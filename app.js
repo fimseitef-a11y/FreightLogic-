@@ -1,12 +1,16 @@
 (() => {
 'use strict';
 
-/** Freight Logic v17.0.0 USA ENGINE
+/** Freight Logic v18.0.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
  *  DAT API integration ready
+ *  v18: Lane Memory, Weekly P&L, Broker Intel, GPS Deadhead, OCR v2,
+ *       Rate Trends, Document Vault, Voice Input, Reload Scoring,
+ *       Fatigue Scoring, Weekly Strategy, Seasonal Intel, Chain Analysis,
+ *       Cost-Per-Day, Counter-Offer Memory, CPA Tax Package, Sync v2
  */
 
-const APP_VERSION = '17.0.0';
+const APP_VERSION = '18.0.0';
 const MASTER_SOURCE_ASSET = './MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
@@ -50,7 +54,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // PRODUCTION READY: ✅ Security Hardened | ✅ Accessibility Compliant
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -646,6 +650,39 @@ async function initDB(){
           if (!fuelStore.indexNames.contains('date')) fuelStore.createIndex('date', 'date', { unique: false });
         }
       }
+      // v10: v18.0.0 — Lane Memory, Weekly Reports, Reload Outcomes, Bid History, Document Vault
+      if (old < 10) {
+        // Lane Memory: track RPM/pay/days per lane corridor
+        if (!d.objectStoreNames.contains('laneHistory')) {
+          const lh = d.createObjectStore('laneHistory', { keyPath: 'id' });
+          lh.createIndex('lane', 'lane', { unique: false });
+          lh.createIndex('date', 'date', { unique: false });
+        }
+        // Weekly P&L Reports: auto-generated weekly summaries
+        if (!d.objectStoreNames.contains('weeklyReports')) {
+          d.createObjectStore('weeklyReports', { keyPath: 'weekId' });
+        }
+        // Reload Outcomes: track reload speed at each destination city
+        if (!d.objectStoreNames.contains('reloadOutcomes')) {
+          const ro = d.createObjectStore('reloadOutcomes', { keyPath: 'id' });
+          ro.createIndex('city', 'city', { unique: false });
+          ro.createIndex('dayOfWeek', 'dayOfWeek', { unique: false });
+          ro.createIndex('date', 'date', { unique: false });
+        }
+        // Bid History: track negotiation per broker/lane over time
+        if (!d.objectStoreNames.contains('bidHistory')) {
+          const bh = d.createObjectStore('bidHistory', { keyPath: 'id' });
+          bh.createIndex('broker', 'broker', { unique: false });
+          bh.createIndex('lane', 'lane', { unique: false });
+          bh.createIndex('date', 'date', { unique: false });
+        }
+        // Document Vault: store insurance, MC authority, W-9, carrier packets, etc.
+        if (!d.objectStoreNames.contains('documents')) {
+          const dv = d.createObjectStore('documents', { keyPath: 'id' });
+          dv.createIndex('type', 'type', { unique: false });
+          dv.createIndex('date', 'date', { unique: false });
+        }
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -1198,7 +1235,7 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupPass','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses']);
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupPass','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -2952,6 +2989,8 @@ async function renderHome(){
     checkOverduePayments(),
   ]);
   await refreshStorageHealth('');
+  // F5: Show latest weekly report card
+  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
 }
 
 // ---- Performance Command Center ----
@@ -3702,6 +3741,9 @@ const MORE_TILES = [
   { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel' },
   { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights' },
+  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports' },
+  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents' },
+  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3728,6 +3770,10 @@ async function renderMore(){
         else if (tile.act === 'export') exportJSON();
         else if (tile.act === 'source') openMasterSourceCenter();
         else if (tile.act === 'security') openSecurityLockModal();
+        else if (tile.act === 'weeklyReports') openWeeklyReports();
+        else if (tile.act === 'documents') openDocumentVault();
+        else if (tile.act === 'rateTrends') openRateTrends();
+        else if (tile.act === 'chainAnalysis') openChainAnalysis();
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -5170,6 +5216,9 @@ function _mwRenderDecision(out, d){
     html += bidRangeHTML(bidRange);
   }
 
+  // ── Lane Intel (F4), injected async after render ──
+  html += `<div id="mwLaneIntelSlot"></div>`;
+
   // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
     <button class="btn primary" id="mwBookTrip" style="width:100%">＋ Book as Trip</button>
@@ -5179,6 +5228,14 @@ function _mwRenderDecision(out, d){
   </div>`;
 
   out.innerHTML = html;
+
+  // Async: inject Lane Intel (F4)
+  if (d.origin && d.dest){
+    getLaneIntel(d.origin, d.dest).then(intel => {
+      const slot = $('#mwLaneIntelSlot', out);
+      if (slot && intel) slot.innerHTML = renderLaneIntelHTML(intel);
+    }).catch(()=>{});
+  }
 
   // Wire up book-as-trip
   const bookBtn = $('#mwBookTrip', out);
@@ -5857,6 +5914,89 @@ function parseArrowLaneLine(text){
   };
 }
 
+/** v18 OCR character correction — fix common Tesseract misreads in load board text */
+function ocrCorrectText(text){
+  if (!text) return text;
+  let s = String(text);
+  // Common OCR letter/digit confusion in numeric context
+  // O ↔ 0 in numeric sequences: "3O0" → "300", "1O5" → "105"
+  s = s.replace(/(\d)[Oo](\d)/g, '$10$2');
+  s = s.replace(/(\d)[Oo](?=\s|$|\D)/g, '$10');
+  // l ↔ 1 in numeric context
+  s = s.replace(/(\d)l(\d)/g, '$11$2');
+  s = s.replace(/\bl(\d{2,})/g, '1$1');
+  // S ↔ 5 in all-digit context
+  s = s.replace(/(\d)S(\d)/g, '$15$2');
+  // B ↔ 8 in numeric context
+  s = s.replace(/(\d)B(\d)/g, '$18$2');
+  // Fix "$1.5OO" → "$1,500" style misreads
+  s = s.replace(/\$\s*(\d+)\s*\.\s*([Oo5]{3})/gi, (_, a, b) => '$' + a + ',' + b.replace(/[Oo]/g,'0').replace(/5/g,'5'));
+  // Normalize common load board separators
+  s = s.replace(/\s*[|]\s*/g, ' | ');
+  // Fix "CHICAGD" → "CHICAGO" (D at end of -O words, common OCR)
+  // Fix broken state abbreviations: "IL." → "IL"
+  s = s.replace(/\b([A-Z]{2})\./g, '$1');
+  return s;
+}
+
+/** v18 Enhanced OCR parsing — Sylectus, Dispatchland, DAT, Truckstop formats */
+function parseLoadTextEnhanced(rawText){
+  const text = ocrCorrectText(rawText);
+  const base = parseLoadText(text);
+
+  // Sylectus format: "Origin: City ST | Destination: City ST | Miles: XXX | Rate: $X,XXX"
+  const sylectusOrigin = text.match(/(?:^|\|)\s*(?:origin|from|shipper)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  const sylectusDest = text.match(/(?:^|\|)\s*(?:dest(?:ination)?|to|consignee)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  if (sylectusOrigin && !base.origin) base.origin = `${sylectusOrigin[1].trim()}, ${sylectusOrigin[2]}`;
+  if (sylectusDest && !base.destination) base.destination = `${sylectusDest[1].trim()}, ${sylectusDest[2]}`;
+
+  // Dispatchland format: "Chicago, IL → Indianapolis, IN | 185 loaded mi | 22 DH mi | $420"
+  const dlArrow = text.match(/([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})\s*(?:→|->|to)\s*([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})/i);
+  if (dlArrow) {
+    if (!base.origin) base.origin = `${dlArrow[1].trim()}, ${dlArrow[2]}`;
+    if (!base.destination) base.destination = `${dlArrow[3].trim()}, ${dlArrow[4]}`;
+  }
+
+  // Loaded miles: "185 loaded mi" or "185 loaded miles"
+  const loadedMiMatch = text.match(/(\d[\d,]{0,5})\s*(?:loaded\s*)?(?:mi(?:les?)?)\b/i);
+  if (loadedMiMatch && !base.loadedMiles) base.loadedMiles = parseInt(loadedMiMatch[1].replace(/,/g,''),10)||0;
+
+  // Deadhead/empty miles: "22 DH" or "22 empty miles" or "empty: 22"
+  const dhMatch = text.match(/(\d[\d,]{0,5})\s*(?:dh|empty|deadhead)\s*(?:mi(?:les?)?)?(?:\s|$)/i) ||
+                  text.match(/(?:empty|dh|deadhead)\s*:?\s*(\d[\d,]{0,5})\s*(?:mi(?:les?)?)?/i);
+  if (dhMatch && !base.deadheadMiles) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
+
+  // Rate: "$1,650" or "Rate: 1650" or "$1.65/mi" style (reject per-mile rates)
+  if (!base.pay){
+    const rateMatch = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)\b(?!\s*\/\s*mi)/i) ||
+                      text.match(/(?:rate|pay|total|line\s*haul|all[\s-]*in)\s*:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (rateMatch){
+      const v = parseFloat(rateMatch[1].replace(/,/g,''));
+      if (v > 50 && v < 50000) base.pay = v;
+    }
+  }
+
+  // Weight: "1200 lbs" or "Weight: 1200 lb"
+  if (!base.weight){
+    const wm = text.match(/(\d[\d,]{0,6})\s*(?:lbs?|pounds?)/i);
+    if (wm) base.weight = parseInt(wm[1].replace(/,/g,''),10)||0;
+  }
+
+  // Pieces: "4 pcs" or "Pieces: 4"
+  const pcsMatch = text.match(/(\d{1,4})\s*(?:pcs?|pieces?|pallets?|skids?)/i);
+  if (pcsMatch) base.pieces = parseInt(pcsMatch[1],10)||0;
+
+  // Pickup window: "PU: 03/19 08:00-14:00" or "Pickup: tomorrow 0800"
+  const puWindowMatch = text.match(/(?:pu|pick\s*up)\s*(?:window|time)?\s*:?\s*([^\n]{5,40})/i);
+  if (puWindowMatch) base.pickupWindow = puWindowMatch[1].trim().slice(0,60);
+
+  // Broker/company name: "Posted by: Acme Transport" or "Broker: Acme"
+  const brokerMatch = text.match(/(?:posted\s*by|broker(?:age)?|company|carrier\s*contact)\s*:?\s*([A-Z][a-zA-Z0-9\s&.,'-]{3,50})/i);
+  if (brokerMatch && !base.customer) base.customer = brokerMatch[1].trim().slice(0,80);
+
+  return base;
+}
+
 async function buildOcrVariants(file){
   const variants = [{ label: 'original', source: file }];
   if (!file || !file.type || !file.type.startsWith('image/')) return variants;
@@ -6282,7 +6422,7 @@ function openSnapLoad(preFile){
       }
 
       const list = parseLoadListFromText(text);
-      _parsedData = list.length ? { _loads: list } : parseLoadText(text);
+      _parsedData = list.length ? { _loads: list } : parseLoadTextEnhanced(text);
       _parsedData._confidence = confidence;
       if (list.length) { renderLoadList(list); } else { renderSingleParsed(_parsedData); }
 
@@ -6587,6 +6727,7 @@ function openTripWizard(existing=null){
     if (!(await validateStep1())){ toast('Fix required fields', true); return; }
     await collectTrip(stepNo);
     const saved = await upsertTrip(trip);
+    _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
     if (stepNo >= 2){
       const f = $('#f_receipts', body).files;
@@ -6689,6 +6830,8 @@ function openTripWizard(existing=null){
   }
   const custEl = $('#f_customer', body);
   if (custEl){
+    // F3: Broker Intelligence Alert
+    attachBrokerIntelToField(custEl, $('#brokerIntelBox', body));
     custEl.addEventListener('input', ()=>{ clearTimeout(_biTimer); _biTimer = setTimeout(updateBrokerIntel, 400); });
     attachAutoComplete(custEl, async (val) => {
       const { trips: allT } = await _getTripsAndExps();
@@ -7005,6 +7148,7 @@ addManagedListener($('#fab'), 'keydown', (e)=>{
   if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fab').click(); }
 });
 addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
+addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); openQuickEvalFlow(); });
 addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
@@ -8787,6 +8931,430 @@ function _updateOnlineStatus(){
 }
 window.addEventListener('online', _updateOnlineStatus);
 window.addEventListener('offline', _updateOnlineStatus);
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 2-5
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F2: Quick Eval Flow ──────────────────────────────────────────────────
+function openQuickEvalFlow(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="text-align:center;padding:12px 0 4px">
+      <div style="font-size:40px;margin-bottom:8px">📸</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Snap a load board screenshot</div>
+      <div class="muted" style="font-size:13px;line-height:1.5">Take a photo or pick from gallery — the app will scan for load details and score it instantly.</div>
+    </div>
+    <div class="btn-row" style="margin-top:20px;flex-direction:column;gap:10px">
+      <button class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
+      <button class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
+    </div>
+    <input type="file" id="qeCameraInput" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="qeGalleryInput" accept="image/*" style="display:none">
+    <div id="qeStatus" style="display:none;margin-top:16px;text-align:center;padding:16px;background:var(--surface-0);border-radius:var(--r-sm)">
+      <div style="font-size:28px;margin-bottom:8px">⏳</div>
+      <div style="font-size:14px;font-weight:600" id="qeStatusMsg">Scanning load…</div>
+      <div class="muted" style="font-size:12px;margin-top:4px" id="qeStatusSub">Running OCR engine</div>
+    </div>`;
+  openModal('⚡ Quick Eval', body);
+
+  const setStatus = (icon, msg, sub='') => {
+    $('#qeStatus', body).style.display = '';
+    $('#qeStatus', body).querySelector('div').textContent = icon;
+    $('#qeStatusMsg', body).textContent = msg;
+    $('#qeStatusSub', body).textContent = sub;
+  };
+
+  async function processQuickEval(file){
+    if (!file || !file.type.startsWith('image/')){ toast('Please select an image', true); return; }
+    setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
+    try {
+      const worker = await loadTesseract();
+      setStatus('🔍','Scanning load…','Reading text from image');
+      const { data } = await worker.recognize(file);
+      const text = data.text || '';
+      if (!text.trim()){ setStatus('❌','No text found','Try a clearer photo with good lighting'); return; }
+      const parsed = parseLoadTextEnhanced(text);
+      const hasData = parsed.origin || parsed.destination || parsed.pay || parsed.loadedMiles;
+      closeModal();
+      // Navigate to evaluator and fill fields
+      location.hash = '#omega';
+      setTimeout(() => {
+        if (parsed.origin) { const el = $('#mwOrigin'); if (el) el.value = parsed.origin; }
+        if (parsed.destination) { const el = $('#mwDest'); if (el) el.value = parsed.destination; }
+        if (parsed.loadedMiles) { const el = $('#mwLoadedMi'); if (el) el.value = parsed.loadedMiles; }
+        if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
+        if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
+        if (hasData){
+          try { mwEvaluateLoad(); } catch(e){}
+          toast('✓ Load scanned — verify fields and hit Evaluate');
+        } else {
+          toast('Scan complete — fill in any missing fields', false);
+        }
+      }, 80);
+    } catch(err){
+      setStatus('❌','Scan failed', String(err.message||err).slice(0,80));
+    }
+  }
+
+  $('#qeCamera', body).addEventListener('click', ()=>{ haptic(); $('#qeCameraInput', body).click(); });
+  $('#qeGallery', body).addEventListener('click', ()=>{ haptic(); $('#qeGalleryInput', body).click(); });
+  $('#qeCameraInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+  $('#qeGalleryInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+}
+
+// ── F3: Broker Intelligence Alerts ──────────────────────────────────────
+async function getBrokerIntel(company){
+  if (!company || company.length < 2) return null;
+  const norm = company.trim().toLowerCase();
+  try {
+    const all = await dumpStore('trips');
+    const matches = all.filter(t => (t.customer||'').toLowerCase().includes(norm) || norm.includes((t.customer||'').toLowerCase().slice(0,6)));
+    if (!matches.length) return null;
+    let totalPay = 0, totalMiles = 0, totalDaysToPay = 0, payCount = 0, unpaidCount = 0, wouldRunCount = 0, wouldRunYes = 0;
+    for (const t of matches){
+      const pay = Number(t.pay||0);
+      const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      totalPay += pay;
+      totalMiles += miles;
+      if (!t.isPaid) unpaidCount++;
+      if (t.isPaid && t.paidDate && t.invoiceDate){
+        const days = Math.max(0, Math.round((new Date(t.paidDate) - new Date(t.invoiceDate)) / 86400000));
+        if (days < 200){ totalDaysToPay += days; payCount++; }
+      }
+      if (t.wouldRunAgain !== null && t.wouldRunAgain !== undefined){ wouldRunCount++; if (t.wouldRunAgain) wouldRunYes++; }
+    }
+    const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+    const avgDaysPay = payCount > 0 ? Math.round(totalDaysToPay / payCount) : null;
+    const unpaidPct = Math.round((unpaidCount / matches.length) * 100);
+    const wouldRunPct = wouldRunCount > 0 ? Math.round((wouldRunYes / wouldRunCount) * 100) : null;
+    return { count: matches.length, avgRPM, avgDaysPay, unpaidCount, unpaidPct, wouldRunPct, totalPay };
+  } catch(e){ return null; }
+}
+
+function renderBrokerAlert(container, intel, company){
+  if (!container) return;
+  const existing = container.querySelector('.broker-intel-alert');
+  if (existing) existing.remove();
+  if (!intel) return;
+  const { count, avgRPM, avgDaysPay, unpaidPct, wouldRunPct } = intel;
+  // Color: green = fast pay + good RPM, red = slow pay or high unpaid
+  const isGreen = avgRPM >= 1.60 && (avgDaysPay === null || avgDaysPay <= 25) && unpaidPct < 10;
+  const isRed = unpaidPct >= 30 || (avgDaysPay !== null && avgDaysPay > 45) || avgRPM < 1.30;
+  const color = isGreen ? 'var(--good)' : isRed ? 'var(--bad)' : 'var(--warn)';
+  const bg = isGreen ? 'var(--good-muted)' : isRed ? 'var(--bad-muted)' : 'var(--warn-muted)';
+  const border = isGreen ? 'var(--good-border)' : isRed ? 'var(--bad-border)' : 'var(--warn-border)';
+  const icon = isGreen ? '✅' : isRed ? '🚨' : '⚠️';
+  const parts = [`${count} load${count!==1?'s':''}`, `$${avgRPM.toFixed(2)} avg RPM`];
+  if (avgDaysPay !== null) parts.push(`${avgDaysPay}d avg pay`);
+  else parts.push('pay unknown');
+  parts.push(`${unpaidPct}% unpaid`);
+  if (wouldRunPct !== null) parts.push(`${wouldRunPct}% would run again`);
+  const el = document.createElement('div');
+  el.className = 'broker-intel-alert';
+  el.style.cssText = `margin-top:6px;padding:8px 12px;border-radius:8px;background:${bg};border:1px solid ${border};font-size:12px;line-height:1.4`;
+  el.innerHTML = `<span style="font-weight:700;color:${color}">${icon} ${escapeHtml(company)}:</span> <span class="muted">${escapeHtml(parts.join(' · '))}</span>`;
+  container.appendChild(el);
+}
+
+function attachBrokerIntelToField(inputEl, containerEl){
+  if (!inputEl || !containerEl) return;
+  let _timer = null;
+  inputEl.addEventListener('input', ()=>{
+    clearTimeout(_timer);
+    _timer = setTimeout(async ()=>{
+      const val = (inputEl.value||'').trim();
+      if (val.length < 2){ const ex = containerEl.querySelector('.broker-intel-alert'); if (ex) ex.remove(); return; }
+      const intel = await getBrokerIntel(val);
+      renderBrokerAlert(containerEl, intel, val);
+    }, 350);
+  });
+}
+
+// ── F4: Lane Memory ──────────────────────────────────────────────────────
+const STATE_ABBRS = { alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY' };
+
+function normalizeLanePart(s){
+  let p = (s||'').trim().toLowerCase().replace(/[^a-z\s,]/g,'').replace(/\s+/g,' ');
+  // Replace full state name with abbreviation
+  for (const [name, abbr] of Object.entries(STATE_ABBRS)){
+    p = p.replace(new RegExp('\\b' + name + '\\b', 'i'), abbr.toLowerCase());
+  }
+  // Keep only city + state (first word group before/after comma)
+  const m = p.match(/^([a-z\s.]+?)(?:,\s*([a-z]{2}))?$/);
+  if (m) return (m[1].trim() + (m[2] ? ',' + m[2] : '')).trim();
+  return p.slice(0, 40).trim();
+}
+
+function normalizeLane(orig, dest){
+  return normalizeLanePart(orig) + '→' + normalizeLanePart(dest);
+}
+
+async function recordLaneHistory(trip){
+  if (!trip || !trip.origin || !trip.destination) return;
+  const pay = Number(trip.pay||0);
+  const loaded = Number(trip.loadedMiles||0);
+  const empty = Number(trip.emptyMiles||0);
+  const total = loaded + empty;
+  if (!pay || !total) return;
+  try {
+    const lane = normalizeLane(trip.origin, trip.destination);
+    const rpm = total > 0 ? roundCents(pay / total) : 0;
+    const pickupTs = trip.pickupDate ? new Date(trip.pickupDate).getTime() : null;
+    const deliveryTs = trip.deliveryDate ? new Date(trip.deliveryDate).getTime() : null;
+    const transitDays = (pickupTs && deliveryTs && deliveryTs > pickupTs) ? Math.round((deliveryTs - pickupTs) / 86400000) : null;
+    // Upsert: look for existing lane entry
+    const existing = await (async ()=>{
+      const {stores} = tx('laneHistory');
+      const idx = stores.laneHistory.index('lane');
+      return await idbReq(idx.getAll(lane));
+    })();
+    const now = Date.now();
+    if (existing && existing.length > 0){
+      // Update the existing aggregate entry
+      const rec = existing[0];
+      rec.count = (rec.count||1) + 1;
+      rec.totalPay = roundCents((rec.totalPay||0) + pay);
+      rec.totalMiles = (rec.totalMiles||0) + total;
+      rec.bestPay = Math.max(rec.bestPay||0, pay);
+      rec.avgRPM = rec.totalMiles > 0 ? roundCents(rec.totalPay / rec.totalMiles) : rpm;
+      if (transitDays !== null){ rec.totalTransitDays = (rec.totalTransitDays||0) + transitDays; rec.transitCount = (rec.transitCount||0) + 1; }
+      rec.avgTransitDays = rec.transitCount > 0 ? roundCents(rec.totalTransitDays / rec.transitCount) : null;
+      if (trip.wouldRunAgain !== null && trip.wouldRunAgain !== undefined){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (trip.wouldRunAgain) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      rec.lastDate = isoDate(); rec.updated = now;
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    } else {
+      const rec = { id: 'lane_' + lane.replace(/[^a-z0-9]/g,'_') + '_' + now, lane, count: 1, totalPay: pay, totalMiles: total, bestPay: pay, avgRPM: rpm,
+        totalTransitDays: transitDays||0, transitCount: transitDays !== null ? 1 : 0, avgTransitDays: transitDays,
+        wouldRunCount: (trip.wouldRunAgain!==null&&trip.wouldRunAgain!==undefined)?1:0, wouldRunYes: trip.wouldRunAgain?1:0,
+        lastDate: isoDate(), created: now, updated: now, displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    }
+  } catch(e){ console.warn('[FL] recordLaneHistory:', e); }
+}
+
+async function getLaneIntel(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const {stores} = tx('laneHistory');
+    const idx = stores.laneHistory.index('lane');
+    const recs = await idbReq(idx.getAll(lane));
+    if (!recs || !recs.length) return null;
+    const r = recs[0];
+    if (!r.count || r.count < 1) return null;
+    return { ...r, wouldRunPct: r.wouldRunCount > 0 ? Math.round((r.wouldRunYes/r.wouldRunCount)*100) : null };
+  } catch(e){ return null; }
+}
+
+function renderLaneIntelHTML(intel){
+  if (!intel) return '';
+  const { count, avgRPM, bestPay, avgTransitDays, wouldRunPct, lastDate, displayOrigin, displayDest } = intel;
+  const color = avgRPM >= 1.60 ? 'var(--good)' : avgRPM >= 1.35 ? 'var(--warn)' : 'var(--bad)';
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">🛣️ Lane Intel — Your History</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+      <div><span class="muted">Times run:</span> <b>${count}</b></div>
+      <div><span class="muted">Avg RPM:</span> <b style="color:${color}">$${(avgRPM||0).toFixed(2)}</b></div>
+      <div><span class="muted">Best pay:</span> <b>${fmtMoney(bestPay||0)}</b></div>
+      ${avgTransitDays ? `<div><span class="muted">Avg transit:</span> <b>${avgTransitDays} day${avgTransitDays!==1?'s':''}</b></div>` : '<div></div>'}
+      ${wouldRunPct !== null ? `<div><span class="muted">Would run again:</span> <b style="color:${wouldRunPct>=70?'var(--good)':wouldRunPct>=40?'var(--warn)':'var(--bad)'}">${wouldRunPct}%</b></div>` : '<div></div>'}
+      <div><span class="muted">Last run:</span> <b>${lastDate||'—'}</b></div>
+    </div>
+  </div>`;
+}
+
+// Hook lane recording into trip saves — call after saveTrip
+async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){} }
+
+// ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
+function getWeekId(date){
+  const d = date ? new Date(date) : new Date();
+  const mon = startOfWeek(d);
+  const y = mon.getFullYear();
+  const jan1 = new Date(y, 0, 1);
+  const wk = Math.ceil(((mon - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+  return `${y}-W${String(wk).padStart(2,'0')}`;
+}
+
+async function generateWeeklyPnL(weekId){
+  try {
+    const parts = weekId.match(/^(\d{4})-W(\d{2})$/);
+    if (!parts) return null;
+    const y = parseInt(parts[1]), wk = parseInt(parts[2]);
+    // Compute Monday of that week
+    const jan1 = new Date(y, 0, 1);
+    const daysToMon = (8 - jan1.getDay()) % 7; // days to first Monday
+    const firstMon = new Date(y, 0, 1 + daysToMon);
+    const weekStart = new Date(firstMon.getTime() + (wk - 1) * 7 * 86400000);
+    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000 - 1);
+    const wkStartISO = isoDate(weekStart);
+    const wkEndISO = isoDate(weekEnd);
+
+    const allTrips = await dumpStore('trips');
+    const allExp = await dumpStore('expenses');
+    const weekTrips = allTrips.filter(t => t.pickupDate >= wkStartISO && t.pickupDate <= wkEndISO);
+    const weekExp = allExp.filter(e => (e.date||'') >= wkStartISO && (e.date||'') <= wkEndISO);
+
+    let grossRev = 0, totalLoadedMi = 0, totalDeadMi = 0, totalRPMSum = 0, rpmCount = 0;
+    let bestTrip = null, worstTrip = null;
+    const workDays = new Set();
+    for (const t of weekTrips){
+      const pay = Number(t.pay||0);
+      const loaded = Number(t.loadedMiles||0);
+      const empty = Number(t.emptyMiles||0);
+      const total = loaded + empty;
+      grossRev += pay;
+      totalLoadedMi += loaded;
+      totalDeadMi += empty;
+      if (total > 0 && pay > 0){ const rpm = pay/total; totalRPMSum += rpm; rpmCount++; if (!bestTrip || rpm > (bestTrip._rpm||0)) bestTrip = {...t, _rpm: rpm}; if (!worstTrip || rpm < (worstTrip._rpm||Infinity)) worstTrip = {...t, _rpm: rpm}; }
+      if (t.pickupDate) workDays.add(t.pickupDate);
+      if (t.deliveryDate) workDays.add(t.deliveryDate);
+    }
+    let totalExpenses = 0;
+    const expByCategory = {};
+    for (const e of weekExp){
+      const amt = Number(e.amount||0);
+      totalExpenses += amt;
+      const cat = e.category||'Other';
+      expByCategory[cat] = (expByCategory[cat]||0) + amt;
+    }
+    const mpg = Number(getCachedSetting('vehicleMpg',6.5)||6.5);
+    const fuelPricePerGal = Number(getCachedSetting('fuelPrice',3.50)||3.50);
+    const fuelEstimate = roundCents(((totalLoadedMi+totalDeadMi) / mpg) * fuelPricePerGal);
+    const netIncome = roundCents(grossRev - totalExpenses);
+    const avgRPM = rpmCount > 0 ? roundCents(totalRPMSum / rpmCount) : 0;
+    const deadheadPct = (totalLoadedMi+totalDeadMi) > 0 ? roundCents((totalDeadMi/(totalLoadedMi+totalDeadMi))*100) : 0;
+
+    const report = { weekId, weekStart: wkStartISO, weekEnd: wkEndISO, grossRev, totalExpenses, netIncome, avgRPM, totalLoadedMi, totalDeadMi, deadheadPct, fuelEstimate, loadsCount: weekTrips.length, daysWorked: workDays.size, expByCategory, bestLane: bestTrip ? `${bestTrip.origin||'?'} → ${bestTrip.destination||'?'}` : null, bestRPM: bestTrip?._rpm||0, worstLane: worstTrip ? `${worstTrip.origin||'?'} → ${worstTrip.destination||'?'}` : null, worstRPM: worstTrip?._rpm||0, generatedAt: Date.now() };
+    const {t, stores} = tx('weeklyReports','readwrite');
+    stores.weeklyReports.put(report);
+    await waitTxn(t);
+    return report;
+  } catch(e){ console.warn('[FL] generateWeeklyPnL:', e); return null; }
+}
+
+async function checkAndGenerateWeeklyReport(){
+  try {
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun
+    const hour = now.getHours();
+    // Generate on Sunday after 8pm OR anytime on Monday for the previous week
+    if (!((dow === 0 && hour >= 20) || dow === 1)) return;
+    const targetDate = new Date(now.getTime() - (dow === 1 ? 7 : 0) * 86400000);
+    const weekId = getWeekId(targetDate);
+    const {stores} = tx('weeklyReports');
+    const existing = await idbReq(stores.weeklyReports.get(weekId));
+    if (existing) return;
+    const report = await generateWeeklyPnL(weekId);
+    if (report && report.loadsCount > 0){
+      toast('📊 Weekly P&L report generated!');
+      await renderWeeklyReportCard(report);
+    }
+  } catch(e){ console.warn('[FL] weekly report check:', e); }
+}
+
+async function getLatestWeeklyReport(){
+  try {
+    const all = await dumpStore('weeklyReports');
+    if (!all.length) return null;
+    return all.sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1)[0];
+  } catch(e){ return null; }
+}
+
+function formatWeeklyReportText(r){
+  const lines = [
+    `📊 Weekly P&L Report — ${r.weekStart} to ${r.weekEnd}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Gross Revenue:    ${fmtMoney(r.grossRev)}`,
+    `Total Expenses:   ${fmtMoney(r.totalExpenses)}`,
+    `Net Income:       ${fmtMoney(r.netIncome)}`,
+    ``,
+    `Avg RPM:          $${(r.avgRPM||0).toFixed(2)}/mi`,
+    `Loaded Miles:     ${(r.totalLoadedMi||0).toLocaleString()} mi`,
+    `Deadhead Miles:   ${(r.totalDeadMi||0).toLocaleString()} mi (${(r.deadheadPct||0).toFixed(1)}%)`,
+    `Fuel Estimate:    ${fmtMoney(r.fuelEstimate||0)}`,
+    `Loads Completed:  ${r.loadsCount||0}`,
+    `Days Worked:      ${r.daysWorked||0}`,
+  ];
+  if (r.bestLane) lines.push(`Best Load:        ${r.bestLane} ($${(r.bestRPM||0).toFixed(2)} RPM)`);
+  if (r.worstLane && r.loadsCount > 1) lines.push(`Worst Load:       ${r.worstLane} ($${(r.worstRPM||0).toFixed(2)} RPM)`);
+  if (r.expByCategory && Object.keys(r.expByCategory).length){
+    lines.push(``, `Expenses by category:`);
+    for (const [cat, amt] of Object.entries(r.expByCategory)) lines.push(`  ${cat}: ${fmtMoney(amt)}`);
+  }
+  lines.push(``, `Generated by FreightLogic v${APP_VERSION}`);
+  return lines.join('\n');
+}
+
+async function renderWeeklyReportCard(report){
+  const slot = $('#homeWeeklyReport');
+  if (!slot) return;
+  if (!report || !report.loadsCount){ slot.style.display = 'none'; return; }
+  const netColor = (report.netIncome||0) >= 0 ? 'var(--good)' : 'var(--bad)';
+  slot.innerHTML = `<div class="card" style="border:1px solid var(--accent-border);background:var(--accent-glow)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">📊 Weekly P&L — ${report.weekStart}</div>
+      <button class="btn sm" id="weekReportShare" style="min-height:36px;font-size:11px">Share</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--good)">${fmtMoney(report.grossRev||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Gross</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:${netColor}">${fmtMoney(report.netIncome||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Net</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700">$${(report.avgRPM||0).toFixed(2)}</div><div style="font-size:10px;color:var(--text-tertiary)">Avg RPM</div></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px;text-align:center">${report.loadsCount} load${report.loadsCount!==1?'s':''} · ${(report.totalLoadedMi||0).toLocaleString()} loaded mi · ${report.daysWorked||0} days worked</div>
+  </div>`;
+  slot.style.display = '';
+  $('#weekReportShare', slot)?.addEventListener('click', async ()=>{
+    haptic(15);
+    const txt = formatWeeklyReportText(report);
+    if (navigator.share){ try{ await navigator.share({ text: txt }); return; }catch{} }
+    await copyTextToClipboard(txt);
+    toast('Weekly report copied to clipboard');
+  });
+}
+
+async function openWeeklyReports(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wkrList"><div class="muted" style="font-size:13px;text-align:center;padding:24px">Loading reports…</div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="wkrGenerate">Generate This Week's Report</button></div>`;
+  openModal('📊 Weekly Reports', body);
+  const allReports = (await dumpStore('weeklyReports')).sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1);
+  const list = $('#wkrList', body);
+  if (!allReports.length){
+    list.innerHTML = '<div class="muted" style="font-size:13px;text-align:center;padding:24px">No reports yet.<br><span style="font-size:12px">Reports generate automatically on Sunday evening.</span></div>';
+  } else {
+    list.innerHTML = allReports.map(r => `
+      <div class="card" style="margin-bottom:10px;cursor:pointer" data-wkid="${escapeHtml(r.weekId)}">
+        <div style="display:flex;justify-content:space-between">
+          <div style="font-weight:700">${escapeHtml(r.weekId)} <span class="muted" style="font-size:11px">${r.weekStart} – ${r.weekEnd}</span></div>
+          <div style="font-family:var(--font-mono);color:${(r.netIncome||0)>=0?'var(--good)':'var(--bad)'};">${fmtMoney(r.netIncome||0)}</div>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${r.loadsCount||0} loads · $${(r.avgRPM||0).toFixed(2)} RPM · ${fmtMoney(r.grossRev||0)} gross</div>
+      </div>`).join('');
+    list.querySelectorAll('[data-wkid]').forEach(el => {
+      el.addEventListener('click', ()=>{
+        const r = allReports.find(x => x.weekId === el.dataset.wkid);
+        if (!r) return;
+        const txt = formatWeeklyReportText(r);
+        const detail = document.createElement('div');
+        detail.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--text)">${escapeHtml(txt)}</pre><div class="btn-row" style="margin-top:12px"><button class="btn primary" id="drShare">Share</button></div>`;
+        openModal(`Report ${escapeHtml(r.weekId)}`, detail);
+        $('#drShare', detail)?.addEventListener('click', async ()=>{ haptic(); if (navigator.share){ try{ await navigator.share({text:txt}); return; }catch{} } await copyTextToClipboard(txt); toast('Copied!'); });
+      });
+    });
+  }
+  $('#wkrGenerate', body)?.addEventListener('click', async ()=>{
+    haptic(20);
+    const r = await generateWeeklyPnL(getWeekId());
+    if (r){ toast(`Week ${r.weekId} report generated!`); closeModal(); openWeeklyReports(); }
+    else toast('Not enough data this week yet', true);
+  });
+}
 
 // ---- Boot ----
 (async () => {

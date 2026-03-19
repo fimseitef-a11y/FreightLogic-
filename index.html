@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=17.0.0">
+  <link rel="manifest" href="manifest.json?v=18.0.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -700,13 +700,18 @@
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross</div></div>
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Expenses</div></div>
         </div>
-        <div class="quick-actions">
-          <button class="btn primary" id="btnQuickTrip">＋ Trip</button>
+        <div class="quick-actions" style="grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn primary" id="btnQuickTrip" style="gap:4px">＋ Trip</button>
+          <button class="btn primary" id="btnQuickEval" style="background:linear-gradient(135deg,#5b6fff,#4040dd);gap:4px">📸 Quick Eval</button>
           <button class="btn" id="btnQuickExpense">＋ Expense</button>
           <button class="btn" id="btnQuickFuel">＋ Fuel</button>
         </div>
       </div>
       <div class="spacer"></div>
+      <div id="homeStrategyBadge" style="display:none;margin-bottom:10px"></div>
+      <div id="homeWeeklyReport" style="display:none;margin-bottom:10px"></div>
+      <div id="homeFuelNudge" style="display:none;margin-bottom:10px"></div>
+      <div id="homeReloadPrompt" style="display:none;margin-bottom:10px"></div>
       <div class="card" id="overdueAlert" style="display:none;border:1px solid var(--bad-border);background:var(--bad-muted)"></div>
       <div class="card"><h3>What's Next</h3><div class="list" id="trendAlerts"></div><div class="list" id="homeActions"></div></div>
       <div class="spacer"></div>
