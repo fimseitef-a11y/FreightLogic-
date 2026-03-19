@@ -3746,6 +3746,8 @@ const MORE_TILES = [
   { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports' },
   { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents' },
   { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
+  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
+  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3775,6 +3777,7 @@ async function renderMore(){
         else if (tile.act === 'weeklyReports') openWeeklyReports();
         else if (tile.act === 'documents') openDocumentVault();
         else if (tile.act === 'rateTrends') openRateTrends();
+        else if (tile.act === 'reloadScoring') openReloadScoring();
         else if (tile.act === 'chainAnalysis') openChainAnalysis();
       };
       el.addEventListener('click', tileAction);
@@ -5672,6 +5675,9 @@ async function mwInit(){
 
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
+
+  // F10: Voice input — init after evaluator binds
+  initVoiceInput();
 }
 
 let omegaBound = false;
@@ -9674,6 +9680,407 @@ document.addEventListener('visibilitychange', ()=>{
     }).catch(()=>{});
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 10-13
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F10: Voice Input ─────────────────────────────────────────────────────
+// Uses Web Speech API to fill evaluator fields via spoken load details.
+// Parses natural language: "Chicago to Indianapolis 185 miles $420"
+
+function initVoiceInput(){
+  const btn = $('#mwVoiceBtn');
+  const status = $('#mwVoiceStatus');
+  if (!btn || !status) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){ btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  let rec = null;
+  let active = false;
+
+  function parseVoiceText(txt){
+    const t = txt.toLowerCase();
+    // Origin → Destination
+    const toMatch = t.match(/(?:from\s+)?([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s+\d|$|\s+for|\s+loaded|\s+miles|\.)/);
+    if (toMatch){
+      const orig = toMatch[1].trim();
+      const dest = toMatch[2].trim();
+      if (orig.length > 2) $('#mwOrigin').value = orig.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      if (dest.length > 2) $('#mwDest').value = dest.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+    }
+    // Revenue — "$420", "four hundred twenty dollars", "420 dollars"
+    const revMatch = t.match(/\$?\s*(\d[\d,]*)\s*(?:dollars?|bucks?|pay)/);
+    if (revMatch) $('#mwRevenue').value = revMatch[1].replace(',','');
+    // Loaded miles
+    const ldMatch = t.match(/(\d+)\s*(?:loaded\s*)?miles?(?:\s+loaded)?/);
+    if (ldMatch) $('#mwLoadedMi').value = ldMatch[1];
+    // Deadhead / empty miles
+    const dhMatch = t.match(/(\d+)\s*(?:dead\s*head|empty|dh)\s*miles?/);
+    if (dhMatch) $('#mwDeadMi').value = dhMatch[1];
+    // Fatigue
+    const fatMatch = t.match(/fatigue\s+(?:level\s+)?(\d+)/);
+    if (fatMatch) $('#mwFatigue').value = fatMatch[1];
+    // Notes (pass-through)
+    if (t.includes('asap') || t.includes('hot load') || t.includes('rush') || t.includes('line down')){
+      const notes = $('#mwLoadNotes');
+      if (notes && !notes.value) notes.value = txt;
+    }
+  }
+
+  btn.addEventListener('click', ()=>{
+    haptic(20);
+    if (active){
+      rec?.stop();
+      return;
+    }
+    rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    active = true;
+    btn.textContent = '⏹️';
+    btn.style.color = 'var(--bad)';
+    status.style.display = '';
+    status.textContent = '🎙️ Listening… say the load details';
+
+    rec.onresult = (ev) => {
+      const interim = Array.from(ev.results).map(r => r[0].transcript).join(' ');
+      status.textContent = `🎙️ "${interim}"`;
+      if (ev.results[ev.results.length - 1].isFinal){
+        const final = ev.results[ev.results.length - 1][0].transcript;
+        parseVoiceText(final);
+        status.textContent = `✅ Parsed: "${final}"`;
+        setTimeout(()=>{ status.style.display = 'none'; }, 3000);
+      }
+    };
+    rec.onerror = (ev) => {
+      status.textContent = `⚠️ ${ev.error === 'not-allowed' ? 'Microphone permission denied' : 'Voice error — try again'}`;
+      setTimeout(()=>{ status.style.display = 'none'; }, 3000);
+    };
+    rec.onend = () => {
+      active = false;
+      btn.textContent = '🎙️';
+      btn.style.color = '';
+    };
+    rec.start();
+  });
+}
+
+// ── F11: Document Vault ──────────────────────────────────────────────────
+// Store insurance cards, MC authority, W-9s, carrier packets as blobs.
+// Uses 'documents' IDB store (added in v10 schema).
+
+async function openDocumentVault(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <select id="dvTypeFilter" style="flex:1;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="">All documents</option>
+          <option value="insurance">Insurance</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
+      </div>
+      <div id="dvList"><div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading…</div></div>
+    </div>
+    <input type="file" id="dvFileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none" />`;
+  openModal('📁 Document Vault', body);
+
+  const TYPES = { insurance:'Insurance', authority:'MC Authority', w9:'W-9', carrier_packet:'Carrier Packet', other:'Other' };
+
+  async function loadDocs(){
+    const filter = $('#dvTypeFilter', body).value;
+    let docs = await dumpStore('documents');
+    docs = docs.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    if (filter) docs = docs.filter(d => d.type === filter);
+    const list = $('#dvList', body);
+    if (!docs.length){
+      list.innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No documents yet.<br><span style="font-size:11px">Add insurance cards, MC authority, W-9s, carrier packets.</span></div>`;
+      return;
+    }
+    list.innerHTML = docs.map(d => `
+      <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px" data-dvid="${escapeHtml(d.id)}">
+        <div style="font-size:28px;flex-shrink:0">${d.mimeType && d.mimeType.startsWith('image') ? '🖼️' : '📄'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name||'Untitled')}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(TYPES[d.type]||d.type||'Document')} · ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'} · ${d.size ? Math.round(d.size/1024)+'KB' : '—'}</div>
+          ${d.note ? `<div class="muted" style="font-size:11px;margin-top:2px;font-style:italic">${escapeHtml(d.note.slice(0,60))}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
+          <button class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
+        </div>
+      </div>`).join('');
+
+    list.querySelectorAll('[data-dvopen]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        const doc = docs.find(d => d.id === btn2.dataset.dvopen);
+        if (!doc || !doc.blob) return toast('Document data not found', true);
+        const url = URL.createObjectURL(new Blob([doc.blob], {type: doc.mimeType || 'application/octet-stream'}));
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      });
+    });
+    list.querySelectorAll('[data-dvdel]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        if (!confirm('Delete this document?')) return;
+        const {t, stores} = tx('documents', 'readwrite');
+        await idbReq(stores.documents.delete(btn2.dataset.dvdel));
+        await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+        toast('Document deleted');
+        loadDocs();
+      });
+    });
+  }
+
+  async function addDocument(file, type, note){
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) return toast('File too large (max 6 MB)', true);
+    const buf = await file.arrayBuffer();
+    const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const rec = { id, name: file.name, type, note: note||'', mimeType: file.type||'application/octet-stream', size: file.size, blob: new Uint8Array(buf), createdAt: Date.now() };
+    const {t, stores} = tx('documents', 'readwrite');
+    await idbReq(stores.documents.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+    toast(`"${file.name}" saved to vault`);
+    loadDocs();
+  }
+
+  $('#dvTypeFilter', body).addEventListener('change', () => loadDocs());
+
+  $('#dvAddBtn', body).addEventListener('click', () => {
+    // Show add dialog
+    const addBody = document.createElement('div');
+    addBody.innerHTML = `
+      <div class="field"><label>Document type</label>
+        <select id="addDvType" style="width:100%;font-size:13px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="insurance">Insurance Card</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Note (optional)</label><input id="addDvNote" placeholder="e.g. State Farm, expires 12/2026" /></div>
+      <div class="field">
+        <label>File</label>
+        <div id="addDvDropzone" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:var(--text-secondary);font-size:13px">
+          📎 Tap to choose file (PDF, image — max 6 MB)
+        </div>
+        <input type="file" id="addDvFile" accept="image/*,application/pdf" style="display:none" />
+        <div id="addDvFilename" class="muted" style="font-size:12px;margin-top:6px"></div>
+      </div>
+      <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="addDvSave">Save to Vault</button></div>`;
+    openModal('Add Document', addBody);
+    let chosenFile = null;
+    $('#addDvDropzone', addBody).addEventListener('click', () => $('#addDvFile', addBody).click());
+    $('#addDvFile', addBody).addEventListener('change', (ev) => {
+      chosenFile = ev.target.files[0] || null;
+      $('#addDvFilename', addBody).textContent = chosenFile ? `Selected: ${chosenFile.name}` : '';
+    });
+    $('#addDvSave', addBody).addEventListener('click', async () => {
+      if (!chosenFile) return toast('Choose a file first', true);
+      const type = $('#addDvType', addBody).value;
+      const note = $('#addDvNote', addBody).value.trim();
+      haptic(20);
+      await addDocument(chosenFile, type, note);
+      closeModal();
+      // Re-open vault
+      setTimeout(() => openDocumentVault(), 100);
+    });
+  });
+
+  await loadDocs();
+}
+
+// ── F12: Reload Scoring ──────────────────────────────────────────────────
+// Track reload speed per destination city using 'reloadOutcomes' store.
+// Record how long it took to get a return load after delivering to a city.
+// Show city reload score in evaluator output.
+
+async function recordReloadOutcome(trip, hoursToReload){
+  if (!trip || !trip.destination) return;
+  const city = normalizeLanePart(trip.destination);
+  if (!city) return;
+  try {
+    const id = 'ro_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const dt = trip.deliveryDate || isoDate(new Date());
+    const dayOfWeek = new Date(dt + 'T12:00:00').getDay(); // 0=Sun
+    const rec = { id, city, date: dt, dayOfWeek, hoursToReload: Number(hoursToReload)||0, tripId: trip.orderNo||'' };
+    const {t, stores} = tx('reloadOutcomes', 'readwrite');
+    await idbReq(stores.reloadOutcomes.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+  } catch(e){ console.warn('[FL] reloadOutcome:', e); }
+}
+
+async function getCityReloadScore(city){
+  if (!city) return null;
+  try {
+    const norm = normalizeLanePart(city);
+    const {stores} = tx('reloadOutcomes');
+    const idx = stores.reloadOutcomes.index('city');
+    const recs = await idbReq(idx.getAll(norm));
+    if (!recs || recs.length < 2) return null;
+    const avg = recs.reduce((s, r) => s + (r.hoursToReload||0), 0) / recs.length;
+    // Score: <8h = great, 8-24h = ok, 24-48h = slow, >48h = dead zone
+    let grade, color, label;
+    if (avg < 8){ grade='A'; color='var(--good)'; label='Hot market'; }
+    else if (avg < 24){ grade='B'; color='var(--good)'; label='Good reload'; }
+    else if (avg < 48){ grade='C'; color='var(--warn)'; label='Slow reload'; }
+    else { grade='D'; color='var(--bad)'; label='Dead zone'; }
+    return { avg: Math.round(avg), grade, color, label, count: recs.length };
+  } catch(e){ return null; }
+}
+
+async function openReloadScoring(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rsContent"><div class="muted" style="text-align:center;padding:24px">Loading reload data…</div></div>
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Log a Reload Outcome</div>
+      <div class="field"><label>Delivery city</label><input id="rsCity" placeholder="e.g. Indianapolis" /></div>
+      <div class="field"><label>Hours to reload (after delivery)</label><input id="rsHours" inputmode="decimal" placeholder="e.g. 6.5" /></div>
+      <div class="btn-row"><button class="btn primary" id="rsSave">Log Outcome</button></div>
+    </div>`;
+  openModal('🔄 Reload Scoring', body);
+
+  async function loadScores(){
+    try {
+      const all = await dumpStore('reloadOutcomes');
+      const cities = {};
+      for (const r of all){
+        if (!cities[r.city]) cities[r.city] = [];
+        cities[r.city].push(r.hoursToReload||0);
+      }
+      const entries = Object.entries(cities).map(([city, hrs]) => {
+        const avg = hrs.reduce((a,b)=>a+b,0)/hrs.length;
+        let grade, color;
+        if (avg < 8){ grade='A'; color='var(--good)'; }
+        else if (avg < 24){ grade='B'; color='var(--good)'; }
+        else if (avg < 48){ grade='C'; color='var(--warn)'; }
+        else { grade='D'; color='var(--bad)'; }
+        return { city, avg: Math.round(avg), grade, color, count: hrs.length };
+      }).sort((a,b) => a.avg - b.avg);
+      const el = $('#rsContent', body);
+      if (!entries.length){
+        el.innerHTML = '<div class="muted" style="text-align:center;padding:24px;font-size:13px">No reload data yet.<br>Log outcomes after each delivery to build your city intelligence.</div>';
+      } else {
+        el.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">A=&lt;8h · B=8-24h · C=24-48h · D=48h+</div>` + entries.map(e => `
+          <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:22px;font-weight:900;color:${e.color};width:24px;text-align:center">${e.grade}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(e.city.replace(/(?:^|\s)\S/g, c => c.toUpperCase()))}</div>
+              <div class="muted" style="font-size:11px">Avg ${e.avg}h to reload · ${e.count} data point${e.count!==1?'s':''}</div>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e){ $('#rsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load data.</div>'; }
+  }
+
+  $('#rsSave', body).addEventListener('click', async () => {
+    const city = ($('#rsCity', body).value || '').trim();
+    const hours = parseFloat($('#rsHours', body).value || '');
+    if (!city || isNaN(hours) || hours < 0) return toast('Enter city and hours', true);
+    haptic(20);
+    await recordReloadOutcome({ destination: city }, hours);
+    toast('Reload outcome logged!');
+    $('#rsCity', body).value = '';
+    $('#rsHours', body).value = '';
+    loadScores();
+  });
+
+  await loadScores();
+}
+
+// ── F13: Chain Analysis ──────────────────────────────────────────────────
+// Analyze multi-load chains: given a delivery city, find best next loads
+// based on lane history, broker intel, and reload scores.
+
+async function openChainAnalysis(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+      Find the best next load after delivering to a city, based on your lane history and reload data.
+    </div>
+    <div class="field"><label>You are delivering to…</label>
+      <input id="caCity" placeholder="e.g. Indianapolis" style="width:100%" /></div>
+    <button class="btn primary" id="caAnalyze" style="width:100%;margin-top:4px">Analyze Chain</button>
+    <div id="caResults" style="margin-top:16px"></div>`;
+  openModal('🔗 Chain Analysis', body);
+
+  $('#caAnalyze', body).addEventListener('click', async () => {
+    const city = ($('#caCity', body).value || '').trim();
+    if (!city) return toast('Enter a delivery city', true);
+    haptic(20);
+    const results = $('#caResults', body);
+    results.innerHTML = '<div class="muted" style="text-align:center;padding:16px">Analyzing…</div>';
+    try {
+      const normCity = normalizeLanePart(city);
+      // Find all lanes that START from this city (from laneHistory)
+      const {stores} = tx('laneHistory');
+      const all = await idbReq(stores.laneHistory.getAll());
+      const outbound = all.filter(r => r.lane && r.lane.startsWith(normCity + '→'));
+      // Get reload score for this city
+      const reload = await getCityReloadScore(city);
+      // Also look at trips from the trips store
+      const allTrips = await dumpStore('trips');
+      const fromCity = allTrips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+      // Build destination stats from trips
+      const destMap = {};
+      for (const t of fromCity){
+        const dest = normalizeLanePart(t.destination||'');
+        if (!dest) continue;
+        if (!destMap[dest]) destMap[dest] = { dest, display: t.destination, pays: [], rpms: [], count: 0 };
+        const pay = Number(t.pay||0);
+        const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+        destMap[dest].count++;
+        if (pay) destMap[dest].pays.push(pay);
+        if (miles > 0) destMap[dest].rpms.push(pay / miles);
+      }
+      const lanes = Object.values(destMap).sort((a,b) => {
+        const rpmA = a.rpms.length ? a.rpms.reduce((s,r)=>s+r,0)/a.rpms.length : 0;
+        const rpmB = b.rpms.length ? b.rpms.reduce((s,r)=>s+r,0)/b.rpms.length : 0;
+        return rpmB - rpmA;
+      }).slice(0, 8);
+
+      let html = '';
+      // Reload intel header
+      if (reload){
+        html += `<div class="card" style="margin-bottom:12px;border:1px solid ${reload.color};opacity:.9">
+          <div style="font-size:12px;font-weight:700;color:${reload.color}">Reload Score for ${escapeHtml(city)}: <b>${reload.grade}</b> — ${escapeHtml(reload.label)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">Avg ${reload.avg}h to reload · Based on ${reload.count} data point${reload.count!==1?'s':''}</div>
+        </div>`;
+      } else {
+        html += `<div class="muted" style="font-size:12px;margin-bottom:10px">No reload score for ${escapeHtml(city)} yet — log outcomes to build intelligence.</div>`;
+      }
+      if (!lanes.length){
+        html += `<div class="muted" style="font-size:13px;text-align:center;padding:16px">No outbound lane history from ${escapeHtml(city)} yet.<br><span style="font-size:11px">Run loads from this city to build chain intelligence.</span></div>`;
+      } else {
+        html += `<div style="font-weight:700;font-size:13px;margin-bottom:8px">Best next lanes from ${escapeHtml(city)}:</div>`;
+        html += lanes.map((l, i) => {
+          const avgRPM = l.rpms.length ? (l.rpms.reduce((s,r)=>s+r,0)/l.rpms.length) : 0;
+          const avgPay = l.pays.length ? (l.pays.reduce((s,p)=>s+p,0)/l.pays.length) : 0;
+          const rpmColor = avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+          return `<div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:18px;font-weight:900;color:var(--text-tertiary);width:20px;text-align:center">${i+1}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(city)} → ${escapeHtml(l.display||l.dest)}</div>
+              <div class="muted" style="font-size:11px;margin-top:2px">${l.count} run${l.count!==1?'s':''} · Avg ${fmtMoney(avgPay)} · <span style="color:${rpmColor};font-weight:700">$${avgRPM.toFixed(2)} RPM</span></div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+      results.innerHTML = html;
+    } catch(e){
+      results.innerHTML = '<div style="color:var(--bad);padding:16px">Analysis failed. Try again.</div>';
+      console.warn('[FL] chainAnalysis:', e);
+    }
+  });
+}
 
 // ---- Boot ----
 (async () => {
