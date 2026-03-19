@@ -673,6 +673,7 @@
       <div class="row">
         <button id="themeToggle" class="theme-btn" title="Toggle theme" aria-label="Toggle dark/light theme">🌙</button>
         <span id="cloudIndicator" style="font-size:12px;display:none;cursor:pointer" title="Cloud backup status" aria-label="Cloud backup status">☁️</span>
+        <span id="syncIndicator" style="font-size:12px;display:none;cursor:pointer;display:flex;align-items:center" title="Sync status" aria-label="Sync status"></span>
         <div class="pill" id="pillWeekNet"><span class="muted">Week</span> <b id="kpiWeekNet">—</b></div>
         <div class="pill" id="pillUnpaid"><span class="muted">AR</span> <b id="kpiUnpaid">—</b></div>
       </div>
@@ -818,8 +819,14 @@
       <!-- ── TAB: 90-Second Load Evaluator ── -->
       <div id="mwTabEval" class="mw-tab-panel" style="margin-top:12px">
         <div class="grid2">
-          <div class="card"><h3>Load Details</h3>
-            <div class="field"><label>Origin</label><input id="mwOrigin" placeholder="e.g. Chicago" /></div>
+          <div class="card"><h3>Load Details <button id="mwVoiceBtn" title="Speak load details" style="float:right;background:none;border:none;font-size:18px;cursor:pointer;padding:0 2px;line-height:1;display:none" aria-label="Voice input">🎙️</button></h3>
+            <div class="field"><label>Origin</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="mwOrigin" placeholder="e.g. Chicago" style="flex:1" />
+                <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:40px;min-height:40px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
+              </div>
+              <div id="mwGpsHint" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
+            </div>
             <div class="field"><label>Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
             <div class="field"><label>Loaded miles</label><input id="mwLoadedMi" inputmode="numeric" placeholder="e.g. 185" /></div>
             <div class="field"><label>Deadhead miles</label><input id="mwDeadMi" inputmode="numeric" placeholder="e.g. 22" /></div>
@@ -848,6 +855,7 @@
             </div>
           </div>
           <div class="card"><h3>Decision</h3>
+            <div id="mwVoiceStatus" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-bottom:10px;color:var(--accent)"></div>
             <div id="mwEvalOutput" style="min-height:260px">
               <div class="muted" style="font-size:13px;line-height:1.8">
                 Enter a load to run the 90-second filter.<br><br>
