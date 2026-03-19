@@ -2991,6 +2991,8 @@ async function renderHome(){
   await refreshStorageHealth('');
   // F5: Show latest weekly report card
   if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
+  // F6: Fuel price staleness nudge
+  checkFuelPriceStaleness().catch(()=>{});
 }
 
 // ---- Performance Command Center ----
@@ -3784,6 +3786,7 @@ async function renderMore(){
       await setSetting('weeklyGoal', Number($('#moreWeeklyGoal').value || 0));
       await setSetting('vehicleMpg', Number($('#moreVehicleMpg').value || 0));
       await setSetting('fuelPrice', Number($('#moreFuelPrice').value || 0));
+      markFuelPriceUpdated().catch(()=>{});
       await setSetting('perDiemRate', Number($('#morePerDiem').value || 0));
       // Sync with full settings page
       $('#weeklyGoal').value = $('#moreWeeklyGoal').value;
@@ -5216,8 +5219,8 @@ function _mwRenderDecision(out, d){
     html += bidRangeHTML(bidRange);
   }
 
-  // ── Lane Intel (F4), injected async after render ──
-  html += `<div id="mwLaneIntelSlot"></div>`;
+  // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
+  html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
 
   // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
@@ -5229,12 +5232,13 @@ function _mwRenderDecision(out, d){
 
   out.innerHTML = html;
 
-  // Async: inject Lane Intel (F4)
+  // Async: inject Lane Intel (F4) + Rate Trend (F8)
   if (d.origin && d.dest){
     getLaneIntel(d.origin, d.dest).then(intel => {
       const slot = $('#mwLaneIntelSlot', out);
       if (slot && intel) slot.innerHTML = renderLaneIntelHTML(intel);
     }).catch(()=>{});
+    injectRateTrendIntoEvaluator(d.origin, d.dest).catch(()=>{});
   }
 
   // Wire up book-as-trip
@@ -5580,6 +5584,25 @@ async function mwInit(){
 
   // Load evaluator
   $('#mwEvalBtn')?.addEventListener('click', mwEvaluateLoad);
+
+  // F7: GPS deadhead — trigger on origin field changes
+  const originEl = $('#mwOrigin');
+  if (originEl){
+    let _gpsTimer = null;
+    originEl.addEventListener('input', ()=>{
+      clearTimeout(_gpsTimer);
+      _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
+    });
+  }
+  // F7: GPS pin button next to origin
+  $('#mwGpsBtn')?.addEventListener('click', async ()=>{
+    haptic(15);
+    const orig = ($('#mwOrigin')?.value||'').trim();
+    if (!orig){ toast('Enter an origin city first', true); return; }
+    $('#mwGpsHint').textContent = '📍 Getting location…';
+    _gpsCache = null; // force fresh lookup
+    await updateGPSDeadhead(orig);
+  });
 
   // Mode selector persistence
   const modeEl = $('#mwModeSelector');
@@ -7250,6 +7273,7 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('iftaMode', $('#iftaMode').value || 'on');
   await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
   await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
+  markFuelPriceUpdated().catch(()=>{});
   // Monthly fixed costs → auto-calculate opCostPerMile
   const mIns = Number($('#monthlyInsurance')?.value || 0);
   const mVeh = Number($('#monthlyVehicle')?.value || 0);
@@ -9356,6 +9380,301 @@ async function openWeeklyReports(){
   });
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 6-9
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F6: Fuel Price Staleness Nudge ───────────────────────────────────────
+async function checkFuelPriceStaleness(){
+  try {
+    const updatedAt = await getSetting('fuelPriceUpdatedAt', null);
+    const slot = $('#homeFuelNudge');
+    if (!slot) return;
+    const now = Date.now();
+    const staleDays = updatedAt ? Math.floor((now - Number(updatedAt)) / 86400000) : null;
+    // Show nudge if never set OR stale for 14+ days
+    const isStale = staleDays === null || staleDays >= 14;
+    if (!isStale){ slot.style.display = 'none'; return; }
+    const label = staleDays === null ? 'never updated' : `last updated ${staleDays} day${staleDays!==1?'s':''} ago`;
+    slot.innerHTML = `<div class="card" style="border:1px solid var(--warn-border);background:var(--warn-muted);cursor:pointer" id="fuelNudgeCard">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">⛽</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:13px;color:var(--warn)">Fuel price may be stale</div>
+          <div class="muted" style="font-size:12px;line-height:1.4">Price ${label}. Stale fuel price = inaccurate load scoring.</div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--warn);white-space:nowrap">Update →</div>
+      </div>
+    </div>`;
+    slot.style.display = '';
+    slot.querySelector('#fuelNudgeCard')?.addEventListener('click', ()=>{
+      haptic(15);
+      location.hash = '#settings';
+      setTimeout(()=>{
+        const fp = $('#moreFuelPrice') || $('#fuelPrice');
+        if (fp){ fp.focus(); fp.style.outline = '2px solid var(--warn)'; setTimeout(()=> fp.style.outline = '', 2500); }
+      }, 400);
+    });
+  } catch(e){ console.warn('[FL] fuel staleness:', e); }
+}
+
+// Hook: update fuelPriceUpdatedAt whenever fuel price is saved
+// Called from settings save (patched below at settings save handler)
+async function markFuelPriceUpdated(){
+  await setSetting('fuelPriceUpdatedAt', Date.now());
+}
+
+// ── F7: Deadhead Calculator with GPS ─────────────────────────────────────
+let _gpsCache = null; // { lat, lng, ts }
+
+async function getGPSPosition(){
+  if (_gpsCache && (Date.now() - _gpsCache.ts) < 300000) return _gpsCache; // 5-min cache
+  return new Promise((resolve) => {
+    if (!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => { _gpsCache = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() }; resolve(_gpsCache); },
+      () => resolve(null),
+      { timeout: 6000, maximumAge: 120000 }
+    );
+  });
+}
+
+function haversineDistanceMi(lat1, lon1, lat2, lon2){
+  const R = 3958.8; // miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getMarketCoords(cityStr){
+  const norm = (cityStr||'').trim().toLowerCase().replace(/[^a-z\s]/g,'').replace(/\s+/g,' ');
+  // Check USA_MARKETS first
+  for (const [key, data] of Object.entries(USA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  // Check CA_MARKETS
+  for (const [key, data] of Object.entries(CA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  return null;
+}
+
+async function estimateDeadheadFromGPS(originCity){
+  const gps = await getGPSPosition();
+  if (!gps) return null;
+  const coords = getMarketCoords(originCity);
+  if (!coords) return null;
+  const straightLine = haversineDistanceMi(gps.lat, gps.lng, coords.lat, coords.lng);
+  return Math.round(straightLine * 1.3); // road multiplier
+}
+
+// Wire GPS deadhead into evaluator — called when origin field changes
+async function updateGPSDeadhead(originVal){
+  const hint = $('#mwGpsHint');
+  const deadEl = $('#mwDeadMi');
+  if (!hint || !deadEl) return;
+  if (!originVal || originVal.length < 3){ hint.textContent = ''; return; }
+  hint.textContent = '📍 Estimating distance…';
+  const miles = await estimateDeadheadFromGPS(originVal);
+  if (miles !== null){
+    hint.textContent = `📍 ~${miles} mi from your location`;
+    if (!deadEl.value || deadEl.value === '0'){
+      deadEl.value = miles;
+      deadEl.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  } else {
+    hint.textContent = '';
+  }
+}
+
+// ── F8: Rate Trend Tracking ───────────────────────────────────────────────
+async function getLaneRPMTrend(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const all = await dumpStore('trips');
+    // Filter trips on this lane
+    const laneParts = lane.split('→');
+    const origNorm = laneParts[0]||'';
+    const destNorm = laneParts[1]||'';
+    const relevant = all.filter(t => {
+      const to = normalizeLanePart(t.origin||'');
+      const td = normalizeLanePart(t.destination||'');
+      return to.includes(origNorm.split(',')[0].trim()) && td.includes(destNorm.split(',')[0].trim());
+    });
+    if (relevant.length < 3) return null;
+    // Group by YYYY-MM
+    const byMonth = {};
+    for (const t of relevant){
+      const mo = (t.pickupDate||'').slice(0,7);
+      if (!mo) continue;
+      const pay = Number(t.pay||0);
+      const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      if (!pay || !mi) continue;
+      if (!byMonth[mo]) byMonth[mo] = { totalPay:0, totalMi:0, count:0 };
+      byMonth[mo].totalPay += pay;
+      byMonth[mo].totalMi += mi;
+      byMonth[mo].count++;
+    }
+    const months = Object.keys(byMonth).sort();
+    if (months.length < 2) return null;
+    const rpmByMonth = months.map(mo => ({ mo, rpm: byMonth[mo].totalMi > 0 ? roundCents(byMonth[mo].totalPay / byMonth[mo].totalMi) : 0, count: byMonth[mo].count }));
+    const lastTwo = rpmByMonth.slice(-2);
+    const prev = lastTwo[0]; const cur = lastTwo[1];
+    const changePct = prev.rpm > 0 ? roundCents(((cur.rpm - prev.rpm) / prev.rpm) * 100) : 0;
+    const arrow = changePct >= 5 ? '↑' : changePct <= -5 ? '↓' : '→';
+    const color = changePct >= 5 ? 'var(--good)' : changePct <= -5 ? 'var(--bad)' : 'var(--warn)';
+    return { rpmByMonth, prev, cur, changePct, arrow, color, totalCount: relevant.length };
+  } catch(e){ return null; }
+}
+
+function renderRateTrendHTML(trend){
+  if (!trend) return '';
+  const { prev, cur, changePct, arrow, color } = trend;
+  const sparkline = trend.rpmByMonth.slice(-6).map(m =>
+    `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:24px;height:${Math.max(4, Math.round((m.rpm/2.5)*40))}px;background:${m.mo===cur.mo?color:'var(--surface-3)'};border-radius:2px"></div>
+      <div style="font-size:8px;color:var(--text-tertiary)">${m.mo.slice(5)}</div>
+    </div>`
+  ).join('');
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">📈 Rate Trend — This Lane</div>
+    <div style="font-size:13px;margin-bottom:8px"><span class="muted">${prev.mo}:</span> <b>$${prev.rpm.toFixed(2)}</b> <span style="color:var(--text-tertiary)">→</span> <span class="muted">${cur.mo}:</span> <b style="color:${color}">$${cur.rpm.toFixed(2)}</b> <span style="color:${color};font-weight:700">${arrow} ${Math.abs(changePct).toFixed(0)}%</span></div>
+    <div style="display:flex;gap:4px;align-items:flex-end;height:50px">${sparkline}</div>
+  </div>`;
+}
+
+async function openRateTrends(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rtContent"><div class="muted" style="text-align:center;padding:24px">Loading lane data…</div></div>`;
+  openModal('📈 Rate Trends', body);
+  try {
+    const all = await dumpStore('trips');
+    // Group by lane
+    const laneMap = {};
+    for (const t of all){
+      if (!t.origin || !t.destination) continue;
+      const lane = normalizeLane(t.origin, t.destination);
+      if (!laneMap[lane]) laneMap[lane] = { lane, trips:[], display:`${t.origin} → ${t.destination}` };
+      laneMap[lane].trips.push(t);
+    }
+    const lanes = Object.values(laneMap).filter(l => l.trips.length >= 2).sort((a,b) => b.trips.length - a.trips.length).slice(0, 20);
+    if (!lanes.length){
+      $('#rtContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No lane trend data yet.<br><span style="font-size:11px">Run at least 2 loads on the same route to see trends.</span></div>`;
+      return;
+    }
+    const items = await Promise.all(lanes.map(async l => {
+      const trend = await getLaneRPMTrend(l.trips[0].origin, l.trips[0].destination);
+      return { ...l, trend };
+    }));
+    $('#rtContent', body).innerHTML = items.map(l => {
+      const t = l.trend;
+      const arrow = t ? t.arrow : '—';
+      const color = t ? t.color : 'var(--text-tertiary)';
+      const curRPM = t ? `$${t.cur.rpm.toFixed(2)}` : '—';
+      return `<div class="card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:13px">${escapeHtml(l.display)}</div>
+          <div style="font-size:18px;font-weight:700;color:${color}">${arrow}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${l.trips.length} run${l.trips.length!==1?'s':''} · Latest: <b style="color:${color}">${curRPM}</b>${t ? ` · ${t.changePct >= 0 ? '+' : ''}${t.changePct.toFixed(0)}% vs prior month` : ''}</div>
+        ${t ? renderRateTrendHTML(t) : ''}
+      </div>`;
+    }).join('');
+  } catch(e){
+    $('#rtContent', body).innerHTML = `<div style="color:var(--bad);padding:16px">Failed to load trend data.</div>`;
+  }
+}
+
+// Wire rate trend into evaluator async injection
+async function injectRateTrendIntoEvaluator(orig, dest){
+  const slot = $('#mwRateTrendSlot');
+  if (!slot) return;
+  const trend = await getLaneRPMTrend(orig, dest);
+  if (trend) slot.innerHTML = renderRateTrendHTML(trend);
+}
+
+// ── F9: Multi-Device Sync Enhancement ────────────────────────────────────
+// Replace existing visibilitychange handler with enhanced version that:
+// 1. Auto-pushes when visible if last sync > 5 min ago
+// 2. Shows sync indicator in header
+// 3. On boot checks if server has newer backup
+
+function _updateSyncIndicator(state, label){
+  const el = $('#syncIndicator');
+  if (!el) return;
+  const icons = { syncing: `<span class="cloud-sync-spinner" style="width:12px;height:12px;border-width:1.5px"></span>`, ok: '☁️', warn: '⚠️', off: '' };
+  el.innerHTML = (icons[state]||'') + (label ? `<span style="font-size:10px;margin-left:3px;color:var(--text-tertiary)">${escapeHtml(label)}</span>` : '');
+  el.style.display = state === 'off' ? 'none' : '';
+  el.title = label || '';
+}
+
+async function cloudCheckServerTimestamp(){
+  // Check if server backup is newer than our last sync
+  try {
+    const config = await cloudGetConfig();
+    if (!config) return;
+    const hdrs = { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token };
+    const res = await cloudFetch(config.url + '/status', { headers: hdrs }, 6000);
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    if (!data.hasBackup) return;
+    // The worker doesn't expose a timestamp directly; use lastCloudSync comparison.
+    // If we have never synced but there IS a backup, show the banner.
+    const lastLocal = Number(await getSetting('lastCloudSync', 0) || 0);
+    const banner = $('#cloudSyncBanner');
+    const saved = await getSetting('lastCloudCheckTimestamp', 0) || 0;
+    // Avoid re-showing within 1hr
+    if ((Date.now() - Number(saved)) < 3600000) return;
+    await setSetting('lastCloudCheckTimestamp', Date.now());
+    if (lastLocal === 0 && data.count > 0){
+      showCloudSyncBanner('Backup found on server. Tap to restore your data.');
+    }
+  } catch(e){}
+}
+
+function showCloudSyncBanner(msg){
+  const existing = $('#cloudSyncBanner');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'cloudSyncBanner';
+  el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;background:linear-gradient(135deg,#1a1a3a,#252545);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;gap:12px;font-size:13px';
+  el.innerHTML = `<div style="flex:1">☁️ <b style="color:var(--accent)">Cloud Sync</b> — ${escapeHtml(msg)}</div>
+    <button class="btn sm" id="cloudBannerSync" style="min-height:36px;background:var(--accent);color:#000;border:none;font-weight:700">Sync Now</button>
+    <button class="btn sm" id="cloudBannerDismiss" style="min-height:36px">✕</button>`;
+  document.body.appendChild(el);
+  document.getElementById('cloudBannerSync')?.addEventListener('click', async ()=>{
+    haptic(20); el.remove();
+    location.hash = '#settings';
+    toast('Go to Cloud Backup → Pull Backup');
+  });
+  document.getElementById('cloudBannerDismiss')?.addEventListener('click', ()=>{ haptic(); el.remove(); });
+  setTimeout(()=> el?.remove(), 12000);
+}
+
+// Override the existing visibilitychange handler behaviour with enhanced version
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible'){
+    cloudIsEnabled().then(async enabled => {
+      if (!enabled) return;
+      const last = Number(await getSetting('lastCloudSync', 0) || 0);
+      const staleMs = 5 * 60 * 1000; // 5 minutes
+      if ((Date.now() - last) > staleMs){
+        _updateSyncIndicator('syncing', 'Syncing…');
+        await cloudPushBackup(true);
+        const newLast = Number(await getSetting('lastCloudSync', 0) || 0);
+        const ago = Math.floor((Date.now() - newLast) / 60000);
+        _updateSyncIndicator('ok', ago < 2 ? 'Synced' : `${ago}m ago`);
+      }
+    }).catch(()=>{});
+  }
+});
+
 // ---- Boot ----
 (async () => {
   try{
@@ -9434,6 +9753,8 @@ async function openWeeklyReports(){
       }catch(e){ console.warn('[FL] Recovery check failed:', e); }
       try{ showSafariWarning(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkStorageQuota(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkAndGenerateWeeklyReport(); }catch(e){ console.warn("[FL]", e); }
+      try{ await cloudCheckServerTimestamp(); }catch(e){ console.warn("[FL]", e); }
     }, 2000);
   }catch(err){
     console.error(err);
