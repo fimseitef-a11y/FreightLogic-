@@ -3752,6 +3752,7 @@ const MORE_TILES = [
   { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
   { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay' },
   { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory' },
+  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3787,6 +3788,7 @@ async function renderMore(){
         else if (tile.act === 'seasonalIntel') openSeasonalIntel();
         else if (tile.act === 'costPerDay') openCostPerDay();
         else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
+        else if (tile.act === 'cpaPackage') openCPAPackage();
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -10535,6 +10537,268 @@ async function openCounterOfferMemory(){
       console.warn('[FL] counterOfferMemory save:', e);
     }
   });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Feature 18: CPA Track Package
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F18: CPA Track Package ────────────────────────────────────────────────
+// In-app CPA-ready report: full P&L preview, quarterly breakdown, estimated
+// SE tax + quarterly payment schedule, and one-tap CSV export.
+
+async function openCPAPackage(){
+  const now   = new Date();
+  const year  = now.getFullYear();
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn cpa-period-btn active" data-period="ytd" style="flex:1;min-width:0;font-size:12px">YTD ${year}</button>
+      <button class="btn cpa-period-btn" data-period="q1"  style="flex:1;min-width:0;font-size:12px">Q1</button>
+      <button class="btn cpa-period-btn" data-period="q2"  style="flex:1;min-width:0;font-size:12px">Q2</button>
+      <button class="btn cpa-period-btn" data-period="q3"  style="flex:1;min-width:0;font-size:12px">Q3</button>
+      <button class="btn cpa-period-btn" data-period="q4"  style="flex:1;min-width:0;font-size:12px">Q4</button>
+    </div>
+    <div id="cpaContent"><div class="muted" style="text-align:center;padding:24px">Loading…</div></div>`;
+
+  openModal('📦 CPA Package', body);
+
+  let currentPeriod = 'ytd';
+
+  const QUARTERS = [
+    { key:'q1', label:'Q1', start:`${year}-01-01`, end:`${year}-03-31` },
+    { key:'q2', label:'Q2', start:`${year}-04-01`, end:`${year}-06-30` },
+    { key:'q3', label:'Q3', start:`${year}-07-01`, end:`${year}-09-30` },
+    { key:'q4', label:'Q4', start:`${year}-10-01`, end:`${year}-12-31` },
+  ];
+
+  // IRS estimated tax due dates (approximate)
+  const EST_TAX_DATES = ['Apr 15','Jun 16','Sep 15','Jan 15'];
+
+  async function buildPeriodData(period){
+    let startDate, endDate, label;
+    if (period === 'ytd'){ startDate = `${year}-01-01`; endDate = isoDate(now); label = `YTD ${year}`; }
+    else { const q = QUARTERS.find(x => x.key === period); startDate = q.start; endDate = q.end; label = `${q.label} ${year}`; }
+
+    const inRange = d => d && d >= startDate && d <= endDate;
+
+    const [allTrips, allExps, allFuel] = await Promise.all([
+      dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
+    ]);
+    const trips = allTrips.filter(t => !t.needsReview && inRange(t.pickupDate || t.deliveryDate));
+    const exps  = allExps.filter(e => inRange(e.date));
+    const fuel  = allFuel.filter(f => inRange(f.date));
+
+    const [perDiemRate, vehicleClass] = await Promise.all([
+      getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+      getSetting('vehicleClass', 'cargo_van'),
+    ]);
+    const pdRate = Number(perDiemRate || IRS.PER_DIEM_CONUS);
+    const perDiemPct = (vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl')
+      ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+
+    // Revenue
+    let gross = 0, loadedMi = 0, allMi = 0;
+    const tripDays = new Set();
+    for (const t of trips){
+      gross    += Number(t.pay || 0);
+      loadedMi += Number(t.loadedMiles || 0);
+      allMi    += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      const d  = t.pickupDate || t.deliveryDate;
+      if (d) tripDays.add(d);
+      if (t.pickupDate && t.deliveryDate && t.pickupDate !== t.deliveryDate){
+        const s = new Date(t.pickupDate), e = new Date(t.deliveryDate);
+        for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate()+1)) tripDays.add(isoDate(dt));
+      }
+    }
+    gross = roundCents(gross);
+
+    // Expenses by category
+    const catMap = new Map();
+    let totalExp = 0;
+    for (const e of exps){
+      const amt = Number(e.amount || 0);
+      totalExp += amt;
+      const cat = e.category || 'Uncategorized';
+      catMap.set(cat, (catMap.get(cat) || 0) + amt);
+    }
+    totalExp = roundCents(totalExp);
+
+    // Fuel
+    const totalFuelCost = roundCents(fuel.reduce((s,f) => s + Number(f.amount||0), 0));
+    const totalGallons  = fuel.reduce((s,f) => s + Number(f.gallons||0), 0);
+
+    // Per diem
+    const pdDays       = tripDays.size;
+    const pdGross      = roundCents(pdDays * pdRate);
+    const pdDeductible = roundCents(pdGross * perDiemPct);
+
+    // Mileage deduction (standard rate)
+    const mileDeduc2026 = roundCents(allMi * IRS.MILEAGE_RATE_2026);
+
+    // Net + SE tax
+    const net      = roundCents(gross - totalExp);
+    const seTax    = roundCents(Math.max(0, (net - pdDeductible) * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+    const estProfit= roundCents(net - pdDeductible - seTax);
+
+    return {
+      label, startDate, endDate, period,
+      gross, totalExp, catMap, totalFuelCost, totalGallons,
+      loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct,
+      mileDeduc2026, net, seTax, estProfit,
+      tripCount: trips.length, expCount: exps.length,
+    };
+  }
+
+  async function render(period){
+    const el = $('#cpaContent', body);
+    el.innerHTML = '<div class="muted" style="text-align:center;padding:18px">Calculating…</div>';
+    try {
+      const d = await buildPeriodData(period);
+      const isYTD = period === 'ytd';
+
+      // Quarterly breakdown (YTD only)
+      let qRowsHTML = '';
+      if (isYTD){
+        const qData = await Promise.all(QUARTERS.map(q => buildPeriodData(q.key)));
+        qRowsHTML = `
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px">Quarterly Breakdown + Est. Tax Due Dates</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead>
+                <tr style="color:var(--text-secondary)">
+                  <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--card-border)">Period</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Gross</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Expenses</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Net</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">SE Tax Est.</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${qData.map((q,i) => `<tr style="border-bottom:1px solid var(--card-border)">
+                  <td style="padding:5px 6px;font-weight:600">${q.label}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.gross)}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.totalExp)}</td>
+                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:${q.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(q.net)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--warn)">${fmtMoney(q.seTax)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--text-secondary)">${EST_TAX_DATES[i]}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">IRS estimated tax due dates are approximate. Confirm at IRS.gov or with your CPA.</div>
+        </div>`;
+      }
+
+      const catRows = [...d.catMap.entries()]
+        .sort((a,b) => b[1]-a[1])
+        .map(([cat,amt]) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+          <span style="color:var(--text-secondary)">${escapeHtml(cat)}</span>
+          <b>${fmtMoney(roundCents(amt))}</b>
+        </div>`).join('');
+
+      el.innerHTML = `
+        <!-- P&L Summary -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:10px">P&L Summary — ${escapeHtml(d.label)}</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Gross Revenue</span><b style="color:var(--good)">${fmtMoney(d.gross)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Expenses</span><b style="color:var(--bad)">-${fmtMoney(d.totalExp)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Net Income</span><b style="color:${d.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.net)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Per Diem Deduction (${Math.round(d.perDiemPct*100)}% · ${d.pdDays}d × $${d.pdRate.toFixed(2)})</span>
+            <b style="color:var(--accent)">-${fmtMoney(d.pdDeductible)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Est. Self-Employment Tax (15.3%)</span><b style="color:var(--warn)">-${fmtMoney(d.seTax)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:6px 0;margin-top:2px">
+            <span>Estimated After-Tax Profit</span>
+            <span style="color:${d.estProfit>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.estProfit)}</span>
+          </div>
+        </div>
+
+        <!-- Mileage -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Mileage — IRS Standard Rate</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Business Miles</span><b>${d.allMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Loaded Miles</span><b>${d.loadedMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+            <span>Mileage Deduction @ $${IRS.MILEAGE_RATE_2026}/mi (2026)</span>
+            <b style="color:var(--accent)">${fmtMoney(d.mileDeduc2026)}</b>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:5px">⚠️ Choose mileage OR actual expenses — not both. Ask your CPA which method benefits you more.</div>
+        </div>
+
+        <!-- Expense breakdown -->
+        ${d.totalExp > 0 ? `<div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Expenses by Category</div>
+          ${catRows}
+        </div>` : ''}
+
+        <!-- Quarterly breakdown (YTD only) -->
+        ${qRowsHTML}
+
+        <!-- CPA Handoff Checklist -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">CPA Handoff Checklist</div>
+          ${[
+            ['This exported CPA Package CSV',                                                  true ],
+            ['Mileage log (this app\'s trip detail CSV)',                                      true ],
+            ['Form 1099-NEC from each broker (due Jan 31)',                                    d.gross > 600 ],
+            ['Bank / business account statements',                                             true ],
+            ['Receipts for expense categories above',                                          d.totalExp > 0 ],
+            ['IFTA fuel summary (if applicable)',                                              d.totalFuelCost > 0 ],
+            ['Home office square footage (if claiming home office deduction)',                  false],
+            ['Cell phone & internet — estimate business use %',                                false],
+          ].map(([item, ready]) => `<div style="display:flex;align-items:flex-start;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--card-border)">
+            <span style="color:${ready?'var(--good)':'var(--text-tertiary)'};flex-shrink:0;font-size:13px">${ready?'✅':'☐'}</span>
+            <span style="color:${ready?'var(--text-primary)':'var(--text-secondary)'}">${item}</span>
+          </div>`).join('')}
+        </div>
+
+        <!-- Export -->
+        <button class="btn primary" id="cpaExportBtn" style="width:100%;font-size:14px;font-weight:700;padding:14px">
+          ⬇ Download CPA Package — ${escapeHtml(d.label)}
+        </button>
+        <div style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-bottom:4px">
+          CSV includes P&L summary, income detail, expense detail, and fuel log.<br>
+          Estimates only — not tax advice. Verify with a licensed CPA.
+        </div>`;
+
+      $('#cpaExportBtn', body).addEventListener('click', () => {
+        haptic(20);
+        generateAccountantPackage(period);
+      });
+
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);padding:16px;font-size:12px">Failed to load CPA data.</div>';
+      console.warn('[FL] cpaPackage:', e);
+    }
+  }
+
+  $$('.cpa-period-btn', body).forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.cpa-period-btn', body).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      render(currentPeriod);
+    });
+  });
+
+  render(currentPeriod);
 }
 
 // ---- Boot ----
