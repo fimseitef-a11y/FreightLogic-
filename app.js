@@ -3750,6 +3750,8 @@ const MORE_TILES = [
   { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
   { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy' },
   { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
+  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay' },
+  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3783,6 +3785,8 @@ async function renderMore(){
         else if (tile.act === 'chainAnalysis') openChainAnalysis();
         else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
         else if (tile.act === 'seasonalIntel') openSeasonalIntel();
+        else if (tile.act === 'costPerDay') openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -10291,6 +10295,246 @@ async function openSeasonalIntel(){
     $('#siContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load seasonal data.</div>';
     console.warn('[FL] seasonalIntel:', e);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 16-17
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F16: Cost-Per-Day ────────────────────────────────────────────────────
+// Calculates daily breakeven from monthly fixed costs + variable CPM.
+// Shows minimum gross needed per day / week and compares to recent actuals.
+
+async function openCostPerDay(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="cpdContent"><div class="muted" style="text-align:center;padding:24px">Loading cost data…</div></div>`;
+  openModal('💸 Cost-Per-Day', body);
+  try {
+    const [mIns, mVeh, mMaint, mOther, mMiles, opCPM, weeklyGoal] = await Promise.all([
+      getSetting('monthlyInsurance',  0),
+      getSetting('monthlyVehicle',    0),
+      getSetting('monthlyMaintenance',0),
+      getSetting('monthlyOther',      0),
+      getSetting('monthlyMiles',      0),
+      getSetting('opCostPerMile',     0),
+      getSetting('weeklyGoal',        0),
+    ]);
+    const fixedMonthly = [mIns, mVeh, mMaint, mOther].reduce((s,v) => s + Number(v||0), 0);
+    const fixedDaily   = fixedMonthly / 30.44;   // avg days/month
+    const fixedWeekly  = fixedMonthly / 4.345;
+    const cpm          = Number(opCPM || 0);
+    const avgMonthMiles= Number(mMiles || 0);
+    const varDaily     = avgMonthMiles > 0 ? (avgMonthMiles / 30.44) * cpm : 0;
+    const varWeekly    = avgMonthMiles > 0 ? (avgMonthMiles / 4.345) * cpm : 0;
+
+    const totalDaily   = fixedDaily + varDaily;
+    const totalWeekly  = fixedWeekly + varWeekly;
+
+    // Last 30 days actuals
+    const now      = new Date();
+    const from30   = new Date(now); from30.setDate(now.getDate() - 30);
+    const [trips30, exps30] = await Promise.all([
+      queryTripsByPickupRange(isoDate(from30), isoDate(now)),
+      queryExpensesByDateRange(isoDate(from30), isoDate(now)),
+    ]);
+    const gross30   = trips30.reduce((s,t) => s + Number(t.pay||0), 0);
+    const exp30     = exps30.reduce((s,e)  => s + Number(e.amount||0), 0);
+    const actDaily  = gross30 / 30;
+    const actNet30  = gross30 - exp30;
+
+    const hasFixed = fixedMonthly > 0;
+    const beColor  = actDaily >= totalDaily ? 'var(--good)' : actDaily > 0 ? 'var(--warn)' : 'var(--text-tertiary)';
+    const wGoal    = Number(weeklyGoal||0);
+
+    $('#cpdContent', body).innerHTML = `
+      ${!hasFixed && cpm === 0 ? `<div class="card" style="border:1px solid var(--warn);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
+        <b style="color:var(--warn)">⚠️ No cost data yet.</b><br>Enter monthly fixed costs and op cost-per-mile in <b>Settings → Vehicle & Costs</b> to unlock full analysis.
+      </div>` : ''}
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">Daily Breakeven</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Fixed / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(fixedDaily)}</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Variable / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(varDaily)}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:12px;background:var(--bg-secondary);border-radius:10px;text-align:center">
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Total Breakeven / Day</div>
+          <div style="font-size:26px;font-weight:900;color:var(--accent)">${fmtMoney(totalDaily)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${fmtMoney(totalWeekly)} / week &nbsp;·&nbsp; ${fmtMoney(fixedMonthly + varDaily*30.44)} / month</div>
+        </div>
+      </div>
+
+      ${gross30 > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Last 30 Days Actuals</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Avg gross / day</span><b style="color:${beColor}">${fmtMoney(actDaily)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Gross total</span><b>${fmtMoney(gross30)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>Net (after expenses)</span><b style="color:${actNet30>=0?'var(--good)':'var(--bad)'}">${fmtMoney(actNet30)}</b>
+        </div>
+        ${totalDaily > 0 ? `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:${actDaily >= totalDaily ? 'rgba(0,200,100,.08)' : 'rgba(255,80,80,.08)'};font-size:12px;text-align:center">
+          ${actDaily >= totalDaily
+            ? `<b style="color:var(--good)">✓ Covering costs</b> — ${fmtMoney(actDaily - totalDaily)}/day above breakeven`
+            : `<b style="color:var(--bad)">✗ Below breakeven</b> — ${fmtMoney(totalDaily - actDaily)}/day shortfall`}
+        </div>` : ''}
+      </div>` : ''}
+
+      ${wGoal > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Weekly Goal Coverage</div>
+        <div style="font-size:12px;color:var(--text-secondary)">Goal: <b>${fmtMoney(wGoal)}</b> &nbsp;·&nbsp; Breakeven: <b>${fmtMoney(totalWeekly)}</b> &nbsp;·&nbsp; Profit window: <b style="color:var(--good)">${fmtMoney(Math.max(0, wGoal - totalWeekly))}</b></div>
+      </div>` : ''}
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:2px">
+        Fixed / 30.44 days avg. Variable based on ${avgMonthMiles > 0 ? avgMonthMiles.toLocaleString() + ' est. monthly miles' : 'no miles estimate'}.
+      </div>`;
+  } catch(e){
+    $('#cpdContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load cost data.</div>';
+    console.warn('[FL] costPerDay:', e);
+  }
+}
+
+// ── F17: Counter-Offer Memory ─────────────────────────────────────────────
+// Log counter-offer attempts per broker+lane with outcome (accepted/rejected/
+// no-response). View history sorted by broker, see win rates and avg deltas.
+
+async function openCounterOfferMemory(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+      Track counter-offer outcomes to learn which brokers and lanes are negotiable.
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">Log Attempt</div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Broker</label>
+        <input id="comBroker" placeholder="e.g. Coyote Logistics" style="width:100%" /></div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Lane</label>
+        <input id="comLane" placeholder="e.g. Chicago → Indianapolis" style="width:100%" /></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <div class="field"><label style="font-size:11px">Their Offer ($)</label>
+          <input id="comOffer" type="number" min="0" placeholder="800" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Your Counter ($)</label>
+          <input id="comCounter" type="number" min="0" placeholder="950" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Final ($)</label>
+          <input id="comFinal" type="number" min="0" placeholder="920" style="width:100%" /></div>
+      </div>
+      <div class="field" style="margin-bottom:8px"><label style="font-size:11px">Outcome</label>
+        <select id="comOutcome" style="width:100%">
+          <option value="accepted">✅ Accepted my counter</option>
+          <option value="partial">🤝 Partial — met in middle</option>
+          <option value="rejected">❌ Rejected — took their rate</option>
+          <option value="no_response">🚫 No response / walked</option>
+        </select>
+      </div>
+      <button class="btn primary" id="comSave" style="width:100%">Save Attempt</button>
+    </div>
+    <div id="comHistory"></div>`;
+  openModal('🤝 Counter-Offer Memory', body);
+
+  async function loadHistory(){
+    const el = $('#comHistory', body);
+    el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:10px">Loading…</div>';
+    try {
+      const all = await dumpStore('bidHistory');
+      all.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      if (!all.length){
+        el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:16px">No attempts logged yet.</div>';
+        return;
+      }
+
+      // Aggregate by broker
+      const brokerMap = {};
+      for (const r of all){
+        const b = r.broker || 'Unknown';
+        if (!brokerMap[b]) brokerMap[b] = { broker: b, records: [], wins: 0 };
+        brokerMap[b].records.push(r);
+        if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
+      }
+      const brokers = Object.values(brokerMap).sort((a,z) => z.records.length - a.records.length);
+
+      const outcomeIcon = { accepted:'✅', partial:'🤝', rejected:'❌', no_response:'🚫' };
+      const outcomeLabel= { accepted:'Accepted', partial:'Partial', rejected:'Rejected', no_response:'Walked' };
+
+      el.innerHTML = brokers.map(bk => {
+        const winRate = Math.round((bk.wins / bk.records.length) * 100);
+        const rateColor = winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
+        const rows = bk.records.slice(0, 5).map(r => {
+          const offer   = Number(r.offerAmt  || 0);
+          const counter = Number(r.counterAmt|| 0);
+          const final   = Number(r.finalAmt  || 0);
+          const delta   = final > 0 && offer > 0 ? final - offer : null;
+          const icon    = outcomeIcon[r.outcome] || '•';
+          const label   = outcomeLabel[r.outcome] || r.outcome;
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:6px 0;border-bottom:1px solid var(--card-border)">
+            <span style="width:16px;text-align:center">${icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.lane||'—')}</div>
+              <div class="muted">${r.date||''} · ${offer > 0 ? fmtMoney(offer) : '—'} → ${counter > 0 ? fmtMoney(counter) : '—'}${final > 0 ? ` → ${fmtMoney(final)}` : ''}</div>
+            </div>
+            ${delta !== null ? `<div style="font-weight:700;color:${delta >= 0 ? 'var(--good)' : 'var(--bad)'}">+${fmtMoney(delta)}</div>` : ''}
+          </div>`;
+        }).join('');
+        return `<div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-weight:700;font-size:13px">${escapeHtml(bk.broker)}</div>
+            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate}% win · ${bk.records.length} attempt${bk.records.length!==1?'s':''}</div>
+          </div>
+          ${rows}
+          ${bk.records.length > 5 ? `<div class="muted" style="font-size:11px;text-align:center;padding-top:6px">+${bk.records.length-5} more</div>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);font-size:12px;padding:10px">Failed to load history.</div>';
+      console.warn('[FL] counterOfferMemory load:', e);
+    }
+  }
+
+  await loadHistory();
+
+  $('#comSave', body).addEventListener('click', async () => {
+    const broker  = ($('#comBroker',  body).value || '').trim();
+    const lane    = ($('#comLane',    body).value || '').trim();
+    const offer   = Number($('#comOffer',   body).value || 0);
+    const counter = Number($('#comCounter', body).value || 0);
+    const final   = Number($('#comFinal',   body).value || 0);
+    const outcome = $('#comOutcome', body).value;
+    if (!broker) return toast('Enter a broker name', true);
+    if (!lane)   return toast('Enter a lane', true);
+    haptic(20);
+    try {
+      const rec = {
+        id:        Date.now() + Math.random(),
+        broker:    clampStr(broker, 80),
+        lane:      clampStr(lane, 80),
+        offerAmt:  offer,
+        counterAmt:counter,
+        finalAmt:  final,
+        outcome,
+        date:      isoDate(new Date()),
+      };
+      const {t, stores} = tx('bidHistory', 'readwrite');
+      stores.bidHistory.put(rec);
+      await idbReq(t);
+      // Clear fields
+      ['#comBroker','#comLane','#comOffer','#comCounter','#comFinal'].forEach(sel => { const el = $(sel, body); if (el) el.value = ''; });
+      $('#comOutcome', body).value = 'accepted';
+      toast('Saved');
+      await loadHistory();
+    } catch(e){
+      toast('Save failed', true);
+      console.warn('[FL] counterOfferMemory save:', e);
+    }
+  });
 }
 
 // ---- Boot ----
