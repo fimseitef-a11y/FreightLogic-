@@ -1,5 +1,5 @@
-/* Freight Logic v17.0.0 — Browser Hardened Service Worker */
-const SW_VERSION = '17.0.0';
+/* Freight Logic v18.0.0 — Browser Hardened Service Worker */
+const SW_VERSION = '18.0.0';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';

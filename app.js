@@ -1,12 +1,16 @@
 (() => {
 'use strict';
 
-/** Freight Logic v17.0.0 USA ENGINE
+/** Freight Logic v18.0.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
  *  DAT API integration ready
+ *  v18: Lane Memory, Weekly P&L, Broker Intel, GPS Deadhead, OCR v2,
+ *       Rate Trends, Document Vault, Voice Input, Reload Scoring,
+ *       Fatigue Scoring, Weekly Strategy, Seasonal Intel, Chain Analysis,
+ *       Cost-Per-Day, Counter-Offer Memory, CPA Tax Package, Sync v2
  */
 
-const APP_VERSION = '17.0.0';
+const APP_VERSION = '18.0.0';
 const MASTER_SOURCE_ASSET = './MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
@@ -50,7 +54,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // PRODUCTION READY: ✅ Security Hardened | ✅ Accessibility Compliant
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -646,6 +650,39 @@ async function initDB(){
           if (!fuelStore.indexNames.contains('date')) fuelStore.createIndex('date', 'date', { unique: false });
         }
       }
+      // v10: v18.0.0 — Lane Memory, Weekly Reports, Reload Outcomes, Bid History, Document Vault
+      if (old < 10) {
+        // Lane Memory: track RPM/pay/days per lane corridor
+        if (!d.objectStoreNames.contains('laneHistory')) {
+          const lh = d.createObjectStore('laneHistory', { keyPath: 'id' });
+          lh.createIndex('lane', 'lane', { unique: false });
+          lh.createIndex('date', 'date', { unique: false });
+        }
+        // Weekly P&L Reports: auto-generated weekly summaries
+        if (!d.objectStoreNames.contains('weeklyReports')) {
+          d.createObjectStore('weeklyReports', { keyPath: 'weekId' });
+        }
+        // Reload Outcomes: track reload speed at each destination city
+        if (!d.objectStoreNames.contains('reloadOutcomes')) {
+          const ro = d.createObjectStore('reloadOutcomes', { keyPath: 'id' });
+          ro.createIndex('city', 'city', { unique: false });
+          ro.createIndex('dayOfWeek', 'dayOfWeek', { unique: false });
+          ro.createIndex('date', 'date', { unique: false });
+        }
+        // Bid History: track negotiation per broker/lane over time
+        if (!d.objectStoreNames.contains('bidHistory')) {
+          const bh = d.createObjectStore('bidHistory', { keyPath: 'id' });
+          bh.createIndex('broker', 'broker', { unique: false });
+          bh.createIndex('lane', 'lane', { unique: false });
+          bh.createIndex('date', 'date', { unique: false });
+        }
+        // Document Vault: store insurance, MC authority, W-9, carrier packets, etc.
+        if (!d.objectStoreNames.contains('documents')) {
+          const dv = d.createObjectStore('documents', { keyPath: 'id' });
+          dv.createIndex('type', 'type', { unique: false });
+          dv.createIndex('date', 'date', { unique: false });
+        }
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -1198,7 +1235,7 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupPass','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses']);
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupPass','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -2952,6 +2989,10 @@ async function renderHome(){
     checkOverduePayments(),
   ]);
   await refreshStorageHealth('');
+  // F5: Show latest weekly report card
+  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
+  // F6: Fuel price staleness nudge
+  checkFuelPriceStaleness().catch(()=>{});
 }
 
 // ---- Performance Command Center ----
@@ -3702,6 +3743,16 @@ const MORE_TILES = [
   { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel' },
   { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights' },
+  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports' },
+  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents' },
+  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
+  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
+  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
+  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy' },
+  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
+  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay' },
+  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory' },
+  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3728,6 +3779,16 @@ async function renderMore(){
         else if (tile.act === 'export') exportJSON();
         else if (tile.act === 'source') openMasterSourceCenter();
         else if (tile.act === 'security') openSecurityLockModal();
+        else if (tile.act === 'weeklyReports') openWeeklyReports();
+        else if (tile.act === 'documents') openDocumentVault();
+        else if (tile.act === 'rateTrends') openRateTrends();
+        else if (tile.act === 'reloadScoring') openReloadScoring();
+        else if (tile.act === 'chainAnalysis') openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') openSeasonalIntel();
+        else if (tile.act === 'costPerDay') openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
+        else if (tile.act === 'cpaPackage') openCPAPackage();
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -3738,6 +3799,7 @@ async function renderMore(){
       await setSetting('weeklyGoal', Number($('#moreWeeklyGoal').value || 0));
       await setSetting('vehicleMpg', Number($('#moreVehicleMpg').value || 0));
       await setSetting('fuelPrice', Number($('#moreFuelPrice').value || 0));
+      markFuelPriceUpdated().catch(()=>{});
       await setSetting('perDiemRate', Number($('#morePerDiem').value || 0));
       // Sync with full settings page
       $('#weeklyGoal').value = $('#moreWeeklyGoal').value;
@@ -5170,6 +5232,9 @@ function _mwRenderDecision(out, d){
     html += bidRangeHTML(bidRange);
   }
 
+  // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
+  html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
+
   // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
     <button class="btn primary" id="mwBookTrip" style="width:100%">＋ Book as Trip</button>
@@ -5179,6 +5244,15 @@ function _mwRenderDecision(out, d){
   </div>`;
 
   out.innerHTML = html;
+
+  // Async: inject Lane Intel (F4) + Rate Trend (F8)
+  if (d.origin && d.dest){
+    getLaneIntel(d.origin, d.dest).then(intel => {
+      const slot = $('#mwLaneIntelSlot', out);
+      if (slot && intel) slot.innerHTML = renderLaneIntelHTML(intel);
+    }).catch(()=>{});
+    injectRateTrendIntoEvaluator(d.origin, d.dest).catch(()=>{});
+  }
 
   // Wire up book-as-trip
   const bookBtn = $('#mwBookTrip', out);
@@ -5524,6 +5598,25 @@ async function mwInit(){
   // Load evaluator
   $('#mwEvalBtn')?.addEventListener('click', mwEvaluateLoad);
 
+  // F7: GPS deadhead — trigger on origin field changes
+  const originEl = $('#mwOrigin');
+  if (originEl){
+    let _gpsTimer = null;
+    originEl.addEventListener('input', ()=>{
+      clearTimeout(_gpsTimer);
+      _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
+    });
+  }
+  // F7: GPS pin button next to origin
+  $('#mwGpsBtn')?.addEventListener('click', async ()=>{
+    haptic(15);
+    const orig = ($('#mwOrigin')?.value||'').trim();
+    if (!orig){ toast('Enter an origin city first', true); return; }
+    $('#mwGpsHint').textContent = '📍 Getting location…';
+    _gpsCache = null; // force fresh lookup
+    await updateGPSDeadhead(orig);
+  });
+
   // Mode selector persistence
   const modeEl = $('#mwModeSelector');
   if (modeEl){
@@ -5592,6 +5685,9 @@ async function mwInit(){
 
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
+
+  // F10: Voice input — init after evaluator binds
+  initVoiceInput();
 }
 
 let omegaBound = false;
@@ -5855,6 +5951,89 @@ function parseArrowLaneLine(text){
     origin: normalizeCityStateLoose(m[1]),
     destination: normalizeCityStateLoose(m[2])
   };
+}
+
+/** v18 OCR character correction — fix common Tesseract misreads in load board text */
+function ocrCorrectText(text){
+  if (!text) return text;
+  let s = String(text);
+  // Common OCR letter/digit confusion in numeric context
+  // O ↔ 0 in numeric sequences: "3O0" → "300", "1O5" → "105"
+  s = s.replace(/(\d)[Oo](\d)/g, '$10$2');
+  s = s.replace(/(\d)[Oo](?=\s|$|\D)/g, '$10');
+  // l ↔ 1 in numeric context
+  s = s.replace(/(\d)l(\d)/g, '$11$2');
+  s = s.replace(/\bl(\d{2,})/g, '1$1');
+  // S ↔ 5 in all-digit context
+  s = s.replace(/(\d)S(\d)/g, '$15$2');
+  // B ↔ 8 in numeric context
+  s = s.replace(/(\d)B(\d)/g, '$18$2');
+  // Fix "$1.5OO" → "$1,500" style misreads
+  s = s.replace(/\$\s*(\d+)\s*\.\s*([Oo5]{3})/gi, (_, a, b) => '$' + a + ',' + b.replace(/[Oo]/g,'0').replace(/5/g,'5'));
+  // Normalize common load board separators
+  s = s.replace(/\s*[|]\s*/g, ' | ');
+  // Fix "CHICAGD" → "CHICAGO" (D at end of -O words, common OCR)
+  // Fix broken state abbreviations: "IL." → "IL"
+  s = s.replace(/\b([A-Z]{2})\./g, '$1');
+  return s;
+}
+
+/** v18 Enhanced OCR parsing — Sylectus, Dispatchland, DAT, Truckstop formats */
+function parseLoadTextEnhanced(rawText){
+  const text = ocrCorrectText(rawText);
+  const base = parseLoadText(text);
+
+  // Sylectus format: "Origin: City ST | Destination: City ST | Miles: XXX | Rate: $X,XXX"
+  const sylectusOrigin = text.match(/(?:^|\|)\s*(?:origin|from|shipper)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  const sylectusDest = text.match(/(?:^|\|)\s*(?:dest(?:ination)?|to|consignee)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  if (sylectusOrigin && !base.origin) base.origin = `${sylectusOrigin[1].trim()}, ${sylectusOrigin[2]}`;
+  if (sylectusDest && !base.destination) base.destination = `${sylectusDest[1].trim()}, ${sylectusDest[2]}`;
+
+  // Dispatchland format: "Chicago, IL → Indianapolis, IN | 185 loaded mi | 22 DH mi | $420"
+  const dlArrow = text.match(/([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})\s*(?:→|->|to)\s*([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})/i);
+  if (dlArrow) {
+    if (!base.origin) base.origin = `${dlArrow[1].trim()}, ${dlArrow[2]}`;
+    if (!base.destination) base.destination = `${dlArrow[3].trim()}, ${dlArrow[4]}`;
+  }
+
+  // Loaded miles: "185 loaded mi" or "185 loaded miles"
+  const loadedMiMatch = text.match(/(\d[\d,]{0,5})\s*(?:loaded\s*)?(?:mi(?:les?)?)\b/i);
+  if (loadedMiMatch && !base.loadedMiles) base.loadedMiles = parseInt(loadedMiMatch[1].replace(/,/g,''),10)||0;
+
+  // Deadhead/empty miles: "22 DH" or "22 empty miles" or "empty: 22"
+  const dhMatch = text.match(/(\d[\d,]{0,5})\s*(?:dh|empty|deadhead)\s*(?:mi(?:les?)?)?(?:\s|$)/i) ||
+                  text.match(/(?:empty|dh|deadhead)\s*:?\s*(\d[\d,]{0,5})\s*(?:mi(?:les?)?)?/i);
+  if (dhMatch && !base.deadheadMiles) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
+
+  // Rate: "$1,650" or "Rate: 1650" or "$1.65/mi" style (reject per-mile rates)
+  if (!base.pay){
+    const rateMatch = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)\b(?!\s*\/\s*mi)/i) ||
+                      text.match(/(?:rate|pay|total|line\s*haul|all[\s-]*in)\s*:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (rateMatch){
+      const v = parseFloat(rateMatch[1].replace(/,/g,''));
+      if (v > 50 && v < 50000) base.pay = v;
+    }
+  }
+
+  // Weight: "1200 lbs" or "Weight: 1200 lb"
+  if (!base.weight){
+    const wm = text.match(/(\d[\d,]{0,6})\s*(?:lbs?|pounds?)/i);
+    if (wm) base.weight = parseInt(wm[1].replace(/,/g,''),10)||0;
+  }
+
+  // Pieces: "4 pcs" or "Pieces: 4"
+  const pcsMatch = text.match(/(\d{1,4})\s*(?:pcs?|pieces?|pallets?|skids?)/i);
+  if (pcsMatch) base.pieces = parseInt(pcsMatch[1],10)||0;
+
+  // Pickup window: "PU: 03/19 08:00-14:00" or "Pickup: tomorrow 0800"
+  const puWindowMatch = text.match(/(?:pu|pick\s*up)\s*(?:window|time)?\s*:?\s*([^\n]{5,40})/i);
+  if (puWindowMatch) base.pickupWindow = puWindowMatch[1].trim().slice(0,60);
+
+  // Broker/company name: "Posted by: Acme Transport" or "Broker: Acme"
+  const brokerMatch = text.match(/(?:posted\s*by|broker(?:age)?|company|carrier\s*contact)\s*:?\s*([A-Z][a-zA-Z0-9\s&.,'-]{3,50})/i);
+  if (brokerMatch && !base.customer) base.customer = brokerMatch[1].trim().slice(0,80);
+
+  return base;
 }
 
 async function buildOcrVariants(file){
@@ -6282,7 +6461,7 @@ function openSnapLoad(preFile){
       }
 
       const list = parseLoadListFromText(text);
-      _parsedData = list.length ? { _loads: list } : parseLoadText(text);
+      _parsedData = list.length ? { _loads: list } : parseLoadTextEnhanced(text);
       _parsedData._confidence = confidence;
       if (list.length) { renderLoadList(list); } else { renderSingleParsed(_parsedData); }
 
@@ -6587,6 +6766,7 @@ function openTripWizard(existing=null){
     if (!(await validateStep1())){ toast('Fix required fields', true); return; }
     await collectTrip(stepNo);
     const saved = await upsertTrip(trip);
+    _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
     if (stepNo >= 2){
       const f = $('#f_receipts', body).files;
@@ -6689,6 +6869,8 @@ function openTripWizard(existing=null){
   }
   const custEl = $('#f_customer', body);
   if (custEl){
+    // F3: Broker Intelligence Alert
+    attachBrokerIntelToField(custEl, $('#brokerIntelBox', body));
     custEl.addEventListener('input', ()=>{ clearTimeout(_biTimer); _biTimer = setTimeout(updateBrokerIntel, 400); });
     attachAutoComplete(custEl, async (val) => {
       const { trips: allT } = await _getTripsAndExps();
@@ -7005,6 +7187,7 @@ addManagedListener($('#fab'), 'keydown', (e)=>{
   if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fab').click(); }
 });
 addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
+addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); openQuickEvalFlow(); });
 addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
@@ -7106,6 +7289,7 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('iftaMode', $('#iftaMode').value || 'on');
   await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
   await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
+  markFuelPriceUpdated().catch(()=>{});
   // Monthly fixed costs → auto-calculate opCostPerMile
   const mIns = Number($('#monthlyInsurance')?.value || 0);
   const mVeh = Number($('#monthlyVehicle')?.value || 0);
@@ -8788,6 +8972,1835 @@ function _updateOnlineStatus(){
 window.addEventListener('online', _updateOnlineStatus);
 window.addEventListener('offline', _updateOnlineStatus);
 
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 2-5
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F2: Quick Eval Flow ──────────────────────────────────────────────────
+function openQuickEvalFlow(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="text-align:center;padding:12px 0 4px">
+      <div style="font-size:40px;margin-bottom:8px">📸</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Snap a load board screenshot</div>
+      <div class="muted" style="font-size:13px;line-height:1.5">Take a photo or pick from gallery — the app will scan for load details and score it instantly.</div>
+    </div>
+    <div class="btn-row" style="margin-top:20px;flex-direction:column;gap:10px">
+      <button class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
+      <button class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
+    </div>
+    <input type="file" id="qeCameraInput" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="qeGalleryInput" accept="image/*" style="display:none">
+    <div id="qeStatus" style="display:none;margin-top:16px;text-align:center;padding:16px;background:var(--surface-0);border-radius:var(--r-sm)">
+      <div style="font-size:28px;margin-bottom:8px">⏳</div>
+      <div style="font-size:14px;font-weight:600" id="qeStatusMsg">Scanning load…</div>
+      <div class="muted" style="font-size:12px;margin-top:4px" id="qeStatusSub">Running OCR engine</div>
+    </div>`;
+  openModal('⚡ Quick Eval', body);
+
+  const setStatus = (icon, msg, sub='') => {
+    $('#qeStatus', body).style.display = '';
+    $('#qeStatus', body).querySelector('div').textContent = icon;
+    $('#qeStatusMsg', body).textContent = msg;
+    $('#qeStatusSub', body).textContent = sub;
+  };
+
+  async function processQuickEval(file){
+    if (!file || !file.type.startsWith('image/')){ toast('Please select an image', true); return; }
+    setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
+    try {
+      const worker = await loadTesseract();
+      setStatus('🔍','Scanning load…','Reading text from image');
+      const { data } = await worker.recognize(file);
+      const text = data.text || '';
+      if (!text.trim()){ setStatus('❌','No text found','Try a clearer photo with good lighting'); return; }
+      const parsed = parseLoadTextEnhanced(text);
+      const hasData = parsed.origin || parsed.destination || parsed.pay || parsed.loadedMiles;
+      closeModal();
+      // Navigate to evaluator and fill fields
+      location.hash = '#omega';
+      setTimeout(() => {
+        if (parsed.origin) { const el = $('#mwOrigin'); if (el) el.value = parsed.origin; }
+        if (parsed.destination) { const el = $('#mwDest'); if (el) el.value = parsed.destination; }
+        if (parsed.loadedMiles) { const el = $('#mwLoadedMi'); if (el) el.value = parsed.loadedMiles; }
+        if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
+        if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
+        if (hasData){
+          try { mwEvaluateLoad(); } catch(e){}
+          toast('✓ Load scanned — verify fields and hit Evaluate');
+        } else {
+          toast('Scan complete — fill in any missing fields', false);
+        }
+      }, 80);
+    } catch(err){
+      setStatus('❌','Scan failed', String(err.message||err).slice(0,80));
+    }
+  }
+
+  $('#qeCamera', body).addEventListener('click', ()=>{ haptic(); $('#qeCameraInput', body).click(); });
+  $('#qeGallery', body).addEventListener('click', ()=>{ haptic(); $('#qeGalleryInput', body).click(); });
+  $('#qeCameraInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+  $('#qeGalleryInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+}
+
+// ── F3: Broker Intelligence Alerts ──────────────────────────────────────
+async function getBrokerIntel(company){
+  if (!company || company.length < 2) return null;
+  const norm = company.trim().toLowerCase();
+  try {
+    const all = await dumpStore('trips');
+    const matches = all.filter(t => (t.customer||'').toLowerCase().includes(norm) || norm.includes((t.customer||'').toLowerCase().slice(0,6)));
+    if (!matches.length) return null;
+    let totalPay = 0, totalMiles = 0, totalDaysToPay = 0, payCount = 0, unpaidCount = 0, wouldRunCount = 0, wouldRunYes = 0;
+    for (const t of matches){
+      const pay = Number(t.pay||0);
+      const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      totalPay += pay;
+      totalMiles += miles;
+      if (!t.isPaid) unpaidCount++;
+      if (t.isPaid && t.paidDate && t.invoiceDate){
+        const days = Math.max(0, Math.round((new Date(t.paidDate) - new Date(t.invoiceDate)) / 86400000));
+        if (days < 200){ totalDaysToPay += days; payCount++; }
+      }
+      if (t.wouldRunAgain !== null && t.wouldRunAgain !== undefined){ wouldRunCount++; if (t.wouldRunAgain) wouldRunYes++; }
+    }
+    const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+    const avgDaysPay = payCount > 0 ? Math.round(totalDaysToPay / payCount) : null;
+    const unpaidPct = Math.round((unpaidCount / matches.length) * 100);
+    const wouldRunPct = wouldRunCount > 0 ? Math.round((wouldRunYes / wouldRunCount) * 100) : null;
+    return { count: matches.length, avgRPM, avgDaysPay, unpaidCount, unpaidPct, wouldRunPct, totalPay };
+  } catch(e){ return null; }
+}
+
+function renderBrokerAlert(container, intel, company){
+  if (!container) return;
+  const existing = container.querySelector('.broker-intel-alert');
+  if (existing) existing.remove();
+  if (!intel) return;
+  const { count, avgRPM, avgDaysPay, unpaidPct, wouldRunPct } = intel;
+  // Color: green = fast pay + good RPM, red = slow pay or high unpaid
+  const isGreen = avgRPM >= 1.60 && (avgDaysPay === null || avgDaysPay <= 25) && unpaidPct < 10;
+  const isRed = unpaidPct >= 30 || (avgDaysPay !== null && avgDaysPay > 45) || avgRPM < 1.30;
+  const color = isGreen ? 'var(--good)' : isRed ? 'var(--bad)' : 'var(--warn)';
+  const bg = isGreen ? 'var(--good-muted)' : isRed ? 'var(--bad-muted)' : 'var(--warn-muted)';
+  const border = isGreen ? 'var(--good-border)' : isRed ? 'var(--bad-border)' : 'var(--warn-border)';
+  const icon = isGreen ? '✅' : isRed ? '🚨' : '⚠️';
+  const parts = [`${count} load${count!==1?'s':''}`, `$${avgRPM.toFixed(2)} avg RPM`];
+  if (avgDaysPay !== null) parts.push(`${avgDaysPay}d avg pay`);
+  else parts.push('pay unknown');
+  parts.push(`${unpaidPct}% unpaid`);
+  if (wouldRunPct !== null) parts.push(`${wouldRunPct}% would run again`);
+  const el = document.createElement('div');
+  el.className = 'broker-intel-alert';
+  el.style.cssText = `margin-top:6px;padding:8px 12px;border-radius:8px;background:${bg};border:1px solid ${border};font-size:12px;line-height:1.4`;
+  el.innerHTML = `<span style="font-weight:700;color:${color}">${icon} ${escapeHtml(company)}:</span> <span class="muted">${escapeHtml(parts.join(' · '))}</span>`;
+  container.appendChild(el);
+}
+
+function attachBrokerIntelToField(inputEl, containerEl){
+  if (!inputEl || !containerEl) return;
+  let _timer = null;
+  inputEl.addEventListener('input', ()=>{
+    clearTimeout(_timer);
+    _timer = setTimeout(async ()=>{
+      const val = (inputEl.value||'').trim();
+      if (val.length < 2){ const ex = containerEl.querySelector('.broker-intel-alert'); if (ex) ex.remove(); return; }
+      const intel = await getBrokerIntel(val);
+      renderBrokerAlert(containerEl, intel, val);
+    }, 350);
+  });
+}
+
+// ── F4: Lane Memory ──────────────────────────────────────────────────────
+const STATE_ABBRS = { alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY' };
+
+function normalizeLanePart(s){
+  let p = (s||'').trim().toLowerCase().replace(/[^a-z\s,]/g,'').replace(/\s+/g,' ');
+  // Replace full state name with abbreviation
+  for (const [name, abbr] of Object.entries(STATE_ABBRS)){
+    p = p.replace(new RegExp('\\b' + name + '\\b', 'i'), abbr.toLowerCase());
+  }
+  // Keep only city + state (first word group before/after comma)
+  const m = p.match(/^([a-z\s.]+?)(?:,\s*([a-z]{2}))?$/);
+  if (m) return (m[1].trim() + (m[2] ? ',' + m[2] : '')).trim();
+  return p.slice(0, 40).trim();
+}
+
+function normalizeLane(orig, dest){
+  return normalizeLanePart(orig) + '→' + normalizeLanePart(dest);
+}
+
+async function recordLaneHistory(trip){
+  if (!trip || !trip.origin || !trip.destination) return;
+  const pay = Number(trip.pay||0);
+  const loaded = Number(trip.loadedMiles||0);
+  const empty = Number(trip.emptyMiles||0);
+  const total = loaded + empty;
+  if (!pay || !total) return;
+  try {
+    const lane = normalizeLane(trip.origin, trip.destination);
+    const rpm = total > 0 ? roundCents(pay / total) : 0;
+    const pickupTs = trip.pickupDate ? new Date(trip.pickupDate).getTime() : null;
+    const deliveryTs = trip.deliveryDate ? new Date(trip.deliveryDate).getTime() : null;
+    const transitDays = (pickupTs && deliveryTs && deliveryTs > pickupTs) ? Math.round((deliveryTs - pickupTs) / 86400000) : null;
+    // Upsert: look for existing lane entry
+    const existing = await (async ()=>{
+      const {stores} = tx('laneHistory');
+      const idx = stores.laneHistory.index('lane');
+      return await idbReq(idx.getAll(lane));
+    })();
+    const now = Date.now();
+    if (existing && existing.length > 0){
+      // Update the existing aggregate entry
+      const rec = existing[0];
+      rec.count = (rec.count||1) + 1;
+      rec.totalPay = roundCents((rec.totalPay||0) + pay);
+      rec.totalMiles = (rec.totalMiles||0) + total;
+      rec.bestPay = Math.max(rec.bestPay||0, pay);
+      rec.avgRPM = rec.totalMiles > 0 ? roundCents(rec.totalPay / rec.totalMiles) : rpm;
+      if (transitDays !== null){ rec.totalTransitDays = (rec.totalTransitDays||0) + transitDays; rec.transitCount = (rec.transitCount||0) + 1; }
+      rec.avgTransitDays = rec.transitCount > 0 ? roundCents(rec.totalTransitDays / rec.transitCount) : null;
+      if (trip.wouldRunAgain !== null && trip.wouldRunAgain !== undefined){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (trip.wouldRunAgain) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      rec.lastDate = isoDate(); rec.updated = now;
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    } else {
+      const rec = { id: 'lane_' + lane.replace(/[^a-z0-9]/g,'_') + '_' + now, lane, count: 1, totalPay: pay, totalMiles: total, bestPay: pay, avgRPM: rpm,
+        totalTransitDays: transitDays||0, transitCount: transitDays !== null ? 1 : 0, avgTransitDays: transitDays,
+        wouldRunCount: (trip.wouldRunAgain!==null&&trip.wouldRunAgain!==undefined)?1:0, wouldRunYes: trip.wouldRunAgain?1:0,
+        lastDate: isoDate(), created: now, updated: now, displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    }
+  } catch(e){ console.warn('[FL] recordLaneHistory:', e); }
+}
+
+async function getLaneIntel(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const {stores} = tx('laneHistory');
+    const idx = stores.laneHistory.index('lane');
+    const recs = await idbReq(idx.getAll(lane));
+    if (!recs || !recs.length) return null;
+    const r = recs[0];
+    if (!r.count || r.count < 1) return null;
+    return { ...r, wouldRunPct: r.wouldRunCount > 0 ? Math.round((r.wouldRunYes/r.wouldRunCount)*100) : null };
+  } catch(e){ return null; }
+}
+
+function renderLaneIntelHTML(intel){
+  if (!intel) return '';
+  const { count, avgRPM, bestPay, avgTransitDays, wouldRunPct, lastDate, displayOrigin, displayDest } = intel;
+  const color = avgRPM >= 1.60 ? 'var(--good)' : avgRPM >= 1.35 ? 'var(--warn)' : 'var(--bad)';
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">🛣️ Lane Intel — Your History</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+      <div><span class="muted">Times run:</span> <b>${count}</b></div>
+      <div><span class="muted">Avg RPM:</span> <b style="color:${color}">$${(avgRPM||0).toFixed(2)}</b></div>
+      <div><span class="muted">Best pay:</span> <b>${fmtMoney(bestPay||0)}</b></div>
+      ${avgTransitDays ? `<div><span class="muted">Avg transit:</span> <b>${avgTransitDays} day${avgTransitDays!==1?'s':''}</b></div>` : '<div></div>'}
+      ${wouldRunPct !== null ? `<div><span class="muted">Would run again:</span> <b style="color:${wouldRunPct>=70?'var(--good)':wouldRunPct>=40?'var(--warn)':'var(--bad)'}">${wouldRunPct}%</b></div>` : '<div></div>'}
+      <div><span class="muted">Last run:</span> <b>${lastDate||'—'}</b></div>
+    </div>
+  </div>`;
+}
+
+// Hook lane recording into trip saves — call after saveTrip
+async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){} }
+
+// ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
+function getWeekId(date){
+  const d = date ? new Date(date) : new Date();
+  const mon = startOfWeek(d);
+  const y = mon.getFullYear();
+  const jan1 = new Date(y, 0, 1);
+  const wk = Math.ceil(((mon - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+  return `${y}-W${String(wk).padStart(2,'0')}`;
+}
+
+async function generateWeeklyPnL(weekId){
+  try {
+    const parts = weekId.match(/^(\d{4})-W(\d{2})$/);
+    if (!parts) return null;
+    const y = parseInt(parts[1]), wk = parseInt(parts[2]);
+    // Compute Monday of that week
+    const jan1 = new Date(y, 0, 1);
+    const daysToMon = (8 - jan1.getDay()) % 7; // days to first Monday
+    const firstMon = new Date(y, 0, 1 + daysToMon);
+    const weekStart = new Date(firstMon.getTime() + (wk - 1) * 7 * 86400000);
+    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000 - 1);
+    const wkStartISO = isoDate(weekStart);
+    const wkEndISO = isoDate(weekEnd);
+
+    const allTrips = await dumpStore('trips');
+    const allExp = await dumpStore('expenses');
+    const weekTrips = allTrips.filter(t => t.pickupDate >= wkStartISO && t.pickupDate <= wkEndISO);
+    const weekExp = allExp.filter(e => (e.date||'') >= wkStartISO && (e.date||'') <= wkEndISO);
+
+    let grossRev = 0, totalLoadedMi = 0, totalDeadMi = 0, totalRPMSum = 0, rpmCount = 0;
+    let bestTrip = null, worstTrip = null;
+    const workDays = new Set();
+    for (const t of weekTrips){
+      const pay = Number(t.pay||0);
+      const loaded = Number(t.loadedMiles||0);
+      const empty = Number(t.emptyMiles||0);
+      const total = loaded + empty;
+      grossRev += pay;
+      totalLoadedMi += loaded;
+      totalDeadMi += empty;
+      if (total > 0 && pay > 0){ const rpm = pay/total; totalRPMSum += rpm; rpmCount++; if (!bestTrip || rpm > (bestTrip._rpm||0)) bestTrip = {...t, _rpm: rpm}; if (!worstTrip || rpm < (worstTrip._rpm||Infinity)) worstTrip = {...t, _rpm: rpm}; }
+      if (t.pickupDate) workDays.add(t.pickupDate);
+      if (t.deliveryDate) workDays.add(t.deliveryDate);
+    }
+    let totalExpenses = 0;
+    const expByCategory = {};
+    for (const e of weekExp){
+      const amt = Number(e.amount||0);
+      totalExpenses += amt;
+      const cat = e.category||'Other';
+      expByCategory[cat] = (expByCategory[cat]||0) + amt;
+    }
+    const mpg = Number(getCachedSetting('vehicleMpg',6.5)||6.5);
+    const fuelPricePerGal = Number(getCachedSetting('fuelPrice',3.50)||3.50);
+    const fuelEstimate = roundCents(((totalLoadedMi+totalDeadMi) / mpg) * fuelPricePerGal);
+    const netIncome = roundCents(grossRev - totalExpenses);
+    const avgRPM = rpmCount > 0 ? roundCents(totalRPMSum / rpmCount) : 0;
+    const deadheadPct = (totalLoadedMi+totalDeadMi) > 0 ? roundCents((totalDeadMi/(totalLoadedMi+totalDeadMi))*100) : 0;
+
+    const report = { weekId, weekStart: wkStartISO, weekEnd: wkEndISO, grossRev, totalExpenses, netIncome, avgRPM, totalLoadedMi, totalDeadMi, deadheadPct, fuelEstimate, loadsCount: weekTrips.length, daysWorked: workDays.size, expByCategory, bestLane: bestTrip ? `${bestTrip.origin||'?'} → ${bestTrip.destination||'?'}` : null, bestRPM: bestTrip?._rpm||0, worstLane: worstTrip ? `${worstTrip.origin||'?'} → ${worstTrip.destination||'?'}` : null, worstRPM: worstTrip?._rpm||0, generatedAt: Date.now() };
+    const {t, stores} = tx('weeklyReports','readwrite');
+    stores.weeklyReports.put(report);
+    await waitTxn(t);
+    return report;
+  } catch(e){ console.warn('[FL] generateWeeklyPnL:', e); return null; }
+}
+
+async function checkAndGenerateWeeklyReport(){
+  try {
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun
+    const hour = now.getHours();
+    // Generate on Sunday after 8pm OR anytime on Monday for the previous week
+    if (!((dow === 0 && hour >= 20) || dow === 1)) return;
+    const targetDate = new Date(now.getTime() - (dow === 1 ? 7 : 0) * 86400000);
+    const weekId = getWeekId(targetDate);
+    const {stores} = tx('weeklyReports');
+    const existing = await idbReq(stores.weeklyReports.get(weekId));
+    if (existing) return;
+    const report = await generateWeeklyPnL(weekId);
+    if (report && report.loadsCount > 0){
+      toast('📊 Weekly P&L report generated!');
+      await renderWeeklyReportCard(report);
+    }
+  } catch(e){ console.warn('[FL] weekly report check:', e); }
+}
+
+async function getLatestWeeklyReport(){
+  try {
+    const all = await dumpStore('weeklyReports');
+    if (!all.length) return null;
+    return all.sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1)[0];
+  } catch(e){ return null; }
+}
+
+function formatWeeklyReportText(r){
+  const lines = [
+    `📊 Weekly P&L Report — ${r.weekStart} to ${r.weekEnd}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Gross Revenue:    ${fmtMoney(r.grossRev)}`,
+    `Total Expenses:   ${fmtMoney(r.totalExpenses)}`,
+    `Net Income:       ${fmtMoney(r.netIncome)}`,
+    ``,
+    `Avg RPM:          $${(r.avgRPM||0).toFixed(2)}/mi`,
+    `Loaded Miles:     ${(r.totalLoadedMi||0).toLocaleString()} mi`,
+    `Deadhead Miles:   ${(r.totalDeadMi||0).toLocaleString()} mi (${(r.deadheadPct||0).toFixed(1)}%)`,
+    `Fuel Estimate:    ${fmtMoney(r.fuelEstimate||0)}`,
+    `Loads Completed:  ${r.loadsCount||0}`,
+    `Days Worked:      ${r.daysWorked||0}`,
+  ];
+  if (r.bestLane) lines.push(`Best Load:        ${r.bestLane} ($${(r.bestRPM||0).toFixed(2)} RPM)`);
+  if (r.worstLane && r.loadsCount > 1) lines.push(`Worst Load:       ${r.worstLane} ($${(r.worstRPM||0).toFixed(2)} RPM)`);
+  if (r.expByCategory && Object.keys(r.expByCategory).length){
+    lines.push(``, `Expenses by category:`);
+    for (const [cat, amt] of Object.entries(r.expByCategory)) lines.push(`  ${cat}: ${fmtMoney(amt)}`);
+  }
+  lines.push(``, `Generated by FreightLogic v${APP_VERSION}`);
+  return lines.join('\n');
+}
+
+async function renderWeeklyReportCard(report){
+  const slot = $('#homeWeeklyReport');
+  if (!slot) return;
+  if (!report || !report.loadsCount){ slot.style.display = 'none'; return; }
+  const netColor = (report.netIncome||0) >= 0 ? 'var(--good)' : 'var(--bad)';
+  slot.innerHTML = `<div class="card" style="border:1px solid var(--accent-border);background:var(--accent-glow)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">📊 Weekly P&L — ${report.weekStart}</div>
+      <button class="btn sm" id="weekReportShare" style="min-height:36px;font-size:11px">Share</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--good)">${fmtMoney(report.grossRev||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Gross</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:${netColor}">${fmtMoney(report.netIncome||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Net</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700">$${(report.avgRPM||0).toFixed(2)}</div><div style="font-size:10px;color:var(--text-tertiary)">Avg RPM</div></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px;text-align:center">${report.loadsCount} load${report.loadsCount!==1?'s':''} · ${(report.totalLoadedMi||0).toLocaleString()} loaded mi · ${report.daysWorked||0} days worked</div>
+  </div>`;
+  slot.style.display = '';
+  $('#weekReportShare', slot)?.addEventListener('click', async ()=>{
+    haptic(15);
+    const txt = formatWeeklyReportText(report);
+    if (navigator.share){ try{ await navigator.share({ text: txt }); return; }catch{} }
+    await copyTextToClipboard(txt);
+    toast('Weekly report copied to clipboard');
+  });
+}
+
+async function openWeeklyReports(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wkrList"><div class="muted" style="font-size:13px;text-align:center;padding:24px">Loading reports…</div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="wkrGenerate">Generate This Week's Report</button></div>`;
+  openModal('📊 Weekly Reports', body);
+  const allReports = (await dumpStore('weeklyReports')).sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1);
+  const list = $('#wkrList', body);
+  if (!allReports.length){
+    list.innerHTML = '<div class="muted" style="font-size:13px;text-align:center;padding:24px">No reports yet.<br><span style="font-size:12px">Reports generate automatically on Sunday evening.</span></div>';
+  } else {
+    list.innerHTML = allReports.map(r => `
+      <div class="card" style="margin-bottom:10px;cursor:pointer" data-wkid="${escapeHtml(r.weekId)}">
+        <div style="display:flex;justify-content:space-between">
+          <div style="font-weight:700">${escapeHtml(r.weekId)} <span class="muted" style="font-size:11px">${r.weekStart} – ${r.weekEnd}</span></div>
+          <div style="font-family:var(--font-mono);color:${(r.netIncome||0)>=0?'var(--good)':'var(--bad)'};">${fmtMoney(r.netIncome||0)}</div>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${r.loadsCount||0} loads · $${(r.avgRPM||0).toFixed(2)} RPM · ${fmtMoney(r.grossRev||0)} gross</div>
+      </div>`).join('');
+    list.querySelectorAll('[data-wkid]').forEach(el => {
+      el.addEventListener('click', ()=>{
+        const r = allReports.find(x => x.weekId === el.dataset.wkid);
+        if (!r) return;
+        const txt = formatWeeklyReportText(r);
+        const detail = document.createElement('div');
+        detail.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--text)">${escapeHtml(txt)}</pre><div class="btn-row" style="margin-top:12px"><button class="btn primary" id="drShare">Share</button></div>`;
+        openModal(`Report ${escapeHtml(r.weekId)}`, detail);
+        $('#drShare', detail)?.addEventListener('click', async ()=>{ haptic(); if (navigator.share){ try{ await navigator.share({text:txt}); return; }catch{} } await copyTextToClipboard(txt); toast('Copied!'); });
+      });
+    });
+  }
+  $('#wkrGenerate', body)?.addEventListener('click', async ()=>{
+    haptic(20);
+    const r = await generateWeeklyPnL(getWeekId());
+    if (r){ toast(`Week ${r.weekId} report generated!`); closeModal(); openWeeklyReports(); }
+    else toast('Not enough data this week yet', true);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 6-9
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F6: Fuel Price Staleness Nudge ───────────────────────────────────────
+async function checkFuelPriceStaleness(){
+  try {
+    const updatedAt = await getSetting('fuelPriceUpdatedAt', null);
+    const slot = $('#homeFuelNudge');
+    if (!slot) return;
+    const now = Date.now();
+    const staleDays = updatedAt ? Math.floor((now - Number(updatedAt)) / 86400000) : null;
+    // Show nudge if never set OR stale for 14+ days
+    const isStale = staleDays === null || staleDays >= 14;
+    if (!isStale){ slot.style.display = 'none'; return; }
+    const label = staleDays === null ? 'never updated' : `last updated ${staleDays} day${staleDays!==1?'s':''} ago`;
+    slot.innerHTML = `<div class="card" style="border:1px solid var(--warn-border);background:var(--warn-muted);cursor:pointer" id="fuelNudgeCard">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">⛽</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:13px;color:var(--warn)">Fuel price may be stale</div>
+          <div class="muted" style="font-size:12px;line-height:1.4">Price ${label}. Stale fuel price = inaccurate load scoring.</div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--warn);white-space:nowrap">Update →</div>
+      </div>
+    </div>`;
+    slot.style.display = '';
+    slot.querySelector('#fuelNudgeCard')?.addEventListener('click', ()=>{
+      haptic(15);
+      location.hash = '#settings';
+      setTimeout(()=>{
+        const fp = $('#moreFuelPrice') || $('#fuelPrice');
+        if (fp){ fp.focus(); fp.style.outline = '2px solid var(--warn)'; setTimeout(()=> fp.style.outline = '', 2500); }
+      }, 400);
+    });
+  } catch(e){ console.warn('[FL] fuel staleness:', e); }
+}
+
+// Hook: update fuelPriceUpdatedAt whenever fuel price is saved
+// Called from settings save (patched below at settings save handler)
+async function markFuelPriceUpdated(){
+  await setSetting('fuelPriceUpdatedAt', Date.now());
+}
+
+// ── F7: Deadhead Calculator with GPS ─────────────────────────────────────
+let _gpsCache = null; // { lat, lng, ts }
+
+async function getGPSPosition(){
+  if (_gpsCache && (Date.now() - _gpsCache.ts) < 300000) return _gpsCache; // 5-min cache
+  return new Promise((resolve) => {
+    if (!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => { _gpsCache = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() }; resolve(_gpsCache); },
+      () => resolve(null),
+      { timeout: 6000, maximumAge: 120000 }
+    );
+  });
+}
+
+function haversineDistanceMi(lat1, lon1, lat2, lon2){
+  const R = 3958.8; // miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getMarketCoords(cityStr){
+  const norm = (cityStr||'').trim().toLowerCase().replace(/[^a-z\s]/g,'').replace(/\s+/g,' ');
+  // Check USA_MARKETS first
+  for (const [key, data] of Object.entries(USA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  // Check CA_MARKETS
+  for (const [key, data] of Object.entries(CA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  return null;
+}
+
+async function estimateDeadheadFromGPS(originCity){
+  const gps = await getGPSPosition();
+  if (!gps) return null;
+  const coords = getMarketCoords(originCity);
+  if (!coords) return null;
+  const straightLine = haversineDistanceMi(gps.lat, gps.lng, coords.lat, coords.lng);
+  return Math.round(straightLine * 1.3); // road multiplier
+}
+
+// Wire GPS deadhead into evaluator — called when origin field changes
+async function updateGPSDeadhead(originVal){
+  const hint = $('#mwGpsHint');
+  const deadEl = $('#mwDeadMi');
+  if (!hint || !deadEl) return;
+  if (!originVal || originVal.length < 3){ hint.textContent = ''; return; }
+  hint.textContent = '📍 Estimating distance…';
+  const miles = await estimateDeadheadFromGPS(originVal);
+  if (miles !== null){
+    hint.textContent = `📍 ~${miles} mi from your location`;
+    if (!deadEl.value || deadEl.value === '0'){
+      deadEl.value = miles;
+      deadEl.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  } else {
+    hint.textContent = '';
+  }
+}
+
+// ── F8: Rate Trend Tracking ───────────────────────────────────────────────
+async function getLaneRPMTrend(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const all = await dumpStore('trips');
+    // Filter trips on this lane
+    const laneParts = lane.split('→');
+    const origNorm = laneParts[0]||'';
+    const destNorm = laneParts[1]||'';
+    const relevant = all.filter(t => {
+      const to = normalizeLanePart(t.origin||'');
+      const td = normalizeLanePart(t.destination||'');
+      return to.includes(origNorm.split(',')[0].trim()) && td.includes(destNorm.split(',')[0].trim());
+    });
+    if (relevant.length < 3) return null;
+    // Group by YYYY-MM
+    const byMonth = {};
+    for (const t of relevant){
+      const mo = (t.pickupDate||'').slice(0,7);
+      if (!mo) continue;
+      const pay = Number(t.pay||0);
+      const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      if (!pay || !mi) continue;
+      if (!byMonth[mo]) byMonth[mo] = { totalPay:0, totalMi:0, count:0 };
+      byMonth[mo].totalPay += pay;
+      byMonth[mo].totalMi += mi;
+      byMonth[mo].count++;
+    }
+    const months = Object.keys(byMonth).sort();
+    if (months.length < 2) return null;
+    const rpmByMonth = months.map(mo => ({ mo, rpm: byMonth[mo].totalMi > 0 ? roundCents(byMonth[mo].totalPay / byMonth[mo].totalMi) : 0, count: byMonth[mo].count }));
+    const lastTwo = rpmByMonth.slice(-2);
+    const prev = lastTwo[0]; const cur = lastTwo[1];
+    const changePct = prev.rpm > 0 ? roundCents(((cur.rpm - prev.rpm) / prev.rpm) * 100) : 0;
+    const arrow = changePct >= 5 ? '↑' : changePct <= -5 ? '↓' : '→';
+    const color = changePct >= 5 ? 'var(--good)' : changePct <= -5 ? 'var(--bad)' : 'var(--warn)';
+    return { rpmByMonth, prev, cur, changePct, arrow, color, totalCount: relevant.length };
+  } catch(e){ return null; }
+}
+
+function renderRateTrendHTML(trend){
+  if (!trend) return '';
+  const { prev, cur, changePct, arrow, color } = trend;
+  const sparkline = trend.rpmByMonth.slice(-6).map(m =>
+    `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:24px;height:${Math.max(4, Math.round((m.rpm/2.5)*40))}px;background:${m.mo===cur.mo?color:'var(--surface-3)'};border-radius:2px"></div>
+      <div style="font-size:8px;color:var(--text-tertiary)">${m.mo.slice(5)}</div>
+    </div>`
+  ).join('');
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">📈 Rate Trend — This Lane</div>
+    <div style="font-size:13px;margin-bottom:8px"><span class="muted">${prev.mo}:</span> <b>$${prev.rpm.toFixed(2)}</b> <span style="color:var(--text-tertiary)">→</span> <span class="muted">${cur.mo}:</span> <b style="color:${color}">$${cur.rpm.toFixed(2)}</b> <span style="color:${color};font-weight:700">${arrow} ${Math.abs(changePct).toFixed(0)}%</span></div>
+    <div style="display:flex;gap:4px;align-items:flex-end;height:50px">${sparkline}</div>
+  </div>`;
+}
+
+async function openRateTrends(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rtContent"><div class="muted" style="text-align:center;padding:24px">Loading lane data…</div></div>`;
+  openModal('📈 Rate Trends', body);
+  try {
+    const all = await dumpStore('trips');
+    // Group by lane
+    const laneMap = {};
+    for (const t of all){
+      if (!t.origin || !t.destination) continue;
+      const lane = normalizeLane(t.origin, t.destination);
+      if (!laneMap[lane]) laneMap[lane] = { lane, trips:[], display:`${t.origin} → ${t.destination}` };
+      laneMap[lane].trips.push(t);
+    }
+    const lanes = Object.values(laneMap).filter(l => l.trips.length >= 2).sort((a,b) => b.trips.length - a.trips.length).slice(0, 20);
+    if (!lanes.length){
+      $('#rtContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No lane trend data yet.<br><span style="font-size:11px">Run at least 2 loads on the same route to see trends.</span></div>`;
+      return;
+    }
+    const items = await Promise.all(lanes.map(async l => {
+      const trend = await getLaneRPMTrend(l.trips[0].origin, l.trips[0].destination);
+      return { ...l, trend };
+    }));
+    $('#rtContent', body).innerHTML = items.map(l => {
+      const t = l.trend;
+      const arrow = t ? t.arrow : '—';
+      const color = t ? t.color : 'var(--text-tertiary)';
+      const curRPM = t ? `$${t.cur.rpm.toFixed(2)}` : '—';
+      return `<div class="card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:13px">${escapeHtml(l.display)}</div>
+          <div style="font-size:18px;font-weight:700;color:${color}">${arrow}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${l.trips.length} run${l.trips.length!==1?'s':''} · Latest: <b style="color:${color}">${curRPM}</b>${t ? ` · ${t.changePct >= 0 ? '+' : ''}${t.changePct.toFixed(0)}% vs prior month` : ''}</div>
+        ${t ? renderRateTrendHTML(t) : ''}
+      </div>`;
+    }).join('');
+  } catch(e){
+    $('#rtContent', body).innerHTML = `<div style="color:var(--bad);padding:16px">Failed to load trend data.</div>`;
+  }
+}
+
+// Wire rate trend into evaluator async injection
+async function injectRateTrendIntoEvaluator(orig, dest){
+  const slot = $('#mwRateTrendSlot');
+  if (!slot) return;
+  const trend = await getLaneRPMTrend(orig, dest);
+  if (trend) slot.innerHTML = renderRateTrendHTML(trend);
+}
+
+// ── F9: Multi-Device Sync Enhancement ────────────────────────────────────
+// Replace existing visibilitychange handler with enhanced version that:
+// 1. Auto-pushes when visible if last sync > 5 min ago
+// 2. Shows sync indicator in header
+// 3. On boot checks if server has newer backup
+
+function _updateSyncIndicator(state, label){
+  const el = $('#syncIndicator');
+  if (!el) return;
+  const icons = { syncing: `<span class="cloud-sync-spinner" style="width:12px;height:12px;border-width:1.5px"></span>`, ok: '☁️', warn: '⚠️', off: '' };
+  el.innerHTML = (icons[state]||'') + (label ? `<span style="font-size:10px;margin-left:3px;color:var(--text-tertiary)">${escapeHtml(label)}</span>` : '');
+  el.style.display = state === 'off' ? 'none' : '';
+  el.title = label || '';
+}
+
+async function cloudCheckServerTimestamp(){
+  // Check if server backup is newer than our last sync
+  try {
+    const config = await cloudGetConfig();
+    if (!config) return;
+    const hdrs = { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token };
+    const res = await cloudFetch(config.url + '/status', { headers: hdrs }, 6000);
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    if (!data.hasBackup) return;
+    // The worker doesn't expose a timestamp directly; use lastCloudSync comparison.
+    // If we have never synced but there IS a backup, show the banner.
+    const lastLocal = Number(await getSetting('lastCloudSync', 0) || 0);
+    const banner = $('#cloudSyncBanner');
+    const saved = await getSetting('lastCloudCheckTimestamp', 0) || 0;
+    // Avoid re-showing within 1hr
+    if ((Date.now() - Number(saved)) < 3600000) return;
+    await setSetting('lastCloudCheckTimestamp', Date.now());
+    if (lastLocal === 0 && data.count > 0){
+      showCloudSyncBanner('Backup found on server. Tap to restore your data.');
+    }
+  } catch(e){}
+}
+
+function showCloudSyncBanner(msg){
+  const existing = $('#cloudSyncBanner');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'cloudSyncBanner';
+  el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;background:linear-gradient(135deg,#1a1a3a,#252545);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;gap:12px;font-size:13px';
+  el.innerHTML = `<div style="flex:1">☁️ <b style="color:var(--accent)">Cloud Sync</b> — ${escapeHtml(msg)}</div>
+    <button class="btn sm" id="cloudBannerSync" style="min-height:36px;background:var(--accent);color:#000;border:none;font-weight:700">Sync Now</button>
+    <button class="btn sm" id="cloudBannerDismiss" style="min-height:36px">✕</button>`;
+  document.body.appendChild(el);
+  document.getElementById('cloudBannerSync')?.addEventListener('click', async ()=>{
+    haptic(20); el.remove();
+    location.hash = '#settings';
+    toast('Go to Cloud Backup → Pull Backup');
+  });
+  document.getElementById('cloudBannerDismiss')?.addEventListener('click', ()=>{ haptic(); el.remove(); });
+  setTimeout(()=> el?.remove(), 12000);
+}
+
+// Override the existing visibilitychange handler behaviour with enhanced version
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible'){
+    cloudIsEnabled().then(async enabled => {
+      if (!enabled) return;
+      const last = Number(await getSetting('lastCloudSync', 0) || 0);
+      const staleMs = 5 * 60 * 1000; // 5 minutes
+      if ((Date.now() - last) > staleMs){
+        _updateSyncIndicator('syncing', 'Syncing…');
+        await cloudPushBackup(true);
+        const newLast = Number(await getSetting('lastCloudSync', 0) || 0);
+        const ago = Math.floor((Date.now() - newLast) / 60000);
+        _updateSyncIndicator('ok', ago < 2 ? 'Synced' : `${ago}m ago`);
+      }
+    }).catch(()=>{});
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 10-13
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F10: Voice Input ─────────────────────────────────────────────────────
+// Uses Web Speech API to fill evaluator fields via spoken load details.
+// Parses natural language: "Chicago to Indianapolis 185 miles $420"
+
+function initVoiceInput(){
+  const btn = $('#mwVoiceBtn');
+  const status = $('#mwVoiceStatus');
+  if (!btn || !status) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){ btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  let rec = null;
+  let active = false;
+
+  function parseVoiceText(txt){
+    const t = txt.toLowerCase();
+    // Origin → Destination
+    const toMatch = t.match(/(?:from\s+)?([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s+\d|$|\s+for|\s+loaded|\s+miles|\.)/);
+    if (toMatch){
+      const orig = toMatch[1].trim();
+      const dest = toMatch[2].trim();
+      if (orig.length > 2) $('#mwOrigin').value = orig.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      if (dest.length > 2) $('#mwDest').value = dest.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+    }
+    // Revenue — "$420", "four hundred twenty dollars", "420 dollars"
+    const revMatch = t.match(/\$?\s*(\d[\d,]*)\s*(?:dollars?|bucks?|pay)/);
+    if (revMatch) $('#mwRevenue').value = revMatch[1].replace(',','');
+    // Loaded miles
+    const ldMatch = t.match(/(\d+)\s*(?:loaded\s*)?miles?(?:\s+loaded)?/);
+    if (ldMatch) $('#mwLoadedMi').value = ldMatch[1];
+    // Deadhead / empty miles
+    const dhMatch = t.match(/(\d+)\s*(?:dead\s*head|empty|dh)\s*miles?/);
+    if (dhMatch) $('#mwDeadMi').value = dhMatch[1];
+    // Fatigue
+    const fatMatch = t.match(/fatigue\s+(?:level\s+)?(\d+)/);
+    if (fatMatch) $('#mwFatigue').value = fatMatch[1];
+    // Notes (pass-through)
+    if (t.includes('asap') || t.includes('hot load') || t.includes('rush') || t.includes('line down')){
+      const notes = $('#mwLoadNotes');
+      if (notes && !notes.value) notes.value = txt;
+    }
+  }
+
+  btn.addEventListener('click', ()=>{
+    haptic(20);
+    if (active){
+      rec?.stop();
+      return;
+    }
+    rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    active = true;
+    btn.textContent = '⏹️';
+    btn.style.color = 'var(--bad)';
+    status.style.display = '';
+    status.textContent = '🎙️ Listening… say the load details';
+
+    rec.onresult = (ev) => {
+      const interim = Array.from(ev.results).map(r => r[0].transcript).join(' ');
+      status.textContent = `🎙️ "${interim}"`;
+      if (ev.results[ev.results.length - 1].isFinal){
+        const final = ev.results[ev.results.length - 1][0].transcript;
+        parseVoiceText(final);
+        status.textContent = `✅ Parsed: "${final}"`;
+        setTimeout(()=>{ status.style.display = 'none'; }, 3000);
+      }
+    };
+    rec.onerror = (ev) => {
+      status.textContent = `⚠️ ${ev.error === 'not-allowed' ? 'Microphone permission denied' : 'Voice error — try again'}`;
+      setTimeout(()=>{ status.style.display = 'none'; }, 3000);
+    };
+    rec.onend = () => {
+      active = false;
+      btn.textContent = '🎙️';
+      btn.style.color = '';
+    };
+    rec.start();
+  });
+}
+
+// ── F11: Document Vault ──────────────────────────────────────────────────
+// Store insurance cards, MC authority, W-9s, carrier packets as blobs.
+// Uses 'documents' IDB store (added in v10 schema).
+
+async function openDocumentVault(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <select id="dvTypeFilter" style="flex:1;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="">All documents</option>
+          <option value="insurance">Insurance</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
+      </div>
+      <div id="dvList"><div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading…</div></div>
+    </div>
+    <input type="file" id="dvFileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none" />`;
+  openModal('📁 Document Vault', body);
+
+  const TYPES = { insurance:'Insurance', authority:'MC Authority', w9:'W-9', carrier_packet:'Carrier Packet', other:'Other' };
+
+  async function loadDocs(){
+    const filter = $('#dvTypeFilter', body).value;
+    let docs = await dumpStore('documents');
+    docs = docs.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    if (filter) docs = docs.filter(d => d.type === filter);
+    const list = $('#dvList', body);
+    if (!docs.length){
+      list.innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No documents yet.<br><span style="font-size:11px">Add insurance cards, MC authority, W-9s, carrier packets.</span></div>`;
+      return;
+    }
+    list.innerHTML = docs.map(d => `
+      <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px" data-dvid="${escapeHtml(d.id)}">
+        <div style="font-size:28px;flex-shrink:0">${d.mimeType && d.mimeType.startsWith('image') ? '🖼️' : '📄'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name||'Untitled')}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(TYPES[d.type]||d.type||'Document')} · ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'} · ${d.size ? Math.round(d.size/1024)+'KB' : '—'}</div>
+          ${d.note ? `<div class="muted" style="font-size:11px;margin-top:2px;font-style:italic">${escapeHtml(d.note.slice(0,60))}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
+          <button class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
+        </div>
+      </div>`).join('');
+
+    list.querySelectorAll('[data-dvopen]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        const doc = docs.find(d => d.id === btn2.dataset.dvopen);
+        if (!doc || !doc.blob) return toast('Document data not found', true);
+        const url = URL.createObjectURL(new Blob([doc.blob], {type: doc.mimeType || 'application/octet-stream'}));
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      });
+    });
+    list.querySelectorAll('[data-dvdel]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        if (!confirm('Delete this document?')) return;
+        const {t, stores} = tx('documents', 'readwrite');
+        await idbReq(stores.documents.delete(btn2.dataset.dvdel));
+        await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+        toast('Document deleted');
+        loadDocs();
+      });
+    });
+  }
+
+  async function addDocument(file, type, note){
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) return toast('File too large (max 6 MB)', true);
+    const buf = await file.arrayBuffer();
+    const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const rec = { id, name: file.name, type, note: note||'', mimeType: file.type||'application/octet-stream', size: file.size, blob: new Uint8Array(buf), createdAt: Date.now() };
+    const {t, stores} = tx('documents', 'readwrite');
+    await idbReq(stores.documents.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+    toast(`"${file.name}" saved to vault`);
+    loadDocs();
+  }
+
+  $('#dvTypeFilter', body).addEventListener('change', () => loadDocs());
+
+  $('#dvAddBtn', body).addEventListener('click', () => {
+    // Show add dialog
+    const addBody = document.createElement('div');
+    addBody.innerHTML = `
+      <div class="field"><label>Document type</label>
+        <select id="addDvType" style="width:100%;font-size:13px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="insurance">Insurance Card</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Note (optional)</label><input id="addDvNote" placeholder="e.g. State Farm, expires 12/2026" /></div>
+      <div class="field">
+        <label>File</label>
+        <div id="addDvDropzone" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:var(--text-secondary);font-size:13px">
+          📎 Tap to choose file (PDF, image — max 6 MB)
+        </div>
+        <input type="file" id="addDvFile" accept="image/*,application/pdf" style="display:none" />
+        <div id="addDvFilename" class="muted" style="font-size:12px;margin-top:6px"></div>
+      </div>
+      <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="addDvSave">Save to Vault</button></div>`;
+    openModal('Add Document', addBody);
+    let chosenFile = null;
+    $('#addDvDropzone', addBody).addEventListener('click', () => $('#addDvFile', addBody).click());
+    $('#addDvFile', addBody).addEventListener('change', (ev) => {
+      chosenFile = ev.target.files[0] || null;
+      $('#addDvFilename', addBody).textContent = chosenFile ? `Selected: ${chosenFile.name}` : '';
+    });
+    $('#addDvSave', addBody).addEventListener('click', async () => {
+      if (!chosenFile) return toast('Choose a file first', true);
+      const type = $('#addDvType', addBody).value;
+      const note = $('#addDvNote', addBody).value.trim();
+      haptic(20);
+      await addDocument(chosenFile, type, note);
+      closeModal();
+      // Re-open vault
+      setTimeout(() => openDocumentVault(), 100);
+    });
+  });
+
+  await loadDocs();
+}
+
+// ── F12: Reload Scoring ──────────────────────────────────────────────────
+// Track reload speed per destination city using 'reloadOutcomes' store.
+// Record how long it took to get a return load after delivering to a city.
+// Show city reload score in evaluator output.
+
+async function recordReloadOutcome(trip, hoursToReload){
+  if (!trip || !trip.destination) return;
+  const city = normalizeLanePart(trip.destination);
+  if (!city) return;
+  try {
+    const id = 'ro_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const dt = trip.deliveryDate || isoDate(new Date());
+    const dayOfWeek = new Date(dt + 'T12:00:00').getDay(); // 0=Sun
+    const rec = { id, city, date: dt, dayOfWeek, hoursToReload: Number(hoursToReload)||0, tripId: trip.orderNo||'' };
+    const {t, stores} = tx('reloadOutcomes', 'readwrite');
+    await idbReq(stores.reloadOutcomes.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+  } catch(e){ console.warn('[FL] reloadOutcome:', e); }
+}
+
+async function getCityReloadScore(city){
+  if (!city) return null;
+  try {
+    const norm = normalizeLanePart(city);
+    const {stores} = tx('reloadOutcomes');
+    const idx = stores.reloadOutcomes.index('city');
+    const recs = await idbReq(idx.getAll(norm));
+    if (!recs || recs.length < 2) return null;
+    const avg = recs.reduce((s, r) => s + (r.hoursToReload||0), 0) / recs.length;
+    // Score: <8h = great, 8-24h = ok, 24-48h = slow, >48h = dead zone
+    let grade, color, label;
+    if (avg < 8){ grade='A'; color='var(--good)'; label='Hot market'; }
+    else if (avg < 24){ grade='B'; color='var(--good)'; label='Good reload'; }
+    else if (avg < 48){ grade='C'; color='var(--warn)'; label='Slow reload'; }
+    else { grade='D'; color='var(--bad)'; label='Dead zone'; }
+    return { avg: Math.round(avg), grade, color, label, count: recs.length };
+  } catch(e){ return null; }
+}
+
+async function openReloadScoring(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rsContent"><div class="muted" style="text-align:center;padding:24px">Loading reload data…</div></div>
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Log a Reload Outcome</div>
+      <div class="field"><label>Delivery city</label><input id="rsCity" placeholder="e.g. Indianapolis" /></div>
+      <div class="field"><label>Hours to reload (after delivery)</label><input id="rsHours" inputmode="decimal" placeholder="e.g. 6.5" /></div>
+      <div class="btn-row"><button class="btn primary" id="rsSave">Log Outcome</button></div>
+    </div>`;
+  openModal('🔄 Reload Scoring', body);
+
+  async function loadScores(){
+    try {
+      const all = await dumpStore('reloadOutcomes');
+      const cities = {};
+      for (const r of all){
+        if (!cities[r.city]) cities[r.city] = [];
+        cities[r.city].push(r.hoursToReload||0);
+      }
+      const entries = Object.entries(cities).map(([city, hrs]) => {
+        const avg = hrs.reduce((a,b)=>a+b,0)/hrs.length;
+        let grade, color;
+        if (avg < 8){ grade='A'; color='var(--good)'; }
+        else if (avg < 24){ grade='B'; color='var(--good)'; }
+        else if (avg < 48){ grade='C'; color='var(--warn)'; }
+        else { grade='D'; color='var(--bad)'; }
+        return { city, avg: Math.round(avg), grade, color, count: hrs.length };
+      }).sort((a,b) => a.avg - b.avg);
+      const el = $('#rsContent', body);
+      if (!entries.length){
+        el.innerHTML = '<div class="muted" style="text-align:center;padding:24px;font-size:13px">No reload data yet.<br>Log outcomes after each delivery to build your city intelligence.</div>';
+      } else {
+        el.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">A=&lt;8h · B=8-24h · C=24-48h · D=48h+</div>` + entries.map(e => `
+          <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:22px;font-weight:900;color:${e.color};width:24px;text-align:center">${e.grade}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(e.city.replace(/(?:^|\s)\S/g, c => c.toUpperCase()))}</div>
+              <div class="muted" style="font-size:11px">Avg ${e.avg}h to reload · ${e.count} data point${e.count!==1?'s':''}</div>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e){ $('#rsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load data.</div>'; }
+  }
+
+  $('#rsSave', body).addEventListener('click', async () => {
+    const city = ($('#rsCity', body).value || '').trim();
+    const hours = parseFloat($('#rsHours', body).value || '');
+    if (!city || isNaN(hours) || hours < 0) return toast('Enter city and hours', true);
+    haptic(20);
+    await recordReloadOutcome({ destination: city }, hours);
+    toast('Reload outcome logged!');
+    $('#rsCity', body).value = '';
+    $('#rsHours', body).value = '';
+    loadScores();
+  });
+
+  await loadScores();
+}
+
+// ── F13: Chain Analysis ──────────────────────────────────────────────────
+// Analyze multi-load chains: given a delivery city, find best next loads
+// based on lane history, broker intel, and reload scores.
+
+async function openChainAnalysis(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+      Find the best next load after delivering to a city, based on your lane history and reload data.
+    </div>
+    <div class="field"><label>You are delivering to…</label>
+      <input id="caCity" placeholder="e.g. Indianapolis" style="width:100%" /></div>
+    <button class="btn primary" id="caAnalyze" style="width:100%;margin-top:4px">Analyze Chain</button>
+    <div id="caResults" style="margin-top:16px"></div>`;
+  openModal('🔗 Chain Analysis', body);
+
+  $('#caAnalyze', body).addEventListener('click', async () => {
+    const city = ($('#caCity', body).value || '').trim();
+    if (!city) return toast('Enter a delivery city', true);
+    haptic(20);
+    const results = $('#caResults', body);
+    results.innerHTML = '<div class="muted" style="text-align:center;padding:16px">Analyzing…</div>';
+    try {
+      const normCity = normalizeLanePart(city);
+      // Find all lanes that START from this city (from laneHistory)
+      const {stores} = tx('laneHistory');
+      const all = await idbReq(stores.laneHistory.getAll());
+      const outbound = all.filter(r => r.lane && r.lane.startsWith(normCity + '→'));
+      // Get reload score for this city
+      const reload = await getCityReloadScore(city);
+      // Also look at trips from the trips store
+      const allTrips = await dumpStore('trips');
+      const fromCity = allTrips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+      // Build destination stats from trips
+      const destMap = {};
+      for (const t of fromCity){
+        const dest = normalizeLanePart(t.destination||'');
+        if (!dest) continue;
+        if (!destMap[dest]) destMap[dest] = { dest, display: t.destination, pays: [], rpms: [], count: 0 };
+        const pay = Number(t.pay||0);
+        const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+        destMap[dest].count++;
+        if (pay) destMap[dest].pays.push(pay);
+        if (miles > 0) destMap[dest].rpms.push(pay / miles);
+      }
+      const lanes = Object.values(destMap).sort((a,b) => {
+        const rpmA = a.rpms.length ? a.rpms.reduce((s,r)=>s+r,0)/a.rpms.length : 0;
+        const rpmB = b.rpms.length ? b.rpms.reduce((s,r)=>s+r,0)/b.rpms.length : 0;
+        return rpmB - rpmA;
+      }).slice(0, 8);
+
+      let html = '';
+      // Reload intel header
+      if (reload){
+        html += `<div class="card" style="margin-bottom:12px;border:1px solid ${reload.color};opacity:.9">
+          <div style="font-size:12px;font-weight:700;color:${reload.color}">Reload Score for ${escapeHtml(city)}: <b>${reload.grade}</b> — ${escapeHtml(reload.label)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">Avg ${reload.avg}h to reload · Based on ${reload.count} data point${reload.count!==1?'s':''}</div>
+        </div>`;
+      } else {
+        html += `<div class="muted" style="font-size:12px;margin-bottom:10px">No reload score for ${escapeHtml(city)} yet — log outcomes to build intelligence.</div>`;
+      }
+      if (!lanes.length){
+        html += `<div class="muted" style="font-size:13px;text-align:center;padding:16px">No outbound lane history from ${escapeHtml(city)} yet.<br><span style="font-size:11px">Run loads from this city to build chain intelligence.</span></div>`;
+      } else {
+        html += `<div style="font-weight:700;font-size:13px;margin-bottom:8px">Best next lanes from ${escapeHtml(city)}:</div>`;
+        html += lanes.map((l, i) => {
+          const avgRPM = l.rpms.length ? (l.rpms.reduce((s,r)=>s+r,0)/l.rpms.length) : 0;
+          const avgPay = l.pays.length ? (l.pays.reduce((s,p)=>s+p,0)/l.pays.length) : 0;
+          const rpmColor = avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+          return `<div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:18px;font-weight:900;color:var(--text-tertiary);width:20px;text-align:center">${i+1}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(city)} → ${escapeHtml(l.display||l.dest)}</div>
+              <div class="muted" style="font-size:11px;margin-top:2px">${l.count} run${l.count!==1?'s':''} · Avg ${fmtMoney(avgPay)} · <span style="color:${rpmColor};font-weight:700">$${avgRPM.toFixed(2)} RPM</span></div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+      results.innerHTML = html;
+    } catch(e){
+      results.innerHTML = '<div style="color:var(--bad);padding:16px">Analysis failed. Try again.</div>';
+      console.warn('[FL] chainAnalysis:', e);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 14-15
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F14: Weekly Strategy ─────────────────────────────────────────────────
+// Analyzes the current week's trips/expenses to suggest a strategic mode
+// (HARVEST / REPOSITION / PROTECT / FLOOR_PROTECT), shows goal progress
+// and a projected end-of-week gross.
+
+async function openWeeklyStrategy(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wsContent"><div class="muted" style="text-align:center;padding:24px">Analyzing this week…</div></div>`;
+  openModal('📅 Weekly Strategy', body);
+  try {
+    const now = new Date();
+    const wkStart = startOfWeek(now);
+    const wkEnd = new Date(wkStart); wkEnd.setDate(wkStart.getDate() + 6); wkEnd.setHours(23,59,59,999);
+    const wkStartISO = isoDate(wkStart);
+    const wkEndISO   = isoDate(wkEnd);
+
+    const [wkTrips, wkExps] = await Promise.all([
+      queryTripsByPickupRange(wkStartISO, wkEndISO),
+      queryExpensesByDateRange(wkStartISO, wkEndISO)
+    ]);
+
+    const weeklyGoal  = Number(await getSetting('weeklyGoal', 0) || 0);
+    const opCPM       = Number(await getSetting('opCostPerMile', 0) || 0);
+
+    // Compute week totals
+    const grossWk   = wkTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
+    const milesWk   = wkTrips.reduce((s, t) => s + Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0), 0);
+    const expWk     = wkExps.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const netWk     = grossWk - expWk - (opCPM > 0 ? milesWk * opCPM : 0);
+    const avgRPM    = milesWk > 0 ? grossWk / milesWk : 0;
+
+    // Day-of-week progress (Mon=0 … Sun=6), Monday-anchored
+    const dayOfWk   = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0-6
+    const daysLeft  = 6 - dayOfWk;
+    const dailyRate = dayOfWk > 0 ? grossWk / dayOfWk : 0;
+    const projected = grossWk + dailyRate * daysLeft;
+
+    // Strategy logic
+    let strategy, stratColor, stratNote;
+    const pct = weeklyGoal > 0 ? grossWk / weeklyGoal : null;
+    if (pct === null){
+      strategy   = 'SET A GOAL';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Add a weekly income goal in Settings to unlock strategy mode.';
+    } else if (pct >= 1.0){
+      strategy   = '🏆 HARVEST';
+      stratColor = 'var(--good)';
+      stratNote  = 'Goal hit. Be selective — only accept premium loads. Protect your net.';
+    } else if (pct >= 0.75){
+      strategy   = '⚡ PUSH';
+      stratColor = 'var(--accent)';
+      stratNote  = 'On track. Accept good loads but keep an eye on expenses.';
+    } else if (pct >= 0.40){
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Behind pace. Consider repositioning to a stronger freight market.';
+    } else if (dayOfWk >= 3){
+      strategy   = '🛡️ FLOOR_PROTECT';
+      stratColor = 'var(--bad)';
+      stratNote  = 'Late in the week and behind. Take what covers costs — do not go negative.';
+    } else {
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Slow start. Look for volume lanes to build momentum.';
+    }
+
+    const goalBar = weeklyGoal > 0 ? Math.min(100, Math.round((grossWk / weeklyGoal) * 100)) : 0;
+    const projBar = weeklyGoal > 0 ? Math.min(100, Math.round((projected / weeklyGoal) * 100)) : 0;
+    const projColor = projected >= (weeklyGoal || projected + 1) ? 'var(--good)' : projected >= (weeklyGoal || 0) * 0.75 ? 'var(--warn)' : 'var(--bad)';
+
+    $('#wsContent', body).innerHTML = `
+      <div class="card" style="border:2px solid ${stratColor};margin-bottom:14px;text-align:center;padding:18px 12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-tertiary);letter-spacing:.08em;margin-bottom:6px">Strategy Mode</div>
+        <div style="font-size:22px;font-weight:900;color:${stratColor}">${escapeHtml(strategy)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;max-width:280px;margin-left:auto;margin-right:auto">${escapeHtml(stratNote)}</div>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Week Progress${weeklyGoal > 0 ? ` · Goal: ${fmtMoney(weeklyGoal)}` : ''}</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Earned so far</span><b>${fmtMoney(grossWk)}</b>
+        </div>
+        ${weeklyGoal > 0 ? `
+        <div style="background:var(--card-border);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px">
+          <div style="width:${goalBar}%;background:${stratColor};height:100%;transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:2px">
+          <span>Projected EOW</span><b style="color:${projColor}">${fmtMoney(projected)}</b>
+        </div>
+        <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden">
+          <div style="width:${projBar}%;background:${projColor};height:100%;opacity:.6;transition:width .4s"></div>
+        </div>` : ''}
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Loads</div><b>${wkTrips.length}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Miles</div><b>${milesWk.toLocaleString()}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Avg RPM</div><b style="color:${avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : avgRPM > 0 ? 'var(--bad)' : 'var(--text-tertiary)'}">${avgRPM > 0 ? '$' + avgRPM.toFixed(2) : '—'}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Est. Net</div><b style="color:${netWk >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(netWk)}</b></div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px">
+        ${daysLeft === 0 ? 'Last day of the week.' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left · based on ${wkTrips.length} load${wkTrips.length !== 1 ? 's' : ''} this week`}
+      </div>`;
+  } catch(e){
+    $('#wsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load strategy data.</div>';
+    console.warn('[FL] weeklyStrategy:', e);
+  }
+}
+
+// ── F15: Seasonal Intel ──────────────────────────────────────────────────
+// Groups all historical trips by calendar month (1-12), computes average
+// gross/RPM per month across all years, and highlights best/worst months.
+
+async function openSeasonalIntel(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="siContent"><div class="muted" style="text-align:center;padding:24px">Building seasonal data…</div></div>`;
+  openModal('🌦️ Seasonal Intel', body);
+  try {
+    const all = await dumpStore('trips');
+    if (!all.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No trip history yet.<br><span style="font-size:11px">Log loads to build seasonal intelligence over time.</span></div>`;
+      return;
+    }
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // month buckets: index 0-11
+    const buckets = Array.from({length:12}, (_,i) => ({ idx:i, name:MONTHS[i], grosses:[], rpms:[], count:0 }));
+
+    for (const t of all){
+      const d = t.pickupDate || t.date || '';
+      if (!d) continue;
+      const mo = parseInt(d.slice(5, 7), 10) - 1; // 0-based
+      if (mo < 0 || mo > 11) continue;
+      const pay  = Number(t.pay || 0);
+      const mi   = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      buckets[mo].count++;
+      if (pay)      buckets[mo].grosses.push(pay);
+      if (mi > 0)   buckets[mo].rpms.push(pay / mi);
+    }
+
+    // Compute averages
+    const stats = buckets.map(b => {
+      const avgGross = b.grosses.length ? b.grosses.reduce((s,v)=>s+v,0)/b.grosses.length : null;
+      const avgRPM   = b.rpms.length   ? b.rpms.reduce((s,v)=>s+v,0)/b.rpms.length       : null;
+      return { ...b, avgGross, avgRPM };
+    });
+
+    const withData = stats.filter(s => s.avgRPM !== null);
+    if (!withData.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">Not enough data yet.</div>`;
+      return;
+    }
+
+    const maxRPM  = Math.max(...withData.map(s => s.avgRPM));
+    const minRPM  = Math.min(...withData.map(s => s.avgRPM));
+    const curMo   = new Date().getMonth(); // 0-based
+
+    const rows = stats.map(s => {
+      if (!s.avgGross && !s.avgRPM){
+        return `<div class="card" style="margin-bottom:6px;opacity:.45;display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;color:var(--text-tertiary)">${escapeHtml(s.name)}</div>
+          <div style="flex:1;font-size:11px;color:var(--text-tertiary)">No data${s.idx === curMo ? ' · <b>current month</b>' : ''}</div>
+        </div>`;
+      }
+      const isBest  = s.avgRPM !== null && s.avgRPM === maxRPM;
+      const isWorst = s.avgRPM !== null && s.avgRPM === minRPM && maxRPM !== minRPM;
+      const isCur   = s.idx === curMo;
+      const rpmColor = s.avgRPM >= 2.5 ? 'var(--good)' : s.avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+      const barPct   = maxRPM > 0 ? Math.round((s.avgRPM / maxRPM) * 100) : 0;
+      const badge    = isBest ? ' 🏆' : isWorst ? ' ⚠️' : isCur ? ' ←now' : '';
+      const border   = isBest ? '2px solid var(--good)' : isWorst ? '2px solid var(--bad)' : isCur ? '2px solid var(--accent)' : '1px solid var(--card-border)';
+      return `<div class="card" style="margin-bottom:6px;border:${border}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;flex-shrink:0">${escapeHtml(s.name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="background:var(--card-border);border-radius:3px;height:6px;overflow:hidden;margin-bottom:4px">
+              <div style="width:${barPct}%;background:${rpmColor};height:100%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary)">
+              ${s.count} load${s.count !== 1 ? 's' : ''} · Avg ${fmtMoney(s.avgGross || 0)} · <b style="color:${rpmColor}">$${(s.avgRPM||0).toFixed(2)} RPM</b>${escapeHtml(badge)}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    $('#siContent', body).innerHTML = `
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        Based on <b>${all.length}</b> historical load${all.length !== 1 ? 's' : ''}. Best months get <b>🏆</b>, weakest get <b>⚠️</b>.
+      </div>
+      ${rows}
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-top:4px">
+        Data spans ${[...new Set(all.map(t=>(t.pickupDate||t.date||'').slice(0,4)).filter(Boolean))].sort().join(', ') || 'unknown years'}
+      </div>`;
+  } catch(e){
+    $('#siContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load seasonal data.</div>';
+    console.warn('[FL] seasonalIntel:', e);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 16-17
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F16: Cost-Per-Day ────────────────────────────────────────────────────
+// Calculates daily breakeven from monthly fixed costs + variable CPM.
+// Shows minimum gross needed per day / week and compares to recent actuals.
+
+async function openCostPerDay(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="cpdContent"><div class="muted" style="text-align:center;padding:24px">Loading cost data…</div></div>`;
+  openModal('💸 Cost-Per-Day', body);
+  try {
+    const [mIns, mVeh, mMaint, mOther, mMiles, opCPM, weeklyGoal] = await Promise.all([
+      getSetting('monthlyInsurance',  0),
+      getSetting('monthlyVehicle',    0),
+      getSetting('monthlyMaintenance',0),
+      getSetting('monthlyOther',      0),
+      getSetting('monthlyMiles',      0),
+      getSetting('opCostPerMile',     0),
+      getSetting('weeklyGoal',        0),
+    ]);
+    const fixedMonthly = [mIns, mVeh, mMaint, mOther].reduce((s,v) => s + Number(v||0), 0);
+    const fixedDaily   = fixedMonthly / 30.44;   // avg days/month
+    const fixedWeekly  = fixedMonthly / 4.345;
+    const cpm          = Number(opCPM || 0);
+    const avgMonthMiles= Number(mMiles || 0);
+    const varDaily     = avgMonthMiles > 0 ? (avgMonthMiles / 30.44) * cpm : 0;
+    const varWeekly    = avgMonthMiles > 0 ? (avgMonthMiles / 4.345) * cpm : 0;
+
+    const totalDaily   = fixedDaily + varDaily;
+    const totalWeekly  = fixedWeekly + varWeekly;
+
+    // Last 30 days actuals
+    const now      = new Date();
+    const from30   = new Date(now); from30.setDate(now.getDate() - 30);
+    const [trips30, exps30] = await Promise.all([
+      queryTripsByPickupRange(isoDate(from30), isoDate(now)),
+      queryExpensesByDateRange(isoDate(from30), isoDate(now)),
+    ]);
+    const gross30   = trips30.reduce((s,t) => s + Number(t.pay||0), 0);
+    const exp30     = exps30.reduce((s,e)  => s + Number(e.amount||0), 0);
+    const actDaily  = gross30 / 30;
+    const actNet30  = gross30 - exp30;
+
+    const hasFixed = fixedMonthly > 0;
+    const beColor  = actDaily >= totalDaily ? 'var(--good)' : actDaily > 0 ? 'var(--warn)' : 'var(--text-tertiary)';
+    const wGoal    = Number(weeklyGoal||0);
+
+    $('#cpdContent', body).innerHTML = `
+      ${!hasFixed && cpm === 0 ? `<div class="card" style="border:1px solid var(--warn);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
+        <b style="color:var(--warn)">⚠️ No cost data yet.</b><br>Enter monthly fixed costs and op cost-per-mile in <b>Settings → Vehicle & Costs</b> to unlock full analysis.
+      </div>` : ''}
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">Daily Breakeven</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Fixed / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(fixedDaily)}</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Variable / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(varDaily)}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:12px;background:var(--bg-secondary);border-radius:10px;text-align:center">
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Total Breakeven / Day</div>
+          <div style="font-size:26px;font-weight:900;color:var(--accent)">${fmtMoney(totalDaily)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${fmtMoney(totalWeekly)} / week &nbsp;·&nbsp; ${fmtMoney(fixedMonthly + varDaily*30.44)} / month</div>
+        </div>
+      </div>
+
+      ${gross30 > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Last 30 Days Actuals</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Avg gross / day</span><b style="color:${beColor}">${fmtMoney(actDaily)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Gross total</span><b>${fmtMoney(gross30)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>Net (after expenses)</span><b style="color:${actNet30>=0?'var(--good)':'var(--bad)'}">${fmtMoney(actNet30)}</b>
+        </div>
+        ${totalDaily > 0 ? `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:${actDaily >= totalDaily ? 'rgba(0,200,100,.08)' : 'rgba(255,80,80,.08)'};font-size:12px;text-align:center">
+          ${actDaily >= totalDaily
+            ? `<b style="color:var(--good)">✓ Covering costs</b> — ${fmtMoney(actDaily - totalDaily)}/day above breakeven`
+            : `<b style="color:var(--bad)">✗ Below breakeven</b> — ${fmtMoney(totalDaily - actDaily)}/day shortfall`}
+        </div>` : ''}
+      </div>` : ''}
+
+      ${wGoal > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Weekly Goal Coverage</div>
+        <div style="font-size:12px;color:var(--text-secondary)">Goal: <b>${fmtMoney(wGoal)}</b> &nbsp;·&nbsp; Breakeven: <b>${fmtMoney(totalWeekly)}</b> &nbsp;·&nbsp; Profit window: <b style="color:var(--good)">${fmtMoney(Math.max(0, wGoal - totalWeekly))}</b></div>
+      </div>` : ''}
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:2px">
+        Fixed / 30.44 days avg. Variable based on ${avgMonthMiles > 0 ? avgMonthMiles.toLocaleString() + ' est. monthly miles' : 'no miles estimate'}.
+      </div>`;
+  } catch(e){
+    $('#cpdContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load cost data.</div>';
+    console.warn('[FL] costPerDay:', e);
+  }
+}
+
+// ── F17: Counter-Offer Memory ─────────────────────────────────────────────
+// Log counter-offer attempts per broker+lane with outcome (accepted/rejected/
+// no-response). View history sorted by broker, see win rates and avg deltas.
+
+async function openCounterOfferMemory(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+      Track counter-offer outcomes to learn which brokers and lanes are negotiable.
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">Log Attempt</div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Broker</label>
+        <input id="comBroker" placeholder="e.g. Coyote Logistics" style="width:100%" /></div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Lane</label>
+        <input id="comLane" placeholder="e.g. Chicago → Indianapolis" style="width:100%" /></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <div class="field"><label style="font-size:11px">Their Offer ($)</label>
+          <input id="comOffer" type="number" min="0" placeholder="800" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Your Counter ($)</label>
+          <input id="comCounter" type="number" min="0" placeholder="950" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Final ($)</label>
+          <input id="comFinal" type="number" min="0" placeholder="920" style="width:100%" /></div>
+      </div>
+      <div class="field" style="margin-bottom:8px"><label style="font-size:11px">Outcome</label>
+        <select id="comOutcome" style="width:100%">
+          <option value="accepted">✅ Accepted my counter</option>
+          <option value="partial">🤝 Partial — met in middle</option>
+          <option value="rejected">❌ Rejected — took their rate</option>
+          <option value="no_response">🚫 No response / walked</option>
+        </select>
+      </div>
+      <button class="btn primary" id="comSave" style="width:100%">Save Attempt</button>
+    </div>
+    <div id="comHistory"></div>`;
+  openModal('🤝 Counter-Offer Memory', body);
+
+  async function loadHistory(){
+    const el = $('#comHistory', body);
+    el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:10px">Loading…</div>';
+    try {
+      const all = await dumpStore('bidHistory');
+      all.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      if (!all.length){
+        el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:16px">No attempts logged yet.</div>';
+        return;
+      }
+
+      // Aggregate by broker
+      const brokerMap = {};
+      for (const r of all){
+        const b = r.broker || 'Unknown';
+        if (!brokerMap[b]) brokerMap[b] = { broker: b, records: [], wins: 0 };
+        brokerMap[b].records.push(r);
+        if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
+      }
+      const brokers = Object.values(brokerMap).sort((a,z) => z.records.length - a.records.length);
+
+      const outcomeIcon = { accepted:'✅', partial:'🤝', rejected:'❌', no_response:'🚫' };
+      const outcomeLabel= { accepted:'Accepted', partial:'Partial', rejected:'Rejected', no_response:'Walked' };
+
+      el.innerHTML = brokers.map(bk => {
+        const winRate = Math.round((bk.wins / bk.records.length) * 100);
+        const rateColor = winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
+        const rows = bk.records.slice(0, 5).map(r => {
+          const offer   = Number(r.offerAmt  || 0);
+          const counter = Number(r.counterAmt|| 0);
+          const final   = Number(r.finalAmt  || 0);
+          const delta   = final > 0 && offer > 0 ? final - offer : null;
+          const icon    = outcomeIcon[r.outcome] || '•';
+          const label   = outcomeLabel[r.outcome] || r.outcome;
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:6px 0;border-bottom:1px solid var(--card-border)">
+            <span style="width:16px;text-align:center">${icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.lane||'—')}</div>
+              <div class="muted">${r.date||''} · ${offer > 0 ? fmtMoney(offer) : '—'} → ${counter > 0 ? fmtMoney(counter) : '—'}${final > 0 ? ` → ${fmtMoney(final)}` : ''}</div>
+            </div>
+            ${delta !== null ? `<div style="font-weight:700;color:${delta >= 0 ? 'var(--good)' : 'var(--bad)'}">+${fmtMoney(delta)}</div>` : ''}
+          </div>`;
+        }).join('');
+        return `<div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-weight:700;font-size:13px">${escapeHtml(bk.broker)}</div>
+            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate}% win · ${bk.records.length} attempt${bk.records.length!==1?'s':''}</div>
+          </div>
+          ${rows}
+          ${bk.records.length > 5 ? `<div class="muted" style="font-size:11px;text-align:center;padding-top:6px">+${bk.records.length-5} more</div>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);font-size:12px;padding:10px">Failed to load history.</div>';
+      console.warn('[FL] counterOfferMemory load:', e);
+    }
+  }
+
+  await loadHistory();
+
+  $('#comSave', body).addEventListener('click', async () => {
+    const broker  = ($('#comBroker',  body).value || '').trim();
+    const lane    = ($('#comLane',    body).value || '').trim();
+    const offer   = Number($('#comOffer',   body).value || 0);
+    const counter = Number($('#comCounter', body).value || 0);
+    const final   = Number($('#comFinal',   body).value || 0);
+    const outcome = $('#comOutcome', body).value;
+    if (!broker) return toast('Enter a broker name', true);
+    if (!lane)   return toast('Enter a lane', true);
+    haptic(20);
+    try {
+      const rec = {
+        id:        Date.now() + Math.random(),
+        broker:    clampStr(broker, 80),
+        lane:      clampStr(lane, 80),
+        offerAmt:  offer,
+        counterAmt:counter,
+        finalAmt:  final,
+        outcome,
+        date:      isoDate(new Date()),
+      };
+      const {t, stores} = tx('bidHistory', 'readwrite');
+      stores.bidHistory.put(rec);
+      await idbReq(t);
+      // Clear fields
+      ['#comBroker','#comLane','#comOffer','#comCounter','#comFinal'].forEach(sel => { const el = $(sel, body); if (el) el.value = ''; });
+      $('#comOutcome', body).value = 'accepted';
+      toast('Saved');
+      await loadHistory();
+    } catch(e){
+      toast('Save failed', true);
+      console.warn('[FL] counterOfferMemory save:', e);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Feature 18: CPA Track Package
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F18: CPA Track Package ────────────────────────────────────────────────
+// In-app CPA-ready report: full P&L preview, quarterly breakdown, estimated
+// SE tax + quarterly payment schedule, and one-tap CSV export.
+
+async function openCPAPackage(){
+  const now   = new Date();
+  const year  = now.getFullYear();
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn cpa-period-btn active" data-period="ytd" style="flex:1;min-width:0;font-size:12px">YTD ${year}</button>
+      <button class="btn cpa-period-btn" data-period="q1"  style="flex:1;min-width:0;font-size:12px">Q1</button>
+      <button class="btn cpa-period-btn" data-period="q2"  style="flex:1;min-width:0;font-size:12px">Q2</button>
+      <button class="btn cpa-period-btn" data-period="q3"  style="flex:1;min-width:0;font-size:12px">Q3</button>
+      <button class="btn cpa-period-btn" data-period="q4"  style="flex:1;min-width:0;font-size:12px">Q4</button>
+    </div>
+    <div id="cpaContent"><div class="muted" style="text-align:center;padding:24px">Loading…</div></div>`;
+
+  openModal('📦 CPA Package', body);
+
+  let currentPeriod = 'ytd';
+
+  const QUARTERS = [
+    { key:'q1', label:'Q1', start:`${year}-01-01`, end:`${year}-03-31` },
+    { key:'q2', label:'Q2', start:`${year}-04-01`, end:`${year}-06-30` },
+    { key:'q3', label:'Q3', start:`${year}-07-01`, end:`${year}-09-30` },
+    { key:'q4', label:'Q4', start:`${year}-10-01`, end:`${year}-12-31` },
+  ];
+
+  // IRS estimated tax due dates (approximate)
+  const EST_TAX_DATES = ['Apr 15','Jun 16','Sep 15','Jan 15'];
+
+  async function buildPeriodData(period){
+    let startDate, endDate, label;
+    if (period === 'ytd'){ startDate = `${year}-01-01`; endDate = isoDate(now); label = `YTD ${year}`; }
+    else { const q = QUARTERS.find(x => x.key === period); startDate = q.start; endDate = q.end; label = `${q.label} ${year}`; }
+
+    const inRange = d => d && d >= startDate && d <= endDate;
+
+    const [allTrips, allExps, allFuel] = await Promise.all([
+      dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
+    ]);
+    const trips = allTrips.filter(t => !t.needsReview && inRange(t.pickupDate || t.deliveryDate));
+    const exps  = allExps.filter(e => inRange(e.date));
+    const fuel  = allFuel.filter(f => inRange(f.date));
+
+    const [perDiemRate, vehicleClass] = await Promise.all([
+      getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+      getSetting('vehicleClass', 'cargo_van'),
+    ]);
+    const pdRate = Number(perDiemRate || IRS.PER_DIEM_CONUS);
+    const perDiemPct = (vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl')
+      ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+
+    // Revenue
+    let gross = 0, loadedMi = 0, allMi = 0;
+    const tripDays = new Set();
+    for (const t of trips){
+      gross    += Number(t.pay || 0);
+      loadedMi += Number(t.loadedMiles || 0);
+      allMi    += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      const d  = t.pickupDate || t.deliveryDate;
+      if (d) tripDays.add(d);
+      if (t.pickupDate && t.deliveryDate && t.pickupDate !== t.deliveryDate){
+        const s = new Date(t.pickupDate), e = new Date(t.deliveryDate);
+        for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate()+1)) tripDays.add(isoDate(dt));
+      }
+    }
+    gross = roundCents(gross);
+
+    // Expenses by category
+    const catMap = new Map();
+    let totalExp = 0;
+    for (const e of exps){
+      const amt = Number(e.amount || 0);
+      totalExp += amt;
+      const cat = e.category || 'Uncategorized';
+      catMap.set(cat, (catMap.get(cat) || 0) + amt);
+    }
+    totalExp = roundCents(totalExp);
+
+    // Fuel
+    const totalFuelCost = roundCents(fuel.reduce((s,f) => s + Number(f.amount||0), 0));
+    const totalGallons  = fuel.reduce((s,f) => s + Number(f.gallons||0), 0);
+
+    // Per diem
+    const pdDays       = tripDays.size;
+    const pdGross      = roundCents(pdDays * pdRate);
+    const pdDeductible = roundCents(pdGross * perDiemPct);
+
+    // Mileage deduction (standard rate)
+    const mileDeduc2026 = roundCents(allMi * IRS.MILEAGE_RATE_2026);
+
+    // Net + SE tax
+    const net      = roundCents(gross - totalExp);
+    const seTax    = roundCents(Math.max(0, (net - pdDeductible) * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+    const estProfit= roundCents(net - pdDeductible - seTax);
+
+    return {
+      label, startDate, endDate, period,
+      gross, totalExp, catMap, totalFuelCost, totalGallons,
+      loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct,
+      mileDeduc2026, net, seTax, estProfit,
+      tripCount: trips.length, expCount: exps.length,
+    };
+  }
+
+  async function render(period){
+    const el = $('#cpaContent', body);
+    el.innerHTML = '<div class="muted" style="text-align:center;padding:18px">Calculating…</div>';
+    try {
+      const d = await buildPeriodData(period);
+      const isYTD = period === 'ytd';
+
+      // Quarterly breakdown (YTD only)
+      let qRowsHTML = '';
+      if (isYTD){
+        const qData = await Promise.all(QUARTERS.map(q => buildPeriodData(q.key)));
+        qRowsHTML = `
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px">Quarterly Breakdown + Est. Tax Due Dates</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead>
+                <tr style="color:var(--text-secondary)">
+                  <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--card-border)">Period</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Gross</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Expenses</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Net</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">SE Tax Est.</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${qData.map((q,i) => `<tr style="border-bottom:1px solid var(--card-border)">
+                  <td style="padding:5px 6px;font-weight:600">${q.label}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.gross)}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.totalExp)}</td>
+                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:${q.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(q.net)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--warn)">${fmtMoney(q.seTax)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--text-secondary)">${EST_TAX_DATES[i]}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">IRS estimated tax due dates are approximate. Confirm at IRS.gov or with your CPA.</div>
+        </div>`;
+      }
+
+      const catRows = [...d.catMap.entries()]
+        .sort((a,b) => b[1]-a[1])
+        .map(([cat,amt]) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+          <span style="color:var(--text-secondary)">${escapeHtml(cat)}</span>
+          <b>${fmtMoney(roundCents(amt))}</b>
+        </div>`).join('');
+
+      el.innerHTML = `
+        <!-- P&L Summary -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:10px">P&L Summary — ${escapeHtml(d.label)}</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Gross Revenue</span><b style="color:var(--good)">${fmtMoney(d.gross)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Expenses</span><b style="color:var(--bad)">-${fmtMoney(d.totalExp)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Net Income</span><b style="color:${d.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.net)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Per Diem Deduction (${Math.round(d.perDiemPct*100)}% · ${d.pdDays}d × $${d.pdRate.toFixed(2)})</span>
+            <b style="color:var(--accent)">-${fmtMoney(d.pdDeductible)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Est. Self-Employment Tax (15.3%)</span><b style="color:var(--warn)">-${fmtMoney(d.seTax)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:6px 0;margin-top:2px">
+            <span>Estimated After-Tax Profit</span>
+            <span style="color:${d.estProfit>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.estProfit)}</span>
+          </div>
+        </div>
+
+        <!-- Mileage -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Mileage — IRS Standard Rate</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Business Miles</span><b>${d.allMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Loaded Miles</span><b>${d.loadedMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+            <span>Mileage Deduction @ $${IRS.MILEAGE_RATE_2026}/mi (2026)</span>
+            <b style="color:var(--accent)">${fmtMoney(d.mileDeduc2026)}</b>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:5px">⚠️ Choose mileage OR actual expenses — not both. Ask your CPA which method benefits you more.</div>
+        </div>
+
+        <!-- Expense breakdown -->
+        ${d.totalExp > 0 ? `<div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Expenses by Category</div>
+          ${catRows}
+        </div>` : ''}
+
+        <!-- Quarterly breakdown (YTD only) -->
+        ${qRowsHTML}
+
+        <!-- CPA Handoff Checklist -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">CPA Handoff Checklist</div>
+          ${[
+            ['This exported CPA Package CSV',                                                  true ],
+            ['Mileage log (this app\'s trip detail CSV)',                                      true ],
+            ['Form 1099-NEC from each broker (due Jan 31)',                                    d.gross > 600 ],
+            ['Bank / business account statements',                                             true ],
+            ['Receipts for expense categories above',                                          d.totalExp > 0 ],
+            ['IFTA fuel summary (if applicable)',                                              d.totalFuelCost > 0 ],
+            ['Home office square footage (if claiming home office deduction)',                  false],
+            ['Cell phone & internet — estimate business use %',                                false],
+          ].map(([item, ready]) => `<div style="display:flex;align-items:flex-start;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--card-border)">
+            <span style="color:${ready?'var(--good)':'var(--text-tertiary)'};flex-shrink:0;font-size:13px">${ready?'✅':'☐'}</span>
+            <span style="color:${ready?'var(--text-primary)':'var(--text-secondary)'}">${item}</span>
+          </div>`).join('')}
+        </div>
+
+        <!-- Export -->
+        <button class="btn primary" id="cpaExportBtn" style="width:100%;font-size:14px;font-weight:700;padding:14px">
+          ⬇ Download CPA Package — ${escapeHtml(d.label)}
+        </button>
+        <div style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-bottom:4px">
+          CSV includes P&L summary, income detail, expense detail, and fuel log.<br>
+          Estimates only — not tax advice. Verify with a licensed CPA.
+        </div>`;
+
+      $('#cpaExportBtn', body).addEventListener('click', () => {
+        haptic(20);
+        generateAccountantPackage(period);
+      });
+
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);padding:16px;font-size:12px">Failed to load CPA data.</div>';
+      console.warn('[FL] cpaPackage:', e);
+    }
+  }
+
+  $$('.cpa-period-btn', body).forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.cpa-period-btn', body).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      render(currentPeriod);
+    });
+  });
+
+  render(currentPeriod);
+}
+
 // ---- Boot ----
 (async () => {
   try{
@@ -8866,6 +10879,8 @@ window.addEventListener('offline', _updateOnlineStatus);
       }catch(e){ console.warn('[FL] Recovery check failed:', e); }
       try{ showSafariWarning(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkStorageQuota(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkAndGenerateWeeklyReport(); }catch(e){ console.warn("[FL]", e); }
+      try{ await cloudCheckServerTimestamp(); }catch(e){ console.warn("[FL]", e); }
     }, 2000);
   }catch(err){
     console.error(err);
