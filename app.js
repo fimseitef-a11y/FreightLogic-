@@ -3748,6 +3748,8 @@ const MORE_TILES = [
   { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
   { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
   { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
+  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy' },
+  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
   { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
@@ -3779,6 +3781,8 @@ async function renderMore(){
         else if (tile.act === 'rateTrends') openRateTrends();
         else if (tile.act === 'reloadScoring') openReloadScoring();
         else if (tile.act === 'chainAnalysis') openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') openSeasonalIntel();
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -10080,6 +10084,213 @@ async function openChainAnalysis(){
       console.warn('[FL] chainAnalysis:', e);
     }
   });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 14-15
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F14: Weekly Strategy ─────────────────────────────────────────────────
+// Analyzes the current week's trips/expenses to suggest a strategic mode
+// (HARVEST / REPOSITION / PROTECT / FLOOR_PROTECT), shows goal progress
+// and a projected end-of-week gross.
+
+async function openWeeklyStrategy(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wsContent"><div class="muted" style="text-align:center;padding:24px">Analyzing this week…</div></div>`;
+  openModal('📅 Weekly Strategy', body);
+  try {
+    const now = new Date();
+    const wkStart = startOfWeek(now);
+    const wkEnd = new Date(wkStart); wkEnd.setDate(wkStart.getDate() + 6); wkEnd.setHours(23,59,59,999);
+    const wkStartISO = isoDate(wkStart);
+    const wkEndISO   = isoDate(wkEnd);
+
+    const [wkTrips, wkExps] = await Promise.all([
+      queryTripsByPickupRange(wkStartISO, wkEndISO),
+      queryExpensesByDateRange(wkStartISO, wkEndISO)
+    ]);
+
+    const weeklyGoal  = Number(await getSetting('weeklyGoal', 0) || 0);
+    const opCPM       = Number(await getSetting('opCostPerMile', 0) || 0);
+
+    // Compute week totals
+    const grossWk   = wkTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
+    const milesWk   = wkTrips.reduce((s, t) => s + Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0), 0);
+    const expWk     = wkExps.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const netWk     = grossWk - expWk - (opCPM > 0 ? milesWk * opCPM : 0);
+    const avgRPM    = milesWk > 0 ? grossWk / milesWk : 0;
+
+    // Day-of-week progress (Mon=0 … Sun=6), Monday-anchored
+    const dayOfWk   = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0-6
+    const daysLeft  = 6 - dayOfWk;
+    const dailyRate = dayOfWk > 0 ? grossWk / dayOfWk : 0;
+    const projected = grossWk + dailyRate * daysLeft;
+
+    // Strategy logic
+    let strategy, stratColor, stratNote;
+    const pct = weeklyGoal > 0 ? grossWk / weeklyGoal : null;
+    if (pct === null){
+      strategy   = 'SET A GOAL';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Add a weekly income goal in Settings to unlock strategy mode.';
+    } else if (pct >= 1.0){
+      strategy   = '🏆 HARVEST';
+      stratColor = 'var(--good)';
+      stratNote  = 'Goal hit. Be selective — only accept premium loads. Protect your net.';
+    } else if (pct >= 0.75){
+      strategy   = '⚡ PUSH';
+      stratColor = 'var(--accent)';
+      stratNote  = 'On track. Accept good loads but keep an eye on expenses.';
+    } else if (pct >= 0.40){
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Behind pace. Consider repositioning to a stronger freight market.';
+    } else if (dayOfWk >= 3){
+      strategy   = '🛡️ FLOOR_PROTECT';
+      stratColor = 'var(--bad)';
+      stratNote  = 'Late in the week and behind. Take what covers costs — do not go negative.';
+    } else {
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Slow start. Look for volume lanes to build momentum.';
+    }
+
+    const goalBar = weeklyGoal > 0 ? Math.min(100, Math.round((grossWk / weeklyGoal) * 100)) : 0;
+    const projBar = weeklyGoal > 0 ? Math.min(100, Math.round((projected / weeklyGoal) * 100)) : 0;
+    const projColor = projected >= (weeklyGoal || projected + 1) ? 'var(--good)' : projected >= (weeklyGoal || 0) * 0.75 ? 'var(--warn)' : 'var(--bad)';
+
+    $('#wsContent', body).innerHTML = `
+      <div class="card" style="border:2px solid ${stratColor};margin-bottom:14px;text-align:center;padding:18px 12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-tertiary);letter-spacing:.08em;margin-bottom:6px">Strategy Mode</div>
+        <div style="font-size:22px;font-weight:900;color:${stratColor}">${escapeHtml(strategy)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;max-width:280px;margin-left:auto;margin-right:auto">${escapeHtml(stratNote)}</div>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Week Progress${weeklyGoal > 0 ? ` · Goal: ${fmtMoney(weeklyGoal)}` : ''}</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Earned so far</span><b>${fmtMoney(grossWk)}</b>
+        </div>
+        ${weeklyGoal > 0 ? `
+        <div style="background:var(--card-border);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px">
+          <div style="width:${goalBar}%;background:${stratColor};height:100%;transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:2px">
+          <span>Projected EOW</span><b style="color:${projColor}">${fmtMoney(projected)}</b>
+        </div>
+        <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden">
+          <div style="width:${projBar}%;background:${projColor};height:100%;opacity:.6;transition:width .4s"></div>
+        </div>` : ''}
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Loads</div><b>${wkTrips.length}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Miles</div><b>${milesWk.toLocaleString()}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Avg RPM</div><b style="color:${avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : avgRPM > 0 ? 'var(--bad)' : 'var(--text-tertiary)'}">${avgRPM > 0 ? '$' + avgRPM.toFixed(2) : '—'}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Est. Net</div><b style="color:${netWk >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(netWk)}</b></div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px">
+        ${daysLeft === 0 ? 'Last day of the week.' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left · based on ${wkTrips.length} load${wkTrips.length !== 1 ? 's' : ''} this week`}
+      </div>`;
+  } catch(e){
+    $('#wsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load strategy data.</div>';
+    console.warn('[FL] weeklyStrategy:', e);
+  }
+}
+
+// ── F15: Seasonal Intel ──────────────────────────────────────────────────
+// Groups all historical trips by calendar month (1-12), computes average
+// gross/RPM per month across all years, and highlights best/worst months.
+
+async function openSeasonalIntel(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="siContent"><div class="muted" style="text-align:center;padding:24px">Building seasonal data…</div></div>`;
+  openModal('🌦️ Seasonal Intel', body);
+  try {
+    const all = await dumpStore('trips');
+    if (!all.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No trip history yet.<br><span style="font-size:11px">Log loads to build seasonal intelligence over time.</span></div>`;
+      return;
+    }
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // month buckets: index 0-11
+    const buckets = Array.from({length:12}, (_,i) => ({ idx:i, name:MONTHS[i], grosses:[], rpms:[], count:0 }));
+
+    for (const t of all){
+      const d = t.pickupDate || t.date || '';
+      if (!d) continue;
+      const mo = parseInt(d.slice(5, 7), 10) - 1; // 0-based
+      if (mo < 0 || mo > 11) continue;
+      const pay  = Number(t.pay || 0);
+      const mi   = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      buckets[mo].count++;
+      if (pay)      buckets[mo].grosses.push(pay);
+      if (mi > 0)   buckets[mo].rpms.push(pay / mi);
+    }
+
+    // Compute averages
+    const stats = buckets.map(b => {
+      const avgGross = b.grosses.length ? b.grosses.reduce((s,v)=>s+v,0)/b.grosses.length : null;
+      const avgRPM   = b.rpms.length   ? b.rpms.reduce((s,v)=>s+v,0)/b.rpms.length       : null;
+      return { ...b, avgGross, avgRPM };
+    });
+
+    const withData = stats.filter(s => s.avgRPM !== null);
+    if (!withData.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">Not enough data yet.</div>`;
+      return;
+    }
+
+    const maxRPM  = Math.max(...withData.map(s => s.avgRPM));
+    const minRPM  = Math.min(...withData.map(s => s.avgRPM));
+    const curMo   = new Date().getMonth(); // 0-based
+
+    const rows = stats.map(s => {
+      if (!s.avgGross && !s.avgRPM){
+        return `<div class="card" style="margin-bottom:6px;opacity:.45;display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;color:var(--text-tertiary)">${escapeHtml(s.name)}</div>
+          <div style="flex:1;font-size:11px;color:var(--text-tertiary)">No data${s.idx === curMo ? ' · <b>current month</b>' : ''}</div>
+        </div>`;
+      }
+      const isBest  = s.avgRPM !== null && s.avgRPM === maxRPM;
+      const isWorst = s.avgRPM !== null && s.avgRPM === minRPM && maxRPM !== minRPM;
+      const isCur   = s.idx === curMo;
+      const rpmColor = s.avgRPM >= 2.5 ? 'var(--good)' : s.avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+      const barPct   = maxRPM > 0 ? Math.round((s.avgRPM / maxRPM) * 100) : 0;
+      const badge    = isBest ? ' 🏆' : isWorst ? ' ⚠️' : isCur ? ' ←now' : '';
+      const border   = isBest ? '2px solid var(--good)' : isWorst ? '2px solid var(--bad)' : isCur ? '2px solid var(--accent)' : '1px solid var(--card-border)';
+      return `<div class="card" style="margin-bottom:6px;border:${border}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;flex-shrink:0">${escapeHtml(s.name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="background:var(--card-border);border-radius:3px;height:6px;overflow:hidden;margin-bottom:4px">
+              <div style="width:${barPct}%;background:${rpmColor};height:100%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary)">
+              ${s.count} load${s.count !== 1 ? 's' : ''} · Avg ${fmtMoney(s.avgGross || 0)} · <b style="color:${rpmColor}">$${(s.avgRPM||0).toFixed(2)} RPM</b>${escapeHtml(badge)}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    $('#siContent', body).innerHTML = `
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        Based on <b>${all.length}</b> historical load${all.length !== 1 ? 's' : ''}. Best months get <b>🏆</b>, weakest get <b>⚠️</b>.
+      </div>
+      ${rows}
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-top:4px">
+        Data spans ${[...new Set(all.map(t=>(t.pickupDate||t.date||'').slice(0,4)).filter(Boolean))].sort().join(', ') || 'unknown years'}
+      </div>`;
+  } catch(e){
+    $('#siContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load seasonal data.</div>';
+    console.warn('[FL] seasonalIntel:', e);
+  }
 }
 
 // ---- Boot ----
