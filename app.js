@@ -11,7 +11,6 @@
  */
 
 const APP_VERSION = '18.0.0';
-const MASTER_SOURCE_ASSET = './MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -317,7 +316,7 @@ async function copyTextToClipboard(text){
       await navigator.clipboard.writeText(text);
       return true;
     }
-  }catch{}
+  }catch(e){ console.warn('[FL] clipboard API failed:', e); }
   try{
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -329,7 +328,7 @@ async function copyTextToClipboard(text){
     document.execCommand('copy');
     ta.remove();
     return true;
-  }catch{}
+  }catch(e){ console.warn('[FL] execCommand copy failed:', e); }
   return false;
 }
 function downloadTextFile(filename, text, mime='text/plain;charset=utf-8'){
@@ -360,42 +359,6 @@ function markdownToSimpleHtml(md){
     .replace(/(<\/h3>)<\/p>/g, '$1')
     .replace(/<p[^>]*>(<div)/g, '$1')
     .replace(/(<\/div>)<\/p>/g, '$1');
-}
-async function openMasterSourceCenter(){
-  try{
-    const res = await fetch(MASTER_SOURCE_ASSET, { cache:'no-cache' });
-    if (!res.ok) throw new Error('Source file missing');
-    const sourceText = await res.text();
-    const lineCount = sourceText.split(/\r?\n/).length;
-    const wordCount = sourceText.trim().split(/\s+/).filter(Boolean).length;
-    const body = document.createElement('div');
-    body.innerHTML = `
-      <div class="card" style="padding:14px;margin-bottom:12px">
-        <div style="font-size:15px;font-weight:700;margin-bottom:6px">Midwest Stack + Freight Logic Master Source</div>
-        <div class="muted" style="font-size:12px;line-height:1.45">This app now ships with your master source file bundled inside it. Use it as the app's built-in rules, reference, and handoff file.</div>
-        <div class="row" style="margin-top:10px">
-          <div class="pill"><span class="muted">Version</span> <b>v5</b></div>
-          <div class="pill"><span class="muted">Lines</span> <b>${lineCount}</b></div>
-          <div class="pill"><span class="muted">Words</span> <b>${wordCount}</b></div>
-        </div>
-        <div class="btn-row" style="margin-top:12px">
-          <button class="btn primary" id="msDownload">Download source</button>
-          <button class="btn" id="msCopy">Copy all</button>
-          <button class="btn" id="msRaw">Open raw</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3 style="margin-bottom:10px">Preview</h3>
-        <div style="max-height:58vh;overflow:auto;padding-right:4px">${markdownToSimpleHtml(sourceText.slice(0, 24000))}</div>
-      </div>`;
-    openModal('🧠 Master Source', body);
-    $('#msDownload', body).addEventListener('click', ()=>{ downloadTextFile('MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md', sourceText, 'text/markdown;charset=utf-8'); toast('Master source downloaded'); });
-    $('#msCopy', body).addEventListener('click', async ()=>{ const ok = await copyTextToClipboard(sourceText); toast(ok ? 'Master source copied' : 'Copy failed', !ok); });
-    $('#msRaw', body).addEventListener('click', ()=> window.open(MASTER_SOURCE_ASSET, '_blank', 'noopener'));
-  }catch(err){
-    console.error('[FL] master source open failed:', err);
-    toast('Master source could not be opened', true);
-  }
 }
 
 function showQuarterlyNudge(msg){
@@ -495,7 +458,7 @@ function numVal(id, def=0){
   return Number.isFinite(x) ? x : def;
 }
 
-function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch{} }
+function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch(e){ /* vibrate unsupported */ } }
 
 function toast(msg, isErr=false){
   const t = $('#toast');
@@ -1153,6 +1116,11 @@ async function exportJSON(){
     receipts: await dumpStore('receipts'),
     settings: await dumpStore('settings'),
     auditLog: await dumpStore('auditLog'),
+    laneHistory: await dumpStore('laneHistory'),
+    weeklyReports: await dumpStore('weeklyReports'),
+    reloadOutcomes: await dumpStore('reloadOutcomes'),
+    bidHistory: await dumpStore('bidHistory'),
+    documents: await dumpStore('documents'),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -1246,8 +1214,15 @@ async function importJSON(file, opts={}){
       action: clampStr(a.action, 30), data: a.data && typeof a.data === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(a.data))) : undefined
     }));
 
+    // Passthrough arrays for v18 stores — filter objects, no deep sanitization needed beyond deepCleanObj
+    const safeLaneHistoryArr   = arr(data.laneHistory).filter(r => r && typeof r === 'object');
+    const safeWeeklyReportsArr = arr(data.weeklyReports).filter(r => r && typeof r === 'object');
+    const safeReloadOutcomesArr= arr(data.reloadOutcomes).filter(r => r && typeof r === 'object');
+    const safeBidHistoryArr    = arr(data.bidHistory).filter(r => r && typeof r === 'object');
+    const safeDocumentsArr     = arr(data.documents).filter(r => r && typeof r === 'object');
+
     const mode = opts.mode || 'merge';
-    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog'],'readwrite');
+    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'],'readwrite');
     if (mode === 'replace'){
       try{ stores.trips.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.expenses.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -1255,6 +1230,11 @@ async function importJSON(file, opts={}){
       try{ stores.receipts.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.settings.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.auditLog.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.laneHistory.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.weeklyReports.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.reloadOutcomes.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.bidHistory.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.documents.clear(); }catch(e){ console.warn("[FL]", e); }
     }
     const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
     putAll(stores.trips, safeTripArr);
@@ -1263,6 +1243,11 @@ async function importJSON(file, opts={}){
     putAll(stores.receipts, safeReceiptArr);
     putAll(stores.settings, safeSettingsArr);
     putAll(stores.auditLog, safeAuditArr);
+    putAll(stores.laneHistory, safeLaneHistoryArr);
+    putAll(stores.weeklyReports, safeWeeklyReportsArr);
+    putAll(stores.reloadOutcomes, safeReloadOutcomesArr);
+    putAll(stores.bidHistory, safeBidHistoryArr);
+    putAll(stores.documents, safeDocumentsArr);
     await waitTxn(txn);
     toast('Import complete');
   }catch(err){ toast('Import failed (invalid JSON or corrupted export).', true); }
@@ -3755,7 +3740,6 @@ const MORE_TILES = [
   { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
-  { icon:'🧠', title:'Master Source', sub:'Built-in Midwest Stack + Freight Logic source file', act:'source' },
   { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security' },
 ];
 
@@ -3777,7 +3761,6 @@ async function renderMore(){
         if (tile.hash) location.hash = tile.hash;
         else if (tile.act === 'import') openUniversalImport();
         else if (tile.act === 'export') exportJSON();
-        else if (tile.act === 'source') openMasterSourceCenter();
         else if (tile.act === 'security') openSecurityLockModal();
         else if (tile.act === 'weeklyReports') openWeeklyReports();
         else if (tile.act === 'documents') openDocumentVault();
@@ -4018,83 +4001,83 @@ const USA_MARKET_ROLES = { anchor: 18, support: 9, feeder: 2, transitional: -6, 
 
 const USA_MARKETS = {
   // ── Midwest ──
-  'chicago':       { zone:'MIDWEST', role:'anchor',       bias:'very_strong' },
-  'indianapolis':  { zone:'MIDWEST', role:'anchor',       bias:'very_strong' },
-  'columbus':      { zone:'MIDWEST', role:'anchor',       bias:'strong' },
-  'detroit':       { zone:'MIDWEST', role:'anchor',       bias:'strong' },
-  'cleveland':     { zone:'MIDWEST', role:'anchor',       bias:'strong' },
-  'louisville':    { zone:'MIDWEST', role:'support',      bias:'strong' },
-  'cincinnati':    { zone:'MIDWEST', role:'support',      bias:'strong' },
-  'dayton':        { zone:'MIDWEST', role:'support',      bias:'moderate' },
-  'toledo':        { zone:'MIDWEST', role:'support',      bias:'moderate' },
-  'st. louis':     { zone:'MIDWEST', role:'support',      bias:'moderate' },
-  'grand rapids':  { zone:'MIDWEST', role:'feeder',       bias:'moderate' },
-  'fort wayne':    { zone:'MIDWEST', role:'feeder',       bias:'moderate' },
-  'evansville':    { zone:'MIDWEST', role:'feeder',       bias:'moderate' },
+  'chicago':       { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:41.8781, lng:-87.6298 },
+  'indianapolis':  { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:39.7684, lng:-86.1581 },
+  'columbus':      { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:39.9612, lng:-82.9988 },
+  'detroit':       { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:42.3314, lng:-83.0458 },
+  'cleveland':     { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:41.4993, lng:-81.6944 },
+  'louisville':    { zone:'MIDWEST', role:'support',      bias:'strong',      lat:38.2527, lng:-85.7585 },
+  'cincinnati':    { zone:'MIDWEST', role:'support',      bias:'strong',      lat:39.1031, lng:-84.5120 },
+  'dayton':        { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:39.7589, lng:-84.1916 },
+  'toledo':        { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:41.6639, lng:-83.5552 },
+  'st. louis':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:38.6270, lng:-90.1994 },
+  'grand rapids':  { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:42.9634, lng:-85.6681 },
+  'fort wayne':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:41.0793, lng:-85.1394 },
+  'evansville':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:37.9716, lng:-87.5711 },
   // ── Southeast ──
-  'atlanta':       { zone:'SOUTHEAST', role:'anchor',     bias:'strong' },
-  'nashville':     { zone:'SOUTHEAST', role:'anchor',     bias:'strong' },
-  'charlotte':     { zone:'SOUTHEAST', role:'anchor',     bias:'moderate' },
-  'memphis':       { zone:'SOUTHEAST', role:'support',    bias:'moderate' },
-  'knoxville':     { zone:'SOUTHEAST', role:'support',    bias:'moderate' },
-  'greenville':    { zone:'SOUTHEAST', role:'support',    bias:'moderate' },
-  'raleigh':       { zone:'SOUTHEAST', role:'support',    bias:'moderate' },
-  'chattanooga':   { zone:'SOUTHEAST', role:'feeder',     bias:'moderate' },
-  'savannah':      { zone:'SOUTHEAST', role:'feeder',     bias:'weak' },
-  'jacksonville':  { zone:'SOUTHEAST', role:'transitional', bias:'weak' },
+  'atlanta':       { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:33.7490, lng:-84.3880 },
+  'nashville':     { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:36.1627, lng:-86.7816 },
+  'charlotte':     { zone:'SOUTHEAST', role:'anchor',     bias:'moderate',    lat:35.2271, lng:-80.8431 },
+  'memphis':       { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.1495, lng:-90.0490 },
+  'knoxville':     { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.9606, lng:-83.9207 },
+  'greenville':    { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:34.8526, lng:-82.3940 },
+  'raleigh':       { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.7796, lng:-78.6382 },
+  'chattanooga':   { zone:'SOUTHEAST', role:'feeder',     bias:'moderate',    lat:35.0456, lng:-85.3097 },
+  'savannah':      { zone:'SOUTHEAST', role:'feeder',     bias:'weak',        lat:32.0835, lng:-81.0998 },
+  'jacksonville':  { zone:'SOUTHEAST', role:'transitional', bias:'weak',      lat:30.3322, lng:-81.6557 },
   // ── Texas ──
-  'dallas':        { zone:'TEXAS', role:'anchor',         bias:'strong' },
-  'houston':       { zone:'TEXAS', role:'support',        bias:'moderate', notes:'compression risk' },
-  'austin':        { zone:'TEXAS', role:'support',        bias:'moderate' },
-  'san antonio':   { zone:'TEXAS', role:'support',        bias:'moderate' },
-  'fort worth':    { zone:'TEXAS', role:'support',        bias:'moderate' },
+  'dallas':        { zone:'TEXAS', role:'anchor',         bias:'strong',      lat:32.7767, lng:-96.7970 },
+  'houston':       { zone:'TEXAS', role:'support',        bias:'moderate',    lat:29.7604, lng:-95.3698, notes:'compression risk' },
+  'austin':        { zone:'TEXAS', role:'support',        bias:'moderate',    lat:30.2672, lng:-97.7431 },
+  'san antonio':   { zone:'TEXAS', role:'support',        bias:'moderate',    lat:29.4241, lng:-98.4936 },
+  'fort worth':    { zone:'TEXAS', role:'support',        bias:'moderate',    lat:32.7555, lng:-97.3308 },
   // ── Northeast / Mid-Atlantic ──
-  'pittsburgh':    { zone:'NORTHEAST', role:'anchor',     bias:'strong' },
-  'harrisburg':    { zone:'NORTHEAST', role:'anchor',     bias:'strong' },
-  'allentown':     { zone:'NORTHEAST', role:'anchor',     bias:'strong' },
-  'newark':        { zone:'MIDATLANTIC', role:'anchor',   bias:'strong' },
-  'baltimore':     { zone:'MIDATLANTIC', role:'anchor',   bias:'strong' },
-  'richmond':      { zone:'MIDATLANTIC', role:'anchor',   bias:'moderate' },
-  'philadelphia':  { zone:'MIDATLANTIC', role:'support',  bias:'moderate' },
-  'norfolk':       { zone:'MIDATLANTIC', role:'feeder',   bias:'weak' },
+  'pittsburgh':    { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.4406, lng:-79.9959 },
+  'harrisburg':    { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.2732, lng:-76.8867 },
+  'allentown':     { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.6023, lng:-75.4714 },
+  'newark':        { zone:'MIDATLANTIC', role:'anchor',   bias:'strong',      lat:40.7357, lng:-74.1724 },
+  'baltimore':     { zone:'MIDATLANTIC', role:'anchor',   bias:'strong',      lat:39.2904, lng:-76.6122 },
+  'richmond':      { zone:'MIDATLANTIC', role:'anchor',   bias:'moderate',    lat:37.5407, lng:-77.4360 },
+  'philadelphia':  { zone:'MIDATLANTIC', role:'support',  bias:'moderate',    lat:39.9526, lng:-75.1652 },
+  'norfolk':       { zone:'MIDATLANTIC', role:'feeder',   bias:'weak',        lat:36.8508, lng:-76.2859 },
   // ── Plains ──
-  'kansas city':   { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'feeder not anchor' },
-  'wichita':       { zone:'PLAINS', role:'feeder',        bias:'weak', notes:'secondary Plains feeder toward KC/OKC' },
-  'topeka':        { zone:'PLAINS', role:'feeder',        bias:'weak', notes:'small feeder — usually pair with KC' },
-  'joplin':        { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'crossroads but not a hold market' },
-  'springfield':   { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'MO feeder — use to reposition, not anchor' },
-  'oklahoma city': { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'acceptable escape/reposition market, not anchor' },
-  'okc':           { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'acceptable escape/reposition market, not anchor' },
-  'tulsa':         { zone:'PLAINS', role:'transitional',  bias:'weak', notes:'watch southbound compression — secondary only' },
-  'omaha':         { zone:'PLAINS', role:'feeder',        bias:'weak' },
-  'des moines':    { zone:'PLAINS', role:'feeder',        bias:'weak' },
-  'minneapolis':   { zone:'PLAINS', role:'support',       bias:'moderate' },
+  'kansas city':   { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:39.0997, lng:-94.5786, notes:'feeder not anchor' },
+  'wichita':       { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:37.6872, lng:-97.3301, notes:'secondary Plains feeder toward KC/OKC' },
+  'topeka':        { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:39.0558, lng:-95.6890, notes:'small feeder — usually pair with KC' },
+  'joplin':        { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:37.0842, lng:-94.5133, notes:'crossroads but not a hold market' },
+  'springfield':   { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:37.2090, lng:-93.2923, notes:'MO feeder — use to reposition, not anchor' },
+  'oklahoma city': { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:35.4676, lng:-97.5164, notes:'acceptable escape/reposition market, not anchor' },
+  'okc':           { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:35.4676, lng:-97.5164, notes:'acceptable escape/reposition market, not anchor' },
+  'tulsa':         { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:36.1540, lng:-95.9928, notes:'watch southbound compression — secondary only' },
+  'omaha':         { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:41.2565, lng:-95.9345 },
+  'des moines':    { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:41.5868, lng:-93.6250 },
+  'minneapolis':   { zone:'PLAINS', role:'support',       bias:'moderate',    lat:44.9778, lng:-93.2650 },
   // ── Mountain ──
-  'denver':        { zone:'MOUNTAIN', role:'transitional', bias:'weak' },
-  'salt lake city':{ zone:'MOUNTAIN', role:'transitional', bias:'weak' },
+  'denver':        { zone:'MOUNTAIN', role:'transitional', bias:'weak',       lat:39.7392, lng:-104.9903 },
+  'salt lake city':{ zone:'MOUNTAIN', role:'transitional', bias:'weak',       lat:40.7608, lng:-111.8910 },
   // ── West Coast ──
-  'los angeles':   { zone:'WEST_COAST', role:'anchor',    bias:'moderate' },
-  'seattle':       { zone:'WEST_COAST', role:'support',   bias:'moderate' },
-  'portland':      { zone:'WEST_COAST', role:'support',   bias:'moderate' },
-  'phoenix':       { zone:'WEST_COAST', role:'transitional', bias:'weak' },
+  'los angeles':   { zone:'WEST_COAST', role:'anchor',    bias:'moderate',    lat:34.0522, lng:-118.2437 },
+  'seattle':       { zone:'WEST_COAST', role:'support',   bias:'moderate',    lat:47.6062, lng:-122.3321 },
+  'portland':      { zone:'WEST_COAST', role:'support',   bias:'moderate',    lat:45.5051, lng:-122.6750 },
+  'phoenix':       { zone:'WEST_COAST', role:'transitional', bias:'weak',     lat:33.4484, lng:-112.0740 },
   // ── TRAP MARKETS ──
-  'miami':         { zone:'FLORIDA', role:'trap',         bias:'very_weak' },
-  'fort lauderdale':{ zone:'FLORIDA', role:'trap',        bias:'very_weak' },
-  'west palm beach':{ zone:'FLORIDA', role:'trap',        bias:'very_weak' },
-  'orlando':       { zone:'FLORIDA', role:'transitional', bias:'weak' },
-  'tampa':         { zone:'FLORIDA', role:'transitional', bias:'weak' },
-  'laredo':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'mcallen':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'brownsville':   { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'midland':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'odessa':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'el paso':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak' },
-  'duluth':        { zone:'PLAINS', role:'trap',          bias:'very_weak' },
-  'marquette':     { zone:'MIDWEST', role:'trap',         bias:'very_weak' },
-  'portland me':   { zone:'NORTHEAST', role:'trap',       bias:'very_weak' },
-  'bangor':        { zone:'NORTHEAST', role:'trap',       bias:'very_weak' },
-  'burlington vt': { zone:'NORTHEAST', role:'trap',       bias:'very_weak' },
-  'spokane':       { zone:'MOUNTAIN', role:'trap',        bias:'very_weak' },
+  'miami':         { zone:'FLORIDA', role:'trap',         bias:'very_weak',   lat:25.7617, lng:-80.1918 },
+  'fort lauderdale':{ zone:'FLORIDA', role:'trap',        bias:'very_weak',   lat:26.1224, lng:-80.1373 },
+  'west palm beach':{ zone:'FLORIDA', role:'trap',        bias:'very_weak',   lat:26.7153, lng:-80.0534 },
+  'orlando':       { zone:'FLORIDA', role:'transitional', bias:'weak',        lat:28.5383, lng:-81.3792 },
+  'tampa':         { zone:'FLORIDA', role:'transitional', bias:'weak',        lat:27.9506, lng:-82.4572 },
+  'laredo':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:27.5036, lng:-99.5075 },
+  'mcallen':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:26.2034, lng:-98.2300 },
+  'brownsville':   { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:25.9017, lng:-97.4975 },
+  'midland':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.9973, lng:-102.0779 },
+  'odessa':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.8457, lng:-102.3676 },
+  'el paso':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.7619, lng:-106.4850 },
+  'duluth':        { zone:'PLAINS', role:'trap',          bias:'very_weak',   lat:46.7867, lng:-92.1005 },
+  'marquette':     { zone:'MIDWEST', role:'trap',         bias:'very_weak',   lat:46.5436, lng:-87.3954 },
+  'portland me':   { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:43.6591, lng:-70.2568 },
+  'bangor':        { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:44.8016, lng:-68.7712 },
+  'burlington vt': { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:44.4759, lng:-73.2121 },
+  'spokane':       { zone:'MOUNTAIN', role:'trap',        bias:'very_weak',   lat:47.6588, lng:-117.4260 },
 };
 
 const USA_CORRIDORS = [
@@ -4163,38 +4146,38 @@ const CA_ZONES = {
 
 const CA_MARKETS = {
   // ── Ontario Core ──
-  'toronto':      { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong' },
-  'mississauga':  { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong' },
-  'brampton':     { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'strong' },
-  'hamilton':     { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'strong' },
-  'london on':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate' },
-  'kitchener':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate' },
-  'cambridge':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate' },
-  'windsor on':   { zone:'ON_CORE', role:'transitional', country:'CA', province:'ON', bias:'moderate' },
-  'oshawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate' },
-  'ottawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate' },
+  'toronto':      { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong', lat:43.6532, lng:-79.3832 },
+  'mississauga':  { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong', lat:43.5890, lng:-79.6441 },
+  'brampton':     { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'strong',      lat:43.7315, lng:-79.7624 },
+  'hamilton':     { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'strong',      lat:43.2557, lng:-79.8711 },
+  'london on':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:42.9849, lng:-81.2453 },
+  'kitchener':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.4516, lng:-80.4925 },
+  'cambridge':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.3616, lng:-80.3144 },
+  'windsor on':   { zone:'ON_CORE', role:'transitional', country:'CA', province:'ON', bias:'moderate',    lat:42.3149, lng:-83.0364 },
+  'oshawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.8971, lng:-78.8658 },
+  'ottawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:45.4215, lng:-75.6972 },
   // ── Quebec Core ──
-  'montreal':     { zone:'QC_CORE', role:'anchor',       country:'CA', province:'QC', bias:'strong' },
-  'laval':        { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate' },
-  'drummondville':{ zone:'QC_CORE', role:'feeder',       country:'CA', province:'QC', bias:'weak' },
-  'quebec city':  { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate' },
+  'montreal':     { zone:'QC_CORE', role:'anchor',       country:'CA', province:'QC', bias:'strong',      lat:45.5017, lng:-73.5673 },
+  'laval':        { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate',    lat:45.5720, lng:-73.6920 },
+  'drummondville':{ zone:'QC_CORE', role:'feeder',       country:'CA', province:'QC', bias:'weak',        lat:45.8797, lng:-72.4847 },
+  'quebec city':  { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate',    lat:46.8139, lng:-71.2080 },
   // ── Prairie Canada ──
-  'winnipeg':     { zone:'PRAIRIE_CA', role:'transitional',country:'CA', province:'MB', bias:'weak' },
-  'regina':       { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak' },
-  'saskatoon':    { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak' },
+  'winnipeg':     { zone:'PRAIRIE_CA', role:'transitional',country:'CA', province:'MB', bias:'weak',      lat:49.8951, lng:-97.1384 },
+  'regina':       { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak',  lat:50.4452, lng:-104.6189 },
+  'saskatoon':    { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak',  lat:52.1332, lng:-106.6700 },
   // ── Alberta Corridor ──
-  'calgary':      { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate' },
-  'edmonton':     { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate' },
-  'red deer':     { zone:'ALBERTA', role:'feeder',        country:'CA', province:'AB', bias:'weak' },
+  'calgary':      { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate',   lat:51.0447, lng:-114.0719 },
+  'edmonton':     { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate',   lat:53.5461, lng:-113.4938 },
+  'red deer':     { zone:'ALBERTA', role:'feeder',        country:'CA', province:'AB', bias:'weak',        lat:52.2681, lng:-113.8112 },
   // ── BC Lower Mainland ──
-  'vancouver':    { zone:'BC_LOWER', role:'anchor',       country:'CA', province:'BC', bias:'strong' },
-  'surrey':       { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate' },
-  'burnaby':      { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate' },
-  'richmond bc':  { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate' },
-  'abbotsford':   { zone:'BC_LOWER', role:'feeder',       country:'CA', province:'BC', bias:'weak' },
+  'vancouver':    { zone:'BC_LOWER', role:'anchor',       country:'CA', province:'BC', bias:'strong',      lat:49.2827, lng:-123.1207 },
+  'surrey':       { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.1044, lng:-122.8011 },
+  'burnaby':      { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.2488, lng:-122.9805 },
+  'richmond bc':  { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.1666, lng:-123.1336 },
+  'abbotsford':   { zone:'BC_LOWER', role:'feeder',       country:'CA', province:'BC', bias:'weak',        lat:49.0504, lng:-122.3045 },
   // ── Atlantic Canada ──
-  'moncton':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NB', bias:'weak' },
-  'halifax':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NS', bias:'weak' },
+  'moncton':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NB', bias:'weak',      lat:46.0878, lng:-64.7782 },
+  'halifax':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NS', bias:'weak',      lat:44.6488, lng:-63.5752 },
 };
 
 /** Border gateways — scored by commercial truck volume, efficiency, and expedite suitability.
@@ -5664,7 +5647,7 @@ async function mwInit(){
     try{
       const qk = await computeQuickKPIs();
       if (qk?.gross > 0) $('#mwWeeklyGross').value = qk.gross;
-    }catch(e){}
+    }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
   }
 
   // Market board
@@ -8738,8 +8721,16 @@ async function cloudPushBackup(silent = true){
     const trips = await dumpStore('trips'); const expenses = await dumpStore('expenses');
     const fuel = await dumpStore('fuel'); const settings = await dumpStore('settings');
     const receipts = await dumpStore('receipts');
-    const counts = { trips: trips.length, expenses: expenses.length, fuel: fuel.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts }, trips, expenses, fuel, settings, receipts });
+    const laneHistory = await dumpStore('laneHistory');
+    const weeklyReports = await dumpStore('weeklyReports');
+    const reloadOutcomes = await dumpStore('reloadOutcomes');
+    const bidHistory = await dumpStore('bidHistory');
+    const documents = await dumpStore('documents');
+    const counts = { trips: trips.length, expenses: expenses.length, fuel: fuel.length,
+      laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
+      reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
+      documents: documents.length };
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const res = await cloudFetch(config.url + '/backup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
     if (res.ok){ _lastCloudSync = Date.now(); _cloudRetryCount = 0; await setSetting('lastCloudSync', _lastCloudSync); if (!silent) toast('Backup synced'); cloudRefreshStatusPanel(); }
@@ -9026,7 +9017,7 @@ function openQuickEvalFlow(){
         if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
         if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
         if (hasData){
-          try { mwEvaluateLoad(); } catch(e){}
+          try { mwEvaluateLoad(); } catch(e){ console.warn('[FL] auto-evaluate after scan failed:', e); }
           toast('✓ Load scanned — verify fields and hit Evaluate');
         } else {
           toast('Scan complete — fill in any missing fields', false);
@@ -9209,7 +9200,7 @@ function renderLaneIntelHTML(intel){
 }
 
 // Hook lane recording into trip saves — call after saveTrip
-async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){} }
+async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); } }
 
 // ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
 function getWeekId(date){
@@ -9651,7 +9642,7 @@ async function cloudCheckServerTimestamp(){
     if (lastLocal === 0 && data.count > 0){
       showCloudSyncBanner('Backup found on server. Tap to restore your data.');
     }
-  } catch(e){}
+  } catch(e){ console.warn('[FL] cloud auto-check failed:', e); }
 }
 
 function showCloudSyncBanner(msg){
