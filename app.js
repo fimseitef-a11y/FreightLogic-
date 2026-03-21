@@ -316,7 +316,7 @@ async function copyTextToClipboard(text){
       await navigator.clipboard.writeText(text);
       return true;
     }
-  }catch{}
+  }catch(e){ console.warn('[FL] clipboard API failed:', e); }
   try{
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -328,7 +328,7 @@ async function copyTextToClipboard(text){
     document.execCommand('copy');
     ta.remove();
     return true;
-  }catch{}
+  }catch(e){ console.warn('[FL] execCommand copy failed:', e); }
   return false;
 }
 function downloadTextFile(filename, text, mime='text/plain;charset=utf-8'){
@@ -458,7 +458,7 @@ function numVal(id, def=0){
   return Number.isFinite(x) ? x : def;
 }
 
-function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch{} }
+function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch(e){ /* vibrate unsupported */ } }
 
 function toast(msg, isErr=false){
   const t = $('#toast');
@@ -1116,6 +1116,11 @@ async function exportJSON(){
     receipts: await dumpStore('receipts'),
     settings: await dumpStore('settings'),
     auditLog: await dumpStore('auditLog'),
+    laneHistory: await dumpStore('laneHistory'),
+    weeklyReports: await dumpStore('weeklyReports'),
+    reloadOutcomes: await dumpStore('reloadOutcomes'),
+    bidHistory: await dumpStore('bidHistory'),
+    documents: await dumpStore('documents'),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -5642,7 +5647,7 @@ async function mwInit(){
     try{
       const qk = await computeQuickKPIs();
       if (qk?.gross > 0) $('#mwWeeklyGross').value = qk.gross;
-    }catch(e){}
+    }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
   }
 
   // Market board
@@ -9012,7 +9017,7 @@ function openQuickEvalFlow(){
         if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
         if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
         if (hasData){
-          try { mwEvaluateLoad(); } catch(e){}
+          try { mwEvaluateLoad(); } catch(e){ console.warn('[FL] auto-evaluate after scan failed:', e); }
           toast('✓ Load scanned — verify fields and hit Evaluate');
         } else {
           toast('Scan complete — fill in any missing fields', false);
@@ -9195,7 +9200,7 @@ function renderLaneIntelHTML(intel){
 }
 
 // Hook lane recording into trip saves — call after saveTrip
-async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){} }
+async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); } }
 
 // ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
 function getWeekId(date){
@@ -9637,7 +9642,7 @@ async function cloudCheckServerTimestamp(){
     if (lastLocal === 0 && data.count > 0){
       showCloudSyncBanner('Backup found on server. Tap to restore your data.');
     }
-  } catch(e){}
+  } catch(e){ console.warn('[FL] cloud auto-check failed:', e); }
 }
 
 function showCloudSyncBanner(msg){
