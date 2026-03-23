@@ -1,5 +1,5 @@
-/* Freight Logic v18.0.0 — Browser Hardened Service Worker */
-const SW_VERSION = '18.0.0';
+/* Freight Logic v18.2.0 — Browser Hardened Service Worker */
+const SW_VERSION = '18.2.0';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
@@ -7,7 +7,8 @@ const APP_SHELL = './index.html';
 const CORE = [
   './', APP_SHELL, './app.js', './manifest.json',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
-  './icon180.png','./icon167.png','./icon152.png','./icon120.png','./favicon32.png','./favicon16.png'
+  './icon180.png','./icon167.png','./icon152.png','./icon120.png','./favicon32.png','./favicon16.png',
+  './sw-bridge.js'
 ];
 
 self.addEventListener('install', (event) => {
