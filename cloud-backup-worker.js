@@ -1,10 +1,13 @@
-// FreightLogic Cloud Backup Worker v4 - Multi-User
-// KV binding: BACKUPS | Secret: ADMIN_TOKEN
+// FreightLogic Cloud Backup Worker v5 - Multi-User + AI Evaluate
+// KV binding: BACKUPS
+// Secrets: ADMIN_TOKEN, OPENAI_API_KEY
+// Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
 
 export default {
   async fetch(request, env) {
-    var cors = {
-      'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*',
+    const allowedOrigin = env.ALLOWED_ORIGIN || '*';
+    const cors = {
+      'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Device-Id, X-Backup-Token, X-Admin-Token',
       'Content-Type': 'application/json'
@@ -14,139 +17,292 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    var url = new URL(request.url);
-    var path = url.pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
 
     try {
       // ADMIN ENDPOINTS
       if (path.startsWith('/admin/')) {
-        var adminToken = request.headers.get('X-Admin-Token');
+        const adminToken = request.headers.get('X-Admin-Token');
         if (!adminToken || adminToken !== env.ADMIN_TOKEN) {
           return json({ ok: false, error: 'Unauthorized' }, 401, cors);
         }
 
         if (request.method === 'POST' && path === '/admin/users') {
-          var body = await request.json().catch(function() { return {}; });
-          var name = (body.name || 'Driver').slice(0, 50);
-          var userId = 'u_' + crypto.randomUUID().slice(0, 12);
-          var token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
-          var rec = { userId: userId, name: name, token: token, createdAt: new Date().toISOString(), active: true };
+          const body = await request.json().catch(() => ({}));
+          const name = (body.name || 'Driver').slice(0, 50);
+          const userId = 'u_' + crypto.randomUUID().slice(0, 12);
+          const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
+          const rec = { userId, name, token, createdAt: new Date().toISOString(), active: true };
           await env.BACKUPS.put('token:' + token, JSON.stringify(rec));
           await env.BACKUPS.put('user:' + userId, JSON.stringify(rec));
-          return json({ ok: true, userId: userId, name: name, token: token }, 201, cors);
+          return json({ ok: true, userId, name, token }, 201, cors);
         }
 
         if (request.method === 'GET' && path === '/admin/users') {
-          var list = await env.BACKUPS.list({ prefix: 'user:' });
-          var users = [];
-          for (var i = 0; i < list.keys.length; i++) {
-            var val = await env.BACKUPS.get(list.keys[i].name);
-            if (val) { users.push(JSON.parse(val)); }
+          const list = await env.BACKUPS.list({ prefix: 'user:' });
+          const users = [];
+          for (const k of list.keys) {
+            const val = await env.BACKUPS.get(k.name);
+            if (val) users.push(JSON.parse(val));
           }
-          return json({ ok: true, users: users }, 200, cors);
+          return json({ ok: true, users }, 200, cors);
         }
 
         if (request.method === 'DELETE' && path.startsWith('/admin/users/')) {
-          var delId = path.split('/admin/users/')[1];
-          var userRec = await env.BACKUPS.get('user:' + delId);
-          if (!userRec) { return json({ ok: false, error: 'Not found' }, 404, cors); }
-          var parsed = JSON.parse(userRec);
+          const delId = path.split('/admin/users/')[1];
+          const userRec = await env.BACKUPS.get('user:' + delId);
+          if (!userRec) return json({ ok: false, error: 'Not found' }, 404, cors);
+          const parsed = JSON.parse(userRec);
           parsed.active = false;
           await env.BACKUPS.put('user:' + delId, JSON.stringify(parsed));
-          if (parsed.token) { await env.BACKUPS.delete('token:' + parsed.token); }
+          if (parsed.token) await env.BACKUPS.delete('token:' + parsed.token);
           return json({ ok: true, revoked: delId }, 200, cors);
         }
 
         return json({ ok: false, error: 'Not found' }, 404, cors);
       }
 
-      // DRIVER ENDPOINTS - require token
-      var driverToken = request.headers.get('X-Backup-Token');
+      // DRIVER ENDPOINTS — require token
+      const driverToken = request.headers.get('X-Backup-Token');
       if (!driverToken) {
         return json({ ok: false, error: 'Missing token' }, 401, cors);
       }
 
-      var tokenRaw = await env.BACKUPS.get('token:' + driverToken);
+      const tokenRaw = await env.BACKUPS.get('token:' + driverToken);
       if (!tokenRaw) {
         return json({ ok: false, error: 'Invalid token' }, 403, cors);
       }
 
-      var tokenData = JSON.parse(tokenRaw);
+      const tokenData = JSON.parse(tokenRaw);
       if (!tokenData.active) {
         return json({ ok: false, error: 'Token revoked' }, 403, cors);
       }
 
-      var driverUserId = tokenData.userId;
-      var deviceId = request.headers.get('X-Device-Id') || 'default';
+      const driverUserId = tokenData.userId;
+      const deviceId = request.headers.get('X-Device-Id') || 'default';
 
-      // POST /backup - save encrypted data
+      // POST /evaluate — AI load analysis via OpenAI
+      if (request.method === 'POST' && path === '/evaluate') {
+        // Rate limit: 20 requests per minute per user
+        const rateLimited = await checkRateLimit(env, driverUserId, 20);
+        if (rateLimited) {
+          return json({ ok: false, error: 'Rate limit exceeded. Please wait before evaluating again.' }, 429, cors);
+        }
+
+        if (!env.OPENAI_API_KEY) {
+          return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
+        }
+
+        const payload = await request.json().catch(() => null);
+        if (!payload) {
+          return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
+        }
+
+        const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
+        const prompt = buildEvalPrompt(payload);
+
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + env.OPENAI_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.3,
+            max_tokens: 600,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: prompt }
+            ]
+          })
+        });
+
+        if (!aiRes.ok) {
+          const errText = await aiRes.text().catch(() => '');
+          console.error('[FL] OpenAI error:', aiRes.status, errText);
+          return json({ ok: false, error: 'AI service error. Local evaluation is still valid.' }, 502, cors);
+        }
+
+        const aiJson = await aiRes.json();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(aiJson.choices[0].message.content);
+        } catch {
+          return json({ ok: false, error: 'AI response parse error. Local evaluation is still valid.' }, 502, cors);
+        }
+
+        return json({
+          ok: true,
+          ai: {
+            summary:       String(parsed.summary       || '').slice(0, 500),
+            verdict:       validateVerdict(parsed.verdict),
+            grade:         validateGrade(parsed.grade),
+            trueRpmBand:   String(parsed.trueRpmBand   || '').slice(0, 80),
+            bidAdvice:     String(parsed.bidAdvice      || '').slice(0, 300),
+            primaryReason: String(parsed.primaryReason || '').slice(0, 200),
+            risks:         sanitizeList(parsed.risks),
+            positives:     sanitizeList(parsed.positives),
+            nextMove:      String(parsed.nextMove       || '').slice(0, 200)
+          },
+          model,
+          user: tokenData.name
+        }, 200, cors);
+      }
+
+      // POST /backup — save encrypted data
       if (request.method === 'POST' && path === '/backup') {
-        var payload = await request.text();
+        const payload = await request.text();
         if (!payload || payload.length < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
         }
         if (payload.length > 5 * 1024 * 1024) {
           return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
         }
-        var ts = new Date().toISOString().replace(/[:.]/g, '-');
-        var key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
         await env.BACKUPS.put(key, payload);
 
-        // Rotate - keep last 3
-        var bp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
-        var bl = await env.BACKUPS.list({ prefix: bp });
+        // Rotate — keep last 3
+        const bp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
+        const bl = await env.BACKUPS.list({ prefix: bp });
         if (bl.keys.length > 3) {
-          var sorted = bl.keys.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
-          var delCount = sorted.length - 3;
-          for (var d = 0; d < delCount; d++) {
-            await env.BACKUPS.delete(sorted[d].name);
-          }
+          const sorted = bl.keys.slice().sort((a, b) => a.name < b.name ? -1 : 1);
+          const toDelete = sorted.slice(0, sorted.length - 3);
+          for (const k of toDelete) await env.BACKUPS.delete(k.name);
         }
 
-        return json({ ok: true, key: key, size: payload.length }, 200, cors);
+        return json({ ok: true, key, size: payload.length }, 200, cors);
       }
 
-      // GET /backup - retrieve latest
+      // GET /backup — retrieve latest
       if (request.method === 'GET' && path === '/backup') {
-        var gp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
-        var gl = await env.BACKUPS.list({ prefix: gp });
+        const gp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
+        const gl = await env.BACKUPS.list({ prefix: gp });
         if (gl.keys.length === 0) {
           return json({ ok: false, error: 'No backup found' }, 404, cors);
         }
-        var gsorted = gl.keys.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
-        var latest = gsorted[gsorted.length - 1].name;
-        var data = await env.BACKUPS.get(latest);
+        const gsorted = gl.keys.slice().sort((a, b) => a.name < b.name ? -1 : 1);
+        const data = await env.BACKUPS.get(gsorted[gsorted.length - 1].name);
         return new Response(data, { status: 200, headers: cors });
       }
 
-      // GET /list - list backups
+      // GET /list — list backups for this user+device
       if (request.method === 'GET' && path === '/list') {
-        var lp = 'user:' + driverUserId + ':device:' + deviceId + ':';
-        var ll = await env.BACKUPS.list({ prefix: lp });
-        return json({
-          ok: true,
-          backups: ll.keys.map(function(k) { return k.name; }),
-          count: ll.keys.length
-        }, 200, cors);
+        const lp = 'user:' + driverUserId + ':device:' + deviceId + ':';
+        const ll = await env.BACKUPS.list({ prefix: lp });
+        return json({ ok: true, backups: ll.keys.map(k => k.name), count: ll.keys.length }, 200, cors);
       }
 
-      // GET /status - check backup status
+      // GET /status — backup presence check
       if (request.method === 'GET' && path === '/status') {
-        var sp = 'user:' + driverUserId + ':device:' + deviceId + ':';
-        var sl = await env.BACKUPS.list({ prefix: sp });
+        const sp = 'user:' + driverUserId + ':device:' + deviceId + ':';
+        const sl = await env.BACKUPS.list({ prefix: sp });
         return json({ ok: true, hasBackup: sl.keys.length > 0, count: sl.keys.length, user: tokenData.name }, 200, cors);
+      }
+
+      // DELETE /backup — remove all backups for this user+device
+      if (request.method === 'DELETE' && path === '/backup') {
+        const dp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
+        const dl = await env.BACKUPS.list({ prefix: dp });
+        for (const k of dl.keys) await env.BACKUPS.delete(k.name);
+        return json({ ok: true, deleted: dl.keys.length }, 200, cors);
       }
 
       return json({ ok: false, error: 'Not found' }, 404, cors);
     } catch (err) {
+      console.error('[FL] Worker error:', err);
       return json({ ok: false, error: 'Server error' }, 500, cors);
     }
   }
 };
 
+// ─── Rate limiter (sliding minute window via KV) ──────────────────────────────
+
+async function checkRateLimit(env, userId, limit) {
+  const minute = Math.floor(Date.now() / 60000);
+  const key = 'rl:eval:' + userId + ':' + minute;
+  const raw = await env.BACKUPS.get(key);
+  const count = raw ? parseInt(raw, 10) : 0;
+  if (count >= limit) return true;
+  // TTL 120s so KV cleans itself up after two minutes
+  await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 120 });
+  return false;
+}
+
+// ─── Prompt builder ───────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are a Midwest Stack freight decision advisor for a cargo van expedited carrier.
+Your job is to evaluate a single load using the Midwest Stack operating framework.
+
+Core principles:
+- True RPM (revenue per loaded mile) is the primary metric — always calculate it.
+- Deadhead miles dilute true RPM and must be factored into every decision.
+- Density and reload potential matter — empty return lanes are traps.
+- Strategic under-floor loads are allowed only when explicitly justified.
+- Preserve operator discipline. Do not validate emotional moves.
+- Be direct and specific. No generic freight advice.
+
+You must respond with a single JSON object matching this exact structure:
+{
+  "summary": "2-3 sentence analysis of this load",
+  "verdict": "ACCEPT | NEGOTIATE | PASS | STRATEGIC_ONLY",
+  "grade": "A | B | C | D | E",
+  "trueRpmBand": "$X.XX – $X.XX / loaded mile",
+  "bidAdvice": "specific bid or negotiation guidance",
+  "primaryReason": "the single most important factor driving this verdict",
+  "risks": ["risk 1", "risk 2"],
+  "positives": ["positive 1", "positive 2"],
+  "nextMove": "what the operator should do right now"
+}`;
+
+function buildEvalPrompt(p) {
+  const lines = [
+    'Evaluate this load:',
+    '',
+    'Route: ' + (p.origin || 'unknown') + ' → ' + (p.destination || 'unknown'),
+    'Loaded miles: ' + (p.loadedMiles || 0),
+    'Deadhead miles: ' + (p.deadheadMiles || 0),
+    'Revenue: $' + (p.revenue || 0),
+    'True RPM (pre-calc): $' + (p.trueRpm || 'not provided'),
+    'Weekly gross context: $' + (p.weeklyGross || 'not provided'),
+    'Day of week: ' + (p.dayOfWeek || 'unknown'),
+    'Fatigue level: ' + (p.fatigue || 'not provided'),
+    'MPG: ' + (p.mpg || 'not provided'),
+    'Fuel price: $' + (p.fuelPrice || 'not provided'),
+    'Operating cost/mile: $' + (p.operatingCostPerMile || 'not provided'),
+    'Home location: ' + (p.homeLocation || 'not provided'),
+    'Strategic flag: ' + (p.strategic ? 'YES — ' + (p.strategicReason || 'no reason given') : 'No'),
+    'Currency: ' + (p.currency || 'USD'),
+    'Driver notes: ' + (p.notes || 'none'),
+  ];
+  return lines.join('\n');
+}
+
+// ─── Output sanitizers ────────────────────────────────────────────────────────
+
+const VALID_VERDICTS = new Set(['ACCEPT', 'NEGOTIATE', 'PASS', 'STRATEGIC_ONLY']);
+const VALID_GRADES   = new Set(['A', 'B', 'C', 'D', 'E']);
+
+function validateVerdict(v) {
+  const s = String(v || '').toUpperCase().replace(/\s+/g, '_');
+  return VALID_VERDICTS.has(s) ? s : 'PASS';
+}
+
+function validateGrade(g) {
+  const s = String(g || '').toUpperCase().trim();
+  return VALID_GRADES.has(s) ? s : 'C';
+}
+
+function sanitizeList(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.slice(0, 6).map(s => String(s).slice(0, 150));
+}
+
+// ─── Response helper ──────────────────────────────────────────────────────────
+
 function json(data, status, headers) {
-  return new Response(JSON.stringify(data), {
-    status: status,
-    headers: headers
-  });
+  return new Response(JSON.stringify(data), { status, headers });
 }

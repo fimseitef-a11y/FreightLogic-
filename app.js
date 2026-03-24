@@ -1,16 +1,13 @@
 (() => {
 'use strict';
 
-/** Freight Logic v18.0.0 USA ENGINE
+/** Freight Logic v18.2.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
- *  DAT API integration ready
- *  v18: Lane Memory, Weekly P&L, Broker Intel, GPS Deadhead, OCR v2,
- *       Rate Trends, Document Vault, Voice Input, Reload Scoring,
- *       Fatigue Scoring, Weekly Strategy, Seasonal Intel, Chain Analysis,
- *       Cost-Per-Day, Counter-Offer Memory, CPA Tax Package, Sync v2
+ *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
+ *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '18.0.0';
+const APP_VERSION = '18.2.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -34,7 +31,8 @@ window.addEventListener('beforeunload', cleanupListeners);
 window.addEventListener('pagehide', cleanupListeners);
 
 
-const DB_NAME = 'XpediteOps_v1';
+const DB_NAME = 'FreightLogic_v18';
+const DB_NAME_LEGACY = 'XpediteOps_v1';
 const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
@@ -53,7 +51,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // PRODUCTION READY: ✅ Security Hardened | ✅ Accessibility Compliant
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -646,6 +644,8 @@ async function initDB(){
           dv.createIndex('date', 'date', { unique: false });
         }
       }
+      // v11: User identity namespace — localUserId written at runtime by ensureLocalUserId()
+      if (old < 11) { /* no schema changes — settings store already holds the key */ }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -664,6 +664,75 @@ async function initDB(){
     };
     req.onblocked = () => toast('Close other Freight Logic tabs to finish upgrade', true);
   });
+}
+
+// ── Legacy DB migration: XpediteOps_v1 → FreightLogic_v18 ────────────────────
+async function migrateFromLegacyDB(){
+  const already = await getSetting('legacyMigrated', '');
+  if (already) return;
+
+  const STORES = ['trips','expenses','fuel','receipts','receiptBlobs',
+                  'settings','auditLog','marketBoard','laneHistory',
+                  'weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'];
+
+  const legacyDb = await new Promise(resolve => {
+    let resolved = false;
+    const req = indexedDB.open(DB_NAME_LEGACY);
+    req.onsuccess = () => { resolved = true; resolve(req.result); };
+    req.onerror  = () => resolve(null);
+    // If onupgradeneeded fires the legacy DB doesn't exist yet — abort and skip
+    req.onupgradeneeded = () => { try{ req.transaction.abort(); }catch{} if (!resolved){ resolved=true; resolve(null); } };
+  });
+
+  if (!legacyDb) { await setSetting('legacyMigrated', 'none'); return; }
+
+  // Confirm there is actual trip data worth migrating
+  const tripCount = await new Promise(resolve => {
+    try {
+      const r = legacyDb.transaction(['trips'],'readonly').objectStore('trips').count();
+      r.onsuccess = () => resolve(r.result);
+      r.onerror   = () => resolve(0);
+    } catch { resolve(0); }
+  });
+
+  if (tripCount === 0){ legacyDb.close(); await setSetting('legacyMigrated','empty'); return; }
+
+  let total = 0;
+  for (const storeName of STORES){
+    if (!legacyDb.objectStoreNames.contains(storeName)) continue;
+    if (!db.objectStoreNames.contains(storeName)) continue;
+
+    const records = await new Promise(resolve => {
+      try {
+        const r = legacyDb.transaction([storeName],'readonly').objectStore(storeName).getAll();
+        r.onsuccess = () => resolve(r.result || []);
+        r.onerror   = () => resolve([]);
+      } catch { resolve([]); }
+    });
+
+    if (!records.length) continue;
+    const { t, stores } = tx([storeName], 'readwrite');
+    for (const rec of records){ try{ stores[storeName].put(rec); }catch{} }
+    await waitTxn(t);
+    total += records.length;
+  }
+
+  legacyDb.close();
+  const stamp = new Date().toISOString();
+  await setSetting('legacyMigrated', stamp);
+  await setSetting('legacyMigratedCount', total);
+  console.info('[FL] Migrated', total, 'records from XpediteOps_v1 at', stamp);
+  if (total > 0) toast('Your data has been migrated (' + total + ' records) — everything is intact');
+}
+
+// ── User identity namespace ───────────────────────────────────────────────────
+async function ensureLocalUserId(){
+  const existing = await getSetting('localUserId', '');
+  if (existing) return existing;
+  const id = 'usr_' + crypto.randomUUID().replace(/-/g,'').slice(0, 16);
+  await setSetting('localUserId', id);
+  await setSetting('localUserCreatedAt', new Date().toISOString());
+  return id;
 }
 
 function tx(storeNames, mode='readonly'){
@@ -3711,7 +3780,7 @@ async function renderInsights(){
   }
   // Cloud Backup settings
   const cbPass = $('#cloudBackupPass');
-  if (cbPass) cbPass.value = await getSetting('cloudBackupPass', '') || '';
+  if (cbPass) cbPass.value = sessionStorage.getItem('fl_cloud_pass') || '';
   const cbToken = $('#cloudBackupToken');
   if (cbToken) cbToken.value = await getSetting('cloudBackupToken', '') || '';
   _lastCloudSync = Number(await getSetting('lastCloudSync', 0) || 0);
@@ -5278,6 +5347,11 @@ function _mwRenderDecision(out, d){
           deadheadPct: deadheadPct, weeklyGross: weeklyGross || 0,
           dayOfWeek: ($('#mwDayOfWeek')?.value || ''), fatigue: fatigue || 0,
           rulesGrade: grade, rulesVerdict: verdict,
+          notes: ($('#mwLoadNotes')?.value || '').trim(),
+          currency: ($('#mwCurrency')?.value || 'USD'),
+          mpg: MW.mpg, fuelPrice: MW.fuelBaseline,
+          operatingCostPerMile: opCPM || 0,
+          strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
         };
 
         const res = await cloudFetch(CLOUD_WORKER_URL + '/evaluate', {
@@ -5294,59 +5368,51 @@ function _mwRenderDecision(out, d){
         }
 
         const aiData = await res.json();
-        if (!aiData.ok || !aiData.evaluation){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis'; return; }
+        if (!aiData.ok || !aiData.ai){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis'; return; }
 
-        const ev = aiData.evaluation;
+        const ev = aiData.ai;
         const evGradeColor = ev.grade === 'A' ? 'var(--good)' : ev.grade === 'B' ? '#58a6ff' : ev.grade === 'C' ? 'var(--warn)' : ev.grade === 'D' ? '#ff8c42' : 'var(--bad)';
-        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : ev.verdict === 'REJECT' ? 'var(--bad)' : 'var(--warn)';
+        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : ev.verdict === 'NEGOTIATE' ? 'var(--warn)' : ev.verdict === 'STRATEGIC_ONLY' ? '#58a6ff' : 'var(--bad)';
 
         var aiHTML = '<div style="border:2px solid var(--accent-border);border-radius:var(--r);padding:14px;background:var(--surface-0)">';
-        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI STRATEGIC ANALYSIS</span></div>';
+        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI STRATEGIC ANALYSIS</span>';
+        if (aiData.model) aiHTML += '<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">' + escapeHtml(aiData.model) + '</span>';
+        aiHTML += '</div>';
 
         // Grade + Verdict
         aiHTML += '<div style="display:flex;gap:10px;margin-bottom:12px">';
         aiHTML += '<div style="text-align:center;padding:10px 16px;border-radius:8px;background:' + evGradeColor + '15;border:1px solid ' + evGradeColor + '40"><div style="font-size:28px;font-weight:800;color:' + evGradeColor + ';font-family:var(--font-mono)">' + escapeHtml(ev.grade || '?') + '</div><div style="font-size:10px;color:var(--text-tertiary)">AI Grade</div></div>';
-        aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;align-items:center;justify-content:center"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml(ev.verdict || '?') + '</div></div>';
-        aiHTML += '</div>';
+        aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml((ev.verdict || '?').replace(/_/g, ' ')) + '</div>';
+        if (ev.trueRpmBand) aiHTML += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono)">' + escapeHtml(ev.trueRpmBand) + '</div>';
+        aiHTML += '</div></div>';
 
         // Summary
         if (ev.summary) aiHTML += '<div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px">' + escapeHtml(ev.summary) + '</div>';
 
-        // Strengths & Risks
-        if (ev.strengths && ev.strengths.length){
+        // Primary reason
+        if (ev.primaryReason) aiHTML += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border-left:3px solid var(--accent-border)">' + escapeHtml(ev.primaryReason) + '</div>';
+
+        // Positives & Risks
+        if (ev.positives && ev.positives.length){
           aiHTML += '<div style="margin-bottom:8px">';
-          for (var s = 0; s < ev.strengths.length; s++){
-            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--good);font-weight:700">+</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.strengths[s]) + '</span></div>';
+          for (var s = 0; s < ev.positives.length; s++){
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--good);font-weight:700">+</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.positives[s]) + '</span></div>';
           }
           aiHTML += '</div>';
         }
         if (ev.risks && ev.risks.length){
           aiHTML += '<div style="margin-bottom:10px">';
           for (var r = 0; r < ev.risks.length; r++){
-            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--bad);font-weight:700">-</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.risks[r]) + '</span></div>';
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--bad);font-weight:700">−</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.risks[r]) + '</span></div>';
           }
           aiHTML += '</div>';
         }
 
-        // Bid Range
-        if (ev.bidRange){
-          aiHTML += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--surface-2)"><div style="font-size:10px;color:var(--text-tertiary)">Min</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--text)">$' + (ev.bidRange.min || 0).toLocaleString() + '</div></div>';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--accent-muted);border:1px solid var(--accent-border)"><div style="font-size:10px;color:var(--accent)">Target</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--accent-text)">$' + (ev.bidRange.target || 0).toLocaleString() + '</div></div>';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--surface-2)"><div style="font-size:10px;color:var(--text-tertiary)">Premium</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--text)">$' + (ev.bidRange.premium || 0).toLocaleString() + '</div></div>';
-          aiHTML += '</div>';
-        }
+        // Bid advice
+        if (ev.bidAdvice) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2);margin-bottom:8px"><b style="color:var(--text)">Bid:</b> ' + escapeHtml(ev.bidAdvice) + '</div>';
 
-        // Explanation
-        if (ev.explanation) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2)">' + escapeHtml(ev.explanation) + '</div>';
-
-        // Destination + Post-delivery
-        if (ev.destQuality || ev.postDelivery){
-          aiHTML += '<div style="display:flex;gap:8px;margin-top:8px;font-size:11px">';
-          if (ev.destQuality) aiHTML += '<div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Dest: <b>' + escapeHtml(ev.destQuality) + '</b></div>';
-          if (ev.postDelivery) aiHTML += '<div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">After: <b>' + escapeHtml(ev.postDelivery) + '</b></div>';
-          aiHTML += '</div>';
-        }
+        // Next move
+        if (ev.nextMove) aiHTML += '<div style="display:flex;gap:8px;margin-top:4px;font-size:11px"><div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Next: <b>' + escapeHtml(ev.nextMove) + '</b></div></div>';
 
         aiHTML += '</div>';
         resultDiv.innerHTML = aiHTML;
@@ -5356,6 +5422,12 @@ function _mwRenderDecision(out, d){
       aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis';
     });
   }
+
+  // Auto-run AI if token is configured — non-blocking, fails silently
+  (async () => {
+    const cfg = await cloudGetConfig();
+    if (cfg && aiBtn) aiBtn.click();
+  })().catch(() => {});
 }
 
 
@@ -8623,13 +8695,13 @@ let _cloudRetryCount = 0;
 let _cloudLastStatus = null;
 
 async function cloudIsEnabled(){
-  const pass = await getSetting('cloudBackupPass', '');
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
   const token = await getSetting('cloudBackupToken', '');
   return !!(pass && token);
 }
 
 async function cloudGetConfig(){
-  const pass = await getSetting('cloudBackupPass', '');
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
   const token = await getSetting('cloudBackupToken', '');
   if (!pass || !token) return null;
   return { url: CLOUD_WORKER_URL, pass, token };
@@ -8706,7 +8778,7 @@ async function cloudSaveConfig(){
     if (!res.ok){ const e = await res.json().catch(()=>({})); cloudSetSyncStatus('warn', e.error || 'Invalid token'); toast(e.error || 'Invalid token', true); return; }
   } catch(e) { cloudSetSyncStatus('warn', 'Cannot reach server'); }
   await setSetting('cloudBackupUrl', CLOUD_WORKER_URL);
-  await setSetting('cloudBackupPass', pass);
+  sessionStorage.setItem('fl_cloud_pass', pass);
   await setSetting('cloudBackupToken', token);
   toast('Cloud backup connected!'); cloudRefreshButtons(); cloudRefreshStatusPanel();
   await cloudPushBackup(false);
@@ -8831,7 +8903,7 @@ async function cloudAdminCreateUser(){
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
       if (result) result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn" onclick="cloudAdminShare(\'' + shareText.replace(/'/g, "\\'").replace(/\n/g, "\\n") + '\')">Share with ' + escapeHtml(data.name) + '</button></div>';
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
-      localStorage.setItem('fl_admin_token', adminToken);
+      sessionStorage.setItem('fl_admin_token', adminToken);
       cloudAdminLoadUsers();
     } else { const e = await res.json().catch(()=>({})); if (result) result.innerHTML = '<div style="color:var(--bad)">' + escapeHtml(e.error || 'Failed') + '</div>'; }
   } catch(e) { if (result) result.innerHTML = '<div style="color:var(--bad)">Network error</div>'; }
@@ -8843,7 +8915,7 @@ function cloudAdminShare(text){
 }
 
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || localStorage.getItem('fl_admin_token') || '').trim();
+  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_token') || '').trim();
   const list = $('#adminUserList'); if (!adminToken || !list) return;
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
@@ -8866,12 +8938,12 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = localStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
   $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
     if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
-    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupPass', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0);
+    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
     _lastCloudSync = 0; _cloudLastStatus = null;
     var pe = $('#cloudBackupPass'); if (pe) pe.value = ''; var te = $('#cloudBackupToken'); if (te) te.value = '';
     toast('Cloud backup disconnected'); cloudRefreshButtons(); cloudRefreshStatusPanel();
@@ -10797,6 +10869,8 @@ async function openCPAPackage(){
   try{
     $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
     db = await initDB();
+    await migrateFromLegacyDB().catch(e => console.warn('[FL] legacy migration error:', e));
+    await ensureLocalUserId().catch(()=>{});
     await requireAppUnlock();
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
