@@ -325,35 +325,7 @@ async function copyTextToClipboard(text){
   }catch(e){ console.warn('[FL] execCommand copy failed:', e); }
   return false;
 }
-function downloadTextFile(filename, text, mime='text/plain;charset=utf-8'){
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=> URL.revokeObjectURL(url), 2500);
-}
-function markdownToSimpleHtml(md){
-  const esc = escapeHtml(md || '');
-  return esc
-    .replace(/^###\s+(.+)$/gm, '<h3 style="margin:16px 0 8px;font-size:13px;letter-spacing:.3px;color:var(--text)">$1</h3>')
-    .replace(/^##\s+(.+)$/gm, '<h3 style="margin:18px 0 8px;font-size:14px;letter-spacing:.3px;color:var(--text)">$1</h3>')
-    .replace(/^#\s+(.+)$/gm, '<h3 style="margin:18px 0 8px;font-size:15px;letter-spacing:.3px;color:var(--text)">$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/^-\s+(.+)$/gm, '<div style="margin:4px 0 4px 14px;position:relative"><span style="position:absolute;left:-12px">•</span>$1</div>')
-    .replace(/`([^`]+)`/g, '<code style="font-family:var(--font-mono);font-size:12px;background:var(--surface-0);padding:1px 4px;border-radius:6px">$1</code>')
-    .replace(/\n{2,}/g, '</p><p style="margin:10px 0;color:var(--text-secondary);line-height:1.45">')
-    .replace(/^(?!<h3|<div)/, '<p style="margin:10px 0;color:var(--text-secondary);line-height:1.45">')
-    .concat('</p>')
-    .replace(/<p[^>]*><\/p>/g, '')
-    .replace(/<p[^>]*>(<h3)/g, '$1')
-    .replace(/(<\/h3>)<\/p>/g, '$1')
-    .replace(/<p[^>]*>(<div)/g, '$1')
-    .replace(/(<\/div>)<\/p>/g, '$1');
-}
+
 
 function showQuarterlyNudge(msg){
   const el = document.createElement('div');
@@ -2530,8 +2502,8 @@ function generateBidRange(totalMiles, opts={}){
   };
   // Cross-border loads need higher threshold to cover friction
   const borderAdj = crossBorder ? 0.10 : 0;
-  // Urgency allows premium pricing
-  const urgAdj = urgencyBoost;
+  // Urgency allows premium pricing — cap at $0.30/mi regardless of caller
+  const urgAdj = Math.min(0.30, urgencyBoost);
 
   const bids = {};
   for (const [key, tier] of Object.entries(tiers)){
@@ -2596,11 +2568,6 @@ function detectUrgency(text){
 }
 
 /** Render urgency badge */
-function urgencyBadgeHTML(urgency){
-  if (!urgency || !urgency.isUrgent) return '';
-  return `<span class="tag" style="background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4);color:var(--warn);font-weight:700">⚡ ${escapeHtml(urgency.matches.join(' • '))}</span>`;
-}
-
 // ════════════════════════════════════════════════════════════════
 // CONFIGURABLE SCORING WEIGHTS (Spec §9)
 // Default weights match spec. User can adjust via settings.
@@ -2619,15 +2586,6 @@ const DEFAULT_SCORE_WEIGHTS = Object.freeze({
 });
 
 /** Get scoring weights — returns user-configured or defaults */
-async function getScoreWeights(){
-  const saved = await getSetting('scoreWeights', null);
-  if (saved && typeof saved === 'object'){
-    // Merge with defaults to ensure all keys exist
-    return { ...DEFAULT_SCORE_WEIGHTS, ...saved };
-  }
-  return { ...DEFAULT_SCORE_WEIGHTS };
-}
-
 // ── Score badge for trip rows ──
 function scoreBadgeHTML(score){
   if (!score) return '';
@@ -3867,12 +3825,6 @@ async function renderMore(){
 
 
 
-function getCurrentCloudNamespace(){
-  const profileId = (localStorage.getItem('fl_profile_id') || '').trim() || 'default';
-  const backupSpace = (localStorage.getItem('fl_backup_space') || '').trim() || profileId;
-  return { profileId, backupSpace };
-}
-
 function openSecurityLockModal(){
   const body = document.createElement('div');
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
@@ -3920,32 +3872,6 @@ async function requireAppUnlock(){
     };
     document.getElementById('unlockNow')?.addEventListener('click', tryUnlock);
     document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock(); });
-  });
-}
-
-async function chooseRestoreModePreview(meta={}, key=''){
-  return await new Promise((resolve)=>{
-    const counts = meta.counts || {};
-    const body = document.createElement('div');
-    body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
-      <div class="muted" style="font-size:12px;margin-bottom:12px">Choose how this cloud restore should be applied.</div>
-      <div class="row" style="margin-bottom:12px">
-        <div class="pill"><span class="muted">Saved</span> <b>${escapeHtml((meta.savedAt||'unknown').slice(0,16))}</b></div>
-        <div class="pill"><span class="muted">Trips</span> <b>${Number(counts.trips||0)}</b></div>
-        <div class="pill"><span class="muted">Expenses</span> <b>${Number(counts.expenses||0)}</b></div>
-        <div class="pill"><span class="muted">Fuel</span> <b>${Number(counts.fuel||0)}</b></div>
-      </div>
-      <div class="muted" style="font-size:11px;margin-bottom:12px;word-break:break-all">Backup key: ${escapeHtml(key || 'unknown')}</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <button class="btn primary" id="restoreMergeBtn" style="justify-content:flex-start">MERGE <span class="muted" style="font-weight:400">Add/update matching records</span></button>
-        <button class="btn" id="restoreSkipBtn" style="justify-content:flex-start">SKIP <span class="muted" style="font-weight:400">Import only new records</span></button>
-        <button class="btn danger" id="restoreReplaceBtn" style="justify-content:flex-start">REPLACE <span class="muted" style="font-weight:400">Replace local trips, expenses, fuel</span></button>
-      </div>
-    </div>`;
-    openModal('Restore Preview', body);
-    body.querySelector('#restoreMergeBtn')?.addEventListener('click', ()=>{ closeModal(); resolve('merge'); });
-    body.querySelector('#restoreSkipBtn')?.addEventListener('click', ()=>{ closeModal(); resolve('skip'); });
-    body.querySelector('#restoreReplaceBtn')?.addEventListener('click', ()=>{ closeModal(); resolve('replace'); });
   });
 }
 
@@ -4442,11 +4368,6 @@ function usaLookupMarket(city){
     if (norm.includes(key) || key.includes(norm)) return { city: key, ...data };
   }
   return null;
-}
-
-function usaLookupZone(city){
-  const mkt = usaLookupMarket(city);
-  return mkt ? mkt.zone : null;
 }
 
 function usaFindCorridor(origZone, destZone){
