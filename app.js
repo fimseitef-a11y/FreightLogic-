@@ -7,7 +7,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '18.2.0';
+const APP_VERSION = '19.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
