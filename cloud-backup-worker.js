@@ -1,4 +1,4 @@
-// FreightLogic Cloud Backup Worker v5 - Multi-User + AI Evaluate
+// FreightLogic Cloud Backup Worker v6 - Multi-User + AI Evaluate + AI Extract
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
 // Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
@@ -85,7 +85,7 @@ export default {
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
         // Rate limit: 20 requests per minute per user
-        const rateLimited = await checkRateLimit(env, driverUserId, 20);
+        const rateLimited = await checkRateLimit(env, driverUserId, 20, 'eval');
         if (rateLimited) {
           return json({ ok: false, error: 'Rate limit exceeded. Please wait before evaluating again.' }, 429, cors);
         }
@@ -146,6 +146,80 @@ export default {
             risks:         sanitizeList(parsed.risks),
             positives:     sanitizeList(parsed.positives),
             nextMove:      String(parsed.nextMove       || '').slice(0, 200)
+          },
+          model,
+          user: tokenData.name
+        }, 200, cors);
+      }
+
+      // POST /extract — AI field extraction from raw load text
+      if (request.method === 'POST' && path === '/extract') {
+        // Rate limit: 10 requests per minute per user
+        const rateLimited = await checkRateLimit(env, driverUserId, 10, 'extract');
+        if (rateLimited) {
+          return json({ ok: false, error: 'Rate limit exceeded. Please wait before extracting again.' }, 429, cors);
+        }
+
+        if (!env.OPENAI_API_KEY) {
+          return json({ ok: false, error: 'AI extraction not configured on server.' }, 500, cors);
+        }
+
+        const payload = await request.json().catch(() => null);
+        if (!payload || !payload.text) {
+          return json({ ok: false, error: 'Missing required field: text' }, 400, cors);
+        }
+
+        const rawText = String(payload.text).slice(0, 4000);
+        const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
+
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + env.OPENAI_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            max_tokens: 400,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
+              { role: 'user', content: 'Extract structured fields from this load text:\n\n' + rawText }
+            ]
+          })
+        });
+
+        if (!aiRes.ok) {
+          const errText = await aiRes.text().catch(() => '');
+          console.error('[FL] OpenAI extract error:', aiRes.status, errText);
+          return json({ ok: false, error: 'AI service error.' }, 502, cors);
+        }
+
+        const aiJson = await aiRes.json();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(aiJson.choices[0].message.content);
+        } catch {
+          return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
+        }
+
+        return json({
+          ok: true,
+          fields: {
+            orderNo:      String(parsed.orderNo      || '').slice(0, 40),
+            customer:     String(parsed.customer     || '').slice(0, 80),
+            broker:       String(parsed.broker       || '').slice(0, 80),
+            origin:       String(parsed.origin       || '').slice(0, 100),
+            destination:  String(parsed.destination  || '').slice(0, 100),
+            pay:          finitePositive(parsed.pay),
+            loadedMiles:  intPositive(parsed.loadedMiles),
+            deadheadMiles:intPositive(parsed.deadheadMiles),
+            pickupDate:   safeDate(parsed.pickupDate),
+            deliveryDate: safeDate(parsed.deliveryDate),
+            weight:       intPositive(parsed.weight),
+            commodity:    String(parsed.commodity    || '').slice(0, 80),
+            notes:        String(parsed.notes        || '').slice(0, 300),
           },
           model,
           user: tokenData.name
@@ -221,9 +295,9 @@ export default {
 
 // ─── Rate limiter (sliding minute window via KV) ──────────────────────────────
 
-async function checkRateLimit(env, userId, limit) {
+async function checkRateLimit(env, userId, limit, ns = 'eval') {
   const minute = Math.floor(Date.now() / 60000);
-  const key = 'rl:eval:' + userId + ':' + minute;
+  const key = 'rl:' + ns + ':' + userId + ':' + minute;
   const raw = await env.BACKUPS.get(key);
   const count = raw ? parseInt(raw, 10) : 0;
   if (count >= limit) return true;
@@ -299,6 +373,51 @@ function validateGrade(g) {
 function sanitizeList(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.slice(0, 6).map(s => String(s).slice(0, 150));
+}
+
+// ─── Extract system prompt ────────────────────────────────────────────────────
+
+const EXTRACT_SYSTEM_PROMPT = `You are a freight data parser for an expedited cargo van operator app.
+Extract structured fields from raw load board text, rate confirmations, or OCR output.
+Return ONLY a JSON object with these fields (omit or use null for fields not found):
+{
+  "orderNo": "load or order number string",
+  "customer": "shipper or customer name",
+  "broker": "freight broker or dispatcher name",
+  "origin": "City, ST format if possible",
+  "destination": "City, ST format if possible",
+  "pay": numeric total rate in USD (no $ symbol),
+  "loadedMiles": integer loaded miles,
+  "deadheadMiles": integer deadhead miles to pickup,
+  "pickupDate": "YYYY-MM-DD",
+  "deliveryDate": "YYYY-MM-DD",
+  "weight": integer pounds,
+  "commodity": "freight type or description",
+  "notes": "any special instructions, hazmat, team required, etc."
+}
+Be precise. Do not invent data. If a field is ambiguous or missing, omit it.`;
+
+// ─── Extract output sanitizers ────────────────────────────────────────────────
+
+function finitePositive(v) {
+  const n = parseFloat(v);
+  return (Number.isFinite(n) && n > 0) ? Math.round(n * 100) / 100 : null;
+}
+
+function intPositive(v) {
+  const n = parseInt(v, 10);
+  return (Number.isFinite(n) && n > 0) ? n : null;
+}
+
+function safeDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  // Accept YYYY-MM-DD only
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2035) return s;
+  }
+  return null;
 }
 
 // ─── Response helper ──────────────────────────────────────────────────────────
