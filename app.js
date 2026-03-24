@@ -6490,7 +6490,7 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
   }
 
   // Delegate — wait for buttons to exist in DOM before binding
-  body.addEventListener('click', (e) => {
+  body.addEventListener('click', async (e) => {
     if (e.target.id === 'snapAccept' && _parsedData){
       haptic();
       closeModal();
