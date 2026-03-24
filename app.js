@@ -3711,7 +3711,7 @@ async function renderInsights(){
   }
   // Cloud Backup settings
   const cbPass = $('#cloudBackupPass');
-  if (cbPass) cbPass.value = await getSetting('cloudBackupPass', '') || '';
+  if (cbPass) cbPass.value = sessionStorage.getItem('fl_cloud_pass') || '';
   const cbToken = $('#cloudBackupToken');
   if (cbToken) cbToken.value = await getSetting('cloudBackupToken', '') || '';
   _lastCloudSync = Number(await getSetting('lastCloudSync', 0) || 0);
@@ -8626,13 +8626,13 @@ let _cloudRetryCount = 0;
 let _cloudLastStatus = null;
 
 async function cloudIsEnabled(){
-  const pass = await getSetting('cloudBackupPass', '');
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
   const token = await getSetting('cloudBackupToken', '');
   return !!(pass && token);
 }
 
 async function cloudGetConfig(){
-  const pass = await getSetting('cloudBackupPass', '');
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
   const token = await getSetting('cloudBackupToken', '');
   if (!pass || !token) return null;
   return { url: CLOUD_WORKER_URL, pass, token };
@@ -8709,7 +8709,7 @@ async function cloudSaveConfig(){
     if (!res.ok){ const e = await res.json().catch(()=>({})); cloudSetSyncStatus('warn', e.error || 'Invalid token'); toast(e.error || 'Invalid token', true); return; }
   } catch(e) { cloudSetSyncStatus('warn', 'Cannot reach server'); }
   await setSetting('cloudBackupUrl', CLOUD_WORKER_URL);
-  await setSetting('cloudBackupPass', pass);
+  sessionStorage.setItem('fl_cloud_pass', pass);
   await setSetting('cloudBackupToken', token);
   toast('Cloud backup connected!'); cloudRefreshButtons(); cloudRefreshStatusPanel();
   await cloudPushBackup(false);
@@ -8834,7 +8834,7 @@ async function cloudAdminCreateUser(){
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
       if (result) result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn" onclick="cloudAdminShare(\'' + shareText.replace(/'/g, "\\'").replace(/\n/g, "\\n") + '\')">Share with ' + escapeHtml(data.name) + '</button></div>';
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
-      localStorage.setItem('fl_admin_token', adminToken);
+      sessionStorage.setItem('fl_admin_token', adminToken);
       cloudAdminLoadUsers();
     } else { const e = await res.json().catch(()=>({})); if (result) result.innerHTML = '<div style="color:var(--bad)">' + escapeHtml(e.error || 'Failed') + '</div>'; }
   } catch(e) { if (result) result.innerHTML = '<div style="color:var(--bad)">Network error</div>'; }
@@ -8846,7 +8846,7 @@ function cloudAdminShare(text){
 }
 
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || localStorage.getItem('fl_admin_token') || '').trim();
+  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_token') || '').trim();
   const list = $('#adminUserList'); if (!adminToken || !list) return;
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
@@ -8869,12 +8869,12 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = localStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
   $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
     if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
-    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupPass', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0);
+    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
     _lastCloudSync = 0; _cloudLastStatus = null;
     var pe = $('#cloudBackupPass'); if (pe) pe.value = ''; var te = $('#cloudBackupToken'); if (te) te.value = '';
     toast('Cloud backup disconnected'); cloudRefreshButtons(); cloudRefreshStatusPanel();
