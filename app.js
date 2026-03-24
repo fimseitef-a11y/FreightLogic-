@@ -7,7 +7,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '18.2.0';
+const APP_VERSION = '19.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -6235,6 +6235,7 @@ function openSnapLoad(preFile){
     <textarea id="snapPaste" placeholder="Paste load text here (example: Origin Pryor, OK Destination Tolleson, AZ Deadhead 36 mi Distance 1161 mi Price $2400)" style="width:100%;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--text);font-size:12px;line-height:1.35;margin-bottom:8px"></textarea>
     <div class="btn-row" style="margin-bottom:12px">
       <button class="btn" id="snapParsePaste">🧠 Analyze Paste</button>
+      <button class="btn" id="snapAiExtract">✨ AI Extract</button>
       <button class="btn" id="snapCsvBtn">📄 Import CSV</button>
     </div>
     <input type="file" id="snapCsvInput" accept=".csv,text/csv" style="display:none" />
@@ -6529,6 +6530,40 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
         _parsedData = parseLoadText(t);
         renderSingleParsed(_parsedData);
         toast('Parsed 1 load');
+      }
+    }
+    if (e.target.id === 'snapAiExtract'){
+      haptic(15);
+      const t = ($('#snapPaste', body)?.value || '').trim();
+      if (!t){ toast('Paste some load text first', true); return; }
+      const btn = e.target;
+      btn.disabled = true; btn.textContent = '⏳ Extracting…';
+      try {
+        const fields = await cloudExtractLoad(t);
+        _parsedData = {
+          orderNo:       fields.orderNo       || '',
+          customer:      fields.customer      || '',
+          origin:        fields.origin        || '',
+          destination:   fields.destination   || '',
+          pay:           fields.pay           || 0,
+          loadedMiles:   fields.loadedMiles   || 0,
+          deadheadMiles: fields.deadheadMiles || 0,
+          pickupDate:    fields.pickupDate    || '',
+          deliveryDate:  fields.deliveryDate  || '',
+          weight:        fields.weight        || 0,
+          commodity:     fields.commodity     || '',
+          notes:         fields.notes         || '',
+          _rawText:      t.slice(0, 2000),
+          _confidence:   100,
+        };
+        renderSingleParsed(_parsedData);
+        $('#snapResults', body).style.display = 'block';
+        $('#snapStatus', body).style.display = 'none';
+        toast('AI extraction complete');
+      } catch(err){
+        toast(err.message || 'AI extraction failed', true);
+      } finally {
+        btn.disabled = false; btn.textContent = '✨ AI Extract';
       }
     }
     if (e.target.id === 'snapCsvBtn'){
@@ -8671,6 +8706,22 @@ async function cloudDecrypt(encrypted, iv, salt, passphrase){
 async function cloudFetch(url, opts = {}, timeoutMs = 15000){
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeoutMs);
   try { const r = await fetch(url, { ...opts, signal: c.signal }); clearTimeout(t); return r; } catch(e) { clearTimeout(t); throw e; }
+}
+
+/** Call /extract on the worker to parse raw load text into structured fields via AI.
+ *  Returns the `fields` object on success, or throws with a user-facing message.
+ */
+async function cloudExtractLoad(rawText){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) throw new Error('Cloud backup not configured. Add a backup token in Settings to use AI Extract.');
+  const res = await cloudFetch(CLOUD_WORKER_URL + '/extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
+    body: JSON.stringify({ text: String(rawText).slice(0, 4000) }),
+  }, 20000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
+  return data.fields;
 }
 
 async function cloudTestConnection(){
