@@ -5278,6 +5278,11 @@ function _mwRenderDecision(out, d){
           deadheadPct: deadheadPct, weeklyGross: weeklyGross || 0,
           dayOfWeek: ($('#mwDayOfWeek')?.value || ''), fatigue: fatigue || 0,
           rulesGrade: grade, rulesVerdict: verdict,
+          notes: ($('#mwLoadNotes')?.value || '').trim(),
+          currency: ($('#mwCurrency')?.value || 'USD'),
+          mpg: MW.mpg, fuelPrice: MW.fuelBaseline,
+          operatingCostPerMile: opCPM || 0,
+          strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
         };
 
         const res = await cloudFetch(CLOUD_WORKER_URL + '/evaluate', {
@@ -5294,59 +5299,51 @@ function _mwRenderDecision(out, d){
         }
 
         const aiData = await res.json();
-        if (!aiData.ok || !aiData.evaluation){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis'; return; }
+        if (!aiData.ok || !aiData.ai){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis'; return; }
 
-        const ev = aiData.evaluation;
+        const ev = aiData.ai;
         const evGradeColor = ev.grade === 'A' ? 'var(--good)' : ev.grade === 'B' ? '#58a6ff' : ev.grade === 'C' ? 'var(--warn)' : ev.grade === 'D' ? '#ff8c42' : 'var(--bad)';
-        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : ev.verdict === 'REJECT' ? 'var(--bad)' : 'var(--warn)';
+        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : ev.verdict === 'NEGOTIATE' ? 'var(--warn)' : ev.verdict === 'STRATEGIC_ONLY' ? '#58a6ff' : 'var(--bad)';
 
         var aiHTML = '<div style="border:2px solid var(--accent-border);border-radius:var(--r);padding:14px;background:var(--surface-0)">';
-        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI STRATEGIC ANALYSIS</span></div>';
+        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI STRATEGIC ANALYSIS</span>';
+        if (aiData.model) aiHTML += '<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">' + escapeHtml(aiData.model) + '</span>';
+        aiHTML += '</div>';
 
         // Grade + Verdict
         aiHTML += '<div style="display:flex;gap:10px;margin-bottom:12px">';
         aiHTML += '<div style="text-align:center;padding:10px 16px;border-radius:8px;background:' + evGradeColor + '15;border:1px solid ' + evGradeColor + '40"><div style="font-size:28px;font-weight:800;color:' + evGradeColor + ';font-family:var(--font-mono)">' + escapeHtml(ev.grade || '?') + '</div><div style="font-size:10px;color:var(--text-tertiary)">AI Grade</div></div>';
-        aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;align-items:center;justify-content:center"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml(ev.verdict || '?') + '</div></div>';
-        aiHTML += '</div>';
+        aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml((ev.verdict || '?').replace(/_/g, ' ')) + '</div>';
+        if (ev.trueRpmBand) aiHTML += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono)">' + escapeHtml(ev.trueRpmBand) + '</div>';
+        aiHTML += '</div></div>';
 
         // Summary
         if (ev.summary) aiHTML += '<div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px">' + escapeHtml(ev.summary) + '</div>';
 
-        // Strengths & Risks
-        if (ev.strengths && ev.strengths.length){
+        // Primary reason
+        if (ev.primaryReason) aiHTML += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border-left:3px solid var(--accent-border)">' + escapeHtml(ev.primaryReason) + '</div>';
+
+        // Positives & Risks
+        if (ev.positives && ev.positives.length){
           aiHTML += '<div style="margin-bottom:8px">';
-          for (var s = 0; s < ev.strengths.length; s++){
-            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--good);font-weight:700">+</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.strengths[s]) + '</span></div>';
+          for (var s = 0; s < ev.positives.length; s++){
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--good);font-weight:700">+</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.positives[s]) + '</span></div>';
           }
           aiHTML += '</div>';
         }
         if (ev.risks && ev.risks.length){
           aiHTML += '<div style="margin-bottom:10px">';
           for (var r = 0; r < ev.risks.length; r++){
-            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--bad);font-weight:700">-</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.risks[r]) + '</span></div>';
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--bad);font-weight:700">−</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.risks[r]) + '</span></div>';
           }
           aiHTML += '</div>';
         }
 
-        // Bid Range
-        if (ev.bidRange){
-          aiHTML += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--surface-2)"><div style="font-size:10px;color:var(--text-tertiary)">Min</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--text)">$' + (ev.bidRange.min || 0).toLocaleString() + '</div></div>';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--accent-muted);border:1px solid var(--accent-border)"><div style="font-size:10px;color:var(--accent)">Target</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--accent-text)">$' + (ev.bidRange.target || 0).toLocaleString() + '</div></div>';
-          aiHTML += '<div style="text-align:center;padding:8px;border-radius:6px;background:var(--surface-2)"><div style="font-size:10px;color:var(--text-tertiary)">Premium</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--text)">$' + (ev.bidRange.premium || 0).toLocaleString() + '</div></div>';
-          aiHTML += '</div>';
-        }
+        // Bid advice
+        if (ev.bidAdvice) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2);margin-bottom:8px"><b style="color:var(--text)">Bid:</b> ' + escapeHtml(ev.bidAdvice) + '</div>';
 
-        // Explanation
-        if (ev.explanation) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2)">' + escapeHtml(ev.explanation) + '</div>';
-
-        // Destination + Post-delivery
-        if (ev.destQuality || ev.postDelivery){
-          aiHTML += '<div style="display:flex;gap:8px;margin-top:8px;font-size:11px">';
-          if (ev.destQuality) aiHTML += '<div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Dest: <b>' + escapeHtml(ev.destQuality) + '</b></div>';
-          if (ev.postDelivery) aiHTML += '<div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">After: <b>' + escapeHtml(ev.postDelivery) + '</b></div>';
-          aiHTML += '</div>';
-        }
+        // Next move
+        if (ev.nextMove) aiHTML += '<div style="display:flex;gap:8px;margin-top:4px;font-size:11px"><div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Next: <b>' + escapeHtml(ev.nextMove) + '</b></div></div>';
 
         aiHTML += '</div>';
         resultDiv.innerHTML = aiHTML;
@@ -5356,6 +5353,12 @@ function _mwRenderDecision(out, d){
       aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis';
     });
   }
+
+  // Auto-run AI if token is configured — non-blocking, fails silently
+  (async () => {
+    const cfg = await cloudGetConfig();
+    if (cfg && aiBtn) aiBtn.click();
+  })().catch(() => {});
 }
 
 
