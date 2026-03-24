@@ -37,18 +37,14 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v17.0.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v18.2.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
-// TIER 6 OMEGA FIXES APPLIED:
-// • XSS Protection (innerHTML sanitization)
-// • CSV Injection Protection (formula neutralization)
-// • IndexedDB Error Recovery (quota + corruption handling)
-// • Memory Leak Prevention (event listener cleanup)
-// • Accessibility Improvements (focus, touch targets)
-// • Home Location Feature (strategic $1.25 floor)
-// • Division-by-Zero Protection
-//
-// PRODUCTION READY: ✅ Security Hardened | ✅ Accessibility Compliant
+// • XSS / CSV injection / prototype pollution protection
+// • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
+// • Memory leak prevention (managed event listeners)
+// • Passphrase/admin token scoped to sessionStorage only
+// • OpenAI-backed load evaluator via /evaluate worker route
+// • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
 const DB_VERSION = 11;
