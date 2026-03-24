@@ -1,5 +1,5 @@
 {
-  "name": "FreightLogic v18.0.0",
+  "name": "FreightLogic v18.2.0",
   "short_name": "FreightLogic",
   "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, bid recommendations, trap detection, and market positioning.",
   "start_url": "./",
@@ -22,7 +22,19 @@
   ],
   "categories": ["business","finance","productivity"],
   "shortcuts": [
-    {"name":"Add Trip","short_name":"New Trip","description":"Quickly log a new trip","url":"./#trip","icons":[{"src":"icon192.png","sizes":"192x192"}]},
-    {"name":"Evaluate Load","short_name":"Evaluate","description":"Open the freight evaluator","url":"./#midwest","icons":[{"src":"icon192.png","sizes":"192x192"}]}
+    {
+      "name":"Add Trip",
+      "short_name":"New Trip",
+      "description":"Quickly log a new trip",
+      "url":"./#trip",
+      "icons":[{"src":"icon192.png","sizes":"192x192"}]
+    },
+    {
+      "name":"Evaluate Load",
+      "short_name":"Evaluate",
+      "description":"Open the freight evaluator",
+      "url":"./#midwest",
+      "icons":[{"src":"icon192.png","sizes":"192x192"}]
+    }
   ]
 }
