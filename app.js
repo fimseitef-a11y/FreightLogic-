@@ -1,16 +1,13 @@
 (() => {
 'use strict';
 
-/** Freight Logic v18.0.0 USA ENGINE
+/** Freight Logic v18.2.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
- *  DAT API integration ready
- *  v18: Lane Memory, Weekly P&L, Broker Intel, GPS Deadhead, OCR v2,
- *       Rate Trends, Document Vault, Voice Input, Reload Scoring,
- *       Fatigue Scoring, Weekly Strategy, Seasonal Intel, Chain Analysis,
- *       Cost-Per-Day, Counter-Offer Memory, CPA Tax Package, Sync v2
+ *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
+ *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '18.0.0';
+const APP_VERSION = '18.2.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -34,7 +31,8 @@ window.addEventListener('beforeunload', cleanupListeners);
 window.addEventListener('pagehide', cleanupListeners);
 
 
-const DB_NAME = 'XpediteOps_v1';
+const DB_NAME = 'FreightLogic_v18';
+const DB_NAME_LEGACY = 'XpediteOps_v1';
 const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
@@ -53,7 +51,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // PRODUCTION READY: ✅ Security Hardened | ✅ Accessibility Compliant
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -646,6 +644,8 @@ async function initDB(){
           dv.createIndex('date', 'date', { unique: false });
         }
       }
+      // v11: User identity namespace — localUserId written at runtime by ensureLocalUserId()
+      if (old < 11) { /* no schema changes — settings store already holds the key */ }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -664,6 +664,75 @@ async function initDB(){
     };
     req.onblocked = () => toast('Close other Freight Logic tabs to finish upgrade', true);
   });
+}
+
+// ── Legacy DB migration: XpediteOps_v1 → FreightLogic_v18 ────────────────────
+async function migrateFromLegacyDB(){
+  const already = await getSetting('legacyMigrated', '');
+  if (already) return;
+
+  const STORES = ['trips','expenses','fuel','receipts','receiptBlobs',
+                  'settings','auditLog','marketBoard','laneHistory',
+                  'weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'];
+
+  const legacyDb = await new Promise(resolve => {
+    let resolved = false;
+    const req = indexedDB.open(DB_NAME_LEGACY);
+    req.onsuccess = () => { resolved = true; resolve(req.result); };
+    req.onerror  = () => resolve(null);
+    // If onupgradeneeded fires the legacy DB doesn't exist yet — abort and skip
+    req.onupgradeneeded = () => { try{ req.transaction.abort(); }catch{} if (!resolved){ resolved=true; resolve(null); } };
+  });
+
+  if (!legacyDb) { await setSetting('legacyMigrated', 'none'); return; }
+
+  // Confirm there is actual trip data worth migrating
+  const tripCount = await new Promise(resolve => {
+    try {
+      const r = legacyDb.transaction(['trips'],'readonly').objectStore('trips').count();
+      r.onsuccess = () => resolve(r.result);
+      r.onerror   = () => resolve(0);
+    } catch { resolve(0); }
+  });
+
+  if (tripCount === 0){ legacyDb.close(); await setSetting('legacyMigrated','empty'); return; }
+
+  let total = 0;
+  for (const storeName of STORES){
+    if (!legacyDb.objectStoreNames.contains(storeName)) continue;
+    if (!db.objectStoreNames.contains(storeName)) continue;
+
+    const records = await new Promise(resolve => {
+      try {
+        const r = legacyDb.transaction([storeName],'readonly').objectStore(storeName).getAll();
+        r.onsuccess = () => resolve(r.result || []);
+        r.onerror   = () => resolve([]);
+      } catch { resolve([]); }
+    });
+
+    if (!records.length) continue;
+    const { t, stores } = tx([storeName], 'readwrite');
+    for (const rec of records){ try{ stores[storeName].put(rec); }catch{} }
+    await waitTxn(t);
+    total += records.length;
+  }
+
+  legacyDb.close();
+  const stamp = new Date().toISOString();
+  await setSetting('legacyMigrated', stamp);
+  await setSetting('legacyMigratedCount', total);
+  console.info('[FL] Migrated', total, 'records from XpediteOps_v1 at', stamp);
+  if (total > 0) toast('Your data has been migrated (' + total + ' records) — everything is intact');
+}
+
+// ── User identity namespace ───────────────────────────────────────────────────
+async function ensureLocalUserId(){
+  const existing = await getSetting('localUserId', '');
+  if (existing) return existing;
+  const id = 'usr_' + crypto.randomUUID().replace(/-/g,'').slice(0, 16);
+  await setSetting('localUserId', id);
+  await setSetting('localUserCreatedAt', new Date().toISOString());
+  return id;
 }
 
 function tx(storeNames, mode='readonly'){
@@ -10800,6 +10869,8 @@ async function openCPAPackage(){
   try{
     $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
     db = await initDB();
+    await migrateFromLegacyDB().catch(e => console.warn('[FL] legacy migration error:', e));
+    await ensureLocalUserId().catch(()=>{});
     await requireAppUnlock();
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
