@@ -1251,12 +1251,13 @@ async function importJSON(file, opts={}){
       action: clampStr(a.action, 30), data: a.data && typeof a.data === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(a.data))) : undefined
     }));
 
-    // Passthrough arrays for v18 stores — filter objects, no deep sanitization needed beyond deepCleanObj
-    const safeLaneHistoryArr   = arr(data.laneHistory).filter(r => r && typeof r === 'object');
-    const safeWeeklyReportsArr = arr(data.weeklyReports).filter(r => r && typeof r === 'object');
-    const safeReloadOutcomesArr= arr(data.reloadOutcomes).filter(r => r && typeof r === 'object');
-    const safeBidHistoryArr    = arr(data.bidHistory).filter(r => r && typeof r === 'object');
-    const safeDocumentsArr     = arr(data.documents).filter(r => r && typeof r === 'object');
+    // Passthrough arrays for v18 stores — deepCleanObj guards prototype pollution
+    const _cleanRec = r => r && typeof r === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(r))) : null;
+    const safeLaneHistoryArr   = arr(data.laneHistory).map(_cleanRec).filter(Boolean);
+    const safeWeeklyReportsArr = arr(data.weeklyReports).map(_cleanRec).filter(Boolean);
+    const safeReloadOutcomesArr= arr(data.reloadOutcomes).map(_cleanRec).filter(Boolean);
+    const safeBidHistoryArr    = arr(data.bidHistory).map(_cleanRec).filter(Boolean);
+    const safeDocumentsArr     = arr(data.documents).map(_cleanRec).filter(Boolean);
 
     const mode = opts.mode || 'merge';
     const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'],'readwrite');
