@@ -1,4 +1,4 @@
-/* Freight Logic v18.2.0 — service worker update bridge */
+/* Freight Logic v19.0.0 — service worker update bridge */
 (function(){
   if (!('serviceWorker' in navigator)) return;
 
