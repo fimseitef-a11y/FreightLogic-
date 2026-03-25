@@ -44,16 +44,20 @@ export default {
           const users = [];
           for (const k of list.keys) {
             const val = await env.BACKUPS.get(k.name);
-            if (val) users.push(JSON.parse(val));
+            if (val) { try { users.push(JSON.parse(val)); } catch {} }
           }
           return json({ ok: true, users }, 200, cors);
         }
 
         if (request.method === 'DELETE' && path.startsWith('/admin/users/')) {
           const delId = path.split('/admin/users/')[1];
+          if (!delId || !/^u_[a-f0-9-]{8,36}$/i.test(delId)) {
+            return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+          }
           const userRec = await env.BACKUPS.get('user:' + delId);
           if (!userRec) return json({ ok: false, error: 'Not found' }, 404, cors);
-          const parsed = JSON.parse(userRec);
+          let parsed;
+          try { parsed = JSON.parse(userRec); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
           parsed.active = false;
           await env.BACKUPS.put('user:' + delId, JSON.stringify(parsed));
           if (parsed.token) await env.BACKUPS.delete('token:' + parsed.token);
@@ -74,13 +78,14 @@ export default {
         return json({ ok: false, error: 'Invalid token' }, 403, cors);
       }
 
-      const tokenData = JSON.parse(tokenRaw);
+      let tokenData;
+      try { tokenData = JSON.parse(tokenRaw); } catch { return json({ ok: false, error: 'Invalid token' }, 403, cors); }
       if (!tokenData.active) {
         return json({ ok: false, error: 'Token revoked' }, 403, cors);
       }
 
       const driverUserId = tokenData.userId;
-      const deviceId = request.headers.get('X-Device-Id') || 'default';
+      const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
 
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
@@ -243,7 +248,7 @@ export default {
         const bp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
         const bl = await env.BACKUPS.list({ prefix: bp });
         if (bl.keys.length > 3) {
-          const sorted = bl.keys.slice().sort((a, b) => a.name < b.name ? -1 : 1);
+          const sorted = bl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
           const toDelete = sorted.slice(0, sorted.length - 3);
           for (const k of toDelete) await env.BACKUPS.delete(k.name);
         }
@@ -258,7 +263,7 @@ export default {
         if (gl.keys.length === 0) {
           return json({ ok: false, error: 'No backup found' }, 404, cors);
         }
-        const gsorted = gl.keys.slice().sort((a, b) => a.name < b.name ? -1 : 1);
+        const gsorted = gl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
         const data = await env.BACKUPS.get(gsorted[gsorted.length - 1].name);
         return new Response(data, { status: 200, headers: cors });
       }
