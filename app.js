@@ -1251,8 +1251,13 @@ async function importJSON(file, opts={}){
       action: clampStr(a.action, 30), data: a.data && typeof a.data === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(a.data))) : undefined
     }));
 
-    // Passthrough arrays for v18 stores — deepCleanObj guards prototype pollution
-    const _cleanRec = r => r && typeof r === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(r))) : null;
+    // Passthrough arrays for v18 stores — deepCleanObj guards prototype pollution; validateRecordSize caps record size
+    const _cleanRec = r => {
+      if (!r || typeof r !== 'object') return null;
+      const cleaned = deepCleanObj(JSON.parse(JSON.stringify(r)));
+      try { validateRecordSize(cleaned, 'Record'); } catch { return null; }
+      return cleaned;
+    };
     const safeLaneHistoryArr   = arr(data.laneHistory).map(_cleanRec).filter(Boolean);
     const safeWeeklyReportsArr = arr(data.weeklyReports).map(_cleanRec).filter(Boolean);
     const safeReloadOutcomesArr= arr(data.reloadOutcomes).map(_cleanRec).filter(Boolean);
