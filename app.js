@@ -6452,8 +6452,8 @@ function openSnapLoad(preFile){
       if (_parsedData.pay) fields.push(`<b>Pay:</b> $${_parsedData.pay.toLocaleString()}`);
       if (_parsedData.loadedMiles) fields.push(`<b>Miles:</b> ${_parsedData.loadedMiles.toLocaleString()}`);
       if (_parsedData.weight) fields.push(`<b>Weight:</b> ${_parsedData.weight.toLocaleString()} lbs`);
-      if (_parsedData.pickupDate) fields.push(`<b>Pickup:</b> ${_parsedData.pickupDate}`);
-      if (_parsedData.deliveryDate) fields.push(`<b>Delivery:</b> ${_parsedData.deliveryDate}`);
+      if (_parsedData.pickupDate) fields.push(`<b>Pickup:</b> ${escapeHtml(String(_parsedData.pickupDate))}`);
+      if (_parsedData.deliveryDate) fields.push(`<b>Delivery:</b> ${escapeHtml(String(_parsedData.deliveryDate))}`);
       fields.push(`<span class="muted">Confidence: ${Math.round(confidence)}% • OCR pass: ${escapeHtml(best.label || 'original')}</span>`);
 
       if (fields.length <= 1){
@@ -8869,7 +8869,11 @@ async function cloudAdminCreateUser(){
       const appUrl = window.location.origin + window.location.pathname;
       const setupLink = appUrl + '?token=' + encodeURIComponent(data.token);
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
-      if (result) result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn" onclick="cloudAdminShare(\'' + shareText.replace(/'/g, "\\'").replace(/\n/g, "\\n") + '\')">Share with ' + escapeHtml(data.name) + '</button></div>';
+      if (result) {
+        result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
+        const shareBtn = result.querySelector('.admin-share-btn');
+        if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
+      }
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
       sessionStorage.setItem('fl_admin_token', adminToken);
       cloudAdminLoadUsers();
