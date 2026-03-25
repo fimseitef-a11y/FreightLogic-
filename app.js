@@ -6847,8 +6847,8 @@ function openTripWizard(existing=null){
     updateBrokerIntel(); updateLaneIntel();
   });
   $('#backStep1', body).addEventListener('click', ()=>{ step2.style.display = 'none'; step1.style.display = ''; });
-  $('#saveTrip', body).addEventListener('click', ()=> save(1));
-  $('#saveTrip2', body).addEventListener('click', ()=> save(2));
+  $('#saveTrip', body).addEventListener('click', async ()=> { await save(1); });
+  $('#saveTrip2', body).addEventListener('click', async ()=> { await save(2); });
 
   // Lane + Broker intelligence in step 2 (debounced)
   let _biTimer = null, _liTimer = null;
@@ -7349,7 +7349,7 @@ addManagedListener($('#btnStorageRebuild'), 'click', async ()=> await rebuildRec
 addManagedListener($('#btnStorageClearCache'), 'click', async ()=>{
   if (!confirm('Clear receipt cache? Thumbnails stay.')) return; await clearReceiptCache(); toast('Receipt cache cleared');
 });
-addManagedListener($('#btnWeeklyReport'), 'click', ()=> { haptic(20); generateWeeklyReport(); });
+addManagedListener($('#btnWeeklyReport'), 'click', async ()=> { haptic(20); await generateWeeklyReport(); });
 addManagedListener($('#btnLoadCompare'), 'click', ()=> { haptic(20); openLoadCompare(); });
 
 // Accountant period tabs
@@ -7362,7 +7362,7 @@ $$('#acctPeriodTabs .btn').forEach(btn => {
     haptic(8);
   });
 });
-addManagedListener($('#btnAccountantExport'), 'click', ()=> { haptic(20); generateAccountantPackage(_acctPeriod); });
+addManagedListener($('#btnAccountantExport'), 'click', async ()=> { haptic(20); await generateAccountantPackage(_acctPeriod); });
 
 // ====================================================================
 //  WEEKLY PERFORMANCE REPORT — Canvas-rendered shareable image
