@@ -6452,8 +6452,8 @@ function openSnapLoad(preFile){
       if (_parsedData.pay) fields.push(`<b>Pay:</b> $${_parsedData.pay.toLocaleString()}`);
       if (_parsedData.loadedMiles) fields.push(`<b>Miles:</b> ${_parsedData.loadedMiles.toLocaleString()}`);
       if (_parsedData.weight) fields.push(`<b>Weight:</b> ${_parsedData.weight.toLocaleString()} lbs`);
-      if (_parsedData.pickupDate) fields.push(`<b>Pickup:</b> ${_parsedData.pickupDate}`);
-      if (_parsedData.deliveryDate) fields.push(`<b>Delivery:</b> ${_parsedData.deliveryDate}`);
+      if (_parsedData.pickupDate) fields.push(`<b>Pickup:</b> ${escapeHtml(String(_parsedData.pickupDate))}`);
+      if (_parsedData.deliveryDate) fields.push(`<b>Delivery:</b> ${escapeHtml(String(_parsedData.deliveryDate))}`);
       fields.push(`<span class="muted">Confidence: ${Math.round(confidence)}% • OCR pass: ${escapeHtml(best.label || 'original')}</span>`);
 
       if (fields.length <= 1){
