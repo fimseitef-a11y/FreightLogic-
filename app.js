@@ -8869,7 +8869,11 @@ async function cloudAdminCreateUser(){
       const appUrl = window.location.origin + window.location.pathname;
       const setupLink = appUrl + '?token=' + encodeURIComponent(data.token);
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
-      if (result) result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn" onclick="cloudAdminShare(\'' + shareText.replace(/'/g, "\\'").replace(/\n/g, "\\n") + '\')">Share with ' + escapeHtml(data.name) + '</button></div>';
+      if (result) {
+        result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
+        const shareBtn = result.querySelector('.admin-share-btn');
+        if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
+      }
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
       sessionStorage.setItem('fl_admin_token', adminToken);
       cloudAdminLoadUsers();
