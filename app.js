@@ -1492,17 +1492,20 @@ async function importFile(file){
   } catch(err) { console.error('[FL] Import error:', err); toast('Import failed. Check file format.', true); }
 }
 
-// ---- XLSX Import (uses SheetJS from CDN — version-pinned + SRI-ready) ----
-// SECURITY: Generate SRI hash via: curl -s URL | openssl dgst -sha384 -binary | openssl base64 -A
-// Then set s.integrity = 'sha384-<hash>';
+// ---- XLSX Import (uses SheetJS from CDN — version-pinned + SRI) ----
+// Each entry is a string (no SRI, for local/vendor files) or { url, integrity } for CDN scripts.
+// SRI hashes computed from npm registry tarballs (jsdelivr serves files unmodified from npm).
 async function loadScriptWithFallback(urls, validate, finalError){
   let lastErr = null;
-  for (const url of urls){
+  for (const entry of urls){
+    const url = typeof entry === 'string' ? entry : entry.url;
+    const integrity = typeof entry === 'object' ? entry.integrity : null;
     try {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = url;
         if (/^https?:/i.test(url)) s.crossOrigin = 'anonymous';
+        if (integrity) s.integrity = integrity;
         s.onload = () => {
           try {
             validate();
@@ -1526,7 +1529,8 @@ async function loadSheetJS(){
   if (typeof XLSX !== 'undefined') return;
   await loadScriptWithFallback([
     './vendor/xlsx.full.min.js',
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    { url: 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+      integrity: 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw' },
   ], () => {
     if (typeof XLSX === 'undefined' || typeof XLSX.read !== 'function'){
       throw new Error('SheetJS loaded but XLSX.read missing — possible CDN tampering');
@@ -5889,7 +5893,8 @@ async function loadTesseract(){
   if (typeof Tesseract === 'undefined'){
     await loadScriptWithFallback([
       './vendor/tesseract.min.js',
-      'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+      { url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+        integrity: 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F' },
     ], () => {
       if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
         throw new Error('Tesseract loaded but createWorker missing — possible CDN tampering');
