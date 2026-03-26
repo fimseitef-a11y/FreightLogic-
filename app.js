@@ -7,7 +7,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '19.0.0';
+const APP_VERSION = '20.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -2919,44 +2919,40 @@ function pulseKPI(el){
 async function renderHome(){
   const state = await getOnboardState();
   const trips = await listTrips({cursor:null});
-  const recent = trips.items.slice(0,6);
+  const recent = trips.items.slice(0, 3); // v20: limit to 3
   const box = $('#homeRecentTrips');
   box.innerHTML = '';
 
-  // ── Welcome card (replaces Ω calculator card for new users) ──
+  // ── Welcome card (new users) / KPI card (active users) ──
   const welcomeSlot = $('#homeWelcome');
-  const omegaLink = $('#homeOmegaCard');
-  const perfCard = $('#homePerfCard');
+  const kpiCard = $('#homeKPICard');
 
   if (state.isEmpty){
-    // Show welcome, hide omega card and performance center
     if (welcomeSlot){
       welcomeSlot.innerHTML = renderWelcomeCard();
       welcomeSlot.style.display = '';
       welcomeSlot.querySelector('#welcomeAddTrip')?.addEventListener('click', ()=> { haptic(); openQuickAddSheet(); });
     }
-    if (omegaLink) omegaLink.style.display = 'none';
-    if (perfCard) perfCard.style.display = 'none';
+    if (kpiCard) kpiCard.style.display = 'none';
     box.innerHTML = '';
   } else {
-    // Hide welcome, show normal cards
     if (welcomeSlot) welcomeSlot.style.display = 'none';
-    if (omegaLink) omegaLink.style.display = '';
-    if (perfCard) perfCard.style.display = '';
+    if (kpiCard) kpiCard.style.display = '';
 
-    if (!recent.length) box.innerHTML = `<div class="muted" style="font-size:12px">No trips yet. Tap ＋ to add your first trip.</div>`;
+    if (!recent.length) box.innerHTML = `<div class="muted" style="font-size:12px">No trips yet. Tap ＋ Trip to add your first.</div>`;
     else { recent.forEach(t => box.appendChild(tripRow(t, {compact:true}))); staggerItems(box); }
   }
 
-  // ── Beginner encouragement in performance card ──
+  // ── Coaching: beginner encouragement ──
   const coachEl = $('#pcCoaching');
   if (state.isBeginner && coachEl){
     coachEl.innerHTML = `<div style="padding:10px 12px;border-radius:10px;background:rgba(255,179,0,.08);border:1px solid rgba(255,179,0,.15);font-size:12px">
       <span style="font-weight:700;color:var(--accent)">Getting started!</span>
-      <span class="muted"> Log a few more trips and your dashboard will show RPM trends, broker grades, and profit scores automatically.</span>
+      <span class="muted"> Log a few more trips to unlock RPM trends, broker grades, and profit scores.</span>
     </div>`;
   }
 
+  // ── What's Next: actions ──
   const actions = $('#homeActions');
   actions.innerHTML = '';
 
@@ -2965,25 +2961,19 @@ async function renderHome(){
     actions.appendChild(actionCard('Got a rate confirmation?', 'Snap Load (OCR)', ()=> openSnapLoad()));
   } else {
     const unpaidList = await listUnpaidTrips(6);
-    if (unpaidList.length) actions.appendChild(actionCard(`You have ${unpaidList.length} unpaid trip(s)`, 'Go to Money', ()=> location.hash = '#money'));
-    else actions.appendChild(actionCard('All caught up', 'View Trips', ()=> location.hash = '#trips'));
+    if (unpaidList.length) actions.appendChild(actionCard(`${unpaidList.length} unpaid trip${unpaidList.length > 1 ? 's' : ''} pending`, 'Mark Paid →', ()=> location.hash = '#money'));
 
-    // P3-4: backup reminder
     const lastExp = await getSetting('lastExportDate', null);
     if (!lastExp || daysBetweenISO(lastExp, isoDate()) > 7){
-      actions.appendChild(actionCard(`Haven't backed up in ${lastExp ? daysBetweenISO(lastExp, isoDate()) + ' days' : 'a while'}`, 'Export Now', ()=> exportJSON()));
-    } else {
-      actions.appendChild(actionCard('Export a backup', 'Export JSON', ()=> exportJSON()));
+      actions.appendChild(actionCard(`Backup overdue${lastExp ? ' ('+daysBetweenISO(lastExp, isoDate())+'d)' : ''}`, 'Export Now', ()=> exportJSON()));
     }
 
-    // Weekly reflection: show Fri-Sun if not yet done this week
-    const dayOfWeek = new Date().getDay(); // 0=Sun, 5=Fri, 6=Sat
+    const dayOfWeek = new Date().getDay();
     if (dayOfWeek >= 5 || dayOfWeek === 0){
       const weekStart = startOfWeek(new Date()).toISOString().slice(0,10);
       const reflection = await getSetting('weeklyReflection', null);
-      const lastReflectWeek = reflection?.week || '';
-      if (lastReflectWeek !== weekStart){
-        actions.appendChild(actionCard('End-of-week check-in', 'Reflect on Your Week', ()=> openWeeklyReflection()));
+      if ((reflection?.week || '') !== weekStart){
+        actions.appendChild(actionCard('End-of-week check-in ready', 'Reflect on Week', ()=> openWeeklyReflection()));
       }
     }
   }
@@ -2993,14 +2983,12 @@ async function renderHome(){
   await computeKPIs();
   if (!state.isEmpty) await Promise.all([
     renderCommandCenter(),
-    renderWeeklyChart().catch(()=>{}),
     checkOverduePayments(),
   ]);
-  await refreshStorageHealth('');
-  // F5: Show latest weekly report card
-  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
-  // F6: Fuel price staleness nudge
+  // F6: Fuel price staleness nudge (non-blocking)
   checkFuelPriceStaleness().catch(()=>{});
+  // F5: Weekly report card (non-blocking, renders into homeWeeklyReport slot)
+  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
 }
 
 // ---- Performance Command Center ----
@@ -3014,7 +3002,7 @@ async function renderCommandCenter(){
     const d14 = now.getTime() - 14 * 86400000;
     const d30 = now.getTime() - 30 * 86400000;
 
-    // Revenue velocity: $/day over last 7 days vs previous 7
+    // Revenue velocity: $/day over last 7 days vs previous 7 (for trend alerts)
     let rev7 = 0, rev14 = 0;
     for (const t of trips){
       const dt = t.pickupDate || t.deliveryDate;
@@ -3026,14 +3014,35 @@ async function renderCommandCenter(){
     }
     const velNow = rev7 / 7;
     const velPrev = rev14 / 7;
+
+    // v20: pcRevVel now shows True RPM for the week (the #1 most actionable KPI)
+    let wkMiLoaded = 0, wkMiAll = 0, wkGrossRpm = 0, wkDhMiSum = 0, wkTripCount = 0;
+    for (const t of trips){
+      const dt = t.pickupDate || t.deliveryDate;
+      if (!dt || t.needsReview) continue;
+      if (new Date(dt).getTime() >= wk0){
+        const loaded = Number(t.loadedMiles || 0);
+        const empty = Number(t.emptyMiles || 0);
+        const pay = Number(t.pay || 0);
+        wkGrossRpm += pay;
+        wkMiLoaded += loaded;
+        wkMiAll += loaded + empty;
+        wkDhMiSum += empty;
+        wkTripCount++;
+      }
+    }
+    const wkTrueRPM = wkMiAll > 0 ? wkGrossRpm / wkMiAll : 0;
+    const wkAvgDH = wkTripCount > 0 ? wkDhMiSum / wkTripCount : 0;
+
     const velEl = $('#pcRevVel');
     if (velEl){
-      velEl.textContent = `${fmtMoney(velNow)}/d`;
-      const parent = velEl.closest('.pill');
+      velEl.textContent = wkTrueRPM > 0 ? `$${wkTrueRPM.toFixed(2)}` : '\u2014';
+      const parent = velEl.closest('.kpi-cell');
       if (parent){
-        if (velPrev > 0 && velNow < velPrev * 0.8) parent.className = 'pill danger';
-        else if (velPrev > 0 && velNow > velPrev * 1.1) parent.className = 'pill';
-        else parent.className = 'pill';
+        if (wkTrueRPM >= 1.75) parent.style.color = 'var(--good)';
+        else if (wkTrueRPM >= 1.50) parent.style.color = '';
+        else if (wkTrueRPM > 0) parent.style.color = 'var(--warn)';
+        else parent.style.color = '';
       }
     }
 
@@ -3046,11 +3055,8 @@ async function renderCommandCenter(){
     }
     const autoTarget = (gross30 / 30) * 7 || 0;
     const weeklyTarget = userGoal > 0 ? userGoal : autoTarget;
-    let wkGross = 0;
-    for (const t of trips){
-      const dt = t.pickupDate || t.deliveryDate;
-      if (dt && new Date(dt).getTime() >= wk0) wkGross += Number(t.pay || 0);
-    }
+    // v20: use wkGrossRpm (already computed above) instead of a second loop
+    const wkGross = wkGrossRpm;
     const targetPct = weeklyTarget > 0 ? Math.min(200, (wkGross / weeklyTarget) * 100) : 0;
 
     const tgtEl = $('#pcWkTarget');
@@ -3066,6 +3072,16 @@ async function renderCommandCenter(){
       if (targetPct >= 100) bar.style.background = 'var(--good)';
       else if (targetPct >= 70) bar.style.background = 'var(--accent)';
       else bar.style.background = 'var(--warn)';
+    }
+    // v20: homeWeekBadge shows progress %
+    if (badgeEl){
+      if (weeklyTarget > 0){
+        const pct = Math.min(200, Math.round(targetPct));
+        badgeEl.textContent = `${pct}% of goal`;
+        if (pct >= 100) badgeEl.style.color = 'var(--good)';
+        else if (pct >= 70) badgeEl.style.color = 'var(--accent-text)';
+        else badgeEl.style.color = '';
+      }
     }
     const label = $('#pcProgressLabel');
     if (label) label.textContent = weeklyTarget > 0
@@ -3102,7 +3118,21 @@ async function renderCommandCenter(){
       }
     } else if (coachEl){ coachEl.innerHTML = ''; }
 
-    // Efficiency score
+    // v20: pcEfficiency shows Avg DH miles (more actionable than loaded efficiency %)
+    const effEl = $('#pcEfficiency');
+    if (effEl){
+      effEl.textContent = wkTripCount > 0 ? `${Math.round(wkAvgDH)} mi` : '\u2014';
+      const parent = effEl.closest('.kpi-cell');
+      if (parent){
+        if (wkAvgDH <= 25 && wkTripCount > 0) parent.style.color = 'var(--good)';
+        else if (wkAvgDH <= 50 && wkTripCount > 0) parent.style.color = '';
+        else if (wkTripCount > 0) parent.style.color = 'var(--warn)';
+      }
+    }
+    // v20: homeWeekBadge shows progress pct
+    const badgeEl = $('#homeWeekBadge');
+
+    // Efficiency for trend alerts (still needed)
     let ld30 = 0, all30 = 0;
     for (const t of trips){
       const dt = t.pickupDate || t.deliveryDate;
@@ -3112,16 +3142,6 @@ async function renderCommandCenter(){
       }
     }
     const eff = all30 > 0 ? ((ld30 / all30) * 100) : 0;
-    const effEl = $('#pcEfficiency');
-    if (effEl){
-      effEl.textContent = all30 > 0 ? `${eff.toFixed(0)}%` : '\u2014';
-      const pp = effEl.closest('.pill');
-      if (pp){
-        if (eff >= 85) pp.className = 'pill';
-        else if (eff >= 70) pp.className = 'pill warn';
-        else if (all30 > 0) pp.className = 'pill danger';
-      }
-    }
 
     // Average load score (last 30 days)
     let scoreSum = 0, scoreCnt = 0, acceptCount = 0;
@@ -3746,24 +3766,33 @@ async function renderInsights(){
 }
 
 // ---- More menu ----
+// v20: More tiles organized into sections
 const MORE_TILES = [
-  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money' },
-  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel' },
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights' },
-  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports' },
-  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents' },
-  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
-  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
-  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
-  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy' },
-  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
-  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay' },
-  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory' },
-  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage' },
-  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
-  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
-  { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security' },
+  // MONEY
+  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'MONEY' },
+  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'MONEY' },
+  // LOGS
+  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'LOGS' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'LOGS' },
+  // INTELLIGENCE
+  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports', section:'INTELLIGENCE' },
+  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends', section:'INTELLIGENCE' },
+  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring', section:'INTELLIGENCE' },
+  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis', section:'INTELLIGENCE' },
+  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy', section:'INTELLIGENCE' },
+  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel', section:'INTELLIGENCE' },
+  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay', section:'INTELLIGENCE' },
+  // TOOLS
+  { icon:'Ω', title:'Ω Tiers Calculator', sub:'All-in pricing tiers by mileage band', act:'omegaTiers', section:'TOOLS' },
+  { icon:'📡', title:'Market Board', sub:'Log market observations & signals', act:'marketBoard', section:'TOOLS' },
+  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory', section:'TOOLS' },
+  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents', section:'TOOLS' },
+  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage', section:'TOOLS' },
+  // DATA
+  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'DATA' },
+  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'DATA' },
+  // APP
+  { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security', section:'APP' },
 ];
 
 let _moreBound = false;
@@ -3772,7 +3801,18 @@ async function renderMore(){
   if (!_moreBound){
     _moreBound = true;
     grid.innerHTML = '';
+
+    // v20: Render tiles grouped by section
+    let currentSection = null;
     for (const tile of MORE_TILES){
+      if (tile.section && tile.section !== currentSection){
+        currentSection = tile.section;
+        const hdr = document.createElement('div');
+        hdr.className = 'more-section-head';
+        hdr.textContent = currentSection;
+        hdr.style.gridColumn = '1 / -1';
+        grid.appendChild(hdr);
+      }
       const el = document.createElement('div');
       el.className = 'menu-tile';
       el.setAttribute('role', 'button');
@@ -3795,6 +3835,23 @@ async function renderMore(){
         else if (tile.act === 'costPerDay') openCostPerDay();
         else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
         else if (tile.act === 'cpaPackage') openCPAPackage();
+        // v20: Tools tiles — navigate to Evaluate screen + switch sub-tab
+        else if (tile.act === 'omegaTiers'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
+        else if (tile.act === 'marketBoard'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -5552,25 +5609,88 @@ function mwBindTabs(){
   });
 }
 
+// ── v20: sessionStorage draft helpers ──
+function _saveEvalDraft(){
+  try{
+    const draft = {
+      rev: $('#mwRevenue')?.value || '',
+      lm: $('#mwLoadedMi')?.value || '',
+      dm: $('#mwDeadMi')?.value || '',
+      origin: $('#mwOrigin')?.value || '',
+      dest: $('#mwDest')?.value || '',
+      ts: Date.now()
+    };
+    sessionStorage.setItem('fl_eval_draft', JSON.stringify(draft));
+  }catch(e){}
+}
+function _loadEvalDraft(){
+  try{
+    const raw = sessionStorage.getItem('fl_eval_draft');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Draft expires after 30 minutes
+    if (!d || (Date.now() - (d.ts||0)) > 1800000) { sessionStorage.removeItem('fl_eval_draft'); return null; }
+    return d;
+  }catch(e){ return null; }
+}
+
 async function mwInit(){
   if (mwBound) return;
   mwBound = true;
 
-  // Tab switching
+  // Tab switching (hidden tabs used by More → Tools tiles)
   mwBindTabs();
 
-  // Restore last tab
+  // Restore last tab (usually eval)
   const lastTab = await getSetting('mwLastTab', 'eval');
-  // T5-FIX: Guard against selector injection — only allow known tab values
   const validTabs = new Set(['eval', 'omega', 'board']);
   const safeTab = validTabs.has(lastTab) ? lastTab : 'eval';
   const tabBtn = document.querySelector(`#mwTabs [data-mwtab="${safeTab}"]`);
   if (tabBtn) tabBtn.click();
 
-  // Load evaluator
-  $('#mwEvalBtn')?.addEventListener('click', mwEvaluateLoad);
+  // v20: Advanced section toggle
+  const advToggle = $('#evalAdvToggle');
+  const advBody = $('#evalAdvBody');
+  if (advToggle && advBody){
+    advToggle.addEventListener('click', ()=>{
+      haptic(8);
+      advToggle.classList.toggle('open');
+      advBody.classList.toggle('open');
+    });
+  }
 
-  // F7: GPS deadhead — trigger on origin field changes
+  // v20: Live evaluation — debounced, no button needed
+  let _evalTimer = null;
+  function _scheduleEval(){
+    _saveEvalDraft();
+    clearTimeout(_evalTimer);
+    _evalTimer = setTimeout(()=>{
+      const rev = Number($('#mwRevenue')?.value) || 0;
+      const lm = Number($('#mwLoadedMi')?.value) || 0;
+      if (rev > 0 && lm > 0){
+        mwEvaluateLoad();
+      } else {
+        // Show helpful hint while partially filled
+        const out = $('#mwEvalOutput');
+        if (out){
+          const hint = rev > 0 ? 'Enter loaded miles to see grade' : lm > 0 ? 'Enter revenue to see grade' : null;
+          if (hint) out.innerHTML = `<div class="card" style="text-align:center;padding:20px 16px;border-style:dashed"><div class="muted" style="font-size:13px">${escapeHtml(hint)}</div></div>`;
+        }
+      }
+    }, 200);
+  }
+  ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => {
+    $('#'+id)?.addEventListener('input', _scheduleEval);
+  });
+
+  // Sanity-check warnings on revenue blur
+  $('#mwRevenue')?.addEventListener('blur', ()=>{
+    const rev = Number($('#mwRevenue')?.value) || 0;
+    if (rev > 5000) toast('Revenue over $5,000 — double-check the amount', false);
+    if (rev > 0 && rev < 50) toast('Revenue seems low — is that per mile?', false);
+  });
+
+  // GPS deadhead — trigger on origin field changes
   const originEl = $('#mwOrigin');
   if (originEl){
     let _gpsTimer = null;
@@ -5579,13 +5699,13 @@ async function mwInit(){
       _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
     });
   }
-  // F7: GPS pin button next to origin
+  // GPS pin button next to origin
   $('#mwGpsBtn')?.addEventListener('click', async ()=>{
     haptic(15);
     const orig = ($('#mwOrigin')?.value||'').trim();
     if (!orig){ toast('Enter an origin city first', true); return; }
     $('#mwGpsHint').textContent = '📍 Getting location…';
-    _gpsCache = null; // force fresh lookup
+    _gpsCache = null;
     await updateGPSDeadhead(orig);
   });
 
@@ -5603,41 +5723,73 @@ async function mwInit(){
     const sel = $('#mwStrategicReason');
     if (sel){ sel.disabled = !on; if (!on) sel.value = ''; }
   });
+
+  // v20: Clear button — reset 3 primary fields + output, focus revenue
   $('#mwEvalReset')?.addEventListener('click', () => {
     ['mwOrigin','mwDest','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
-    $('#mwDayOfWeek').value='mon';
+    const dow = $('#mwDayOfWeek');
+    if (dow){ const dm = ['sun','mon','tue','wed','thu','fri','sat']; dow.value = dm[new Date().getDay()]; }
     const cur = $('#mwCurrency'); if (cur) cur.value='USD';
     const st = $('#mwStrategic'); if (st) st.checked = false;
     const sr = $('#mwStrategicReason'); if (sr){ sr.value=''; sr.disabled = true; }
-    $('#mwEvalOutput').innerHTML = '<div class="muted" style="font-size:13px;line-height:1.8">Enter a load to run the 90-second filter.<br><br><span style="font-size:11px;color:var(--text-tertiary)">Geography → True RPM → Fuel → Weekly Position → Fatigue</span></div>';
+    const out = $('#mwEvalOutput');
+    if (out) out.innerHTML = `<div class="card" style="text-align:center;padding:28px 16px;border-style:dashed"><div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div><div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div><div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Geography → True RPM → Fuel → Weekly Position → Fatigue</div></div>`;
     mwRenderWeekStructure(0);
     setSetting('mwLastInputs', null).catch(()=>{});
+    sessionStorage.removeItem('fl_eval_draft');
+    setTimeout(()=> $('#mwRevenue')?.focus(), 50);
+    haptic(10);
   });
 
-  // Restore last eval inputs
+  // Restore state: sessionStorage draft first (fastest), then IDB last inputs
+  const draft = _loadEvalDraft();
   const last = await getSetting('mwLastInputs', null);
-  if (last && typeof last === 'object'){
-    if (last.origin) $('#mwOrigin').value = last.origin;
-    if (last.dest) $('#mwDest').value = last.dest;
-    if (last.loadedMi) $('#mwLoadedMi').value = last.loadedMi;
-    if (last.deadMi) $('#mwDeadMi').value = last.deadMi;
-    if (last.revenue) $('#mwRevenue').value = last.revenue;
-    if (last.dayOfWeek) $('#mwDayOfWeek').value = last.dayOfWeek;
-    if (last.fatigue) $('#mwFatigue').value = last.fatigue;
-    if (last.weeklyGross) $('#mwWeeklyGross').value = last.weeklyGross;
+
+  if (draft?.rev || draft?.lm){
+    // Draft is fresh (< 30min) — use it for primary fields
+    if (draft.rev) { const el=$('#mwRevenue'); if(el) el.value=draft.rev; }
+    if (draft.lm) { const el=$('#mwLoadedMi'); if(el) el.value=draft.lm; }
+    if (draft.dm) { const el=$('#mwDeadMi'); if(el) el.value=draft.dm; }
+    if (draft.origin) { const el=$('#mwOrigin'); if(el) el.value=draft.origin; }
+    if (draft.dest) { const el=$('#mwDest'); if(el) el.value=draft.dest; }
+  } else if (last && typeof last === 'object'){
+    if (last.origin) { const el=$('#mwOrigin'); if(el) el.value=last.origin; }
+    if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
+    if (last.loadedMi) { const el=$('#mwLoadedMi'); if(el) el.value=last.loadedMi; }
+    if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
+    if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
+    if (last.fatigue) { const el=$('#mwFatigue'); if(el) el.value=last.fatigue; }
     if (last.strategicEnabled){
       const st = $('#mwStrategic'); if (st) st.checked = true;
       const sr = $('#mwStrategicReason'); if (sr){ sr.disabled = false; sr.value = last.strategicReason || ''; }
     }
   }
 
-  // Auto-populate weekly gross from current KPI if not saved
-  if (!last?.weeklyGross){
-    try{
-      const qk = await computeQuickKPIs();
-      if (qk?.gross > 0) $('#mwWeeklyGross').value = qk.gross;
-    }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
-  }
+  // Auto-detect day of week (auto, show label)
+  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+  const today = dayMap[new Date().getDay()];
+  const dowEl = $('#mwDayOfWeek');
+  if (dowEl && !last?.dayOfWeek) dowEl.value = today;
+  const dayAutoLabel = $('#mwDayAutoLabel');
+  if (dayAutoLabel) dayAutoLabel.textContent = '(auto)';
+
+  // Auto-populate weekly gross from IDB (never ask driver to type it)
+  try{
+    const qk = await computeQuickKPIs();
+    const grossEl = $('#mwWeeklyGross');
+    if (qk?.gross > 0 && grossEl && !grossEl.value){
+      grossEl.value = qk.gross;
+      const lbl = $('#mwGrossAutoLabel');
+      if (lbl) lbl.textContent = `(${qk.gross > 0 ? 'auto: $'+qk.gross : 'auto'})`;
+      const statusEl = $('#mwAutoFillStatus');
+      if (statusEl) statusEl.textContent = `Week so far: ${fmtMoney(qk.gross)} • ${today.charAt(0).toUpperCase()+today.slice(1)}`;
+    }
+  }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
+
+  // If we restored inputs with revenue + miles, trigger live eval
+  const hasRevenue = Number($('#mwRevenue')?.value) > 0;
+  const hasMiles = Number($('#mwLoadedMi')?.value) > 0;
+  if (hasRevenue && hasMiles) setTimeout(()=> mwEvaluateLoad(), 100);
 
   // Market board
   $('#mbSaveBtn')?.addEventListener('click', mwSaveMarketEntry);
@@ -5645,15 +5797,9 @@ async function mwInit(){
     ['mbLocation','mbRpmLow','mbRpmHigh','mbCompression','mbReload','mbDeadRisk','mbNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
     mwRepoSignal();
   });
-  // Live reposition signal
   ['mbCompression','mbRpmLow','mbRpmHigh','mbLocation'].forEach(id => {
     $('#'+id)?.addEventListener('input', mwRepoSignal);
   });
-
-  // Auto-set day of week
-  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
-  const today = dayMap[new Date().getDay()];
-  if (!last?.dayOfWeek) $('#mwDayOfWeek').value = today;
 
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
@@ -5855,7 +6001,7 @@ function openLaneBreakdown(lane, allTrips){
 // ---- Forms ----
 function openQuickAddSheet(){
   haptic(20);
-  const fab = $('#fab'); fab.classList.add('open');
+  $('#fab')?.classList.add('open');
   const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.cssText='border:0;box-shadow:none;background:transparent';
   wrap.innerHTML = `<div class="btn-row"><button class="btn primary" id="qaTrip">＋ Trip</button><button class="btn" id="qaExpense">＋ Expense</button><button class="btn" id="qaFuel">＋ Fuel</button><button class="btn" id="qaCompare">⚖️ Compare</button></div>
     <div style="margin-top:10px"><button class="btn primary" id="qaSnapLoad" style="width:100%;background:var(--accent2,#e67e22)">📸 Snap Load — OCR from Photo</button></div>
@@ -6790,10 +6936,8 @@ function openTripWizard(existing=null){
       closeModal();
       setTimeout(()=> {
         toast('🎉 First trip logged! Your dashboard is live.');
-        // Remove FAB pulse
-        $('#fab').classList.remove('pulse');
-        const hint = $('#fabHint');
-        if (hint) hint.style.display = 'none';
+        $('#fab')?.classList.remove('pulse');
+        $('#fabHint') && ($('#fabHint').style.display = 'none');
       }, 300);
       await renderTrips(true); await renderHome();
       return;
@@ -7183,18 +7327,11 @@ async function openWeeklyReflection(){
 }
 
 // ---- Buttons ----
-addManagedListener($('#fab'), 'click', ()=>{
-  // Dismiss onboarding pulse
-  $('#fab').classList.remove('pulse');
-  const hint = $('#fabHint');
-  if (hint) hint.style.display = 'none';
-  openQuickAddSheet();
-});
-addManagedListener($('#fab'), 'keydown', (e)=>{
-  if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fab').click(); }
-});
+// v20: FAB removed — Evaluate tab (⚡) is the center nav action.
+// Quick-add sheet still accessible from Home quick-actions row.
 addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
-addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); openQuickEvalFlow(); });
+// v20: btnQuickEval is now a hidden stub (Evaluate is the center tab); keep for safety
+addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); location.hash = '#omega'; });
 addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
@@ -8254,6 +8391,7 @@ async function checkOverduePayments(){
       const total = overdueTrips.reduce((s, t) => s + t.pay, 0);
       const worst = overdueTrips.sort((a, b) => b.days - a.days)[0];
       banner.style.display = '';
+      banner.style.cssText = 'border:1px solid var(--bad-border);background:var(--bad-muted);border-radius:10px;padding:12px;margin-top:8px';
       banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
         <div style="font-size:20px">⏰</div>
         <div style="flex:1">
@@ -10872,17 +11010,8 @@ async function openCPAPackage(){
     _updateOnlineStatus();
     setInterval(()=> computeQuickKPIs().catch(()=>{}), 60_000);
 
-    // Onboarding: pulse FAB and show hint for new users (auto-dismiss after 8s)
-    const onb = await getOnboardState();
-    if (onb.isEmpty){
-      $('#fab').classList.add('pulse');
-      const hint = $('#fabHint');
-      if (hint) hint.style.display = '';
-      setTimeout(()=>{
-        $('#fab')?.classList.remove('pulse');
-        if (hint) hint.style.display = 'none';
-      }, 8000);
-    }
+    // v20: FAB removed — onboarding handled via Home welcome card
+    await getOnboardState();
 
     // v14.4.0: Deferred boot tasks (non-blocking)
     setTimeout(async ()=>{
