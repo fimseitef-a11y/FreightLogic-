@@ -3894,6 +3894,7 @@ const MORE_TILES = [
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'DATA' },
   // APP
   { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security', section:'APP' },
+  { icon:'💿', title:'Storage Health', sub:'IndexedDB usage, quota & cleanup', act:'storageHealth', section:'APP' },
 ];
 
 let _moreBound = false;
@@ -3952,6 +3953,14 @@ async function renderMore(){
             if (btn) btn.click();
             window.scrollTo({top:0,behavior:'instant'});
           }, 100);
+        }
+        else if (tile.act === 'storageHealth'){
+          location.hash = '#insights';
+          setTimeout(()=>{
+            const el = $('#stTrips')?.closest('.card');
+            if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+            refreshStorageHealth();
+          }, 200);
         }
       };
       el.addEventListener('click', tileAction);
@@ -4938,11 +4947,12 @@ async function mwEvaluateLoad(){
   // A–E are displayed as the visible scale; <E is Reject
   // ════════════════════════════════════════════════════
   let grade, gradeLabel, gradeColor, gradeEmoji;
-  if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'STRONG LOAD'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
-  else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'GOOD LOAD'; gradeColor = '#58a6ff'; gradeEmoji = '🔵'; }
-  else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'PROFESSIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
-  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'MINIMUM STANDARD'; gradeColor = '#ff8c42'; gradeEmoji = '🟠'; }
-  else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
+  // v20: Blueprint grade labels — decisive, action-oriented
+  if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'PREMIUM WIN'; gradeColor = '#34d399'; gradeEmoji = '🟢'; }
+  else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'STRONG ACCEPT'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
+  else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'CONDITIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
+  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'WEAK — NEGOTIATE'; gradeColor = '#fb923c'; gradeEmoji = '🟠'; }
+  else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
   // Override display verdict with intelligence engine result
@@ -5041,6 +5051,23 @@ async function mwEvaluateLoad(){
   };
   _mwRenderDecision(out, _decision);
   mwRenderWeekStructure(weeklyGross);
+
+  // Save to eval history (session, last 5)
+  try {
+    const histEntry = {
+      ts: Date.now(),
+      grade, gradeLabel, gradeColor, gradeEmoji,
+      trueRPM: +trueRPM.toFixed(2),
+      origin: origin || '', dest: dest || '',
+      revenue: +revenue, loadedMi: +loadedMi,
+    };
+    let hist = [];
+    try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+    hist.unshift(histEntry);
+    if (hist.length > 5) hist.length = 5;
+    sessionStorage.setItem('fl_eval_hist', JSON.stringify(hist));
+  } catch(e){}
+  _renderEvalHistory();
 }
 
 function _mwRenderDecision(out, d){
@@ -5076,10 +5103,10 @@ function _mwRenderDecision(out, d){
     <div style="font-size:48px;font-weight:800;color:${gradeColor};font-family:var(--font-mono);line-height:1.1;margin:4px 0">${grade}</div>
     <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${tier.color}">$${trueRPM.toFixed(2)}</b> • ${tier.label}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
-      ${ladderRow('A','STRONG LOAD','≥ $1.75')}
-      ${ladderRow('B','GOOD LOAD','$1.60–$1.74')}
-      ${ladderRow('C','PROFESSIONAL','$1.50–$1.59')}
-      ${ladderRow('D','MINIMUM STANDARD','$1.35–$1.49')}
+      ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
+      ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
+      ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
+      ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
       ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
     </div>
@@ -5251,7 +5278,7 @@ function _mwRenderDecision(out, d){
 
   // Final intelligence verdict
   html += `<div style="text-align:center;margin-top:14px;padding:12px;border-radius:var(--r-sm);background:${verdictColors[verdict]}15;border:1px solid ${verdictColors[verdict]}40">
-    <div style="font-size:16px;font-weight:800;color:${verdictColors[verdict]};font-family:var(--font-mono)">${verdict === 'ACCEPT' ? (trueRPM >= 1.75 ? 'STRONG LOAD' : trueRPM >= 1.60 ? 'GOOD LOAD' : 'ACCEPT') : verdictLabels[verdict]}</div>
+    <div style="font-size:16px;font-weight:800;color:${verdictColors[verdict]};font-family:var(--font-mono)">${verdict === 'ACCEPT' ? (trueRPM >= 1.75 ? 'PREMIUM WIN' : trueRPM >= 1.60 ? 'STRONG ACCEPT' : 'CONDITIONAL') : verdictLabels[verdict]}</div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${escapeHtml(verdictReason)}</div>` : ''}
   </div>`;
 
@@ -5362,12 +5389,14 @@ function _mwRenderDecision(out, d){
   // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
   html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
 
-  // "Book as Trip" button — pre-fill trip wizard with evaluated load data
+  // "Book as Trip" + "Clear & Next" buttons
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-    <button class="btn primary" id="mwBookTrip" style="width:100%">＋ Book as Trip</button>
-    <button class="btn" id="mwAskAI" style="width:100%;margin-top:8px;background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI — Strategic Analysis</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
+      <button class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
+    </div>
+    <button class="btn" id="mwAskAI" style="width:100%;background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI — Strategic Analysis</button>
     <div id="mwAIResult" style="margin-top:10px"></div>
-    <div class="muted" style="font-size:11px;margin-top:6px;text-align:center">Pre-fills a new trip with this load's data</div>
   </div>`;
 
   out.innerHTML = html;
@@ -5397,6 +5426,18 @@ function _mwRenderDecision(out, d){
         pickupDate: isoDate(),
         notes: `MW Stack: ${grade || ''} (USA ${usaResult?.score || 0}/100) — True RPM $${trueRPM.toFixed(2)}`,
       });
+    });
+  }
+
+  // Wire up Clear & Next
+  const clearNextBtn = $('#mwClearNext', out);
+  if (clearNextBtn){
+    clearNextBtn.addEventListener('click', ()=>{
+      haptic(10);
+      ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => { const el = $('#'+id); if(el) el.value=''; });
+      $('#mwEvalOutput').innerHTML = '';
+      try{ sessionStorage.removeItem('fl_eval_draft'); }catch(e){}
+      setTimeout(()=>{ $('#mwRevenue')?.focus(); }, 80);
     });
   }
 
@@ -5505,6 +5546,44 @@ function _mwRenderDecision(out, d){
   })().catch(() => {});
 }
 
+
+function _renderEvalHistory(){
+  const container = $('#mwEvalHistory');
+  if (!container) return;
+  let hist = [];
+  try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+  if (!hist.length){ container.innerHTML = ''; return; }
+
+  const rows = hist.map((h, i) => {
+    const route = (h.origin && h.dest) ? `${escapeHtml(h.origin)} → ${escapeHtml(h.dest)}` : '—';
+    const ago = i === 0 ? 'Just now' : _timeAgoShort(h.ts);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < hist.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
+      <div style="width:28px;height:28px;border-radius:6px;background:${h.gradeColor}22;border:1px solid ${h.gradeColor}55;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${h.gradeColor};font-family:var(--font-mono);flex-shrink:0">${escapeHtml(h.grade)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${route}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);flex-shrink:0">${h.revenue ? '$'+h.revenue.toLocaleString() : ''}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <details style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <summary style="font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
+        <span style="flex:1">Recent Evaluations (${hist.length})</span>
+        <span style="font-size:10px;color:var(--text-tertiary)">▼</span>
+      </summary>
+      <div style="margin-top:8px">${rows}</div>
+    </details>`;
+}
+
+function _timeAgoShort(ts){
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return sec + 's ago';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + 'm ago';
+  return Math.floor(min / 60) + 'h ago';
+}
 
 function mwRenderWeekStructure(weeklyGross){
   const gross = weeklyGross || 0;
