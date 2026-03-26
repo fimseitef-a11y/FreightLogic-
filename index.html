@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=19.0.0">
+  <link rel="manifest" href="manifest.json?v=20.0.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -125,11 +125,7 @@
       border-bottom: 1px solid var(--border);
       transition: box-shadow .2s;
     }
-    header::after {
-      content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent-border) 30%, var(--accent-border) 70%, transparent);
-      opacity: 0.5;
-    }
+    /* v20: header::after accent line removed (decorative noise) */
     header.scrolled { box-shadow: 0 1px 0 var(--border), var(--shadow) }
     .hdr-row { display: flex; align-items: center; gap: 12px; justify-content: space-between }
     .brand { display: flex; align-items: center; gap: 10px }
@@ -372,6 +368,83 @@
     }
     .nav a.active::after { transform: translateX(-50%) scaleX(1) }
     .nav .fab-wrap { flex: 0 0 58px; display: flex; justify-content: center }
+    /* v20: Center Evaluate tab */
+    .nav a.nav-eval-center {
+      flex: 0 0 64px; padding: 4px 2px;
+    }
+    .nav a.nav-eval-center .ni {
+      width: 44px; height: 44px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), #e09500);
+      color: #0c0c12; font-size: 20px; font-weight: 800;
+      box-shadow: 0 4px 16px rgba(240,168,0,.28), 0 0 0 1px rgba(240,168,0,0.15);
+      transition: transform .15s var(--spring), box-shadow .15s;
+    }
+    .nav a.nav-eval-center:active .ni { transform: scale(.88); box-shadow: 0 2px 6px rgba(240,168,0,.12) }
+    .nav a.nav-eval-center .nl { color: var(--accent-text); font-weight: 700 }
+    .nav a.nav-eval-center::after { display: none }
+    .nav a.nav-eval-center.active .ni {
+      box-shadow: 0 4px 20px rgba(240,168,0,.4), 0 0 0 2px rgba(240,168,0,0.35);
+    }
+    /* v20: Collapsible advanced eval fields */
+    .eval-advanced-toggle {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+      padding: 10px 0; font-size: 12px; font-weight: 600;
+      color: var(--text-secondary); user-select: none; -webkit-user-select: none;
+    }
+    .eval-advanced-toggle .adv-arrow {
+      width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+      transition: transform .2s var(--ease-smooth); font-size: 10px; color: var(--text-tertiary);
+    }
+    .eval-advanced-toggle.open .adv-arrow { transform: rotate(90deg) }
+    .eval-advanced-body { display: none }
+    .eval-advanced-body.open { display: block }
+    /* v20: Eval output inline */
+    .eval-grade-badge {
+      font-size: 56px; font-weight: 800; font-family: var(--font-mono); line-height: 1;
+      text-align: center; margin: 8px 0 4px;
+    }
+    .eval-grade-label {
+      font-size: 13px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      text-align: center; margin-bottom: 2px;
+    }
+    .eval-rpm-hero {
+      font-size: 20px; font-weight: 700; font-family: var(--font-mono);
+      text-align: center; margin-bottom: 12px;
+    }
+    /* v20: Swipe actions on list rows */
+    .swipe-wrap { position: relative; overflow: hidden; border-radius: var(--r-sm); margin-bottom: 0 }
+    .swipe-wrap + .swipe-wrap { margin-top: 0 }
+    .swipe-actions-l, .swipe-actions-r {
+      position: absolute; top: 0; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; min-width: 80px; padding: 0 16px;
+      pointer-events: none; opacity: 0; transition: opacity .12s;
+    }
+    .swipe-actions-l { left: 0; background: var(--bad); color: #fff; border-radius: var(--r-sm) 0 0 var(--r-sm) }
+    .swipe-actions-r { right: 0; background: var(--good); color: #0c0c12; border-radius: 0 var(--r-sm) var(--r-sm) 0 }
+    .swipe-wrap.swiping-l .swipe-actions-l,
+    .swipe-wrap.swiping-r .swipe-actions-r { opacity: 1 }
+    .swipe-inner { transition: transform .2s var(--ease-smooth); will-change: transform }
+    .swipe-inner.no-transition { transition: none }
+    /* v20: Filter chips */
+    .chip {
+      flex: 0 0 auto; padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--surface-1);
+      color: var(--text-secondary); font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .chip:active { transform: scale(.94) }
+    .chip.active {
+      background: var(--accent); color: #0c0c12;
+      border-color: var(--accent);
+    }
+    /* v20: More menu section headers */
+    .more-section-head {
+      font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      color: var(--text-tertiary); padding: 14px 2px 6px;
+    }
 
     /* ── Menu grid ─────────────────────────────────────────────── */
     .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
@@ -511,11 +584,7 @@
        v17.0.0 — VISUAL UPGRADES
        ═══════════════════════════════════════════════════════════════ */
 
-    /* ── Subtle background texture ──────────────────────────────── */
-    body::before {
-      content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-      background: radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 60%);
-    }
+    /* v20: body::before gradient glow removed (decorative noise) */
 
     /* ── Scrollbar styling ──────────────────────────────────────── */
     ::-webkit-scrollbar { width: 4px; height: 4px }
@@ -689,10 +758,19 @@
   </datalist>
   <main class="app">
     <section id="view-home" class="view">
+      <!-- Card 1: Welcome (new users only) -->
       <div id="homeWelcome" style="display:none"></div>
-      <div id="homeOmegaCard" style="display:none"><div class="card" style="display:flex;align-items:center;gap:14px;cursor:pointer"><div style="font-size:24px;line-height:1">⚡</div><div style="flex:1"><div style="font-weight:700;font-size:14px">Midwest Stack</div><div class="muted" style="font-size:12px">Load filter &amp; market board</div></div><div style="color:var(--text-tertiary)">→</div></div></div>
-      <div class="card" style="margin-top:10px">
-        <h3>This Week</h3>
+
+      <!-- Card 1 (active users): This Week Command Center -->
+      <div class="card" style="margin-top:10px" id="homeKPICard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="margin:0">This Week</h3>
+          <div id="homeWeekBadge" style="font-size:11px;font-weight:700;color:var(--text-tertiary)"></div>
+        </div>
+        <!-- Progress bar always visible in the card header -->
+        <div style="height:4px;border-radius:2px;background:var(--surface-0);overflow:hidden;margin-bottom:12px">
+          <div id="pcProgressBar" style="height:100%;width:0%;border-radius:2px;background:var(--accent);transition:width .5s var(--ease-smooth)"></div>
+        </div>
         <div class="kpi-hero">
           <div class="kpi-hero-value" id="kpiTodayNet">—</div>
           <div class="kpi-hero-label">net income</div>
@@ -700,54 +778,76 @@
         <div class="kpi-row">
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross</div></div>
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Expenses</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="pcEfficiency">—</div><div class="kpi-cell-label">Avg DH</div></div>
         </div>
-        <div class="quick-actions" style="grid-template-columns:1fr 1fr;gap:8px">
+        <div id="pcCoaching" style="margin-top:10px"></div>
+        <div class="quick-actions" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
           <button class="btn primary" id="btnQuickTrip" style="gap:4px">＋ Trip</button>
-          <button class="btn primary" id="btnQuickEval" style="background:linear-gradient(135deg,#5b6fff,#4040dd);gap:4px">📸 Quick Eval</button>
           <button class="btn" id="btnQuickExpense">＋ Expense</button>
           <button class="btn" id="btnQuickFuel">＋ Fuel</button>
         </div>
       </div>
-      <div class="spacer"></div>
-      <div id="homeStrategyBadge" style="display:none;margin-bottom:10px"></div>
-      <div id="homeWeeklyReport" style="display:none;margin-bottom:10px"></div>
-      <div id="homeFuelNudge" style="display:none;margin-bottom:10px"></div>
-      <div id="homeReloadPrompt" style="display:none;margin-bottom:10px"></div>
-      <div class="card" id="overdueAlert" style="display:none;border:1px solid var(--bad-border);background:var(--bad-muted)"></div>
-      <div class="card"><h3>What's Next</h3><div class="list" id="trendAlerts"></div><div class="list" id="homeActions"></div></div>
-      <div class="spacer"></div>
-      <div class="card" id="homePerfCard"><h3>Performance</h3>
-        <div class="row">
-          <div class="pill"><span class="muted">RPM</span> <b id="pcRevVel">—</b></div>
-          <div class="pill"><span class="muted">Target</span> <b id="pcWkTarget">—</b></div>
-          <div class="pill"><span class="muted">Efficiency</span> <b id="pcEfficiency">—</b></div>
-        </div>
-        <div style="margin-top:14px;height:6px;border-radius:3px;background:var(--surface-0);overflow:hidden">
-          <div id="pcProgressBar" style="height:100%;width:0%;border-radius:3px;background:var(--accent);transition:width .5s var(--ease-smooth)"></div>
-        </div>
-        <div class="muted" style="font-size:11px;margin-top:6px" id="pcProgressLabel">Weekly progress</div>
-        <canvas id="weeklyChart"></canvas>
-        <div id="pcCoaching" style="margin-top:8px"></div>
-        <div style="display:none" id="pcDetailRow"><div class="row" style="margin-top:10px">
-          <div class="pill"><span class="muted">Avg Score</span> <b id="pcAvgScore">—</b></div>
-          <div class="pill"><span class="muted">Accept</span> <b id="pcAcceptRate">—</b></div>
-          <div class="pill"><span class="muted">Fuel Δ</span> <b id="pcFuelDrift">—</b></div>
-        </div></div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn" id="btnWeeklyReport" style="flex:1">📊 Weekly Report</button>
-          <button class="btn" id="btnLoadCompare" style="flex:1">⚖️ Compare Loads</button>
-        </div>
+
+      <!-- Card 2: Alerts & Actions -->
+      <div class="card" style="margin-top:12px">
+        <h3>What's Next</h3>
+        <div class="list" id="trendAlerts"></div>
+        <div class="list" id="homeActions"></div>
+        <!-- Preserved slots for dynamic content (hidden by default) -->
+        <div id="homeStrategyBadge" style="display:none"></div>
+        <div id="homeWeeklyReport" style="display:none"></div>
+        <div id="homeFuelNudge" style="display:none"></div>
+        <div id="homeReloadPrompt" style="display:none"></div>
+        <div id="overdueAlert" style="display:none"></div>
       </div>
-      <div class="spacer"></div>
-      <div class="card"><h3>Recent Trips</h3><div class="list" id="homeRecentTrips"></div></div>
+
+      <!-- Card 3: Recent Trips -->
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="margin:0">Recent Trips</h3>
+          <a href="#trips" style="font-size:12px;color:var(--accent-text);font-weight:600;text-decoration:none">See all →</a>
+        </div>
+        <div class="list" id="homeRecentTrips"></div>
+      </div>
+
+      <!-- Hidden: preserved IDs used by renderCommandCenter (perf card removed as standalone) -->
+      <div style="display:none">
+        <b id="pcWkTarget"></b>
+        <div id="pcDetailRow"></div>
+        <div id="pcAvgScore"></div><div id="pcAcceptRate"></div><div id="pcFuelDrift"></div>
+        <canvas id="weeklyChart"></canvas>
+        <div id="homePerfCard"></div>
+        <div id="homeOmegaCard"></div>
+        <div id="pcProgressLabel"></div>
+        <button id="btnWeeklyReport"></button>
+        <button id="btnLoadCompare"></button>
+        <button id="btnQuickEval"></button>
+      </div>
     </section>
     <section id="view-trips" class="view" style="display:none">
       <div class="card">
-        <h3 style="margin:0 0 10px">Trips</h3>
-        <input id="tripSearch" placeholder="Search order # or customer…" />
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <h3 style="margin:0">Trips</h3>
+          <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+        </div>
+        <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
+        <!-- v20: Filter chips -->
+        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+          <button class="chip active" data-chip="all">All</button>
+          <button class="chip" data-chip="unpaid">Unpaid</button>
+          <button class="chip" data-chip="week">This Week</button>
+          <button class="chip" data-chip="month">This Month</button>
+        </div>
       </div>
       <div class="spacer"></div><div class="ptr-zone" id="tripsPTR"></div><div class="list" id="tripList"></div><div class="spacer"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnTripMore" style="flex:1">Load more</button><button class="btn" id="btnTripExport" style="flex:1">Export JSON</button><button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnTripImport" style="flex:1">Import</button><button class="btn" id="btnTripFilter" style="flex:1">Filter</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="btnTripMore" style="flex:1">Load more</button>
+        <button class="btn" id="btnTripFilter" style="flex:1">Date Filter</button>
+        <button class="btn" id="btnTripExport" style="flex:1">Export JSON</button>
+        <button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button>
+        <button class="btn" id="btnTripImport" style="flex:1">Import</button>
+      </div>
     </section>
     <section id="view-expenses" class="view" style="display:none">
       <div class="card">
@@ -795,91 +895,121 @@
       <div class="spacer"></div>
       <div class="card"><h3>Export to Accountant</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Quarterly P&amp;L, expenses, IFTA fuel, per diem — for your CPA.</div><div class="ptabs" id="acctPeriodTabs"><button class="btn sm" data-acct="q1">Q1</button><button class="btn sm" data-acct="q2">Q2</button><button class="btn sm" data-acct="q3">Q3</button><button class="btn sm" data-acct="q4">Q4</button><button class="btn sm act" data-acct="ytd">YTD</button></div><button class="btn primary" id="btnAccountantExport" style="margin-top:10px">Generate Package</button></div>
       <div class="spacer"></div>
-      <div class="card"><h3>Midwest Stack</h3><a class="btn primary" href="#omega">Open Stack</a></div>
     </section>
     <section id="view-omega" class="view" style="display:none">
-      <div class="card" style="padding-bottom:8px">
-        <h2 style="margin:0 0 4px 0;font-size:18px">Freight Logic USA Engine</h2>
-        <div class="muted" style="font-size:12px;margin-bottom:8px">Nationwide cargo-van intelligence • Midwest Stack operator profile</div>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <select id="mwModeSelector" style="flex:1;min-width:140px;font-size:13px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)">
-            <option value="HARVEST">🟢 Harvest — in density</option>
-            <option value="REPOSITION">🔵 Reposition — move to density</option>
-            <option value="ESCAPE">🟡 Escape — exit bad zone</option>
-            <option value="FLOOR_PROTECT">🟠 Floor Protect — late-week</option>
-          </select>
+
+      <!-- ── v20: Primary 3-Field Evaluator ── -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <h2 style="margin:0 0 2px;font-size:17px;font-weight:800">Evaluate Load</h2>
+            <div id="mwAutoFillStatus" class="muted" style="font-size:11px"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="mwVoiceBtn" title="Speak load details" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px;line-height:1;display:none;color:var(--text-secondary)" aria-label="Voice input">🎙️</button>
+            <button class="btn sm" id="mwEvalReset" style="font-size:11px;padding:6px 10px">Clear</button>
+          </div>
         </div>
-        <div class="ptabs" id="mwTabs" style="margin-bottom:0">
-          <button class="btn sm act" data-mwtab="eval">Load Filter</button>
-          <button class="btn sm" data-mwtab="omega">Ω Tiers</button>
-          <button class="btn sm" data-mwtab="board">Market Board</button>
+
+        <!-- ── Primary 3 Fields ── -->
+        <div class="field" style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Revenue ($)</label>
+          <input id="mwRevenue" inputmode="decimal" placeholder="420" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px;letter-spacing:-0.5px" />
+        </div>
+        <div class="grid2" style="gap:10px;margin-bottom:10px">
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Loaded Miles</label>
+            <input id="mwLoadedMi" inputmode="numeric" placeholder="185" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Deadhead Miles</label>
+            <input id="mwDeadMi" inputmode="numeric" placeholder="22" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+          </div>
+        </div>
+
+        <!-- ── Advanced toggle ── -->
+        <div class="eval-advanced-toggle" id="evalAdvToggle">
+          <div class="adv-arrow">▶</div>
+          <span>More Details</span>
+          <span class="muted" style="font-size:11px;margin-left:auto" id="evalAdvSummary"></span>
+        </div>
+        <div class="eval-advanced-body" id="evalAdvBody">
+          <div class="field"><label>Origin</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="mwOrigin" placeholder="e.g. Chicago" style="flex:1" />
+              <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:40px;min-height:40px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
+            </div>
+            <div id="mwGpsHint" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
+          </div>
+          <div class="field"><label>Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
+          <div class="grid2" style="gap:10px">
+            <div class="field"><label>Currency</label><select id="mwCurrency" style="font-size:13px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
+            <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
+              <select id="mwDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
+            </div>
+          </div>
+          <div class="grid2" style="gap:10px">
+            <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
+            <div class="field"><label>Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+          </div>
+          <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
+          <div class="field">
+            <label class="chk" style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="mwStrategic"> Allow Strategic Floor ($1.25 True RPM)
+            </label>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <select id="mwStrategicReason" style="flex:1" disabled>
+                <option value="">Reason (required)</option>
+                <option value="home">Going home</option>
+                <option value="slow">Escaping slow market</option>
+                <option value="replace">Replacing deadhead</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-bottom:2px">
+            <div class="field"><label>Mode <span class="muted" style="font-size:10px;font-weight:400">(auto-detected)</span></label>
+              <select id="mwModeSelector" style="font-size:13px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)">
+                <option value="HARVEST">🟢 Harvest — in density</option>
+                <option value="REPOSITION">🔵 Reposition — move to density</option>
+                <option value="ESCAPE">🟡 Escape — exit bad zone</option>
+                <option value="FLOOR_PROTECT">🟠 Floor Protect — late-week</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Voice status ── -->
+        <div id="mwVoiceStatus" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-top:8px;color:var(--accent)"></div>
+      </div>
+
+      <!-- ── v20: Inline Decision Output ── -->
+      <div id="mwEvalOutput" style="min-height:80px">
+        <div class="card" style="text-align:center;padding:28px 16px;border-style:dashed">
+          <div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div>
+          <div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Geography → True RPM → Fuel → Weekly Position → Fatigue</div>
         </div>
       </div>
 
-      <!-- ── TAB: 90-Second Load Evaluator ── -->
-      <div id="mwTabEval" class="mw-tab-panel" style="margin-top:12px">
-        <div class="grid2">
-          <div class="card"><h3>Load Details <button id="mwVoiceBtn" title="Speak load details" style="float:right;background:none;border:none;font-size:18px;cursor:pointer;padding:0 2px;line-height:1;display:none" aria-label="Voice input">🎙️</button></h3>
-            <div class="field"><label>Origin</label>
-              <div style="display:flex;gap:6px;align-items:center">
-                <input id="mwOrigin" placeholder="e.g. Chicago" style="flex:1" />
-                <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:40px;min-height:40px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
-              </div>
-              <div id="mwGpsHint" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
-            </div>
-            <div class="field"><label>Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
-            <div class="field"><label>Loaded miles</label><input id="mwLoadedMi" inputmode="numeric" placeholder="e.g. 185" /></div>
-            <div class="field"><label>Deadhead miles</label><input id="mwDeadMi" inputmode="numeric" placeholder="e.g. 22" /></div>
-            <div class="field"><label>Revenue</label><div style="display:flex;gap:6px"><input id="mwRevenue" inputmode="decimal" placeholder="e.g. 420" style="flex:1" /><select id="mwCurrency" style="width:80px;font-size:13px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div></div>
-            <div class="field"><label>Day of week</label><select id="mwDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select></div>
-            <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="e.g. 3" min="1" max="10" /></div>
-            <div class="field"><label>Current weekly gross ($)</label><input id="mwWeeklyGross" inputmode="decimal" placeholder="e.g. 1800" /></div>
-            <div class="field"><label>Load notes / description</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
-            <div class="field">
-              <label class="chk" style="display:flex;align-items:center;gap:10px">
-                <input type="checkbox" id="mwStrategic"> Allow Strategic Floor (down to $1.25 True RPM — normal $1.35)
-              </label>
-              <div style="display:flex;gap:8px;margin-top:8px">
-                <select id="mwStrategicReason" style="flex:1" disabled>
-                  <option value="">Reason (required)</option>
-                  <option value="home">Going home</option>
-                  <option value="slow">Escaping slow market</option>
-                  <option value="replace">Replacing deadhead</option>
-                </select>
-              </div>
-              <div class="muted" style="font-size:11px;margin-top:6px">Strategic floor is only for slow areas / reposition / home loads — not a new normal.</div>
-            </div>
-            <div style="display:flex;gap:8px;margin-top:14px">
-              <button class="btn primary" id="mwEvalBtn" style="flex:1">Evaluate Load</button>
-              <button class="btn" id="mwEvalReset">Clear</button>
-            </div>
-          </div>
-          <div class="card"><h3>Decision</h3>
-            <div id="mwVoiceStatus" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-bottom:10px;color:var(--accent)"></div>
-            <div id="mwEvalOutput" style="min-height:260px">
-              <div class="muted" style="font-size:13px;line-height:1.8">
-                Enter a load to run the 90-second filter.<br><br>
-                <span style="font-size:11px;color:var(--text-tertiary)">Geography → True RPM → Fuel → Weekly Position → Fatigue</span>
-              </div>
-            </div>
-          </div>
+      <!-- ── Eval History (rendered by _renderEvalHistory) ── -->
+      <div id="mwEvalHistory"></div>
+
+      <!-- ── Week Structure (always visible) ── -->
+      <div class="card" style="margin-top:12px">
+        <h3>This Week</h3>
+        <div class="row">
+          <div class="pill"><span class="muted">Gross</span> <b id="mwWeekGross">—</b></div>
+          <div class="pill"><span class="muted">True RPM</span> <b id="mwWeekRPM">—</b></div>
+          <div class="pill"><span class="muted">Net/Fuel</span> <b id="mwWeekNAF">—</b></div>
         </div>
-        <div class="spacer"></div>
-        <div class="card">
-          <h3>Week Structure</h3>
-          <div class="row">
-            <div class="pill"><span class="muted">Weekly Gross</span> <b id="mwWeekGross">—</b></div>
-            <div class="pill"><span class="muted">True RPM</span> <b id="mwWeekRPM">—</b></div>
-            <div class="pill"><span class="muted">Net After Fuel</span> <b id="mwWeekNAF">—</b></div>
-          </div>
-          <div style="margin-top:12px;height:4px;border-radius:2px;background:var(--surface-0);overflow:hidden">
-            <div id="mwWeekBar" style="height:100%;width:0%;border-radius:2px;background:var(--good);transition:width .5s var(--ease-smooth)"></div>
-          </div>
-          <div class="muted" style="font-size:11px;margin-top:6px" id="mwWeekLabel">Target: $3,800–$4,200/week</div>
+        <div style="margin-top:12px;height:4px;border-radius:2px;background:var(--surface-0);overflow:hidden">
+          <div id="mwWeekBar" style="height:100%;width:0%;border-radius:2px;background:var(--good);transition:width .5s var(--ease-smooth)"></div>
         </div>
+        <div class="muted" style="font-size:11px;margin-top:6px" id="mwWeekLabel">Target: $3,800–$4,200/week</div>
       </div>
 
-      <!-- ── TAB: Ω Tiers (existing calculator, preserved) ── -->
+      <!-- ── Hidden sub-panels: Ω Tiers & Market Board (used by More tiles) ── -->
+      <div id="mwTabEval" class="mw-tab-panel" style="display:none"></div>
       <div id="mwTabOmega" class="mw-tab-panel" style="display:none;margin-top:12px">
         <div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:12px">All pricing based on <b>ALL miles</b>. Outputs are locked format.</div></div>
         <div class="grid2">
@@ -887,8 +1017,6 @@
           <div class="card"><h3>Locked Output</h3><pre id="omOutput" class="mono" style="white-space:pre-wrap;margin:0;min-height:240px"></pre></div>
         </div>
       </div>
-
-      <!-- ── TAB: Market Board Intelligence ── -->
       <div id="mwTabBoard" class="mw-tab-panel" style="display:none;margin-top:12px">
         <div class="grid2">
           <div class="card"><h3>Log Market Observation</h3>
@@ -920,12 +1048,17 @@
           </div>
         </div>
       </div>
-
-      <!-- ── Shared: AR / Brokers / Lanes ── -->
-      <div class="spacer"></div>
-      <div class="grid2"><div class="card"><h3>AR Aging</h3><div class="row"><div class="pill"><span class="muted">0–15</span> <b id="ar0_15">$0</b></div><div class="pill"><span class="muted">16–30</span> <b id="ar16_30">$0</b></div><div class="pill"><span class="muted">31–45</span> <b id="ar31_45">$0</b></div><div class="pill"><span class="muted">46+</span> <b id="ar46p">$0</b></div></div></div><div class="card"><h3>Top Brokers <span class="muted" id="brokerWindowLabel">(90d)</span></h3><div id="brokerList" class="list"></div></div></div>
-      <div class="spacer"></div>
-      <div class="card"><h3>Top Lanes</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Most-run corridors with RPM trends.</div><div id="laneList" class="list"></div></div>
+      <!-- Preserved IDs for AR/broker rendering (hidden) -->
+      <div style="display:none">
+        <div id="ar0_15"></div><div id="ar16_30"></div><div id="ar31_45"></div><div id="ar46p"></div>
+        <div id="brokerWindowLabel"></div><div id="brokerList"></div><div id="laneList"></div>
+      </div>
+      <!-- Hidden tab buttons (used by JS tab switcher) -->
+      <div style="display:none" id="mwTabs">
+        <button class="btn sm act" data-mwtab="eval">Load Filter</button>
+        <button class="btn sm" data-mwtab="omega">Ω Tiers</button>
+        <button class="btn sm" data-mwtab="board">Market Board</button>
+      </div>
     </section>
     <section id="view-more" class="view" style="display:none">
       <div class="card" style="margin-bottom:12px">
@@ -955,13 +1088,12 @@
       <div class="nl">Home</div>
     </a>
     <a href="#trips" data-nav="trips" aria-label="Trips">
-      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+      <div class="ni" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><span id="navUnpaidBadge" style="display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center"></span></div>
       <div class="nl">Trips</div>
     </a>
-    <div class="fab-wrap"><div class="fab" id="fab" role="button" aria-label="Add new trip" tabindex="0">＋</div><div class="fab-hint" id="fabHint" style="display:none">Tap to add a trip</div></div>
-    <a href="#omega" data-nav="omega" aria-label="Stack">
-      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-      <div class="nl">Stack</div>
+    <a href="#omega" data-nav="omega" aria-label="Evaluate load" class="nav-eval-center">
+      <div class="ni">⚡</div>
+      <div class="nl">Evaluate</div>
     </a>
     <a href="#more" data-nav="more" aria-label="More">
       <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></div>
@@ -980,7 +1112,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=19.0.0"></script>
-  <script src="sw-bridge.js?v=19.0.0"></script>
+  <script src="app.js?v=20.0.0"></script>
+  <script src="sw-bridge.js?v=20.0.0"></script>
 </body>
 </html>

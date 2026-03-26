@@ -7,7 +7,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '19.0.0';
+const APP_VERSION = '20.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -821,7 +821,7 @@ async function deleteTrip(orderNo){
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: orderNo, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(true); txn.onerror = ()=> reject(txn.error); });
 }
-async function listTrips({cursor=null, search='', dateFrom='', dateTo=''}={}){
+async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaidOnly=false}={}){
   const {stores} = tx('trips');
   const idx = stores.trips.index('created');
   const results = [];
@@ -840,6 +840,8 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo=''}={}){
       // P1-1: date range filtering
       if (dateFrom && (v.pickupDate || '') < dateFrom){ cur.continue(); return; }
       if (dateTo && (v.pickupDate || '') > dateTo){ cur.continue(); return; }
+      // v20: unpaid filter chip
+      if (unpaidOnly && v.isPaid){ cur.continue(); return; }
       if (!term) { results.push(v); }
       else {
         const hay = (String(v.orderNo||'')+' '+String(v.customer||'')).toUpperCase();
@@ -2526,7 +2528,11 @@ function bidRangeHTML(bids){
     const color = colors[key] || 'var(--text)';
     html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
       <span style="color:var(--text-secondary)">${escapeHtml(bid.label)}</span>
-      <span><span style="color:${color};font-weight:700;font-family:var(--font-mono)">${fmtMoney(bid.amount)}</span> <span class="muted" style="font-size:11px">($${bid.rpm.toFixed(2)}/mi)</span></span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="color:${color};font-weight:700;font-family:var(--font-mono)">${fmtMoney(bid.amount)}</span>
+        <span class="muted" style="font-size:11px">($${bid.rpm.toFixed(2)}/mi)</span>
+        <button data-copybid="${bid.amount}" style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--text-secondary);cursor:pointer;line-height:1.4" aria-label="Copy ${escapeHtml(bid.label)} rate">📋</button>
+      </span>
     </div>`;
   }
   html += '</div>';
@@ -2824,6 +2830,21 @@ function setActiveNav(name){
   });
 }
 
+async function refreshUnpaidBadge(){
+  try {
+    const badge = $('#navUnpaidBadge');
+    if (!badge) return;
+    const unpaid = await listTrips({ unpaidOnly: true, limit: 100 });
+    const n = unpaid.length;
+    if (n > 0){
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e){}
+}
+
 async function navigate(){
   const hash = (location.hash || '#home').slice(1);
 
@@ -2917,46 +2938,43 @@ function pulseKPI(el){
 
 // ---- UI: Home ----
 async function renderHome(){
+  refreshUnpaidBadge().catch(()=>{});
   const state = await getOnboardState();
   const trips = await listTrips({cursor:null});
-  const recent = trips.items.slice(0,6);
+  const recent = trips.items.slice(0, 3); // v20: limit to 3
   const box = $('#homeRecentTrips');
   box.innerHTML = '';
 
-  // ── Welcome card (replaces Ω calculator card for new users) ──
+  // ── Welcome card (new users) / KPI card (active users) ──
   const welcomeSlot = $('#homeWelcome');
-  const omegaLink = $('#homeOmegaCard');
-  const perfCard = $('#homePerfCard');
+  const kpiCard = $('#homeKPICard');
 
   if (state.isEmpty){
-    // Show welcome, hide omega card and performance center
     if (welcomeSlot){
       welcomeSlot.innerHTML = renderWelcomeCard();
       welcomeSlot.style.display = '';
       welcomeSlot.querySelector('#welcomeAddTrip')?.addEventListener('click', ()=> { haptic(); openQuickAddSheet(); });
     }
-    if (omegaLink) omegaLink.style.display = 'none';
-    if (perfCard) perfCard.style.display = 'none';
+    if (kpiCard) kpiCard.style.display = 'none';
     box.innerHTML = '';
   } else {
-    // Hide welcome, show normal cards
     if (welcomeSlot) welcomeSlot.style.display = 'none';
-    if (omegaLink) omegaLink.style.display = '';
-    if (perfCard) perfCard.style.display = '';
+    if (kpiCard) kpiCard.style.display = '';
 
-    if (!recent.length) box.innerHTML = `<div class="muted" style="font-size:12px">No trips yet. Tap ＋ to add your first trip.</div>`;
+    if (!recent.length) box.innerHTML = `<div class="muted" style="font-size:12px">No trips yet. Tap ＋ Trip to add your first.</div>`;
     else { recent.forEach(t => box.appendChild(tripRow(t, {compact:true}))); staggerItems(box); }
   }
 
-  // ── Beginner encouragement in performance card ──
+  // ── Coaching: beginner encouragement ──
   const coachEl = $('#pcCoaching');
   if (state.isBeginner && coachEl){
     coachEl.innerHTML = `<div style="padding:10px 12px;border-radius:10px;background:rgba(255,179,0,.08);border:1px solid rgba(255,179,0,.15);font-size:12px">
       <span style="font-weight:700;color:var(--accent)">Getting started!</span>
-      <span class="muted"> Log a few more trips and your dashboard will show RPM trends, broker grades, and profit scores automatically.</span>
+      <span class="muted"> Log a few more trips to unlock RPM trends, broker grades, and profit scores.</span>
     </div>`;
   }
 
+  // ── What's Next: actions ──
   const actions = $('#homeActions');
   actions.innerHTML = '';
 
@@ -2965,25 +2983,19 @@ async function renderHome(){
     actions.appendChild(actionCard('Got a rate confirmation?', 'Snap Load (OCR)', ()=> openSnapLoad()));
   } else {
     const unpaidList = await listUnpaidTrips(6);
-    if (unpaidList.length) actions.appendChild(actionCard(`You have ${unpaidList.length} unpaid trip(s)`, 'Go to Money', ()=> location.hash = '#money'));
-    else actions.appendChild(actionCard('All caught up', 'View Trips', ()=> location.hash = '#trips'));
+    if (unpaidList.length) actions.appendChild(actionCard(`${unpaidList.length} unpaid trip${unpaidList.length > 1 ? 's' : ''} pending`, 'Mark Paid →', ()=> location.hash = '#money'));
 
-    // P3-4: backup reminder
     const lastExp = await getSetting('lastExportDate', null);
     if (!lastExp || daysBetweenISO(lastExp, isoDate()) > 7){
-      actions.appendChild(actionCard(`Haven't backed up in ${lastExp ? daysBetweenISO(lastExp, isoDate()) + ' days' : 'a while'}`, 'Export Now', ()=> exportJSON()));
-    } else {
-      actions.appendChild(actionCard('Export a backup', 'Export JSON', ()=> exportJSON()));
+      actions.appendChild(actionCard(`Backup overdue${lastExp ? ' ('+daysBetweenISO(lastExp, isoDate())+'d)' : ''}`, 'Export Now', ()=> exportJSON()));
     }
 
-    // Weekly reflection: show Fri-Sun if not yet done this week
-    const dayOfWeek = new Date().getDay(); // 0=Sun, 5=Fri, 6=Sat
+    const dayOfWeek = new Date().getDay();
     if (dayOfWeek >= 5 || dayOfWeek === 0){
       const weekStart = startOfWeek(new Date()).toISOString().slice(0,10);
       const reflection = await getSetting('weeklyReflection', null);
-      const lastReflectWeek = reflection?.week || '';
-      if (lastReflectWeek !== weekStart){
-        actions.appendChild(actionCard('End-of-week check-in', 'Reflect on Your Week', ()=> openWeeklyReflection()));
+      if ((reflection?.week || '') !== weekStart){
+        actions.appendChild(actionCard('End-of-week check-in ready', 'Reflect on Week', ()=> openWeeklyReflection()));
       }
     }
   }
@@ -2993,14 +3005,12 @@ async function renderHome(){
   await computeKPIs();
   if (!state.isEmpty) await Promise.all([
     renderCommandCenter(),
-    renderWeeklyChart().catch(()=>{}),
     checkOverduePayments(),
   ]);
-  await refreshStorageHealth('');
-  // F5: Show latest weekly report card
-  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
-  // F6: Fuel price staleness nudge
+  // F6: Fuel price staleness nudge (non-blocking)
   checkFuelPriceStaleness().catch(()=>{});
+  // F5: Weekly report card (non-blocking, renders into homeWeeklyReport slot)
+  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
 }
 
 // ---- Performance Command Center ----
@@ -3014,7 +3024,7 @@ async function renderCommandCenter(){
     const d14 = now.getTime() - 14 * 86400000;
     const d30 = now.getTime() - 30 * 86400000;
 
-    // Revenue velocity: $/day over last 7 days vs previous 7
+    // Revenue velocity: $/day over last 7 days vs previous 7 (for trend alerts)
     let rev7 = 0, rev14 = 0;
     for (const t of trips){
       const dt = t.pickupDate || t.deliveryDate;
@@ -3026,14 +3036,35 @@ async function renderCommandCenter(){
     }
     const velNow = rev7 / 7;
     const velPrev = rev14 / 7;
+
+    // v20: pcRevVel now shows True RPM for the week (the #1 most actionable KPI)
+    let wkMiLoaded = 0, wkMiAll = 0, wkGrossRpm = 0, wkDhMiSum = 0, wkTripCount = 0;
+    for (const t of trips){
+      const dt = t.pickupDate || t.deliveryDate;
+      if (!dt || t.needsReview) continue;
+      if (new Date(dt).getTime() >= wk0){
+        const loaded = Number(t.loadedMiles || 0);
+        const empty = Number(t.emptyMiles || 0);
+        const pay = Number(t.pay || 0);
+        wkGrossRpm += pay;
+        wkMiLoaded += loaded;
+        wkMiAll += loaded + empty;
+        wkDhMiSum += empty;
+        wkTripCount++;
+      }
+    }
+    const wkTrueRPM = wkMiAll > 0 ? wkGrossRpm / wkMiAll : 0;
+    const wkAvgDH = wkTripCount > 0 ? wkDhMiSum / wkTripCount : 0;
+
     const velEl = $('#pcRevVel');
     if (velEl){
-      velEl.textContent = `${fmtMoney(velNow)}/d`;
-      const parent = velEl.closest('.pill');
+      velEl.textContent = wkTrueRPM > 0 ? `$${wkTrueRPM.toFixed(2)}` : '\u2014';
+      const parent = velEl.closest('.kpi-cell');
       if (parent){
-        if (velPrev > 0 && velNow < velPrev * 0.8) parent.className = 'pill danger';
-        else if (velPrev > 0 && velNow > velPrev * 1.1) parent.className = 'pill';
-        else parent.className = 'pill';
+        if (wkTrueRPM >= 1.75) parent.style.color = 'var(--good)';
+        else if (wkTrueRPM >= 1.50) parent.style.color = '';
+        else if (wkTrueRPM > 0) parent.style.color = 'var(--warn)';
+        else parent.style.color = '';
       }
     }
 
@@ -3046,11 +3077,8 @@ async function renderCommandCenter(){
     }
     const autoTarget = (gross30 / 30) * 7 || 0;
     const weeklyTarget = userGoal > 0 ? userGoal : autoTarget;
-    let wkGross = 0;
-    for (const t of trips){
-      const dt = t.pickupDate || t.deliveryDate;
-      if (dt && new Date(dt).getTime() >= wk0) wkGross += Number(t.pay || 0);
-    }
+    // v20: use wkGrossRpm (already computed above) instead of a second loop
+    const wkGross = wkGrossRpm;
     const targetPct = weeklyTarget > 0 ? Math.min(200, (wkGross / weeklyTarget) * 100) : 0;
 
     const tgtEl = $('#pcWkTarget');
@@ -3066,6 +3094,16 @@ async function renderCommandCenter(){
       if (targetPct >= 100) bar.style.background = 'var(--good)';
       else if (targetPct >= 70) bar.style.background = 'var(--accent)';
       else bar.style.background = 'var(--warn)';
+    }
+    // v20: homeWeekBadge shows progress %
+    if (badgeEl){
+      if (weeklyTarget > 0){
+        const pct = Math.min(200, Math.round(targetPct));
+        badgeEl.textContent = `${pct}% of goal`;
+        if (pct >= 100) badgeEl.style.color = 'var(--good)';
+        else if (pct >= 70) badgeEl.style.color = 'var(--accent-text)';
+        else badgeEl.style.color = '';
+      }
     }
     const label = $('#pcProgressLabel');
     if (label) label.textContent = weeklyTarget > 0
@@ -3102,7 +3140,21 @@ async function renderCommandCenter(){
       }
     } else if (coachEl){ coachEl.innerHTML = ''; }
 
-    // Efficiency score
+    // v20: pcEfficiency shows Avg DH miles (more actionable than loaded efficiency %)
+    const effEl = $('#pcEfficiency');
+    if (effEl){
+      effEl.textContent = wkTripCount > 0 ? `${Math.round(wkAvgDH)} mi` : '\u2014';
+      const parent = effEl.closest('.kpi-cell');
+      if (parent){
+        if (wkAvgDH <= 25 && wkTripCount > 0) parent.style.color = 'var(--good)';
+        else if (wkAvgDH <= 50 && wkTripCount > 0) parent.style.color = '';
+        else if (wkTripCount > 0) parent.style.color = 'var(--warn)';
+      }
+    }
+    // v20: homeWeekBadge shows progress pct
+    const badgeEl = $('#homeWeekBadge');
+
+    // Efficiency for trend alerts (still needed)
     let ld30 = 0, all30 = 0;
     for (const t of trips){
       const dt = t.pickupDate || t.deliveryDate;
@@ -3112,16 +3164,6 @@ async function renderCommandCenter(){
       }
     }
     const eff = all30 > 0 ? ((ld30 / all30) * 100) : 0;
-    const effEl = $('#pcEfficiency');
-    if (effEl){
-      effEl.textContent = all30 > 0 ? `${eff.toFixed(0)}%` : '\u2014';
-      const pp = effEl.closest('.pill');
-      if (pp){
-        if (eff >= 85) pp.className = 'pill';
-        else if (eff >= 70) pp.className = 'pill warn';
-        else if (all30 > 0) pp.className = 'pill danger';
-      }
-    }
 
     // Average load score (last 30 days)
     let scoreSum = 0, scoreCnt = 0, acceptCount = 0;
@@ -3371,11 +3413,35 @@ let tripCursor = null;
 let tripSearchTerm = '';
 let tripFilterDateFrom = '';
 let tripFilterDateTo = '';
+let tripFilterChip = 'all'; // v20: 'all' | 'unpaid' | 'week' | 'month'
+
+// v20: Compute date range from chip selection
+function _chipDateRange(chip){
+  if (chip === 'week'){
+    const from = startOfWeek(new Date()).toISOString().slice(0,10);
+    const to = isoDate();
+    return { dateFrom: from, dateTo: to, unpaidOnly: false };
+  }
+  if (chip === 'month'){
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const to = isoDate();
+    return { dateFrom: from, dateTo: to, unpaidOnly: false };
+  }
+  if (chip === 'unpaid') return { dateFrom: '', dateTo: '', unpaidOnly: true };
+  return { dateFrom: tripFilterDateFrom, dateTo: tripFilterDateTo, unpaidOnly: false };
+}
 
 async function renderTrips(reset=false){
   const list = $('#tripList');
   if (reset){ tripCursor = null; showSkeleton(list); }
-  const res = await listTrips({cursor: tripCursor, search: tripSearchTerm, dateFrom: tripFilterDateFrom, dateTo: tripFilterDateTo});
+  const { dateFrom, dateTo, unpaidOnly } = _chipDateRange(tripFilterChip);
+  const res = await listTrips({cursor: tripCursor, search: tripSearchTerm,
+    dateFrom: unpaidOnly ? '' : (dateFrom || tripFilterDateFrom),
+    dateTo: unpaidOnly ? '' : (dateTo || tripFilterDateTo),
+    unpaidOnly});
+  // v20: update chip active state
+  $$('#tripChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === tripFilterChip));
   tripCursor = res.nextCursor;
   if (reset) list.innerHTML = '';
   if (!res.items.length && reset){
@@ -3387,6 +3453,61 @@ async function renderTrips(reset=false){
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
+}
+
+// ── v20: Swipe actions helper ──────────────────────────────────────────────
+// Wraps el in a swipe-wrap container.
+// Swipe left (< -threshold) → onLeft(); Swipe right (> threshold) → onRight()
+function addSwipeActions(el, { onLeft, onRight, labelLeft='Delete 🗑️', labelRight='Paid ✓' }={}){
+  const wrap = document.createElement('div'); wrap.className = 'swipe-wrap';
+  const inner = document.createElement('div'); inner.className = 'swipe-inner';
+  if (onLeft){
+    const actL = document.createElement('div'); actL.className = 'swipe-actions-l'; actL.textContent = labelLeft;
+    wrap.appendChild(actL);
+  }
+  if (onRight){
+    const actR = document.createElement('div'); actR.className = 'swipe-actions-r'; actR.textContent = labelRight;
+    wrap.appendChild(actR);
+  }
+  inner.appendChild(el);
+  wrap.appendChild(inner);
+
+  const THRESHOLD = 72;
+  let startX = 0, startY = 0, dx = 0, locked = false, axis = null;
+
+  inner.addEventListener('touchstart', (e)=>{
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    dx = 0; locked = false; axis = null;
+    inner.classList.add('no-transition');
+  }, {passive: true});
+
+  inner.addEventListener('touchmove', (e)=>{
+    if (e.touches.length !== 1 || locked) return;
+    const x = e.touches[0].clientX - startX;
+    const y = e.touches[0].clientY - startY;
+    if (axis === null){
+      if (Math.abs(x) < 6 && Math.abs(y) < 6) return;
+      axis = Math.abs(x) > Math.abs(y) ? 'h' : 'v';
+    }
+    if (axis === 'v') return;
+    e.preventDefault();
+    dx = x;
+    const clipped = Math.max(onLeft ? -THRESHOLD * 1.4 : 0, Math.min(onRight ? THRESHOLD * 1.4 : 0, dx));
+    inner.style.transform = `translateX(${clipped}px)`;
+    wrap.classList.toggle('swiping-l', dx < -20);
+    wrap.classList.toggle('swiping-r', dx > 20);
+  }, {passive: false});
+
+  inner.addEventListener('touchend', ()=>{
+    inner.classList.remove('no-transition');
+    inner.style.transform = '';
+    wrap.classList.remove('swiping-l', 'swiping-r');
+    if (dx < -THRESHOLD && onLeft){ locked = true; haptic(20); onLeft(); }
+    else if (dx > THRESHOLD && onRight){ locked = true; haptic(20); onRight(); }
+  }, {passive: true});
+
+  return wrap;
 }
 
 // P2-2: trip row shows RPM, route, paid tag, LOAD SCORE
@@ -3445,7 +3566,28 @@ function tripRow(t, {compact=false}={}){
     toast(t.isPaid ? 'Marked paid' : 'Marked unpaid');
     await renderAR(); await renderTrips(true);
   });
-  return d;
+
+  // v20: Swipe-right → Mark Paid; Swipe-left → Delete (with confirm)
+  const markPaid = async ()=>{
+    t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
+    await upsertTrip(t); invalidateKPICache();
+    toast(t.isPaid ? 'Marked paid ✓' : 'Marked unpaid');
+    refreshUnpaidBadge().catch(()=>{});
+    await renderAR(); await renderTrips(true);
+  };
+  const swipeDelete = async ()=>{
+    const ok = confirm(`Delete trip ${escapeHtml(String(t.orderNo))}? This cannot be undone.`);
+    if (!ok) return;
+    await deleteTrip(t.orderNo); invalidateKPICache();
+    toast('Trip deleted');
+    await renderTrips(true); await renderHome();
+  };
+  return compact ? d : addSwipeActions(d, {
+    onRight: t.isPaid ? null : markPaid,
+    onLeft: swipeDelete,
+    labelRight: '✓ Paid',
+    labelLeft: '🗑️ Delete',
+  });
 }
 
 // ---- UI: Receipt Manager ----
@@ -3671,7 +3813,7 @@ async function renderAR(){
       <div class="right"><div class="v">${fmtMoney(t.pay||0)}</div><button class="btn primary sm">Mark Paid</button></div>`;
     $('button', d).addEventListener('click', async ()=>{
       haptic(20);
-      t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs();
+      t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs(); refreshUnpaidBadge().catch(()=>{});
     });
     list.appendChild(d);
   });
@@ -3746,24 +3888,34 @@ async function renderInsights(){
 }
 
 // ---- More menu ----
+// v20: More tiles organized into sections
 const MORE_TILES = [
-  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money' },
-  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel' },
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights' },
-  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports' },
-  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents' },
-  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
-  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
-  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
-  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy' },
-  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel' },
-  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay' },
-  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory' },
-  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage' },
-  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
-  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
-  { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security' },
+  // MONEY
+  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'MONEY' },
+  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'MONEY' },
+  // LOGS
+  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'LOGS' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'LOGS' },
+  // INTELLIGENCE
+  { icon:'📋', title:'Weekly Reports', sub:'Auto-generated P&L summaries by week', act:'weeklyReports', section:'INTELLIGENCE' },
+  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends', section:'INTELLIGENCE' },
+  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring', section:'INTELLIGENCE' },
+  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis', section:'INTELLIGENCE' },
+  { icon:'📅', title:'Weekly Strategy', sub:'Mode, goal progress & week projection', act:'weeklyStrategy', section:'INTELLIGENCE' },
+  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by avg RPM', act:'seasonalIntel', section:'INTELLIGENCE' },
+  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs. actuals', act:'costPerDay', section:'INTELLIGENCE' },
+  // TOOLS
+  { icon:'Ω', title:'Ω Tiers Calculator', sub:'All-in pricing tiers by mileage band', act:'omegaTiers', section:'TOOLS' },
+  { icon:'📡', title:'Market Board', sub:'Log market observations & signals', act:'marketBoard', section:'TOOLS' },
+  { icon:'🤝', title:'Counter-Offer Memory', sub:'Track broker negotiation outcomes', act:'counterOfferMemory', section:'TOOLS' },
+  { icon:'📁', title:'Documents', sub:'Insurance, MC authority, W-9, carrier packets', act:'documents', section:'TOOLS' },
+  { icon:'📦', title:'CPA Package', sub:'P&L preview, quarterly breakdown & export', act:'cpaPackage', section:'TOOLS' },
+  // DATA
+  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'DATA' },
+  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'DATA' },
+  // APP
+  { icon:'🔒', title:'Security Lock', sub:'PIN lock for local profile', act:'security', section:'APP' },
+  { icon:'💿', title:'Storage Health', sub:'IndexedDB usage, quota & cleanup', act:'storageHealth', section:'APP' },
 ];
 
 let _moreBound = false;
@@ -3772,7 +3924,18 @@ async function renderMore(){
   if (!_moreBound){
     _moreBound = true;
     grid.innerHTML = '';
+
+    // v20: Render tiles grouped by section
+    let currentSection = null;
     for (const tile of MORE_TILES){
+      if (tile.section && tile.section !== currentSection){
+        currentSection = tile.section;
+        const hdr = document.createElement('div');
+        hdr.className = 'more-section-head';
+        hdr.textContent = currentSection;
+        hdr.style.gridColumn = '1 / -1';
+        grid.appendChild(hdr);
+      }
       const el = document.createElement('div');
       el.className = 'menu-tile';
       el.setAttribute('role', 'button');
@@ -3795,6 +3958,31 @@ async function renderMore(){
         else if (tile.act === 'costPerDay') openCostPerDay();
         else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
         else if (tile.act === 'cpaPackage') openCPAPackage();
+        // v20: Tools tiles — navigate to Evaluate screen + switch sub-tab
+        else if (tile.act === 'omegaTiers'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
+        else if (tile.act === 'marketBoard'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
+        else if (tile.act === 'storageHealth'){
+          location.hash = '#insights';
+          setTimeout(()=>{
+            const el = $('#stTrips')?.closest('.card');
+            if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+            refreshStorageHealth();
+          }, 200);
+        }
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -4780,11 +4968,12 @@ async function mwEvaluateLoad(){
   // A–E are displayed as the visible scale; <E is Reject
   // ════════════════════════════════════════════════════
   let grade, gradeLabel, gradeColor, gradeEmoji;
-  if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'STRONG LOAD'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
-  else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'GOOD LOAD'; gradeColor = '#58a6ff'; gradeEmoji = '🔵'; }
-  else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'PROFESSIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
-  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'MINIMUM STANDARD'; gradeColor = '#ff8c42'; gradeEmoji = '🟠'; }
-  else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
+  // v20: Blueprint grade labels — decisive, action-oriented
+  if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'PREMIUM WIN'; gradeColor = '#34d399'; gradeEmoji = '🟢'; }
+  else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'STRONG ACCEPT'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
+  else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'CONDITIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
+  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'WEAK — NEGOTIATE'; gradeColor = '#fb923c'; gradeEmoji = '🟠'; }
+  else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
   // Override display verdict with intelligence engine result
@@ -4883,6 +5072,23 @@ async function mwEvaluateLoad(){
   };
   _mwRenderDecision(out, _decision);
   mwRenderWeekStructure(weeklyGross);
+
+  // Save to eval history (session, last 5)
+  try {
+    const histEntry = {
+      ts: Date.now(),
+      grade, gradeLabel, gradeColor, gradeEmoji,
+      trueRPM: +trueRPM.toFixed(2),
+      origin: origin || '', dest: dest || '',
+      revenue: +revenue, loadedMi: +loadedMi,
+    };
+    let hist = [];
+    try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+    hist.unshift(histEntry);
+    if (hist.length > 5) hist.length = 5;
+    sessionStorage.setItem('fl_eval_hist', JSON.stringify(hist));
+  } catch(e){}
+  _renderEvalHistory();
 }
 
 function _mwRenderDecision(out, d){
@@ -4918,10 +5124,10 @@ function _mwRenderDecision(out, d){
     <div style="font-size:48px;font-weight:800;color:${gradeColor};font-family:var(--font-mono);line-height:1.1;margin:4px 0">${grade}</div>
     <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${tier.color}">$${trueRPM.toFixed(2)}</b> • ${tier.label}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
-      ${ladderRow('A','STRONG LOAD','≥ $1.75')}
-      ${ladderRow('B','GOOD LOAD','$1.60–$1.74')}
-      ${ladderRow('C','PROFESSIONAL','$1.50–$1.59')}
-      ${ladderRow('D','MINIMUM STANDARD','$1.35–$1.49')}
+      ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
+      ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
+      ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
+      ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
       ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
     </div>
@@ -5093,7 +5299,7 @@ function _mwRenderDecision(out, d){
 
   // Final intelligence verdict
   html += `<div style="text-align:center;margin-top:14px;padding:12px;border-radius:var(--r-sm);background:${verdictColors[verdict]}15;border:1px solid ${verdictColors[verdict]}40">
-    <div style="font-size:16px;font-weight:800;color:${verdictColors[verdict]};font-family:var(--font-mono)">${verdict === 'ACCEPT' ? (trueRPM >= 1.75 ? 'STRONG LOAD' : trueRPM >= 1.60 ? 'GOOD LOAD' : 'ACCEPT') : verdictLabels[verdict]}</div>
+    <div style="font-size:16px;font-weight:800;color:${verdictColors[verdict]};font-family:var(--font-mono)">${verdict === 'ACCEPT' ? (trueRPM >= 1.75 ? 'PREMIUM WIN' : trueRPM >= 1.60 ? 'STRONG ACCEPT' : 'CONDITIONAL') : verdictLabels[verdict]}</div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${escapeHtml(verdictReason)}</div>` : ''}
   </div>`;
 
@@ -5204,15 +5410,29 @@ function _mwRenderDecision(out, d){
   // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
   html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
 
-  // "Book as Trip" button — pre-fill trip wizard with evaluated load data
+  // "Book as Trip" + "Clear & Next" buttons
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-    <button class="btn primary" id="mwBookTrip" style="width:100%">＋ Book as Trip</button>
-    <button class="btn" id="mwAskAI" style="width:100%;margin-top:8px;background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI — Strategic Analysis</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
+      <button class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
+    </div>
+    <button class="btn" id="mwAskAI" style="width:100%;background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI — Strategic Analysis</button>
     <div id="mwAIResult" style="margin-top:10px"></div>
-    <div class="muted" style="font-size:11px;margin-top:6px;text-align:center">Pre-fills a new trip with this load's data</div>
   </div>`;
 
   out.innerHTML = html;
+
+  // Wire up bid copy buttons
+  out.addEventListener('click', (e)=>{
+    const btn = e.target.closest('[data-copybid]');
+    if (!btn) return;
+    const amount = Number(btn.dataset.copybid);
+    if (!amount) return;
+    const text = fmtMoney(amount);
+    try {
+      navigator.clipboard.writeText(text).then(()=>{ haptic(10); toast('Rate copied: ' + text); }).catch(()=>{ toast('Rate: ' + text); });
+    } catch(e){ toast('Rate: ' + text); }
+  }, { once: false });
 
   // Async: inject Lane Intel (F4) + Rate Trend (F8)
   if (d.origin && d.dest){
@@ -5237,8 +5457,21 @@ function _mwRenderDecision(out, d){
         emptyMiles: deadMi || 0,
         pay: revenue || 0,
         pickupDate: isoDate(),
-        notes: `MW Stack: ${grade || ''} (USA ${usaResult?.score || 0}/100) — True RPM $${trueRPM.toFixed(2)}`,
+        notes: `Eval: ${grade || ''} · $${trueRPM.toFixed(2)}/mi True RPM`,
+        _evalPrefill: true,
       });
+    });
+  }
+
+  // Wire up Clear & Next
+  const clearNextBtn = $('#mwClearNext', out);
+  if (clearNextBtn){
+    clearNextBtn.addEventListener('click', ()=>{
+      haptic(10);
+      ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => { const el = $('#'+id); if(el) el.value=''; });
+      $('#mwEvalOutput').innerHTML = '';
+      try{ sessionStorage.removeItem('fl_eval_draft'); }catch(e){}
+      setTimeout(()=>{ $('#mwRevenue')?.focus(); }, 80);
     });
   }
 
@@ -5347,6 +5580,44 @@ function _mwRenderDecision(out, d){
   })().catch(() => {});
 }
 
+
+function _renderEvalHistory(){
+  const container = $('#mwEvalHistory');
+  if (!container) return;
+  let hist = [];
+  try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+  if (!hist.length){ container.innerHTML = ''; return; }
+
+  const rows = hist.map((h, i) => {
+    const route = (h.origin && h.dest) ? `${escapeHtml(h.origin)} → ${escapeHtml(h.dest)}` : '—';
+    const ago = i === 0 ? 'Just now' : _timeAgoShort(h.ts);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < hist.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
+      <div style="width:28px;height:28px;border-radius:6px;background:${h.gradeColor}22;border:1px solid ${h.gradeColor}55;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${h.gradeColor};font-family:var(--font-mono);flex-shrink:0">${escapeHtml(h.grade)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${route}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);flex-shrink:0">${h.revenue ? '$'+h.revenue.toLocaleString() : ''}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <details style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <summary style="font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
+        <span style="flex:1">Recent Evaluations (${hist.length})</span>
+        <span style="font-size:10px;color:var(--text-tertiary)">▼</span>
+      </summary>
+      <div style="margin-top:8px">${rows}</div>
+    </details>`;
+}
+
+function _timeAgoShort(ts){
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return sec + 's ago';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + 'm ago';
+  return Math.floor(min / 60) + 'h ago';
+}
 
 function mwRenderWeekStructure(weeklyGross){
   const gross = weeklyGross || 0;
@@ -5552,25 +5823,88 @@ function mwBindTabs(){
   });
 }
 
+// ── v20: sessionStorage draft helpers ──
+function _saveEvalDraft(){
+  try{
+    const draft = {
+      rev: $('#mwRevenue')?.value || '',
+      lm: $('#mwLoadedMi')?.value || '',
+      dm: $('#mwDeadMi')?.value || '',
+      origin: $('#mwOrigin')?.value || '',
+      dest: $('#mwDest')?.value || '',
+      ts: Date.now()
+    };
+    sessionStorage.setItem('fl_eval_draft', JSON.stringify(draft));
+  }catch(e){}
+}
+function _loadEvalDraft(){
+  try{
+    const raw = sessionStorage.getItem('fl_eval_draft');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Draft expires after 30 minutes
+    if (!d || (Date.now() - (d.ts||0)) > 1800000) { sessionStorage.removeItem('fl_eval_draft'); return null; }
+    return d;
+  }catch(e){ return null; }
+}
+
 async function mwInit(){
   if (mwBound) return;
   mwBound = true;
 
-  // Tab switching
+  // Tab switching (hidden tabs used by More → Tools tiles)
   mwBindTabs();
 
-  // Restore last tab
+  // Restore last tab (usually eval)
   const lastTab = await getSetting('mwLastTab', 'eval');
-  // T5-FIX: Guard against selector injection — only allow known tab values
   const validTabs = new Set(['eval', 'omega', 'board']);
   const safeTab = validTabs.has(lastTab) ? lastTab : 'eval';
   const tabBtn = document.querySelector(`#mwTabs [data-mwtab="${safeTab}"]`);
   if (tabBtn) tabBtn.click();
 
-  // Load evaluator
-  $('#mwEvalBtn')?.addEventListener('click', mwEvaluateLoad);
+  // v20: Advanced section toggle
+  const advToggle = $('#evalAdvToggle');
+  const advBody = $('#evalAdvBody');
+  if (advToggle && advBody){
+    advToggle.addEventListener('click', ()=>{
+      haptic(8);
+      advToggle.classList.toggle('open');
+      advBody.classList.toggle('open');
+    });
+  }
 
-  // F7: GPS deadhead — trigger on origin field changes
+  // v20: Live evaluation — debounced, no button needed
+  let _evalTimer = null;
+  function _scheduleEval(){
+    _saveEvalDraft();
+    clearTimeout(_evalTimer);
+    _evalTimer = setTimeout(()=>{
+      const rev = Number($('#mwRevenue')?.value) || 0;
+      const lm = Number($('#mwLoadedMi')?.value) || 0;
+      if (rev > 0 && lm > 0){
+        mwEvaluateLoad();
+      } else {
+        // Show helpful hint while partially filled
+        const out = $('#mwEvalOutput');
+        if (out){
+          const hint = rev > 0 ? 'Enter loaded miles to see grade' : lm > 0 ? 'Enter revenue to see grade' : null;
+          if (hint) out.innerHTML = `<div class="card" style="text-align:center;padding:20px 16px;border-style:dashed"><div class="muted" style="font-size:13px">${escapeHtml(hint)}</div></div>`;
+        }
+      }
+    }, 200);
+  }
+  ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => {
+    $('#'+id)?.addEventListener('input', _scheduleEval);
+  });
+
+  // Sanity-check warnings on revenue blur
+  $('#mwRevenue')?.addEventListener('blur', ()=>{
+    const rev = Number($('#mwRevenue')?.value) || 0;
+    if (rev > 5000) toast('Revenue over $5,000 — double-check the amount', false);
+    if (rev > 0 && rev < 50) toast('Revenue seems low — is that per mile?', false);
+  });
+
+  // GPS deadhead — trigger on origin field changes
   const originEl = $('#mwOrigin');
   if (originEl){
     let _gpsTimer = null;
@@ -5579,13 +5913,13 @@ async function mwInit(){
       _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
     });
   }
-  // F7: GPS pin button next to origin
+  // GPS pin button next to origin
   $('#mwGpsBtn')?.addEventListener('click', async ()=>{
     haptic(15);
     const orig = ($('#mwOrigin')?.value||'').trim();
     if (!orig){ toast('Enter an origin city first', true); return; }
     $('#mwGpsHint').textContent = '📍 Getting location…';
-    _gpsCache = null; // force fresh lookup
+    _gpsCache = null;
     await updateGPSDeadhead(orig);
   });
 
@@ -5603,41 +5937,73 @@ async function mwInit(){
     const sel = $('#mwStrategicReason');
     if (sel){ sel.disabled = !on; if (!on) sel.value = ''; }
   });
+
+  // v20: Clear button — reset 3 primary fields + output, focus revenue
   $('#mwEvalReset')?.addEventListener('click', () => {
     ['mwOrigin','mwDest','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
-    $('#mwDayOfWeek').value='mon';
+    const dow = $('#mwDayOfWeek');
+    if (dow){ const dm = ['sun','mon','tue','wed','thu','fri','sat']; dow.value = dm[new Date().getDay()]; }
     const cur = $('#mwCurrency'); if (cur) cur.value='USD';
     const st = $('#mwStrategic'); if (st) st.checked = false;
     const sr = $('#mwStrategicReason'); if (sr){ sr.value=''; sr.disabled = true; }
-    $('#mwEvalOutput').innerHTML = '<div class="muted" style="font-size:13px;line-height:1.8">Enter a load to run the 90-second filter.<br><br><span style="font-size:11px;color:var(--text-tertiary)">Geography → True RPM → Fuel → Weekly Position → Fatigue</span></div>';
+    const out = $('#mwEvalOutput');
+    if (out) out.innerHTML = `<div class="card" style="text-align:center;padding:28px 16px;border-style:dashed"><div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div><div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div><div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Geography → True RPM → Fuel → Weekly Position → Fatigue</div></div>`;
     mwRenderWeekStructure(0);
     setSetting('mwLastInputs', null).catch(()=>{});
+    sessionStorage.removeItem('fl_eval_draft');
+    setTimeout(()=> $('#mwRevenue')?.focus(), 50);
+    haptic(10);
   });
 
-  // Restore last eval inputs
+  // Restore state: sessionStorage draft first (fastest), then IDB last inputs
+  const draft = _loadEvalDraft();
   const last = await getSetting('mwLastInputs', null);
-  if (last && typeof last === 'object'){
-    if (last.origin) $('#mwOrigin').value = last.origin;
-    if (last.dest) $('#mwDest').value = last.dest;
-    if (last.loadedMi) $('#mwLoadedMi').value = last.loadedMi;
-    if (last.deadMi) $('#mwDeadMi').value = last.deadMi;
-    if (last.revenue) $('#mwRevenue').value = last.revenue;
-    if (last.dayOfWeek) $('#mwDayOfWeek').value = last.dayOfWeek;
-    if (last.fatigue) $('#mwFatigue').value = last.fatigue;
-    if (last.weeklyGross) $('#mwWeeklyGross').value = last.weeklyGross;
+
+  if (draft?.rev || draft?.lm){
+    // Draft is fresh (< 30min) — use it for primary fields
+    if (draft.rev) { const el=$('#mwRevenue'); if(el) el.value=draft.rev; }
+    if (draft.lm) { const el=$('#mwLoadedMi'); if(el) el.value=draft.lm; }
+    if (draft.dm) { const el=$('#mwDeadMi'); if(el) el.value=draft.dm; }
+    if (draft.origin) { const el=$('#mwOrigin'); if(el) el.value=draft.origin; }
+    if (draft.dest) { const el=$('#mwDest'); if(el) el.value=draft.dest; }
+  } else if (last && typeof last === 'object'){
+    if (last.origin) { const el=$('#mwOrigin'); if(el) el.value=last.origin; }
+    if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
+    if (last.loadedMi) { const el=$('#mwLoadedMi'); if(el) el.value=last.loadedMi; }
+    if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
+    if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
+    if (last.fatigue) { const el=$('#mwFatigue'); if(el) el.value=last.fatigue; }
     if (last.strategicEnabled){
       const st = $('#mwStrategic'); if (st) st.checked = true;
       const sr = $('#mwStrategicReason'); if (sr){ sr.disabled = false; sr.value = last.strategicReason || ''; }
     }
   }
 
-  // Auto-populate weekly gross from current KPI if not saved
-  if (!last?.weeklyGross){
-    try{
-      const qk = await computeQuickKPIs();
-      if (qk?.gross > 0) $('#mwWeeklyGross').value = qk.gross;
-    }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
-  }
+  // Auto-detect day of week (auto, show label)
+  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+  const today = dayMap[new Date().getDay()];
+  const dowEl = $('#mwDayOfWeek');
+  if (dowEl && !last?.dayOfWeek) dowEl.value = today;
+  const dayAutoLabel = $('#mwDayAutoLabel');
+  if (dayAutoLabel) dayAutoLabel.textContent = '(auto)';
+
+  // Auto-populate weekly gross from IDB (never ask driver to type it)
+  try{
+    const qk = await computeQuickKPIs();
+    const grossEl = $('#mwWeeklyGross');
+    if (qk?.gross > 0 && grossEl && !grossEl.value){
+      grossEl.value = qk.gross;
+      const lbl = $('#mwGrossAutoLabel');
+      if (lbl) lbl.textContent = `(${qk.gross > 0 ? 'auto: $'+qk.gross : 'auto'})`;
+      const statusEl = $('#mwAutoFillStatus');
+      if (statusEl) statusEl.textContent = `Week so far: ${fmtMoney(qk.gross)} • ${today.charAt(0).toUpperCase()+today.slice(1)}`;
+    }
+  }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
+
+  // If we restored inputs with revenue + miles, trigger live eval
+  const hasRevenue = Number($('#mwRevenue')?.value) > 0;
+  const hasMiles = Number($('#mwLoadedMi')?.value) > 0;
+  if (hasRevenue && hasMiles) setTimeout(()=> mwEvaluateLoad(), 100);
 
   // Market board
   $('#mbSaveBtn')?.addEventListener('click', mwSaveMarketEntry);
@@ -5645,15 +6011,9 @@ async function mwInit(){
     ['mbLocation','mbRpmLow','mbRpmHigh','mbCompression','mbReload','mbDeadRisk','mbNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
     mwRepoSignal();
   });
-  // Live reposition signal
   ['mbCompression','mbRpmLow','mbRpmHigh','mbLocation'].forEach(id => {
     $('#'+id)?.addEventListener('input', mwRepoSignal);
   });
-
-  // Auto-set day of week
-  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
-  const today = dayMap[new Date().getDay()];
-  if (!last?.dayOfWeek) $('#mwDayOfWeek').value = today;
 
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
@@ -5855,7 +6215,7 @@ function openLaneBreakdown(lane, allTrips){
 // ---- Forms ----
 function openQuickAddSheet(){
   haptic(20);
-  const fab = $('#fab'); fab.classList.add('open');
+  $('#fab')?.classList.add('open');
   const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.cssText='border:0;box-shadow:none;background:transparent';
   wrap.innerHTML = `<div class="btn-row"><button class="btn primary" id="qaTrip">＋ Trip</button><button class="btn" id="qaExpense">＋ Expense</button><button class="btn" id="qaFuel">＋ Fuel</button><button class="btn" id="qaCompare">⚖️ Compare</button></div>
     <div style="margin-top:10px"><button class="btn primary" id="qaSnapLoad" style="width:100%;background:var(--accent2,#e67e22)">📸 Snap Load — OCR from Photo</button></div>
@@ -6311,7 +6671,7 @@ function openSnapLoad(preFile){
       </div>`;
     }).join('');
 
-    listEl.innerHTML = `<div style="font-size:13px;font-weight:700;margin-top:6px">🏁 Ranked Loads (Top 12)</div>${rows}<div class="muted" style="font-size:11px;margin-top:8px">Tap “Use” to send the selected load into the Midwest Evaluator.</div>`;
+    listEl.innerHTML = `<div style="font-size:13px;font-weight:700;margin-top:6px">🏁 Ranked Loads (Top 12)</div>${rows}<div class="muted" style="font-size:11px;margin-top:8px">Tap “Use” to send the selected load into the Evaluator.</div>`;
 
     // Wire "Use" buttons via event delegation
     listEl.querySelectorAll('[data-sendload]').forEach(btn => {
@@ -6330,7 +6690,7 @@ function openSnapLoad(preFile){
           $('#mwDeadMi').value = String(chosen.deadheadMiles || 0);
           $('#mwRevenue').value = String(chosen.pay || 0);
           try { mwEvaluateLoad(); } catch(e) {}
-          toast('Loaded into Midwest Evaluator');
+          toast('Loaded into Evaluator ⚡');
         }, 60);
       });
     });
@@ -6438,6 +6798,30 @@ function openSnapLoad(preFile){
       _parsedData._confidence = confidence;
       if (list.length) { renderLoadList(list); } else { renderSingleParsed(_parsedData); }
 
+      // v20: Auto-jump to evaluator when all 3 required fields detected (single load)
+      if (!list.length && _parsedData.pay > 0 && _parsedData.loadedMiles > 0){
+        status.style.display = 'none';
+        // Show brief "Jumping to evaluator…" message then auto-navigate
+        status.innerHTML = '<div style="font-size:13px;color:var(--good)">✓ Load detected — opening evaluator…</div>';
+        status.style.display = 'block';
+        haptic(15);
+        setTimeout(() => {
+          closeModal();
+          location.hash = '#omega';
+          setTimeout(() => {
+            const o = $('#mwOrigin'); const d = $('#mwDest');
+            const lm = $('#mwLoadedMi'); const dm = $('#mwDeadMi'); const rev = $('#mwRevenue');
+            if (o) o.value = _parsedData.origin || '';
+            if (d) d.value = _parsedData.destination || '';
+            if (lm) lm.value = String(_parsedData.loadedMiles || 0);
+            if (dm) dm.value = String(_parsedData.deadheadMiles || 0);
+            if (rev) rev.value = String(_parsedData.pay || 0);
+            try { mwEvaluateLoad(); } catch(e) {}
+          }, 60);
+        }, 900);
+        return;
+      }
+
       status.style.display = 'none';
       $('#snapResults', body).style.display = 'block';
 
@@ -6510,7 +6894,7 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
         if (dm) dm.value = String(l0.deadheadMiles || 0);
         if (rev) rev.value = String(l0.pay || 0);
         try { mwEvaluateLoad(); } catch(e) {}
-        toast('Loaded into Midwest Evaluator');
+        toast('Loaded into Evaluator ⚡');
       }, 60);
     }
     
@@ -6528,8 +6912,25 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
       } else {
         // Fallback to single-load parser
         _parsedData = parseLoadText(t);
+        // v20: auto-jump if all 3 fields present
+        if (_parsedData.pay > 0 && _parsedData.loadedMiles > 0){
+          haptic(15);
+          closeModal();
+          location.hash = '#omega';
+          setTimeout(() => {
+            if ($('#mwOrigin')) $('#mwOrigin').value = _parsedData.origin || '';
+            if ($('#mwDest')) $('#mwDest').value = _parsedData.destination || '';
+            if ($('#mwLoadedMi')) $('#mwLoadedMi').value = String(_parsedData.loadedMiles || 0);
+            if ($('#mwDeadMi')) $('#mwDeadMi').value = String(_parsedData.deadheadMiles || 0);
+            if ($('#mwRevenue')) $('#mwRevenue').value = String(_parsedData.pay || 0);
+            try { mwEvaluateLoad(); } catch(e) {}
+          }, 60);
+          return;
+        }
         renderSingleParsed(_parsedData);
-        toast('Parsed 1 load');
+        $('#snapResults', body).style.display = 'block';
+        $('#snapStatus', body).style.display = 'none';
+        toast('Parsed 1 load — verify fields below');
       }
     }
     if (e.target.id === 'snapAiExtract'){
@@ -6586,9 +6987,11 @@ if (e.target.id === 'snapRetry'){
 function openTripWizard(existing=null){
   // Snap Load: if _snapPrefill flag is set, treat as new trip with pre-filled data
   const isSnapPrefill = existing && existing._snapPrefill;
-  const mode = (existing && !isSnapPrefill) ? 'edit' : 'add';
+  const isEvalPrefill = existing && existing._evalPrefill;
+  const mode = (existing && !isSnapPrefill && !isEvalPrefill) ? 'edit' : 'add';
   const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
   if (isSnapPrefill) delete trip._snapPrefill;
+  if (isEvalPrefill) delete trip._evalPrefill;
   const body = document.createElement('div');
   const step1 = document.createElement('div');
   const step2 = document.createElement('div');
@@ -6597,6 +7000,11 @@ function openTripWizard(existing=null){
     const banner = document.createElement('div');
     banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(230,126,34,0.15);border:1px solid rgba(230,126,34,0.3);margin-bottom:12px;font-size:12px';
     banner.innerHTML = '📸 <b>Snap Load</b> — Pre-filled from OCR. <span class="muted">Verify all fields before saving.</span>';
+    body.appendChild(banner);
+  } else if (isEvalPrefill){
+    const banner = document.createElement('div');
+    banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);margin-bottom:12px;font-size:12px';
+    banner.innerHTML = '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
     body.appendChild(banner);
   } else if (mode === 'add'){
     // First-trip helper: show guidance if user has few trips
@@ -6790,10 +7198,8 @@ function openTripWizard(existing=null){
       closeModal();
       setTimeout(()=> {
         toast('🎉 First trip logged! Your dashboard is live.');
-        // Remove FAB pulse
-        $('#fab').classList.remove('pulse');
-        const hint = $('#fabHint');
-        if (hint) hint.style.display = 'none';
+        $('#fab')?.classList.remove('pulse');
+        $('#fabHint') && ($('#fabHint').style.display = 'none');
       }, 300);
       await renderTrips(true); await renderHome();
       return;
@@ -6938,7 +7344,12 @@ function openTripWizard(existing=null){
       toast('Trip deleted'); closeModal(); await renderTrips(true); await renderHome();
     });
   }
-  openModal(mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`, body);
+  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`), body);
+
+  // Eval prefill: auto-focus Order # so the user only needs to type one thing
+  if (isEvalPrefill){
+    setTimeout(()=>{ $('#f_orderNo', body)?.focus(); }, 150);
+  }
 
   // ── Autosave draft (v16.9.0) ──
   // Save form state on every input so nothing is lost if app closes
@@ -7183,18 +7594,11 @@ async function openWeeklyReflection(){
 }
 
 // ---- Buttons ----
-addManagedListener($('#fab'), 'click', ()=>{
-  // Dismiss onboarding pulse
-  $('#fab').classList.remove('pulse');
-  const hint = $('#fabHint');
-  if (hint) hint.style.display = 'none';
-  openQuickAddSheet();
-});
-addManagedListener($('#fab'), 'keydown', (e)=>{
-  if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fab').click(); }
-});
+// v20: FAB removed — Evaluate tab (⚡) is the center nav action.
+// Quick-add sheet still accessible from Home quick-actions row.
 addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
-addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); openQuickEvalFlow(); });
+// v20: btnQuickEval is now a hidden stub (Evaluate is the center tab); keep for safety
+addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); location.hash = '#omega'; });
 addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
 addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
@@ -7207,6 +7611,18 @@ addManagedListener($('#btnAddFuel2'), 'click', ()=> openFuelForm());
 addManagedListener($('#tripSearch'), 'input', (e)=>{
   tripSearchTerm = e.target.value || '';
   clearTimeout(renderTrips._tm); renderTrips._tm = setTimeout(()=> renderTrips(true), 250);
+});
+
+// v20: ＋ Trip button on Trips screen
+addManagedListener($('#btnTripAdd'), 'click', ()=> openTripWizard());
+
+// v20: Filter chips on Trips screen
+addManagedListener($('#tripChips'), 'click', (e)=>{
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  haptic(8);
+  tripFilterChip = chip.dataset.chip || 'all';
+  renderTrips(true);
 });
 addManagedListener($('#expSearch'), 'input', (e)=>{
   expSearchTerm = e.target.value || '';
@@ -8254,6 +8670,7 @@ async function checkOverduePayments(){
       const total = overdueTrips.reduce((s, t) => s + t.pay, 0);
       const worst = overdueTrips.sort((a, b) => b.days - a.days)[0];
       banner.style.display = '';
+      banner.style.cssText = 'border:1px solid var(--bad-border);background:var(--bad-muted);border-radius:10px;padding:12px;margin-top:8px';
       banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
         <div style="font-size:20px">⏰</div>
         <div style="flex:1">
@@ -8514,11 +8931,14 @@ async function datEnrichMwEvaluator(origin, dest, trueRPM){
 }
 
 
-// ==================== COLLAPSIBLE SETTINGS (v16.9.0) ====================
+// ==================== COLLAPSIBLE SETTINGS (v16.9.0 → v20.0.0) ====================
 // Makes Settings sections collapsible to reduce cognitive overload.
 // Vehicle section stays open by default; others collapse.
-// ========================================================================
+// Guard against double-init with _settingsBound flag.
+// ==================================================================================
+let _settingsBound = false;
 function initCollapsibleSettings(){
+  if (_settingsBound) return;
   const card = document.querySelector('#view-insights .card h3');
   if (!card || card.textContent !== 'Settings') return;
   const settingsCard = card.parentElement;
@@ -8564,10 +8984,12 @@ function initCollapsibleSettings(){
     header.remove();
 
     toggle.addEventListener('click', function(){
+      haptic(8);
       toggle.classList.toggle('open');
       body.classList.toggle('open');
     });
   });
+  _settingsBound = true;
 }
 
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
@@ -10872,17 +11294,8 @@ async function openCPAPackage(){
     _updateOnlineStatus();
     setInterval(()=> computeQuickKPIs().catch(()=>{}), 60_000);
 
-    // Onboarding: pulse FAB and show hint for new users (auto-dismiss after 8s)
-    const onb = await getOnboardState();
-    if (onb.isEmpty){
-      $('#fab').classList.add('pulse');
-      const hint = $('#fabHint');
-      if (hint) hint.style.display = '';
-      setTimeout(()=>{
-        $('#fab')?.classList.remove('pulse');
-        if (hint) hint.style.display = 'none';
-      }, 8000);
-    }
+    // v20: FAB removed — onboarding handled via Home welcome card
+    await getOnboardState();
 
     // v14.4.0: Deferred boot tasks (non-blocking)
     setTimeout(async ()=>{
