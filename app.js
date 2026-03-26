@@ -2528,7 +2528,11 @@ function bidRangeHTML(bids){
     const color = colors[key] || 'var(--text)';
     html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
       <span style="color:var(--text-secondary)">${escapeHtml(bid.label)}</span>
-      <span><span style="color:${color};font-weight:700;font-family:var(--font-mono)">${fmtMoney(bid.amount)}</span> <span class="muted" style="font-size:11px">($${bid.rpm.toFixed(2)}/mi)</span></span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="color:${color};font-weight:700;font-family:var(--font-mono)">${fmtMoney(bid.amount)}</span>
+        <span class="muted" style="font-size:11px">($${bid.rpm.toFixed(2)}/mi)</span>
+        <button data-copybid="${bid.amount}" style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--text-secondary);cursor:pointer;line-height:1.4" aria-label="Copy ${escapeHtml(bid.label)} rate">📋</button>
+      </span>
     </div>`;
   }
   html += '</div>';
@@ -2826,6 +2830,21 @@ function setActiveNav(name){
   });
 }
 
+async function refreshUnpaidBadge(){
+  try {
+    const badge = $('#navUnpaidBadge');
+    if (!badge) return;
+    const unpaid = await listTrips({ unpaidOnly: true, limit: 100 });
+    const n = unpaid.length;
+    if (n > 0){
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e){}
+}
+
 async function navigate(){
   const hash = (location.hash || '#home').slice(1);
 
@@ -2919,6 +2938,7 @@ function pulseKPI(el){
 
 // ---- UI: Home ----
 async function renderHome(){
+  refreshUnpaidBadge().catch(()=>{});
   const state = await getOnboardState();
   const trips = await listTrips({cursor:null});
   const recent = trips.items.slice(0, 3); // v20: limit to 3
@@ -3552,6 +3572,7 @@ function tripRow(t, {compact=false}={}){
     t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
     await upsertTrip(t); invalidateKPICache();
     toast(t.isPaid ? 'Marked paid ✓' : 'Marked unpaid');
+    refreshUnpaidBadge().catch(()=>{});
     await renderAR(); await renderTrips(true);
   };
   const swipeDelete = async ()=>{
@@ -3792,7 +3813,7 @@ async function renderAR(){
       <div class="right"><div class="v">${fmtMoney(t.pay||0)}</div><button class="btn primary sm">Mark Paid</button></div>`;
     $('button', d).addEventListener('click', async ()=>{
       haptic(20);
-      t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs();
+      t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs(); refreshUnpaidBadge().catch(()=>{});
     });
     list.appendChild(d);
   });
@@ -5401,6 +5422,18 @@ function _mwRenderDecision(out, d){
 
   out.innerHTML = html;
 
+  // Wire up bid copy buttons
+  out.addEventListener('click', (e)=>{
+    const btn = e.target.closest('[data-copybid]');
+    if (!btn) return;
+    const amount = Number(btn.dataset.copybid);
+    if (!amount) return;
+    const text = fmtMoney(amount);
+    try {
+      navigator.clipboard.writeText(text).then(()=>{ haptic(10); toast('Rate copied: ' + text); }).catch(()=>{ toast('Rate: ' + text); });
+    } catch(e){ toast('Rate: ' + text); }
+  }, { once: false });
+
   // Async: inject Lane Intel (F4) + Rate Trend (F8)
   if (d.origin && d.dest){
     getLaneIntel(d.origin, d.dest).then(intel => {
@@ -5424,7 +5457,8 @@ function _mwRenderDecision(out, d){
         emptyMiles: deadMi || 0,
         pay: revenue || 0,
         pickupDate: isoDate(),
-        notes: `MW Stack: ${grade || ''} (USA ${usaResult?.score || 0}/100) — True RPM $${trueRPM.toFixed(2)}`,
+        notes: `Eval: ${grade || ''} · $${trueRPM.toFixed(2)}/mi True RPM`,
+        _evalPrefill: true,
       });
     });
   }
@@ -6637,7 +6671,7 @@ function openSnapLoad(preFile){
       </div>`;
     }).join('');
 
-    listEl.innerHTML = `<div style="font-size:13px;font-weight:700;margin-top:6px">🏁 Ranked Loads (Top 12)</div>${rows}<div class="muted" style="font-size:11px;margin-top:8px">Tap “Use” to send the selected load into the Midwest Evaluator.</div>`;
+    listEl.innerHTML = `<div style="font-size:13px;font-weight:700;margin-top:6px">🏁 Ranked Loads (Top 12)</div>${rows}<div class="muted" style="font-size:11px;margin-top:8px">Tap “Use” to send the selected load into the Evaluator.</div>`;
 
     // Wire "Use" buttons via event delegation
     listEl.querySelectorAll('[data-sendload]').forEach(btn => {
@@ -6656,7 +6690,7 @@ function openSnapLoad(preFile){
           $('#mwDeadMi').value = String(chosen.deadheadMiles || 0);
           $('#mwRevenue').value = String(chosen.pay || 0);
           try { mwEvaluateLoad(); } catch(e) {}
-          toast('Loaded into Midwest Evaluator');
+          toast('Loaded into Evaluator ⚡');
         }, 60);
       });
     });
@@ -6764,6 +6798,30 @@ function openSnapLoad(preFile){
       _parsedData._confidence = confidence;
       if (list.length) { renderLoadList(list); } else { renderSingleParsed(_parsedData); }
 
+      // v20: Auto-jump to evaluator when all 3 required fields detected (single load)
+      if (!list.length && _parsedData.pay > 0 && _parsedData.loadedMiles > 0){
+        status.style.display = 'none';
+        // Show brief "Jumping to evaluator…" message then auto-navigate
+        status.innerHTML = '<div style="font-size:13px;color:var(--good)">✓ Load detected — opening evaluator…</div>';
+        status.style.display = 'block';
+        haptic(15);
+        setTimeout(() => {
+          closeModal();
+          location.hash = '#omega';
+          setTimeout(() => {
+            const o = $('#mwOrigin'); const d = $('#mwDest');
+            const lm = $('#mwLoadedMi'); const dm = $('#mwDeadMi'); const rev = $('#mwRevenue');
+            if (o) o.value = _parsedData.origin || '';
+            if (d) d.value = _parsedData.destination || '';
+            if (lm) lm.value = String(_parsedData.loadedMiles || 0);
+            if (dm) dm.value = String(_parsedData.deadheadMiles || 0);
+            if (rev) rev.value = String(_parsedData.pay || 0);
+            try { mwEvaluateLoad(); } catch(e) {}
+          }, 60);
+        }, 900);
+        return;
+      }
+
       status.style.display = 'none';
       $('#snapResults', body).style.display = 'block';
 
@@ -6836,7 +6894,7 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
         if (dm) dm.value = String(l0.deadheadMiles || 0);
         if (rev) rev.value = String(l0.pay || 0);
         try { mwEvaluateLoad(); } catch(e) {}
-        toast('Loaded into Midwest Evaluator');
+        toast('Loaded into Evaluator ⚡');
       }, 60);
     }
     
@@ -6854,8 +6912,25 @@ $('#snapRawText', body).textContent = text.slice(0, 3000);
       } else {
         // Fallback to single-load parser
         _parsedData = parseLoadText(t);
+        // v20: auto-jump if all 3 fields present
+        if (_parsedData.pay > 0 && _parsedData.loadedMiles > 0){
+          haptic(15);
+          closeModal();
+          location.hash = '#omega';
+          setTimeout(() => {
+            if ($('#mwOrigin')) $('#mwOrigin').value = _parsedData.origin || '';
+            if ($('#mwDest')) $('#mwDest').value = _parsedData.destination || '';
+            if ($('#mwLoadedMi')) $('#mwLoadedMi').value = String(_parsedData.loadedMiles || 0);
+            if ($('#mwDeadMi')) $('#mwDeadMi').value = String(_parsedData.deadheadMiles || 0);
+            if ($('#mwRevenue')) $('#mwRevenue').value = String(_parsedData.pay || 0);
+            try { mwEvaluateLoad(); } catch(e) {}
+          }, 60);
+          return;
+        }
         renderSingleParsed(_parsedData);
-        toast('Parsed 1 load');
+        $('#snapResults', body).style.display = 'block';
+        $('#snapStatus', body).style.display = 'none';
+        toast('Parsed 1 load — verify fields below');
       }
     }
     if (e.target.id === 'snapAiExtract'){
@@ -6912,9 +6987,11 @@ if (e.target.id === 'snapRetry'){
 function openTripWizard(existing=null){
   // Snap Load: if _snapPrefill flag is set, treat as new trip with pre-filled data
   const isSnapPrefill = existing && existing._snapPrefill;
-  const mode = (existing && !isSnapPrefill) ? 'edit' : 'add';
+  const isEvalPrefill = existing && existing._evalPrefill;
+  const mode = (existing && !isSnapPrefill && !isEvalPrefill) ? 'edit' : 'add';
   const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
   if (isSnapPrefill) delete trip._snapPrefill;
+  if (isEvalPrefill) delete trip._evalPrefill;
   const body = document.createElement('div');
   const step1 = document.createElement('div');
   const step2 = document.createElement('div');
@@ -6923,6 +7000,11 @@ function openTripWizard(existing=null){
     const banner = document.createElement('div');
     banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(230,126,34,0.15);border:1px solid rgba(230,126,34,0.3);margin-bottom:12px;font-size:12px';
     banner.innerHTML = '📸 <b>Snap Load</b> — Pre-filled from OCR. <span class="muted">Verify all fields before saving.</span>';
+    body.appendChild(banner);
+  } else if (isEvalPrefill){
+    const banner = document.createElement('div');
+    banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);margin-bottom:12px;font-size:12px';
+    banner.innerHTML = '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
     body.appendChild(banner);
   } else if (mode === 'add'){
     // First-trip helper: show guidance if user has few trips
@@ -7262,7 +7344,12 @@ function openTripWizard(existing=null){
       toast('Trip deleted'); closeModal(); await renderTrips(true); await renderHome();
     });
   }
-  openModal(mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`, body);
+  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`), body);
+
+  // Eval prefill: auto-focus Order # so the user only needs to type one thing
+  if (isEvalPrefill){
+    setTimeout(()=>{ $('#f_orderNo', body)?.focus(); }, 150);
+  }
 
   // ── Autosave draft (v16.9.0) ──
   // Save form state on every input so nothing is lost if app closes
