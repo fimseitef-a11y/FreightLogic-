@@ -821,7 +821,7 @@ async function deleteTrip(orderNo){
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: orderNo, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(true); txn.onerror = ()=> reject(txn.error); });
 }
-async function listTrips({cursor=null, search='', dateFrom='', dateTo=''}={}){
+async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaidOnly=false}={}){
   const {stores} = tx('trips');
   const idx = stores.trips.index('created');
   const results = [];
@@ -840,6 +840,8 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo=''}={}){
       // P1-1: date range filtering
       if (dateFrom && (v.pickupDate || '') < dateFrom){ cur.continue(); return; }
       if (dateTo && (v.pickupDate || '') > dateTo){ cur.continue(); return; }
+      // v20: unpaid filter chip
+      if (unpaidOnly && v.isPaid){ cur.continue(); return; }
       if (!term) { results.push(v); }
       else {
         const hay = (String(v.orderNo||'')+' '+String(v.customer||'')).toUpperCase();
@@ -3391,11 +3393,35 @@ let tripCursor = null;
 let tripSearchTerm = '';
 let tripFilterDateFrom = '';
 let tripFilterDateTo = '';
+let tripFilterChip = 'all'; // v20: 'all' | 'unpaid' | 'week' | 'month'
+
+// v20: Compute date range from chip selection
+function _chipDateRange(chip){
+  if (chip === 'week'){
+    const from = startOfWeek(new Date()).toISOString().slice(0,10);
+    const to = isoDate();
+    return { dateFrom: from, dateTo: to, unpaidOnly: false };
+  }
+  if (chip === 'month'){
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const to = isoDate();
+    return { dateFrom: from, dateTo: to, unpaidOnly: false };
+  }
+  if (chip === 'unpaid') return { dateFrom: '', dateTo: '', unpaidOnly: true };
+  return { dateFrom: tripFilterDateFrom, dateTo: tripFilterDateTo, unpaidOnly: false };
+}
 
 async function renderTrips(reset=false){
   const list = $('#tripList');
   if (reset){ tripCursor = null; showSkeleton(list); }
-  const res = await listTrips({cursor: tripCursor, search: tripSearchTerm, dateFrom: tripFilterDateFrom, dateTo: tripFilterDateTo});
+  const { dateFrom, dateTo, unpaidOnly } = _chipDateRange(tripFilterChip);
+  const res = await listTrips({cursor: tripCursor, search: tripSearchTerm,
+    dateFrom: unpaidOnly ? '' : (dateFrom || tripFilterDateFrom),
+    dateTo: unpaidOnly ? '' : (dateTo || tripFilterDateTo),
+    unpaidOnly});
+  // v20: update chip active state
+  $$('#tripChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === tripFilterChip));
   tripCursor = res.nextCursor;
   if (reset) list.innerHTML = '';
   if (!res.items.length && reset){
@@ -3407,6 +3433,61 @@ async function renderTrips(reset=false){
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
+}
+
+// ── v20: Swipe actions helper ──────────────────────────────────────────────
+// Wraps el in a swipe-wrap container.
+// Swipe left (< -threshold) → onLeft(); Swipe right (> threshold) → onRight()
+function addSwipeActions(el, { onLeft, onRight, labelLeft='Delete 🗑️', labelRight='Paid ✓' }={}){
+  const wrap = document.createElement('div'); wrap.className = 'swipe-wrap';
+  const inner = document.createElement('div'); inner.className = 'swipe-inner';
+  if (onLeft){
+    const actL = document.createElement('div'); actL.className = 'swipe-actions-l'; actL.textContent = labelLeft;
+    wrap.appendChild(actL);
+  }
+  if (onRight){
+    const actR = document.createElement('div'); actR.className = 'swipe-actions-r'; actR.textContent = labelRight;
+    wrap.appendChild(actR);
+  }
+  inner.appendChild(el);
+  wrap.appendChild(inner);
+
+  const THRESHOLD = 72;
+  let startX = 0, startY = 0, dx = 0, locked = false, axis = null;
+
+  inner.addEventListener('touchstart', (e)=>{
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    dx = 0; locked = false; axis = null;
+    inner.classList.add('no-transition');
+  }, {passive: true});
+
+  inner.addEventListener('touchmove', (e)=>{
+    if (e.touches.length !== 1 || locked) return;
+    const x = e.touches[0].clientX - startX;
+    const y = e.touches[0].clientY - startY;
+    if (axis === null){
+      if (Math.abs(x) < 6 && Math.abs(y) < 6) return;
+      axis = Math.abs(x) > Math.abs(y) ? 'h' : 'v';
+    }
+    if (axis === 'v') return;
+    e.preventDefault();
+    dx = x;
+    const clipped = Math.max(onLeft ? -THRESHOLD * 1.4 : 0, Math.min(onRight ? THRESHOLD * 1.4 : 0, dx));
+    inner.style.transform = `translateX(${clipped}px)`;
+    wrap.classList.toggle('swiping-l', dx < -20);
+    wrap.classList.toggle('swiping-r', dx > 20);
+  }, {passive: false});
+
+  inner.addEventListener('touchend', ()=>{
+    inner.classList.remove('no-transition');
+    inner.style.transform = '';
+    wrap.classList.remove('swiping-l', 'swiping-r');
+    if (dx < -THRESHOLD && onLeft){ locked = true; haptic(20); onLeft(); }
+    else if (dx > THRESHOLD && onRight){ locked = true; haptic(20); onRight(); }
+  }, {passive: true});
+
+  return wrap;
 }
 
 // P2-2: trip row shows RPM, route, paid tag, LOAD SCORE
@@ -3465,7 +3546,27 @@ function tripRow(t, {compact=false}={}){
     toast(t.isPaid ? 'Marked paid' : 'Marked unpaid');
     await renderAR(); await renderTrips(true);
   });
-  return d;
+
+  // v20: Swipe-right → Mark Paid; Swipe-left → Delete (with confirm)
+  const markPaid = async ()=>{
+    t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
+    await upsertTrip(t); invalidateKPICache();
+    toast(t.isPaid ? 'Marked paid ✓' : 'Marked unpaid');
+    await renderAR(); await renderTrips(true);
+  };
+  const swipeDelete = async ()=>{
+    const ok = confirm(`Delete trip ${escapeHtml(String(t.orderNo))}? This cannot be undone.`);
+    if (!ok) return;
+    await deleteTrip(t.orderNo); invalidateKPICache();
+    toast('Trip deleted');
+    await renderTrips(true); await renderHome();
+  };
+  return compact ? d : addSwipeActions(d, {
+    onRight: t.isPaid ? null : markPaid,
+    onLeft: swipeDelete,
+    labelRight: '✓ Paid',
+    labelLeft: '🗑️ Delete',
+  });
 }
 
 // ---- UI: Receipt Manager ----
@@ -7345,6 +7446,18 @@ addManagedListener($('#tripSearch'), 'input', (e)=>{
   tripSearchTerm = e.target.value || '';
   clearTimeout(renderTrips._tm); renderTrips._tm = setTimeout(()=> renderTrips(true), 250);
 });
+
+// v20: ＋ Trip button on Trips screen
+addManagedListener($('#btnTripAdd'), 'click', ()=> openTripWizard());
+
+// v20: Filter chips on Trips screen
+addManagedListener($('#tripChips'), 'click', (e)=>{
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  haptic(8);
+  tripFilterChip = chip.dataset.chip || 'all';
+  renderTrips(true);
+});
 addManagedListener($('#expSearch'), 'input', (e)=>{
   expSearchTerm = e.target.value || '';
   clearTimeout(renderExpenses._tm); renderExpenses._tm = setTimeout(()=> renderExpenses(true), 250);
@@ -8652,11 +8765,14 @@ async function datEnrichMwEvaluator(origin, dest, trueRPM){
 }
 
 
-// ==================== COLLAPSIBLE SETTINGS (v16.9.0) ====================
+// ==================== COLLAPSIBLE SETTINGS (v16.9.0 → v20.0.0) ====================
 // Makes Settings sections collapsible to reduce cognitive overload.
 // Vehicle section stays open by default; others collapse.
-// ========================================================================
+// Guard against double-init with _settingsBound flag.
+// ==================================================================================
+let _settingsBound = false;
 function initCollapsibleSettings(){
+  if (_settingsBound) return;
   const card = document.querySelector('#view-insights .card h3');
   if (!card || card.textContent !== 'Settings') return;
   const settingsCard = card.parentElement;
@@ -8702,10 +8818,12 @@ function initCollapsibleSettings(){
     header.remove();
 
     toggle.addEventListener('click', function(){
+      haptic(8);
       toggle.classList.toggle('open');
       body.classList.toggle('open');
     });
   });
+  _settingsBound = true;
 }
 
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================

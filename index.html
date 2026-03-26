@@ -125,11 +125,7 @@
       border-bottom: 1px solid var(--border);
       transition: box-shadow .2s;
     }
-    header::after {
-      content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent-border) 30%, var(--accent-border) 70%, transparent);
-      opacity: 0.5;
-    }
+    /* v20: header::after accent line removed (decorative noise) */
     header.scrolled { box-shadow: 0 1px 0 var(--border), var(--shadow) }
     .hdr-row { display: flex; align-items: center; gap: 12px; justify-content: space-between }
     .brand { display: flex; align-items: center; gap: 10px }
@@ -415,6 +411,35 @@
       font-size: 20px; font-weight: 700; font-family: var(--font-mono);
       text-align: center; margin-bottom: 12px;
     }
+    /* v20: Swipe actions on list rows */
+    .swipe-wrap { position: relative; overflow: hidden; border-radius: var(--r-sm); margin-bottom: 0 }
+    .swipe-wrap + .swipe-wrap { margin-top: 0 }
+    .swipe-actions-l, .swipe-actions-r {
+      position: absolute; top: 0; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; min-width: 80px; padding: 0 16px;
+      pointer-events: none; opacity: 0; transition: opacity .12s;
+    }
+    .swipe-actions-l { left: 0; background: var(--bad); color: #fff; border-radius: var(--r-sm) 0 0 var(--r-sm) }
+    .swipe-actions-r { right: 0; background: var(--good); color: #0c0c12; border-radius: 0 var(--r-sm) var(--r-sm) 0 }
+    .swipe-wrap.swiping-l .swipe-actions-l,
+    .swipe-wrap.swiping-r .swipe-actions-r { opacity: 1 }
+    .swipe-inner { transition: transform .2s var(--ease-smooth); will-change: transform }
+    .swipe-inner.no-transition { transition: none }
+    /* v20: Filter chips */
+    .chip {
+      flex: 0 0 auto; padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--surface-1);
+      color: var(--text-secondary); font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .chip:active { transform: scale(.94) }
+    .chip.active {
+      background: var(--accent); color: #0c0c12;
+      border-color: var(--accent);
+    }
     /* v20: More menu section headers */
     .more-section-head {
       font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
@@ -559,11 +584,7 @@
        v17.0.0 — VISUAL UPGRADES
        ═══════════════════════════════════════════════════════════════ */
 
-    /* ── Subtle background texture ──────────────────────────────── */
-    body::before {
-      content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-      background: radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 60%);
-    }
+    /* v20: body::before gradient glow removed (decorative noise) */
 
     /* ── Scrollbar styling ──────────────────────────────────────── */
     ::-webkit-scrollbar { width: 4px; height: 4px }
@@ -806,11 +827,27 @@
     </section>
     <section id="view-trips" class="view" style="display:none">
       <div class="card">
-        <h3 style="margin:0 0 10px">Trips</h3>
-        <input id="tripSearch" placeholder="Search order # or customer…" />
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <h3 style="margin:0">Trips</h3>
+          <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+        </div>
+        <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
+        <!-- v20: Filter chips -->
+        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+          <button class="chip active" data-chip="all">All</button>
+          <button class="chip" data-chip="unpaid">Unpaid</button>
+          <button class="chip" data-chip="week">This Week</button>
+          <button class="chip" data-chip="month">This Month</button>
+        </div>
       </div>
       <div class="spacer"></div><div class="ptr-zone" id="tripsPTR"></div><div class="list" id="tripList"></div><div class="spacer"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnTripMore" style="flex:1">Load more</button><button class="btn" id="btnTripExport" style="flex:1">Export JSON</button><button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnTripImport" style="flex:1">Import</button><button class="btn" id="btnTripFilter" style="flex:1">Filter</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="btnTripMore" style="flex:1">Load more</button>
+        <button class="btn" id="btnTripFilter" style="flex:1">Date Filter</button>
+        <button class="btn" id="btnTripExport" style="flex:1">Export JSON</button>
+        <button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button>
+        <button class="btn" id="btnTripImport" style="flex:1">Import</button>
+      </div>
     </section>
     <section id="view-expenses" class="view" style="display:none">
       <div class="card">
