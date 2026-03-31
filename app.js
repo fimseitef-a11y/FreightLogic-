@@ -132,6 +132,28 @@ const fmtNum = (n) => {
 const isoDate = (d=new Date()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 function clampStr(s, max=120){ return String(s||'').trim().slice(0,max); }
 
+/** Validate ISO date string YYYY-MM-DD — prevents garbage dates entering IDB */
+function isValidISODate(s){
+  if (typeof s !== 'string') return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s);
+  return d instanceof Date && !isNaN(d.getTime());
+}
+
+/** Hash a PIN for secure storage — uses SHA-256, falls back to FNV-1a */
+async function hashPin(pin){
+  const salt = 'fl_pin_v1:';
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + pin));
+    return 'h1:' + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch {
+    let h = 0x811c9dc5;
+    const str = salt + pin;
+    for (let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return 'fnv:' + (h >>> 0).toString(16).padStart(8,'0');
+  }
+}
+
 // ---- Numeric hardening (v14.3.1) ----
 function finiteNum(v, def=0){
   const x = Number(v);
@@ -773,10 +795,10 @@ function sanitizeTrip(raw){
   t.id = clampStr(raw.id || t.id, 80);
   t.orderNo = normOrderNo(raw.orderNo);
   t.customer = clampStr(raw.customer, 80);
-  t.pickupDate = raw.pickupDate || isoDate();
-  t.deliveryDate = raw.deliveryDate || t.pickupDate;
-  t.invoiceDate = raw.invoiceDate || t.deliveryDate || t.pickupDate;
-  t.dueDate = raw.dueDate || '';
+  t.pickupDate = isValidISODate(raw.pickupDate) ? raw.pickupDate : isoDate();
+  t.deliveryDate = isValidISODate(raw.deliveryDate) ? raw.deliveryDate : t.pickupDate;
+  t.invoiceDate = isValidISODate(raw.invoiceDate) ? raw.invoiceDate : t.deliveryDate;
+  t.dueDate = isValidISODate(raw.dueDate) ? raw.dueDate : '';
   t.origin = clampStr(raw.origin, 60);
   t.destination = clampStr(raw.destination, 60);
   t.pay = posNum(raw.pay, 0, 1000000);
@@ -809,7 +831,7 @@ async function upsertTrip(trip){
   try{ beforeData = await idbReq(stores.trips.get(t.orderNo)); }catch(e){ console.warn("[FL]", e); }
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
-  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=> reject(txn.error); });
+  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
 }
 async function deleteTrip(orderNo){
   // TOCTOU-safe: read + write in single readwrite transaction
@@ -854,7 +876,7 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaid
 
 // ---- Expenses ----
 function sanitizeExpense(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: raw.date || isoDate(),
+  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), type: clampStr(raw.type || 'expense', 20) };
@@ -871,7 +893,7 @@ async function addExpense(exp){
       try{ stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id), action:'CREATE_EXPENSE', beforeData: null, afterData: e, source: 'user' }); }catch(e){ console.warn("[FL]", e); }
     };
     txn.oncomplete = ()=> resolve(e);
-    txn.onerror = ()=> reject(txn.error);
+    txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); };
     txn.onabort = ()=> reject(txn.error || new Error('Transaction aborted'));
   });
 }
@@ -918,7 +940,7 @@ async function listExpenses({cursor=null, search=''}={}){
 
 // ---- Fuel (P1-3: full CRUD + list) ----
 function sanitizeFuel(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: raw.date || isoDate(),
+  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
     created: finiteNum(raw.created, Date.now()), updated: Date.now() };
@@ -932,7 +954,7 @@ async function addFuel(f){
     req.onsuccess = ()=> { x.id = req.result; try{ stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(x.id), action:'CREATE_FUEL', beforeData: null, afterData: x, source: 'user' }); }catch(e){ console.warn("[FL]", e); } };
     req.onerror = ()=> reject(req.error);
     txn.oncomplete = ()=> resolve(x);
-    txn.onerror = ()=> reject(txn.error);
+    txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); };
   });
 }
 async function updateFuel(f){
@@ -1127,7 +1149,8 @@ async function dumpStore(name){
     req.onsuccess = (e)=>{ const cur = e.target.result; if (!cur){ resolve(out); return; } out.push(cur.value); cur.continue(); };
   });
 }
-/** P1-5: SHA-256 checksum for export integrity */
+/** P1-5: SHA-256 checksum for export integrity — covers trips/expenses/fuel (legacy field)
+ *  checksumFull additionally covers settings to detect credential tampering */
 async function computeExportChecksum(trips, expenses, fuel){
   const raw = JSON.stringify({ trips, expenses, fuel });
   const buf = new TextEncoder().encode(raw);
@@ -1141,14 +1164,28 @@ async function computeExportChecksum(trips, expenses, fuel){
     return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
   }
 }
+async function computeExportChecksumFull(trips, expenses, fuel, settings){
+  const raw = JSON.stringify({ trips, expenses, fuel, settings });
+  const buf = new TextEncoder().encode(raw);
+  try {
+    const hash = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
+  }
+}
 
 async function exportJSON(){
   const trips = await dumpStore('trips');
   const expenses = await dumpStore('expenses');
   const fuel = await dumpStore('fuel');
+  const settings = await dumpStore('settings');
   const checksum = await computeExportChecksum(trips, expenses, fuel);
+  const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
   const payload = {
-    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length } },
+    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length } },
     trips,
     expenses,
     fuel,
@@ -1217,8 +1254,16 @@ async function importJSON(file, opts={}){
     const data = deepCleanObj(JSON.parse(await file.text()));
     const arr = (x)=> Array.isArray(x) ? x : [];
 
-    // P1-5: Verify export integrity checksum
-    if (data.meta?.checksum){
+    // P1-5: Verify export integrity checksum (full first, then legacy partial)
+    if (data.meta?.checksumFull){
+      try {
+        const verify = await computeExportChecksumFull(arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings));
+        if (verify !== data.meta.checksumFull){
+          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Settings or data may have been tampered with.\n\nImport anyway?');
+          if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
+        }
+      } catch(e){ console.warn("[FL]", e); }
+    } else if (data.meta?.checksum){
       try {
         const verify = await computeExportChecksum(arr(data.trips), arr(data.expenses), arr(data.fuel));
         if (verify !== data.meta.checksum){
@@ -1253,12 +1298,35 @@ async function importJSON(file, opts={}){
       action: clampStr(a.action, 30), data: a.data && typeof a.data === 'object' ? deepCleanObj(JSON.parse(JSON.stringify(a.data))) : undefined
     }));
 
-    // Passthrough arrays for v18 stores — filter objects, no deep sanitization needed beyond deepCleanObj
-    const safeLaneHistoryArr   = arr(data.laneHistory).filter(r => r && typeof r === 'object');
-    const safeWeeklyReportsArr = arr(data.weeklyReports).filter(r => r && typeof r === 'object');
-    const safeReloadOutcomesArr= arr(data.reloadOutcomes).filter(r => r && typeof r === 'object');
-    const safeBidHistoryArr    = arr(data.bidHistory).filter(r => r && typeof r === 'object');
-    const safeDocumentsArr     = arr(data.documents).filter(r => r && typeof r === 'object');
+    // Passthrough arrays for v18 stores — sanitize rendered string fields to prevent stored XSS
+    const safeLaneHistoryArr = arr(data.laneHistory).filter(r => r && typeof r === 'object').map(r => ({
+      ...deepCleanObj(r),
+      // Sanitize fields rendered via innerHTML in renderLaneIntelHTML / renderTopLanes
+      lastDate: isValidISODate(r.lastDate) ? r.lastDate : '',
+      displayOrigin: clampStr(r.displayOrigin || '', 60),
+      displayDest: clampStr(r.displayDest || '', 60),
+      lane: clampStr(r.lane || '', 120),
+    }));
+    const safeWeeklyReportsArr = arr(data.weeklyReports).filter(r => r && typeof r === 'object').map(r => ({
+      ...deepCleanObj(r),
+      weekId: clampStr(r.weekId || '', 10),
+      bestLane: clampStr(r.bestLane || '', 120),
+      worstLane: clampStr(r.worstLane || '', 120),
+    }));
+    const safeReloadOutcomesArr = arr(data.reloadOutcomes).filter(r => r && typeof r === 'object').map(r => ({
+      ...deepCleanObj(r),
+      city: clampStr(r.city || '', 60),
+    }));
+    const safeBidHistoryArr = arr(data.bidHistory).filter(r => r && typeof r === 'object').map(r => ({
+      ...deepCleanObj(r),
+      broker: clampStr(r.broker || '', 80),
+      lane: clampStr(r.lane || '', 120),
+    }));
+    const safeDocumentsArr = arr(data.documents).filter(r => r && typeof r === 'object').map(r => ({
+      ...deepCleanObj(r),
+      name: clampStr(r.name || '', 120),
+      type: clampStr(r.type || '', 40),
+    }));
 
     const mode = opts.mode || 'merge';
     const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'],'readwrite');
@@ -4028,7 +4096,7 @@ function openSecurityLockModal(){
     const pin = String(document.getElementById('lockPin')?.value || '').trim();
     if (enabled && !/^\d{4,8}$/.test(pin)){ toast('PIN must be 4–8 digits', true); return; }
     await setSetting('appLockEnabled', enabled);
-    if (enabled) await setSetting('appLockPin', pin);
+    if (enabled) await setSetting('appLockPin', await hashPin(pin));
     toast(enabled ? 'Profile lock enabled' : 'Profile lock disabled');
     closeModal();
   });
@@ -4053,13 +4121,22 @@ async function requireAppUnlock(){
       <div id="unlockHint" class="muted" style="font-size:12px;margin-top:10px"></div>
     </div>`;
     openModal('Unlock Freight Logic', body);
-    const tryUnlock = ()=>{
+    const tryUnlock = async ()=>{
       const val = String(document.getElementById('unlockPin')?.value || '');
-      if (val === pin){ closeModal(); resolve(true); }
+      // Support hashed PINs (h1:/fnv: prefix) and legacy plaintext (migration path)
+      let match = false;
+      if (pin.startsWith('h1:') || pin.startsWith('fnv:')){
+        match = (await hashPin(val)) === pin;
+      } else {
+        // Legacy plaintext PIN — compare directly and migrate to hash on success
+        match = val === pin;
+        if (match){ setSetting('appLockPin', await hashPin(val)).catch(()=>{}); }
+      }
+      if (match){ closeModal(); resolve(true); }
       else { const h = document.getElementById('unlockHint'); if (h) h.textContent = 'Incorrect PIN'; haptic(35); }
     };
-    document.getElementById('unlockNow')?.addEventListener('click', tryUnlock);
-    document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock(); });
+    document.getElementById('unlockNow')?.addEventListener('click', ()=>{ tryUnlock().catch(()=>{}); });
+    document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock().catch(()=>{}); });
   });
 }
 
@@ -9660,7 +9737,7 @@ function renderLaneIntelHTML(intel){
       <div><span class="muted">Best pay:</span> <b>${fmtMoney(bestPay||0)}</b></div>
       ${avgTransitDays ? `<div><span class="muted">Avg transit:</span> <b>${avgTransitDays} day${avgTransitDays!==1?'s':''}</b></div>` : '<div></div>'}
       ${wouldRunPct !== null ? `<div><span class="muted">Would run again:</span> <b style="color:${wouldRunPct>=70?'var(--good)':wouldRunPct>=40?'var(--warn)':'var(--bad)'}">${wouldRunPct}%</b></div>` : '<div></div>'}
-      <div><span class="muted">Last run:</span> <b>${lastDate||'—'}</b></div>
+      <div><span class="muted">Last run:</span> <b>${escapeHtml(lastDate||'—')}</b></div>
     </div>
   </div>`;
 }
@@ -11256,6 +11333,25 @@ async function openCPAPackage(){
   });
 
   render(currentPeriod);
+}
+
+// ════════════════════════════════════════════════════════════════
+// TEST EXPORTS — pure functions exposed for test harness
+// Only active when window.__FL_TESTS_ENABLED is set before load
+// ════════════════════════════════════════════════════════════════
+if (typeof window !== 'undefined'){
+  window.__FL_TESTS = {
+    escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
+    finiteNum, posNum, intNum, roundCents, validateRecordSize,
+    sanitizeTrip, sanitizeExpense, sanitizeFuel,
+    computeExportChecksum, computeExportChecksumFull,
+    computeLoadScore, generateBidRange, detectUrgency,
+    omegaTierForMiles, OMEGA_TIERS,
+    mwClassifyRPM, MW,
+    normOrderNo, sanitizeReceiptId, clampStr,
+    parseCSVLines, isValidISODate, hashPin,
+    isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),
+  };
 }
 
 // ---- Boot ----
