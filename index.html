@@ -2,9 +2,1172 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>FreightLogic v20.2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#141419" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Freight Logic" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+  <title>Freight Logic</title>
+  <link rel="manifest" href="manifest.json?v=20.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="./icon120.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon16.png">
+  <style>
+    /* ═══════════════════════════════════════════════════════════════
+       FREIGHT LOGIC — DESIGN SYSTEM v3.0 "Command"
+       Precision-built for cargo van operators. Dark-first, daylight-tested.
+       ═══════════════════════════════════════════════════════════════ */
+
+    :root {
+      /* Surface palette — deeper contrast, better layering */
+      --bg: #0c0c12;
+      --surface-0: #131320;
+      --surface-1: #1a1a2a;
+      --surface-2: #242438;
+      --surface-3: #2e2e48;
+
+      /* Borders — visible in daylight */
+      --border: rgba(255,255,255,0.09);
+      --border-subtle: rgba(255,255,255,0.06);
+      --border-focus: rgba(255,255,255,0.18);
+      --line: rgba(255,255,255,0.09);
+
+      /* Text — high contrast for outdoor use */
+      --text: #f0f0f6;
+      --text-secondary: #a8a8c0;
+      --text-tertiary: #8888a4;
+      --muted: #a8a8c0;
+
+      /* Accent — warm amber command */
+      --accent: #f0a800;
+      --accent-muted: rgba(240,168,0,0.10);
+      --accent-border: rgba(240,168,0,0.28);
+      --accent-text: #ffc940;
+      --accent-glow: rgba(240,168,0,0.06);
+
+      /* Semantic */
+      --good: #34d399; --good-muted: rgba(52,211,153,0.08); --good-border: rgba(52,211,153,0.22);
+      --bad: #f87171; --bad-muted: rgba(248,113,113,0.08); --bad-border: rgba(248,113,113,0.22);
+      --warn: #fbbf24; --warn-muted: rgba(251,191,36,0.08); --warn-border: rgba(251,191,36,0.22);
+
+      /* System */
+      --r: 14px; --r-sm: 10px; --r-pill: 20px;
+      --shadow: 0 4px 20px rgba(0,0,0,0.35);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+      --spring: cubic-bezier(.175,.885,.32,1.275);
+      --ease-out: cubic-bezier(.25,.46,.45,.94);
+      --ease-smooth: cubic-bezier(.4,0,.2,1);
+
+      /* Fonts */
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'SF Mono', 'Cascadia Code', 'Menlo', ui-monospace, monospace;
+    }
+
+    /* ── Light Theme ────────────────────────────────────────────── */
+    [data-theme="light"] {
+      --bg: #f2f2f6;
+      --surface-0: #ffffff;
+      --surface-1: #f8f8fc;
+      --surface-2: #ededf4;
+      --surface-3: #dddde8;
+      --border: rgba(0,0,0,0.10);
+      --border-subtle: rgba(0,0,0,0.06);
+      --border-focus: rgba(0,0,0,0.20);
+      --line: rgba(0,0,0,0.10);
+      --text: #0f0f1a;
+      --text-secondary: #404060;
+      --text-tertiary: #606080;
+      --muted: #404060;
+      --accent: #d09000;
+      --accent-muted: rgba(208,144,0,0.10);
+      --accent-border: rgba(208,144,0,0.30);
+      --accent-text: #8a5e00;
+      --accent-glow: rgba(208,144,0,0.04);
+      --good: #047857; --good-muted: rgba(4,120,87,0.08); --good-border: rgba(4,120,87,0.25);
+      --bad: #b91c1c; --bad-muted: rgba(185,28,28,0.08); --bad-border: rgba(185,28,28,0.25);
+      --warn: #b45309; --warn-muted: rgba(180,83,9,0.08); --warn-border: rgba(180,83,9,0.25);
+      --shadow: 0 2px 12px rgba(0,0,0,0.08);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+    }
+    [data-theme="light"] .modal { background: #fff; }
+    [data-theme="light"] .modal-backdrop.vis { background: rgba(0,0,0,0.25); }
+    [data-theme="light"] header { background: rgba(242,242,246,0.90); }
+
+    /* ── Reset ─────────────────────────────────────────────────── */
+    *,*::before,*::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+    html { height: 100%; overscroll-behavior-y: none }
+    body {
+      margin: 0; height: 100%;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      font-size: 14px; line-height: 1.5;
+    }
+    .app {
+      max-width: 680px; margin: 0 auto;
+      padding: 16px 16px calc(80px + env(safe-area-inset-bottom));
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      position: sticky; top: 0; z-index: 30;
+      padding: 10px 16px;
+      background: rgba(12,12,18,0.92);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--border);
+      transition: box-shadow .2s;
+    }
+    /* v20: header::after accent line removed (decorative noise) */
+    header.scrolled { box-shadow: 0 1px 0 var(--border), var(--shadow) }
+    .hdr-row { display: flex; align-items: center; gap: 12px; justify-content: space-between }
+    .brand { display: flex; align-items: center; gap: 10px }
+    .logo { width: 32px; height: 32px; border-radius: 8px; overflow: hidden; transition: transform .15s }
+    .logo:active { transform: scale(.9) }
+    .title { display: flex; flex-direction: column; line-height: 1.15 }
+    .title strong { font-size: 14px; font-weight: 700; letter-spacing: -.2px }
+    .title span { font-size: 11px; color: var(--text-tertiary); font-weight: 500 }
+
+    /* ── Pills ──────────────────────────────────────────────────── */
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: var(--r-pill);
+      border: 1px solid var(--border); background: var(--surface-1);
+      font-size: 12px; font-weight: 500; color: var(--text-secondary);
+      white-space: nowrap; transition: transform .12s, border-color .2s;
+    }
+    .pill b {
+      color: var(--text); font-family: var(--font-mono);
+      font-weight: 500; font-size: 13px; letter-spacing: -.3px;
+    }
+    .pill.warn { border-color: var(--warn-border); background: var(--warn-muted) }
+    .pill.warn b { color: var(--warn) }
+    .pill.danger { border-color: var(--bad-border); background: var(--bad-muted) }
+    .pill.danger b { color: var(--bad) }
+    .pill:active { transform: scale(.96) }
+    .row { display: flex; gap: 8px; flex-wrap: wrap }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface-1); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: transform .12s, box-shadow .2s, border-color .2s;
+    }
+    .card:active { transform: scale(.998) }
+    .card h3 {
+      margin: 0 0 12px; font-size: 11px; letter-spacing: .8px;
+      text-transform: uppercase; color: var(--text-tertiary); font-weight: 600;
+    }
+    .muted { color: var(--text-secondary) }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
+    @media(max-width:640px) { .grid2 { grid-template-columns: 1fr } }
+
+    /* ── KPI Hero (home dashboard) ──────────────────────────────── */
+    .kpi-hero { text-align: center; padding: 12px 0 6px }
+    .kpi-hero-value {
+      font-family: var(--font-mono); font-size: 42px; font-weight: 600;
+      letter-spacing: -2px; line-height: 1;
+      background: linear-gradient(135deg, var(--text) 0%, var(--accent-text) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .kpi-hero-label {
+      font-size: 11px; color: var(--text-tertiary); font-weight: 600;
+      margin-top: 8px; text-transform: uppercase; letter-spacing: .8px;
+    }
+    .kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px }
+    .kpi-cell {
+      background: var(--surface-0); border: 1px solid var(--border-subtle);
+      border-radius: var(--r-sm); padding: 14px; text-align: center;
+      transition: border-color .2s;
+    }
+    .kpi-cell:hover { border-color: var(--border-focus) }
+    .kpi-cell-value {
+      font-family: var(--font-mono); font-size: 20px; font-weight: 600;
+      letter-spacing: -.5px; color: var(--text);
+    }
+    .kpi-cell-label { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; font-weight: 600; letter-spacing: .2px }
+
+    /* ── Forms ──────────────────────────────────────────────────── */
+    label {
+      display: block; font-size: 12px; color: var(--text-secondary);
+      margin: 14px 0 6px; font-weight: 600; letter-spacing: .1px;
+    }
+    input, select, textarea {
+      width: 100%; border-radius: var(--r-sm); border: 1px solid var(--border);
+      background: var(--surface-0); color: var(--text); padding: 10px 12px;
+      outline: none; font-size: 15px; font-family: var(--font);
+      transition: border-color .15s, box-shadow .15s;
+      -webkit-appearance: none; appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-muted);
+    }
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    input::placeholder, textarea::placeholder { color: var(--text-tertiary) }
+    textarea { min-height: 80px; resize: vertical }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%235a5a6e' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
+    }
+
+    /* ── Buttons ────────────────────────────────────────────────── */
+    .btn {
+      border: 1px solid var(--border); background: var(--surface-1); color: var(--text);
+      padding: 10px 16px; border-radius: var(--r-sm);
+      font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 13px; font-family: var(--font); min-height:48px;
+      transition: transform .1s, background .15s, border-color .15s, box-shadow .15s;
+      -webkit-user-select: none; user-select: none; position: relative; overflow: hidden;
+    }
+    .btn:active { transform: scale(.96) }
+    .btn:hover { border-color: var(--border-focus); background: var(--surface-2) }
+    .btn.primary {
+      border-color: transparent; background: linear-gradient(135deg, var(--accent), #e09500);
+      color: #0c0c12; font-weight: 700;
+      box-shadow: 0 2px 16px rgba(240,168,0,.18), inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+    .btn.primary:active { box-shadow: 0 1px 4px rgba(240,168,0,.08) }
+    .btn.danger { border-color: var(--bad-border); background: var(--bad-muted); color: var(--bad) }
+    .btn.sm { padding: 8px 12px; font-size: 12px; min-height: 44px; border-radius: 8px }
+    .btn:disabled { opacity: .35; cursor: not-allowed; transform: none !important }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap }
+
+    /* ── Cloud Backup ──────────────────────────────────────────── */
+    .cloud-status-panel { background: var(--surface-0); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 12px; margin-top: 10px }
+    .cloud-status-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px }
+    .cloud-status-row .label { color: var(--text-tertiary); font-weight: 500 }
+    .cloud-status-row .value { color: var(--text); font-family: var(--font-mono); font-size: 12px; font-weight: 500 }
+    .cloud-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle }
+    .cloud-dot.ok { background: var(--good) } .cloud-dot.warn { background: var(--warn) } .cloud-dot.off { background: var(--text-tertiary) }
+    .cloud-dot.syncing { background: var(--accent); animation: cloudPulse 1s infinite }
+    @keyframes cloudPulse { 0%,100%{ opacity:1 } 50%{ opacity:.3 } }
+    .pass-wrap { position: relative; display: flex; align-items: center }
+    .pass-wrap input { padding-right: 44px }
+    .pass-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-tertiary); cursor: pointer; padding: 4px 6px; font-size: 16px; line-height: 1 }
+    .pass-strength { height: 3px; border-radius: 2px; margin-top: 6px; background: var(--surface-2); overflow: hidden }
+    .pass-strength-fill { height: 100%; border-radius: 2px; width: 0%; transition: width .3s var(--ease-smooth), background .3s }
+    .cloud-sync-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px }
+    @keyframes spin { to { transform: rotate(360deg) } }
+    .cloud-actions { display: flex; gap: 8px; margin-top: 10px }
+    .cloud-actions .btn { flex: 1 }
+    .admin-user { background: var(--surface-0); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 10px 12px; margin-bottom: 6px }
+    .admin-user .au-name { font-weight: 700; font-size: 14px }
+    .admin-user .au-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px }
+    .admin-user .au-badge { display: inline-block; font-size: 10px; padding: 1px 8px; border-radius: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle }
+    .admin-user .au-badge.active { background: rgba(52,211,153,0.12); color: var(--good) }
+    .admin-user .au-badge.revoked { background: rgba(248,113,113,0.12); color: var(--bad) }
+    .admin-result-box { background: var(--surface-0); border: 1px solid var(--good-border); border-radius: var(--r-sm); padding: 12px; font-size: 13px; line-height: 1.6 }
+    .admin-result-box .ar-token { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; word-break: break-all; margin: 6px 0; user-select: all; -webkit-user-select: all }
+    .admin-share-btn { background: var(--accent); color: var(--bg); border: none; border-radius: 8px; padding: 10px 16px; font-weight: 700; font-size: 13px; width: 100%; margin-top: 8px; cursor: pointer; font-family: var(--font) }
+
+    /* ── Collapsible Settings ──────────────────────────────────── */
+    .settings-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; -webkit-user-select: none; user-select: none;
+      padding: 4px 0; margin-top: 16px;
+    }
+    .settings-toggle::after {
+      content: '▸'; font-size: 12px; color: var(--text-tertiary);
+      transition: transform .2s var(--ease-smooth);
+    }
+    .settings-toggle.open::after { transform: rotate(90deg) }
+    .settings-body { display: none; padding-top: 4px }
+    .settings-body.open { display: block }
+
+    /* ── Focus indicators for keyboard navigation ──────────────── */
+    .btn:focus-visible, [role="button"]:focus-visible, a:focus-visible, .nav a:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+      box-shadow: 0 0 0 4px var(--accent-muted);
+    }
+    .x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+
+    /* ── List items ─────────────────────────────────────────────── */
+    .list { display: flex; flex-direction: column; gap: 3px }
+    .item {
+      border: 1px solid var(--border-subtle); border-radius: var(--r-sm);
+      padding: 13px 14px; background: var(--surface-1);
+      display: flex; justify-content: space-between; gap: 12px;
+      transition: transform .15s, background .15s, border-color .2s;
+      position: relative; overflow: hidden;
+      border-left: 3px solid var(--surface-3);
+    }
+    .item:active { transform: scale(.99); background: var(--surface-2); border-color: var(--border-focus) }
+    .item .left { min-width: 0; flex: 1 }
+    .item .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0 }
+    .item .k { font-size: 11px; color: var(--text-tertiary); font-weight: 500; text-transform: uppercase; letter-spacing: .3px }
+    .item .v { font-weight: 700; font-family: var(--font-mono); font-size: 15px; letter-spacing: -.3px }
+    .item .sub {
+      font-size: 12px; color: var(--text-tertiary); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; max-width: 320px; margin-top: 2px;
+    }
+    .tag {
+      font-size: 11px; padding: 3px 8px; border-radius: var(--r-pill);
+      border: 1px solid var(--border); background: var(--surface-0);
+      color: var(--text-secondary); font-weight: 500; transition: all .2s;
+    }
+    .tag.good { border-color: var(--good-border); background: var(--good-muted); color: var(--good) }
+    .tag.bad { border-color: var(--bad-border); background: var(--bad-muted); color: var(--bad) }
+
+    /* Stagger entry */
+    @keyframes itemIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+    .item.enter { animation: itemIn .2s var(--ease-smooth) both }
+
+    .split { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+    .spacer { height: 12px }
+    .field { margin-bottom: 4px }
+    .chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px }
+    .mono { font-family: var(--font-mono); font-size: 13px; line-height: 1.6 }
+
+    /* ── View transitions ──────────────────────────────────────── */
+    @keyframes viewIn { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: translateY(0) } }
+    .view.entering { animation: viewIn .2s var(--ease-smooth) both }
+
+    /* ── Pull to refresh ───────────────────────────────────────── */
+    .ptr-zone { text-align: center; height: 0; overflow: hidden; transition: height .2s; color: var(--accent-text); font-size: 12px; font-weight: 600 }
+    .ptr-zone.active { height: 40px; line-height: 40px }
+    .ptr-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--accent-muted); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px }
+    @keyframes spin { to { transform: rotate(360deg) } }
+
+    /* ── Bottom nav ────────────────────────────────────────────── */
+    .bottom {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      padding: 0 12px env(safe-area-inset-bottom);
+      background: rgba(12,12,18,0.92);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+      backdrop-filter: saturate(180%) blur(24px);
+      border-top: 1px solid var(--border); z-index: 50;
+    }
+    .nav { max-width: 680px; margin: 0 auto; display: flex; align-items: center; justify-content: space-around; height: 56px }
+    .nav a {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      text-decoration: none; color: var(--text-tertiary); padding: 6px 2px;
+      transition: color .15s; -webkit-user-select: none; user-select: none; position: relative;
+    }
+    .nav a:active .ni { transform: scale(.85) }
+    .nav a .ni { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transition: transform .15s var(--spring), color .15s; font-size: 22px; line-height: 1 }
+    .nav a .ni svg { width: 22px; height: 22px }
+    .nav a .nl { font-size: 10px; font-weight: 600; letter-spacing: .2px }
+    .nav a.active { color: var(--accent-text) }
+    .nav a.active .ni svg { stroke-width: 2.4 }
+    .nav a::after {
+      content: ''; position: absolute; top: 0; left: 50%;
+      width: 20px; height: 2px; border-radius: 1px; background: var(--accent);
+      transform: translateX(-50%) scaleX(0); transition: transform .2s var(--spring);
+    }
+    .nav a.active::after { transform: translateX(-50%) scaleX(1) }
+    .nav .fab-wrap { flex: 0 0 58px; display: flex; justify-content: center }
+    /* v20: Center Evaluate tab */
+    .nav a.nav-eval-center {
+      flex: 0 0 64px; padding: 4px 2px;
+    }
+    .nav a.nav-eval-center .ni {
+      width: 44px; height: 44px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), #e09500);
+      color: #0c0c12; font-size: 20px; font-weight: 800;
+      box-shadow: 0 4px 16px rgba(240,168,0,.28), 0 0 0 1px rgba(240,168,0,0.15);
+      transition: transform .15s var(--spring), box-shadow .15s;
+    }
+    .nav a.nav-eval-center:active .ni { transform: scale(.88); box-shadow: 0 2px 6px rgba(240,168,0,.12) }
+    .nav a.nav-eval-center .nl { color: var(--accent-text); font-weight: 700 }
+    .nav a.nav-eval-center::after { display: none }
+    .nav a.nav-eval-center.active .ni {
+      box-shadow: 0 4px 20px rgba(240,168,0,.4), 0 0 0 2px rgba(240,168,0,0.35);
+    }
+    /* v20: Collapsible advanced eval fields */
+    .eval-advanced-toggle {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+      padding: 10px 0; font-size: 12px; font-weight: 600;
+      color: var(--text-secondary); user-select: none; -webkit-user-select: none;
+    }
+    .eval-advanced-toggle .adv-arrow {
+      width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+      transition: transform .2s var(--ease-smooth); font-size: 10px; color: var(--text-tertiary);
+    }
+    .eval-advanced-toggle.open .adv-arrow { transform: rotate(90deg) }
+    .eval-advanced-body { display: none }
+    .eval-advanced-body.open { display: block }
+    /* v20: Eval output inline */
+    .eval-grade-badge {
+      font-size: 56px; font-weight: 800; font-family: var(--font-mono); line-height: 1;
+      text-align: center; margin: 8px 0 4px;
+    }
+    .eval-grade-label {
+      font-size: 13px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      text-align: center; margin-bottom: 2px;
+    }
+    .eval-rpm-hero {
+      font-size: 20px; font-weight: 700; font-family: var(--font-mono);
+      text-align: center; margin-bottom: 12px;
+    }
+    /* v20: Swipe actions on list rows */
+    .swipe-wrap { position: relative; overflow: hidden; border-radius: var(--r-sm); margin-bottom: 0 }
+    .swipe-wrap + .swipe-wrap { margin-top: 0 }
+    .swipe-actions-l, .swipe-actions-r {
+      position: absolute; top: 0; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; min-width: 80px; padding: 0 16px;
+      pointer-events: none; opacity: 0; transition: opacity .12s;
+    }
+    .swipe-actions-l { left: 0; background: var(--bad); color: #fff; border-radius: var(--r-sm) 0 0 var(--r-sm) }
+    .swipe-actions-r { right: 0; background: var(--good); color: #0c0c12; border-radius: 0 var(--r-sm) var(--r-sm) 0 }
+    .swipe-wrap.swiping-l .swipe-actions-l,
+    .swipe-wrap.swiping-r .swipe-actions-r { opacity: 1 }
+    .swipe-inner { transition: transform .2s var(--ease-smooth); will-change: transform }
+    .swipe-inner.no-transition { transition: none }
+    /* v20: Filter chips */
+    .chip {
+      flex: 0 0 auto; padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--surface-1);
+      color: var(--text-secondary); font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .chip:active { transform: scale(.94) }
+    .chip.active {
+      background: var(--accent); color: #0c0c12;
+      border-color: var(--accent);
+    }
+    /* v20: More menu section headers */
+    .more-section-head {
+      font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      color: var(--text-tertiary); padding: 14px 2px 6px;
+    }
+
+    /* ── Menu grid ─────────────────────────────────────────────── */
+    .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+    .menu-tile {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      padding: 20px 12px; border-radius: var(--r); background: var(--surface-1);
+      border: 1px solid var(--border); cursor: pointer;
+      transition: transform .12s, background .15s, border-color .15s;
+    }
+    .menu-tile:active { transform: scale(.97); background: var(--surface-2) }
+    .menu-tile .ti { font-size: 24px; line-height: 1 }
+    .menu-tile .tt { font-size: 13px; font-weight: 700; color: var(--text); text-align: center }
+    .menu-tile .ts { font-size: 11px; color: var(--text-tertiary); text-align: center; line-height: 1.3 }
+
+    /* ── FAB ────────────────────────────────────────────────────── */
+    .fab {
+      width: 46px; height: 46px; border-radius: 13px;
+      border: none; background: linear-gradient(135deg, var(--accent), #e09500);
+      color: #0c0c12; font-weight: 800; font-size: 22px;
+      display: grid; place-items: center; cursor: pointer;
+      box-shadow: 0 4px 20px rgba(240,168,0,.25), 0 0 0 1px rgba(240,168,0,0.15);
+      transition: transform .15s var(--spring), box-shadow .15s, border-radius .2s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .fab:active { transform: scale(.85); box-shadow: 0 2px 8px rgba(240,168,0,.1) }
+    .fab.open { transform: rotate(45deg); border-radius: 50% }
+    .fab.pulse { animation: fabPulse 2.5s ease-in-out 3 }
+    @keyframes fabPulse { 0%,100% { box-shadow: 0 4px 20px rgba(240,168,0,.25) } 50% { box-shadow: 0 4px 36px rgba(240,168,0,.45), 0 0 60px rgba(240,168,0,.12) } }
+    .fab-hint {
+      position: absolute; bottom: 56px; left: 50%; transform: translateX(-50%);
+      background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600;
+      padding: 6px 12px; border-radius: 6px; white-space: nowrap; pointer-events: none;
+      opacity: 0; animation: hintFade 3s ease-in-out 1s infinite; border: 1px solid var(--border);
+    }
+    .fab-hint::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid var(--surface-2) }
+    @keyframes hintFade { 0%,100% { opacity: 0 } 20%,80% { opacity: 1 } }
+
+    /* ── Modal ──────────────────────────────────────────────────── */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 60; display: none; transition: background .25s }
+    .modal-backdrop.vis { background: rgba(0,0,0,.6) }
+    .modal {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      width: 100%; max-width: 680px; margin: 0 auto; max-height: 92vh; overflow: auto;
+      z-index: 61; border-radius: 18px 18px 0 0;
+      border: 1px solid var(--border); border-bottom: none;
+      background: var(--surface-0); box-shadow: 0 -12px 48px rgba(0,0,0,.6);
+      padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+      transform: translateY(100%); transition: transform .3s var(--spring);
+      -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: none;
+    }
+    .modal.open { transform: translateY(0) }
+    .modal-handle { width: 32px; height: 3px; border-radius: 2px; background: var(--surface-3); margin: 10px auto 6px }
+    .modal header { position: sticky; top: 0; padding: 8px 0 12px; background: var(--surface-0); border: 0; z-index: 5 }
+    .modal .mhead { display: flex; align-items: center; justify-content: space-between; gap: 10px }
+    .modal .mhead h2 { margin: 0; font-size: 16px; font-weight: 700 }
+    .x {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--surface-1);
+      color: var(--text-secondary); display: grid; place-items: center;
+      cursor: pointer; font-size: 13px; transition: transform .12s var(--spring), background .15s;
+    }
+    .x:active { transform: scale(.85) }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(12px) } to { opacity: 1; transform: translateX(-50%) translateY(0) } }
+    @keyframes toastOut { from { opacity: 1; transform: translateX(-50%) translateY(0) } to { opacity: 0; transform: translateX(-50%) translateY(8px) } }
+    .toast {
+      position: fixed; bottom: calc(88px + env(safe-area-inset-bottom));
+      left: 50%; transform: translateX(-50%); z-index: 100;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 10px 18px; box-shadow: var(--shadow-lg);
+      color: var(--text); font-size: 13px; font-weight: 600;
+      white-space: nowrap; pointer-events: none; opacity: 0;
+    }
+    .toast.show { animation: toastIn .2s var(--ease-smooth) forwards }
+    .toast.hide { animation: toastOut .2s var(--ease-smooth) forwards }
+    .toast.err { border-color: var(--bad-border) }
+
+    /* ── KPI pulse ──────────────────────────────────────────────── */
+    @keyframes kpiPop { 0% { transform: scale(1) } 50% { transform: scale(1.04) } 100% { transform: scale(1) } }
+    .kpi-pop { animation: kpiPop .25s var(--ease-smooth) }
+
+    /* ── Skeleton ───────────────────────────────────────────────── */
+    @keyframes shimmer { 0% { background-position: -200px 0 } 100% { background-position: calc(200px + 100%) 0 } }
+    .skel { border-radius: var(--r-sm); background: linear-gradient(90deg, var(--surface-1), var(--surface-2) 40%, var(--surface-1) 80%); background-size: 200px 100%; animation: shimmer 1.2s infinite; min-height: 52px; margin-bottom: 8px }
+
+    /* ── Period tabs ────────────────────────────────────────────── */
+    .ptabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px }
+    .ptabs .btn { transition: all .15s }
+    .ptabs .btn.act { border-color: var(--accent-border); background: var(--accent-muted); color: var(--accent-text) }
+
+    /* ── Autocomplete ──────────────────────────────────────────── */
+    .ac-drop { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: var(--surface-2); border: 1px solid var(--border-focus); border-radius: var(--r-sm); max-height: 200px; overflow-y: auto; box-shadow: var(--shadow-lg); display: none }
+    .ac-drop.vis { display: block }
+    .ac-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border-subtle); transition: background .1s }
+    .ac-item:hover, .ac-item.sel { background: var(--surface-3) }
+    .ac-item:last-child { border-bottom: none }
+    .ac-item .ac-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px }
+    .ac-wrap { position: relative }
+
+    /* ── Quick actions grid ─────────────────────────────────────── */
+    .quick-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 16px }
+    .quick-actions .btn { flex-direction: column; gap: 2px; padding: 14px 8px; font-size: 13px }
+
+    /* ── Midwest Stack tab panels ──────────────────────────────── */
+    .mw-tab-panel { transition: opacity .15s }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media(max-width:380px) {
+      .kpi-hero-value { font-size: 30px }
+      .pill { padding: 5px 10px; font-size: 11px }
+      .pill b { font-size: 12px }
+    }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important } }
+
+    /* ── Theme toggle ──────────────────────────────────────────── */
+    .theme-btn { background:none; border:1px solid var(--border); border-radius:var(--r-pill); padding:10px 12px; font-size:16px; cursor:pointer; line-height:1; transition:all .2s; color:var(--text); min-width:44px; min-height:44px; display:inline-flex; align-items:center; justify-content:center }
+    .theme-btn:active { transform:scale(.9) }
+
+    /* ── Weekly chart ──────────────────────────────────────────── */
+    #weeklyChart { width:100%; height:140px; border-radius:var(--r-sm); margin-top:12px }
+
+    /* ── PWA Install Banner ────────────────────────────────────── */
+    #pwaInstallBanner { display:none; position:fixed; bottom:76px; left:12px; right:12px; z-index:999; padding:14px 16px; background:var(--surface-1); border:1px solid var(--accent-border); border-radius:var(--r); box-shadow:var(--shadow-lg); animation:slideUp .3s var(--ease-smooth) }
+    @keyframes slideUp { from { transform:translateY(20px); opacity:0 } to { transform:translateY(0); opacity:1 } }
+    #pwaInstallBanner .pwa-row { display:flex; align-items:center; gap:12px }
+    #pwaInstallBanner .pwa-close { position:absolute; top:8px; right:8px; background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:12px }
+
+    /* ── Payment alert badge ───────────────────────────────────── */
+    .overdue-badge { display:inline-block; padding:2px 8px; border-radius:var(--r-pill); background:var(--bad-muted); border:1px solid var(--bad-border); color:var(--bad); font-size:11px; font-weight:700 }
+
+    /* ── Stop entries ──────────────────────────────────────────── */
+    .stop-entry input, .stop-entry select { padding:10px 8px; font-size:12px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface-1); color:var(--text) }
+    .stop-entry input::placeholder { color:var(--text-tertiary) }
+
+    /* ═══════════════════════════════════════════════════════════════
+       v17.0.0 — VISUAL UPGRADES
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* v20: body::before gradient glow removed (decorative noise) */
+
+    /* ── Scrollbar styling ──────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px }
+    ::-webkit-scrollbar-track { background: transparent }
+    ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary) }
+
+    /* ── Grade badges (evaluator output) ───────────────────────── */
+    .grade-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px; border-radius: 14px; font-size: 22px; font-weight: 800;
+      font-family: var(--font-mono); letter-spacing: -1px; line-height: 1;
+      border: 2px solid transparent; position: relative; overflow: hidden;
+    }
+    .grade-badge::before {
+      content: ''; position: absolute; inset: 0; opacity: 0.12; border-radius: inherit;
+      background: radial-gradient(circle at 30% 30%, currentColor, transparent 70%);
+    }
+    .grade-A { background: var(--good-muted); color: var(--good); border-color: var(--good-border) }
+    .grade-B { background: rgba(52,180,220,0.10); color: #58c4dd; border-color: rgba(52,180,220,0.25) }
+    .grade-C { background: var(--warn-muted); color: var(--warn); border-color: var(--warn-border) }
+    .grade-D { background: rgba(248,150,100,0.10); color: #f89664; border-color: rgba(248,150,100,0.25) }
+    .grade-E { background: var(--bad-muted); color: var(--bad); border-color: var(--bad-border) }
+
+    /* ── Verdict banner (evaluator) ─────────────────────────────── */
+    .verdict-banner {
+      padding: 14px 16px; border-radius: var(--r); margin: 12px 0;
+      font-weight: 700; font-size: 14px; letter-spacing: .3px;
+      display: flex; align-items: center; gap: 12px;
+      border: 1px solid transparent;
+    }
+    .verdict-accept { background: var(--good-muted); color: var(--good); border-color: var(--good-border) }
+    .verdict-negotiate { background: var(--warn-muted); color: var(--warn); border-color: var(--warn-border) }
+    .verdict-pass { background: var(--bad-muted); color: var(--bad); border-color: var(--bad-border) }
+    .verdict-premium { background: linear-gradient(135deg, rgba(52,211,153,0.12), rgba(240,168,0,0.08)); color: var(--good); border-color: var(--good-border) }
+
+    /* ── Improved progress bar ──────────────────────────────────── */
+    .progress-track {
+      height: 8px; border-radius: 4px; background: var(--surface-0);
+      overflow: hidden; position: relative;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 4px; transition: width .6s var(--ease-smooth);
+      background: linear-gradient(90deg, var(--accent), #e8b830);
+      position: relative;
+    }
+    .progress-fill::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      animation: progressShine 2s ease-in-out infinite;
+    }
+    @keyframes progressShine { 0% { transform: translateX(-100%) } 100% { transform: translateX(200%) } }
+
+    /* ── Improved list items with grade accent ──────────────────── */
+    .item.paid { border-left-color: var(--good) }
+    .item.unpaid { border-left-color: var(--warn) }
+    .item.overdue { border-left-color: var(--bad) }
+    .item.review { border-left-color: var(--accent) }
+
+    /* ── Status indicator dots ──────────────────────────────────── */
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+      vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+    }
+    .status-dot.live { background: var(--good); box-shadow: 0 0 6px var(--good) }
+    .status-dot.stale { background: var(--warn); box-shadow: 0 0 6px var(--warn) }
+    .status-dot.off { background: var(--text-tertiary) }
+
+    /* ── Card section header ───────────────────────────────────── */
+    .section-header {
+      display: flex; align-items: center; gap: 8px; margin: 0 0 14px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .section-header h3 { margin: 0; flex: 1 }
+    .section-header .section-badge {
+      font-size: 11px; font-family: var(--font-mono); font-weight: 600;
+      padding: 2px 8px; border-radius: var(--r-pill);
+      background: var(--accent-muted); color: var(--accent-text); border: 1px solid var(--accent-border);
+    }
+
+    /* ── Bid range bars (evaluator) ─────────────────────────────── */
+    .bid-bar {
+      height: 6px; border-radius: 3px; margin-top: 4px; overflow: hidden;
+      background: var(--surface-0);
+    }
+    .bid-bar-fill { height: 100%; border-radius: 3px; transition: width .4s var(--ease-smooth) }
+
+    /* ── Command Dashboard chips ────────────────────────────────── */
+    .cmd-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 700;
+      letter-spacing: .3px; text-transform: uppercase; white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .cmd-chip.prime { background: rgba(52,211,153,0.10); color: var(--good); border-color: var(--good-border) }
+    .cmd-chip.flex { background: var(--accent-muted); color: var(--accent-text); border-color: var(--accent-border) }
+    .cmd-chip.recovery { background: var(--bad-muted); color: var(--bad); border-color: var(--bad-border) }
+    .cmd-chip.hold { background: rgba(52,180,220,0.10); color: #58c4dd; border-color: rgba(52,180,220,0.25) }
+
+    /* ── Improved bottom nav with glow ──────────────────────────── */
+    .nav a.active {
+      color: var(--accent-text);
+      filter: drop-shadow(0 0 6px rgba(240,168,0,0.25));
+    }
+    [data-theme="light"] .nav a.active { filter: none }
+    [data-theme="light"] .bottom { background: rgba(248,248,252,0.92) }
+
+    /* ── Toast upgrade ─────────────────────────────────────────── */
+    .toast { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px) }
+    .toast.err { background: linear-gradient(135deg, rgba(248,113,113,0.15), var(--surface-2)) }
+
+    /* ── Empty state styling ────────────────────────────────────── */
+    .empty-state {
+      text-align: center; padding: 32px 16px;
+      color: var(--text-tertiary);
+    }
+    .empty-state img { opacity: 0.8; margin-bottom: 12px }
+    .empty-state h4 { font-size: 15px; font-weight: 700; color: var(--text-secondary); margin: 0 0 6px }
+    .empty-state p { font-size: 13px; line-height: 1.5; max-width: 300px; margin: 0 auto 16px }
+
+    /* ── Improved quick action buttons ──────────────────────────── */
+    .quick-actions .btn.primary {
+      background: linear-gradient(135deg, var(--accent), #e09500);
+      box-shadow: 0 2px 12px rgba(240,168,0,.15);
+    }
+
+    /* ── Menu tile hover glow ──────────────────────────────────── */
+    .menu-tile:active {
+      border-color: var(--accent-border);
+      box-shadow: 0 0 0 1px var(--accent-muted);
+    }
+
+    /* ── Smoother page transitions ─────────────────────────────── */
+    @keyframes viewIn {
+      from { opacity: 0; transform: translateY(6px) }
+      to { opacity: 1; transform: translateY(0) }
+    }
+    .view.entering { animation: viewIn .25s var(--ease-smooth) both }
+
+    /* ── Card hover micro-interaction ──────────────────────────── */
+    @media (hover: hover) {
+      .card:hover { border-color: var(--border-focus) }
+      .item:hover { border-color: var(--border-focus); background: var(--surface-2) }
+      .menu-tile:hover { border-color: var(--border-focus); background: var(--surface-2) }
+    }
+  </style>
 </head>
 <body>
-  <div id="app">FreightLogic v20.2.0</div>
+  <header id="mainHeader">
+    <div class="hdr-row">
+      <div class="brand">
+        <img class="logo" src="./icon64.png" alt="Freight Logic" width="32" height="32" />
+        <div class="title"><strong>Freight Logic</strong><span id="appMeta">loading…</span></div>
+      </div>
+      <div class="row">
+        <button id="themeToggle" class="theme-btn" title="Toggle theme" aria-label="Toggle dark/light theme">🌙</button>
+        <span id="cloudIndicator" style="font-size:12px;display:none;cursor:pointer" title="Cloud backup status" aria-label="Cloud backup status">☁️</span>
+        <span id="syncIndicator" style="font-size:12px;display:none;cursor:pointer;display:flex;align-items:center" title="Sync status" aria-label="Sync status"></span>
+        <div class="pill" id="pillWeekNet"><span class="muted">Week</span> <b id="kpiWeekNet">—</b></div>
+        <div class="pill" id="pillUnpaid"><span class="muted">AR</span> <b id="kpiUnpaid">—</b></div>
+      </div>
+    </div>
+  </header>
+  <datalist id="catList">
+    <option value="Fuel"><option value="Tolls"><option value="Repairs & Maintenance">
+    <option value="Insurance"><option value="Parking"><option value="Meals">
+    <option value="Vehicle Payment"><option value="Software / Apps"><option value="Permits & Licenses">
+    <option value="Supplies"><option value="Tires"><option value="Vehicle Wash">
+    <option value="Phone / Data"><option value="Tools / Equipment"><option value="Oil Change">
+    <option value="Registration"><option value="Roadside Assistance"><option value="Other">
+  </datalist>
+  <main class="app">
+    <section id="view-home" class="view">
+      <!-- Card 1: Welcome (new users only) -->
+      <div id="homeWelcome" style="display:none"></div>
+
+      <!-- Card 1 (active users): This Week Command Center -->
+      <div class="card" style="margin-top:10px" id="homeKPICard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="margin:0">This Week</h3>
+          <div id="homeWeekBadge" style="font-size:11px;font-weight:700;color:var(--text-tertiary)"></div>
+        </div>
+        <!-- Progress bar always visible in the card header -->
+        <div style="height:4px;border-radius:2px;background:var(--surface-0);overflow:hidden;margin-bottom:12px">
+          <div id="pcProgressBar" style="height:100%;width:0%;border-radius:2px;background:var(--accent);transition:width .5s var(--ease-smooth)"></div>
+        </div>
+        <div class="kpi-hero">
+          <div class="kpi-hero-value" id="kpiTodayNet">—</div>
+          <div class="kpi-hero-label">net income</div>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Expenses</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="pcEfficiency">—</div><div class="kpi-cell-label">Avg DH</div></div>
+        </div>
+        <div id="pcCoaching" style="margin-top:10px"></div>
+        <div class="quick-actions" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
+          <button class="btn primary" id="btnQuickTrip" style="gap:4px">＋ Trip</button>
+          <button class="btn" id="btnQuickExpense">＋ Expense</button>
+          <button class="btn" id="btnQuickFuel">＋ Fuel</button>
+        </div>
+      </div>
+
+      <!-- Card 2: Alerts & Actions -->
+      <div class="card" style="margin-top:12px">
+        <h3>What's Next</h3>
+        <div class="list" id="trendAlerts"></div>
+        <div class="list" id="homeActions"></div>
+        <!-- Preserved slots for dynamic content (hidden by default) -->
+        <div id="homeStrategyBadge" style="display:none"></div>
+        <div id="homeWeeklyReport" style="display:none"></div>
+        <div id="homeFuelNudge" style="display:none"></div>
+        <div id="homeReloadPrompt" style="display:none"></div>
+        <div id="overdueAlert" style="display:none"></div>
+      </div>
+
+      <!-- Card 3: Recent Trips -->
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="margin:0">Recent Trips</h3>
+          <a href="#trips" style="font-size:12px;color:var(--accent-text);font-weight:600;text-decoration:none">See all →</a>
+        </div>
+        <div class="list" id="homeRecentTrips"></div>
+      </div>
+
+      <!-- Hidden: preserved IDs used by renderCommandCenter (perf card removed as standalone) -->
+      <div style="display:none">
+        <b id="pcWkTarget"></b>
+        <div id="pcDetailRow"></div>
+        <div id="pcAvgScore"></div><div id="pcAcceptRate"></div><div id="pcFuelDrift"></div>
+        <canvas id="weeklyChart"></canvas>
+        <div id="homePerfCard"></div>
+        <div id="homeOmegaCard"></div>
+        <div id="pcProgressLabel"></div>
+        <button id="btnWeeklyReport"></button>
+        <button id="btnLoadCompare"></button>
+        <button id="btnQuickEval"></button>
+      </div>
+    </section>
+    <section id="view-trips" class="view" style="display:none">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <h3 style="margin:0">Trips</h3>
+          <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+        </div>
+        <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
+        <!-- v20: Filter chips -->
+        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+          <button class="chip active" data-chip="all">All</button>
+          <button class="chip" data-chip="unpaid">Unpaid</button>
+          <button class="chip" data-chip="week">This Week</button>
+          <button class="chip" data-chip="month">This Month</button>
+        </div>
+      </div>
+      <div class="spacer"></div><div class="ptr-zone" id="tripsPTR"></div><div class="list" id="tripList"></div><div class="spacer"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="btnTripMore" style="flex:1">Load more</button>
+        <button class="btn" id="btnTripFilter" style="flex:1">Date Filter</button>
+        <button class="btn" id="btnTripExport" style="flex:1">Export JSON</button>
+        <button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button>
+        <button class="btn" id="btnTripImport" style="flex:1">Import</button>
+      </div>
+    </section>
+    <section id="view-expenses" class="view" style="display:none">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Expenses</h3><button class="btn primary" id="btnAddExp2" style="padding:8px 14px">＋ Add</button></div>
+        <input id="expSearch" placeholder="Search category or notes…" />
+      </div>
+      <div class="spacer"></div><div class="ptr-zone" id="expPTR"></div><div class="list" id="expenseList"></div><div class="spacer"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnExpMore" style="flex:1">Load more</button><button class="btn" id="btnExpExport" style="flex:1">Export JSON</button><button class="btn" id="btnExpExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnExpImport" style="flex:1">Import</button></div>
+    </section>
+    <section id="view-money" class="view" style="display:none">
+      <div class="card">
+        <h3>Money Owed To You</h3>
+        <div class="muted" style="font-size:13px;line-height:1.5">Unpaid trips by age. Tap "Mark Paid" when the check arrives.</div>
+        <div class="row" style="margin-top:12px">
+          <div class="pill"><span class="muted">0–15d</span> <b id="ar0_15m">$0</b></div>
+          <div class="pill"><span class="muted">16–30d</span> <b id="ar16_30m">$0</b></div>
+          <div class="pill"><span class="muted">31–45d</span> <b id="ar31_45m">$0</b></div>
+          <div class="pill warn"><span class="muted">46+d</span> <b id="ar46pm">$0</b></div>
+        </div>
+      </div>
+      <div class="spacer"></div><div class="list" id="arList"></div>
+    </section>
+    <section id="view-fuel" class="view" style="display:none">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Fuel Log</h3><button class="btn primary" id="btnAddFuel2" style="padding:8px 14px">＋ Fill-up</button></div>
+        <div class="muted" style="font-size:13px">Track every fill-up. Powers fuel cost analysis and per-mile calculations.</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="card"><h3>IFTA Summary</h3><div id="iftaSummary" class="row"><div class="muted" style="font-size:13px">Add fuel entries to see state-by-state breakdown.</div></div></div>
+      <div class="spacer"></div><div class="ptr-zone" id="fuelPTR"></div><div class="list" id="fuelList"></div><div class="spacer"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnFuelMore" style="flex:1">Load more</button><button class="btn" id="btnFuelExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnFuelImport" style="flex:1">Import</button></div>
+    </section>
+    <section id="view-insights" class="view" style="display:none">
+      <div class="grid2">
+        <div class="card"><h3>Weekly Snapshot</h3><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="wkGross">—</b></div><div class="pill"><span class="muted">Exp</span> <b id="wkExp">—</b></div><div class="pill"><span class="muted">Net</span> <b id="wkNet">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Loaded mi</span> <b id="wkLoaded">—</b></div><div class="pill"><span class="muted">All mi</span> <b id="wkAll">—</b></div><div class="pill"><span class="muted">RPM</span> <b id="wkRpm">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill" id="deadheadPill"><span class="muted">Deadhead</span> <b id="wkDeadhead">—</b></div></div></div>
+        <div class="card"><h3>Settings</h3>
+<!-- ── 3 Essential Settings (always visible) ── -->
+<div class="grid2" style="gap:10px;margin-bottom:6px">
+<div><label>Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /></div>
+<div><label>Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" /></div>
+</div>
+<div class="field" style="margin-bottom:0"><label>Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
+
+<!-- ── Advanced Settings (collapsed) ── -->
+<div id="advSettingsToggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 0 4px;border-top:1px solid var(--border-subtle);margin-top:12px;color:var(--text-secondary);font-size:13px;font-weight:600">
+<span id="advSettingsArrow" style="font-size:10px;transition:transform .2s">▶</span> Advanced Settings
+</div>
+<div id="advSettingsBody" style="display:none">
+<div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
+<label style="font-size:12px;font-weight:600;color:var(--text-secondary)">🚐 Vehicle</label>
+<label>Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
+<label>Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
+<label>Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Monthly Fixed Costs</label>
+<div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
+<div class="grid2" style="gap:10px">
+<div><label>Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
+<div><label>Vehicle payment</label><input id="monthlyVehicle" type="number" step="1" placeholder="$/mo" /></div>
+<div><label>Maintenance</label><input id="monthlyMaintenance" type="number" step="1" placeholder="$/mo" /></div>
+<div><label>Other fixed</label><input id="monthlyOther" type="number" step="1" placeholder="$/mo" /></div>
+</div>
+<label>Est. monthly miles</label><input id="monthlyMiles" type="number" step="1" placeholder="e.g., 8000" />
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<label style="font-size:12px;font-weight:600;color:var(--text-secondary)">💰 Financial</label>
+<div class="grid2" style="gap:10px">
+<div><label>Per diem rate</label><input id="perDiemRate" type="number" step="0.01" placeholder="80.00" /></div>
+<div><label>Broker window</label><select id="brokerWindow"><option value="90">90 days</option><option value="180">6 months</option><option value="365">1 year</option><option value="0">All time</option></select></div>
+</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<label style="font-size:12px;font-weight:600;color:var(--text-secondary)">⚙️ App</label>
+<div class="grid2" style="gap:10px">
+<div><label>UI Mode</label><select id="uiMode"><option value="simple">Simple</option><option value="pro">Pro</option></select></div>
+<div><label>IFTA tracking</label><select id="iftaMode"><option value="off">Off</option><option value="on">On</option></select></div>
+</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<label style="font-size:12px;font-weight:600;color:var(--text-secondary)">📡 Integrations</label>
+<label>🇨🇦 Canada Cross-Border</label><select id="canadaEnabled"><option value="off">Off — US only</option><option value="on">On — score cross-border loads</option></select>
+<div id="canadaFields" style="display:none"><label>CAD→USD Rate</label><input id="cadUsdRate" type="number" step="0.001" placeholder="0.735" /><label>Border admin cost (USD)</label><input id="borderAdminCost" type="number" step="1" placeholder="50" /><label class="chk" style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="canadaDocsReady"> Cross-border docs ready</label></div>
+<label>DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
+<div id="datApiFields" style="display:none"><label>DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
+</div>
+<!-- ── end advanced ── -->
+<div class="spacer"></div><div class="btn-row"><button class="btn primary" id="btnSaveSettings">Save</button><button class="btn danger" id="btnHardReset">Hard Reset</button></div><div class="muted" style="font-size:11px;margin-top:8px">Hard reset clears all local data.</div></div>
+        <div class="card" id="cloudBackupCard"><h3>☁️ Cloud Backup</h3><div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Encrypted backups — your data is encrypted on your phone before upload. Your passphrase never leaves this device.</div><div id="cloudStatusPanel" class="cloud-status-panel" style="display:none"><div class="cloud-status-row"><span class="label">Status</span><span class="value" id="cloudStatusDot"><span class="cloud-dot off"></span> Not connected</span></div><div class="cloud-status-row"><span class="label">Last sync</span><span class="value" id="cloudStatusTime">—</span></div><div class="cloud-status-row"><span class="label">User</span><span class="value" id="cloudStatusUser">—</span></div><div class="cloud-status-row"><span class="label">Backups</span><span class="value" id="cloudStatusCount">—</span></div></div><div id="cloudSetupSection"><label>Your Token</label><div class="pass-wrap"><input id="cloudBackupToken" type="password" placeholder="flk_... (given to you)" autocomplete="off" /><button type="button" class="pass-toggle" id="btnTokenToggle" aria-label="Show token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Paste the token you received</div><label>Encryption Passphrase</label><div class="pass-wrap"><input id="cloudBackupPass" type="password" placeholder="Min 8 characters — pick your own" autocomplete="off" /><button type="button" class="pass-toggle" id="btnPassToggle" aria-label="Show passphrase">👁</button></div><div class="pass-strength" id="passStrength"><div class="pass-strength-fill" id="passStrengthFill"></div></div><div class="muted" style="font-size:11px;margin-top:4px" id="passStrengthLabel">If you forget this, backups cannot be recovered.</div><div class="cloud-actions"><button class="btn" id="btnCloudTest">🔌 Test</button><button class="btn primary" id="btnCloudSave" style="font-weight:700">Connect</button></div></div><div class="cloud-actions"><button class="btn" id="btnCloudPush" disabled>☁️ Backup Now</button><button class="btn" id="btnCloudPull" disabled>📥 Restore</button></div><div id="cloudSyncStatus" class="muted" style="font-size:12px;margin-top:8px;min-height:18px"></div><div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px"><button class="btn sm" id="btnAdminToggle" style="font-size:12px;width:100%">👑 Admin — Add / Manage Drivers</button><div id="adminPanel" style="display:none;margin-top:12px"><label>Admin Token</label><div class="pass-wrap"><input id="adminToken" type="password" placeholder="Your ADMIN_TOKEN secret" autocomplete="off" /><button type="button" class="pass-toggle" id="btnAdminTokenToggle" aria-label="Show admin token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">The ADMIN_TOKEN from Cloudflare Worker settings</div><label>New driver name</label><input id="adminDriverName" type="text" placeholder="e.g., John" /><button class="btn" id="btnAdminCreate" style="margin-top:10px;width:100%">➕ Create Driver Account</button><div id="adminCreateResult" style="display:none;margin-top:10px"></div><div id="adminUserList" style="margin-top:14px"></div><button class="btn sm" id="btnAdminRefresh" style="font-size:11px;margin-top:8px;color:var(--text-tertiary)">Refresh driver list</button></div></div><div style="margin-top:8px"><button class="btn sm" id="btnCloudClear" style="font-size:11px;color:var(--text-tertiary)">Disconnect Cloud Backup</button></div></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="card"><h3>Storage &amp; Recovery</h3><div class="row"><div class="pill"><span class="muted">Trips</span> <b id="stTrips">0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="stExpenses">0</b></div><div class="pill"><span class="muted">Fuel</span> <b id="stFuel">0</b></div><div class="pill"><span class="muted">Receipts</span> <b id="stReceiptSets">0</b></div><div class="pill"><span class="muted">Blobs</span> <b id="stReceiptBlobs">0</b></div></div><div class="spacer"></div><div class="btn-row"><button class="btn" id="btnStorageRefresh">Refresh</button><button class="btn" id="btnStorageAnalyze">Analyze</button><button class="btn" id="btnStorageRebuild">Rebuild Index</button><button class="btn danger" id="btnStorageClearCache">Clear Cache</button></div><div class="muted" style="font-size:11px;margin-top:8px" id="stStatus">—</div></div>
+      <div class="spacer"></div>
+      <div class="card"><h3>Money &amp; AR</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Track unpaid trips and aging.</div><a class="btn" href="#money">View AR / Unpaid</a></div>
+      <div class="spacer"></div>
+      <div class="card"><h3>Tax Quick View</h3><div class="ptabs" id="taxPeriodTabs"><button class="btn sm act" data-period="week">Week</button><button class="btn sm" data-period="month">Month</button><button class="btn sm" data-period="quarter">Quarter</button><button class="btn sm" data-period="ytd">YTD</button></div><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="taxGross">$0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="taxExpenses">$0</b></div><div class="pill"><span class="muted">Net</span> <b id="taxNet">$0</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Per diem</span> <b id="taxPerDiem">$0</b></div><div class="pill"><span class="muted">SE tax</span> <b id="taxSE">$0</b></div><div class="pill"><span class="muted">Profit</span> <b id="taxProfit">$0</b></div></div><div class="muted" style="font-size:11px;margin-top:10px">Quick estimate — not tax advice.</div></div>
+      <div class="spacer"></div>
+      <div class="card"><h3>Export to Accountant</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Quarterly P&amp;L, expenses, IFTA fuel, per diem — for your CPA.</div><div class="ptabs" id="acctPeriodTabs"><button class="btn sm" data-acct="q1">Q1</button><button class="btn sm" data-acct="q2">Q2</button><button class="btn sm" data-acct="q3">Q3</button><button class="btn sm" data-acct="q4">Q4</button><button class="btn sm act" data-acct="ytd">YTD</button></div><button class="btn primary" id="btnAccountantExport" style="margin-top:10px">Generate Package</button></div>
+      <div class="spacer"></div>
+    </section>
+    <section id="view-intel" class="view" style="display:none">
+      <div class="card" style="margin-top:10px">
+        <h3 style="margin:0">Intelligence</h3>
+        <div class="muted" style="font-size:12px;margin-top:4px">Your freight data, analyzed.</div>
+      </div>
+      <div class="menu-grid" id="intelMenu" style="margin-top:12px"></div>
+    </section>
+    <section id="view-omega" class="view" style="display:none">
+
+      <!-- ── v20: Primary 3-Field Evaluator ── -->
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <h2 style="margin:0 0 2px;font-size:17px;font-weight:800">Evaluate Load</h2>
+            <div id="mwAutoFillStatus" class="muted" style="font-size:11px"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="mwVoiceBtn" title="Speak load details" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px;line-height:1;display:none;color:var(--text-secondary)" aria-label="Voice input">🎙️</button>
+            <button class="btn sm" id="mwEvalReset" style="font-size:11px;padding:6px 10px">Clear</button>
+          </div>
+        </div>
+
+        <!-- ── Primary 3 Fields ── -->
+        <div class="field" style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Revenue ($)</label>
+          <input id="mwRevenue" inputmode="decimal" placeholder="420" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px;letter-spacing:-0.5px" />
+        </div>
+        <div class="grid2" style="gap:10px;margin-bottom:10px">
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Loaded Miles</label>
+            <input id="mwLoadedMi" inputmode="numeric" placeholder="185" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Deadhead Miles</label>
+            <input id="mwDeadMi" inputmode="numeric" placeholder="22" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+          </div>
+        </div>
+
+        <!-- ── Advanced toggle ── -->
+        <div class="eval-advanced-toggle" id="evalAdvToggle">
+          <div class="adv-arrow">▶</div>
+          <span>More Details</span>
+          <span class="muted" style="font-size:11px;margin-left:auto" id="evalAdvSummary"></span>
+        </div>
+        <div class="eval-advanced-body" id="evalAdvBody">
+          <div class="field"><label>Origin</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="mwOrigin" placeholder="e.g. Chicago" style="flex:1" />
+              <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:40px;min-height:40px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
+            </div>
+            <div id="mwGpsHint" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
+          </div>
+          <div class="field"><label>Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
+          <div class="grid2" style="gap:10px">
+            <div class="field"><label>Currency</label><select id="mwCurrency" style="font-size:13px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
+            <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
+              <select id="mwDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
+            </div>
+          </div>
+          <div class="grid2" style="gap:10px">
+            <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
+            <div class="field"><label>Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+          </div>
+          <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
+          <div class="field">
+            <label class="chk" style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="mwStrategic"> Allow Strategic Floor ($1.25 True RPM)
+            </label>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <select id="mwStrategicReason" style="flex:1" disabled>
+                <option value="">Reason (required)</option>
+                <option value="home">Going home</option>
+                <option value="slow">Escaping slow market</option>
+                <option value="replace">Replacing deadhead</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-bottom:2px">
+            <div class="field"><label>Mode <span class="muted" style="font-size:10px;font-weight:400">(auto-detected)</span></label>
+              <select id="mwModeSelector" style="font-size:13px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)">
+                <option value="HARVEST">🟢 Harvest — in density</option>
+                <option value="REPOSITION">🔵 Reposition — move to density</option>
+                <option value="ESCAPE">🟡 Escape — exit bad zone</option>
+                <option value="FLOOR_PROTECT">🟠 Floor Protect — late-week</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Voice status ── -->
+        <div id="mwVoiceStatus" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-top:8px;color:var(--accent)"></div>
+      </div>
+
+      <!-- ── v20: Inline Decision Output ── -->
+      <div id="mwEvalOutput" style="min-height:80px">
+        <div class="card" style="text-align:center;padding:28px 16px;border-style:dashed">
+          <div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div>
+          <div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Geography → True RPM → Fuel → Weekly Position → Fatigue</div>
+        </div>
+      </div>
+
+      <!-- ── Eval History (rendered by _renderEvalHistory) ── -->
+      <div id="mwEvalHistory"></div>
+
+      <!-- ── Week Structure (always visible) ── -->
+      <div class="card" style="margin-top:12px">
+        <h3>This Week</h3>
+        <div class="row">
+          <div class="pill"><span class="muted">Gross</span> <b id="mwWeekGross">—</b></div>
+          <div class="pill"><span class="muted">True RPM</span> <b id="mwWeekRPM">—</b></div>
+          <div class="pill"><span class="muted">Net/Fuel</span> <b id="mwWeekNAF">—</b></div>
+        </div>
+        <div style="margin-top:12px;height:4px;border-radius:2px;background:var(--surface-0);overflow:hidden">
+          <div id="mwWeekBar" style="height:100%;width:0%;border-radius:2px;background:var(--good);transition:width .5s var(--ease-smooth)"></div>
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:6px" id="mwWeekLabel">Target: $3,800–$4,200/week</div>
+      </div>
+
+      <!-- ── Hidden sub-panels: Ω Tiers & Market Board (used by More tiles) ── -->
+      <div id="mwTabEval" class="mw-tab-panel" style="display:none"></div>
+      <div id="mwTabOmega" class="mw-tab-panel" style="display:none;margin-top:12px">
+        <div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:12px">All pricing based on <b>ALL miles</b>. Outputs are locked format.</div></div>
+        <div class="grid2">
+          <div class="card"><h3>Inputs</h3><div class="field"><label>All-in miles</label><input id="omMiles" inputmode="numeric" placeholder="e.g. 420" /></div><div class="field"><label>Empty miles</label><input id="omEmpty" inputmode="numeric" placeholder="e.g. 15" /></div><div class="field"><label>Drop tier</label><select id="omDropTier"><option value="1">Tier-1 (dense)</option><option value="2">Tier-2 (controlled)</option><option value="3">Tier-3 (thin/rural)</option></select></div><div class="field"><label>Drive time increase %</label><input id="omDelayPct" inputmode="decimal" placeholder="e.g. 0 or 15" /><div class="muted" style="margin-top:4px;font-size:11px">≥15% = next mileage tier up</div></div><div class="field"><label>Risk conditions</label><div class="grid2" style="margin-top:8px"><label class="chk"><input type="checkbox" id="omOvernight"> Overnight</label><label class="chk"><input type="checkbox" id="om250"> Over 250 mi</label></div><div style="margin-top:8px"><select id="omRisk"><option value="none">No risk adder</option><option value="mod">Moderate rain/wind (+0.05)</option><option value="winter">Winter advisory (+0.10)</option><option value="ice">Ice / storm (+0.15)</option><option value="closure">Major closure (PASS)</option></select></div></div><div class="field"><label>Day-3 weekly gross</label><input id="omDay3Gross" inputmode="decimal" placeholder="e.g. 1800" /><label class="chk" style="margin-top:8px"><input type="checkbox" id="omErosionOk"> Allow lower if &lt;$2k</label></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" id="omCalcBtn">Calculate</button><button class="btn" id="omResetBtn">Reset</button></div></div>
+          <div class="card"><h3>Locked Output</h3><pre id="omOutput" class="mono" style="white-space:pre-wrap;margin:0;min-height:240px"></pre></div>
+        </div>
+      </div>
+      <div id="mwTabBoard" class="mw-tab-panel" style="display:none;margin-top:12px">
+        <div class="grid2">
+          <div class="card"><h3>Log Market Observation</h3>
+            <div class="field"><label>Current location</label><input id="mbLocation" placeholder="e.g. Chicago" /></div>
+            <div class="field"><label>Board volume</label><select id="mbVolume"><option value="light">Light</option><option value="moderate">Moderate</option><option value="heavy">Heavy</option></select></div>
+            <div class="field"><label>Dominant direction</label><select id="mbDirection"><option value="mixed">Mixed</option><option value="N">North</option><option value="S">South</option><option value="E">East</option><option value="W">West</option></select></div>
+            <div class="field"><label>Density direction</label><select id="mbDensityDir"><option value="into-t1">Into Tier 1</option><option value="into-t2">Into Tier 2</option><option value="out">Out of Density</option></select></div>
+            <div class="field"><label>Visible RPM range (low–high)</label>
+              <div style="display:flex;gap:8px"><input id="mbRpmLow" inputmode="decimal" placeholder="Low" style="flex:1" /><input id="mbRpmHigh" inputmode="decimal" placeholder="High" style="flex:1" /></div>
+            </div>
+            <div class="field"><label>Compression score (0–100)</label><input id="mbCompression" inputmode="numeric" placeholder="e.g. 65" /></div>
+            <div class="field"><label>Reload probability (0–100)</label><input id="mbReload" inputmode="numeric" placeholder="e.g. 80" /></div>
+            <div class="field"><label>Deadhead risk (0–100)</label><input id="mbDeadRisk" inputmode="numeric" placeholder="e.g. 20" /></div>
+            <div class="field"><label>Notes</label><textarea id="mbNotes" rows="2" placeholder="Board feel, action taken…"></textarea></div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn primary" id="mbSaveBtn" style="flex:1">Save Entry</button>
+              <button class="btn" id="mbClearBtn">Clear</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Reposition Signal</h3>
+            <div id="mbTomorrowSignal" style="margin-bottom:10px"></div>
+            <div id="mbRepoSignal" style="min-height:80px">
+              <div class="muted" style="font-size:13px">Enter compression + RPM data to get a reposition recommendation.</div>
+            </div>
+            <div class="spacer"></div>
+            <h3>Recent Observations</h3>
+            <div class="list" id="mbLogList"><div class="muted" style="font-size:12px">No market entries yet.</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- Preserved IDs for AR/broker rendering (hidden) -->
+      <div style="display:none">
+        <div id="ar0_15"></div><div id="ar16_30"></div><div id="ar31_45"></div><div id="ar46p"></div>
+        <div id="brokerWindowLabel"></div><div id="brokerList"></div><div id="laneList"></div>
+      </div>
+      <!-- Hidden tab buttons (used by JS tab switcher) -->
+      <div style="display:none" id="mwTabs">
+        <button class="btn sm act" data-mwtab="eval">Load Filter</button>
+        <button class="btn sm" data-mwtab="omega">Ω Tiers</button>
+        <button class="btn sm" data-mwtab="board">Market Board</button>
+      </div>
+    </section>
+    <section id="view-more" class="view" style="display:none">
+      <div class="menu-grid" id="moreMenu"></div>
+      <!-- Hidden: preserved IDs for Quick Settings sync (JS references these) -->
+      <div style="display:none"><input id="moreWeeklyGoal" /><input id="moreVehicleMpg" /><input id="moreFuelPrice" /><input id="morePerDiem" /><button id="moreSaveSettings"></button></div>
+      <div class="spacer"></div>
+      <div class="card" style="text-align:center">
+        <div class="muted" style="font-size:12px">Freight Logic <span id="moreVersion"></span></div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Your data stays on this device.</div>
+      </div>
+    </section>
+  </main>
+  <div class="modal-backdrop" id="backdrop"></div>
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1"><div class="modal-handle"></div><header><div class="mhead"><h2 id="modalTitle">Add</h2><button class="x" id="modalClose" aria-label="Close modal">✕</button></div></header><div id="modalBody"></div></div>
+  <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+  <div class="bottom"><nav class="nav" role="navigation" aria-label="Main navigation">
+    <a href="#home" data-nav="home" class="active" aria-label="Home">
+      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="nl">Home</div>
+    </a>
+    <a href="#trips" data-nav="trips" aria-label="Trips">
+      <div class="ni" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><span id="navUnpaidBadge" style="display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center"></span></div>
+      <div class="nl">Trips</div>
+    </a>
+    <a href="#omega" data-nav="omega" aria-label="Evaluate load" class="nav-eval-center">
+      <div class="ni">⚡</div>
+      <div class="nl">Evaluate</div>
+    </a>
+    <a href="#intel" data-nav="intel" aria-label="Intelligence">
+      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg></div>
+      <div class="nl">Intel</div>
+    </a>
+    <a href="#more" data-nav="more" aria-label="More">
+      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></div>
+      <div class="nl">More</div>
+    </a>
+  </nav></div>
+  <!-- PWA Install Banner -->
+  <div id="pwaInstallBanner">
+    <button class="pwa-close" id="pwaInstallDismiss" aria-label="Dismiss install banner">✕</button>
+    <div class="pwa-row">
+      <img src="./icon64.png" width="40" height="40" style="border-radius:10px" alt="" />
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:14px">Install Freight Logic</div>
+        <div class="muted" style="font-size:12px">Add to Home Screen for offline access</div>
+      </div>
+      <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
+    </div>
+  </div>
+  <script src="app.js?v=20.0.0"></script>
+  <script src="sw-bridge.js?v=20.0.0"></script>
 </body>
 </html>
