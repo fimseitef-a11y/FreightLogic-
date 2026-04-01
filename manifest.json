@@ -1,3 +1,48 @@
 {
-  "name": "FreightLogic v20.2.0"
+  "name": "FreightLogic v20.2.0",
+  "short_name": "FreightLogic",
+  "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, bid recommendations, trap detection, and market positioning.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0c0c12",
+  "background_color": "#0c0c12",
+  "icons": [
+    {"src":"icon64.png","sizes":"64x64","type":"image/png"},
+    {"src":"icon120.png","sizes":"120x120","type":"image/png"},
+    {"src":"icon128.png","sizes":"128x128","type":"image/png"},
+    {"src":"icon152.png","sizes":"152x152","type":"image/png"},
+    {"src":"icon167.png","sizes":"167x167","type":"image/png"},
+    {"src":"icon180.png","sizes":"180x180","type":"image/png"},
+    {"src":"icon192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"icon256.png","sizes":"256x256","type":"image/png"},
+    {"src":"icon512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"},
+    {"src":"icon1024.png","sizes":"1024x1024","type":"image/png"}
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{"name": "receipts", "accept": ["image/*", "application/pdf"]}]
+    }
+  },
+  "categories": ["business","finance","productivity"],
+  "shortcuts": [
+    {
+      "name":"Add Trip",
+      "short_name":"New Trip",
+      "description":"Quickly log a new trip",
+      "url":"./#trip",
+      "icons":[{"src":"icon192.png","sizes":"192x192"}]
+    },
+    {
+      "name":"Evaluate Load",
+      "short_name":"Evaluate",
+      "description":"Open the freight evaluator",
+      "url":"./#midwest",
+      "icons":[{"src":"icon192.png","sizes":"192x192"}]
+    }
+  ]
 }
