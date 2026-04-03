@@ -7,7 +7,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '20.2.0';
+const APP_VERSION = '20.3.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -764,7 +764,10 @@ function newTripTemplate(){
   return { id: crypto.randomUUID?.() || ('trip_' + Math.random().toString(36).slice(2) + Date.now().toString(36)), orderNo:'', customer:'', pickupDate:isoDate(), deliveryDate:isoDate(),
     invoiceDate:'', dueDate:'', origin:'', destination:'', pay:0, loadedMiles:0, emptyMiles:0,
     stops:[], // v14.5.0: multi-stop support [{city, date, type:'stop'|'pickup'|'delivery', notes}]
-    notes:'', isPaid:false, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[], created:Date.now(), updated:Date.now() };
+    notes:'', isPaid:false, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],
+    // F20: Dead Zone Exit fields
+    isDZExit:false, dzDistanceFromHome:null, dzSubTier:null,
+    created:Date.now(), updated:Date.now() };
 }
 /** Sanitize a single stop entry */
 function sanitizeStop(raw){
@@ -812,6 +815,10 @@ function sanitizeTrip(raw){
   t.wouldRunAgain = raw.wouldRunAgain === true ? true : raw.wouldRunAgain === false ? false : null;
   t.created = finiteNum(raw.created, Date.now());
   t.updated = Date.now();
+  // F20: Dead Zone Exit fields
+  t.isDZExit = !!raw.isDZExit;
+  t.dzDistanceFromHome = Number.isFinite(Number(raw.dzDistanceFromHome)) && Number(raw.dzDistanceFromHome) > 0 ? Math.round(Number(raw.dzDistanceFromHome)) : null;
+  t.dzSubTier = ['DZ-FLOOR','DZ-ACCEPTABLE','DZ-STANDARD'].includes(raw.dzSubTier) ? raw.dzSubTier : null;
   t.reviewReasons = computeTripReviewReasons(t);
   t.needsReview = t.reviewReasons.length > 0;
   return t;
@@ -3293,6 +3300,22 @@ async function renderCommandCenter(){
       } else { fdEl.textContent = '\u2014'; }
     }
 
+    // F20: DZ exit count this week
+    let wkDZCount = 0;
+    for (const t of trips){
+      const dt = t.pickupDate || t.deliveryDate;
+      if (dt && new Date(dt).getTime() >= wk0 && t.isDZExit) wkDZCount++;
+    }
+    const dzBadge = $('#pcDZBadge');
+    if (dzBadge){
+      if (wkDZCount > 0){
+        dzBadge.style.display = '';
+        dzBadge.innerHTML = `<span style="display:inline-block;padding:4px 10px;border-radius:20px;background:rgba(240,165,0,.12);border:1px solid rgba(240,165,0,.3);color:#f0a500;font-size:11px;font-weight:700">🟠 ${wkDZCount} DZ exit${wkDZCount>1?'s':''} this week</span>`;
+      } else {
+        dzBadge.style.display = 'none';
+      }
+    }
+
     // Show secondary stats row in Pro mode
     const detailRow = $('#pcDetailRow');
     if (detailRow){
@@ -3441,6 +3464,16 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
   // 10. Average load score low
   if (ctx.scoreCnt >= 5 && ctx.avgScore < 40){
     alerts.push({ severity:'warn', title:`Avg load score low: ${ctx.avgScore}`, detail:`Recent loads scoring below target`, action:()=> location.hash='#omega', cta:'Check \u03a9 tiers' });
+  }
+
+  // 11. F20: Dead Zone exit frequency
+  let dzAlertCount = 0;
+  for (const t of trips){
+    const dt = t.pickupDate || t.deliveryDate;
+    if (dt && new Date(dt).getTime() >= ctx.wk0 && t.isDZExit) dzAlertCount++;
+  }
+  if (dzAlertCount > 2){
+    alerts.push({ severity:'warn', title:`${dzAlertCount} Dead Zone exits this week`, detail:'High DZ frequency — review market positioning to avoid being stranded again', action:()=> location.hash='#omega', cta:'Evaluator' });
   }
 
   // Render (max 5, sorted by severity)
@@ -3943,6 +3976,17 @@ async function renderInsights(){
       if (caFields) caFields.style.display = caEl.value === 'on' ? '' : 'none';
     });
   }
+  // F20: Dead Zone Exit settings
+  const dzEnabledEl = $('#dzEnabled');
+  if (dzEnabledEl){
+    const dzVal = await getSetting('dzEnabled', true);
+    dzEnabledEl.value = (dzVal === false || dzVal === 'false') ? 'off' : 'on';
+  }
+  const dzActEl = $('#dzActivationDistance');
+  if (dzActEl) dzActEl.value = String(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const dzFloorEl = $('#dzFloorRPM');
+  if (dzFloorEl) dzFloorEl.value = String(await getSetting('dzFloorRPM', MW.dzFloorRPM) || MW.dzFloorRPM);
+
   // Cloud Backup settings
   const cbPass = $('#cloudBackupPass');
   if (cbPass) cbPass.value = sessionStorage.getItem('fl_cloud_pass') || '';
@@ -4867,7 +4911,10 @@ const MW = {
     { min: 1.60, max: 1.74, label: 'Strong',             color: 'var(--good)', verdict: 'ACCEPT' },
     { min: 1.75, max: 1.99, label: 'Very Strong',        color: 'var(--good)', verdict: 'ACCEPT' },
     { min: 2.00, max: 99,   label: 'Premium',            color: 'var(--accent-text)', verdict: 'ACCEPT' }
-  ]
+  ],
+  // F20: Dead Zone Exit sub-tiers (below normal $1.25 hard floor)
+  dzFloorRPM: 0.90,
+  dzActivationDistanceMi: 1500,
 };
 
 function getMWWeekTarget(){
@@ -4907,6 +4954,76 @@ function mwFuelCost(totalMiles){
 }
 
 
+// ════════════════════════════════════════════════════
+// F20: DEAD ZONE EXIT — Helper functions
+// ════════════════════════════════════════════════════
+const DZ_HOME_LAT_DEFAULT = 42.8856; // Oak Creek, WI
+const DZ_HOME_LNG_DEFAULT = -87.8632;
+
+async function dzGetHomeCoords(){
+  const lat = Number(await getSetting('homeBaseLat', DZ_HOME_LAT_DEFAULT) || DZ_HOME_LAT_DEFAULT);
+  const lng = Number(await getSetting('homeBaseLng', DZ_HOME_LNG_DEFAULT) || DZ_HOME_LNG_DEFAULT);
+  return {
+    lat: Number.isFinite(lat) && lat !== 0 ? lat : DZ_HOME_LAT_DEFAULT,
+    lng: Number.isFinite(lng) && lng !== 0 ? lng : DZ_HOME_LNG_DEFAULT,
+  };
+}
+
+function dzFindNearestAnchor(lat, lng){
+  const anchorNames = [...MW.tier1, ...MW.tier2];
+  let nearest = null, nearestDist = Infinity;
+  for (const name of anchorNames){
+    const coords = getMarketCoords(name);
+    if (!coords) continue;
+    const d = haversineDistanceMi(lat, lng, coords.lat, coords.lng) * 1.3;
+    if (d < nearestDist){ nearestDist = d; nearest = name; }
+  }
+  return { name: nearest, distMi: nearestDist };
+}
+
+async function dzCheckEligibility(origin, dest){
+  const dzEnabled = (await getSetting('dzEnabled', true)) !== false && (await getSetting('dzEnabled', true)) !== 'false';
+  if (!dzEnabled) return { eligible: false };
+
+  const activationMi = Number(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const homeCoords = await dzGetHomeCoords();
+
+  const origCoords = getMarketCoords(origin);
+  if (!origCoords) return { eligible: false, reason: 'Origin not in market database' };
+
+  const distanceFromHome = Math.round(haversineDistanceMi(origCoords.lat, origCoords.lng, homeCoords.lat, homeCoords.lng) * 1.3);
+  if (distanceFromHome < activationMi){
+    return { eligible: false, distanceFromHome, reason: `${distanceFromHome}mi from home (${activationMi}+ required)` };
+  }
+
+  const destCoords = getMarketCoords(dest);
+  if (!destCoords) return { eligible: false, distanceFromHome, reason: 'Destination not in market database' };
+
+  const origAnchor = dzFindNearestAnchor(origCoords.lat, origCoords.lng);
+  const destAnchor = dzFindNearestAnchor(destCoords.lat, destCoords.lng);
+  const distanceSaved = Math.round(origAnchor.distMi - destAnchor.distMi);
+
+  if (distanceSaved < 200){
+    return { eligible: false, distanceFromHome, distanceSaved, reason: `Saves only ${distanceSaved}mi toward home corridor (200+ required)` };
+  }
+
+  return {
+    eligible: true,
+    distanceFromHome,
+    distanceSaved,
+    nearestAnchor: destAnchor.name || origAnchor.name || 'Midwest corridor',
+  };
+}
+
+function dzClassifySubTier(trueRPM, distanceSaved, dzFloor){
+  if (!Number.isFinite(trueRPM) || trueRPM >= MW.hardRejectRPM || trueRPM < dzFloor) return null;
+  if (trueRPM >= 1.10) return 'DZ-STANDARD';
+  if (trueRPM >= 1.00) return 'DZ-ACCEPTABLE';
+  // DZ-FLOOR ($0.90–$0.99): only valid if load moves 500+ miles toward home
+  if ((distanceSaved || 0) >= 500) return 'DZ-FLOOR';
+  return null;
+}
+
 async function mwIsGoingHome(dest) {
   const home = await getSetting('homeLocation', '');
   if (!home) return false;
@@ -4932,6 +5049,8 @@ async function mwEvaluateLoad(){
 
   const out = $('#mwEvalOutput');
   if (!out) return;
+  // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
+  const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
   if (!loadedMi || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
   if (strategicEnabled && !strategicReason){
     toast('Select a Strategic Reason (home / slow market / replace deadhead).', true);
@@ -4980,6 +5099,13 @@ async function mwEvaluateLoad(){
   // Normal floor is MW.hardRejectRPM. Strategic floor is only allowed when explicitly enabled.
   const floorRPM = effectiveStrategic ? MW.strategicFloorRPM : MW.normalFloorRPM;
 
+  // F20: Dead Zone Exit eligibility
+  const dzFloor = Number(await getSetting('dzFloorRPM', MW.dzFloorRPM) || MW.dzFloorRPM);
+  const dzCheck = (origin && dest) ? await dzCheckEligibility(origin, dest) : { eligible: false };
+  const isDZEligible = dzCheck.eligible;
+  const dzSubTier = (isDZEligible && noReloadConfirmed) ? dzClassifySubTier(trueRPM, dzCheck.distanceSaved || 0, dzFloor) : null;
+  const isDZActive = !!(dzSubTier);
+
   // ── Operating cost (v14.5.0) ──
   const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
   const operatingCost = roundCents(totalMi * opCPM);
@@ -5017,14 +5143,19 @@ async function mwEvaluateLoad(){
   }
 
   // STEP 2: True RPM
-  const rpmPass = trueRPM >= floorRPM;
-  steps.push({ pass: rpmPass, label: 'True RPM', detail: `$${trueRPM.toFixed(2)} — ${tier.label}` });
-  if (trueRPM < floorRPM){
+  const rpmPass = isDZActive ? trueRPM >= dzFloor : trueRPM >= floorRPM;
+  steps.push({ pass: rpmPass, label: 'True RPM', detail: `$${trueRPM.toFixed(2)} — ${isDZActive ? `${dzSubTier} (DZ mode)` : tier.label}` });
+  if (!isDZActive && trueRPM < floorRPM){
     verdict = 'REJECT';
     verdictReason = `Under $${floorRPM.toFixed(2)} floor`;
   }
-  // Long-haul minimum: allow strategic exception ONLY for "going home" or "replacing deadhead".
-  if (totalMi > 250 && trueRPM < MW.longHaulMinRPM){
+  if (isDZActive){
+    verdict = 'DZ-EXIT';
+    verdictReason = `Dead Zone Exit — ${dzSubTier} (${dzCheck.distanceFromHome}mi from home)`;
+    steps.push({ pass: true, label: 'Dead Zone Exit', detail: `${dzCheck.distanceSaved}mi saved toward home corridor • Survival scoring active` });
+  }
+  // Long-haul minimum: allow strategic exception ONLY for "going home" or "replacing deadhead", or DZ active.
+  if (!isDZActive && totalMi > 250 && trueRPM < MW.longHaulMinRPM){
     const allowLongHaulStrategic = effectiveStrategic && (effectiveReason === 'home' || effectiveReason === 'replace');
     if (!allowLongHaulStrategic){
       verdict = 'REJECT';
@@ -5084,8 +5215,8 @@ async function mwEvaluateLoad(){
     if (fatigue >= 8){ verdict = 'REJECT'; verdictReason = 'Fatigue too high — rest first'; }
   }
 
-  // Strategic positioning check
-  if (verdict === 'STRATEGIC'){
+  // Strategic positioning check (skip if DZ active)
+  if (!isDZActive && verdict === 'STRATEGIC'){
     if (geo.intoDensity && trueRPM >= 1.40){ verdictReason = verdictReason || 'Strategic — positions into density'; }
     else if (!geo.intoDensity){ verdict = 'REJECT'; verdictReason = verdictReason || 'Strategic RPM but out of density'; }
   }
@@ -5109,9 +5240,15 @@ async function mwEvaluateLoad(){
   else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
+  // F20: DZ grade capping — A/B loads display as C DZ-EXIT in dead zone
+  const dzDisplayGrade = isDZActive ? (['A','B'].includes(grade) ? 'C' : grade) : grade;
+  const dzDisplayGradeLabel = isDZActive ? (dzSubTier || 'DZ-EXIT') : gradeLabel;
+  const dzDisplayGradeColor = isDZActive ? '#f0a500' : gradeColor;
+  const dzDisplayGradeEmoji = isDZActive ? '🟠' : gradeEmoji;
+
   // Override display verdict with intelligence engine result
-  const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)' };
-  const verdictLabels = { ACCEPT: 'ACCEPT', REJECT: 'PASS', STRATEGIC: 'STRATEGIC ONLY' };
+  const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)', 'DZ-EXIT': '#f0a500' };
+  const verdictLabels = { ACCEPT: 'ACCEPT', REJECT: 'PASS', STRATEGIC: 'STRATEGIC ONLY', 'DZ-EXIT': 'DZ EXIT — SURVIVAL' };
 
   // ── USA Engine integration ──
   const usaMode = $('#mwModeSelector')?.value || 'HARVEST';
@@ -5148,6 +5285,8 @@ async function mwEvaluateLoad(){
     velocityMode = 'FLEX'; velocityDetail = 'No weekly gross entered — defaulting to FLEX';
   }
   const velocityFloor = velocityMode === 'PRIME' ? 1.50 : velocityMode === 'FLEX' ? 1.35 : 1.25;
+  // F20: DZ overrides velocity to SURVIVAL
+  if (isDZActive){ velocityMode = 'SURVIVAL'; velocityDetail = 'Dead Zone active — prioritize getting home over profit'; }
 
   // ════════════════════════════════════════════════════
   // POST-DELIVERY COMMAND (Master Source v5 §12)
@@ -5166,6 +5305,12 @@ async function mwEvaluateLoad(){
     postDeliveryCmd = 'STRATEGIC REPOSITION'; postDeliveryDetail = 'Rate covers distance but destination is weak — plan your next move toward density';
   } else {
     postDeliveryCmd = 'EXIT MARKET'; postDeliveryDetail = 'Weak destination — reposition toward Chicago, Indy, Cleveland, or St. Louis';
+  }
+  // F20: DZ overrides post-delivery to a targeted reposition command
+  if (isDZActive){
+    const anchor = ((dzCheck.nearestAnchor || 'midwest corridor').replace(/\b\w/g, c => c.toUpperCase()));
+    postDeliveryCmd = `REPOSITION → ${anchor}`;
+    postDeliveryDetail = `DZ exit complete — find reload within 90mi of ${anchor} or continue north`;
   }
 
   // ════════════════════════════════════════════════════
@@ -5202,6 +5347,10 @@ async function mwEvaluateLoad(){
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
     turnoverType, warnings,
+    // F20: Dead Zone Exit data
+    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor,
+    dzDisplayGrade, dzDisplayGradeLabel, dzDisplayGradeColor, dzDisplayGradeEmoji,
+    noReloadConfirmed,
   };
   _mwRenderDecision(out, _decision);
   mwRenderWeekStructure(weeklyGross);
@@ -5235,27 +5384,36 @@ function _mwRenderDecision(out, d){
     floorRPM, effectiveStrategic, effectiveReason, usaResult, urgency, bidRange, crossBorder,
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
-    turnoverType, warnings} = d;
+    turnoverType, warnings,
+    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor,
+    dzDisplayGrade, dzDisplayGradeLabel, dzDisplayGradeColor, dzDisplayGradeEmoji,
+    noReloadConfirmed} = d;
+  // Use DZ display overrides when active
+  const dispGrade = dzDisplayGrade || grade;
+  const dispGradeLabel = dzDisplayGradeLabel || gradeLabel;
+  const dispGradeColor = dzDisplayGradeColor || gradeColor;
+  const dispGradeEmoji = dzDisplayGradeEmoji || gradeEmoji;
   let html = '';
 
 
   // ── 1. DECISION BANNER ──
   const ladderRow = (g, label, rng) => {
-    const active = g === grade;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;${active ? `background:${gradeColor}18;border:1px solid ${gradeColor}55` : 'border:1px solid transparent'}">
-      <div style="width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:800;color:${active ? gradeColor : 'var(--text-tertiary)'};${active ? `background:${gradeColor}1a` : 'background:var(--surface-2)'}">${g}</div>
+    const active = isDZActive ? g === dispGrade : g === grade;
+    const rowColor = isDZActive && active ? dispGradeColor : (active ? gradeColor : null);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;${active ? `background:${rowColor}18;border:1px solid ${rowColor}55` : 'border:1px solid transparent'}">
+      <div style="width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:800;color:${active ? rowColor : 'var(--text-tertiary)'};${active ? `background:${rowColor}1a` : 'background:var(--surface-2)'}">${g}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${active ? gradeColor : 'var(--text-secondary)'}">${label}</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${active ? rowColor : 'var(--text-secondary)'}">${label}</div>
         <div style="font-size:10px;color:var(--text-tertiary)">${rng}</div>
       </div>
-      ${active ? `<div style="font-size:10px;font-weight:700;color:${gradeColor}">CURRENT</div>` : ''}
+      ${active ? `<div style="font-size:10px;font-weight:700;color:${rowColor}">${isDZActive ? 'DZ-EXIT' : 'CURRENT'}</div>` : ''}
     </div>`;
   };
 
-  html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${gradeColor}40;margin-bottom:14px">
-    <div style="font-size:14px;font-weight:600;color:${gradeColor};letter-spacing:1px;text-transform:uppercase">${gradeEmoji} ${escapeHtml(gradeLabel)}</div>
-    <div style="font-size:48px;font-weight:800;color:${gradeColor};font-family:var(--font-mono);line-height:1.1;margin:4px 0">${grade}</div>
-    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${tier.color}">$${trueRPM.toFixed(2)}</b> • ${tier.label}</div>
+  html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${dispGradeColor}40;margin-bottom:14px">
+    <div style="font-size:14px;font-weight:600;color:${dispGradeColor};letter-spacing:1px;text-transform:uppercase">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
+    <div style="font-size:48px;font-weight:800;color:${dispGradeColor};font-family:var(--font-mono);line-height:1.1;margin:4px 0">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
+    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : tier.color}">$${trueRPM.toFixed(2)}</b> • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
@@ -5263,6 +5421,7 @@ function _mwRenderDecision(out, d){
       ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
       ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
+      ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
     <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
@@ -5497,9 +5656,10 @@ function _mwRenderDecision(out, d){
   }
 
   // ── Velocity Mode + Turnover + Post-Delivery ──
-  const vmColors = { PRIME: 'var(--good)', FLEX: 'var(--warn)', RECOVERY: 'var(--bad)' };
-  const vmIcons = { PRIME: '🟢', FLEX: '🟡', RECOVERY: '🔴' };
+  const vmColors = { PRIME: 'var(--good)', FLEX: 'var(--warn)', RECOVERY: 'var(--bad)', SURVIVAL: '#f0a500' };
+  const vmIcons = { PRIME: '🟢', FLEX: '🟡', RECOVERY: '🔴', SURVIVAL: '🟠' };
   const pdColors = { HOLD: 'var(--good)', 'MICRO-REPOSITION': 'var(--warn)', 'STRATEGIC REPOSITION': '#ff8c42', 'EXIT MARKET': 'var(--bad)', SKIP: 'var(--text-tertiary)' };
+  const pdCmdColor = isDZActive ? '#f0a500' : (pdColors[postDeliveryCmd] || 'var(--text)');
   const ttColors = { 'QUICK TURN': 'var(--good)', 'MONEY RUN': '#58a6ff', 'LONG LOCK': 'var(--warn)', 'STRATEGIC BRIDGE': '#ff8c42' };
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
     <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:10px">Command Dashboard</div>
@@ -5517,7 +5677,7 @@ function _mwRenderDecision(out, d){
     </div>
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:10px;margin-top:8px;text-align:center">
       <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px">Post-Delivery Command</div>
-      <div style="font-size:16px;font-weight:800;color:${pdColors[postDeliveryCmd] || 'var(--text)'};margin-top:4px">${postDeliveryCmd}</div>
+      <div style="font-size:16px;font-weight:800;color:${pdCmdColor};margin-top:4px">${postDeliveryCmd}</div>
       <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${escapeHtml(postDeliveryDetail)}</div>
     </div>
     ${velocityDetail ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;text-align:center">${escapeHtml(velocityDetail)}</div>` : ''}
@@ -5543,7 +5703,43 @@ function _mwRenderDecision(out, d){
   // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
   html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
 
-  // "Book as Trip" + "Clear & Next" buttons
+  // ── F20: Dead Zone Exit section (shown when eligibility conditions are met) ──
+  if (isDZEligible || isDZActive){
+    const dzDistFromHome = dzCheck.distanceFromHome || 0;
+    const dzSaved = dzCheck.distanceSaved || 0;
+    const dzAnchor = dzCheck.nearestAnchor || 'Midwest corridor';
+    html += `<div id="mwDZSection" style="margin-top:14px;padding:14px;border-radius:var(--r-sm);background:rgba(240,165,0,0.05);border:1px solid rgba(240,165,0,0.3)">
+      <div style="font-size:12px;font-weight:700;color:#f0a500;letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">⚠️ DEAD ZONE EXIT MODE</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:#f0a500;font-family:var(--font-mono)">${dzDistFromHome.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Miles from Home</div>
+        </div>
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${dzSaved >= 500 ? 'var(--good)' : '#f0a500'};font-family:var(--font-mono)">${dzSaved.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Miles Saved</div>
+        </div>
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#f0a500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(dzAnchor)}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Target Anchor</div>
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Sub-tier thresholds: <b style="color:#f0a500">DZ-FLOOR</b> $${MW.dzFloorRPM.toFixed(2)}–$0.99 (500+ mi saved) • <b style="color:#f0a500">DZ-ACCEPTABLE</b> $1.00–$1.09 • <b style="color:#f0a500">DZ-STANDARD</b> $1.10–$1.24</div>
+        ${isDZActive ? `<div style="padding:8px 10px;border-radius:6px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;font-weight:700;color:#f0a500">Active: ${escapeHtml(dzSubTier || '')} — Grade capped at C. This load will not pollute your RPM averages.</div>` : ''}
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:8px;border-radius:6px;border:1px solid rgba(240,165,0,.25);background:rgba(240,165,0,.04)">
+        <input type="checkbox" id="mwDZNoReloadToggle" ${noReloadConfirmed ? 'checked' : ''} style="margin-top:2px;accent-color:#f0a500" />
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text)">No reloads above $1.25 available within 120 miles</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Check this to activate Dead Zone survival scoring for this load. Resets on next evaluation.</div>
+        </div>
+      </label>
+      ${!isDZActive && trueRPM < MW.hardRejectRPM && trueRPM >= (dzFloor || MW.dzFloorRPM) ? `<div style="margin-top:8px;font-size:11px;color:var(--text-tertiary)">Current RPM $${trueRPM.toFixed(2)} is below normal floor. Toggle above to enable DZ scoring — load must save ${trueRPM < 1.00 && (dzCheck.distanceSaved||0) < 500 ? '<b style="color:var(--bad)">500mi</b> (DZ-FLOOR)' : '200mi'} toward home corridor.</div>` : ''}
+    </div>`;
+  }
+
+  // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
@@ -5576,12 +5772,18 @@ function _mwRenderDecision(out, d){
     injectRateTrendIntoEvaluator(d.origin, d.dest).catch(()=>{});
   }
 
+  // F20: Wire DZ no-reload toggle → re-evaluate
+  const dzToggle = $('#mwDZNoReloadToggle', out);
+  if (dzToggle){
+    dzToggle.addEventListener('change', ()=>{ haptic(10); mwEvaluateLoad().catch(()=>{}); });
+  }
+
   // Wire up book-as-trip
   const bookBtn = $('#mwBookTrip', out);
   if (bookBtn){
     bookBtn.addEventListener('click', ()=>{
       haptic(15);
-      openTripWizard({
+      const tripData = {
         orderNo: '',
         customer: '',
         origin: origin || '',
@@ -5590,9 +5792,28 @@ function _mwRenderDecision(out, d){
         emptyMiles: deadMi || 0,
         pay: revenue || 0,
         pickupDate: isoDate(),
-        notes: `Eval: ${grade || ''} · $${trueRPM.toFixed(2)}/mi True RPM`,
-        _evalPrefill: true,
-      });
+        notes: isDZActive
+          ? `MW Stack: ${dispGrade} DZ-EXIT (${dzSubTier}) — True RPM $${trueRPM.toFixed(2)} — ${(dzCheck.distanceFromHome||0)}mi from home`
+          : `MW Stack: ${grade || ''} (USA ${usaResult?.score || 0}/100) — True RPM $${trueRPM.toFixed(2)}`,
+        // F20: DZ exit fields — set on trip record
+        isDZExit: isDZActive,
+        dzSubTier: isDZActive ? dzSubTier : null,
+        dzDistanceFromHome: isDZActive ? (dzCheck.distanceFromHome || null) : null,
+      };
+      if (isDZActive){
+        // Audit log the DZ booking
+        tx(['auditLog'],'readwrite').then(({t, stores}) => {
+          stores.auditLog?.put?.({
+            id: crypto.randomUUID?.() || String(Date.now())+Math.random(),
+            timestamp: Date.now(),
+            entityId: null,
+            action: 'DZ_EXIT_BOOKED',
+            afterData: { origin: origin||'', destination: dest||'', trueRPM, dzSubTier, distanceFromHome: dzCheck.distanceFromHome||0, distanceSaved: dzCheck.distanceSaved||0 },
+            source: 'user'
+          });
+        }).catch(()=>{});
+      }
+      openTripWizard(tripData);
     });
   }
 
@@ -7882,6 +8103,13 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
     if (borderCost >= 0) await setSetting('borderAdminCost', borderCost);
     await setSetting('canadaDocsReady', !!$('#canadaDocsReady')?.checked);
   }
+  // F20: Dead Zone Exit settings
+  await setSetting('dzEnabled', ($('#dzEnabled')?.value || 'on') !== 'off');
+  const dzActDistVal = Number($('#dzActivationDistance')?.value || MW.dzActivationDistanceMi);
+  if (dzActDistVal >= 500) await setSetting('dzActivationDistance', dzActDistVal);
+  const dzFloorRPMVal = Number($('#dzFloorRPM')?.value || MW.dzFloorRPM);
+  if (dzFloorRPMVal >= 0.50 && dzFloorRPMVal < MW.hardRejectRPM) await setSetting('dzFloorRPM', dzFloorRPMVal);
+
   toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
 });
 addManagedListener($('#btnHardReset'), 'click', async ()=>{
@@ -7956,6 +8184,14 @@ async function generateWeeklyReport(){
     const wkDh = wkAll > 0 ? ((wkAll - wkLoaded) / wkAll * 100) : 0;
     const wkAvgScore = wkScoreCnt > 0 ? Math.round(wkScoreSum / wkScoreCnt) : 0;
     const wkAccRate = wkScoreCnt > 0 ? Math.round((wkAccept / wkScoreCnt) * 100) : 0;
+
+    // F20: DZ exit stats — separated from main averages
+    let wkDZCount = 0, wkDZGross = 0, wkDZMi = 0;
+    for (const t of wkTripsArr){
+      if (t.isDZExit){ wkDZCount++; wkDZGross += Number(t.pay||0); wkDZMi += Number(t.loadedMiles||0)+Number(t.emptyMiles||0); }
+    }
+    const wkDZRpm = wkDZMi > 0 ? wkDZGross / wkDZMi : 0;
+    const wkRpmExclDZ = (wkAll - wkDZMi) > 0 ? (wkGross - wkDZGross) / (wkAll - wkDZMi) : wkRpm;
 
     // Top lane this week
     const wkTripsArr = trips.filter(t => {
@@ -8061,9 +8297,14 @@ async function generateWeeklyReport(){
     }
 
     drawDivider('EFFICIENCY');
-    drawCard('Avg RPM', wkRpm > 0 ? `$${wkRpm.toFixed(2)}` : '—', `${fmtNum(wkAll)} total miles`);
+    drawCard('Avg RPM', wkRpmExclDZ > 0 ? `$${wkRpmExclDZ.toFixed(2)}` : '—', `${fmtNum(wkAll - wkDZMi)} mi${wkDZCount > 0 ? ' (DZ exits excluded)' : ''}`);
     drawCard('Deadhead', wkAll > 0 ? `${wkDh.toFixed(1)}%` : '—', `${fmtNum(wkAll - wkLoaded)} empty of ${fmtNum(wkAll)} total`, wkDh <= 15 ? '#6bff95' : wkDh <= 25 ? '#ffb300' : '#ff6b6b');
     drawCard('Avg Load Score', wkScoreCnt > 0 ? `${wkAvgScore}/100` : '—', `Accept rate: ${wkAccRate}%`, wkAvgScore >= 60 ? '#6bff95' : wkAvgScore >= 40 ? '#ffb300' : '#ff6b6b');
+
+    if (wkDZCount > 0){
+      drawCard('Dead Zone Exits', `${wkDZCount} load${wkDZCount>1?'s':''}`, `${fmtMoney(wkDZGross)} total • $${wkDZRpm.toFixed(2)} avg RPM (survival-tier, excluded from Avg RPM)`, '#f0a500');
+      if (wkDZCount > 2){ drawDivider('⚠️ High DZ frequency — review market positioning'); }
+    }
 
     drawDivider('INTELLIGENCE');
     if (topLane){
@@ -9709,6 +9950,7 @@ async function recordLaneHistory(trip){
       if (transitDays !== null){ rec.totalTransitDays = (rec.totalTransitDays||0) + transitDays; rec.transitCount = (rec.transitCount||0) + 1; }
       rec.avgTransitDays = rec.transitCount > 0 ? roundCents(rec.totalTransitDays / rec.transitCount) : null;
       if (trip.wouldRunAgain !== null && trip.wouldRunAgain !== undefined){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (trip.wouldRunAgain) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      if (trip.isDZExit) rec.dzExitCount = (rec.dzExitCount || 0) + 1;
       rec.lastDate = isoDate(); rec.updated = now;
       const {t, stores} = tx('laneHistory','readwrite');
       stores.laneHistory.put(rec);
@@ -9717,6 +9959,7 @@ async function recordLaneHistory(trip){
       const rec = { id: 'lane_' + lane.replace(/[^a-z0-9]/g,'_') + '_' + now, lane, count: 1, totalPay: pay, totalMiles: total, bestPay: pay, avgRPM: rpm,
         totalTransitDays: transitDays||0, transitCount: transitDays !== null ? 1 : 0, avgTransitDays: transitDays,
         wouldRunCount: (trip.wouldRunAgain!==null&&trip.wouldRunAgain!==undefined)?1:0, wouldRunYes: trip.wouldRunAgain?1:0,
+        dzExitCount: trip.isDZExit ? 1 : 0,
         lastDate: isoDate(), created: now, updated: now, displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
       const {t, stores} = tx('laneHistory','readwrite');
       stores.laneHistory.put(rec);
@@ -9741,8 +9984,11 @@ async function getLaneIntel(orig, dest){
 
 function renderLaneIntelHTML(intel){
   if (!intel) return '';
-  const { count, avgRPM, bestPay, avgTransitDays, wouldRunPct, lastDate, displayOrigin, displayDest } = intel;
+  const { count, avgRPM, bestPay, avgTransitDays, wouldRunPct, lastDate, displayOrigin, displayDest, dzExitCount } = intel;
   const color = avgRPM >= 1.60 ? 'var(--good)' : avgRPM >= 1.35 ? 'var(--warn)' : 'var(--bad)';
+  const dzHtml = (dzExitCount > 0) ? `<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:${dzExitCount >= 3 ? 'rgba(255,80,80,.08)' : 'rgba(240,165,0,.07)'};border:1px solid ${dzExitCount >= 3 ? 'rgba(255,80,80,.25)' : 'rgba(240,165,0,.25)'};font-size:11px;color:${dzExitCount >= 3 ? 'var(--bad)' : '#f0a500'};font-weight:600">
+    ${dzExitCount >= 3 ? `⚠️ Trap Zone Alert: ${dzExitCount} Dead Zone exits from this origin — this market has repeatedly stranded you` : `🟠 Used ${dzExitCount}× as Dead Zone exit`}
+  </div>` : '';
   return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">🛣️ Lane Intel — Your History</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
@@ -9753,6 +9999,7 @@ function renderLaneIntelHTML(intel){
       ${wouldRunPct !== null ? `<div><span class="muted">Would run again:</span> <b style="color:${wouldRunPct>=70?'var(--good)':wouldRunPct>=40?'var(--warn)':'var(--bad)'}">${wouldRunPct}%</b></div>` : '<div></div>'}
       <div><span class="muted">Last run:</span> <b>${escapeHtml(lastDate||'—')}</b></div>
     </div>
+    ${dzHtml}
   </div>`;
 }
 
