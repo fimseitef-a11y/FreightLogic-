@@ -1,14 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v21.3.0 USA ENGINE
+/** FreightLogic v21.3.1 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
  *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '21.3.0';
+const APP_VERSION = '21.3.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -38,7 +38,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v21.3.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v21.3.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -9797,9 +9797,9 @@ async function cloudPushBackup(silent = true){
     const documents = await dumpStore('documents');
 
     // Filter to changed records for delta, fall back to full push if no timestamps or too much changed
-    const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt||0) > lastSynced) : allTrips;
-    const changedExps = lastSynced > 0 ? allExpenses.filter(r => (r.updatedAt||0) > lastSynced) : allExpenses;
-    const changedFuel = lastSynced > 0 ? allFuel.filter(r => (r.updatedAt||0) > lastSynced) : allFuel;
+    const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allTrips;
+    const changedExps = lastSynced > 0 ? allExpenses.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allExpenses;
+    const changedFuel = lastSynced > 0 ? allFuel.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allFuel;
     const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length) < 50;
 
     const trips = isDelta ? changedTrips : allTrips;
@@ -9853,7 +9853,7 @@ async function mergeRestoreData(parsed){
       const existing = await idbReq(stores.trips.get(incoming.orderNo));
       const {t:wt, stores:ws} = tx('trips','readwrite');
       if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
-      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.trips.put(incoming); stats.trips.updated++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); stats.trips.updated++; }
       else { stats.trips.skipped++; }
       await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     }catch(e){ console.warn('[FL] merge trip', e); }
@@ -9867,7 +9867,7 @@ async function mergeRestoreData(parsed){
       const existing = incoming.id ? await idbReq(stores.expenses.get(Number(incoming.id))) : null;
       const {t:wt, stores:ws} = tx('expenses','readwrite');
       if (!existing){ ws.expenses.put(incoming); stats.expenses.added++; }
-      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
       else { stats.expenses.skipped++; }
       await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     }catch(e){ console.warn('[FL] merge expense', e); }
@@ -9881,7 +9881,7 @@ async function mergeRestoreData(parsed){
       const existing = incoming.id ? await idbReq(stores.fuel.get(Number(incoming.id))) : null;
       const {t:wt, stores:ws} = tx('fuel','readwrite');
       if (!existing){ ws.fuel.put(incoming); stats.fuel.added++; }
-      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
       else { stats.fuel.skipped++; }
       await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     }catch(e){ console.warn('[FL] merge fuel', e); }
@@ -12068,7 +12068,7 @@ async function openBrokerNotes(brokerName){
 // v21 T3E: Quick Share to Broker (Web Share API / clipboard)
 // ════════════════════════════════════════════════════════════════
 async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickupDate }){
-  const driverName = (await getSetting('homeLocation', '')) ? '' : '';
+  const driverName = (await getSetting('cloudBackupToken', '')) ? 'Driver' : '';
   const text = [
     `Hi,`,
     `Re: ${origin || '?'} → ${dest || '?'}, ${miles || '?'} mi`,
@@ -12238,6 +12238,7 @@ if (typeof window !== 'undefined'){
     normOrderNo, sanitizeReceiptId, clampStr,
     parseCSVLines, isValidISODate, hashPin,
     isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),
+    parseReceiptOCR, buildCategorySuggestionMap,
   };
 }
 
