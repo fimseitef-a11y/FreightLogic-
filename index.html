@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=20.3.0">
+  <link rel="manifest" href="manifest.json?v=21.3.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -781,6 +781,8 @@
           <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM</div></div>
           <div class="kpi-cell"><div class="kpi-cell-value" id="pcEfficiency">—</div><div class="kpi-cell-label">Avg DH</div></div>
         </div>
+        <!-- v21 T1D: Daily Breakeven -->
+        <div class="pill" id="kpiDailyBurn" style="margin-top:8px;width:100%;justify-content:center;font-size:12px"></div>
         <div id="pcCoaching" style="margin-top:10px"></div>
         <div id="pcDZBadge" style="display:none;margin-top:6px"></div>
         <div class="quick-actions" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
@@ -887,7 +889,7 @@
         <div class="card"><h3>Settings</h3>
 <!-- ── 3 Essential Settings (always visible) ── -->
 <div class="grid2" style="gap:10px;margin-bottom:6px">
-<div><label>Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /></div>
+<div><label>Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
 <div><label>Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" /></div>
 </div>
 <div class="field" style="margin-bottom:0"><label>Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
@@ -934,6 +936,7 @@
 <div id="canadaFields" style="display:none"><label>CAD→USD Rate</label><input id="cadUsdRate" type="number" step="0.001" placeholder="0.735" /><label>Border admin cost (USD)</label><input id="borderAdminCost" type="number" step="1" placeholder="50" /><label class="chk" style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="canadaDocsReady"> Cross-border docs ready</label></div>
 <label>DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
 <div id="datApiFields" style="display:none"><label>DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
+<label>FMCSA API Key (broker verification)</label><input id="fmcsaApiKey" type="password" placeholder="Get free key at ai.fmcsa.dot.gov" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables broker authority status lookup in evaluator</div>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <label style="font-size:12px;font-weight:600;color:#f0a500">🟠 Dead Zone Exit (F20)</label>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Survival-tier scoring ($0.90–$1.24 RPM) unlocked only when stranded 1,500+ miles from home with no viable reloads above the normal floor. Keeps below-floor loads from polluting your RPM history.</div>
@@ -1174,7 +1177,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=20.3.0"></script>
-  <script src="sw-bridge.js?v=20.3.0"></script>
+  <script src="app.js?v=21.3.0"></script>
+  <script src="sw-bridge.js?v=21.3.0"></script>
 </body>
 </html>

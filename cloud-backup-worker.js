@@ -1,4 +1,4 @@
-// FreightLogic Cloud Backup Worker v6 - Multi-User + AI Evaluate + AI Extract
+// FreightLogic Cloud Backup Worker v7 - Multi-User + AI Evaluate + AI Extract + Delta Sync
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
 // Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
@@ -254,6 +254,29 @@ export default {
         }
 
         return json({ ok: true, key, size: payload.length }, 200, cors);
+      }
+
+      // POST /backup/delta — v21 T2B: store delta (partial sync payload)
+      if (request.method === 'POST' && path === '/backup/delta') {
+        const payload = await request.text();
+        if (!payload || payload.length < 10) {
+          return json({ ok: false, error: 'Empty payload' }, 400, cors);
+        }
+        if (payload.length > 2 * 1024 * 1024) {
+          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
+        await env.BACKUPS.put(key, payload, { expirationTtl: 7 * 24 * 3600 }); // expire deltas after 7 days
+        // Limit deltas — keep last 20
+        const dp = 'user:' + driverUserId + ':device:' + deviceId + ':delta:';
+        const dl = await env.BACKUPS.list({ prefix: dp });
+        if (dl.keys.length > 20) {
+          const dsorted = dl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
+          const toDelete = dsorted.slice(0, dsorted.length - 20);
+          for (const k of toDelete) await env.BACKUPS.delete(k.name);
+        }
+        return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest

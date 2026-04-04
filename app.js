@@ -1,13 +1,14 @@
 (() => {
 'use strict';
 
-/** Freight Logic v20.2.0 USA ENGINE
+/** FreightLogic v21.3.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
+ *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
  *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '20.3.0';
+const APP_VERSION = '21.3.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -37,7 +38,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v20.2.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v21.3.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -831,6 +832,7 @@ async function tripExists(orderNo){
 async function upsertTrip(trip){
   const t = sanitizeTrip(trip);
   if (!t.orderNo) throw new Error('Order # required');
+  t.updatedAt = Date.now();
   validateRecordSize(t, 'Trip');
   // TOCTOU-safe: read + write in single readwrite transaction
   const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
@@ -886,7 +888,19 @@ function sanitizeExpense(raw){
   return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
-    updated: Date.now(), type: clampStr(raw.type || 'expense', 20) };
+    updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
+    receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined };
+}
+
+// upsertExpense: put-or-add wrapper (id may be string for recurring, or auto-int)
+async function upsertExpense(exp){
+  const e = sanitizeExpense(exp);
+  e.updatedAt = Date.now();
+  validateRecordSize(e, 'Expense');
+  const {t:txn, stores} = tx(['expenses','auditLog'],'readwrite');
+  stores.expenses.put(e);
+  try{ stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id||''), action:'UPSERT_EXPENSE', beforeData: null, afterData: e, source: 'system' }); }catch(err){ console.warn("[FL]", err); }
+  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(e); txn.onerror = ()=>{ const err2 = txn.error; if (err2?.name === 'QuotaExceededError' || (err2?.message||'').includes('quota')) toast('Storage full — export a backup', true); reject(err2); }; });
 }
 async function addExpense(exp){
   const e = sanitizeExpense(exp);
@@ -950,7 +964,7 @@ function sanitizeFuel(raw){
   return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
-    created: finiteNum(raw.created, Date.now()), updated: Date.now() };
+    created: finiteNum(raw.created, Date.now()), updated: Date.now(), updatedAt: Date.now() };
 }
 async function addFuel(f){
   const x = sanitizeFuel(f);
@@ -1294,7 +1308,9 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen']);
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
+      // v21 new settings keys
+      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -1806,6 +1822,24 @@ async function computeQuickKPIs(){
     const dhPill = $('#deadheadPill');
     if (dhEl) dhEl.textContent = `${deadheadPct.toFixed(1)}%`;
     if (dhPill) dhPill.className = deadheadPct > 30 ? 'pill danger' : deadheadPct > 20 ? 'pill warn' : 'pill';
+    // v21 T1D: Daily breakeven card
+    try {
+      const [mIns, mVeh, mMaint, mOther, mpg, fuelPx] = await Promise.all([
+        getSetting('monthlyInsurance', 0), getSetting('monthlyVehicle', 0),
+        getSetting('monthlyMaintenance', 0), getSetting('monthlyOther', 0),
+        getSetting('vehicleMpg', 0), getSetting('fuelPrice', 0)
+      ]);
+      const dailyFixed = ((Number(mIns)||0) + (Number(mVeh)||0) + (Number(mMaint)||0) + (Number(mOther)||0)) / 30;
+      const avgDailyMi = wkAll / 7;
+      const dailyFuelEst = (Number(mpg) > 0 && Number(fuelPx) > 0) ? (avgDailyMi / Number(mpg)) * Number(fuelPx) : 0;
+      const dailyBreakeven = roundCents(dailyFixed + dailyFuelEst);
+      const todayMargin = todayGross - todayExp - dailyFixed;
+      const burnEl = $('#kpiDailyBurn');
+      if (burnEl && dailyBreakeven > 0){
+        const ahead = todayMargin >= 0;
+        burnEl.innerHTML = `<span class="muted">Burn</span> <b>${fmtMoney(dailyBreakeven)}/day</b> · <span style="color:${ahead?'var(--good)':'var(--bad)'}">${ahead ? 'Ahead ' : 'Need '}<b>${fmtMoney(Math.abs(todayMargin))}</b></span>`;
+      }
+    } catch(e){ /* breakeven calc optional */ }
   } catch(e){ console.warn("[FL]", e); }
 }
 
@@ -3644,6 +3678,7 @@ function tripRow(t, {compact=false}={}){
       <div class="split">
         <button class="btn sm" data-act="edit">Edit</button>
         <button class="btn sm" data-act="receipts">Receipts</button>
+        <button class="btn sm" data-act="docs">📎 Docs</button>
         <button class="btn sm" data-act="nav">Nav</button>
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
       </div>
@@ -3659,6 +3694,7 @@ function tripRow(t, {compact=false}={}){
   }
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
+  $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo); });
 
   $('[data-act="nav"]', d).addEventListener('click', (e)=>{ e.stopPropagation(); haptic(15); openTripNavigation(t); });
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
@@ -3986,6 +4022,16 @@ async function renderInsights(){
   if (dzActEl) dzActEl.value = String(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
   const dzFloorEl = $('#dzFloorRPM');
   if (dzFloorEl) dzFloorEl.value = String(await getSetting('dzFloorRPM', MW.dzFloorRPM) || MW.dzFloorRPM);
+  // v21 T4A: EIA diesel hint
+  const eiaHintEl = $('#eiaHint');
+  if (eiaHintEl){
+    const eiaPx = await getSetting('eiaLastPrice', 0);
+    const eiaDate = await getSetting('eiaLastDate', '');
+    if (eiaPx) eiaHintEl.innerHTML = `EIA avg: <b>$${Number(eiaPx).toFixed(2)}/gal</b>${eiaDate ? ' ('+escapeHtml(eiaDate)+')' : ''} — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+  }
+  // v21 T4C: FMCSA API key
+  const fmcsaEl = $('#fmcsaApiKey');
+  if (fmcsaEl) fmcsaEl.value = await getSetting('fmcsaApiKey', '') || '';
 
   // Cloud Backup settings
   const cbPass = $('#cloudBackupPass');
@@ -5745,7 +5791,12 @@ function _mwRenderDecision(out, d){
       <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
       <button class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
     </div>
-    <button class="btn" id="mwAskAI" style="width:100%;background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI — Strategic Analysis</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="btn" id="mwAskAI" style="background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI</button>
+      <button class="btn" id="mwShareBid" style="border-color:var(--border)">📤 Share Bid</button>
+    </div>
+    <div id="mwBrokerNotesSlot"></div>
+    <div id="mwWeatherAlertSlot" style="margin-top:8px"></div>
     <div id="mwAIResult" style="margin-top:10px"></div>
   </div>`;
 
@@ -5770,6 +5821,51 @@ function _mwRenderDecision(out, d){
       if (slot && intel) slot.innerHTML = renderLaneIntelHTML(intel);
     }).catch(()=>{});
     injectRateTrendIntoEvaluator(d.origin, d.dest).catch(()=>{});
+  }
+
+  // v21 T3E: Share Bid button
+  const shareBtn = $('#mwShareBid', out);
+  if (shareBtn){
+    shareBtn.addEventListener('click', ()=>{
+      haptic(15);
+      const bidAmounts = bidRange ? bidRange.map(b => b.amount).filter(v => v > 0) : [];
+      const bidAmt = bidAmounts.length ? Math.max(...bidAmounts) : revenue;
+      shareBidToClipboard({ origin, dest, miles: totalMi, bidAmount: bidAmt, rpm: trueRPM.toFixed(2), pickupDate: isoDate() }).catch(()=>{});
+    });
+  }
+
+  // v21 T3D: Broker Notes button — show if customer/broker field has value
+  const brokerNotesSlot = $('#mwBrokerNotesSlot', out);
+  const mwBroker = ($('#mwDest')?.value || '').trim() || origin;
+  if (brokerNotesSlot && mwBroker){
+    brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
+    $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(mwBroker));
+  }
+
+  // v21 T4B: NWS Weather Alerts — async inject after render
+  if (navigator.onLine && (d.origin || d.dest)){
+    const origCoords = d.origin ? getMarketCoords(d.origin) : null;
+    const destCoords = d.dest ? getMarketCoords(d.dest) : null;
+    checkRouteWeather(origCoords, destCoords).then(alerts => {
+      const weatherSlot = $('#mwWeatherAlertSlot', out);
+      if (!weatherSlot || !alerts.length) return;
+      const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(a.event)} at ${escapeHtml(a.label)} (NWS)</span></div>`).join('');
+      weatherSlot.innerHTML = `<div style="padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);margin-top:4px">${lines}</div>`;
+    }).catch(()=>{});
+  }
+
+  // v21 T4D: Border wait time — inject if cross-border load detected
+  if (navigator.onLine && d._isCrossBorder && d._gatewayId){
+    fetchBorderWaitTime(d._gatewayId).then(bwt => {
+      if (!bwt || bwt.commercialWait === null) return;
+      const weatherSlot = $('#mwWeatherAlertSlot', out);
+      if (!weatherSlot) return;
+      const waitMsg = `🛃 ${escapeHtml(bwt.portName)}: ~${bwt.commercialWait} min commercial wait (CBP)`;
+      const el = document.createElement('div');
+      el.style.cssText = 'padding:6px 10px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);font-size:12px;margin-top:4px';
+      el.textContent = waitMsg;
+      weatherSlot.appendChild(el);
+    }).catch(()=>{});
   }
 
   // F20: Wire DZ no-reload toggle → re-evaluate
@@ -6722,6 +6818,130 @@ function parseLoadTextEnhanced(rawText){
   return base;
 }
 
+// ════════════════════════════════════════════════════════════════
+// v21.0.0 T1A: Receipt OCR → Expense Pipeline
+// ════════════════════════════════════════════════════════════════
+function parseReceiptOCR(ocrText){
+  const text = ocrText || '';
+  // Total amount: prefer "Total" label, fallback to subtotal
+  let amount = 0;
+  const totalMatch = text.match(/(?:total|amount|balance due|amount due|amount paid)[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+                     text.match(/(?:subtotal|sub.?total)[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+  if (totalMatch){ amount = parseFloat(totalMatch[1].replace(/,/g,'')) || 0; }
+  // If no labeled total, take largest dollar amount in receipt (likely the total)
+  if (!amount){
+    const allAmounts = [];
+    const amtRe = /\$\s*([\d,]+\.\d{2})/g; let m;
+    while ((m = amtRe.exec(text)) !== null){ const v = parseFloat(m[1].replace(/,/g,'')); if (v > 0) allAmounts.push(v); }
+    if (allAmounts.length) amount = Math.max(...allAmounts);
+  }
+  // Date
+  let date = isoDate();
+  const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (dateMatch){
+    const y = dateMatch[3].length === 2 ? '20' + dateMatch[3] : dateMatch[3];
+    const mo = dateMatch[1].padStart(2,'0'); const dy = dateMatch[2].padStart(2,'0');
+    const candidate = `${y}-${mo}-${dy}`;
+    if (isValidISODate(candidate)) date = candidate;
+  }
+  // Vendor: first line with 3+ alpha chars that isn't a date or just numbers
+  let vendor = '';
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines){
+    if (/^\d[\d\s\-\/:.,$]*$/.test(line)) continue;
+    if (line.length < 3) continue;
+    if (/^(receipt|thank|welcome|cashier|server|table|order|invoice)/i.test(line)) continue;
+    if (/[a-zA-Z]{3}/.test(line)){ vendor = line.replace(/[^\w\s'&.-]/g,' ').trim().slice(0,60); break; }
+  }
+  // Category inference
+  let category = 'Other';
+  const t = text.toLowerCase();
+  if (/love.?s|pilot|flying.?j|\bta\b|casey.?general|sheetz|wawa|buc-?ee|fuel|diesel|\bgas\b|kwik.?trip|speedway/.test(t)) category = 'Fuel';
+  else if (/mcdonald|wendy|burger.?king|subway|taco.?bell|chipotle|chick.?fil|domino|pizza|denny|ihop|cracker|waffle|steak.?n.?shake/.test(t)) category = 'Food';
+  else if (/toll|ez.?pass|i.?pass|sunpass|pikepass|fastlane|peach.?pass/.test(t)) category = 'Tolls';
+  else if (/tire|oil.?change|brake|muffler|maint|autozone|napa|o.?reill|advance.?auto|pep.?boys|jiffy.?lube/.test(t)) category = 'Maintenance';
+  else if (/hotel|motel|inn|lodge|sleep.?inn|comfort.?inn|holiday.?inn|super.?8|days.?inn|hampton/.test(t)) category = 'Lodging';
+  else if (/park|parking|garage|ramp/.test(t)) category = 'Parking';
+  return { amount: roundCents(amount), date, vendor, category };
+}
+
+async function openReceiptExpenseForm(parsed, blob){
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div style="font-size:12px;color:var(--good);margin-bottom:10px;padding:6px 10px;border-radius:6px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2)">
+      Receipt scanned — verify details below
+    </div>
+    <label>Date</label><input id="rof_date" type="date" />
+    <label>Amount $</label><input id="rof_amt" type="number" step="0.01" placeholder="0.00" />
+    <label>Category</label><input id="rof_cat" list="catList" placeholder="Fuel, Tolls..." />
+    <label>Vendor / Notes</label><input id="rof_notes" placeholder="Vendor or note" />
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn primary" id="rof_save">Save Expense</button>
+      <button class="btn" id="rof_cancel">Cancel</button>
+    </div>
+    <div class="muted" id="rof_hint" style="font-size:12px;margin-top:8px"></div>
+  </div>`;
+  $('#rof_date', body).value = parsed.date || isoDate();
+  $('#rof_amt', body).value = parsed.amount > 0 ? parsed.amount.toFixed(2) : '';
+  $('#rof_cat', body).value = parsed.category || '';
+  $('#rof_notes', body).value = parsed.vendor || '';
+
+  $('#rof_save', body).addEventListener('click', async ()=>{
+    const amt = Number($('#rof_amt', body).value || 0);
+    if (!(amt > 0)){ $('#rof_hint', body).textContent = 'Amount must be > 0.'; return; }
+    const exp = { date: $('#rof_date', body).value || isoDate(), amount: amt,
+      category: clampStr($('#rof_cat', body).value, 60),
+      notes: clampStr($('#rof_notes', body).value, 300),
+      type: 'expense', created: Date.now() };
+    // Optionally attach receipt blob
+    if (blob){
+      try{
+        const blobId = 'rcpt_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        const {t:btxn, stores:bs} = tx('receiptBlobs','readwrite');
+        const buf = await blob.arrayBuffer();
+        bs.receiptBlobs.put({ id: blobId, data: new Uint8Array(buf), type: blob.type, size: blob.size, createdAt: Date.now() });
+        await new Promise(r => { btxn.oncomplete = r; btxn.onerror = r; });
+        exp.receiptBlobRef = blobId;
+      }catch(e){ console.warn('[FL] blob attach failed', e); }
+    }
+    await addExpense(exp);
+    invalidateKPICache();
+    toast(`Expense saved: ${fmtMoney(amt)} ${exp.category}${parsed.vendor ? ' at ' + parsed.vendor.slice(0,30) : ''}`);
+    closeModal();
+    await renderExpenses(true); await renderHome();
+  });
+  $('#rof_cancel', body).addEventListener('click', ()=> closeModal());
+  openModal('Save Receipt as Expense', body);
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21.0.0 T1B: Smart Category Suggestion
+// ════════════════════════════════════════════════════════════════
+async function buildCategorySuggestionMap(){
+  try {
+    const {stores} = tx('expenses');
+    const results = [];
+    await new Promise((resolve,reject)=>{
+      const req = stores.expenses.openCursor(null,'prev');
+      req.onerror = ()=> reject(req.error);
+      req.onsuccess = (e)=>{
+        const cur = e.target.result;
+        if (!cur || results.length >= 100){ resolve(); return; }
+        results.push(cur.value); cur.continue();
+      };
+    });
+    const map = new Map(); // key: first 3 words of notes (lowercase) → {category, count}
+    for (const exp of results){
+      if (!exp.notes || !exp.category) continue;
+      const key = exp.notes.toLowerCase().split(/\s+/).slice(0,3).join(' ');
+      if (key.length < 3) continue;
+      if (!map.has(key)){ map.set(key, { category: exp.category, count: 1 }); }
+      else { const e2 = map.get(key); if (e2.category === exp.category) e2.count++; }
+    }
+    return map;
+  } catch(e){ console.warn('[FL] buildCategorySuggestionMap', e); return new Map(); }
+}
+
 async function buildOcrVariants(file){
   const variants = [{ label: 'original', source: file }];
   if (!file || !file.type || !file.type.startsWith('image/')) return variants;
@@ -7534,6 +7754,15 @@ function openTripWizard(existing=null){
   async function save(stepNo){
     if (!(await validateStep1())){ toast('Fix required fields', true); return; }
     await collectTrip(stepNo);
+    // v21 T1C: Auto-estimate loaded miles from market coords if blank
+    if (!(Number(trip.loadedMiles) > 0) && trip.origin && trip.destination){
+      const origCoords = getMarketCoords(trip.origin);
+      const destCoords = getMarketCoords(trip.destination);
+      if (origCoords && destCoords){
+        const estMiles = Math.round(haversineDistanceMi(origCoords.lat, origCoords.lng, destCoords.lat, destCoords.lng) * 1.3);
+        if (estMiles > 0){ trip.loadedMiles = estMiles; trip.milesEstimated = true; toast(`Estimated ${estMiles} loaded miles — edit if needed`); }
+      }
+    }
     const saved = await upsertTrip(trip);
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
@@ -7788,6 +8017,28 @@ function openExpenseForm(existing=null){
     });
   }
   openModal(mode==='add' ? 'Add Expense' : 'Edit Expense', body); validate();
+  // v21 T1B: Smart category suggestion — wire after modal opens
+  if (mode === 'add'){
+    buildCategorySuggestionMap().then(suggMap => {
+      if (!suggMap.size) return;
+      const notesEl = $('#f_notes', body);
+      const catEl = $('#f_cat', body);
+      const hint = $('#f_hint', body);
+      if (!notesEl || !catEl) return;
+      notesEl.addEventListener('input', ()=>{
+        const key = notesEl.value.toLowerCase().split(/\s+/).slice(0,3).join(' ');
+        if (key.length < 3) return;
+        let best = null; let bestLen = 0;
+        for (const [k, v] of suggMap){
+          if ((key.startsWith(k) || k.startsWith(key)) && k.length > bestLen){ best = v; bestLen = k.length; }
+        }
+        if (best && !catEl.value){
+          catEl.value = best.category;
+          if (hint) hint.innerHTML = `<span style="color:var(--good)">Auto: ${escapeHtml(best.category)}</span> — based on your history`;
+        }
+      });
+    }).catch(()=>{});
+  }
   // First-expense guidance
   if (mode === 'add'){
     countStore('expenses').then(cnt => {
@@ -8110,6 +8361,9 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   const dzFloorRPMVal = Number($('#dzFloorRPM')?.value || MW.dzFloorRPM);
   if (dzFloorRPMVal >= 0.50 && dzFloorRPMVal < MW.hardRejectRPM) await setSetting('dzFloorRPM', dzFloorRPMVal);
 
+  // v21 T4C: FMCSA key
+  const fmcsaKey = ($('#fmcsaApiKey')?.value || '').trim();
+  if (fmcsaKey) await setSetting('fmcsaApiKey', clampStr(fmcsaKey, 80));
   toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
 });
 addManagedListener($('#btnHardReset'), 'click', async ()=>{
@@ -8546,7 +8800,8 @@ async function generateAccountantPackage(period='ytd'){
       incomeRows.push([
         t.pickupDate || t.deliveryDate || '', t.orderNo || '', t.customer || '',
         t.origin || '', t.destination || '', pay.toFixed(2),
-        String(loaded), String(empty),
+        // v21 T1C: annotate estimated miles
+        t.milesEstimated ? String(loaded) + ' (est)' : String(loaded), String(empty),
         allMi > 0 ? (pay / allMi).toFixed(2) : '0.00',
         t.isPaid ? 'Paid' : 'Unpaid'
       ]);
@@ -8748,6 +9003,7 @@ async function openReceiptCamera(orderNo){
     <div class="btn-row" style="margin-top:10px">
       <button class="btn" id="camRetake">Retake</button>
       <button class="btn primary" id="camSave">Save Receipt</button>
+      <button class="btn" id="camSaveAsExpense" style="border-color:var(--accent)">💰 Save as Expense</button>
     </div>
   </div>
   <div class="muted" style="font-size:11px;margin-top:10px;text-align:center">Align receipt within the guide frame. Auto-compressed to save storage.</div>`;
@@ -8888,6 +9144,23 @@ async function openReceiptCamera(orderNo){
       toast('Receipt captured — will save with trip');
     }
     closeModal();
+  });
+
+  // v21 T1A: Save as Expense — OCR → pre-fill expense form
+  $('#camSaveAsExpense', body)?.addEventListener('click', async ()=>{
+    if (!capturedBlob){ toast('Capture a frame first', true); return; }
+    haptic(20);
+    toast('Scanning receipt...');
+    try {
+      const Tess = await loadTesseract();
+      if (!Tess){ toast('OCR not available — install Tesseract offline', true); return; }
+      const worker = await Tess.createWorker('eng');
+      const { data: { text } } = await worker.recognize(capturedBlob);
+      await worker.terminate();
+      const parsed = parseReceiptOCR(text);
+      closeModal();
+      setTimeout(()=> openReceiptExpenseForm(parsed, capturedBlob), 200);
+    } catch(e){ console.error('[FL] OCR expense', e); toast('OCR failed — try again', true); }
   });
 
   openModal('📷 Receipt Camera', body);
@@ -9512,25 +9785,123 @@ async function cloudPushBackup(silent = true){
   _cloudSyncInProgress = true;
   if (!silent) cloudSetSyncStatus('spinner', 'Encrypting & uploading...');
   try {
-    const trips = await dumpStore('trips'); const expenses = await dumpStore('expenses');
-    const fuel = await dumpStore('fuel'); const settings = await dumpStore('settings');
+    // v21 T2B: Delta sync — only send records changed since last sync
+    const lastSynced = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
+    const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
+    const allFuel = await dumpStore('fuel'); const settings = await dumpStore('settings');
     const receipts = await dumpStore('receipts');
     const laneHistory = await dumpStore('laneHistory');
     const weeklyReports = await dumpStore('weeklyReports');
     const reloadOutcomes = await dumpStore('reloadOutcomes');
     const bidHistory = await dumpStore('bidHistory');
     const documents = await dumpStore('documents');
-    const counts = { trips: trips.length, expenses: expenses.length, fuel: fuel.length,
+
+    // Filter to changed records for delta, fall back to full push if no timestamps or too much changed
+    const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt||0) > lastSynced) : allTrips;
+    const changedExps = lastSynced > 0 ? allExpenses.filter(r => (r.updatedAt||0) > lastSynced) : allExpenses;
+    const changedFuel = lastSynced > 0 ? allFuel.filter(r => (r.updatedAt||0) > lastSynced) : allFuel;
+    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length) < 50;
+
+    const trips = isDelta ? changedTrips : allTrips;
+    const expenses = isDelta ? changedExps : allExpenses;
+    const fuel = isDelta ? changedFuel : allFuel;
+
+    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0){
+      _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
+      if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
+    }
+
+    const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
       laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
       documents: documents.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents });
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
-    const res = await cloudFetch(config.url + '/backup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
-    if (res.ok){ _lastCloudSync = Date.now(); _cloudRetryCount = 0; await setSetting('lastCloudSync', _lastCloudSync); if (!silent) toast('Backup synced'); cloudRefreshStatusPanel(); }
-    else { if (!silent) toast(res.status === 413 ? 'Too large (>5MB)' : 'Backup failed (' + res.status + ')', true); cloudScheduleRetry(); }
+    const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
+    const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
+    if (res.ok){
+      _lastCloudSync = Date.now(); _cloudRetryCount = 0;
+      await setSetting('lastCloudSync', _lastCloudSync);
+      await setSetting('lastCloudSyncedAt', _lastCloudSync);
+      if (!silent) toast(isDelta ? 'Delta sync complete' : 'Backup synced');
+      cloudRefreshStatusPanel();
+    }
+    else {
+      // If delta endpoint not found (404), fall back to full backup
+      if (res.status === 404 && isDelta){
+        _cloudSyncInProgress = false;
+        await setSetting('lastCloudSyncedAt', 0);
+        return cloudPushBackup(silent);
+      }
+      if (!silent) toast(res.status === 413 ? 'Too large (>5MB)' : 'Backup failed (' + res.status + ')', true); cloudScheduleRetry();
+    }
   } catch(e) { if (!silent) toast('Backup failed', true); cloudScheduleRetry(); }
   finally { _cloudSyncInProgress = false; if (!silent) cloudRefreshStatusPanel(); }
+}
+
+// v21 T2C: Merge-aware restore — keeps newer records, reports summary
+async function mergeRestoreData(parsed){
+  const arr = (x) => Array.isArray(x) ? x : [];
+  const stats = { trips:{added:0,updated:0,skipped:0}, expenses:{added:0,updated:0,skipped:0}, fuel:{added:0,updated:0,skipped:0} };
+
+  // Trips — keyed by orderNo
+  const tripStore = tx(['trips'],'readwrite');
+  const inTrips = arr(parsed.trips);
+  for (const incoming of inTrips){
+    try {
+      const {stores} = tx('trips');
+      const existing = await idbReq(stores.trips.get(incoming.orderNo));
+      const {t:wt, stores:ws} = tx('trips','readwrite');
+      if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
+      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.trips.put(incoming); stats.trips.updated++; }
+      else { stats.trips.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge trip', e); }
+  }
+
+  // Expenses
+  const inExps = arr(parsed.expenses);
+  for (const incoming of inExps){
+    try {
+      const {stores} = tx('expenses');
+      const existing = incoming.id ? await idbReq(stores.expenses.get(Number(incoming.id))) : null;
+      const {t:wt, stores:ws} = tx('expenses','readwrite');
+      if (!existing){ ws.expenses.put(incoming); stats.expenses.added++; }
+      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
+      else { stats.expenses.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge expense', e); }
+  }
+
+  // Fuel
+  const inFuel = arr(parsed.fuel);
+  for (const incoming of inFuel){
+    try {
+      const {stores} = tx('fuel');
+      const existing = incoming.id ? await idbReq(stores.fuel.get(Number(incoming.id))) : null;
+      const {t:wt, stores:ws} = tx('fuel','readwrite');
+      if (!existing){ ws.fuel.put(incoming); stats.fuel.added++; }
+      else if ((existing.updatedAt||0) < (incoming.updatedAt||0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
+      else { stats.fuel.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge fuel', e); }
+  }
+
+  // Other stores: merge by put (laneHistory, bidHistory, weeklyReports, reloadOutcomes, documents)
+  const simpleStores = ['laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'];
+  for (const storeName of simpleStores){
+    const items = arr(parsed[storeName]);
+    if (!items.length) continue;
+    try {
+      const {t:wt, stores:ws} = tx(storeName,'readwrite');
+      for (const item of items){ try{ ws[storeName].put(item); }catch(e){ console.warn('[FL] merge '+storeName, e); } }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge store', storeName, e); }
+  }
+
+  const totalSkipped = stats.trips.skipped + stats.expenses.skipped + stats.fuel.skipped;
+  const summary = `Restored: ${stats.trips.added+stats.trips.updated} trips, ${stats.expenses.added+stats.expenses.updated} expenses, ${stats.fuel.added+stats.fuel.updated} fuel. ${totalSkipped} unchanged (local was newer).`;
+  return { stats, summary, totalSkipped };
 }
 
 async function cloudPullBackup(){
@@ -9557,10 +9928,23 @@ async function cloudPullBackup(){
     const parsed = JSON.parse(plaintext);
     if (!parsed.trips && !parsed.expenses){ toast('Backup empty', true); return; }
     const c = parsed.meta?.counts || {};
-    if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + '\n\nThis will ADD to your data.')){ cloudRefreshStatusPanel(); return; }
+    if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + '\n\nNewer local records will be kept.')){ cloudRefreshStatusPanel(); return; }
     if (typeof saveRollbackSnapshot === 'function') await saveRollbackSnapshot();
-    await importJSON(new File([new Blob([plaintext], {type:'application/json'})], 'cloud-restore.json', {type:'application/json'}));
-    toast('Cloud backup restored!'); cloudSetSyncStatus('ok', 'Restored'); invalidateKPICache(); await renderHome();
+    cloudSetSyncStatus('spinner', 'Merging...');
+    // v21 T2C: use merge-aware restore instead of full importJSON
+    const { summary, totalSkipped } = await mergeRestoreData(parsed);
+    invalidateKPICache(); await renderHome();
+    toast('Cloud backup restored!');
+    cloudSetSyncStatus('ok', 'Restored');
+    // v21 T2D: if local records were kept, push merged result back up
+    if (totalSkipped > 0){
+      setTimeout(()=>{
+        const conflictEl = $('#cloudSyncStatus');
+        if (conflictEl) conflictEl.innerHTML = '<span class="cloud-dot warn"></span>' + escapeHtml(`${totalSkipped} local records kept (newer). Re-syncing...`);
+        cloudPushBackup(true).catch(()=>{});
+      }, 1500);
+    }
+    console.info('[FL] Merge restore:', summary);
   } catch(e) { console.error('[CLOUD] Pull error:', e); cloudSetSyncStatus('warn', 'Restore failed'); toast('Restore failed', true); }
 }
 
@@ -10576,7 +10960,7 @@ function initVoiceInput(){
 // Store insurance cards, MC authority, W-9s, carrier packets as blobs.
 // Uses 'documents' IDB store (added in v10 schema).
 
-async function openDocumentVault(){
+async function openDocumentVault(filterTripOrderNo=null){
   const body = document.createElement('div');
   body.innerHTML = `
     <div style="margin-bottom:12px">
@@ -10587,40 +10971,55 @@ async function openDocumentVault(){
           <option value="authority">MC Authority</option>
           <option value="w9">W-9</option>
           <option value="carrier_packet">Carrier Packet</option>
+          <option value="rate_confirmation">Rate Confirmation</option>
+          <option value="bol">Bill of Lading (BOL)</option>
+          <option value="pod">Proof of Delivery (POD)</option>
           <option value="other">Other</option>
         </select>
         <button class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
       </div>
+      ${filterTripOrderNo ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Showing documents for trip <b>${escapeHtml(filterTripOrderNo)}</b></div>` : ''}
       <div id="dvList"><div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading…</div></div>
     </div>
     <input type="file" id="dvFileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none" />`;
   openModal('📁 Document Vault', body);
 
-  const TYPES = { insurance:'Insurance', authority:'MC Authority', w9:'W-9', carrier_packet:'Carrier Packet', other:'Other' };
+  const TYPES = { insurance:'Insurance', authority:'MC Authority', w9:'W-9', carrier_packet:'Carrier Packet', rate_confirmation:'Rate Confirmation', bol:'BOL', pod:'POD', other:'Other' };
 
   async function loadDocs(){
     const filter = $('#dvTypeFilter', body).value;
     let docs = await dumpStore('documents');
     docs = docs.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     if (filter) docs = docs.filter(d => d.type === filter);
+    if (filterTripOrderNo) docs = docs.filter(d => d.tripOrderNo === filterTripOrderNo || !d.tripOrderNo);
     const list = $('#dvList', body);
     if (!docs.length){
       list.innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No documents yet.<br><span style="font-size:11px">Add insurance cards, MC authority, W-9s, carrier packets.</span></div>`;
       return;
     }
-    list.innerHTML = docs.map(d => `
+    const today = isoDate();
+    list.innerHTML = docs.map(d => {
+      let expiryBadge = '';
+      if (d.expiresAt){
+        const daysLeft = Math.floor((new Date(d.expiresAt) - new Date(today)) / 86400000);
+        if (daysLeft < 0) expiryBadge = `<span class="tag" style="color:var(--bad);border-color:var(--bad-border);font-size:10px">EXPIRED</span>`;
+        else if (daysLeft <= 30) expiryBadge = `<span class="tag" style="color:var(--warn);border-color:rgba(251,191,36,.4);font-size:10px">Exp ${daysLeft}d</span>`;
+      }
+      const tripBadge = d.tripOrderNo ? `<span class="tag" style="font-size:10px">Trip ${escapeHtml(d.tripOrderNo)}</span>` : '';
+      return `
       <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px" data-dvid="${escapeHtml(d.id)}">
         <div style="font-size:28px;flex-shrink:0">${d.mimeType && d.mimeType.startsWith('image') ? '🖼️' : '📄'}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name||'Untitled')}</div>
-          <div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(TYPES[d.type]||d.type||'Document')} · ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'} · ${d.size ? Math.round(d.size/1024)+'KB' : '—'}</div>
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name||'Untitled')} ${expiryBadge}${tripBadge}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(TYPES[d.type]||d.type||'Document')} · ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'} · ${d.size ? Math.round(d.size/1024)+'KB' : '—'}${d.expiresAt ? ' · Exp: ' + escapeHtml(d.expiresAt) : ''}</div>
           ${d.note ? `<div class="muted" style="font-size:11px;margin-top:2px;font-style:italic">${escapeHtml(d.note.slice(0,60))}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
           <button class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     list.querySelectorAll('[data-dvopen]').forEach(btn2 => {
       btn2.addEventListener('click', async () => {
@@ -10643,23 +11042,23 @@ async function openDocumentVault(){
     });
   }
 
-  async function addDocument(file, type, note){
+  async function addDocument(file, type, note, expiresAt='', tripOrderNo=''){
     if (!file) return;
     if (file.size > 6 * 1024 * 1024) return toast('File too large (max 6 MB)', true);
     const buf = await file.arrayBuffer();
     const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-    const rec = { id, name: file.name, type, note: note||'', mimeType: file.type||'application/octet-stream', size: file.size, blob: new Uint8Array(buf), createdAt: Date.now() };
+    const rec = { id, name: file.name, type, note: note||'', mimeType: file.type||'application/octet-stream', size: file.size, blob: new Uint8Array(buf), createdAt: Date.now(), updatedAt: Date.now(), expiresAt: expiresAt||'', tripOrderNo: tripOrderNo||'' };
     const {t, stores} = tx('documents', 'readwrite');
     await idbReq(stores.documents.put(rec));
     await new Promise(r => { t.oncomplete = r; t.onerror = r; });
-    toast(`"${file.name}" saved to vault`);
+    toast(`"${escapeHtml(file.name)}" saved to vault`);
     loadDocs();
   }
 
   $('#dvTypeFilter', body).addEventListener('change', () => loadDocs());
 
   $('#dvAddBtn', body).addEventListener('click', () => {
-    // Show add dialog
+    // Show add dialog — v21 T3A/3B/3C: adds rate_confirmation, bol, pod, expiresAt, tripOrderNo
     const addBody = document.createElement('div');
     addBody.innerHTML = `
       <div class="field"><label>Document type</label>
@@ -10668,10 +11067,15 @@ async function openDocumentVault(){
           <option value="authority">MC Authority</option>
           <option value="w9">W-9</option>
           <option value="carrier_packet">Carrier Packet</option>
+          <option value="rate_confirmation">Rate Confirmation</option>
+          <option value="bol">Bill of Lading (BOL)</option>
+          <option value="pod">Proof of Delivery (POD)</option>
           <option value="other">Other</option>
         </select>
       </div>
-      <div class="field"><label>Note (optional)</label><input id="addDvNote" placeholder="e.g. State Farm, expires 12/2026" /></div>
+      <div class="field"><label>Note (optional)</label><input id="addDvNote" placeholder="e.g. State Farm, policy #12345" /></div>
+      <div class="field"><label>Expiration date (optional)</label><input id="addDvExpires" type="date" /></div>
+      <div class="field"><label>Link to trip order # (optional)</label><input id="addDvTrip" placeholder="e.g. ABC-1234" value="${escapeHtml(filterTripOrderNo||'')}" /></div>
       <div class="field">
         <label>File</label>
         <div id="addDvDropzone" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:var(--text-secondary);font-size:13px">
@@ -10691,12 +11095,14 @@ async function openDocumentVault(){
     $('#addDvSave', addBody).addEventListener('click', async () => {
       if (!chosenFile) return toast('Choose a file first', true);
       const type = $('#addDvType', addBody).value;
-      const note = $('#addDvNote', addBody).value.trim();
+      const note = ($('#addDvNote', addBody).value || '').trim();
+      const expiresAt = ($('#addDvExpires', addBody).value || '').trim();
+      const tripOrderNo = clampStr(($('#addDvTrip', addBody).value || '').trim(), 40);
       haptic(20);
-      await addDocument(chosenFile, type, note);
+      await addDocument(chosenFile, type, note, expiresAt, tripOrderNo);
       closeModal();
       // Re-open vault
-      setTimeout(() => openDocumentVault(), 100);
+      setTimeout(() => openDocumentVault(filterTripOrderNo), 100);
     });
   });
 
@@ -11597,6 +12003,226 @@ async function openCPAPackage(){
 }
 
 // ════════════════════════════════════════════════════════════════
+// v21 T3C: Document Expiry Tracking + Boot-time Alerts
+// ════════════════════════════════════════════════════════════════
+async function checkDocumentExpiry(){
+  try {
+    const docs = await dumpStore('documents');
+    const today = isoDate();
+    for (const doc of docs){
+      if (!doc.expiresAt) continue;
+      const daysLeft = Math.floor((new Date(doc.expiresAt) - new Date(today)) / 86400000);
+      const label = escapeHtml((doc.note || doc.name || 'Document').slice(0, 30));
+      if (daysLeft < 0){
+        toast(`⚠️ ${label} EXPIRED — update now!`, true);
+      } else if (daysLeft <= 30){
+        toast(`📋 ${label} expires in ${daysLeft} days`);
+      }
+    }
+  } catch(e){ console.warn('[FL] checkDocumentExpiry', e); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T3D: Broker Notes Log
+// ════════════════════════════════════════════════════════════════
+function normalizeBrokerKey(name){ return 'brokerNotes_' + (name||'').toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,40); }
+
+async function openBrokerNotes(brokerName){
+  if (!brokerName){ toast('Enter a broker name first', true); return; }
+  const key = normalizeBrokerKey(brokerName);
+  let notes = [];
+  try { notes = (await getSetting(key, [])) || []; if (!Array.isArray(notes)) notes = []; } catch(e){}
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Notes for <span style="color:var(--accent)">${escapeHtml(brokerName)}</span></div>
+      <div id="bnList" style="margin-bottom:12px;max-height:200px;overflow-y:auto"></div>
+      <label>Add note</label>
+      <input id="bnText" placeholder="e.g. Always counters $50 below first offer" style="margin-bottom:8px"/>
+      <button class="btn primary" id="bnSave" style="width:100%">Add Note</button>
+    </div>`;
+  function renderNotes(){
+    const list = $('#bnList', body);
+    if (!notes.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No notes yet.</div>'; return; }
+    list.innerHTML = notes.slice().reverse().map(n => `
+      <div style="padding:7px 0;border-bottom:1px solid var(--border-subtle);font-size:12px">
+        <div style="color:var(--text)">${escapeHtml(n.text)}</div>
+        <div class="muted" style="font-size:10px;margin-top:2px">${new Date(n.ts).toLocaleDateString()}</div>
+      </div>`).join('');
+  }
+  renderNotes();
+  $('#bnSave', body).addEventListener('click', async ()=>{
+    const text = clampStr(($('#bnText', body).value || '').trim(), 300);
+    if (!text){ toast('Enter a note', true); return; }
+    notes.push({ text, ts: Date.now() });
+    if (notes.length > 50) notes = notes.slice(-50);
+    await setSetting(key, notes);
+    $('#bnText', body).value = '';
+    renderNotes();
+    toast('Note saved');
+  });
+  openModal(`🗒️ Broker Notes`, body);
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T3E: Quick Share to Broker (Web Share API / clipboard)
+// ════════════════════════════════════════════════════════════════
+async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickupDate }){
+  const driverName = (await getSetting('homeLocation', '')) ? '' : '';
+  const text = [
+    `Hi,`,
+    `Re: ${origin || '?'} → ${dest || '?'}, ${miles || '?'} mi`,
+    `I can take this at ${fmtMoney(bidAmount)} ($${rpm} /mi).`,
+    `Available for pickup ${pickupDate || isoDate()}.`,
+    `Thank you.`,
+  ].join('\n');
+  try {
+    if (navigator.share && navigator.canShare && navigator.canShare({ text })){
+      await navigator.share({ text, title: 'Load Bid' });
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast('Bid copied to clipboard');
+    }
+  } catch(e){
+    try { await navigator.clipboard.writeText(text); toast('Bid copied to clipboard'); }
+    catch(e2){ toast('Bid: ' + fmtMoney(bidAmount)); }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4A: EIA Diesel Price Feed (no API key required)
+// ════════════════════════════════════════════════════════════════
+async function fetchEIADieselPrice(){
+  if (!navigator.onLine) return null;
+  const lastFetch = Number(await getSetting('eiaLastFetchTs', 0) || 0);
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) return null; // Skip if fetched recently
+  try {
+    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duession][]=NUS&sort[0][column]=period&sort[0][direction]=desc&length=1';
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const record = json?.response?.data?.[0];
+    if (!record || !record.value) return null;
+    const price = parseFloat(record.value);
+    if (!(price > 0)) return null;
+    const period = record.period || '';
+    await setSetting('eiaLastPrice', price);
+    await setSetting('eiaLastDate', period);
+    await setSetting('eiaLastFetchTs', Date.now());
+    // Show hint in settings if visible
+    const hintEl = $('#eiaHint');
+    if (hintEl) hintEl.innerHTML = `EIA avg: <b>$${price.toFixed(2)}/gal</b> (${period}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+    document.addEventListener('click', async (ev)=>{
+      if (ev.target?.id === 'eiaApplyBtn'){
+        ev.preventDefault();
+        await setSetting('fuelPrice', price);
+        const fpEl = $('#fuelPrice');
+        if (fpEl) fpEl.value = price.toFixed(2);
+        toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA)`);
+      }
+    }, { once: false });
+    return { price, period };
+  } catch(e){ console.warn('[FL] EIA fetch', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4B: NWS Weather Alerts for Route
+// ════════════════════════════════════════════════════════════════
+const _nwsCache = new Map();
+async function checkRouteWeather(originCoords, destCoords){
+  if (!navigator.onLine) return [];
+  const points = [];
+  if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
+  if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  const alerts = [];
+  for (const pt of points){
+    const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
+    const cached = _nwsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }
+    try {
+      const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+      if (!res.ok){ continue; }
+      const json = await res.json();
+      const ptAlerts = (json.features || []).map(f => ({
+        label: pt.label,
+        event: f.properties?.event || 'Weather Alert',
+        severity: f.properties?.severity || 'Unknown',
+        headline: f.properties?.headline || '',
+      })).filter(a => a.event);
+      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: Date.now() });
+      alerts.push(...ptAlerts);
+    } catch(e){ /* graceful fallback */ }
+  }
+  return alerts;
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4C: FMCSA Carrier/Broker Lookup
+// ════════════════════════════════════════════════════════════════
+const _fmcsaCache = new Map();
+async function lookupFMCSA(dotNumber){
+  if (!dotNumber || !navigator.onLine) return null;
+  const dot = String(dotNumber).replace(/\D/g,'');
+  if (!dot || dot.length < 5) return null;
+  const cached = _fmcsaCache.get(dot);
+  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) return cached.data;
+  try {
+    const apiKey = await getSetting('fmcsaApiKey', '') || '';
+    if (!apiKey) return null;
+    const url = `https://mobile.fmcsa.dot.gov/qc/services/carriers/${encodeURIComponent(dot)}?webKey=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const c = json?.content?.carrier || json?.carrier || null;
+    if (!c) return null;
+    const data = {
+      dot, name: c.legalName || c.dbaName || '',
+      status: c.allowedToOperate === 'Y' ? 'active' : 'inactive',
+      safetyRating: c.safetyRating || '',
+      insurance: c.bipd || '',
+    };
+    _fmcsaCache.set(dot, { data, ts: Date.now() });
+    return data;
+  } catch(e){ console.warn('[FL] FMCSA lookup', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4D: Border Wait Time (CBP API)
+// ════════════════════════════════════════════════════════════════
+const CA_BORDER_PORT_CODES = {
+  'detroit_windsor':    3801, // Ambassador Bridge
+  'port_huron_sarnia':  3802, // Blue Water Bridge
+  'buffalo_fort_erie':  901,  // Peace Bridge
+  'champlain_montreal': 702,  // Champlain/Lacolle
+  'blaine_vancouver':   3004, // Pacific Highway
+  'pembina_emerson':    3401, // Pembina, ND
+};
+const _cbpCache = new Map();
+async function fetchBorderWaitTime(gatewayId){
+  if (!navigator.onLine) return null;
+  const portCode = CA_BORDER_PORT_CODES[gatewayId];
+  if (!portCode) return null;
+  const cached = _cbpCache.get(String(portCode));
+  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) return cached.data;
+  try {
+    const url = `https://bwt.cbp.gov/api/bwtquery?port=${portCode}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const record = Array.isArray(json) ? json[0] : json;
+    const data = {
+      port: portCode,
+      commercialWait: record?.commercial_vehicle_lanes?.standard_lanes?.wait_time ?? record?.commercialWait ?? null,
+      portName: record?.port_name || record?.portName || String(portCode),
+    };
+    _cbpCache.set(String(portCode), { data, ts: Date.now() });
+    return data;
+  } catch(e){ console.warn('[FL] CBP border wait', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
 // TEST EXPORTS — pure functions exposed for test harness
 // Only active when window.__FL_TESTS_ENABLED is set before load
 // ════════════════════════════════════════════════════════════════
@@ -11688,6 +12314,10 @@ if (typeof window !== 'undefined'){
       try{ await checkStorageQuota(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkAndGenerateWeeklyReport(); }catch(e){ console.warn("[FL]", e); }
       try{ await cloudCheckServerTimestamp(); }catch(e){ console.warn("[FL]", e); }
+      // v21 T3C: Document expiry alerts
+      try{ await checkDocumentExpiry(); }catch(e){ console.warn("[FL]", e); }
+      // v21 T4A: EIA diesel price fetch (background, non-blocking)
+      try{ await fetchEIADieselPrice(); }catch(e){ console.warn("[FL]", e); }
     }, 2000);
   }catch(err){
     console.error(err);
