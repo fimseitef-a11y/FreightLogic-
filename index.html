@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=21.3.0">
+  <link rel="manifest" href="manifest.json?v=22.0.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -730,6 +730,18 @@
       .item:hover { border-color: var(--border-focus); background: var(--surface-2) }
       .menu-tile:hover { border-color: var(--border-focus); background: var(--surface-2) }
     }
+
+    /* ── F21: GPS Trip Tracking ─────────────────────────────────── */
+    .f21-pulse-dot {
+      display: inline-block; flex-shrink: 0;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--bad);
+      animation: f21Pulse 2s ease-in-out infinite;
+    }
+    @keyframes f21Pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(1.35); }
+    }
   </style>
 </head>
 <body>
@@ -761,6 +773,9 @@
       <!-- Card 1: Welcome (new users only) -->
       <div id="homeWelcome" style="display:none"></div>
 
+      <!-- F21: Trip Tracking slot (populated by renderTripTrackingUI) -->
+      <div id="homeTripTrackCard" style="margin-top:10px"></div>
+
       <!-- Card 1 (active users): This Week Command Center -->
       <div class="card" style="margin-top:10px" id="homeKPICard">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -791,6 +806,9 @@
           <button class="btn" id="btnQuickFuel">＋ Fuel</button>
         </div>
       </div>
+
+      <!-- F22: Money Dashboard slot (populated by renderMoneyCard) -->
+      <div id="homeMoneyCard" style="display:none"></div>
 
       <!-- Card 2: Alerts & Actions -->
       <div class="card" style="margin-top:12px">
@@ -966,6 +984,9 @@
       <div class="menu-grid" id="intelMenu" style="margin-top:12px"></div>
     </section>
     <section id="view-omega" class="view" style="display:none">
+
+      <!-- F23: Smart Load Inbox (populated by renderLoadInbox) -->
+      <div id="loadInboxCard"></div>
 
       <!-- ── v20: Primary 3-Field Evaluator ── -->
       <div class="card" style="margin-bottom:12px">
@@ -1177,7 +1198,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=21.3.0"></script>
-  <script src="sw-bridge.js?v=21.3.0"></script>
+  <script src="app.js?v=22.0.0"></script>
+  <script src="sw-bridge.js?v=22.0.0"></script>
 </body>
 </html>
