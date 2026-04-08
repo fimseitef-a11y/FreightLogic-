@@ -1,14 +1,15 @@
 (() => {
 'use strict';
 
-/** FreightLogic v21.3.1 USA ENGINE
- *  Market Feed + Tomorrow Signal + Strategic Floor (A–E)
+/** FreightLogic v22.0.0 USA ENGINE
+ *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
+ *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
  *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '21.3.1';
+const APP_VERSION = '22.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3121,6 +3122,10 @@ async function renderHome(){
   checkFuelPriceStaleness().catch(()=>{});
   // F5: Weekly report card (non-blocking, renders into homeWeeklyReport slot)
   if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
+  // F21: Trip tracking UI (always visible, even when empty)
+  renderTripTrackingUI().catch(()=>{});
+  // F22: Money dashboard card (shown after 1+ trips)
+  renderMoneyCard().catch(()=>{});
 }
 
 // ---- Performance Command Center ----
@@ -6557,6 +6562,8 @@ function omegaCompute(){
 }
 
 async function renderOmega(){
+  // F23: Smart Load Inbox — renders once, guards against re-init
+  renderLoadInbox().catch(()=>{});
   await mwInit();
   if (!omegaBound){
     omegaBound = true;
@@ -12223,6 +12230,808 @@ async function fetchBorderWaitTime(gatewayId){
 }
 
 // ════════════════════════════════════════════════════════════════
+
+
+// ================================================================================
+// F21: TRIP TRACKING — GPS Auto-Logger (v22.0.0)
+// ================================================================================
+
+let _activeTracking = null;
+let _trackingIntervalId = null;
+
+function nearestMarketCity(lat, lng) {
+  const STATE_MAP = {
+    'chicago':'IL','indianapolis':'IN','columbus':'OH','detroit':'MI','cleveland':'OH',
+    'louisville':'KY','cincinnati':'OH','dayton':'OH','toledo':'OH','st. louis':'MO',
+    'grand rapids':'MI','fort wayne':'IN','evansville':'IN',
+    'atlanta':'GA','nashville':'TN','charlotte':'NC','memphis':'TN','knoxville':'TN',
+    'greenville':'SC','raleigh':'NC','chattanooga':'TN','savannah':'GA','jacksonville':'FL',
+    'dallas':'TX','houston':'TX','austin':'TX','san antonio':'TX','laredo':'TX','el paso':'TX',
+    'los angeles':'CA','san francisco':'CA','fresno':'CA','sacramento':'CA','bakersfield':'CA',
+    'phoenix':'AZ','tucson':'AZ','las vegas':'NV','salt lake city':'UT','denver':'CO',
+    'seattle':'WA','portland':'OR','spokane':'WA','boise':'ID',
+    'minneapolis':'MN','kansas city':'MO','omaha':'NE','sioux falls':'SD','fargo':'ND',
+    'new york':'NY','philadelphia':'PA','boston':'MA','baltimore':'MD','pittsburgh':'PA',
+    'buffalo':'NY','hartford':'CT','albany':'NY','harrisburg':'PA',
+    'miami':'FL','orlando':'FL','tampa':'FL',
+    'new orleans':'LA','baton rouge':'LA','birmingham':'AL',
+    'oklahoma city':'OK','tulsa':'OK','little rock':'AR',
+    'albuquerque':'NM','colorado springs':'CO',
+  };
+  let bestKey = null, bestDist = Infinity;
+  const _allMkts = Object.assign({}, USA_MARKETS,
+    (typeof CA_MARKETS !== 'undefined' ? CA_MARKETS : {}));
+  for (const [key, data] of Object.entries(_allMkts)) {
+    if (!data.lat || !data.lng) continue;
+    const d = haversineDistanceMi(lat, lng, data.lat, data.lng);
+    if (d < bestDist) { bestDist = d; bestKey = key; }
+  }
+  if (!bestKey || bestDist > 100) return 'Unknown area';
+  const city = bestKey.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const state = STATE_MAP[bestKey] || '';
+  return state ? `${city}, ${state}` : city;
+}
+
+async function renderTripTrackingUI() {
+  const slot = $('#homeTripTrackCard');
+  if (!slot) return;
+  // One-time onboarding
+  const onboardSeen = await getSetting('f21OnboardingSeen', false);
+  if (!onboardSeen && !slot.querySelector('#f21OnboardingCard')) {
+    const ob = document.createElement('div');
+    ob.id = 'f21OnboardingCard';
+    ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+    ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+      + '<span style="font-size:22px">\u{1F69B}</span>'
+      + '<strong style="font-size:14px;color:var(--accent-text)">New: Track Your Trips Live</strong></div>'
+      + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Tap &ldquo;Start Trip&rdquo; when you pick up a load. FreightLogic tracks your miles automatically. When you deliver, tap &ldquo;Stop&rdquo; and your trip is ready to save.</div>'
+      + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px">Your location stays on your phone and is never shared.</div>'
+      + '<div style="margin-top:12px"><button class="btn primary" id="f21ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+    const f21Dismiss = async () => { await setSetting('f21OnboardingSeen', true); ob.remove(); };
+    ob.querySelector('#f21ObDismiss')?.addEventListener('click', f21Dismiss);
+    ob.addEventListener('click', f21Dismiss);
+    slot.insertBefore(ob, slot.firstChild);
+  }
+  let trackDiv = $('#f21TrackArea');
+  if (!trackDiv) {
+    trackDiv = document.createElement('div');
+    trackDiv.id = 'f21TrackArea';
+    slot.appendChild(trackDiv);
+  }
+  if (_activeTracking) { _renderTrackingActive(trackDiv); }
+  else { _renderTrackingIdle(trackDiv); }
+}
+
+function _renderTrackingIdle(container) {
+  container.innerHTML = '<div style="display:flex;align-items:center;gap:10px;background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:14px 16px;min-height:48px;cursor:pointer" id="f21StartBtn">'
+    + '<span style="font-size:20px">\u{1F69B}</span>'
+    + '<div style="flex:1"><div style="font-weight:700;font-size:15px;color:var(--text)">Start Trip</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:1px">Tap when you pick up a load</div></div>'
+    + '<span id="f21InfoBtn" style="font-size:18px;cursor:pointer;color:var(--text-tertiary);padding:4px" title="About GPS tracking">\u24d8</span>'
+    + '</div>';
+  container.querySelector('#f21StartBtn')?.addEventListener('click', (e) => {
+    if (e.target.id === 'f21InfoBtn' || e.target.closest('#f21InfoBtn')) return;
+    haptic(10); startTripTracking();
+  });
+  container.querySelector('#f21InfoBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toast('GPS tracking works best with the app open. On iPhone, tracking may pause if you switch apps.');
+  });
+}
+
+function _renderTrackingActive(container) {
+  const t = _activeTracking;
+  const elapsedMins = Math.floor((Date.now() - t.startTime) / 60000);
+  const hrs = Math.floor(elapsedMins / 60), mins = elapsedMins % 60;
+  const elapsed = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const miles = Math.round((t.totalMiles || 0) * 10) / 10;
+  const acc = t.lastAccuracy || 999;
+  const gpsQ = acc < 50 ? '<span style="color:var(--good)">\u{1F4CD} Good</span>'
+              : acc < 100 ? '<span style="color:var(--warn)">\u{1F4CD} Fair</span>'
+              : '<span style="color:var(--bad)">\u{1F4CD} Weak</span>';
+  container.innerHTML = '<div style="background:rgba(255,60,60,0.08);border:1px solid rgba(255,60,60,0.3);border-radius:12px;padding:14px 16px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+    + '<span class="f21-pulse-dot"></span>'
+    + '<strong style="font-size:14px">Trip in progress</strong></div>'
+    + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(elapsed)} &nbsp;&bull;&nbsp; ${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${gpsQ}</div>`
+    + '<button class="btn danger" id="f21StopBtn" style="width:100%;min-height:48px;font-weight:700">Stop &amp; Save Trip</button>'
+    + '</div>';
+  container.querySelector('#f21StopBtn')?.addEventListener('click', () => { haptic(20); stopTripTracking(); });
+}
+
+function _updateTrackingUI() {
+  const d = $('#f21TrackArea');
+  if (d && _activeTracking) _renderTrackingActive(d);
+}
+
+async function startTripTracking() {
+  if (_activeTracking) return;
+  if (!navigator.geolocation) { toast('GPS is not available in this browser.', true); return; }
+  const permSeen = await getSetting('f21PermissionSeen', false);
+  if (!permSeen) { _showLocationPermissionModal(); return; }
+  _doStartTracking();
+}
+
+function _showLocationPermissionModal() {
+  const body = document.createElement('div');
+  body.innerHTML = '<p style="font-size:14px;line-height:1.6;margin:0 0 14px;color:var(--text)">FreightLogic needs your location to track trip miles.</p>'
+    + '<ul style="font-size:13px;color:var(--text-secondary);line-height:1.9;margin:0 0 16px;padding-left:18px">'
+    + '<li>Your location stays on your phone only &mdash; never uploaded</li>'
+    + '<li>You can stop tracking anytime</li>'
+    + '<li>Works best with the app open</li></ul>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button class="btn primary" id="permAllow" style="flex:1;min-height:48px">Allow Location</button>'
+    + '<button class="btn" id="permDeny" style="flex:1;min-height:48px">Not Now</button>'
+    + '</div>';
+  body.querySelector('#permAllow')?.addEventListener('click', async () => {
+    await setSetting('f21PermissionSeen', true); closeModal(); _doStartTracking();
+  });
+  body.querySelector('#permDeny')?.addEventListener('click', () => closeModal());
+  openModal('Location Access', body);
+}
+
+function _doStartTracking() {
+  if (!_activeTracking) return;
+  const trackingId = _activeTracking.trackingId;
+  const watcher = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (!_activeTracking || _activeTracking.trackingId !== trackingId) return;
+      const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
+      if (accuracy > 100) { _activeTracking.lastAccuracy = accuracy; return; }
+      if (speed !== null && speed > 53.6) return; // >120 mph = GPS glitch
+      const prev = _activeTracking.lastPos;
+      if (!_activeTracking.startPos) _activeTracking.startPos = { lat, lng, ts: Date.now() };
+      if (prev) {
+        const distMi = haversineDistanceMi(prev.lat, prev.lng, lat, lng) * 1.3;
+        if (distMi > 0.05) _activeTracking.totalMiles += distMi;
+      }
+      _activeTracking.lastPos = { lat, lng, ts: Date.now() };
+      _activeTracking.lastAccuracy = accuracy;
+      // Log waypoint every 120s or if moved >0.5 mi
+      const sinceMs = prev ? (Date.now() - prev.ts) : 999999;
+      const movedFar = prev ? haversineDistanceMi(prev.lat, prev.lng, lat, lng) > 0.5 : false;
+      if (!prev || sinceMs >= 120000 || movedFar) {
+        try {
+          const { t: wt, stores: ws } = tx('gpsLogs', 'readwrite');
+          ws.gpsLogs.add({ tripTrackingId: trackingId, lat, lng, accuracy, speed: speed || 0, timestamp: Date.now() });
+          wt.oncomplete = () => {}; wt.onerror = () => {};
+        } catch(e) { /* non-critical */ }
+        _activeTracking.waypoints = (_activeTracking.waypoints || 0) + 1;
+      }
+      _updateTrackingUI();
+      _persistTrackingState();
+    },
+    (err) => {
+      let msg = "Couldn't get your location. Make sure Location Services is on.";
+      if (err.code === 1) msg = 'Location access was denied. To enable it, go to your device Settings and allow Location Services for this browser.';
+      else if (err.code === 2) msg = "Couldn't get your location right now. Try moving to an open area.";
+      else if (err.code === 3) msg = 'Location timed out. Move to an open area and try again.';
+      toast(msg, true);
+      _activeTracking = null;
+      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+    },
+    { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
+  );
+  _activeTracking.watcherId = watcher;
+  if (_trackingIntervalId) clearInterval(_trackingIntervalId);
+  _trackingIntervalId = setInterval(() => {
+    if (!_activeTracking) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; return; }
+    _updateTrackingUI();
+    _persistTrackingState();
+  }, 30000);
+  const d = $('#f21TrackArea'); if (d) _renderTrackingActive(d);
+  toast('Trip tracking started — drive safely!');
+}
+
+function _persistTrackingState() {
+  try {
+    if (_activeTracking) {
+      sessionStorage.setItem('fl_active_tracking', JSON.stringify({
+        trackingId: _activeTracking.trackingId, startTime: _activeTracking.startTime,
+        startPos: _activeTracking.startPos, totalMiles: _activeTracking.totalMiles,
+      }));
+    } else { sessionStorage.removeItem('fl_active_tracking'); }
+  } catch(e) { /* unavailable */ }
+}
+
+async function stopTripTracking() {
+  if (!_activeTracking) return;
+  if (_activeTracking.watcherId !== null) navigator.geolocation.clearWatch(_activeTracking.watcherId);
+  if (_trackingIntervalId) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; }
+  const t = _activeTracking;
+  _activeTracking = null;
+  try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+
+  const totalMiles = Math.round((t.totalMiles || 0) * 10) / 10;
+  const durationMs = Date.now() - t.startTime;
+  const durHrs = Math.floor(durationMs / 3600000), durMins = Math.floor((durationMs % 3600000) / 60000);
+  const durationStr = durHrs > 0 ? `${durHrs}h ${durMins}m` : `${durMins}m`;
+  const startCity = t.startPos ? nearestMarketCity(t.startPos.lat, t.startPos.lng) : 'Unknown area';
+  const endCity   = t.lastPos  ? nearestMarketCity(t.lastPos.lat,  t.lastPos.lng)  : startCity;
+  const startDate = isoDate(new Date(t.startTime)), endDate = isoDate();
+  const _fmtTime  = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  const body = document.createElement('div');
+  body.innerHTML = '<div style="background:var(--surface-0);border-radius:10px;padding:14px;margin-bottom:14px">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(startCity)} &rarr; ${escapeHtml(endCity)}</div>`
+    + `<div style="font-size:13px;color:var(--text-secondary)">${escapeHtml(String(totalMiles))} miles &nbsp;&bull;&nbsp; ${escapeHtml(durationStr)}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">Started: ${escapeHtml(_fmtTime(t.startTime))} &nbsp;&bull;&nbsp; Ended: ${escapeHtml(_fmtTime(Date.now()))}</div>`
+    + '</div>'
+    + '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Add Details (optional)</div>'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Rate / Pay ($)</label>'
+    + '<input id="trkPay" type="number" inputmode="decimal" step="0.01" placeholder="0.00" style="margin-bottom:10px;font-size:16px;min-height:48px" />'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Broker</label>'
+    + '<input id="trkBroker" type="text" placeholder="Broker or company name" style="margin-bottom:10px;min-height:48px" />'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Order #</label>'
+    + '<input id="trkOrder" type="text" placeholder="Optional" style="min-height:48px" /></div>'
+    + '<div style="display:flex;gap:10px;margin-top:4px">'
+    + '<button class="btn primary" id="trkSave" style="flex:2;min-height:48px;font-weight:700">Save Trip</button>'
+    + '<button class="btn danger" id="trkDiscard" style="flex:1;min-height:48px">Discard</button></div>'
+    + '<div id="trkHint" style="font-size:12px;color:var(--bad);margin-top:8px;display:none"></div>';
+
+  body.querySelector('#trkSave')?.addEventListener('click', async () => {
+    const pay = Number(body.querySelector('#trkPay')?.value || 0);
+    const broker = clampStr(body.querySelector('#trkBroker')?.value || '', 80);
+    const rawOrder = clampStr(body.querySelector('#trkOrder')?.value || '', 40);
+    const orderNo = rawOrder || ('TRK-' + Date.now().toString(36).toUpperCase().slice(-8));
+    const trip = {
+      orderNo, origin: startCity, destination: endCity,
+      loadedMiles: Math.max(1, Math.round(totalMiles)),
+      emptyMiles: 0, pay: pay || 0,
+      pickupDate: startDate, deliveryDate: endDate,
+      customer: broker, needsReview: !(pay > 0),
+      autoTracked: true, gpsTrackingId: t.trackingId, created: t.startTime,
+    };
+    try {
+      await upsertTrip(trip);
+      invalidateKPICache(); closeModal();
+      toast(`Trip saved! ${startCity} \u2192 ${endCity} \u2022 ${totalMiles} mi`);
+      _cleanGpsLogs(t.trackingId);
+      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+      await renderHome();
+    } catch(err) {
+      const h = body.querySelector('#trkHint');
+      if (h) { h.textContent = "Couldn't save — try a different order number."; h.style.display = ''; }
+    }
+  });
+  body.querySelector('#trkDiscard')?.addEventListener('click', () => {
+    if (confirm('Delete this tracked trip? The GPS data will be removed.')) {
+      closeModal(); _cleanGpsLogs(t.trackingId);
+      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+      toast('Trip discarded.');
+    }
+  });
+  openModal('Trip Complete', body);
+}
+
+function _cleanGpsLogs(trackingId) {
+  try {
+    const { stores } = tx('gpsLogs');
+    const ids = [];
+    new Promise((res, rej) => {
+      const req = stores.gpsLogs.openCursor();
+      req.onerror = () => rej(req.error);
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (!cur) { res(); return; }
+        if (cur.value.tripTrackingId === trackingId) ids.push(cur.value.id);
+        cur.continue();
+      };
+    }).then(() => {
+      if (!ids.length) return;
+      const { t: dt, stores: ds } = tx('gpsLogs', 'readwrite');
+      ids.forEach(id => ds.gpsLogs.delete(id));
+      dt.oncomplete = () => {}; dt.onerror = () => {};
+    }).catch(() => {});
+  } catch(e) { console.warn('[FL] GPS log cleanup:', e); }
+}
+
+async function resumeTrackingIfActive() {
+  try {
+    const raw = sessionStorage.getItem('fl_active_tracking');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.trackingId || !saved.startTime) return;
+    const ageMs = Date.now() - saved.startTime;
+    _activeTracking = {
+      trackingId: saved.trackingId, startTime: saved.startTime,
+      startPos: saved.startPos || null, lastPos: null,
+      lastAccuracy: 999, totalMiles: saved.totalMiles || 0,
+      waypoints: 0, watcherId: null,
+    };
+    if (ageMs > 86400000) {
+      // Over 24h old — auto-stop and show review
+      try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+      await stopTripTracking();
+    } else {
+      _doStartTracking();
+      toast('Trip tracking resumed.');
+    }
+  } catch(e) { console.warn('[FL] tracking resume:', e); _activeTracking = null; }
+}
+
+
+
+// ================================================================================
+// F22: MONEY DASHBOARD (v22.0.0)
+// ================================================================================
+
+async function renderMoneyCard() {
+  const card = $('#homeMoneyCard');
+  if (!card) return;
+
+  // One-time onboarding tooltip
+  const f22seen = await getSetting('f22OnboardingSeen', false);
+  if (!f22seen) {
+    const slot = card.parentNode;
+    if (slot && !slot.querySelector('#f22OnboardingCard')) {
+      const ob = document.createElement('div');
+      ob.id = 'f22OnboardingCard';
+      ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+      ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        + '<span style="font-size:22px">\u{1F4B0}</span>'
+        + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Money at a Glance</strong></div>'
+        + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">See your weekly earnings, unpaid loads, and tax estimate &mdash; all in one place. No more jumping between screens.</div>'
+        + '<div style="margin-top:12px"><button class="btn primary" id="f22ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      const f22Dismiss = async () => { await setSetting('f22OnboardingSeen', true); ob.remove(); };
+      ob.querySelector('#f22ObDismiss')?.addEventListener('click', f22Dismiss);
+      ob.addEventListener('click', f22Dismiss);
+      slot.insertBefore(ob, card);
+    }
+  }
+
+  const { trips, exps } = await _getTripsAndExps();
+  const validTrips = trips.filter(t => !t.needsReview);
+  if (validTrips.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const now = new Date();
+  const wk0 = startOfWeek(now).getTime();
+  const qStart = startOfQuarter(now);
+
+  // Week stats
+  let wkGross = 0, wkExp = 0;
+  for (const t of validTrips) {
+    const dt = t.pickupDate || t.deliveryDate;
+    if (dt && new Date(dt).getTime() >= wk0) wkGross += Number(t.pay || 0);
+  }
+  for (const e of exps) {
+    if (e.date && new Date(e.date).getTime() >= wk0) wkExp += Number(e.amount || 0);
+  }
+  const wkNet = wkGross - wkExp;
+
+  // Unpaid totals
+  let unpaidAmt = 0, unpaidCount = 0, totalPaid = 0, totalEver = 0;
+  for (const t of validTrips) {
+    const pay = Number(t.pay || 0);
+    totalEver += pay;
+    if (!t.isPaid) { unpaidAmt += pay; unpaidCount++; } else { totalPaid += pay; }
+  }
+  const collectedPct = totalEver > 0 ? Math.round((totalPaid / totalEver) * 100) : 0;
+
+  // Average days to pay
+  let daysToPaySum = 0, daysToPayCount = 0;
+  for (const t of validTrips) {
+    if (t.isPaid && t.paidDate && (t.deliveryDate || t.pickupDate)) {
+      const d = daysBetweenISO(t.deliveryDate || t.pickupDate, t.paidDate);
+      if (d !== null && d >= 0 && d < 365) { daysToPaySum += d; daysToPayCount++; }
+    }
+  }
+  const avgDaysToPay = daysToPayCount > 0 ? Math.round(daysToPaySum / daysToPayCount) : null;
+
+  // Weekly goal
+  const weeklyGoal = Number(await getSetting('weeklyGoal', 0) || 0);
+  const goalPct = weeklyGoal > 0 ? Math.min(200, Math.round((wkGross / weeklyGoal) * 100)) : 0;
+  const dayOfWeek = now.getDay();
+  const daysLeft = dayOfWeek === 0 ? 1 : 7 - dayOfWeek;
+
+  // Quarter tax estimate
+  const qTrips = validTrips.filter(t => {
+    const dt = t.pickupDate || t.deliveryDate;
+    return dt && new Date(dt) >= qStart;
+  });
+  const qExps = exps.filter(e => e.date && new Date(e.date) >= qStart);
+  const daysOnRoad = new Set(qTrips.map(t => t.pickupDate || t.deliveryDate)).size;
+  const perDiemDeduction = daysOnRoad * IRS.PER_DIEM_CONUS * IRS.PER_DIEM_PCT_NON_DOT;
+  let qGross = 0, qExpTotal = 0;
+  for (const t of qTrips) qGross += Number(t.pay || 0);
+  for (const e of qExps) qExpTotal += Number(e.amount || 0);
+  const qNet = Math.max(0, qGross - qExpTotal);
+  const taxableIncome = Math.max(0, qNet - perDiemDeduction);
+  const seTax = roundCents(taxableIncome * IRS.SE_NET_FACTOR * IRS.SE_RATE);
+  const setAside = Math.max(0, roundCents(seTax - perDiemDeduction));
+
+  // Simplified card for < 3 trips
+  if (validTrips.length < 3) {
+    card.innerHTML = '<div class="card" style="margin-top:12px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+      + '<span style="font-size:18px">\u{1F4B0}</span><h3 style="margin:0">Your Money</h3></div>'
+      + `<div style="font-size:16px;font-weight:700;margin-bottom:8px">This week: ${escapeHtml(fmtMoney(wkGross))} earned</div>`
+      + '<div style="font-size:13px;color:var(--text-secondary);line-height:1.6">Keep adding trips to see your full financial picture &mdash; earnings, money owed to you, and tax estimates will appear here.</div>'
+      + '</div>';
+    return;
+  }
+
+  // Progress bar helper
+  const _pbar = (pct, color) => '<div style="height:8px;border-radius:4px;background:var(--surface-0);overflow:hidden;margin:6px 0 4px">'
+    + `<div style="height:100%;width:${Math.min(100, pct)}%;border-radius:4px;background:${escapeHtml(color)};transition:width .4s ease"></div></div>`;
+
+  const goalColor = goalPct >= 100 ? 'var(--good)' : goalPct >= 70 ? 'var(--accent)' : 'var(--warn)';
+  const collectedColor = collectedPct >= 80 ? 'var(--good)' : collectedPct >= 50 ? 'var(--accent)' : 'var(--bad)';
+  const daysPayColor = avgDaysToPay !== null ? (avgDaysToPay <= 15 ? 'var(--good)' : avgDaysToPay <= 30 ? 'var(--warn)' : 'var(--bad)') : 'var(--text-tertiary)';
+
+  const goalHtml = weeklyGoal > 0
+    ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Weekly Goal</div>'
+      + (goalPct >= 100
+          ? `<div style="color:var(--good);font-weight:700;font-size:14px">&#10003; Goal reached! ${escapeHtml(fmtMoney(wkGross - weeklyGoal))} above target</div>`
+          : `<div style="font-size:15px;font-weight:700">${escapeHtml(fmtMoney(wkGross))} of ${escapeHtml(fmtMoney(weeklyGoal))} (${goalPct}%)</div>`)
+      + _pbar(goalPct, goalColor)
+      + (goalPct < 100 ? `<div style="font-size:12px;color:var(--text-tertiary)">${escapeHtml(fmtMoney(Math.max(0, weeklyGoal - wkGross)))} to go &nbsp;&bull;&nbsp; ${escapeHtml(String(daysLeft))} day${daysLeft !== 1 ? 's' : ''} left</div>` : '')
+      + '</div>'
+    : '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
+      + '<div style="font-size:13px;color:var(--text-tertiary)">No weekly goal set &mdash; '
+      + '<a href="#insights" style="color:var(--accent-text);text-decoration:none;font-weight:600">Set one &rarr;</a></div></div>';
+
+  const taxBodyHtml = seTax > 0
+    ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:0">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Taxes This Quarter</div>'
+      + '<div style="font-size:13px;line-height:1.9;color:var(--text-secondary)">'
+      + `Est. self-employment tax: <strong style="color:var(--text)">${escapeHtml(fmtMoney(seTax))}</strong><br>`
+      + `Per diem savings: <strong style="color:var(--good)">-${escapeHtml(fmtMoney(perDiemDeduction))}</strong><br>`
+      + `Set aside about <strong style="color:var(--accent-text)">${escapeHtml(fmtMoney(setAside))}</strong> this quarter</div>`
+      + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">\u24d8 Estimate only &mdash; not tax advice. Talk to your accountant for exact numbers.</div>'
+      + '</div>'
+    : '<div style="font-size:13px;color:var(--text-tertiary);padding-top:10px">Add more trips to see a tax estimate.</div>';
+
+  card.innerHTML = '<div class="card" style="margin-top:12px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:18px">\u{1F4B0}</span><h3 style="margin:0">Your Money</h3></div>'
+    // This Week
+    + '<div style="border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">This Week</div>'
+    + `<div style="font-size:17px;font-weight:800;margin-bottom:2px">${escapeHtml(fmtMoney(wkGross))} earned`
+    + ` <span style="font-size:13px;font-weight:400;color:var(--text-secondary)">&bull; ${escapeHtml(fmtMoney(wkExp))} spent</span></div>`
+    + `<div style="font-size:14px;font-weight:700;color:${wkNet >= 0 ? 'var(--good)' : 'var(--bad)'}">${escapeHtml(fmtMoney(wkNet))} in your pocket</div>`
+    + '</div>'
+    // Money Owed
+    + '<div style="border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Money Owed to You</div>'
+    + (unpaidCount > 0
+        ? `<div style="font-size:15px;font-weight:700;margin-bottom:2px">${escapeHtml(fmtMoney(unpaidAmt))} unpaid`
+          + ` <span style="font-size:13px;font-weight:400;color:var(--text-secondary)">&bull; ${escapeHtml(String(unpaidCount))} load${unpaidCount !== 1 ? 's' : ''} waiting</span></div>`
+          + _pbar(collectedPct, collectedColor)
+          + `<div style="font-size:12px;color:var(--text-tertiary)">${escapeHtml(String(collectedPct))}% collected`
+          + (avgDaysToPay !== null ? ` &nbsp;&bull;&nbsp; <span style="color:${daysPayColor}">Brokers paying in avg ${escapeHtml(String(avgDaysToPay))} days</span>` : '')
+          + '</div>'
+        : '<div style="font-size:13px;color:var(--good);font-weight:600">&#10003; All caught up &mdash; no unpaid loads</div>')
+    + '</div>'
+    // Weekly Goal
+    + goalHtml
+    // Tax toggle
+    + '<div id="f22TaxToggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 0 4px;border-top:1px solid var(--border-subtle);margin-top:12px;color:var(--text-secondary);font-size:13px;font-weight:600">'
+    + '<span id="f22TaxArrow" style="font-size:10px;transition:transform .2s">&#9660;</span> Tax Estimate (tap to expand)</div>'
+    + '<div id="f22TaxBody" style="display:none">' + taxBodyHtml + '</div>'
+    // Unpaid link
+    + (unpaidCount > 0 ? '<div style="margin-top:14px"><a href="#money" class="btn" style="width:100%;text-align:center;display:block;min-height:48px;line-height:48px;padding:0;box-sizing:border-box">See All Unpaid &rarr;</a></div>' : '')
+    + '</div>';
+
+  card.querySelector('#f22TaxToggle')?.addEventListener('click', () => {
+    const tb = card.querySelector('#f22TaxBody');
+    const arr = card.querySelector('#f22TaxArrow');
+    if (!tb) return;
+    const open = tb.style.display !== 'none';
+    tb.style.display = open ? 'none' : '';
+    if (arr) arr.style.transform = open ? '' : 'rotate(180deg)';
+  });
+}
+
+
+
+// ================================================================================
+// F23: SMART LOAD INBOX — Paste & Score (v22.0.0)
+// ================================================================================
+
+function parseLoadTextForInbox(rawText) {
+  const safe = String(rawText || '').slice(0, 10000);
+  const base = parseLoadTextEnhanced(safe);
+  let confidence = 0;
+  const fieldsFound = [], fieldsMissing = [];
+
+  if (base.origin && base.origin.length > 3) { confidence += 20; fieldsFound.push('origin'); } else { fieldsMissing.push('origin'); }
+  if (base.destination && base.destination.length > 3) { confidence += 20; fieldsFound.push('destination'); } else { fieldsMissing.push('destination'); }
+  if (base.loadedMiles > 0) { confidence += 20; fieldsFound.push('miles'); } else { fieldsMissing.push('miles'); }
+  if (base.pay > 0) { confidence += 20; fieldsFound.push('pay'); } else { fieldsMissing.push('pay'); }
+
+  // Pickup date
+  let pickupDate = '';
+  const lc = safe.toLowerCase();
+  const todayISO = isoDate(), tomorrowISO = isoDate(new Date(Date.now() + 86400000));
+  if (/\btoday\b/.test(lc)) { pickupDate = todayISO; confidence += 10; fieldsFound.push('pickup'); }
+  else if (/\btomorrow\b/.test(lc)) { pickupDate = tomorrowISO; confidence += 10; fieldsFound.push('pickup'); }
+  else {
+    const dm = safe.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dm) {
+      const yr = dm[3] ? (dm[3].length === 2 ? '20' + dm[3] : dm[3]) : String(new Date().getFullYear());
+      const cand = `${yr}-${String(dm[1]).padStart(2,'0')}-${String(dm[2]).padStart(2,'0')}`;
+      if (isValidISODate(cand)) { pickupDate = cand; confidence += 10; fieldsFound.push('pickup'); }
+      else { fieldsMissing.push('pickup'); }
+    } else { fieldsMissing.push('pickup'); }
+  }
+
+  // Pickup time
+  let pickupTime = '';
+  const tm1 = safe.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  if (tm1) pickupTime = `${tm1[1]}:${tm1[2]} ${tm1[3].toUpperCase()}`;
+  if (!pickupTime) {
+    const tm2 = safe.match(/\b([01]\d|2[0-3])([0-5]\d)\s*(?:hrs?)?\b/);
+    if (tm2) { pickupTime = `${tm2[1]}:${tm2[2]}`; }
+  }
+
+  const isUrgent = /\b(asap|hot|rush|expedite|urgent|time.?sensitive|line.?down|same.?day)\b/i.test(safe);
+  const ratePerMile = base.loadedMiles > 0 && base.pay > 0
+    ? Math.round((base.pay / base.loadedMiles) * 100) / 100 : 0;
+  const payType = /\$[\d.]+\s*\/\s*mi|\bper\s*mile\b/i.test(safe) ? 'per_mile' : 'flat';
+
+  return {
+    origin: base.origin || '', destination: base.destination || '',
+    loadedMiles: base.loadedMiles || 0, emptyMiles: base.deadheadMiles || 0,
+    pay: base.pay || 0, payType, ratePerMile,
+    pickupDate, pickupTime, broker: base.customer || '',
+    weight: base.weight || 0, isUrgent,
+    confidence: Math.min(100, confidence),
+    fieldsFound, fieldsMissing, rawText: safe,
+  };
+}
+
+let _inboxDebounceTimer = null;
+
+async function renderLoadInbox() {
+  const card = $('#loadInboxCard');
+  if (!card || card.dataset.inboxInit) return;
+  card.dataset.inboxInit = '1';
+
+  // One-time onboarding
+  const f23seen = await getSetting('f23OnboardingSeen', false);
+  if (!f23seen) {
+    const ob = document.createElement('div');
+    ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+    ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+      + '<span style="font-size:22px">\u{1F4E5}</span>'
+      + '<strong style="font-size:14px;color:var(--accent-text)">New: Paste &amp; Score Loads</strong></div>'
+      + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Got a load offer by email or text? Copy it, paste it here, and FreightLogic scores it instantly. Works with emails from Sylectus, DAT, Dispatchland, or any broker.</div>'
+      + '<div style="margin-top:12px"><button class="btn primary" id="f23ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+    ob.querySelector('#f23ObDismiss')?.addEventListener('click', async () => {
+      await setSetting('f23OnboardingSeen', true); ob.remove();
+    });
+    card.appendChild(ob);
+  }
+
+  _renderInboxInput(card);
+}
+
+function _renderInboxInput(card) {
+  if (card.querySelector('#f23InputArea')) return;
+  const inputArea = document.createElement('div');
+  inputArea.id = 'f23InputArea';
+  inputArea.className = 'card';
+  inputArea.style.marginBottom = '12px';
+
+  const hasSpeech = ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
+  inputArea.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+    + '<span style="font-size:18px">\u{1F4E5}</span><h3 style="margin:0">Paste a Load Offer</h3></div>'
+    + '<textarea id="f23Textarea" rows="5" '
+    + 'placeholder="Paste load email or text here&#10;&#10;Example:&#10;Chicago IL to Detroit MI&#10;280 miles, $560 all-in&#10;Pickup tomorrow 8am&#10;XPO Logistics" '
+    + 'style="width:100%;font-size:15px;resize:vertical;min-height:120px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text);padding:10px;box-sizing:border-box"></textarea>'
+    + '<div style="display:flex;gap:10px;margin-top:10px">'
+    + '<button class="btn primary" id="f23ScoreBtn" style="flex:2;min-height:48px;font-weight:700">Score This Load</button>'
+    + `<button class="btn" id="f23VoiceBtn" style="flex:1;min-height:48px;${hasSpeech ? '' : 'display:none'}" title="Voice input">\u{1F3A4} Voice</button>`
+    + '</div>'
+    + '<div id="f23RecentBar" style="margin-top:10px"></div>';
+
+  card.appendChild(inputArea);
+
+  const textarea = inputArea.querySelector('#f23Textarea');
+
+  const _score = () => {
+    const text = textarea?.value.trim() || '';
+    if (!text) { toast('Paste a load offer to score it.', true); return; }
+    _processInboxText(text, card);
+  };
+
+  textarea?.addEventListener('paste', () => {
+    clearTimeout(_inboxDebounceTimer);
+    _inboxDebounceTimer = setTimeout(() => {
+      if ((textarea.value.trim()).length > 30) _processInboxText(textarea.value.trim(), card);
+    }, 500);
+  });
+  textarea?.addEventListener('input', () => {
+    clearTimeout(_inboxDebounceTimer);
+    _inboxDebounceTimer = setTimeout(() => {
+      if ((textarea.value.trim()).length > 30) _processInboxText(textarea.value.trim(), card);
+    }, 800);
+  });
+  inputArea.querySelector('#f23ScoreBtn')?.addEventListener('click', () => { haptic(10); _score(); });
+  inputArea.querySelector('#f23VoiceBtn')?.addEventListener('click', () => { haptic(10); _startInboxVoice(textarea, card); });
+
+  _renderInboxRecent(inputArea.querySelector('#f23RecentBar'), card);
+}
+
+function _renderInboxRecent(container, card) {
+  if (!container) return;
+  try {
+    const recents = JSON.parse(sessionStorage.getItem('fl_inbox_recent') || '[]');
+    if (!recents.length) return;
+    container.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Recent (${recents.length})</div>`;
+    recents.slice(0, 5).forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.style.cssText = 'width:100%;text-align:left;margin-bottom:6px;min-height:44px;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis';
+      btn.textContent = `${item.origin || '?'} \u2192 ${item.dest || '?'} (${item.miles || '?'} mi, ${item.pay || '?'})`;
+      btn.addEventListener('click', () => { haptic(8); _processInboxText(item.raw, card); });
+      container.appendChild(btn);
+    });
+  } catch(e) { /* sessionStorage unavailable */ }
+}
+
+function _saveInboxRecent(parsed) {
+  try {
+    const recents = JSON.parse(sessionStorage.getItem('fl_inbox_recent') || '[]');
+    recents.unshift({ raw: parsed.rawText.slice(0, 500), origin: parsed.origin,
+      dest: parsed.destination, miles: parsed.loadedMiles,
+      pay: parsed.pay > 0 ? fmtMoney(parsed.pay) : '?' });
+    sessionStorage.setItem('fl_inbox_recent', JSON.stringify(recents.slice(0, 5)));
+  } catch(e) { /* ignore */ }
+}
+
+function _processInboxText(text, card) {
+  const parsed = parseLoadTextForInbox(text);
+  _saveInboxRecent(parsed);
+  if (parsed.confidence < 20) { _renderInboxFailure(card); return; }
+  _renderInboxParsed(parsed, card);
+}
+
+function _renderInboxParsed(parsed, card) {
+  card.querySelector('#f23ResultArea')?.remove();
+  const confColor = parsed.confidence >= 80 ? 'var(--good)' : parsed.confidence >= 50 ? 'var(--warn)' : 'var(--bad)';
+  const rpmStr = parsed.ratePerMile > 0 ? ` ($${parsed.ratePerMile.toFixed(2)}/mi)` : '';
+  const payStr = parsed.pay > 0 ? escapeHtml(fmtMoney(parsed.pay) + rpmStr) : 'Pay unknown';
+  const miStr  = parsed.loadedMiles > 0 ? `${parsed.loadedMiles} loaded miles` : 'Miles unknown';
+  const dhStr  = ` &bull; ${parsed.emptyMiles > 0 ? parsed.emptyMiles : 0} deadhead`;
+  const puStr  = parsed.pickupDate ? escapeHtml(parsed.pickupDate + (parsed.pickupTime ? ' ' + parsed.pickupTime : '')) : 'Unknown';
+
+  const resultDiv = document.createElement('div');
+  resultDiv.id = 'f23ResultArea';
+  resultDiv.className = 'card';
+  resultDiv.style.marginBottom = '12px';
+  resultDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+    + '<span style="font-size:18px">\u{1F4E5}</span><h3 style="margin:0">Parsed Load</h3></div>'
+    + '<div style="height:8px;border-radius:4px;background:var(--surface-0);overflow:hidden;margin-bottom:4px">'
+    + `<div style="height:100%;width:${parsed.confidence}%;border-radius:4px;background:${confColor};transition:width .4s"></div></div>`
+    + `<div style="font-size:11px;color:${confColor};margin-bottom:12px;font-weight:600">${parsed.confidence}% confident</div>`
+    + '<div id="f23ParsedView">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:6px">${escapeHtml(parsed.origin || 'Unknown')} &rarr; ${escapeHtml(parsed.destination || 'Unknown')}</div>`
+    + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:2px">${escapeHtml(miStr)}${dhStr}</div>`
+    + `<div style="font-size:14px;font-weight:700;margin-bottom:2px">${payStr}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary)">Pickup: ${puStr}${parsed.broker ? ' &nbsp;&bull;&nbsp; ' + escapeHtml(parsed.broker) : ''}</div>`
+    + (parsed.isUrgent ? '<div style="font-size:12px;color:var(--warn);margin-top:6px">&#9889; Pickup may be urgent &mdash; confirm timing with broker</div>' : '')
+    + (parsed.fieldsMissing.length ? `<div style="font-size:12px;color:var(--warn);margin-top:6px">&#9888;&#65039; Couldn\'t find: ${escapeHtml(parsed.fieldsMissing.join(', '))}</div>` : '')
+    + '</div>'
+    + '<div id="f23EditArea" style="display:none">'
+    + `<label style="font-size:12px">Origin</label><input id="f23eOrigin" value="${escapeHtml(parsed.origin)}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Destination</label><input id="f23eDest" value="${escapeHtml(parsed.destination)}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Loaded Miles</label><input id="f23eMiles" type="number" value="${parsed.loadedMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Deadhead Miles</label><input id="f23eDH" type="number" value="${parsed.emptyMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Pay ($)</label><input id="f23ePay" type="number" step="0.01" value="${parsed.pay || ''}" style="min-height:48px;margin-bottom:8px" /></div>`
+    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+    + '<button class="btn primary" id="f23ScoreLoad" style="flex:2;min-height:48px;font-weight:700">Score Load &rarr;</button>'
+    + '<button class="btn" id="f23EditDetails" style="flex:1;min-height:48px">&#9998; Edit</button></div>'
+    + '<button class="btn" id="f23PasteDiff" style="width:100%;margin-top:8px;min-height:44px;font-size:13px">&larr; Paste Different Load</button>';
+
+  // Insert before input area
+  const inputArea = card.querySelector('#f23InputArea');
+  if (inputArea) { card.insertBefore(resultDiv, inputArea); inputArea.style.display = 'none'; }
+  else { card.appendChild(resultDiv); }
+
+  // Edit toggle
+  resultDiv.querySelector('#f23EditDetails')?.addEventListener('click', () => {
+    haptic(8);
+    const pv = resultDiv.querySelector('#f23ParsedView');
+    const ea = resultDiv.querySelector('#f23EditArea');
+    const btn = resultDiv.querySelector('#f23EditDetails');
+    if (!pv || !ea) return;
+    const editing = ea.style.display !== 'none';
+    pv.style.display = editing ? '' : 'none';
+    ea.style.display = editing ? 'none' : '';
+    if (btn) btn.innerHTML = editing ? '&#9998; Edit' : 'Done';
+  });
+
+  // Score load — fill evaluator and trigger
+  resultDiv.querySelector('#f23ScoreLoad')?.addEventListener('click', () => {
+    haptic(15);
+    const ea = resultDiv.querySelector('#f23EditArea');
+    const editing = ea && ea.style.display !== 'none';
+    const origin = editing ? (resultDiv.querySelector('#f23eOrigin')?.value || parsed.origin) : parsed.origin;
+    const dest   = editing ? (resultDiv.querySelector('#f23eDest')?.value   || parsed.destination) : parsed.destination;
+    const miles  = editing ? (Number(resultDiv.querySelector('#f23eMiles')?.value) || parsed.loadedMiles) : parsed.loadedMiles;
+    const dh     = editing ? (Number(resultDiv.querySelector('#f23eDH')?.value)    || parsed.emptyMiles)  : parsed.emptyMiles;
+    const pay    = editing ? (Number(resultDiv.querySelector('#f23ePay')?.value)   || parsed.pay)         : parsed.pay;
+
+    const revEl  = $('#mwRevenue');   if (revEl)  revEl.value  = pay   || '';
+    const lmEl   = $('#mwLoadedMi');  if (lmEl)   lmEl.value   = miles || '';
+    const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh    || '';
+    const origEl = $('#mwOrigin');    if (origEl) origEl.value = origin || '';
+    const destEl = $('#mwDest');      if (destEl) destEl.value = dest   || '';
+
+    // Trigger live evaluation
+    if (revEl) revEl.dispatchEvent(new Event('input', { bubbles: true }));
+    setTimeout(() => {
+      const out = $('#mwEvalOutput');
+      if (out) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
+    toast('Load scored! See the results below.');
+  });
+
+  // Paste different
+  resultDiv.querySelector('#f23PasteDiff')?.addEventListener('click', () => {
+    haptic(8);
+    resultDiv.remove();
+    const ia = card.querySelector('#f23InputArea');
+    if (ia) {
+      ia.style.display = '';
+      const ta = ia.querySelector('#f23Textarea');
+      if (ta) { ta.value = ''; ta.focus(); }
+    }
+  });
+}
+
+function _renderInboxFailure(card) {
+  card.querySelector('#f23ResultArea')?.remove();
+  const failDiv = document.createElement('div');
+  failDiv.id = 'f23ResultArea';
+  failDiv.className = 'card';
+  failDiv.style.marginBottom = '12px';
+  failDiv.innerHTML = '<div style="text-align:center;padding:16px 8px">'
+    + '<div style="font-size:32px;margin-bottom:8px">\u{1F914}</div>'
+    + '<div style="font-weight:700;font-size:15px;margin-bottom:8px">Couldn\'t read that load offer</div>'
+    + '<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:16px">FreightLogic couldn\'t find enough details in that text. This works best with load emails that include cities, miles, and a rate.</div>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button class="btn primary" id="f23FailRetry" style="flex:1;min-height:48px">Try Again</button>'
+    + '<button class="btn" id="f23FailManual" style="flex:1;min-height:48px">Enter Manually &#8595;</button>'
+    + '</div></div>';
+
+  const inputArea = card.querySelector('#f23InputArea');
+  if (inputArea) { card.insertBefore(failDiv, inputArea); inputArea.style.display = 'none'; }
+  else { card.appendChild(failDiv); }
+
+  failDiv.querySelector('#f23FailRetry')?.addEventListener('click', () => {
+    failDiv.remove();
+    const ia = card.querySelector('#f23InputArea');
+    if (ia) { ia.style.display = ''; const ta = ia.querySelector('#f23Textarea'); if (ta) { ta.value = ''; ta.focus(); } }
+  });
+  failDiv.querySelector('#f23FailManual')?.addEventListener('click', () => {
+    haptic(8);
+    const out = $('#mwEvalOutput');
+    if (out) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function _startInboxVoice(textarea, card) {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) { toast('Voice input is not supported in this browser.', true); return; }
+  const rec = new SpeechRec();
+  rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = false;
+  toast('Listening... Speak your load details now.');
+  rec.start();
+  rec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    if (textarea) textarea.value = transcript;
+    _processInboxText(transcript, card);
+  };
+  rec.onerror = () => { toast("Couldn't hear that clearly. Try again.", true); };
+}
+
+
 // TEST EXPORTS — pure functions exposed for test harness
 // Only active when window.__FL_TESTS_ENABLED is set before load
 // ════════════════════════════════════════════════════════════════
@@ -12273,6 +13082,9 @@ if (typeof window !== 'undefined'){
     setupPTR('tripsPTR', '#tripList', ()=> renderTrips(true));
     setupPTR('expPTR', '#expenseList', ()=> renderExpenses(true));
     setupPTR('fuelPTR', '#fuelList', ()=> renderFuel(true));
+
+    // F21: Restore GPS trip tracking from previous session before first render
+    await resumeTrackingIfActive().catch(()=>{});
 
     await navigate();
     _updateOnlineStatus();

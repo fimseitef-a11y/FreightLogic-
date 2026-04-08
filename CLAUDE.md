@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v19.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v22.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -44,6 +44,9 @@ README.txt              — Notes on optional offline vendor files
 10. **Freight evaluator** — Market Feed, Tomorrow Signal, Strategic Floor A–E scoring; auto-triggers OpenAI analysis via `/evaluate`
 11. **Cloud backup** — encrypt/decrypt, push/pull, user identity, AI evaluate call
 12. **UI rendering** — Trip list, expense list, fuel log, dashboard, settings panel
+13. **F21 GPS Trip Tracking** — `startTripTracking`, `stopTripTracking`, `nearestMarketCity`, `renderTripTrackingUI`, `resumeTrackingIfActive`
+14. **F22 Money Dashboard** — `renderMoneyCard` with weekly P&L, unpaid summary, goal progress, quarterly tax estimate
+15. **F23 Smart Load Inbox** — `parseLoadTextForInbox`, `renderLoadInbox`, auto-fills evaluator fields
 
 ### IndexedDB schema (`DB_VERSION = 11`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
@@ -74,7 +77,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '19.0.0';
+const APP_VERSION = '22.0.0';
 const DB_VERSION = 11;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -197,6 +200,35 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   4. `?v=` query on `<link rel="manifest">` in `index.html`
   5. `?v=` queries on `app.js` and `sw-bridge.js` script tags in `index.html`
 - **Master source asset** — `MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md` is referenced by `openMasterSourceCenter()` but not included in repo.
+
+---
+
+## v22 Features (F21–F23)
+
+### F21 — GPS Trip Tracking
+- `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
+- `startTripTracking()` → `_showLocationPermissionModal()` (first use) → `_doStartTracking()`
+- `stopTripTracking()` — clears watcher, shows review modal, calls `upsertTrip()`
+- `resumeTrackingIfActive()` — called on boot; reads `sessionStorage('fl_active_tracking')`
+- `nearestMarketCity(lat, lng)` — returns nearest market city within 100 mi, e.g. "Indianapolis, IN"
+- `_cleanGpsLogs(trackingId)` — removes `gpsLogs` IDB entries after save or discard
+- Settings keys: `f21OnboardingSeen` (bool), `f21PermissionSeen` (bool)
+- sessionStorage key: `fl_active_tracking` (JSON: trackingId, startTime, startPos, totalMiles)
+
+### F22 — Money Dashboard
+- `renderMoneyCard()` — populates `#homeMoneyCard` after `renderHome()` computes KPIs
+- Shows: this-week gross/spent/net, unpaid count + amount, collection %, avg days-to-pay,
+  weekly goal progress bar, collapsible quarterly tax estimate
+- Hides when 0 valid trips; simplified (1-line) view for 1–2 trips; full card at 3+
+- Tax estimate uses `IRS.PER_DIEM_CONUS`, `IRS.PER_DIEM_PCT_NON_DOT`, `IRS.SE_NET_FACTOR`, `IRS.SE_RATE`
+- Settings keys: `f22OnboardingSeen` (bool)
+
+### F23 — Smart Load Inbox
+- `renderLoadInbox()` — populates `#loadInboxCard` at top of Evaluate tab (one-time init via `data-inboxInit`)
+- `parseLoadTextForInbox(rawText)` — wraps `parseLoadTextEnhanced()`, adds confidence score (0–100)
+- "Score Load →" fills `#mwRevenue`, `#mwLoadedMi`, `#mwDeadMi`, `#mwOrigin`, `#mwDest` and dispatches `input` event
+- Recent pastes stored in `sessionStorage('fl_inbox_recent')` (last 5, cleared on session end)
+- Settings keys: `f23OnboardingSeen` (bool)
 
 ---
 
