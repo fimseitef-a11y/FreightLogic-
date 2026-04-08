@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v22.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v22.0.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -38,8 +38,8 @@ README.txt              — Notes on optional offline vendor files
 4. **Storage** — `requestPersistentStorage`, `checkStorageQuota`, ITP/Safari detection
 5. **Navigation** — `openTripNavigation` (Apple Maps on iOS, Google Maps otherwise)
 6. **UI utilities** — `toast`, `openModal`, `closeModal`, `haptic`, autocomplete
-7. **IndexedDB layer** — `initDB` (v11 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
-8. **Data stores:** `trips`, `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`
+7. **IndexedDB layer** — `initDB` (v12 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
+8. **Data stores:** `trips`, `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
 9. **Export/Import** — JSON, CSV, XLSX (trips/expenses/fuel), receipt blobs
 10. **Freight evaluator** — Market Feed, Tomorrow Signal, Strategic Floor A–E scoring; auto-triggers OpenAI analysis via `/evaluate`
 11. **Cloud backup** — encrypt/decrypt, push/pull, user identity, AI evaluate call
@@ -48,7 +48,7 @@ README.txt              — Notes on optional offline vendor files
 14. **F22 Money Dashboard** — `renderMoneyCard` with weekly P&L, unpaid summary, goal progress, quarterly tax estimate
 15. **F23 Smart Load Inbox** — `parseLoadTextForInbox`, `renderLoadInbox`, auto-fills evaluator fields
 
-### IndexedDB schema (`DB_VERSION = 11`, `DB_NAME = 'FreightLogic_v18'`)
+### IndexedDB schema (`DB_VERSION = 12`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
 - `expenses` — keyPath: `id`
 - `fuel` — keyPath: `id`
@@ -62,6 +62,7 @@ README.txt              — Notes on optional offline vendor files
 - `reloadOutcomes` — keyPath: `id`
 - `bidHistory` — keyPath: `id`
 - `documents` — keyPath: `id`
+- `gpsLogs` — keyPath: `id`, autoIncrement
 
 ### DB migration
 On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
@@ -77,8 +78,8 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '22.0.0';
-const DB_VERSION = 11;
+const APP_VERSION = '22.0.1';
+const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
@@ -207,7 +208,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
-- `startTripTracking()` → `_showLocationPermissionModal()` (first use) → `_doStartTracking()`
+- `startTripTracking()` → `_showLocationPermissionModal()` (first use) → `_initTrackingObject()` → `_doStartTracking()`
 - `stopTripTracking()` — clears watcher, shows review modal, calls `upsertTrip()`
 - `resumeTrackingIfActive()` — called on boot; reads `sessionStorage('fl_active_tracking')`
 - `nearestMarketCity(lat, lng)` — returns nearest market city within 100 mi, e.g. "Indianapolis, IN"
