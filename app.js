@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 
-/** FreightLogic v22.0.0 USA ENGINE
+/** FreightLogic v22.0.1 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
@@ -9,7 +9,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '22.0.0';
+const APP_VERSION = '22.0.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -39,7 +39,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v21.3.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v22.0.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -49,7 +49,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -638,6 +638,8 @@ async function initDB(){
       }
       // v11: User identity namespace — localUserId written at runtime by ensureLocalUserId()
       if (old < 11) { /* no schema changes — settings store already holds the key */ }
+      // v12: Ensure gpsLogs store exists for users upgrading from any version prior to v22
+      if (old < 12) { ensureStore('gpsLogs', { keyPath: 'id', autoIncrement: true }); }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -1206,8 +1208,9 @@ async function exportJSON(){
   const settings = await dumpStore('settings');
   const checksum = await computeExportChecksum(trips, expenses, fuel);
   const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
+  const gpsLogs = await dumpStore('gpsLogs');
   const payload = {
-    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length } },
+    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length } },
     trips,
     expenses,
     fuel,
@@ -1219,6 +1222,7 @@ async function exportJSON(){
     reloadOutcomes: await dumpStore('reloadOutcomes'),
     bidHistory: await dumpStore('bidHistory'),
     documents: await dumpStore('documents'),
+    gpsLogs,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -1311,7 +1315,9 @@ async function importJSON(file, opts={}){
     }));
     const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
       // v21 new settings keys
-      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId']);
+      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId',
+      // v22 F21/F22/F23 onboarding flags
+      'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -1352,8 +1358,13 @@ async function importJSON(file, opts={}){
       type: clampStr(r.type || '', 40),
     }));
 
+    const safeGpsLogsArr = arr(data.gpsLogs).filter(r => r && typeof r === 'object' && typeof r.timestamp === 'number').map(r => ({
+      ...deepCleanObj(r),
+      tripTrackingId: clampStr(r.tripTrackingId || '', 60),
+    }));
+
     const mode = opts.mode || 'merge';
-    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'],'readwrite');
+    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'],'readwrite');
     if (mode === 'replace'){
       try{ stores.trips.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.expenses.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -1366,6 +1377,7 @@ async function importJSON(file, opts={}){
       try{ stores.reloadOutcomes.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.bidHistory.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.documents.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.gpsLogs.clear(); }catch(e){ console.warn("[FL]", e); }
     }
     const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
     putAll(stores.trips, safeTripArr);
@@ -1379,6 +1391,7 @@ async function importJSON(file, opts={}){
     putAll(stores.reloadOutcomes, safeReloadOutcomesArr);
     putAll(stores.bidHistory, safeBidHistoryArr);
     putAll(stores.documents, safeDocumentsArr);
+    putAll(stores.gpsLogs, safeGpsLogsArr);
     await waitTxn(txn);
     toast('Import complete');
   }catch(err){ toast('Import failed (invalid JSON or corrupted export).', true); }
@@ -9802,6 +9815,7 @@ async function cloudPushBackup(silent = true){
     const reloadOutcomes = await dumpStore('reloadOutcomes');
     const bidHistory = await dumpStore('bidHistory');
     const documents = await dumpStore('documents');
+    const gpsLogs = await dumpStore('gpsLogs');
 
     // Filter to changed records for delta, fall back to full push if no timestamps or too much changed
     const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allTrips;
@@ -9821,8 +9835,8 @@ async function cloudPushBackup(silent = true){
     const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
       laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
-      documents: documents.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents });
+      documents: documents.length, gpsLogs: gpsLogs.length };
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents, gpsLogs });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
     const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
@@ -12344,11 +12358,25 @@ function _updateTrackingUI() {
   if (d && _activeTracking) _renderTrackingActive(d);
 }
 
+function _initTrackingObject() {
+  _activeTracking = {
+    trackingId: randId(),
+    startTime: Date.now(),
+    startPos: null,
+    lastPos: null,
+    lastAccuracy: 999,
+    totalMiles: 0,
+    waypoints: 0,
+    watcherId: null,
+  };
+}
+
 async function startTripTracking() {
   if (_activeTracking) return;
   if (!navigator.geolocation) { toast('GPS is not available in this browser.', true); return; }
   const permSeen = await getSetting('f21PermissionSeen', false);
   if (!permSeen) { _showLocationPermissionModal(); return; }
+  _initTrackingObject();
   _doStartTracking();
 }
 
@@ -12364,7 +12392,7 @@ function _showLocationPermissionModal() {
     + '<button class="btn" id="permDeny" style="flex:1;min-height:48px">Not Now</button>'
     + '</div>';
   body.querySelector('#permAllow')?.addEventListener('click', async () => {
-    await setSetting('f21PermissionSeen', true); closeModal(); _doStartTracking();
+    await setSetting('f21PermissionSeen', true); closeModal(); _initTrackingObject(); _doStartTracking();
   });
   body.querySelector('#permDeny')?.addEventListener('click', () => closeModal());
   openModal('Location Access', body);
@@ -12640,7 +12668,7 @@ async function renderMoneyCard() {
   const qNet = Math.max(0, qGross - qExpTotal);
   const taxableIncome = Math.max(0, qNet - perDiemDeduction);
   const seTax = roundCents(taxableIncome * IRS.SE_NET_FACTOR * IRS.SE_RATE);
-  const setAside = Math.max(0, roundCents(seTax - perDiemDeduction));
+  const setAside = seTax;
 
   // Simplified card for < 3 trips
   if (validTrips.length < 3) {
