@@ -1,6 +1,6 @@
 /* Freight Logic v23.1.0 — service worker update bridge + voice-load bootstrap */
 (function(){
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker'in navigator)) return;
 
   let reloading = false;
   const reloadOnce = () => {
