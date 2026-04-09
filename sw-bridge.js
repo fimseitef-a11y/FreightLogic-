@@ -1,4 +1,4 @@
-/* Freight Logic v22.0.0 — service worker update bridge + voice-load bootstrap */
+/* Freight Logic v22.0.1 — service worker update bridge + voice-load bootstrap */
 (function(){
   if (!('serviceWorker' in navigator)) return;
 
