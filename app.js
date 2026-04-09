@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 
-/** FreightLogic v22.0.1 USA ENGINE
+/** FreightLogic v22.1.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
@@ -9,7 +9,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '22.0.1';
+const APP_VERSION = '22.1.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -39,7 +39,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v22.0.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v22.1.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -2764,6 +2764,24 @@ function openScoreBreakdown(trip, score){
       <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmtMoney(score.counterOffer)} <span class="muted" style="font-size:14px">($${score.counterRpm.toFixed(2)} RPM)</span></div>
       <div class="muted" style="font-size:12px;margin-top:6px">Ideal Target rate for ${fmtNum(Number(trip.loadedMiles||0)+Number(trip.emptyMiles||0))} miles</div>`;
     body.appendChild(counter);
+    // Inject broker negotiation intel from bid history if available
+    if (trip.customer) {
+      (async () => {
+        try {
+          const {stores} = tx('bidHistory');
+          const allBids = await idbReq(stores.bidHistory.index('broker').getAll(trip.customer));
+          if (allBids && allBids.length >= 2) {
+            const accepted = allBids.filter(b => b.outcome === 'accepted' || b.outcome === 'partial');
+            const pct = Math.round((accepted.length / allBids.length) * 100);
+            const avgLift = accepted.length > 0 ? accepted.reduce((s,b) => s + ((b.finalAmt||0) - (b.offerAmt||0)), 0) / accepted.length : 0;
+            const bidIntel = document.createElement('div');
+            bidIntel.style.cssText = 'margin-top:8px;font-size:12px;color:var(--text-secondary)';
+            bidIntel.innerHTML = `Your counter history with ${escapeHtml(trip.customer)}: <b>${pct}%</b> accepted (${accepted.length}/${allBids.length})${avgLift > 0 ? ` · avg lift <b>+${fmtMoney(avgLift)}</b>` : ''}`;
+            counter.appendChild(bidIntel);
+          }
+        } catch(e) { /* non-critical */ }
+      })();
+    }
   }
 
   // Margin breakdown
@@ -4906,7 +4924,7 @@ function usaScoreLoad(opts){
   }
 
   // ── Cross-border adjustments ──
-  if (crossBorder.isCrossBorder){
+  if (crossBorder && crossBorder.isCrossBorder){
     score += crossBorder.totalAdj;
     for (const adj of crossBorder.adjustments){
       if (adj.impact !== 0){
@@ -4919,6 +4937,26 @@ function usaScoreLoad(opts){
     if (crossBorder.gateway){
       bullets.push({ icon: '–', text: `🛂 Gateway: ${crossBorder.gateway.name} — ${crossBorder.gateway.notes || ''}` });
     }
+  }
+
+  // ── Personal Intelligence Adjustments ──
+  if (opts.laneIntel && opts.laneIntel.count >= 3) {
+    const li = opts.laneIntel;
+    if (li.avgRPM > 0) {
+      const rpmRatio = effectiveRPM / li.avgRPM;
+      if (rpmRatio >= 1.10) { score += 6; bullets.push({ icon:'✓', text:`Paying ${((rpmRatio-1)*100).toFixed(0)}% above your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }); }
+      else if (rpmRatio < 0.85) { score -= 6; bullets.push({ icon:'✕', text:`${((1-rpmRatio)*100).toFixed(0)}% below your avg $${li.avgRPM.toFixed(2)} on this lane — hold for better` }); }
+      else { bullets.push({ icon:'–', text:`In line with your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }); }
+    }
+    if (li.dzExitCount >= 3) { score -= 8; bullets.push({ icon:'✕', text:`⚠ Trap lane: ${li.dzExitCount} Dead Zone exits from origin — market repeatedly strands you` }); }
+  }
+
+  if (opts.destReloadScore) {
+    const rs = opts.destReloadScore;
+    if (rs.grade === 'A') { score += 5; bullets.push({ icon:'✓', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload (${rs.count} records)` }); }
+    else if (rs.grade === 'D') { score -= 8; bullets.push({ icon:'✕', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload. Demand premium or avoid.` }); }
+    else if (rs.grade === 'C') { score -= 3; bullets.push({ icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }); }
+    else { bullets.push({ icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }); }
   }
 
   // Clamp
@@ -5314,12 +5352,22 @@ async function mwEvaluateLoad(){
   const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)', 'DZ-EXIT': '#f0a500' };
   const verdictLabels = { ACCEPT: 'ACCEPT', REJECT: 'PASS', STRATEGIC: 'STRATEGIC ONLY', 'DZ-EXIT': 'DZ EXIT — SURVIVAL' };
 
+  // Pre-fetch intelligence for scoring
+  const [laneIntel, destReloadScore, origReloadScore] = await Promise.all([
+    getLaneIntel(origin, dest),
+    getCityReloadScore(dest),
+    getCityReloadScore(origin),
+  ]);
+
   // ── USA Engine integration ──
   const usaMode = $('#mwModeSelector')?.value || 'HARVEST';
   const usaResult = usaScoreLoad({
     origin, dest, trueRPM, deadMi, loadedMi,
     mode: usaMode, profileId: 'MIDWEST_STACK',
     revenue, revenueCurrency, crossBorder,
+    laneIntel,
+    destReloadScore,
+    origReloadScore,
   });
 
   // ── Collect decision data for render ──
@@ -9821,13 +9869,26 @@ async function cloudPushBackup(silent = true){
     const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allTrips;
     const changedExps = lastSynced > 0 ? allExpenses.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allExpenses;
     const changedFuel = lastSynced > 0 ? allFuel.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allFuel;
-    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length) < 50;
+    // Apply same delta filter to intelligence stores using their actual timestamp fields
+    const changedLaneHistory = lastSynced > 0 ? laneHistory.filter(r => (r.updated || r.created || 0) > lastSynced) : laneHistory;
+    const changedWeeklyReports = lastSynced > 0 ? weeklyReports.filter(r => (r.generatedAt || 0) > lastSynced) : weeklyReports;
+    const changedReloadOutcomes = lastSynced > 0 ? reloadOutcomes.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : reloadOutcomes;
+    const changedBidHistory = lastSynced > 0 ? bidHistory.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : bidHistory;
+    const changedDocuments = lastSynced > 0 ? documents.filter(r => (r.updatedAt || r.createdAt || 0) > lastSynced) : documents;
+    const changedGpsLogs = lastSynced > 0 ? gpsLogs.filter(r => (r.timestamp || 0) > lastSynced) : gpsLogs;
+    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length) < 50;
 
     const trips = isDelta ? changedTrips : allTrips;
     const expenses = isDelta ? changedExps : allExpenses;
     const fuel = isDelta ? changedFuel : allFuel;
+    const lh = isDelta ? changedLaneHistory : laneHistory;
+    const wr = isDelta ? changedWeeklyReports : weeklyReports;
+    const ro = isDelta ? changedReloadOutcomes : reloadOutcomes;
+    const bh = isDelta ? changedBidHistory : bidHistory;
+    const docs = isDelta ? changedDocuments : documents;
+    const gl = isDelta ? changedGpsLogs : gpsLogs;
 
-    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0){
+    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0){
       _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
       if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
     }
@@ -9836,7 +9897,7 @@ async function cloudPushBackup(silent = true){
       laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
       documents: documents.length, gpsLogs: gpsLogs.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents, gpsLogs });
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, gpsLogs: gl });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
     const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
@@ -9908,16 +9969,31 @@ async function mergeRestoreData(parsed){
     }catch(e){ console.warn('[FL] merge fuel', e); }
   }
 
-  // Other stores: merge by put (laneHistory, bidHistory, weeklyReports, reloadOutcomes, documents)
+  // Other stores: per-record timestamp merge (laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents)
+  // weeklyReports uses keyPath 'weekId'; all others use 'id'
   const simpleStores = ['laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'];
   for (const storeName of simpleStores){
     const items = arr(parsed[storeName]);
     if (!items.length) continue;
-    try {
-      const {t:wt, stores:ws} = tx(storeName,'readwrite');
-      for (const item of items){ try{ ws[storeName].put(item); }catch(e){ console.warn('[FL] merge '+storeName, e); } }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }catch(e){ console.warn('[FL] merge store', storeName, e); }
+    for (const incoming of items){
+      try {
+        const keyPath = storeName === 'weeklyReports' ? 'weekId' : 'id';
+        const key = incoming[keyPath];
+        if (!key){
+          const {t:wt, stores:ws} = tx(storeName,'readwrite');
+          ws[storeName].put(incoming);
+          await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+          continue;
+        }
+        const {stores} = tx(storeName);
+        const existing = await idbReq(stores[storeName].get(key));
+        const {t:wt, stores:ws} = tx(storeName,'readwrite');
+        const inTs = incoming.updatedAt || incoming.generatedAt || incoming.updated || incoming.created || incoming.createdAt || incoming.timestamp || 0;
+        const exTs = existing ? (existing.updatedAt || existing.generatedAt || existing.updated || existing.created || existing.createdAt || existing.timestamp || 0) : 0;
+        if (!existing || inTs > exTs){ ws[storeName].put(incoming); }
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+      } catch(e){ console.warn('[FL] merge ' + storeName, e); }
+    }
   }
 
   const totalSkipped = stats.trips.skipped + stats.expenses.skipped + stats.fuel.skipped;
