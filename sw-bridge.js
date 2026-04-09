@@ -1,4 +1,4 @@
-/* Freight Logic v22.0.1 — service worker update bridge + voice-load bootstrap */
+/* FreightLogic v22.0.1 — service worker update bridge */
 (function(){
   if (!('serviceWorker' in navigator)) return;
 
@@ -7,22 +7,6 @@
     if (reloading) return;
     reloading = true;
     window.location.reload();
-  };
-
-  const ensureVoiceModule = () => {
-    try {
-      if (document.querySelector('script[data-voice-load="1"]')) return;
-      const script = document.createElement('script');
-      script.src = 'voice-load.js?v=22.0.0';
-      script.defer = true;
-      script.dataset.voiceLoad = '1';
-      script.addEventListener('error', (e) => {
-        console.warn('[FL] voice-load bootstrap failed:', e);
-      });
-      document.body.appendChild(script);
-    } catch (e) {
-      console.warn('[FL] voice-load bootstrap failed:', e);
-    }
   };
 
   navigator.serviceWorker.addEventListener('controllerchange', reloadOnce);
@@ -52,7 +36,6 @@
   };
 
   window.addEventListener('load', async () => {
-    ensureVoiceModule();
     try {
       const registration = await navigator.serviceWorker.getRegistration();
       if (!registration) return;
