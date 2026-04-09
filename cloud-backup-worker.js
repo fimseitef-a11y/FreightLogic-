@@ -1,7 +1,7 @@
 // FreightLogic Cloud Backup Worker v7 - Multi-User + AI Evaluate + AI Extract + Delta Sync
 // KV binding: BACKUPS
-// Secrets: ADMIN_TOKEN, OPENAI_API_KEY
-// Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
+// Secrets: ADMIN_TOKEN, ANTHROPIC_API_KEY
+// Vars: ALLOWED_ORIGIN, ANTHROPIC_MODEL (optional, default: claude-sonnet-4-6)
 
 export default {
   async fetch(request, env) {
@@ -95,7 +95,7 @@ export default {
           return json({ ok: false, error: 'Rate limit exceeded. Please wait before evaluating again.' }, 429, cors);
         }
 
-        if (!env.OPENAI_API_KEY) {
+        if (!env.ANTHROPIC_API_KEY) {
           return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
         }
 
@@ -104,37 +104,38 @@ export default {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
         }
 
-        const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
+        const model = env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
         const prompt = buildEvalPrompt(payload);
 
-        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
-            'Authorization': 'Bearer ' + env.OPENAI_API_KEY,
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             model,
-            temperature: 0.3,
             max_tokens: 600,
-            response_format: { type: 'json_object' },
+            temperature: 0.3,
+            system: SYSTEM_PROMPT,
             messages: [
-              { role: 'system', content: SYSTEM_PROMPT },
-              { role: 'user', content: prompt }
+              { role: 'user', content: prompt },
+              { role: 'assistant', content: '{' }
             ]
           })
         });
 
         if (!aiRes.ok) {
           const errText = await aiRes.text().catch(() => '');
-          console.error('[FL] OpenAI error:', aiRes.status, errText);
+          console.error('[FL] Anthropic eval error:', aiRes.status, errText);
           return json({ ok: false, error: 'AI service error. Local evaluation is still valid.' }, 502, cors);
         }
 
         const aiJson = await aiRes.json();
         let parsed = null;
         try {
-          parsed = JSON.parse(aiJson.choices[0].message.content);
+          parsed = JSON.parse('{' + aiJson.content[0].text);
         } catch {
           return json({ ok: false, error: 'AI response parse error. Local evaluation is still valid.' }, 502, cors);
         }
@@ -165,7 +166,7 @@ export default {
           return json({ ok: false, error: 'Rate limit exceeded. Please wait before extracting again.' }, 429, cors);
         }
 
-        if (!env.OPENAI_API_KEY) {
+        if (!env.ANTHROPIC_API_KEY) {
           return json({ ok: false, error: 'AI extraction not configured on server.' }, 500, cors);
         }
 
@@ -175,36 +176,37 @@ export default {
         }
 
         const rawText = String(payload.text).slice(0, 4000);
-        const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
+        const extractModel = 'claude-haiku-4-5-20251001';
 
-        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
-            'Authorization': 'Bearer ' + env.OPENAI_API_KEY,
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model,
-            temperature: 0.1,
+            model: extractModel,
             max_tokens: 400,
-            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            system: EXTRACT_SYSTEM_PROMPT,
             messages: [
-              { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
-              { role: 'user', content: 'Extract structured fields from this load text:\n\n' + rawText }
+              { role: 'user', content: 'Extract structured fields from this load text:\n\n' + rawText },
+              { role: 'assistant', content: '{' }
             ]
           })
         });
 
         if (!aiRes.ok) {
           const errText = await aiRes.text().catch(() => '');
-          console.error('[FL] OpenAI extract error:', aiRes.status, errText);
+          console.error('[FL] Anthropic extract error:', aiRes.status, errText);
           return json({ ok: false, error: 'AI service error.' }, 502, cors);
         }
 
         const aiJson = await aiRes.json();
         let parsed = null;
         try {
-          parsed = JSON.parse(aiJson.choices[0].message.content);
+          parsed = JSON.parse('{' + aiJson.content[0].text);
         } catch {
           return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
         }
@@ -226,7 +228,7 @@ export default {
             commodity:    String(parsed.commodity    || '').slice(0, 80),
             notes:        String(parsed.notes        || '').slice(0, 300),
           },
-          model,
+          model: extractModel,
           user: tokenData.name
         }, 200, cors);
       }
