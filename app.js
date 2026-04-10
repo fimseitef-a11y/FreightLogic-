@@ -1,15 +1,16 @@
 (() => {
 'use strict';
 
-/** FreightLogic v22.1.0 USA ENGINE
+/** FreightLogic v23.0.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
+ *  v23: Proactive Positioning Engine (F24)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
  *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '22.1.0';
+const APP_VERSION = '23.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -1317,7 +1318,9 @@ async function importJSON(file, opts={}){
       // v21 new settings keys
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId',
       // v22 F21/F22/F23 onboarding flags
-      'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen']);
+      'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
+      // v23 F24 positioning engine flags
+      'f24PostDeliveryCount','f24AutoBriefDisabled','f24OnboardingSeen']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -3157,6 +3160,8 @@ async function renderHome(){
   renderTripTrackingUI().catch(()=>{});
   // F22: Money dashboard card (shown after 1+ trips)
   renderMoneyCard().catch(()=>{});
+  // F24: Positioning Engine card (non-blocking)
+  renderPositioningCard().catch(()=>{});
 }
 
 // ---- Performance Command Center ----
@@ -7833,6 +7838,8 @@ function openTripWizard(existing=null){
     }
     const saved = await upsertTrip(trip);
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
+    _positioningCache = null; // F24: clear positioning cache on trip save
+    if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
     if (stepNo >= 2){
       const f = $('#f_receipts', body).files;
@@ -10487,6 +10494,223 @@ function renderLaneIntelHTML(intel){
 // Hook lane recording into trip saves — call after saveTrip
 async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); } }
 
+// ================================================================================
+// F24: PROACTIVE POSITIONING ENGINE (v23.0.0)
+// ================================================================================
+
+let _positioningCache = null; // { city, brief, ts }
+
+async function getPositioningBrief(city) {
+  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
+
+  // Return cached result if same city within 5 min
+  if (_positioningCache && _positioningCache.city === city && (Date.now() - _positioningCache.ts) < 300000) {
+    return _positioningCache.brief;
+  }
+
+  // 1. Market lookup
+  const market = naLookupMarket(city) || usaLookupMarket(city) || null;
+  const coords = getMarketCoords(city) || (market && market.lat ? { lat: market.lat, lng: market.lng } : null);
+
+  // 2. Reload score
+  const reloadScore = await getCityReloadScore(city);
+
+  // 3. Outbound lanes — build from trips
+  let outboundLanes = [];
+  try {
+    const { trips } = await _getTripsAndExps();
+    const normCity = normalizeLanePart(city);
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+
+    // Group by normalized destination
+    const destMap = {};
+    for (const t of fromHere) {
+      if (!t.destination) continue;
+      const normDest = normalizeLanePart(t.destination);
+      if (!destMap[normDest]) destMap[normDest] = { destRaw: t.destination, trips: [] };
+      destMap[normDest].trips.push(t);
+    }
+
+    for (const [normDest, data] of Object.entries(destMap)) {
+      const ts = data.trips;
+      let totalPay = 0, totalMiles = 0, bestPay = 0, lastDate = '';
+      let minRpm = Infinity, maxRpm = 0;
+      for (const t of ts) {
+        const pay = Number(t.pay || 0);
+        const loaded = Number(t.loadedMiles || 0);
+        const empty = Number(t.emptyMiles || 0);
+        const miles = loaded + empty;
+        if (pay > 0 && miles > 0) {
+          const rpm = pay / miles;
+          if (rpm < minRpm) minRpm = rpm;
+          if (rpm > maxRpm) maxRpm = rpm;
+        }
+        totalPay += pay;
+        totalMiles += miles;
+        if (pay > bestPay) bestPay = pay;
+        if (t.pickupDate && t.pickupDate > lastDate) lastDate = t.pickupDate;
+      }
+      const count = ts.length;
+      const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+      const avgPay = count > 0 ? roundCents(totalPay / count) : 0;
+      if (minRpm === Infinity) minRpm = 0;
+
+      // Dest display name and role
+      const destMarket = usaLookupMarket(data.destRaw) || naLookupMarket(data.destRaw);
+      const destRole = destMarket ? destMarket.role : null;
+      const cityDisplay = data.destRaw.trim();
+      const displayName = city.trim().charAt(0).toUpperCase() + city.trim().slice(1) + ' \u2192 ' + cityDisplay.charAt(0).toUpperCase() + cityDisplay.slice(1);
+
+      outboundLanes.push({
+        dest: normDest,
+        destDisplay: cityDisplay,
+        destRole,
+        avgRPM,
+        count,
+        bestPay,
+        lastDate,
+        totalPay,
+        totalMiles,
+        minRpm: parseFloat(minRpm.toFixed(2)),
+        maxRpm: parseFloat(maxRpm.toFixed(2)),
+        // openLaneBreakdown compatibility fields
+        display: displayName,
+        avgRpm: avgRPM.toFixed(2),
+        trend: 0,
+        trendLabel: 'Stable',
+        trips: count,
+        avgPay,
+      });
+    }
+    outboundLanes.sort((a, b) => b.avgRPM - a.avgRPM);
+    outboundLanes = outboundLanes.slice(0, 5);
+  } catch(e) { outboundLanes = []; }
+
+  // 4. Nearby markets (within 150mi)
+  let nearbyMarkets = [];
+  if (coords) {
+    const rolePriority = { anchor: 0, support: 1, feeder: 2, transitional: 3, trap: 4 };
+    const normCity = normalizeLanePart(city);
+    for (const [key, m] of Object.entries(USA_MARKETS)) {
+      if (!m.lat || !m.lng) continue;
+      if (key === normCity) continue;
+      const dist = haversineDistanceMi(coords.lat, coords.lng, m.lat, m.lng);
+      if (dist <= 150) {
+        const displayName = key.charAt(0).toUpperCase() + key.slice(1);
+        nearbyMarkets.push({ city: key, displayName, role: m.role, zone: m.zone, distanceMi: Math.round(dist) });
+      }
+    }
+    nearbyMarkets.sort((a, b) => {
+      const pa = rolePriority[a.role] ?? 5;
+      const pb = rolePriority[b.role] ?? 5;
+      if (pa !== pb) return pa - pb;
+      return a.distanceMi - b.distanceMi;
+    });
+    nearbyMarkets = nearbyMarkets.slice(0, 8);
+  }
+
+  // 5. Weather alerts (non-blocking)
+  let weatherAlerts = [];
+  if (coords) {
+    try { weatherAlerts = await checkRouteWeather(coords, coords); } catch(e) { weatherAlerts = []; }
+  }
+
+  // 6. Patterns
+  const patterns = { totalTrips: 0, bestDay: null, worstDay: null, topDest: null };
+  try {
+    const { trips } = await _getTripsAndExps();
+    const normCity = normalizeLanePart(city);
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity && t.pickupDate);
+    patterns.totalTrips = fromHere.length;
+
+    if (fromHere.length >= 3) {
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const byDay = {};
+      for (const t of fromHere) {
+        const day = new Date(t.pickupDate).getDay();
+        if (!byDay[day]) byDay[day] = [];
+        byDay[day].push(t);
+      }
+      const dayStats = [];
+      for (const [day, ts] of Object.entries(byDay)) {
+        if (ts.length < 2) continue;
+        let totalPay = 0, totalMiles = 0;
+        for (const t of ts) {
+          totalPay += Number(t.pay || 0);
+          totalMiles += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+        }
+        const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+        dayStats.push({ name: dayNames[Number(day)], avgRPM, count: ts.length });
+      }
+      if (dayStats.length) {
+        dayStats.sort((a, b) => b.avgRPM - a.avgRPM);
+        patterns.bestDay = dayStats[0];
+        if (dayStats.length >= 3) patterns.worstDay = dayStats[dayStats.length - 1];
+      }
+
+      // Top destination
+      const destCount = {};
+      for (const t of fromHere) {
+        if (!t.destination) continue;
+        const nd = normalizeLanePart(t.destination);
+        destCount[nd] = (destCount[nd] || 0) + 1;
+      }
+      const sorted = Object.entries(destCount).sort((a, b) => b[1] - a[1]);
+      if (sorted.length) patterns.topDest = sorted[0][0];
+    }
+  } catch(e) { /* non-critical */ }
+
+  // 7. Command logic
+  let command = 'HUNT';
+  let commandReason = 'Unknown market. No history yet — watch boards.';
+  let repositionTarget = null;
+
+  const nearestAnchor = nearbyMarkets.find(m => m.role === 'anchor' || m.role === 'support');
+
+  if (reloadScore) {
+    if (reloadScore.grade === 'A' || reloadScore.grade === 'B') {
+      command = 'HOLD';
+      commandReason = `${reloadScore.label} \u2014 avg ${reloadScore.avg}h reload (${reloadScore.count} records). Wait for a strong load.`;
+    } else if (reloadScore.grade === 'D' && outboundLanes.length === 0) {
+      command = 'REPOSITION';
+      if (nearestAnchor) {
+        commandReason = `Dead reload zone. No outbound history. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
+        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
+      } else {
+        commandReason = 'Dead reload zone. No outbound history. No nearby anchor found.';
+      }
+    } else {
+      command = 'HUNT';
+      const best = outboundLanes[0];
+      commandReason = best
+        ? `Slow reload but you have options. Target: ${escapeHtml(best.destDisplay)} at $${best.avgRPM.toFixed(2)} avg.`
+        : 'Slow reload. Check boards for outbound loads.';
+    }
+  } else if (market) {
+    if (market.role === 'anchor' || market.role === 'support') {
+      command = 'HOLD';
+      commandReason = `${market.role.charAt(0).toUpperCase() + market.role.slice(1)} market \u2014 reloads likely. Log outcomes to sharpen your data.`;
+    } else if (market.role === 'trap') {
+      command = 'REPOSITION';
+      if (nearestAnchor) {
+        commandReason = `Known trap market. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
+        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
+      } else {
+        commandReason = 'Known trap market. Find nearest anchor market.';
+      }
+    }
+  }
+
+  // 8. Confidence
+  let confidence = 'LOW';
+  if (reloadScore && reloadScore.count >= 3 && outboundLanes.length >= 3) confidence = 'HIGH';
+  else if (reloadScore || outboundLanes.length >= 1) confidence = 'MEDIUM';
+
+  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason, repositionTarget, confidence };
+  _positioningCache = { city, brief, ts: Date.now() };
+  return brief;
+}
+
 // ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
 function getWeekId(date){
   const d = date ? new Date(date) : new Date();
@@ -12522,6 +12746,15 @@ function _doStartTracking() {
     if (!_activeTracking) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; return; }
     _updateTrackingUI();
     _persistTrackingState();
+    // F24: Refresh positioning card when stationary 10+ min
+    if (_activeTracking && _activeTracking.lastPos) {
+      const age = Date.now() - (_activeTracking.lastPos.ts || 0);
+      if (age >= 600000 && !_activeTracking._f24Shown) {
+        _activeTracking._f24Shown = true;
+        renderPositioningCard().catch(() => {});
+      }
+      if (age < 60000) _activeTracking._f24Shown = false; // reset when moving again
+    }
   }, 30000);
   const d = $('#f21TrackArea'); if (d) _renderTrackingActive(d);
   toast('Trip tracking started — drive safely!');
@@ -12540,6 +12773,7 @@ function _persistTrackingState() {
 
 async function stopTripTracking() {
   if (!_activeTracking) return;
+  if (_activeTracking) _activeTracking._f24Shown = false; // F24: reset stationary flag
   if (_activeTracking.watcherId !== null) navigator.geolocation.clearWatch(_activeTracking.watcherId);
   if (_trackingIntervalId) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; }
   const t = _activeTracking;
@@ -12656,6 +12890,271 @@ async function resumeTrackingIfActive() {
 }
 
 
+
+// ================================================================================
+// F24: POSITIONING CARD + POST-DELIVERY BRIEF (v23.0.0)
+// ================================================================================
+
+async function renderPositioningCard(overrideCity, isExploring) {
+  const card = $('#homePositioningCard');
+  if (!card) return;
+
+  // Step 1: Determine city
+  let city = overrideCity || null;
+
+  if (!city && _activeTracking && _activeTracking.lastPos) {
+    const { lat, lng } = _activeTracking.lastPos;
+    let best = null, bestDist = Infinity;
+    for (const [key, m] of Object.entries(USA_MARKETS)) {
+      if (!m.lat || !m.lng) continue;
+      const d = haversineDistanceMi(lat, lng, m.lat, m.lng);
+      if (d < 30 && d < bestDist) { bestDist = d; best = key; }
+    }
+    if (best) city = best;
+  }
+
+  if (!city) {
+    try {
+      const { trips } = await _getTripsAndExps();
+      const latest = trips.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+      if (latest && latest.destination) city = latest.destination;
+    } catch(e) { /* ok */ }
+  }
+
+  if (!city) { card.style.display = 'none'; return; }
+
+  // Step 2: Skeleton
+  card.style.display = '';
+  card.innerHTML = `<div class="card" style="padding:20px;text-align:center"><div class="muted" style="font-size:13px">\uD83D\uDCCD Analyzing ${escapeHtml(city)}\u2026</div></div>`;
+
+  // Step 3: Fetch brief and render
+  let brief;
+  try { brief = await getPositioningBrief(city); }
+  catch(e) { card.innerHTML = ''; card.style.display = 'none'; return; }
+
+  // Onboarding check
+  const f24seen = await getSetting('f24OnboardingSeen', false);
+  if (!f24seen) {
+    const slot = card.parentNode;
+    if (slot && !slot.querySelector('#f24OnboardingCard')) {
+      const ob = document.createElement('div');
+      ob.id = 'f24OnboardingCard';
+      ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+      ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        + '<span style="font-size:22px">\uD83D\uDCCD</span>'
+        + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Co-Driver</strong></div>'
+        + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">After every delivery, FreightLogic shows what to do next \u2014 reload intel, best lanes out, weather, and nearby markets. Powered by YOUR trips. The more you log, the smarter this gets.</div>'
+        + '<div style="margin-top:12px"><button class="btn primary" id="f24ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      const f24Dismiss = async () => { await setSetting('f24OnboardingSeen', true); ob.remove(); };
+      ob.querySelector('#f24ObDismiss')?.addEventListener('click', f24Dismiss);
+      slot.insertBefore(ob, card);
+    }
+  }
+
+  const { market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
+
+  // Command badge styles
+  const cmdStyles = {
+    HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+    REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
+    HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
+  };
+  const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+
+  // Market subtitle
+  let marketSub = 'Unknown market';
+  if (market) {
+    const USA_ZONES_MAP = typeof USA_ZONES !== 'undefined' ? USA_ZONES : {};
+    const zoneLabel = (USA_ZONES_MAP[market.zone] && USA_ZONES_MAP[market.zone].label) ? USA_ZONES_MAP[market.zone].label : (market.zone || '');
+    marketSub = `${escapeHtml(market.role || '')} market \u00B7 ${escapeHtml(zoneLabel)}`;
+  }
+
+  // Best day line
+  const bestDayLine = patterns.bestDay
+    ? `<div style="font-size:12px;margin-top:4px;opacity:.8">Best day: ${escapeHtml(patterns.bestDay.name)} ($${patterns.bestDay.avgRPM.toFixed(2)} RPM)</div>`
+    : '';
+
+  // Outbound lanes HTML
+  let lanesHtml = '';
+  if (outboundLanes.length) {
+    const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+    lanesHtml = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin:14px 0 6px">Best Outbound Lanes</div>`;
+    for (const lane of outboundLanes) {
+      const roleHtml = lane.destRole ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border-subtle);margin-left:6px">${escapeHtml(lane.destRole)}</span>` : '';
+      lanesHtml += `<div class="f24-lane-row" data-dest="${escapeHtml(lane.dest)}" style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:8px 4px;border-bottom:1px solid var(--border-subtle);cursor:pointer">
+        <div style="flex:1;min-width:0">
+          <span style="font-size:13px;font-weight:600">${escapeHtml(cityDisplay)} \u2192 ${escapeHtml(lane.destDisplay)}</span>${roleHtml}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--accent)">$${lane.avgRPM.toFixed(2)}</div>
+          <div style="font-size:11px;color:var(--text-tertiary)">${lane.count} run${lane.count !== 1 ? 's' : ''}</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  // Weather HTML
+  let weatherHtml = '';
+  if (weatherAlerts && weatherAlerts.length) {
+    const alertText = weatherAlerts.map(a => escapeHtml(a.event || a.label || String(a))).join('; ');
+    weatherHtml = `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:12px;color:var(--warn)">\u26A0\uFE0F ${alertText} (NWS)</div>`;
+  }
+
+  // Nearby markets HTML (collapsed, only if not isExploring)
+  let nearbyHtml = '';
+  if (!isExploring && nearbyMarkets.length) {
+    nearbyHtml = `<div id="f24NearbySection" style="margin-top:12px">
+      <button id="f24NearbyToggle" class="btn" style="width:100%;text-align:left;font-size:12px;color:var(--text-secondary);background:none;border:none;padding:4px 0;cursor:pointer">\u25B8 Nearby Markets (tap to expand)</button>
+      <div id="f24NearbyList" style="display:none"></div>
+    </div>`;
+  }
+
+  // Confidence line
+  const tripWord = patterns.totalTrips === 1 ? 'trip' : 'trips';
+  const confidenceLine = `<div style="font-size:12px;color:var(--text-tertiary);margin-top:10px">Based on ${patterns.totalTrips} ${tripWord} from this market</div>`;
+
+  // Render card
+  const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+  card.innerHTML = `<div class="card" style="padding:16px 14px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:2px">\uD83D\uDCCD YOUR POSITION: ${escapeHtml(cityDisplay)}</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">${marketSub}</div>
+    <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
+      <div style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(command)}</div>
+      <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
+      ${bestDayLine}
+    </div>
+    ${lanesHtml}
+    ${weatherHtml}
+    ${nearbyHtml}
+    ${confidenceLine}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn primary f24-eval-btn" style="flex:1;min-height:48px;font-size:13px">Open Evaluator</button>
+      <button class="btn f24-reload-btn" style="flex:1;min-height:48px;font-size:13px">Log Reload Outcome</button>
+    </div>
+  </div>`;
+
+  // Wire up outbound lane taps
+  card.querySelectorAll('.f24-lane-row').forEach(el => {
+    const laneObj = outboundLanes.find(l => l.dest === el.dataset.dest);
+    if (!laneObj) return;
+    el.addEventListener('click', async () => {
+      haptic(10);
+      const { trips } = await _getTripsAndExps();
+      openLaneBreakdown(laneObj, trips);
+    });
+  });
+
+  // Wire up nearby markets toggle
+  const nearbyToggle = card.querySelector('#f24NearbyToggle');
+  const nearbyList = card.querySelector('#f24NearbyList');
+  if (nearbyToggle && nearbyList) {
+    nearbyToggle.addEventListener('click', () => {
+      haptic(10);
+      if (nearbyList.style.display === 'none') {
+        nearbyList.style.display = '';
+        nearbyToggle.textContent = '\u25BE Nearby Markets';
+        if (!nearbyList.children.length) {
+          nearbyMarkets.forEach(m => {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.style.cssText = 'width:100%;text-align:left;margin-top:6px;min-height:48px;font-size:12px;padding:10px 12px';
+            btn.textContent = `${m.displayName} \u00B7 ${m.role} \u00B7 ${m.distanceMi}mi`;
+            btn.addEventListener('click', () => {
+              haptic(10);
+              renderPositioningCard(m.city, true);
+            });
+            nearbyList.appendChild(btn);
+          });
+        }
+      } else {
+        nearbyList.style.display = 'none';
+        nearbyToggle.textContent = '\u25B8 Nearby Markets (tap to expand)';
+      }
+    });
+  }
+
+  // Wire up action buttons
+  card.querySelector('.f24-eval-btn')?.addEventListener('click', () => { haptic(10); location.hash = '#omega'; });
+  card.querySelector('.f24-reload-btn')?.addEventListener('click', () => {
+    haptic(10);
+    openReloadScoring();
+    setTimeout(() => { const inp = document.querySelector('#rsCity'); if (inp) inp.value = city; }, 150);
+  });
+}
+
+async function _triggerPostDeliveryBrief(city) {
+  try {
+    const disabled = await getSetting('f24AutoBriefDisabled', false);
+    if (disabled) return;
+    await new Promise(r => setTimeout(r, 1000));
+    const brief = await getPositioningBrief(city);
+
+    // Increment counter
+    const count = (await getSetting('f24PostDeliveryCount', 0)) + 1;
+    await setSetting('f24PostDeliveryCount', count);
+
+    const { market, reloadScore, outboundLanes, patterns, command, commandReason } = brief;
+    const cmdStyles = {
+      HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+      REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
+      HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
+    };
+    const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+
+    const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+    let marketSub = '';
+    if (market) {
+      const USA_ZONES_MAP = typeof USA_ZONES !== 'undefined' ? USA_ZONES : {};
+      const zoneLabel = (USA_ZONES_MAP[market.zone] && USA_ZONES_MAP[market.zone].label) ? USA_ZONES_MAP[market.zone].label : (market.zone || '');
+      marketSub = `<div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">${escapeHtml(market.role || '')} \u00B7 ${escapeHtml(zoneLabel)}</div>`;
+    }
+
+    let statsBullets = '';
+    if (reloadScore) statsBullets += `<li>Reload: Grade ${escapeHtml(reloadScore.grade)}, avg ${reloadScore.avg}h</li>`;
+    if (outboundLanes[0]) statsBullets += `<li>Best outbound: ${escapeHtml(outboundLanes[0].destDisplay)} at $${outboundLanes[0].avgRPM.toFixed(2)}</li>`;
+    if (patterns.bestDay) statsBullets += `<li>Best day here: ${escapeHtml(patterns.bestDay.name)}</li>`;
+
+    // Show opt-out checkbox after 3rd view
+    const showOptOut = count >= 3;
+    const optOutHtml = showOptOut
+      ? `<div style="margin-top:12px;padding:10px;background:var(--surface-0);border-radius:8px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="f24DontShow" style="width:16px;height:16px"> Don't show this automatically
+          </label>
+        </div>`
+      : '';
+
+    const body = document.createElement('div');
+    body.innerHTML = `<div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:13px;color:var(--text-tertiary)">You just delivered in</div>
+        <div style="font-size:20px;font-weight:700;margin-top:4px">${escapeHtml(cityDisplay)}</div>
+        ${marketSub}
+      </div>
+      <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
+        <div style="font-size:20px;font-weight:900">${escapeHtml(command)}</div>
+        <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
+      </div>
+      ${statsBullets ? `<ul style="font-size:13px;padding-left:18px;margin:0 0 8px;line-height:1.8">${statsBullets}</ul>` : ''}
+      ${optOutHtml}
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn primary f24-gotit-btn" style="flex:1;min-height:48px">Got It</button>
+        <button class="btn f24-fullbrief-btn" style="flex:1;min-height:48px">Full Brief</button>
+      </div>`;
+
+    body.querySelector('.f24-gotit-btn')?.addEventListener('click', async () => {
+      const cb = body.querySelector('#f24DontShow');
+      if (cb && cb.checked) await setSetting('f24AutoBriefDisabled', true);
+      closeModal();
+    });
+    body.querySelector('.f24-fullbrief-btn')?.addEventListener('click', () => {
+      closeModal();
+      location.hash = '#home';
+      setTimeout(() => { $('#homePositioningCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400);
+    });
+
+    openModal('\uD83D\uDCCD What\'s Next?', body);
+  } catch(e) { /* non-critical */ }
+}
 
 // ================================================================================
 // F22: MONEY DASHBOARD (v22.0.0)
