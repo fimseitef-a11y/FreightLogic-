@@ -1,4 +1,4 @@
-/* FreightLogic v22.0.1 — Voice Load Module */
+/* FreightLogic v23.1.0 — Voice Load Module */
 (() => {
   'use strict';
 
