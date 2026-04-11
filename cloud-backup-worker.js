@@ -1,4 +1,5 @@
-// FreightLogic Cloud Backup Worker v7 - Multi-User + AI Evaluate + AI Extract + Delta Sync
+// FreightLogic Cloud Backup Worker v8 - Multi-User + AI Evaluate + AI Extract + Delta Sync
+// Optimized for Cloudflare free tier: pointer keys replace list() calls; hourly rate-limit windows.
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
 // Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
@@ -34,16 +35,22 @@ export default {
           const userId = 'u_' + crypto.randomUUID().slice(0, 12);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
           const rec = { userId, name, token, createdAt: new Date().toISOString(), active: true };
-          await env.BACKUPS.put('token:' + token, JSON.stringify(rec));
-          await env.BACKUPS.put('user:' + userId, JSON.stringify(rec));
+          // Write both records in parallel
+          await Promise.all([
+            env.BACKUPS.put('token:' + token, JSON.stringify(rec)),
+            env.BACKUPS.put('user:' + userId, JSON.stringify(rec))
+          ]);
           return json({ ok: true, userId, name, token }, 201, cors);
         }
 
         if (request.method === 'GET' && path === '/admin/users') {
           const list = await env.BACKUPS.list({ prefix: 'user:' });
+          // Filter to top-level user records only (exclude device/backup subkeys)
+          const userKeys = list.keys.filter(k => /^user:u_[^:]+$/.test(k.name));
+          // Fetch all user records in parallel
+          const vals = await Promise.all(userKeys.map(k => env.BACKUPS.get(k.name)));
           const users = [];
-          for (const k of list.keys) {
-            const val = await env.BACKUPS.get(k.name);
+          for (const val of vals) {
             if (val) { try { users.push(JSON.parse(val)); } catch {} }
           }
           return json({ ok: true, users }, 200, cors);
@@ -59,8 +66,10 @@ export default {
           let parsed;
           try { parsed = JSON.parse(userRec); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
           parsed.active = false;
-          await env.BACKUPS.put('user:' + delId, JSON.stringify(parsed));
-          if (parsed.token) await env.BACKUPS.delete('token:' + parsed.token);
+          // Deactivate user record and revoke token in parallel
+          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
+          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));
+          await Promise.all(ops);
           return json({ ok: true, revoked: delId }, 200, cors);
         }
 
@@ -89,8 +98,8 @@ export default {
 
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
-        // Rate limit: 20 requests per minute per user
-        const rateLimited = await checkRateLimit(env, driverUserId, 20, 'eval');
+        // Rate limit: 100 requests per hour per user (hourly window = far fewer KV writes than per-minute)
+        const rateLimited = await checkRateLimit(env, driverUserId, 100, 'eval');
         if (rateLimited) {
           return json({ ok: false, error: 'Rate limit exceeded. Please wait before evaluating again.' }, 429, cors);
         }
@@ -159,8 +168,8 @@ export default {
 
       // POST /extract — AI field extraction from raw load text
       if (request.method === 'POST' && path === '/extract') {
-        // Rate limit: 10 requests per minute per user
-        const rateLimited = await checkRateLimit(env, driverUserId, 10, 'extract');
+        // Rate limit: 50 requests per hour per user
+        const rateLimited = await checkRateLimit(env, driverUserId, 50, 'extract');
         if (rateLimited) {
           return json({ ok: false, error: 'Rate limit exceeded. Please wait before extracting again.' }, 429, cors);
         }
@@ -212,19 +221,19 @@ export default {
         return json({
           ok: true,
           fields: {
-            orderNo:      String(parsed.orderNo      || '').slice(0, 40),
-            customer:     String(parsed.customer     || '').slice(0, 80),
-            broker:       String(parsed.broker       || '').slice(0, 80),
-            origin:       String(parsed.origin       || '').slice(0, 100),
-            destination:  String(parsed.destination  || '').slice(0, 100),
-            pay:          finitePositive(parsed.pay),
-            loadedMiles:  intPositive(parsed.loadedMiles),
-            deadheadMiles:intPositive(parsed.deadheadMiles),
-            pickupDate:   safeDate(parsed.pickupDate),
-            deliveryDate: safeDate(parsed.deliveryDate),
-            weight:       intPositive(parsed.weight),
-            commodity:    String(parsed.commodity    || '').slice(0, 80),
-            notes:        String(parsed.notes        || '').slice(0, 300),
+            orderNo:       String(parsed.orderNo      || '').slice(0, 40),
+            customer:      String(parsed.customer     || '').slice(0, 80),
+            broker:        String(parsed.broker       || '').slice(0, 80),
+            origin:        String(parsed.origin       || '').slice(0, 100),
+            destination:   String(parsed.destination  || '').slice(0, 100),
+            pay:           finitePositive(parsed.pay),
+            loadedMiles:   intPositive(parsed.loadedMiles),
+            deadheadMiles: intPositive(parsed.deadheadMiles),
+            pickupDate:    safeDate(parsed.pickupDate),
+            deliveryDate:  safeDate(parsed.deliveryDate),
+            weight:        intPositive(parsed.weight),
+            commodity:     String(parsed.commodity    || '').slice(0, 80),
+            notes:         String(parsed.notes        || '').slice(0, 300),
           },
           model,
           user: tokenData.name
@@ -242,21 +251,31 @@ export default {
         }
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
-        await env.BACKUPS.put(key, payload);
 
-        // Rotate — keep last 3
-        const bp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
-        const bl = await env.BACKUPS.list({ prefix: bp });
-        if (bl.keys.length > 3) {
-          const sorted = bl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
-          const toDelete = sorted.slice(0, sorted.length - 3);
-          for (const k of toDelete) await env.BACKUPS.delete(k.name);
+        // Write backup data and read pointer in parallel (saves one round-trip)
+        const [, ptr] = await Promise.all([
+          env.BACKUPS.put(key, payload),
+          getPtr(env, driverUserId, deviceId, 'b')
+        ]);
+
+        ptr.keys.push(key);
+        if (ptr.keys.length > 3) {
+          const toDelete = ptr.keys.splice(0, ptr.keys.length - 3);
+          ptr.count = ptr.keys.length;
+          // Delete old backups and save updated pointer in parallel
+          await Promise.all([
+            ...toDelete.map(k => env.BACKUPS.delete(k)),
+            savePtr(env, driverUserId, deviceId, 'b', ptr)
+          ]);
+        } else {
+          ptr.count = ptr.keys.length;
+          await savePtr(env, driverUserId, deviceId, 'b', ptr);
         }
 
         return json({ ok: true, key, size: payload.length }, 200, cors);
       }
 
-      // POST /backup/delta — v21 T2B: store delta (partial sync payload)
+      // POST /backup/delta — store delta (partial sync payload)
       if (request.method === 'POST' && path === '/backup/delta') {
         const payload = await request.text();
         if (!payload || payload.length < 10) {
@@ -267,50 +286,63 @@ export default {
         }
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
-        await env.BACKUPS.put(key, payload, { expirationTtl: 7 * 24 * 3600 }); // expire deltas after 7 days
-        // Limit deltas — keep last 20
-        const dp = 'user:' + driverUserId + ':device:' + deviceId + ':delta:';
-        const dl = await env.BACKUPS.list({ prefix: dp });
-        if (dl.keys.length > 20) {
-          const dsorted = dl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
-          const toDelete = dsorted.slice(0, dsorted.length - 20);
-          for (const k of toDelete) await env.BACKUPS.delete(k.name);
+
+        // Write delta and read pointer in parallel
+        const [, ptr] = await Promise.all([
+          env.BACKUPS.put(key, payload, { expirationTtl: 7 * 24 * 3600 }),
+          getPtr(env, driverUserId, deviceId, 'd')
+        ]);
+
+        ptr.keys.push(key);
+        if (ptr.keys.length > 20) {
+          const toDelete = ptr.keys.splice(0, ptr.keys.length - 20);
+          ptr.count = ptr.keys.length;
+          await Promise.all([
+            ...toDelete.map(k => env.BACKUPS.delete(k)),
+            savePtr(env, driverUserId, deviceId, 'd', ptr)
+          ]);
+        } else {
+          ptr.count = ptr.keys.length;
+          await savePtr(env, driverUserId, deviceId, 'd', ptr);
         }
+
         return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest
       if (request.method === 'GET' && path === '/backup') {
-        const gp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
-        const gl = await env.BACKUPS.list({ prefix: gp });
-        if (gl.keys.length === 0) {
+        const ptr = await getPtr(env, driverUserId, deviceId, 'b');
+        if (!ptr.keys.length) {
           return json({ ok: false, error: 'No backup found' }, 404, cors);
         }
-        const gsorted = gl.keys.slice().sort((a, b) => a.name.localeCompare(b.name));
-        const data = await env.BACKUPS.get(gsorted[gsorted.length - 1].name);
+        const data = await env.BACKUPS.get(ptr.keys[ptr.keys.length - 1]);
+        if (!data) return json({ ok: false, error: 'No backup found' }, 404, cors);
         return new Response(data, { status: 200, headers: cors });
       }
 
-      // GET /list — list backups for this user+device
+      // GET /list — list backup and delta keys for this user+device
       if (request.method === 'GET' && path === '/list') {
-        const lp = 'user:' + driverUserId + ':device:' + deviceId + ':';
-        const ll = await env.BACKUPS.list({ prefix: lp });
-        return json({ ok: true, backups: ll.keys.map(k => k.name), count: ll.keys.length }, 200, cors);
+        const [bptr, dptr] = await Promise.all([
+          getPtr(env, driverUserId, deviceId, 'b'),
+          getPtr(env, driverUserId, deviceId, 'd')
+        ]);
+        const backups = [...bptr.keys, ...dptr.keys];
+        return json({ ok: true, backups, count: backups.length }, 200, cors);
       }
 
-      // GET /status — backup presence check
+      // GET /status — backup presence check (uses pointer key — no list() call)
       if (request.method === 'GET' && path === '/status') {
-        const sp = 'user:' + driverUserId + ':device:' + deviceId + ':';
-        const sl = await env.BACKUPS.list({ prefix: sp });
-        return json({ ok: true, hasBackup: sl.keys.length > 0, count: sl.keys.length, user: tokenData.name }, 200, cors);
+        const ptr = await getPtr(env, driverUserId, deviceId, 'b');
+        return json({ ok: true, hasBackup: ptr.count > 0, count: ptr.count, user: tokenData.name }, 200, cors);
       }
 
       // DELETE /backup — remove all backups for this user+device
       if (request.method === 'DELETE' && path === '/backup') {
-        const dp = 'user:' + driverUserId + ':device:' + deviceId + ':backup:';
-        const dl = await env.BACKUPS.list({ prefix: dp });
-        for (const k of dl.keys) await env.BACKUPS.delete(k.name);
-        return json({ ok: true, deleted: dl.keys.length }, 200, cors);
+        const ptr = await getPtr(env, driverUserId, deviceId, 'b');
+        const ops = ptr.keys.map(k => env.BACKUPS.delete(k));
+        ops.push(savePtr(env, driverUserId, deviceId, 'b', { keys: [], count: 0 }));
+        await Promise.all(ops);
+        return json({ ok: true, deleted: ptr.keys.length }, 200, cors);
       }
 
       return json({ ok: false, error: 'Not found' }, 404, cors);
@@ -321,16 +353,56 @@ export default {
   }
 };
 
-// ─── Rate limiter (sliding minute window via KV) ──────────────────────────────
+// ─── Backup/delta pointer helpers ─────────────────────────────────────────────
+//
+// Instead of calling BACKUPS.list() (limited to 1,000/day on free tier) to find
+// the latest backup or count backups, we maintain a small pointer key per
+// user+device that stores { keys: string[], count: number }.
+//
+// type 'b' = full backups  (key suffix: bptr)
+// type 'd' = delta backups (key suffix: dptr)
+//
+// On first access the pointer is absent; we run a one-time list() to migrate
+// existing keys and then persist the pointer so future calls skip the list.
+
+async function getPtr(env, userId, deviceId, type) {
+  const ptrKey = 'user:' + userId + ':device:' + deviceId + ':' + type + 'ptr';
+  const raw = await env.BACKUPS.get(ptrKey);
+  if (raw) {
+    try { return JSON.parse(raw); } catch {}
+  }
+  // First-time: lazily migrate existing keys from a list (runs once per user+device+type)
+  const prefix = 'user:' + userId + ':device:' + deviceId + ':' + (type === 'b' ? 'backup:' : 'delta:');
+  const list = await env.BACKUPS.list({ prefix });
+  const keys = list.keys.map(k => k.name).sort();
+  const ptr = { keys, count: keys.length };
+  if (keys.length > 0) {
+    // Persist pointer so all future calls skip the list
+    await env.BACKUPS.put(ptrKey, JSON.stringify(ptr));
+  }
+  return ptr;
+}
+
+async function savePtr(env, userId, deviceId, type, ptr) {
+  const ptrKey = 'user:' + userId + ':device:' + deviceId + ':' + type + 'ptr';
+  await env.BACKUPS.put(ptrKey, JSON.stringify(ptr));
+}
+
+// ─── Rate limiter (sliding hour window via KV) ────────────────────────────────
+//
+// Per-hour windows instead of per-minute drastically reduce KV write churn:
+// one rate-limit key is created per user per endpoint per hour rather than
+// one per minute. The higher per-hour ceiling (100 eval / 50 extract) is still
+// well above legitimate single-driver usage while blocking API abuse.
 
 async function checkRateLimit(env, userId, limit, ns = 'eval') {
-  const minute = Math.floor(Date.now() / 60000);
-  const key = 'rl:' + ns + ':' + userId + ':' + minute;
+  const hour = Math.floor(Date.now() / 3600000);
+  const key = 'rl:' + ns + ':' + userId + ':' + hour;
   const raw = await env.BACKUPS.get(key);
   const count = raw ? parseInt(raw, 10) : 0;
   if (count >= limit) return true;
-  // TTL 120s so KV cleans itself up after two minutes
-  await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 120 });
+  // TTL 7200s (2 hours) — key auto-cleans after two windows
+  await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 7200 });
   return false;
 }
 
