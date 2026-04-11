@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.1.0">
+  <link rel="manifest" href="manifest.json?v=23.2.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -731,6 +731,29 @@
       .menu-tile:hover { border-color: var(--border-focus); background: var(--surface-2) }
     }
 
+    /* ── Undo Toast ─────────────────────────────────────────────── */
+    #undoToast {
+      display: none; position: fixed;
+      bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+      left: 50%; transform: translateX(-50%);
+      z-index: 9999;
+      background: rgba(28,28,42,0.97);
+      color: #f0f0f6; border-radius: 14px;
+      padding: 13px 16px;
+      font-size: 14px; font-weight: 600;
+      white-space: nowrap;
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+      border: 1px solid rgba(255,255,255,0.12);
+      align-items: center; gap: 12px;
+    }
+    #undoToast.show { display: flex }
+    #undoToast .undo-btn {
+      background: var(--accent); color: #000;
+      border: none; border-radius: 8px;
+      padding: 5px 12px; font-size: 13px; font-weight: 700;
+      cursor: pointer; min-height: 32px;
+    }
+
     /* ── F21: GPS Trip Tracking ─────────────────────────────────── */
     .f21-pulse-dot {
       display: inline-block; flex-shrink: 0;
@@ -773,6 +796,9 @@
       <!-- Card 1: Welcome (new users only) -->
       <div id="homeWelcome" style="display:none"></div>
 
+      <!-- UX: Position Context Banner (populated by renderPositionContextBanner) -->
+      <div id="homePositionBanner" style="display:none;margin-top:10px"></div>
+
       <!-- F21: Trip Tracking slot (populated by renderTripTrackingUI) -->
       <div id="homeTripTrackCard" style="margin-top:10px"></div>
 
@@ -812,6 +838,9 @@
           <button class="btn" id="btnQuickFuel">＋ Fuel</button>
         </div>
       </div>
+
+      <!-- UX: Quick Evaluate button (populated by renderHome) -->
+      <div id="homeQuickEvalCard" style="display:none;margin-top:12px"></div>
 
       <!-- F22: Money Dashboard slot (populated by renderMoneyCard) -->
       <div id="homeMoneyCard" style="display:none"></div>
@@ -1167,6 +1196,7 @@
   <div class="modal-backdrop" id="backdrop"></div>
   <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1"><div class="modal-handle"></div><header><div class="mhead"><h2 id="modalTitle">Add</h2><button class="x" id="modalClose" aria-label="Close modal">✕</button></div></header><div id="modalBody"></div></div>
   <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+  <div id="undoToast" role="status" aria-live="assertive"></div>
   <div class="bottom"><nav class="nav" role="navigation" aria-label="Main navigation">
     <a href="#home" data-nav="home" class="active" aria-label="Home">
       <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
@@ -1201,8 +1231,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.1.0"></script>
-  <script src="voice-load.js?v=23.1.0"></script>
-  <script src="sw-bridge.js?v=23.1.0"></script>
+  <script src="app.js?v=23.2.0"></script>
+  <script src="voice-load.js?v=23.2.0"></script>
+  <script src="sw-bridge.js?v=23.2.0"></script>
 </body>
 </html>

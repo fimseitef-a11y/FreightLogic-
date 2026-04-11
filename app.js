@@ -10,7 +10,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.1.0';
+const APP_VERSION = '23.2.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -458,6 +458,45 @@ function toast(msg, isErr=false){
   haptic(isErr ? 30 : 10);
   clearTimeout(toast._tm);
   toast._tm = setTimeout(()=>{ t.className = 'toast hide'; }, 2400);
+}
+
+// ── Undo Toast: immediate UI deletion + 5s window to undo before IDB commit ──
+let _undoPending = null;
+function showUndoToast(label, doDelete, onUndo){
+  // Commit any previously pending deletion
+  if (_undoPending){
+    clearTimeout(_undoPending.timer);
+    _undoPending.doDelete().catch(()=>{});
+    _undoPending = null;
+  }
+  const el = $('#undoToast');
+  if (!el) return;
+  el.innerHTML = '';
+  const msg = document.createElement('span');
+  msg.textContent = label + ' deleted';
+  const btn = document.createElement('button');
+  btn.className = 'undo-btn';
+  btn.textContent = 'Undo';
+  btn.setAttribute('aria-label', 'Undo deletion');
+  el.appendChild(msg); el.appendChild(btn);
+  el.classList.add('show');
+  haptic(15);
+  const commit = async ()=>{
+    el.classList.remove('show');
+    _undoPending = null;
+    try{ await doDelete(); }catch(e){ console.warn('[FL] undo-delete commit:', e); }
+  };
+  _undoPending = {
+    timer: setTimeout(commit, 5000),
+    doDelete: commit,
+  };
+  btn.addEventListener('click', async ()=>{
+    clearTimeout(_undoPending?.timer);
+    _undoPending = null;
+    el.classList.remove('show');
+    haptic(10);
+    try{ await onUndo(); }catch(e){ console.warn('[FL] undo-delete restore:', e); }
+  });
 }
 
 let _modalCloseTimer = null;
@@ -3083,6 +3122,181 @@ function pulseKPI(el){
   el.classList.add('kpi-pop');
 }
 
+// ---- Position Context Banner ----
+async function renderPositionContextBanner(){
+  const slot = $('#homePositionBanner');
+  if (!slot) return;
+  try {
+    const { items } = await listTrips({ cursor: null });
+    const last = items[0];
+    if (!last || !last.destination){ slot.style.display = 'none'; return; }
+    const city = last.destination.toLowerCase().trim();
+    let line = '', color = 'var(--text-secondary)', bg = 'var(--surface-1)', icon = '📍';
+    const t1 = MW.tier1.some(c => city.includes(c));
+    const t2 = MW.tier2.some(c => city.includes(c));
+    const avoid = MW.avoid.some(c => city.includes(c));
+    if (t1){
+      line = `${escapeHtml(last.destination)} — Anchor market. Hold for $1.60+`;
+      color = 'var(--good)'; bg = 'var(--good-muted)'; icon = '🟢';
+    } else if (t2){
+      line = `${escapeHtml(last.destination)} — Support market. Target $1.50+`;
+      color = 'var(--accent-text)'; bg = 'var(--accent-muted)'; icon = '🟡';
+    } else if (avoid){
+      line = `${escapeHtml(last.destination)} — Limited reload options. Consider repositioning`;
+      color = 'var(--bad)'; bg = 'var(--bad-muted)'; icon = '🔴';
+    } else if (city.includes('transitional') || city.includes('transit')){
+      line = `${escapeHtml(last.destination)} — Transitional. Watch deadhead carefully`;
+      color = 'var(--warn)'; bg = 'var(--warn-muted)'; icon = '🟠';
+    } else {
+      // Unknown / thin market
+      line = `${escapeHtml(last.destination)} — Limited reload options. Consider repositioning`;
+      color = 'var(--warn)'; bg = 'var(--warn-muted)'; icon = '🟠';
+    }
+    slot.innerHTML = `<div style="padding:10px 14px;border-radius:10px;background:${bg};border:1px solid ${color}33;font-size:13px;font-weight:600;color:${color};display:flex;align-items:center;gap:8px"><span style="font-size:15px">${icon}</span><span>${line}</span></div>`;
+    slot.style.display = '';
+  } catch(e){ slot.style.display = 'none'; }
+}
+
+// ---- Home: Quick Evaluate button ----
+async function renderQuickEvalCard(){
+  const slot = $('#homeQuickEvalCard');
+  if (!slot) return;
+  slot.innerHTML = `<button id="homeQuickEvalBtn" style="width:100%;min-height:52px;border-radius:var(--r);background:linear-gradient(135deg,rgba(240,168,0,0.15),rgba(240,168,0,0.08));border:1.5px solid var(--accent-border);color:var(--accent-text);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:.2px" aria-label="Evaluate a load">
+    <span style="font-size:22px">⚡</span> Evaluate Load
+  </button>`;
+  slot.style.display = '';
+  const btn = $('#homeQuickEvalBtn');
+  if (btn) btn.addEventListener('click', ()=>{ haptic(15); openQuickEvalModal(); });
+}
+
+function openQuickEvalModal(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div style="padding:0">
+    <div id="qeResultSlot"></div>
+    <div id="qeInputSlot">
+      <p style="font-size:13px;color:var(--text-secondary);margin:0 0 14px;line-height:1.5">Paste a load offer or snap a photo of a rate confirmation to get an instant grade.</p>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <button id="qeModeText" class="btn primary" style="flex:1;min-height:48px;font-size:14px">📋 Paste Text</button>
+        <button id="qeModePhoto" class="btn" style="flex:1;min-height:48px;font-size:14px">📷 Take Photo</button>
+      </div>
+      <div id="qeTextSection" style="display:none">
+        <textarea id="qeText" rows="5" placeholder="Paste load details here — rate, miles, origin, destination..." style="width:100%;resize:vertical;font-size:13px;padding:12px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);color:var(--text)"></textarea>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn primary" id="qeSubmitText" style="flex:1;min-height:48px">Score Load ⚡</button>
+        </div>
+      </div>
+      <div id="qePhotoSection" style="display:none">
+        <input id="qePhoto" type="file" accept="image/*" capture="environment" style="width:100%;margin-bottom:10px" />
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn primary" id="qeSubmitPhoto" style="flex:1;min-height:48px">Score Load ⚡</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  const textSec = $('#qeTextSection', body);
+  const photoSec = $('#qePhotoSection', body);
+  const resultSlot = $('#qeResultSlot', body);
+  const inputSlot = $('#qeInputSlot', body);
+
+  $('#qeModeText', body).addEventListener('click', ()=>{
+    haptic(10);
+    textSec.style.display = ''; photoSec.style.display = 'none';
+    $('#qeModeText', body).classList.add('primary'); $('#qeModePhoto', body).classList.remove('primary');
+    setTimeout(()=> $('#qeText', body)?.focus(), 80);
+  });
+  $('#qeModePhoto', body).addEventListener('click', ()=>{
+    haptic(10);
+    photoSec.style.display = ''; textSec.style.display = 'none';
+    $('#qeModePhoto', body).classList.add('primary'); $('#qeModeText', body).classList.remove('primary');
+  });
+
+  async function _runQuickEval(rawText){
+    if (!rawText || !rawText.trim()){ toast('Enter some load details first', true); return; }
+    resultSlot.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">⚡ Scoring…</div>`;
+    inputSlot.style.display = 'none';
+    try {
+      const parsed = parseLoadTextEnhanced(rawText);
+      const rev = Number(parsed.pay) || 0;
+      const lm = Number(parsed.loadedMiles) || 0;
+      const dm = Number(parsed.deadheadMiles) || 0;
+      const origin = parsed.origin || '';
+      const dest = parsed.destination || '';
+      if (!rev || !lm){
+        resultSlot.innerHTML = '';
+        inputSlot.style.display = '';
+        toast('Could not find rate or miles in that text — try pasting more detail', true);
+        return;
+      }
+      // Fill evaluator DOM fields so mwEvaluateLoad works
+      ['mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest'].forEach(id => {
+        const el = $('#'+id); if (!el) return;
+        if (id==='mwRevenue') el.value = String(rev);
+        else if (id==='mwLoadedMi') el.value = String(lm);
+        else if (id==='mwDeadMi') el.value = String(dm);
+        else if (id==='mwOrigin') el.value = origin;
+        else if (id==='mwDest') el.value = dest;
+      });
+      await mwEvaluateLoad();
+      // Show simplified result in modal
+      const evalOut = $('#mwEvalOutput');
+      const gradeEl = evalOut?.querySelector('[data-qe-grade]');
+      // Build the inline result: grade + sentence + bid range
+      const trueRPM = (rev + dm * 0) / (lm + dm || 1); // rough, actual from evaluator
+      const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
+      const gradeHTML = actualGradeEl?.outerHTML || '';
+      const evalSummary = evalOut ? evalOut.innerHTML : '';
+      resultSlot.innerHTML = `<div style="margin-bottom:12px">
+        <div style="font-size:11px;color:var(--good);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">✓ Scored: ${escapeHtml(origin||'?')} → ${escapeHtml(dest||'?')} • ${fmtMoney(rev)} • ${lm}mi loaded</div>
+        <div id="qeEvalPreview" style="max-height:60vh;overflow-y:auto">${evalSummary}</div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn primary" id="qeBookBtn" style="flex:1;min-height:48px">Book This Load →</button>
+          <button class="btn" id="qeFullBtn" style="flex:1;min-height:48px">Full Analysis</button>
+        </div>
+      </div>`;
+      $('#qeBookBtn', body)?.addEventListener('click', ()=>{
+        closeModal();
+        openTripWizard({ _evalPrefill: true, pay: rev, loadedMiles: lm, emptyMiles: dm, origin, destination: dest });
+      });
+      $('#qeFullBtn', body)?.addEventListener('click', ()=>{
+        closeModal();
+        location.hash = '#omega';
+      });
+    } catch(e){
+      console.warn('[FL] quick eval:', e);
+      resultSlot.innerHTML = '';
+      inputSlot.style.display = '';
+      toast('Scoring failed — try again', true);
+    }
+  }
+
+  $('#qeSubmitText', body).addEventListener('click', ()=>{
+    haptic(15);
+    const txt = $('#qeText', body)?.value || '';
+    _runQuickEval(txt);
+  });
+  $('#qeSubmitPhoto', body).addEventListener('click', async ()=>{
+    haptic(15);
+    const file = $('#qePhoto', body)?.files?.[0];
+    if (!file){ toast('Select an image first', true); return; }
+    resultSlot.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">🔍 Reading image…</div>`;
+    inputSlot.style.display = 'none';
+    try {
+      const text = await runOCR(file);
+      if (!text){ resultSlot.innerHTML = ''; inputSlot.style.display = ''; toast('Could not read text from image', true); return; }
+      _runQuickEval(text);
+    } catch(e){
+      resultSlot.innerHTML = ''; inputSlot.style.display = '';
+      toast('OCR failed — try pasting text instead', true);
+    }
+  });
+
+  // Show text section by default
+  textSec.style.display = '';
+  $('#qeModeText', body).classList.add('primary');
+  openModal('⚡ Evaluate Load', body);
+}
+
 // ---- UI: Home ----
 async function renderHome(){
   refreshUnpaidBadge().catch(()=>{});
@@ -3166,6 +3380,48 @@ async function renderHome(){
   renderPositioningCard().catch(()=>{});
   // F25: Maintenance due alert (non-blocking)
   checkMaintenanceDue().catch(()=>{});
+  // UX: Position context banner (non-blocking)
+  renderPositionContextBanner().catch(()=>{});
+  // UX: Quick Evaluate button (always shown)
+  renderQuickEvalCard().catch(()=>{});
+  // UX: Calm home — hide empty cards with zero content
+  _applyCalmHomeState(state).catch(()=>{});
+}
+
+// ---- Calm Home Tab ----
+async function _applyCalmHomeState(state){
+  try {
+    const actionsDiv = $('#homeActions');
+    const whatNextCard = actionsDiv?.closest('.card');
+    const recentCard = $('#homeRecentTrips')?.closest('.card');
+
+    if (!state.isEmpty){
+      // Check for any actionable items
+      const unpaid = await listUnpaidTrips(1);
+      const hasActions = actionsDiv && actionsDiv.children.length > 0;
+      const hasAlerts = ['trendAlerts','overdueAlert','homeStrategyBadge','homeFuelNudge','homeReloadPrompt']
+        .some(id => { const el = $('#'+id); return el && el.style.display !== 'none' && el.innerHTML.trim() !== ''; });
+
+      if (!hasActions && !hasAlerts && whatNextCard){
+        // Show calm empty-state message instead of blank card
+        const existing = $('#homeAllClearMsg');
+        if (!existing){
+          const msg = document.createElement('div');
+          msg.id = 'homeAllClearMsg';
+          msg.style.cssText = 'padding:14px 0 4px;text-align:center;font-size:13px;color:var(--text-tertiary)';
+          msg.textContent = 'All clear. Tap Evaluate to score your next load.';
+          whatNextCard.appendChild(msg);
+        }
+      } else {
+        $('#homeAllClearMsg')?.remove();
+      }
+
+      // Hide recent trips card when empty
+      const recentList = $('#homeRecentTrips');
+      if (recentCard && recentList && !recentList.children.length) recentCard.style.display = 'none';
+      else if (recentCard) recentCard.style.display = '';
+    }
+  } catch(e){ /* non-critical */ }
 }
 
 // ---- Performance Command Center ----
@@ -3763,11 +4019,13 @@ function tripRow(t, {compact=false}={}){
     await renderAR(); await renderTrips(true);
   };
   const swipeDelete = async ()=>{
-    const ok = confirm(`Delete trip ${escapeHtml(String(t.orderNo))}? This cannot be undone.`);
-    if (!ok) return;
-    await deleteTrip(t.orderNo); invalidateKPICache();
-    toast('Trip deleted');
-    await renderTrips(true); await renderHome();
+    // Remove from UI immediately
+    d.remove();
+    showUndoToast(
+      `Trip ${escapeHtml(String(t.orderNo))}`,
+      async ()=>{ await deleteTrip(t.orderNo); invalidateKPICache(); await renderTrips(true); await renderHome(); },
+      async ()=>{ await renderTrips(true); }
+    );
   };
   return compact ? d : addSwipeActions(d, {
     onRight: t.isPaid ? null : markPaid,
@@ -3896,8 +4154,12 @@ function expenseRow(e){
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     const mode = await getSetting('uiMode','simple');
     if (mode !== 'pro'){ toast('Delete is Pro-only (prevents accidents)', true); return; }
-    if (!confirm('Delete this expense?')) return;
-    await deleteExpense(e.id); invalidateKPICache(); toast('Deleted'); await renderExpenses(true);
+    d.remove();
+    showUndoToast(
+      `${escapeHtml(e.category || 'Expense')}`,
+      async ()=>{ await deleteExpense(e.id); invalidateKPICache(); await renderExpenses(true); },
+      async ()=>{ await renderExpenses(true); }
+    );
   });
   return d;
 }
@@ -3930,8 +4192,12 @@ function fuelRow(f){
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     const mode = await getSetting('uiMode','simple');
     if (mode !== 'pro'){ toast('Delete is Pro-only', true); return; }
-    if (!confirm('Delete this fuel entry?')) return;
-    await deleteFuel(f.id); invalidateKPICache(); toast('Deleted'); await renderFuel(true);
+    d.remove();
+    showUndoToast(
+      `Fuel ${escapeHtml(f.date || '')}`,
+      async ()=>{ await deleteFuel(f.id); invalidateKPICache(); await renderFuel(true); },
+      async ()=>{ await renderFuel(true); }
+    );
   });
   return d;
 }
@@ -5480,6 +5746,18 @@ async function mwEvaluateLoad(){
   _renderEvalHistory();
 }
 
+function _genVerdictSentence(d){
+  const { grade, verdict, trueRPM, geo, isDZActive, dzSubTier, effectiveStrategic } = d;
+  if (isDZActive) return `DZ Exit — gets you closer to home corridor`;
+  if (verdict === 'REJECT') return `Skip — trap lane, low reload probability`;
+  if (grade === 'A') return `Take it — premium rate, strong reload market ahead`;
+  if (grade === 'B') return geo && geo.dT1 ? `Take it — strong reload market ahead` : `Take it — solid economics`;
+  if (grade === 'C') return `Marginal — only if nothing better in 2 hours`;
+  if (grade === 'D') return effectiveStrategic ? `Strategic only — bridges you toward density` : `Negotiate up or pass`;
+  if (grade === 'E') return `Strategic floor only — use with caution`;
+  return `Evaluate carefully before committing`;
+}
+
 function _mwRenderDecision(out, d){
   const {trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
     tier, grade, gradeLabel, gradeColor, gradeEmoji,
@@ -5500,8 +5778,44 @@ function _mwRenderDecision(out, d){
   const dispGradeLabel = dzDisplayGradeLabel || gradeLabel;
   const dispGradeColor = dzDisplayGradeColor || gradeColor;
   const dispGradeEmoji = dzDisplayGradeEmoji || gradeEmoji;
-  let html = '';
+  // Pre-compute bid numbers for the simplified hero
+  const _roundTo25h = (x)=> Math.round((Number(x)||0)/25)*25;
+  const _nextStepRPMh = (trueRPM >= 1.75) ? 1.90 : (trueRPM >= 1.60) ? 1.75 : (trueRPM >= 1.50) ? 1.60 : (trueRPM >= 1.40) ? 1.50 : 1.40;
+  const _bufferRPMh = breakEvenRPM > 0 ? (breakEvenRPM + 0.20) : 0;
+  const _strongRPMh = Math.max(_nextStepRPMh, _bufferRPMh);
+  const _premiumRPMh = _strongRPMh + 0.10;
+  const _strongFinalH = Math.max(_roundTo25h(_strongRPMh * totalMi), _roundTo25h(revenue));
+  const _premiumFinalH = Math.max(_roundTo25h(_premiumRPMh * totalMi), _strongFinalH + 50);
+  const _quickAcceptH = _roundTo25h(revenue);
+  const _verdictSentence = _genVerdictSentence(d);
 
+  // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
+  const _heroColor = isDZActive ? '#f0a500' : dispGradeColor;
+  let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
+    <div style="font-size:13px;font-weight:700;color:${_heroColor};letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
+    <div style="font-size:56px;font-weight:900;color:${_heroColor};font-family:var(--font-mono);line-height:1;margin-bottom:8px">${dispGrade}${isDZActive ? '<span style="font-size:18px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
+    <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:12px;line-height:1.4">${escapeHtml(_verdictSentence)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border-subtle)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Min / Accept</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--text)">${fmtMoney(_quickAcceptH)}</div>
+      </div>
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Professional</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:#58a6ff">${fmtMoney(_strongFinalH)}</div>
+      </div>
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Strong Ask</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
+      </div>
+    </div>
+  </div>
+  <details id="mwEvalDetails" style="margin-bottom:12px">
+    <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
+      <span style="font-size:16px">📊</span> Show Details
+      <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary)">RPM · costs · intelligence</span>
+    </summary>
+    <div style="padding-top:12px">`;
 
   // ── 1. DECISION BANNER ──
   const ladderRow = (g, label, rng) => {
@@ -5845,6 +6159,9 @@ function _mwRenderDecision(out, d){
       ${!isDZActive && trueRPM < MW.hardRejectRPM && trueRPM >= (dzFloor || MW.dzFloorRPM) ? `<div style="margin-top:8px;font-size:11px;color:var(--text-tertiary)">Current RPM $${trueRPM.toFixed(2)} is below normal floor. Toggle above to enable DZ scoring — load must save ${trueRPM < 1.00 && (dzCheck.distanceSaved||0) < 500 ? '<b style="color:var(--bad)">500mi</b> (DZ-FLOOR)' : '200mi'} toward home corridor.</div>` : ''}
     </div>`;
   }
+
+  // Close details wrapper
+  html += `</div></details>`;
 
   // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
@@ -7726,7 +8043,22 @@ function openTripWizard(existing=null){
     $('#f_invoice', body).value = trip.invoiceDate || trip.deliveryDate || trip.pickupDate || isoDate();
     $('#f_due', body).value = trip.dueDate || '';
     $('#f_notes', body).value = trip.notes || '';
-  } else { $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = ''; }
+  } else if (isEvalPrefill){
+    // Evaluator pre-fill — origin/dest from evaluator if available
+    $('#f_origin', body).value = trip.origin || '';
+    $('#f_dest', body).value = trip.destination || '';
+    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+  } else {
+    // Pure add mode: auto-fill origin from last trip destination
+    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+    listTrips({cursor:null}).then(res => {
+      const last = res.items[0];
+      if (last && last.destination){
+        const originEl = $('#f_origin', body);
+        if (originEl && !originEl.value) originEl.value = last.destination;
+      }
+    }).catch(()=>{});
+  }
 
   // v14.5.0: Multi-stop management
   function addStopRow(stopData=null){
@@ -7985,11 +8317,17 @@ function openTripWizard(existing=null){
     if (delBtn) delBtn.addEventListener('click', async ()=>{
       const ui = await getSetting('uiMode','simple');
       if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
-      if (!confirm('Delete this trip and its receipts?')) return;
-      try{ const rec = await getReceipts(trip.orderNo);
-        for (const f of (rec?.files||[])) try{ await cacheDeleteReceipt(f.id); }catch(e){ console.warn("[FL]", e); } }catch(e){ console.warn("[FL]", e); }
-      await deleteTrip(trip.orderNo); invalidateKPICache();
-      toast('Trip deleted'); closeModal(); await renderTrips(true); await renderHome();
+      closeModal();
+      showUndoToast(
+        `Trip ${escapeHtml(String(trip.orderNo))}`,
+        async ()=>{
+          try{ const rec = await getReceipts(trip.orderNo);
+            for (const f of (rec?.files||[])) try{ await cacheDeleteReceipt(f.id); }catch(e){ console.warn("[FL]", e); } }catch(e){ console.warn("[FL]", e); }
+          await deleteTrip(trip.orderNo); invalidateKPICache();
+          await renderTrips(true); await renderHome();
+        },
+        async ()=>{ await renderTrips(true); }
+      );
     });
   }
   openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`), body);
@@ -8076,9 +8414,12 @@ function openExpenseForm(existing=null){
     if (delBtn) delBtn.addEventListener('click', async ()=>{
       const ui = await getSetting('uiMode','simple');
       if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
-      if (!confirm('Delete this expense?')) return;
-      await deleteExpense(e.id); invalidateKPICache();
-      toast('Deleted'); closeModal(); await renderExpenses(true); await renderHome();
+      closeModal();
+      showUndoToast(
+        `${escapeHtml(e.category || 'Expense')}`,
+        async ()=>{ await deleteExpense(e.id); invalidateKPICache(); await renderExpenses(true); await renderHome(); },
+        async ()=>{ await renderExpenses(true); }
+      );
     });
   }
   openModal(mode==='add' ? 'Add Expense' : 'Edit Expense', body); validate();
@@ -8172,8 +8513,12 @@ function openFuelForm(existing=null){
     if (delBtn) delBtn.addEventListener('click', async ()=>{
       const ui = await getSetting('uiMode','simple');
       if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
-      if (!confirm('Delete this fuel entry?')) return;
-      await deleteFuel(f.id); invalidateKPICache(); toast('Deleted'); closeModal(); await renderFuel(true);
+      closeModal();
+      showUndoToast(
+        `Fuel ${escapeHtml(f.date || '')}`,
+        async ()=>{ await deleteFuel(f.id); invalidateKPICache(); await renderFuel(true); },
+        async ()=>{ await renderFuel(true); }
+      );
     });
   }
   openModal(mode==='add' ? 'Add Fuel' : 'Edit Fuel', body);
@@ -11329,12 +11674,27 @@ async function openDocumentVault(filterTripOrderNo=null){
     });
     list.querySelectorAll('[data-dvdel]').forEach(btn2 => {
       btn2.addEventListener('click', async () => {
-        if (!confirm('Delete this document?')) return;
-        const {t, stores} = tx('documents', 'readwrite');
-        await idbReq(stores.documents.delete(btn2.dataset.dvdel));
-        await new Promise(r => { t.oncomplete = r; t.onerror = r; });
-        toast('Document deleted');
-        loadDocs();
+        const docId = btn2.dataset.dvdel;
+        const docRecord = docs.find(d => d.id === docId) || null;
+        const docName = docRecord?.name || 'Document';
+        btn2.closest('[data-dvid]')?.remove();
+        showUndoToast(
+          escapeHtml(docName.slice(0, 30)),
+          async ()=>{
+            const {t: t2, stores: s2} = tx('documents', 'readwrite');
+            await idbReq(s2.documents.delete(docId));
+            await new Promise(r => { t2.oncomplete = r; t2.onerror = r; });
+            loadDocs();
+          },
+          async ()=>{
+            if (docRecord){
+              const {t: t3, stores: s3} = tx('documents', 'readwrite');
+              await idbReq(s3.documents.put(docRecord));
+              await new Promise(r => { t3.oncomplete = r; t3.onerror = r; });
+            }
+            loadDocs();
+          }
+        );
       });
     });
   }
