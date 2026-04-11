@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.0.0">
+  <link rel="manifest" href="manifest.json?v=23.1.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -779,6 +779,9 @@
       <!-- F24: Positioning Engine slot (populated by renderPositioningCard) -->
       <div id="homePositioningCard" style="display:none"></div>
 
+      <!-- F25: Maintenance alert slot (populated by checkMaintenanceDue) -->
+      <div id="homeMaintenanceAlert" style="display:none"></div>
+
       <!-- Card 1 (active users): This Week Command Center -->
       <div class="card" style="margin-top:10px" id="homeKPICard">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -1198,8 +1201,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.0.0"></script>
-  <script src="voice-load.js?v=23.0.0"></script>
-  <script src="sw-bridge.js?v=23.0.0"></script>
+  <script src="app.js?v=23.1.0"></script>
+  <script src="voice-load.js?v=23.1.0"></script>
+  <script src="sw-bridge.js?v=23.1.0"></script>
 </body>
 </html>

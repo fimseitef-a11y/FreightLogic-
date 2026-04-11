@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.1.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -79,7 +79,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.0.0';
+const APP_VERSION = '23.1.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -184,8 +184,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.0.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.0.0`; caches `sw-bridge.js`.
+- `manifest.json` references `v=23.1.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.1.0`; caches `sw-bridge.js`.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -208,7 +208,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ---
 
-## v22–v23 Features (F21–F24)
+## v22–v23.1 Features (F21–F25)
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
@@ -242,6 +242,17 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - GPS stationary detection: `_doStartTracking` setInterval refreshes positioning card after 10+ min stationary; resets `_f24Shown` when moving again
 - `_positioningCache` cleared on every trip save (`upsertTrip` call site)
 - Settings keys: `f24PostDeliveryCount` (int), `f24AutoBriefDisabled` (bool), `f24OnboardingSeen` (bool)
+
+### F25 — Vehicle Maintenance Tracker (v23.1.0)
+- `checkMaintenanceDue()` — non-blocking; called in `renderHome()`; populates `#homeMaintenanceAlert` if any item is overdue or due within 14 days
+- `openMaintenanceTracker()` — Intel tile modal; shows all service items with status badge (OK/warn/overdue), "Log Service" per item, and "Add Item" form for custom services
+- `_logMaintenanceService(items, idx, onDone)` — sub-modal (date, cost, notes); saves updated `lastDate`/`lastCost` to schedule; auto-creates an expense record (category: `Maintenance`) when cost > 0
+- `_getMaintenanceSchedule()` / `_saveMaintenanceSchedule(items)` — load/save `settings['maintenanceSchedule']`; first-run seeds four default items (Oil & Filter, Tire Rotation, Vehicle Inspection, Registration)
+- `_maintenanceStatus(item)` — returns `{ label, daysUntil, state }` where state is `ok` / `warn` / `overdue`
+- `MAINTENANCE_DEFAULTS` — four preset items with `id`, `label`, `intervalDays`, `icon`
+- Intel tile: `🔧 Maintenance` in `INTEL_TILES`; accessible via More page tile handler
+- No new IDB store — schedule persists in `settings['maintenanceSchedule']`; service cost events stored as ordinary expenses
+- Settings keys: `maintenanceSchedule` (array), `lastMaintenanceNotify` (timestamp, reserved)
 
 ---
 
