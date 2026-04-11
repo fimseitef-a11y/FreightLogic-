@@ -6,12 +6,12 @@ const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=22.1.0',
-  './voice-load.js?v=22.1.0',
-  './manifest.json?v=22.1.0',
+  './app.js?v=23.1.0',
+  './voice-load.js?v=23.1.0',
+  './manifest.json?v=23.1.0',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=22.1.0'
+  './sw-bridge.js?v=23.1.0'
 ];
 
 self.addEventListener('install', (event) => {
