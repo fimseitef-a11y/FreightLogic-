@@ -10,7 +10,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.0.0';
+const APP_VERSION = '23.1.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -1320,7 +1320,9 @@ async function importJSON(file, opts={}){
       // v22 F21/F22/F23 onboarding flags
       'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
       // v23 F24 positioning engine flags
-      'f24PostDeliveryCount','f24AutoBriefDisabled','f24OnboardingSeen']);
+      'f24PostDeliveryCount','f24AutoBriefDisabled','f24OnboardingSeen',
+      // v23.1 F25 maintenance tracker
+      'maintenanceSchedule','lastMaintenanceNotify']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -3162,6 +3164,8 @@ async function renderHome(){
   renderMoneyCard().catch(()=>{});
   // F24: Positioning Engine card (non-blocking)
   renderPositioningCard().catch(()=>{});
+  // F25: Maintenance due alert (non-blocking)
+  checkMaintenanceDue().catch(()=>{});
 }
 
 // ---- Performance Command Center ----
@@ -4084,6 +4088,7 @@ const INTEL_TILES = [
   { icon:'🤝', title:'Counter-Offers', sub:'Broker negotiation tracking', act:'counterOfferMemory' },
   { icon:'Ω', title:'Ω Tiers Calculator', sub:'All-in pricing by mileage', act:'omegaTiers' },
   { icon:'📡', title:'Market Board', sub:'Log market observations', act:'marketBoard' },
+  { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
 ];
 
 const MORE_TILES = [
@@ -4142,6 +4147,7 @@ function renderIntel(){
           window.scrollTo({top:0,behavior:'instant'});
         }, 100);
       }
+      else if (tile.act === 'maintenance') openMaintenanceTracker();
     };
     el.addEventListener('click', tileAction);
     el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -4196,6 +4202,7 @@ async function renderMore(){
             window.scrollTo({top:0,behavior:'instant'});
           }, 100);
         }
+        else if (tile.act === 'maintenance') openMaintenanceTracker();
         else if (tile.act === 'storageHealth'){
           location.hash = '#insights';
           setTimeout(()=>{
@@ -13122,6 +13129,219 @@ async function _triggerPostDeliveryBrief(city) {
 
     openModal('\uD83D\uDCCD What\'s Next?', body);
   } catch(e) { /* non-critical */ }
+}
+
+// ================================================================================
+// F25: VEHICLE MAINTENANCE TRACKER (v23.1.0)
+// ================================================================================
+
+const MAINTENANCE_DEFAULTS = [
+  { id: 'oil_change',    label: 'Oil & Filter',       intervalDays: 90,  icon: '🛢️' },
+  { id: 'tire_rotation', label: 'Tire Rotation',      intervalDays: 180, icon: '🔄' },
+  { id: 'inspection',    label: 'Vehicle Inspection',  intervalDays: 365, icon: '📋' },
+  { id: 'registration',  label: 'Registration',        intervalDays: 365, icon: '📄' },
+];
+
+async function _getMaintenanceSchedule() {
+  const saved = await getSetting('maintenanceSchedule', null);
+  if (Array.isArray(saved) && saved.length) return saved;
+  // First run: return defaults (not yet saved — saves on first "Log Service")
+  return MAINTENANCE_DEFAULTS.map(d => ({ ...d, lastDate: null, lastCost: null, lastNotes: '' }));
+}
+
+async function _saveMaintenanceSchedule(items) {
+  const clean = items.map(it => ({
+    id:          clampStr(String(it.id || ''), 40),
+    label:       clampStr(String(it.label || ''), 60),
+    intervalDays: Math.max(1, intNum(it.intervalDays) || 90),
+    icon:        clampStr(String(it.icon || ''), 4),
+    lastDate:    it.lastDate || null,
+    lastCost:    it.lastCost != null ? posNum(it.lastCost) : null,
+    lastNotes:   clampStr(String(it.lastNotes || ''), 200),
+  }));
+  await setSetting('maintenanceSchedule', clean);
+  return clean;
+}
+
+function _maintenanceStatus(item) {
+  const today = new Date();
+  if (!item.lastDate) return { label: 'Never serviced', daysUntil: -9999, state: 'overdue' };
+  const next = new Date(item.lastDate);
+  next.setDate(next.getDate() + item.intervalDays);
+  const daysUntil = Math.ceil((next - today) / 86400000);
+  if (daysUntil <= 0)  return { label: `Overdue ${Math.abs(daysUntil)}d`, daysUntil, state: 'overdue' };
+  if (daysUntil <= 14) return { label: `Due in ${daysUntil}d`, daysUntil, state: 'warn' };
+  return { label: `OK — ${daysUntil}d left`, daysUntil, state: 'ok' };
+}
+
+// Called on home render — shows an alert card if anything is overdue or due soon
+async function checkMaintenanceDue() {
+  try {
+    const slot = $('#homeMaintenanceAlert');
+    if (!slot) return;
+    const items = await _getMaintenanceSchedule();
+    const overdue = [], warn = [];
+    for (const it of items) {
+      const s = _maintenanceStatus(it);
+      if (s.state === 'overdue') overdue.push({ ...it, _status: s });
+      else if (s.state === 'warn') warn.push({ ...it, _status: s });
+    }
+    if (!overdue.length && !warn.length) { slot.style.display = 'none'; return; }
+    slot.style.display = '';
+    const worst = overdue[0] || warn[0];
+    const others = overdue.length + warn.length - 1;
+    const color = overdue.length ? 'var(--bad)' : 'var(--warn)';
+    const borderColor = overdue.length ? 'rgba(255,82,82,.25)' : 'rgba(255,179,0,.25)';
+    const bg = overdue.length ? 'rgba(255,82,82,.06)' : 'rgba(255,179,0,.06)';
+    slot.innerHTML = `<div style="border:1px solid ${borderColor};background:${bg};border-radius:12px;padding:12px 14px;margin-bottom:4px;display:flex;align-items:center;gap:12px;cursor:pointer" id="maintAlertBanner">
+      <div style="font-size:22px">${escapeHtml(worst.icon)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:${color}">${escapeHtml(worst.label)} — ${escapeHtml(worst._status.label)}</div>
+        <div class="muted" style="font-size:12px">${others > 0 ? `+${others} more service item${others > 1?'s':''} need attention` : 'Tap to log service'}</div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:${color};white-space:nowrap">Service →</div>
+    </div>`;
+    slot.querySelector('#maintAlertBanner')?.addEventListener('click', () => { haptic(15); openMaintenanceTracker(); });
+  } catch(e) { console.warn('[F25]', e); }
+}
+
+// Main maintenance tracker modal
+async function openMaintenanceTracker() {
+  haptic(15);
+  const items = await _getMaintenanceSchedule();
+  const body = document.createElement('div');
+  body.style.padding = '0';
+
+  function _buildList() {
+    let html = '';
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const s = _maintenanceStatus(it);
+      const badgeColor = s.state === 'overdue' ? 'var(--bad)' : s.state === 'warn' ? 'var(--warn)' : 'var(--good)';
+      const badgeBg = s.state === 'overdue' ? 'rgba(255,82,82,.12)' : s.state === 'warn' ? 'rgba(255,179,0,.12)' : 'rgba(107,255,149,.08)';
+      const lastInfo = it.lastDate ? `Last: ${it.lastDate}${it.lastCost ? ' · ' + fmtMoney(it.lastCost) : ''}` : 'Never logged';
+      html += `<div class="item" style="align-items:center;gap:12px;padding:12px 0" data-maint-idx="${i}">
+        <div style="font-size:22px;flex-shrink:0">${escapeHtml(it.icon)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px">${escapeHtml(it.label)}</div>
+          <div class="muted" style="font-size:11px">Every ${it.intervalDays}d &nbsp;·&nbsp; ${escapeHtml(lastInfo)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${badgeBg};color:${badgeColor};white-space:nowrap">${escapeHtml(s.label)}</div>
+          <button class="btn sm" data-maint-log="${i}" style="font-size:11px;min-height:36px;min-width:72px">Log Service</button>
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  const listCard = document.createElement('div');
+  listCard.className = 'card';
+  listCard.style.marginBottom = '14px';
+  listCard.innerHTML = `<h3>Service Schedule</h3><div id="maintItemList">${_buildList()}</div>`;
+  body.appendChild(listCard);
+
+  // Add custom item form
+  const addCard = document.createElement('div');
+  addCard.className = 'card';
+  addCard.style.marginBottom = '14px';
+  addCard.innerHTML = `<h3>Add Service Item</h3>
+    <div class="grid2" style="gap:10px;margin-bottom:10px">
+      <div><label>Name</label><input id="maintNewLabel" placeholder="e.g., Spark Plugs" /></div>
+      <div><label>Interval (days)</label><input id="maintNewInterval" type="number" step="1" placeholder="180" inputmode="numeric" /></div>
+    </div>
+    <button class="btn" id="maintAddBtn" style="width:100%;min-height:44px">Add Item</button>`;
+  body.appendChild(addCard);
+
+  openModal('🔧 Maintenance Tracker', body);
+
+  // Wire log-service buttons
+  body.addEventListener('click', async (e) => {
+    const logBtn = e.target.closest('[data-maint-log]');
+    if (logBtn) {
+      const idx = parseInt(logBtn.dataset.maintLog, 10);
+      if (isNaN(idx) || !items[idx]) return;
+      haptic(15);
+      await _logMaintenanceService(items, idx, () => {
+        const listEl = body.querySelector('#maintItemList');
+        if (listEl) listEl.innerHTML = _buildList();
+        // Re-wire after rebuild
+      });
+    }
+  });
+
+  // Wire Add Item
+  body.querySelector('#maintAddBtn')?.addEventListener('click', async () => {
+    const label = clampStr(body.querySelector('#maintNewLabel')?.value?.trim() || '', 60);
+    const intervalDays = intNum(body.querySelector('#maintNewInterval')?.value || '') || 180;
+    if (!label) { toast('Enter a service name', true); return; }
+    if (intervalDays < 1 || intervalDays > 3650) { toast('Interval must be 1–3650 days', true); return; }
+    items.push({ id: 'custom_' + Date.now(), label, intervalDays, icon: '🔧', lastDate: null, lastCost: null, lastNotes: '' });
+    await _saveMaintenanceSchedule(items);
+    body.querySelector('#maintNewLabel').value = '';
+    body.querySelector('#maintNewInterval').value = '';
+    const listEl = body.querySelector('#maintItemList');
+    if (listEl) listEl.innerHTML = _buildList();
+    toast('Item added');
+  });
+}
+
+// Sub-modal: log a service event for one item
+async function _logMaintenanceService(items, idx, onDone) {
+  const it = items[idx];
+  const sub = document.createElement('div');
+  sub.style.padding = '0';
+  sub.innerHTML = `
+    <div style="text-align:center;padding:12px 0 16px">
+      <div style="font-size:36px">${escapeHtml(it.icon)}</div>
+      <div style="font-size:16px;font-weight:700;margin-top:6px">${escapeHtml(it.label)}</div>
+    </div>
+    <div class="field"><label>Service Date</label><input id="maintLogDate" type="date" value="${isoDate()}" /></div>
+    <div class="field"><label>Cost ($)</label><input id="maintLogCost" type="number" step="0.01" placeholder="0.00" inputmode="decimal" /></div>
+    <div class="field"><label>Notes</label><input id="maintLogNotes" placeholder="Shop, parts used, etc." /></div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn" id="maintLogCancel">Cancel</button>
+      <button class="btn primary" id="maintLogSave" style="flex:1">Save Service</button>
+    </div>`;
+
+  openModal(`Log Service — ${escapeHtml(it.label)}`, sub);
+
+  sub.querySelector('#maintLogCancel')?.addEventListener('click', () => {
+    closeModal();
+    setTimeout(() => openMaintenanceTracker(), 300);
+  });
+
+  sub.querySelector('#maintLogSave')?.addEventListener('click', async () => {
+    const date  = sub.querySelector('#maintLogDate')?.value || isoDate();
+    const cost  = posNum(sub.querySelector('#maintLogCost')?.value || '') || null;
+    const notes = clampStr(sub.querySelector('#maintLogNotes')?.value?.trim() || '', 200);
+
+    if (!date || date > isoDate()) { toast('Enter a valid date', true); return; }
+
+    // Update schedule item
+    items[idx] = { ...it, lastDate: date, lastCost: cost, lastNotes: notes };
+    await _saveMaintenanceSchedule(items);
+
+    // Log as an expense record so it appears in expense history
+    if (cost && cost > 0) {
+      const { t, stores } = tx(['expenses'], 'readwrite');
+      await idbReq(stores.expenses.add({
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        date,
+        amount: cost,
+        category: 'Maintenance',
+        notes: it.label + (notes ? ': ' + notes : ''),
+        createdAt: Date.now(),
+      }));
+      await new Promise((res, rej) => { t.oncomplete = res; t.onerror = rej; });
+    }
+
+    toast(`${it.label} logged`);
+    closeModal();
+    await checkMaintenanceDue();   // Refresh home alert
+    if (typeof onDone === 'function') onDone();
+    setTimeout(() => openMaintenanceTracker(), 300);
+  });
 }
 
 // ================================================================================
