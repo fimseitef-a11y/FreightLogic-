@@ -4984,7 +4984,7 @@ const MW = {
   surgeFloor: 3000,
   stabilizeFloor: 2000,
   preferredFloorRPM: 1.40,
-  normalFloorRPM: 1.35,
+  normalFloorRPM: 1.40,
   hardRejectRPM: 1.25,
   // Strategic floor — ONLY when replacing deadhead / going home / escaping slow market
   strategicFloorRPM: 1.25,
@@ -4995,8 +4995,8 @@ const MW = {
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
   rpmTiers: [
     { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
-    { min: 1.25, max: 1.34, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
-    { min: 1.35, max: 1.49, label: 'Minimum Standard',   color: '#ff8c42',     verdict: 'ACCEPT' },
+    { min: 1.25, max: 1.39, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
+    { min: 1.40, max: 1.49, label: 'Minimum Standard',   color: '#ff8c42',     verdict: 'ACCEPT' },
     { min: 1.50, max: 1.59, label: 'Professional',       color: 'var(--text)', verdict: 'ACCEPT' },
     { min: 1.60, max: 1.74, label: 'Strong',             color: 'var(--good)', verdict: 'ACCEPT' },
     { min: 1.75, max: 1.99, label: 'Very Strong',        color: 'var(--good)', verdict: 'ACCEPT' },
@@ -5004,7 +5004,7 @@ const MW = {
   ],
   // F20: Dead Zone Exit sub-tiers (below normal $1.25 hard floor)
   dzFloorRPM: 0.90,
-  dzActivationDistanceMi: 1500,
+  dzActivationDistanceMi: 1000,
 };
 
 function getMWWeekTarget(){
@@ -5326,7 +5326,7 @@ async function mwEvaluateLoad(){
   if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'PREMIUM WIN'; gradeColor = '#34d399'; gradeEmoji = '🟢'; }
   else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'STRONG ACCEPT'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
   else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'CONDITIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
-  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'WEAK — NEGOTIATE'; gradeColor = '#fb923c'; gradeEmoji = '🟠'; }
+  else if (trueRPM >= 1.40){ grade = 'D'; gradeLabel = 'MINIMUM STANDARD'; gradeColor = '#fb923c'; gradeEmoji = '🟠'; }
   else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
@@ -5377,14 +5377,14 @@ async function mwEvaluateLoad(){
     if (projectedWeek >= targetCfgV.high && trueRPM >= 1.50){
       velocityMode = 'PRIME'; velocityDetail = 'On pace + strong RPM — be selective';
     } else if (projectedWeek < targetCfgV.low || (isThuFri && weeklyGross < targetCfgV.low)){
-      velocityMode = 'RECOVERY'; velocityDetail = 'Behind floor — take defendable loads to stabilize';
+      velocityMode = 'PRESSURE'; velocityDetail = 'Behind floor — take defendable loads to stabilize';
     } else {
       velocityMode = 'FLEX'; velocityDetail = 'Board soft or pace needs movement';
     }
   } else {
     velocityMode = 'FLEX'; velocityDetail = 'No weekly gross entered — defaulting to FLEX';
   }
-  const velocityFloor = velocityMode === 'PRIME' ? 1.50 : velocityMode === 'FLEX' ? 1.35 : 1.25;
+  const velocityFloor = velocityMode === 'PRIME' ? 1.50 : velocityMode === 'FLEX' ? 1.35 : velocityMode === 'PRESSURE' ? 1.40 : 1.25;
   // F20: DZ overrides velocity to SURVIVAL
   if (isDZActive){ velocityMode = 'SURVIVAL'; velocityDetail = 'Dead Zone active — prioritize getting home over profit'; }
 
@@ -5518,8 +5518,8 @@ function _mwRenderDecision(out, d){
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
       ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
-      ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
-      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
+      ${ladderRow('D','MINIMUM STANDARD','$1.40–$1.49')}
+      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.39')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
@@ -5756,8 +5756,8 @@ function _mwRenderDecision(out, d){
   }
 
   // ── Velocity Mode + Turnover + Post-Delivery ──
-  const vmColors = { PRIME: 'var(--good)', FLEX: 'var(--warn)', RECOVERY: 'var(--bad)', SURVIVAL: '#f0a500' };
-  const vmIcons = { PRIME: '🟢', FLEX: '🟡', RECOVERY: '🔴', SURVIVAL: '🟠' };
+  const vmColors = { PRIME: 'var(--good)', FLEX: 'var(--warn)', PRESSURE: 'var(--bad)', SURVIVAL: '#f0a500' };
+  const vmIcons = { PRIME: '🟢', FLEX: '🟡', PRESSURE: '🔴', SURVIVAL: '🟠' };
   const pdColors = { HOLD: 'var(--good)', 'MICRO-REPOSITION': 'var(--warn)', 'STRATEGIC REPOSITION': '#ff8c42', 'EXIT MARKET': 'var(--bad)', SKIP: 'var(--text-tertiary)' };
   const pdCmdColor = isDZActive ? '#f0a500' : (pdColors[postDeliveryCmd] || 'var(--text)');
   const ttColors = { 'QUICK TURN': 'var(--good)', 'MONEY RUN': '#58a6ff', 'LONG LOCK': 'var(--warn)', 'STRATEGIC BRIDGE': '#ff8c42' };
@@ -7287,7 +7287,7 @@ function openSnapLoad(preFile){
     listEl.style.display = 'block';
 
     const rows = ranked.slice(0, 12).map((l,i)=> {
-      const grade = l.trueRPM >= 1.75 ? 'A' : (l.trueRPM >= 1.60 ? 'B' : (l.trueRPM >= 1.50 ? 'C' : (l.trueRPM >= 1.35 ? 'D' : (l.trueRPM >= 1.25 ? 'E' : 'F'))));
+      const grade = l.trueRPM >= 1.75 ? 'A' : (l.trueRPM >= 1.60 ? 'B' : (l.trueRPM >= 1.50 ? 'C' : (l.trueRPM >= 1.40 ? 'D' : (l.trueRPM >= 1.25 ? 'E' : 'F'))));
       const verdict = l.tier?.verdict || '';
       return `<div style="display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:12px;margin-top:8px;background:rgba(255,255,255,0.02)">
         <div style="min-width:34px;text-align:center;font-weight:800">${i+1}</div>
