@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v22.0.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -17,7 +17,7 @@ index.html              — Single-page app shell + all CSS (Design System v3.0 
 app.js                  — Core application (~448KB, all logic in one IIFE)
 sw-bridge.js            — Service worker auto-update bridge (SKIP_WAITING + reload)
 service-worker.js       — PWA offline caching
-cloud-backup-worker.js  — Cloudflare Worker: multi-user backup + AI load evaluation
+cloud-backup-worker.js  — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json           — PWA manifest
 favicon*.png / icon*.png — App icons
 README.txt              — Notes on optional offline vendor files
@@ -47,6 +47,7 @@ README.txt              — Notes on optional offline vendor files
 13. **F21 GPS Trip Tracking** — `startTripTracking`, `stopTripTracking`, `nearestMarketCity`, `renderTripTrackingUI`, `resumeTrackingIfActive`
 14. **F22 Money Dashboard** — `renderMoneyCard` with weekly P&L, unpaid summary, goal progress, quarterly tax estimate
 15. **F23 Smart Load Inbox** — `parseLoadTextForInbox`, `renderLoadInbox`, auto-fills evaluator fields
+16. **F24 Proactive Positioning Engine** — `getPositioningBrief`, `renderPositioningCard`, `_triggerPostDeliveryBrief`
 
 ### IndexedDB schema (`DB_VERSION = 12`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
@@ -78,7 +79,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '22.0.1';
+const APP_VERSION = '23.0.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -163,6 +164,8 @@ Do not move the passphrase or admin token back to persistent storage.
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
 - `POST /evaluate` — AI load evaluation (OpenAI); rate limited 20 req/min per user; returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
+- `POST /extract` — AI field extraction from raw load text; rate limited 10 req/min per user; returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
+- `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 
 Token format: `flk_<uuid-no-dashes>`
 
@@ -181,8 +184,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=18.2.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `18.2.0`; caches `sw-bridge.js`.
+- `manifest.json` references `v=23.0.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.0.0`; caches `sw-bridge.js`.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -194,17 +197,18 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - **No build step** — edit files directly and reload in browser.
 - **Test locally** with any static file server (e.g., `python3 -m http.server 8080`).
 - **IndexedDB migrations** — increment `DB_VERSION` and add `if (old < N)` block in `initDB()`.
-- **Version bumps** — keep these five in sync every release:
+- **Version bumps** — keep these six in sync every release:
   1. `APP_VERSION` in `app.js`
   2. `SW_VERSION` in `service-worker.js`
   3. `manifest.json` `name` field
   4. `?v=` query on `<link rel="manifest">` in `index.html`
-  5. `?v=` queries on `app.js` and `sw-bridge.js` script tags in `index.html`
+  5. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
+  6. Version reference in `CLAUDE.md` Project Overview
 - **Master source asset** — `MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md` is referenced by `openMasterSourceCenter()` but not included in repo.
 
 ---
 
-## v22 Features (F21–F23)
+## v22–v23 Features (F21–F24)
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
@@ -230,6 +234,20 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - "Score Load →" fills `#mwRevenue`, `#mwLoadedMi`, `#mwDeadMi`, `#mwOrigin`, `#mwDest` and dispatches `input` event
 - Recent pastes stored in `sessionStorage('fl_inbox_recent')` (last 5, cleared on session end)
 - Settings keys: `f23OnboardingSeen` (bool)
+
+### F24 — Proactive Positioning Engine (v23.0.0)
+- `getPositioningBrief(city)` — core intelligence function; combines reload scores, outbound lane history, nearby market anchors, NWS weather alerts, and day-of-week trip patterns into a structured brief with HOLD/REPOSITION/HUNT command + HIGH/MEDIUM/LOW confidence; 5-min cache via `_positioningCache`
+- `renderPositioningCard(overrideCity?, isExploring?)` — populates `#homePositioningCard` on Home; auto-detects city from GPS, last trip destination, or override; shows command badge, outbound lane rows (tap → `openLaneBreakdown`), weather alerts, collapsible nearby markets; `isExploring` flag prevents infinite drill-down; F24 onboarding card on first display
+- `_triggerPostDeliveryBrief(city)` — fires ~1s after trip save when `saved.deliveryDate && saved.destination`; shows modal with command badge + quick stats; opt-out checkbox after 3rd view; suppressed by `f24AutoBriefDisabled` setting
+- GPS stationary detection: `_doStartTracking` setInterval refreshes positioning card after 10+ min stationary; resets `_f24Shown` when moving again
+- `_positioningCache` cleared on every trip save (`upsertTrip` call site)
+- Settings keys: `f24PostDeliveryCount` (int), `f24AutoBriefDisabled` (bool), `f24OnboardingSeen` (bool)
+
+---
+
+## Dispatch Layer (Planned)
+
+A Dispatch upgrade is planned for a future release. Driver-only features are the current development focus. No dispatch UI, multi-driver management, or load assignment logic should be added until that phase begins.
 
 ---
 

@@ -1314,7 +1314,7 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','iftaMode','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
       // v21 new settings keys
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId',
       // v22 F21/F22/F23 onboarding flags
@@ -3708,6 +3708,11 @@ function tripRow(t, {compact=false}={}){
       d._loadScore = score;
     } catch(e){ console.warn("[FL]", e); }
   }
+  const _destRaw = (t.destination || '').trim();
+  const _origRaw = (t.origin || '').trim();
+  const _mapsHtml = _destRaw
+    ? `<a href="https://www.google.com/maps/dir/?api=1&${_origRaw ? 'origin=' + encodeURIComponent(_origRaw) + '&' : ''}destination=${encodeURIComponent(_destRaw)}&travelmode=driving" target="_blank" rel="noopener noreferrer" class="btn sm" style="text-decoration:none">Maps</a>`
+    : '';
   d.innerHTML = `
     <div class="left">
       <div class="split"><div class="v">${escapeHtml(t.orderNo||'')}</div>${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
@@ -3720,7 +3725,7 @@ function tripRow(t, {compact=false}={}){
         <button class="btn sm" data-act="edit">Edit</button>
         <button class="btn sm" data-act="receipts">Receipts</button>
         <button class="btn sm" data-act="docs">📎 Docs</button>
-        <button class="btn sm" data-act="nav">Nav</button>
+        ${_mapsHtml}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
       </div>
     </div>`;
@@ -3737,7 +3742,6 @@ function tripRow(t, {compact=false}={}){
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
   $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo); });
 
-  $('[data-act="nav"]', d).addEventListener('click', (e)=>{ e.stopPropagation(); haptic(15); openTripNavigation(t); });
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
     t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
@@ -3909,26 +3913,6 @@ async function renderFuel(reset=false){
   }
   else { res.items.forEach(f => list.appendChild(fuelRow(f))); staggerItems(list); }
   $('#btnFuelMore').disabled = !fuelCursor;
-
-  // IFTA summary
-  const allFuel = await dumpStore('fuel');
-  const byState = {};
-  for (const f of allFuel){
-    const st = (f.state || 'N/A').toUpperCase();
-    if (!byState[st]) byState[st] = { gallons:0, amount:0 };
-    byState[st].gallons += Number(f.gallons||0);
-    byState[st].amount += Number(f.amount||0);
-  }
-  const box = $('#iftaSummary');
-  box.innerHTML = '';
-  const states = Object.entries(byState).sort((a,b)=> b[1].gallons - a[1].gallons);
-  if (!states.length) box.innerHTML = `<div class="muted" style="font-size:12px">Add fuel entries to see state-by-state breakdown.</div>`;
-  else states.forEach(([st, d]) => {
-    const ppg = d.gallons > 0 ? (d.amount/d.gallons).toFixed(3) : '0';
-    const p = document.createElement('div'); p.className = 'pill';
-    p.innerHTML = `<span class="muted">${escapeHtml(st)}</span> <b>${d.gallons.toFixed(1)} gal</b> <span class="muted">${fmtMoney(d.amount)} ($${ppg}/gal)</span>`;
-    box.appendChild(p);
-  });
 }
 
 function fuelRow(f){
@@ -4011,7 +3995,6 @@ async function renderInsights(){
   $('#perDiemRate').value = await getSetting('perDiemRate', '') || '';
   $('#brokerWindow').value = String(await getSetting('brokerWindow', 90) || 90);
   $('#weeklyGoal').value = await getSetting('weeklyGoal', '') || '';
-  $('#iftaMode').value = await getSetting('iftaMode', 'off') || 'off';
   $('#vehicleMpg').value = await getSetting('vehicleMpg', '') || '';
   $('#fuelPrice').value = await getSetting('fuelPrice', '') || '';
   $('#opCostPerMile').value = await getSetting('opCostPerMile', '') || '';
@@ -8389,7 +8372,6 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('perDiemRate', Number($('#perDiemRate').value || 0));
   await setSetting('brokerWindow', Number($('#brokerWindow').value || 90));
   await setSetting('weeklyGoal', Number($('#weeklyGoal').value || 0));
-  await setSetting('iftaMode', $('#iftaMode').value || 'on');
   await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
   await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
   markFuelPriceUpdated().catch(()=>{});
@@ -8845,7 +8827,6 @@ async function generateAccountantPackage(period='ytd'){
     const now = new Date();
     const year = now.getFullYear();
     const perDiemRate = Number(await getSetting('perDiemRate', 0) || 0) || 80; // IRS CONUS rate effective Oct 1, 2024
-    const iftaOn = (await getSetting('iftaMode', 'on')) !== 'off';
 
     // Date range based on period
     let startDate, endDate, label;
@@ -8895,10 +8876,9 @@ async function generateAccountantPackage(period='ytd'){
       expenseRows.push([e.date || '', cat, amt.toFixed(2), e.notes || '']);
     }
 
-    // ── 3. IFTA FUEL REPORT (by state) ──
+    // ── 3. FUEL LOG ──
     const periodFuel = allFuel.filter(f => inRange(f.date));
     let totalGallons = 0, totalFuelCost = 0;
-    const stateTotals = new Map();
     const fuelRows = [['Date','State','Gallons','Amount','Price/Gal']];
     for (const f of periodFuel){
       const gal = Number(f.gallons || 0);
@@ -8906,18 +8886,8 @@ async function generateAccountantPackage(period='ytd'){
       const st = (f.state || 'Unknown').toUpperCase().trim();
       totalGallons += gal;
       totalFuelCost += amt;
-      if (!stateTotals.has(st)) stateTotals.set(st, { gallons: 0, amount: 0 });
-      const sr = stateTotals.get(st);
-      sr.gallons += gal; sr.amount += amt;
       fuelRows.push([f.date || '', st, gal.toFixed(2), amt.toFixed(2), gal > 0 ? (amt / gal).toFixed(3) : '0.000']);
     }
-
-    // IFTA summary by state
-    const iftaSummaryRows = [['State','Gallons','Amount','Avg Price/Gal']];
-    for (const [st, data] of [...stateTotals.entries()].sort((a,b) => b[1].gallons - a[1].gallons)){
-      iftaSummaryRows.push([st, data.gallons.toFixed(2), data.amount.toFixed(2), data.gallons > 0 ? (data.amount / data.gallons).toFixed(3) : '0.000']);
-    }
-    iftaSummaryRows.push(['TOTAL', totalGallons.toFixed(2), totalFuelCost.toFixed(2), totalGallons > 0 ? (totalFuelCost / totalGallons).toFixed(3) : '0.000']);
 
     // ── 4. PER DIEM CALCULATION ──
     // Count unique days with trips
@@ -8963,7 +8933,7 @@ async function generateAccountantPackage(period='ytd'){
       ['EXPENSES'],
       ['Total Expenses', '$' + totalExpenses.toFixed(2)],
       ...([...catTotals.entries()].sort((a,b) => b[1] - a[1]).map(([cat, amt]) => [`  ${cat}`, '$' + amt.toFixed(2)])),
-      ...(iftaOn ? [
+      ...(totalFuelCost > 0 ? [
         [''],
         ['FUEL'],
         ['Total Fuel Cost', '$' + totalFuelCost.toFixed(2)],
@@ -9022,10 +8992,9 @@ async function generateAccountantPackage(period='ytd'){
       '--- EXPENSES BY CATEGORY ---',
       expenseCSV,
     ];
-    if (iftaOn){
+    if (periodFuel.length > 0){
       const fuelCSV = toCSV(fuelRows);
-      const iftaCSV = toCSV(iftaSummaryRows);
-      sections.push('', '', '--- FUEL LOG ---', fuelCSV, '', '', '--- FUEL SUMMARY BY STATE ---', iftaCSV);
+      sections.push('', '', '--- FUEL LOG ---', fuelCSV);
     }
     const combined = sections.join('\n');
 
@@ -12282,7 +12251,6 @@ async function openCPAPackage(){
             ['Form 1099-NEC from each broker (due Jan 31)',                                    d.gross > 600 ],
             ['Bank / business account statements',                                             true ],
             ['Receipts for expense categories above',                                          d.totalExp > 0 ],
-            ['IFTA fuel summary (if applicable)',                                              d.totalFuelCost > 0 ],
             ['Home office square footage (if claiming home office deduction)',                  false],
             ['Cell phone & internet — estimate business use %',                                false],
           ].map(([item, ready]) => `<div style="display:flex;align-items:flex-start;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--card-border)">
