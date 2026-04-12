@@ -6,7 +6,7 @@
 
 export default {
   async fetch(request, env) {
-    const allowedOrigin = env.ALLOWED_ORIGIN || '*';
+    const allowedOrigin = env.ALLOWED_ORIGIN || 'https://freightlogic.pages.dev';
     const cors = {
       'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
