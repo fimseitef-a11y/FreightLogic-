@@ -10,7 +10,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.2.0';
+const APP_VERSION = '23.1.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -40,7 +40,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v22.1.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.1.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -10350,7 +10350,8 @@ async function cloudPullBackup(){
     cloudSetSyncStatus('spinner', 'Decrypting...');
     let plaintext;
     try { plaintext = await cloudDecrypt(encObj.encrypted, encObj.iv, encObj.salt, config.pass); } catch(e) { cloudSetSyncStatus('warn', 'Wrong passphrase'); toast('Wrong passphrase — cannot decrypt', true); return; }
-    const parsed = JSON.parse(plaintext);
+    let parsed;
+    try { parsed = JSON.parse(plaintext); } catch { toast('Backup data corrupted — could not parse', true); cloudRefreshStatusPanel(); return; }
     if (!parsed.trips && !parsed.expenses){ toast('Backup empty', true); return; }
     const c = parsed.meta?.counts || {};
     if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + '\n\nNewer local records will be kept.')){ cloudRefreshStatusPanel(); return; }

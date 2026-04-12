@@ -1,4 +1,4 @@
-/* Freight Logic v23.1.0 — service worker update bridge + voice-load bootstrap */
+/* FreightLogic v23.1.1 — service worker update bridge + voice-load bootstrap */
 (function(){
   if (!('serviceWorker'in navigator)) return;
 
@@ -13,7 +13,7 @@
     try {
       if (document.querySelector('script[data-voice-load="1"]')) return;
       const script = document.createElement('script');
-      script.src = 'voice-load.js?v=23.1.0';
+      script.src = 'voice-load.js?v=23.1.1';
       script.defer = true;
       script.dataset.voiceLoad = '1';
       script.addEventListener('error', (e) => {
