@@ -4,15 +4,35 @@ const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
+const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.1.1"></script>';
 const CORE = [
   './', APP_SHELL,
   './app.js?v=23.1.1',
   './voice-load.js?v=23.1.1',
+  './admin-driver-ui.js?v=23.1.1',
   './manifest.json?v=23.1.1',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
   './sw-bridge.js?v=23.1.1'
 ];
+
+async function injectAdminUi(res) {
+  try {
+    if (!res || !res.ok) return res;
+    const type = (res.headers.get('content-type') || '').toLowerCase();
+    if (!type.includes('text/html')) return res;
+    const text = await res.text();
+    if (text.includes('admin-driver-ui.js')) {
+      return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
+    }
+    const patched = text.includes('</body>')
+      ? text.replace('</body>', `  ${ADMIN_UI_TAG}\n</body>`)
+      : `${text}\n${ADMIN_UI_TAG}`;
+    return new Response(patched, { status: res.status, statusText: res.statusText, headers: res.headers });
+  } catch {
+    return res;
+  }
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -80,10 +100,13 @@ self.addEventListener('fetch', (event) => {
     if (isAppLogic) {
       try {
         const res = await fetch(req);
-        if (res && res.ok) cache.put(req, res.clone());
-        return res;
+        const out = (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(res.clone()) : res;
+        if (res && res.ok) cache.put(req, out.clone());
+        return out;
       } catch {
-        return (await cache.match(req)) || (await cache.match(APP_SHELL));
+        const cached = (await cache.match(req)) || (await cache.match(APP_SHELL));
+        if (!cached) return cached;
+        return (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(cached) : cached;
       }
     }
     if (isStatic) {
