@@ -1,8 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.0.0 USA ENGINE
+/** FreightLogic v23.1.1 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
+ *  v23.1.1: badgeEl TDZ fix, SW cache strings, MW.tier2 patch, Milwaukee/Lexington markets, UX hardening
  *  v23: Proactive Positioning Engine (F24)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
@@ -3427,6 +3428,7 @@ async function _applyCalmHomeState(state){
 // ---- Performance Command Center ----
 async function renderCommandCenter(){
   try{
+    const badgeEl = $('#homeWeekBadge');
     const { trips, exps } = await _getTripsAndExps();
     const now = new Date();
     const today = isoDate();
@@ -3562,9 +3564,6 @@ async function renderCommandCenter(){
         else if (wkTripCount > 0) parent.style.color = 'var(--warn)';
       }
     }
-    // v20: homeWeekBadge shows progress pct
-    const badgeEl = $('#homeWeekBadge');
-
     // Efficiency for trend alerts (still needed)
     let ld30 = 0, all30 = 0;
     for (const t of trips){
@@ -4352,7 +4351,7 @@ const INTEL_TILES = [
   { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by RPM', act:'seasonalIntel' },
   { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs actuals', act:'costPerDay' },
   { icon:'🤝', title:'Counter-Offers', sub:'Broker negotiation tracking', act:'counterOfferMemory' },
-  { icon:'Ω', title:'Ω Tiers Calculator', sub:'All-in pricing by mileage', act:'omegaTiers' },
+  { icon:'Ω', title:'Rate Tiers / Bid Calc', sub:'All-in pricing by mileage band', act:'omegaTiers' },
   { icon:'📡', title:'Market Board', sub:'Log market observations', act:'marketBoard' },
   { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
 ];
@@ -4713,6 +4712,8 @@ const USA_MARKETS = {
   'grand rapids':  { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:42.9634, lng:-85.6681 },
   'fort wayne':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:41.0793, lng:-85.1394 },
   'evansville':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:37.9716, lng:-87.5711 },
+  'milwaukee':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:43.0389, lng:-87.9065 },
+  'lexington':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:38.0406, lng:-84.5037 },
   // ── Southeast ──
   'atlanta':       { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:33.7490, lng:-84.3880 },
   'nashville':     { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:36.1627, lng:-86.7816 },
@@ -5264,7 +5265,7 @@ const MW = {
   longHaulMinRPM: 1.45,
   surgeMinRPM: 1.70,
   tier1: ['chicago','indianapolis','cleveland','columbus','detroit'],
-  tier2: ['nashville','louisville','st. louis','st louis','stl'],
+  tier2: ['nashville','louisville','st. louis','st louis','stl','cincinnati','dayton','toledo','fort wayne','grand rapids','milwaukee','lexington'],
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
   rpmTiers: [
     { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
@@ -7983,7 +7984,7 @@ function openTripWizard(existing=null){
       <div><label>Empty miles</label><input id="f_empty" type="number" step="1" placeholder="Deadhead to pickup" /></div></div>
     <div class="btn-row" style="margin-top:12px"><button class="btn" id="toStep2">Next (optional)</button>
       <button class="btn primary" id="saveTrip">Save</button>
-      ${mode==='edit'?'<button class="btn danger" id="delTrip">Delete</button>':''}</div>
+      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
     <div class="muted" id="tripHint" style="font-size:12px;margin-top:10px"></div></div>`;
 
   step2.style.display = 'none';
@@ -14221,9 +14222,22 @@ if (typeof window !== 'undefined'){
           if (!nw) return;
           nw.addEventListener('statechange', () => {
             if (nw.state === 'installed' && navigator.serviceWorker.controller){
-              const ok = confirm('A new Freight Logic version is ready. Reload now?');
-              if (ok){ if (nw.postMessage) nw.postMessage({ type:'SKIP_WAITING' }); else location.reload(); }
-              else toast('New app version ready — reload when safe');
+              const existing = document.getElementById('swUpdateBanner');
+              if (existing) existing.remove();
+              const banner = document.createElement('div');
+              banner.id = 'swUpdateBanner';
+              banner.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:9000;padding:12px 14px;background:var(--surface-2);border:1px solid var(--accent-border);border-radius:14px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:12px;font-size:13px';
+              banner.innerHTML = '<span style="font-size:18px">🔄</span><div style="flex:1"><b style="color:var(--accent)">Update ready</b> — new Freight Logic version available</div><button id="swUpdateNow" class="btn primary" style="white-space:nowrap;padding:8px 14px">Reload</button><button id="swUpdateLater" class="btn" style="padding:8px 10px;font-size:11px">Later</button>';
+              document.body.appendChild(banner);
+              document.getElementById('swUpdateNow')?.addEventListener('click', ()=>{
+                banner.remove();
+                if (nw.postMessage) nw.postMessage({ type:'SKIP_WAITING' }); else location.reload();
+              });
+              document.getElementById('swUpdateLater')?.addEventListener('click', ()=>{
+                banner.remove();
+                toast('Update saved — reload when convenient');
+              });
+              setTimeout(()=> banner?.remove(), 30000);
             }
           });
         });
