@@ -4,9 +4,22 @@
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
 // Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
 
+const ALLOWED_ORIGINS = new Set([
+  'https://freightlogic.pages.dev',
+  'https://www.freightlogic.pages.dev',
+]);
+
 export default {
   async fetch(request, env) {
-    const allowedOrigin = env.ALLOWED_ORIGIN || 'https://freightlogic.pages.dev';
+    // Strict CORS origin validation — only allow explicitly whitelisted origins
+    const configuredOrigin = env.ALLOWED_ORIGIN;
+    const requestOrigin = request.headers.get('Origin') || '';
+    let allowedOrigin = 'https://freightlogic.pages.dev';
+    if (configuredOrigin && requestOrigin === configuredOrigin) {
+      allowedOrigin = configuredOrigin;
+    } else if (ALLOWED_ORIGINS.has(requestOrigin)) {
+      allowedOrigin = requestOrigin;
+    }
     const cors = {
       'Access-Control-Allow-Origin': allowedOrigin,
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -86,6 +99,10 @@ export default {
       const driverToken = request.headers.get('X-Backup-Token');
       if (!driverToken) {
         return json({ ok: false, error: 'Missing token' }, 401, cors);
+      }
+      // Validate token format before KV lookup to prevent malformed key injection
+      if (!/^flk_[a-f0-9]{32}$/.test(driverToken)) {
+        return json({ ok: false, error: 'Invalid token' }, 403, cors);
       }
 
       const tokenRaw = await env.BACKUPS.get('token:' + driverToken);
@@ -192,6 +209,9 @@ export default {
         const rawText = String(payload.text).slice(0, 4000);
         const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
 
+        // Use a hard delimiter so user text cannot escape into instructions
+        const userContent = 'Extract structured fields from this load text:\n\n<<<BEGIN_LOAD_TEXT>>>\n' + rawText + '\n<<<END_LOAD_TEXT>>>';
+
         const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -205,7 +225,7 @@ export default {
             response_format: { type: 'json_object' },
             messages: [
               { role: 'system', content: EXTRACT_SYSTEM_PROMPT },
-              { role: 'user', content: 'Extract structured fields from this load text:\n\n' + rawText }
+              { role: 'user', content: userContent }
             ]
           })
         });
@@ -439,26 +459,35 @@ You must respond with a single JSON object matching this exact structure:
   "nextMove": "what the operator should do right now"
 }`;
 
+// Sanitize a string field before embedding in an OpenAI prompt to prevent injection
+function promptField(v, maxLen = 120) {
+  return String(v || '').replace(/[\r\n\t]/g, ' ').slice(0, maxLen);
+}
+function promptNum(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function buildEvalPrompt(p) {
   const lines = [
     'Evaluate this load:',
     '',
-    'Route: ' + (p.origin || 'unknown') + ' → ' + (p.destination || 'unknown'),
-    'Loaded miles: ' + (p.loadedMiles || 0),
-    'Deadhead miles: ' + (p.deadheadMiles || 0),
-    'Revenue: $' + (p.revenue || 0),
-    'True RPM (pre-calc, loaded+deadhead): $' + (p.trueRPM || p.trueRpm || 'not provided'),
-    'Loaded RPM (pre-calc): $' + (p.loadedRPM || p.loadedRpm || 'not provided'),
-    'Weekly gross context: $' + (p.weeklyGross || 'not provided'),
-    'Day of week: ' + (p.dayOfWeek || 'unknown'),
-    'Fatigue level: ' + (p.fatigue || 'not provided'),
-    'MPG: ' + (p.mpg || 'not provided'),
-    'Fuel price: $' + (p.fuelPrice || 'not provided'),
-    'Operating cost/mile: $' + (p.operatingCostPerMile || 'not provided'),
-    'Home location: ' + (p.homeLocation || 'not provided'),
-    'Strategic flag: ' + (p.strategic ? 'YES — ' + (p.strategicReason || 'no reason given') : 'No'),
-    'Currency: ' + (p.currency || 'USD'),
-    'Driver notes: ' + (p.notes || 'none'),
+    'Route: ' + promptField(p.origin || 'unknown') + ' → ' + promptField(p.destination || 'unknown'),
+    'Loaded miles: ' + promptNum(p.loadedMiles),
+    'Deadhead miles: ' + promptNum(p.deadheadMiles),
+    'Revenue: $' + promptNum(p.revenue),
+    'True RPM (pre-calc, loaded+deadhead): $' + (Number.isFinite(parseFloat(p.trueRPM || p.trueRpm)) ? parseFloat(p.trueRPM || p.trueRpm) : 'not provided'),
+    'Loaded RPM (pre-calc): $' + (Number.isFinite(parseFloat(p.loadedRPM || p.loadedRpm)) ? parseFloat(p.loadedRPM || p.loadedRpm) : 'not provided'),
+    'Weekly gross context: $' + (Number.isFinite(parseFloat(p.weeklyGross)) ? parseFloat(p.weeklyGross) : 'not provided'),
+    'Day of week: ' + promptField(p.dayOfWeek || 'unknown', 20),
+    'Fatigue level: ' + (Number.isFinite(parseFloat(p.fatigue)) ? parseFloat(p.fatigue) : 'not provided'),
+    'MPG: ' + (Number.isFinite(parseFloat(p.mpg)) ? parseFloat(p.mpg) : 'not provided'),
+    'Fuel price: $' + (Number.isFinite(parseFloat(p.fuelPrice)) ? parseFloat(p.fuelPrice) : 'not provided'),
+    'Operating cost/mile: $' + (Number.isFinite(parseFloat(p.operatingCostPerMile)) ? parseFloat(p.operatingCostPerMile) : 'not provided'),
+    'Home location: ' + promptField(p.homeLocation || 'not provided'),
+    'Strategic flag: ' + (p.strategic ? 'YES — ' + promptField(p.strategicReason || 'no reason given', 80) : 'No'),
+    'Currency: ' + promptField(p.currency || 'USD', 10),
+    'Driver notes: ' + promptField(p.notes || 'none', 200),
   ];
   return lines.join('\n');
 }

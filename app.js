@@ -4051,7 +4051,7 @@ async function openReceiptManager(orderNo){
       if (!inp.files?.length){ toast('Select files first', true); return; }
       await saveNewReceipts(orderNo, inp.files); toast('Receipts saved'); closeModal(); await renderTrips(true);
     });
-    openModal(`Receipts • ${orderNo}`, body); return;
+    openModal(`Receipts • ${escapeHtml(orderNo)}`, body); return;
   }
 
   const grid = document.createElement('div');
@@ -4104,7 +4104,7 @@ async function openReceiptManager(orderNo){
     if (!inp.files?.length){ toast('Select files first', true); return; }
     await saveNewReceipts(orderNo, inp.files); toast('Receipts saved'); closeModal(); await openReceiptManager(orderNo);
   });
-  openModal(`Receipts • ${orderNo} (${files.length})`, body);
+  openModal(`Receipts • ${escapeHtml(orderNo)} (${files.length})`, body);
 }
 
 const ALLOWED_RECEIPT_TYPES = new Set(['image/jpeg','image/png','image/gif','image/webp','image/heic','image/heif','application/pdf']);
@@ -7639,11 +7639,13 @@ function openSnapLoad(preFile){
         closeModal();
         location.hash = '#omega';
         setTimeout(() => {
-          $('#mwOrigin').value = chosen.origin || '';
-          $('#mwDest').value = chosen.destination || '';
-          $('#mwLoadedMi').value = String(chosen.loadedMiles || 0);
-          $('#mwDeadMi').value = String(chosen.deadheadMiles || 0);
-          $('#mwRevenue').value = String(chosen.pay || 0);
+          const _o = $('#mwOrigin'); const _d = $('#mwDest');
+          const _lm = $('#mwLoadedMi'); const _dm = $('#mwDeadMi'); const _rev = $('#mwRevenue');
+          if (_o) _o.value = chosen.origin || '';
+          if (_d) _d.value = chosen.destination || '';
+          if (_lm) _lm.value = String(chosen.loadedMiles || 0);
+          if (_dm) _dm.value = String(chosen.deadheadMiles || 0);
+          if (_rev) _rev.value = String(chosen.pay || 0);
           try { mwEvaluateLoad(); } catch(e) {}
           toast('Loaded into Evaluator ⚡');
         }, 60);
@@ -8331,7 +8333,7 @@ function openTripWizard(existing=null){
       );
     });
   }
-  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${trip.orderNo}`), body);
+  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${escapeHtml(trip.orderNo)}`), body);
 
   // Eval prefill: auto-focus Order # so the user only needs to type one thing
   if (isEvalPrefill){
@@ -11548,8 +11550,9 @@ function initVoiceInput(){
     if (toMatch){
       const orig = toMatch[1].trim();
       const dest = toMatch[2].trim();
-      if (orig.length > 2) $('#mwOrigin').value = orig.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-      if (dest.length > 2) $('#mwDest').value = dest.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      const _voO = $('#mwOrigin'); const _voD = $('#mwDest');
+      if (orig.length > 2 && _voO) _voO.value = orig.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      if (dest.length > 2 && _voD) _voD.value = dest.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
     }
     // Revenue — "$420", "four hundred twenty dollars", "420 dollars"
     const revMatch = t.match(/\$?\s*(\d[\d,]*)\s*(?:dollars?|bucks?|pay)/);
@@ -13696,14 +13699,16 @@ async function _logMaintenanceService(items, idx, onDone) {
     // Log as an expense record so it appears in expense history
     if (cost && cost > 0) {
       const { t, stores } = tx(['expenses'], 'readwrite');
-      await idbReq(stores.expenses.add({
+      const expRec = {
         id: Date.now() + Math.floor(Math.random() * 10000),
         date,
         amount: cost,
         category: 'Maintenance',
-        notes: it.label + (notes ? ': ' + notes : ''),
+        notes: clampStr((it.label || '') + (notes ? ': ' + notes : ''), 300),
         createdAt: Date.now(),
-      }));
+      };
+      validateRecordSize(expRec, 'Expense');
+      await idbReq(stores.expenses.add(expRec));
       await new Promise((res, rej) => { t.oncomplete = res; t.onerror = rej; });
     }
 

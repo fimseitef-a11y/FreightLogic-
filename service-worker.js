@@ -22,14 +22,16 @@ async function injectAdminUi(res) {
     const type = (res.headers.get('content-type') || '').toLowerCase();
     if (!type.includes('text/html')) return res;
     const text = await res.text();
-    if (text.includes('admin-driver-ui.js')) {
+    // Check for the specific script src tag to avoid double-injection
+    if (text.includes('admin-driver-ui.js?v=')) {
       return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
     }
     const patched = text.includes('</body>')
       ? text.replace('</body>', `  ${ADMIN_UI_TAG}\n</body>`)
       : `${text}\n${ADMIN_UI_TAG}`;
     return new Response(patched, { status: res.status, statusText: res.statusText, headers: res.headers });
-  } catch {
+  } catch (err) {
+    console.warn('[FL-SW] Admin UI injection failed:', err);
     return res;
   }
 }
@@ -77,7 +79,10 @@ self.addEventListener('fetch', (event) => {
         const files = formData.getAll('receipts');
         if (files && files.length) {
           const shareCache = await caches.open(SHARE_CACHE);
-          await shareCache.put('/shared-meta', new Response(JSON.stringify({ count: files.length, ts: Date.now() })));
+          await shareCache.put('/shared-meta', new Response(
+            JSON.stringify({ count: files.length, ts: Date.now() }),
+            { headers: { 'Content-Type': 'application/json' } }
+          ));
           for (let i = 0; i < files.length; i++) {
             const file = files[i];
             await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': file.type, 'X-Filename': file.name } }));
@@ -101,11 +106,11 @@ self.addEventListener('fetch', (event) => {
       try {
         const res = await fetch(req);
         const out = (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(res.clone()) : res;
-        if (res && res.ok) cache.put(req, out.clone());
+        if (res && res.ok) cache.put(req, out.clone()).catch(e => console.warn('[FL-SW] Cache put failed:', e));
         return out;
       } catch {
         const cached = (await cache.match(req)) || (await cache.match(APP_SHELL));
-        if (!cached) return cached;
+        if (!cached) return new Response('Offline — no cached page available', { status: 503, headers: { 'Content-Type': 'text/plain' } });
         return (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(cached) : cached;
       }
     }
@@ -114,7 +119,7 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
       try {
         const res = await fetch(req);
-        if (res && res.ok) cache.put(req, res.clone());
+        if (res && res.ok) cache.put(req, res.clone()).catch(e => console.warn('[FL-SW] Cache put failed:', e));
         return res;
       } catch {
         return cached || (await cache.match(APP_SHELL));
