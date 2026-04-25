@@ -1,9 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.1.1 USA ENGINE
+/** FreightLogic v23.2.0 USA ENGINE
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
- *  v23.1.1: badgeEl TDZ fix, SW cache strings, MW.tier2 patch, Milwaukee/Lexington markets, UX hardening
+ *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
  *  v23: Proactive Positioning Engine (F24)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
@@ -11,7 +11,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.1.1';
+const APP_VERSION = '23.2.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -41,7 +41,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.1.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.2.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -2475,8 +2475,8 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   const loaded = Number(trip.loadedMiles || 0);
   const empty = Number(trip.emptyMiles || 0);
   const allMi = loaded + empty;
-  const rpm = allMi > 0 ? pay / allMi : 0;
-  const trueRpm = loaded > 0 ? pay / loaded : 0; // loaded-only CPM
+  const trueRpm = allMi > 0 ? pay / allMi : 0;
+  const loadedRpm = loaded > 0 ? pay / loaded : 0;
   const deadheadPct = allMi > 0 ? (empty / allMi) * 100 : 0;
   const customer = clampStr(trip.customer || '', 80);
 
@@ -2492,18 +2492,18 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   const tierIdx = omegaTierForMiles(allMi || 1);
   const tier = OMEGA_TIERS[tierIdx];
   let omegaPts = 0;
-  if (rpm >= tier.premium.min){ omegaPts = 40; margin.factors.push({ name:'Omega tier', pts:40, max:40, detail:'Premium Win range' }); }
-  else if (rpm >= tier.ideal.min){ omegaPts = 32; margin.factors.push({ name:'Omega tier', pts:32, max:40, detail:'Ideal Target range' }); }
-  else if (rpm >= tier.strong.min){ omegaPts = 24; margin.factors.push({ name:'Omega tier', pts:24, max:40, detail:'Strong Accept range' }); }
-  else if (rpm >= tier.floor.min){ omegaPts = 16; margin.factors.push({ name:'Omega tier', pts:16, max:40, detail:'Floor Accept range' }); }
-  else if (rpm >= tier.under.min){ omegaPts = 8; margin.factors.push({ name:'Omega tier', pts:8, max:40, detail:'Under-Floor range' }); }
+  if (trueRpm >= tier.premium.min){ omegaPts = 40; margin.factors.push({ name:'Omega tier', pts:40, max:40, detail:'Premium Win range' }); }
+  else if (trueRpm >= tier.ideal.min){ omegaPts = 32; margin.factors.push({ name:'Omega tier', pts:32, max:40, detail:'Ideal Target range' }); }
+  else if (trueRpm >= tier.strong.min){ omegaPts = 24; margin.factors.push({ name:'Omega tier', pts:24, max:40, detail:'Strong Accept range' }); }
+  else if (trueRpm >= tier.floor.min){ omegaPts = 16; margin.factors.push({ name:'Omega tier', pts:16, max:40, detail:'Floor Accept range' }); }
+  else if (trueRpm >= tier.under.min){ omegaPts = 8; margin.factors.push({ name:'Omega tier', pts:8, max:40, detail:'Under-Floor range' }); }
   else { omegaPts = 0; margin.factors.push({ name:'Omega tier', pts:0, max:40, detail:'Below all tiers' }); }
   margin.total += omegaPts;
 
   // Factor 2: RPM vs personal 90-day average (0-25 pts)
   let histPts = 12; // default neutral if no history
   if (histAvgRpm > 0){
-    const ratio = rpm / histAvgRpm;
+    const ratio = trueRpm / histAvgRpm;
     if (ratio >= 1.20){ histPts = 25; }
     else if (ratio >= 1.05){ histPts = 20; }
     else if (ratio >= 0.95){ histPts = 15; }
@@ -2607,8 +2607,8 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   // Factor 4: Below-floor risk (0-20 pts)
   let floorRisk = 0;
   if (allMi > 0){
-    if (rpm < tier.under.min){ floorRisk = 20; risk.factors.push({ name:'Below floor', pts:20, max:20, detail:`$${rpm.toFixed(2)} RPM is below all Omega tiers` }); }
-    else if (rpm < tier.floor.min){ floorRisk = 12; risk.factors.push({ name:'Below floor', pts:12, max:20, detail:`$${rpm.toFixed(2)} RPM is under-floor range` }); }
+    if (trueRpm < tier.under.min){ floorRisk = 20; risk.factors.push({ name:'Below floor', pts:20, max:20, detail:`$${trueRpm.toFixed(2)} True RPM is below all Omega tiers` }); }
+    else if (trueRpm < tier.floor.min){ floorRisk = 12; risk.factors.push({ name:'Below floor', pts:12, max:20, detail:`$${trueRpm.toFixed(2)} True RPM is under-floor range` }); }
     else { risk.factors.push({ name:'Below floor', pts:0, max:20, detail:'RPM is at or above floor' }); }
   } else {
     risk.factors.push({ name:'Below floor', pts:0, max:20, detail:'No mileage entered' });
@@ -2643,8 +2643,8 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
     marginScore: Math.min(100, Math.max(0, m)),
     riskScore: Math.min(100, Math.max(0, r)),
     verdict, verdictColor,
-    rpm: +rpm.toFixed(2),
-    trueRpm: +trueRpm.toFixed(2),
+    rpm: +trueRpm.toFixed(2),
+    loadedRpm: +loadedRpm.toFixed(2),
     deadheadPct: +deadheadPct.toFixed(1),
     tierName: tier.name,
     counterOffer, counterRpm,
@@ -2792,8 +2792,8 @@ function openScoreBreakdown(trip, score){
   metrics.className = 'row';
   metrics.style.cssText = 'margin:0 0 14px;justify-content:center';
   metrics.innerHTML = `
-    <div class="pill"><span class="muted">RPM</span> <b>$${score.rpm}</b></div>
-    <div class="pill"><span class="muted">True RPM</span> <b>$${score.trueRpm}</b></div>
+    <div class="pill"><span class="muted">True RPM</span> <b>$${score.rpm}</b></div>
+    <div class="pill"><span class="muted">Loaded RPM</span> <b>$${score.loadedRpm}</b></div>
     <div class="pill"><span class="muted">DH%</span> <b>${score.deadheadPct}%</b></div>
     <div class="pill"><span class="muted">Tier</span> <b>${escapeHtml(score.tierName)}</b></div>
     ${score.fuelCost !== null ? `<div class="pill"><span class="muted">Fuel est</span> <b>${fmtMoney(score.fuelCost)}</b></div>` : ''}
@@ -2889,7 +2889,7 @@ function showScoreFlash(trip, score){
       <div><div class="muted" style="font-size:11px">RISK</div><div style="font-size:32px;font-weight:800;color:${score.riskScore<=50?'var(--good)':'var(--bad)'}">${score.riskScore}</div></div>
     </div>
     <div class="row" style="justify-content:center;margin-bottom:14px">
-      <div class="pill"><span class="muted">RPM</span> <b>$${score.rpm}</b></div>
+      <div class="pill"><span class="muted">True RPM</span> <b>$${score.rpm}</b></div>
       <div class="pill"><span class="muted">DH%</span> <b>${score.deadheadPct}%</b></div>
       ${score.fuelCost !== null ? `<div class="pill"><span class="muted">Fuel est</span> <b>${fmtMoney(score.fuelCost)}</b></div>` : ''}
     </div>
@@ -2925,7 +2925,7 @@ function renderLiveScore(container, tripData, allTrips, allExps){
     <span style="font-weight:800;font-size:14px;color:${score.verdictColor}">${score.verdict}</span>
     <span class="pill" style="padding:4px 8px"><span class="muted">M</span> <b>${score.marginScore}</b></span>
     <span class="pill" style="padding:4px 8px"><span class="muted">R</span> <b>${score.riskScore}</b></span>
-    <span class="pill" style="padding:4px 8px"><span class="muted">RPM</span> <b>$${score.rpm}</b></span>
+    <span class="pill" style="padding:4px 8px"><span class="muted">True RPM</span> <b>$${score.rpm}</b></span>
     ${score.counterOffer > 0 && score.marginScore < 80 ? `<span class="pill" style="padding:4px 8px;border-color:rgba(255,179,0,.3)"><span class="muted">Target</span> <b style="color:var(--accent)">${fmtMoney(score.counterOffer)}</b></span>` : ''}
   </div>`;
 }
@@ -10107,6 +10107,15 @@ function cloudPassStrength(pass){
   return { score: 100, label: 'Excellent', color: 'var(--good)' };
 }
 
+function _bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 async function cloudEncrypt(plaintext, passphrase){
   const enc = new TextEncoder();
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -10114,7 +10123,7 @@ async function cloudEncrypt(plaintext, passphrase){
   const km = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
   const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
-  return { encrypted: btoa(String.fromCharCode(...new Uint8Array(ct))), iv: btoa(String.fromCharCode(...iv)), salt: btoa(String.fromCharCode(...salt)) };
+  return { encrypted: _bytesToBase64(new Uint8Array(ct)), iv: _bytesToBase64(iv), salt: _bytesToBase64(salt) };
 }
 
 async function cloudDecrypt(encrypted, iv, salt, passphrase){

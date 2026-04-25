@@ -1,0 +1,8 @@
+CLAUDE.md
+README.txt
+cloud-backup-worker.js
+wrangler.jsonc
+.assetsignore
+.gitignore
+.git/
+admin-driver-ui.js

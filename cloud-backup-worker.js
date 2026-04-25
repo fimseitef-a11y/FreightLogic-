@@ -412,8 +412,9 @@ const SYSTEM_PROMPT = `You are a Midwest Stack freight decision advisor for a ca
 Your job is to evaluate a single load using the Midwest Stack operating framework.
 
 Core principles:
-- True RPM (revenue per loaded mile) is the primary metric — always calculate it.
-- Deadhead miles dilute true RPM and must be factored into every decision.
+- True RPM = revenue ÷ (loaded miles + deadhead miles) — always the primary metric.
+- Loaded RPM is secondary and must never override True RPM.
+- Deadhead miles are included in True RPM by definition; always factor them in.
 - Density and reload potential matter — empty return lanes are traps.
 - Strategic under-floor loads are allowed only when explicitly justified.
 - Preserve operator discipline. Do not validate emotional moves.
@@ -424,7 +425,7 @@ You must respond with a single JSON object matching this exact structure:
   "summary": "2-3 sentence analysis of this load",
   "verdict": "ACCEPT | NEGOTIATE | PASS | STRATEGIC_ONLY",
   "grade": "A | B | C | D | E",
-  "trueRpmBand": "$X.XX – $X.XX / loaded mile",
+  "trueRpmBand": "$X.XX – $X.XX / true mile (loaded + deadhead)",
   "bidAdvice": "specific bid or negotiation guidance",
   "primaryReason": "the single most important factor driving this verdict",
   "risks": ["risk 1", "risk 2"],
@@ -440,7 +441,8 @@ function buildEvalPrompt(p) {
     'Loaded miles: ' + (p.loadedMiles || 0),
     'Deadhead miles: ' + (p.deadheadMiles || 0),
     'Revenue: $' + (p.revenue || 0),
-    'True RPM (pre-calc): $' + (p.trueRpm || 'not provided'),
+    'True RPM (pre-calc, loaded+deadhead): $' + (p.trueRPM || p.trueRpm || 'not provided'),
+    'Loaded RPM (pre-calc): $' + (p.loadedRPM || p.loadedRpm || 'not provided'),
     'Weekly gross context: $' + (p.weeklyGross || 'not provided'),
     'Day of week: ' + (p.dayOfWeek || 'unknown'),
     'Fatigue level: ' + (p.fatigue || 'not provided'),
