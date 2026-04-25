@@ -7545,7 +7545,7 @@ function openSnapLoad(preFile){
     <div class="btn-row" style="margin-bottom:12px">
       <button class="btn primary" id="snapCamera">📷 Camera</button>
       <button class="btn" id="snapFile">📁 Choose File</button>
-    
+    </div>
     <div style="margin:10px 0 6px;font-size:12px" class="muted">Or paste a load listing / dispatch text (or import a CSV of loads):</div>
     <textarea id="snapPaste" placeholder="Paste load text here (example: Origin Pryor, OK Destination Tolleson, AZ Deadhead 36 mi Distance 1161 mi Price $2400)" style="width:100%;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--text);font-size:12px;line-height:1.35;margin-bottom:8px"></textarea>
     <div class="btn-row" style="margin-bottom:12px">
