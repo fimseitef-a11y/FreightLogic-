@@ -1568,7 +1568,7 @@ async function importCSVFile(file){
             paidDate: cellAt(row, 'PaidDate','PayDate','PaymentDate') || null,
             wouldRunAgain: ['yes','true','1'].includes(cellAt(row, 'WouldRunAgain','RunAgain','Repeat').toLowerCase()) ? true : null,
           });
-          if (trip.orderNo) { stores.trips.put(trip); imported++; }
+          if (trip.orderNo) { validateRecordSize(trip, 'Trip'); stores.trips.put(trip); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -1587,7 +1587,7 @@ async function importCSVFile(file){
             notes: cellAt(row, 'Notes','Note','Description','Memo','Details'),
             type: cellAt(row, 'Type','ExpType') || '',
           });
-          if (exp.amount > 0) { stores.expenses.put(exp); imported++; }
+          if (exp.amount > 0) { validateRecordSize(exp, 'Expense'); stores.expenses.put(exp); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -1606,7 +1606,7 @@ async function importCSVFile(file){
             state: cellAt(row, 'State','ST','FuelState','Location') || '',
             notes: cellAt(row, 'Notes','Note','Memo') || '',
           });
-          if (fuel.gallons > 0 || fuel.amount > 0) { stores.fuel.put(fuel); imported++; }
+          if (fuel.gallons > 0 || fuel.amount > 0) { validateRecordSize(fuel, 'Fuel'); stores.fuel.put(fuel); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -3243,7 +3243,7 @@ function openQuickEvalModal(){
       const evalOut = $('#mwEvalOutput');
       const gradeEl = evalOut?.querySelector('[data-qe-grade]');
       // Build the inline result: grade + sentence + bid range
-      const trueRPM = (rev + dm * 0) / (lm + dm || 1); // rough, actual from evaluator
+      const trueRPM = rev / (lm + dm || 1); // rough, actual from evaluator
       const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
       const gradeHTML = actualGradeEl?.outerHTML || '';
       const evalSummary = evalOut ? evalOut.innerHTML : '';

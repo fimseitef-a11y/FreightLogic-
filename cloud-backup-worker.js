@@ -24,6 +24,12 @@ export default {
     try {
       // ADMIN ENDPOINTS
       if (path.startsWith('/admin/')) {
+        // Rate limit admin attempts by IP to prevent brute-force on the admin token
+        const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const adminRateLimited = await checkRateLimit(env, 'ip:' + clientIp, 20, 'admin');
+        if (adminRateLimited) {
+          return json({ ok: false, error: 'Too many admin requests. Try again later.' }, 429, cors);
+        }
         const adminToken = request.headers.get('X-Admin-Token');
         if (!adminToken || adminToken !== env.ADMIN_TOKEN) {
           return json({ ok: false, error: 'Unauthorized' }, 401, cors);
