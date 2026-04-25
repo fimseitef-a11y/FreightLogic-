@@ -1568,7 +1568,7 @@ async function importCSVFile(file){
             paidDate: cellAt(row, 'PaidDate','PayDate','PaymentDate') || null,
             wouldRunAgain: ['yes','true','1'].includes(cellAt(row, 'WouldRunAgain','RunAgain','Repeat').toLowerCase()) ? true : null,
           });
-          if (trip.orderNo) { stores.trips.put(trip); imported++; }
+          if (trip.orderNo) { validateRecordSize(trip, 'Trip'); stores.trips.put(trip); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -1587,7 +1587,7 @@ async function importCSVFile(file){
             notes: cellAt(row, 'Notes','Note','Description','Memo','Details'),
             type: cellAt(row, 'Type','ExpType') || '',
           });
-          if (exp.amount > 0) { stores.expenses.put(exp); imported++; }
+          if (exp.amount > 0) { validateRecordSize(exp, 'Expense'); stores.expenses.put(exp); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -1606,7 +1606,7 @@ async function importCSVFile(file){
             state: cellAt(row, 'State','ST','FuelState','Location') || '',
             notes: cellAt(row, 'Notes','Note','Memo') || '',
           });
-          if (fuel.gallons > 0 || fuel.amount > 0) { stores.fuel.put(fuel); imported++; }
+          if (fuel.gallons > 0 || fuel.amount > 0) { validateRecordSize(fuel, 'Fuel'); stores.fuel.put(fuel); imported++; }
         }catch(e){ console.warn("[FL]", e); }
       }
       await waitTxn(txn);
@@ -3243,7 +3243,7 @@ function openQuickEvalModal(){
       const evalOut = $('#mwEvalOutput');
       const gradeEl = evalOut?.querySelector('[data-qe-grade]');
       // Build the inline result: grade + sentence + bid range
-      const trueRPM = (rev + dm * 0) / (lm + dm || 1); // rough, actual from evaluator
+      const trueRPM = rev / (lm + dm || 1); // rough, actual from evaluator
       const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
       const gradeHTML = actualGradeEl?.outerHTML || '';
       const evalSummary = evalOut ? evalOut.innerHTML : '';
@@ -7545,7 +7545,7 @@ function openSnapLoad(preFile){
     <div class="btn-row" style="margin-bottom:12px">
       <button class="btn primary" id="snapCamera">📷 Camera</button>
       <button class="btn" id="snapFile">📁 Choose File</button>
-    
+    </div>
     <div style="margin:10px 0 6px;font-size:12px" class="muted">Or paste a load listing / dispatch text (or import a CSV of loads):</div>
     <textarea id="snapPaste" placeholder="Paste load text here (example: Origin Pryor, OK Destination Tolleson, AZ Deadhead 36 mi Distance 1161 mi Price $2400)" style="width:100%;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--text);font-size:12px;line-height:1.35;margin-bottom:8px"></textarea>
     <div class="btn-row" style="margin-bottom:12px">
