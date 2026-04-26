@@ -129,7 +129,7 @@
     header.scrolled { box-shadow: 0 1px 0 var(--border), var(--shadow) }
     .hdr-row { display: flex; align-items: center; gap: 12px; justify-content: space-between }
     .brand { display: flex; align-items: center; gap: 10px }
-    .logo { width: 32px; height: 32px; border-radius: 8px; overflow: hidden; transition: transform .15s }
+    .logo { width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.25); transition: transform .15s }
     .logo:active { transform: scale(.9) }
     .title { display: flex; flex-direction: column; line-height: 1.15 }
     .title strong { font-size: 14px; font-weight: 700; letter-spacing: -.2px }
@@ -771,7 +771,7 @@
   <header id="mainHeader">
     <div class="hdr-row">
       <div class="brand">
-        <img class="logo" src="./icon64.png" alt="Freight Logic" width="32" height="32" />
+        <img class="logo" src="./icon64.png" alt="Freight Logic" width="40" height="40" />
         <div class="title"><strong>Freight Logic</strong><span id="appMeta">loading…</span></div>
       </div>
       <div class="row">
@@ -1187,9 +1187,12 @@
       <!-- Hidden: preserved IDs for Quick Settings sync (JS references these) -->
       <div style="display:none"><input id="moreWeeklyGoal" /><input id="moreVehicleMpg" /><input id="moreFuelPrice" /><input id="morePerDiem" /><button id="moreSaveSettings"></button></div>
       <div class="spacer"></div>
-      <div class="card" style="text-align:center">
-        <div class="muted" style="font-size:12px">Freight Logic <span id="moreVersion"></span></div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Your data stays on this device.</div>
+      <div class="card" style="text-align:center;padding:24px 16px">
+        <img src="./icon192.png" alt="FreightLogic" width="72" height="72"
+             style="border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,.3);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto" />
+        <div style="font-size:18px;font-weight:800;letter-spacing:-.3px;margin-bottom:2px">FreightLogic</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">v<span id="moreVersion"></span></div>
+        <div class="muted" style="font-size:11px;line-height:1.5">Freight decision intelligence for expedited operators.<br>Your data stays on this device.</div>
       </div>
     </section>
   </main>
