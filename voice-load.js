@@ -518,36 +518,41 @@
       return;
     }
 
-    const fix = parseFixCommand(normalized);
-    if (fix) {
-      mergeDraft({
-        fields: { [fix.field]: fix.value },
-        confidence: { [fix.field]: 94 }
-      }, {
-        action: 'fix',
-        summary: `Fixed ${FIELD_META[fix.field].label}`,
+    try {
+      const fix = parseFixCommand(normalized);
+      if (fix) {
+        mergeDraft({
+          fields: { [fix.field]: fix.value },
+          confidence: { [fix.field]: 94 }
+        }, {
+          action: 'fix',
+          summary: `Fixed ${FIELD_META[fix.field].label}`,
+          transcript: normalized
+        });
+        saveCorrection({ field: fix.field, value: fix.value, transcript: normalized });
+        setStatus(`${FIELD_META[fix.field].label} updated. Review the draft below.`, STATUS_KIND.success);
+        renderReview();
+        return;
+      }
+
+      const parsed = parseEntryCommand(normalized);
+      mergeDraft(parsed, {
+        action: correctionMode ? 'speak-fix' : 'voice-entry',
+        summary: parsed.summary,
         transcript: normalized
       });
-      saveCorrection({ field: fix.field, value: fix.value, transcript: normalized });
-      setStatus(`${FIELD_META[fix.field].label} updated. Review the draft below.`, STATUS_KIND.success);
+
+      const validation = validateDraft(currentDraft);
+      if (validation.valid) {
+        setStatus('Voice draft parsed. Review before applying it to the evaluator.', STATUS_KIND.success);
+      } else {
+        setStatus(buildGuidance(currentDraft), STATUS_KIND.warn);
+      }
       renderReview();
-      return;
+    } catch (err) {
+      console.error('[FL] Voice transcript processing error:', err);
+      setStatus('Voice processing error. Please try again.', STATUS_KIND.error);
     }
-
-    const parsed = parseEntryCommand(normalized);
-    mergeDraft(parsed, {
-      action: correctionMode ? 'speak-fix' : 'voice-entry',
-      summary: parsed.summary,
-      transcript: normalized
-    });
-
-    const validation = validateDraft(currentDraft);
-    if (validation.valid) {
-      setStatus('Voice draft parsed. Review before applying it to the evaluator.', STATUS_KIND.success);
-    } else {
-      setStatus(buildGuidance(currentDraft), STATUS_KIND.warn);
-    }
-    renderReview();
   }
 
   function startListening(correctionMode = false) {
