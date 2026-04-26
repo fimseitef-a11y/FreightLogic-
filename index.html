@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.2.0">
+  <link rel="manifest" href="manifest.json?v=23.3.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -793,6 +793,15 @@
   </datalist>
   <main class="app">
     <section id="view-home" class="view">
+      <!-- F26: Driver Command Strip — always-visible primary actions -->
+      <div id="driverCommandStrip" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <button class="btn primary" id="dcEvaluate" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">⚡ Evaluate Load</button>
+        <button class="btn primary" id="dcAddTrip" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">＋ Add Trip</button>
+        <button class="btn" id="dcAddExpense" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">📋 Add Expense</button>
+        <button class="btn" id="dcMoney" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">💵 Today's Money</button>
+        <button class="btn" id="dcBestMove" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px;grid-column:1/-1">📍 Best Move Now</button>
+      </div>
+
       <!-- Card 1: Welcome (new users only) -->
       <div id="homeWelcome" style="display:none"></div>
 
@@ -1017,6 +1026,13 @@
     </section>
     <section id="view-omega" class="view" style="display:none">
 
+      <!-- F27: Load Intake button — unified entry point -->
+      <div style="margin-bottom:10px">
+        <button class="btn primary" id="btnLoadIntake" style="width:100%;font-size:15px;font-weight:700;padding:14px;border-radius:14px">
+          📋 Load Intake — Paste, Voice, or Type
+        </button>
+      </div>
+
       <!-- F23: Smart Load Inbox (populated by renderLoadInbox) -->
       <div id="loadInboxCard"></div>
 
@@ -1234,8 +1250,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.2.0"></script>
-  <script src="voice-load.js?v=23.2.0"></script>
-  <script src="sw-bridge.js?v=23.2.0"></script>
+  <script src="app.js?v=23.3.0"></script>
+  <script src="voice-load.js?v=23.3.0"></script>
+  <script src="sw-bridge.js?v=23.3.0"></script>
 </body>
 </html>
