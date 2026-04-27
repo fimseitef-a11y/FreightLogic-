@@ -79,7 +79,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.1.0';
+const APP_VERSION = '23.3.2';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -184,8 +184,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.1.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.1.0`; caches `sw-bridge.js`.
+- `manifest.json` references `v=23.3.2` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.3.2`; caches `sw-bridge.js`.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -243,7 +243,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - `_positioningCache` cleared on every trip save (`upsertTrip` call site)
 - Settings keys: `f24PostDeliveryCount` (int), `f24AutoBriefDisabled` (bool), `f24OnboardingSeen` (bool)
 
-### F25 — Vehicle Maintenance Tracker (v23.1.0)
+### F25 — Vehicle Maintenance Tracker (v23.3.0+)
 - `checkMaintenanceDue()` — non-blocking; called in `renderHome()`; populates `#homeMaintenanceAlert` if any item is overdue or due within 14 days
 - `openMaintenanceTracker()` — Intel tile modal; shows all service items with status badge (OK/warn/overdue), "Log Service" per item, and "Add Item" form for custom services
 - `_logMaintenanceService(items, idx, onDone)` — sub-modal (date, cost, notes); saves updated `lastDate`/`lastCost` to schedule; auto-creates an expense record (category: `Maintenance`) when cost > 0

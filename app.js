@@ -4170,11 +4170,13 @@ async function _enrichBrokerBadges(container){
   });
 }
 
-// Compute A-F grades for an array of broker names from bidHistory.
-// Returns { [brokerName]: { grade, count, fastPct } }
+// Compute A-F grades for broker names from bidHistory.
+// Returns { [brokerName]: { grade, count, fastPct, disputePct, lanesCount } }
+// Pass null to return all brokers; pass [] to return {}.
 // Full table is cached for 5 minutes to avoid repeated IDB reads on re-renders.
 async function _getBrokerGrades(brokerNames){
-  if (!brokerNames.length) return {};
+  const returnAll = brokerNames == null;
+  if (!returnAll && !brokerNames.length) return {};
   try {
     const now = Date.now();
     // Rebuild cache if stale (>5 min) or missing
@@ -4184,10 +4186,11 @@ async function _getBrokerGrades(brokerNames){
       for (const r of (all||[])){
         const bk = clampStr(r.broker||'', 60);
         if (!bk) continue;
-        if (!map[bk]) map[bk] = { fast:0, slow:0, dispute:0 };
+        if (!map[bk]) map[bk] = { fast:0, slow:0, dispute:0, lanes: new Set() };
         if (r.paySpeed === 'fast')         map[bk].fast++;
         else if (r.paySpeed === 'slow')    map[bk].slow++;
         else if (r.paySpeed === 'dispute') map[bk].dispute++;
+        if (r.lane) map[bk].lanes.add(r.lane);
       }
       const grades = {};
       for (const [bk, counts] of Object.entries(map)){
@@ -4201,10 +4204,11 @@ async function _getBrokerGrades(brokerNames){
         else if (fastPct >= 0.6) grade = 'B';
         else if (fastPct >= 0.4) grade = 'C';
         else                      grade = 'D';
-        grades[bk] = { grade, count: total, fastPct: Math.round(fastPct*100) };
+        grades[bk] = { grade, count: total, fastPct: Math.round(fastPct*100), disputePct: Math.round(disputePct*100), lanesCount: counts.lanes.size };
       }
       _brokerGradeCache = { ts: now, allGrades: grades };
     }
+    if (returnAll) return { ..._brokerGradeCache.allGrades };
     // Return only the requested brokers
     const out = {};
     for (const bk of brokerNames){
@@ -12371,28 +12375,16 @@ async function openBrokerGrades(){
   openModal('🏅 Broker Grades', body);
 
   try {
-    const all = await idbReq(tx('bidHistory').stores.bidHistory.getAll());
-    const byBroker = {};
-    for (const r of (all||[])){
-      const bk = clampStr(r.broker||'Unknown', 60);
-      if (!byBroker[bk]) byBroker[bk] = { fast:0, slow:0, dispute:0, lanes: new Set() };
-      if (r.paySpeed === 'fast')    byBroker[bk].fast++;
-      else if (r.paySpeed === 'slow')    byBroker[bk].slow++;
-      else if (r.paySpeed === 'dispute') byBroker[bk].dispute++;
-      if (r.lane) byBroker[bk].lanes.add(r.lane);
-    }
+    const gradesMap = await _getBrokerGrades(null);
 
-    const brokers = Object.entries(byBroker).map(([name, c]) => {
-      const total = c.fast + c.slow + c.dispute;
-      const fastPct = total ? c.fast / total : 0;
-      const disputePct = total ? c.dispute / total : 0;
-      let grade, color;
-      if (disputePct >= 0.3)   { grade = 'F'; color = 'var(--bad)'; }
-      else if (fastPct >= 0.8) { grade = 'A'; color = 'var(--good)'; }
-      else if (fastPct >= 0.6) { grade = 'B'; color = 'rgba(88,166,255,.9)'; }
-      else if (fastPct >= 0.4) { grade = 'C'; color = 'var(--accent)'; }
-      else                      { grade = 'D'; color = 'var(--warn)'; }
-      return { name, grade, color, total, fastPct: Math.round(fastPct*100), disputePct: Math.round(disputePct*100), lanes: c.lanes.size };
+    const brokers = Object.entries(gradesMap).map(([name, g]) => {
+      let color;
+      if (g.grade === 'A')      color = 'var(--good)';
+      else if (g.grade === 'B') color = 'rgba(88,166,255,.9)';
+      else if (g.grade === 'C') color = 'var(--accent)';
+      else if (g.grade === 'D') color = 'var(--warn)';
+      else                       color = 'var(--bad)';
+      return { name, grade: g.grade, color, total: g.count, fastPct: g.fastPct, disputePct: g.disputePct, lanes: g.lanesCount };
     }).sort((a,b) => 'ABCDF'.indexOf(a.grade) - 'ABCDF'.indexOf(b.grade));
 
     if (!brokers.length){
