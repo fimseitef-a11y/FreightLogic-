@@ -1,8 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.2.0 USA ENGINE
+/** FreightLogic v23.3.0 USA ENGINE — Driver Command Upgrade
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
+ *  v23.3.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
+ *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
  *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
  *  v23: Proactive Positioning Engine (F24)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
@@ -11,7 +13,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.2.0';
+const APP_VERSION = '23.3.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -41,7 +43,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.2.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.3.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1362,7 +1364,10 @@ async function importJSON(file, opts={}){
       // v23 F24 positioning engine flags
       'f24PostDeliveryCount','f24AutoBriefDisabled','f24OnboardingSeen',
       // v23.1 F25 maintenance tracker
-      'maintenanceSchedule','lastMaintenanceNotify']);
+      'maintenanceSchedule','lastMaintenanceNotify',
+      // v23.3 F26/F27/F29 new keys
+      'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
+      'vehicleClass','laneReviewEnabled']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -3298,9 +3303,258 @@ function openQuickEvalModal(){
   openModal('⚡ Evaluate Load', body);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// F26 — First-Time Setup Wizard (v23.3.0)
+// Shows once on first boot. Multi-step modal collecting personalization data.
+// ════════════════════════════════════════════════════════════════════════════
+
+async function checkFirstRunSetup(){
+  const done = await getSetting('f26SetupComplete', false);
+  if (done) return;
+  // Don't interrupt if user already has trips (migrated from old install)
+  const state = await getOnboardState();
+  if (!state.isEmpty) { await setSetting('f26SetupComplete', true); return; }
+  await openSetupWizard();
+}
+
+async function openSetupWizard(){
+  const STEPS = [
+    { id:'home',     title:'Where do you home out of?',            hint:'City, State — e.g. "Indianapolis, IN"' },
+    { id:'vehicle',  title:'Tell us about your vehicle',           hint:'' },
+    { id:'costs',    title:'Your weekly goal & fuel cost',         hint:'' },
+    { id:'monthly',  title:'Monthly fixed expenses',               hint:'We\'ll auto-log these each month so your P&L stays accurate' },
+    { id:'prefs',    title:'Operating preferences',                hint:'' },
+  ];
+  let step = 0;
+  const vals = {
+    homeBase:'', vehicleType:'Cargo Van', vehicleYear:'', vehicleMake:'',
+    avgMpg:'', fuelCost:'', weeklyGoal:'', region:'',
+    payloadLimit:'',
+    mIns:0, mVan:0, mPhone:0, mDispatch:0, mParking:0, mSubs:0, mMaint:0,
+  };
+
+  const body = document.createElement('div');
+  body.style.cssText = 'min-height:380px;display:flex;flex-direction:column;gap:0';
+
+  const progress = document.createElement('div');
+  progress.style.cssText = 'height:3px;background:var(--surface-0);border-radius:2px;margin-bottom:20px;overflow:hidden';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'height:100%;background:var(--accent);border-radius:2px;transition:width .4s';
+  progress.appendChild(bar);
+  body.appendChild(progress);
+
+  const content = document.createElement('div');
+  content.style.cssText = 'flex:1';
+  body.appendChild(content);
+
+  const nav = document.createElement('div');
+  nav.style.cssText = 'display:flex;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)';
+  body.appendChild(nav);
+
+  function field(id, label, type, placeholder, value=''){
+    return `<div style="margin-bottom:14px">
+      <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">${escapeHtml(label)}</label>
+      <input id="${id}" type="${type}" class="input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(String(value))}" style="width:100%;box-sizing:border-box" />
+    </div>`;
+  }
+  function moneyField(id, label, placeholder){
+    return `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
+      <label style="font-size:12px;font-weight:600;color:var(--text-secondary);flex:1;min-width:0">${escapeHtml(label)}</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:13px;color:var(--text-secondary)">$</span>
+        <input id="${id}" type="number" min="0" step="1" class="input" placeholder="${escapeHtml(placeholder)}" style="width:84px;text-align:right" />
+      </div>
+    </div>`;
+  }
+
+  function readVals(){
+    const g = id => document.getElementById(id);
+    if (step === 0) vals.homeBase = g('wz_home')?.value.trim() || '';
+    if (step === 1){
+      vals.vehicleType = g('wz_vtype')?.value || 'Cargo Van';
+      vals.vehicleYear = g('wz_vyear')?.value.trim() || '';
+      vals.vehicleMake = g('wz_vmake')?.value.trim() || '';
+      vals.avgMpg = g('wz_mpg')?.value.trim() || '';
+    }
+    if (step === 2){
+      vals.weeklyGoal = g('wz_goal')?.value.trim() || '';
+      vals.fuelCost = g('wz_fuel')?.value.trim() || '';
+    }
+    if (step === 3){
+      vals.mIns      = posNum(g('wz_ins')?.value  || 0);
+      vals.mVan      = posNum(g('wz_van')?.value  || 0);
+      vals.mPhone    = posNum(g('wz_phone')?.value || 0);
+      vals.mDispatch = posNum(g('wz_disp')?.value || 0);
+      vals.mParking  = posNum(g('wz_park')?.value || 0);
+      vals.mSubs     = posNum(g('wz_subs')?.value || 0);
+      vals.mMaint    = posNum(g('wz_maint')?.value || 0);
+    }
+    if (step === 4){
+      vals.region       = g('wz_region')?.value.trim() || '';
+      vals.payloadLimit = g('wz_payload')?.value.trim() || '';
+    }
+  }
+
+  function renderStep(){
+    const pct = Math.round(((step) / STEPS.length) * 100);
+    bar.style.width = pct + '%';
+    const s = STEPS[step];
+
+    let html = `<h3 style="margin:0 0 6px 0;font-size:17px;font-weight:800">${escapeHtml(s.title)}</h3>`;
+    if (s.hint) html += `<p class="muted" style="font-size:12px;margin:0 0 16px 0">${escapeHtml(s.hint)}</p>`;
+
+    if (step === 0){
+      html += field('wz_home','Home Base (City, State)','text','e.g. Indianapolis, IN', vals.homeBase);
+      html += `<p class="muted" style="font-size:11px;margin-top:4px">Used for strategic floor and reload positioning. Can be changed in Settings.</p>`;
+    } else if (step === 1){
+      html += `<div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Vehicle Type</label>
+        <select id="wz_vtype" class="input" style="width:100%">
+          <option${vals.vehicleType==='Cargo Van'?' selected':''}>Cargo Van</option>
+          <option${vals.vehicleType==='Sprinter Van'?' selected':''}>Sprinter Van</option>
+          <option${vals.vehicleType==='Box Truck'?' selected':''}>Box Truck</option>
+          <option${vals.vehicleType==='Pickup + Trailer'?' selected':''}>Pickup + Trailer</option>
+          <option${vals.vehicleType==='Other'?' selected':''}>Other</option>
+        </select>
+      </div>`;
+      html += field('wz_vyear','Year (optional)','text','e.g. 2021', vals.vehicleYear);
+      html += field('wz_vmake','Make / Model (optional)','text','e.g. Ford Transit 250', vals.vehicleMake);
+      html += field('wz_mpg','Average MPG','number','e.g. 18', vals.avgMpg);
+    } else if (step === 2){
+      html += field('wz_goal','Weekly Revenue Goal ($)','number','e.g. 4000', vals.weeklyGoal);
+      html += field('wz_fuel','Fuel Cost per Gallon ($)','number','e.g. 3.89', vals.fuelCost);
+    } else if (step === 3){
+      html += `<div style="padding:12px;background:rgba(255,179,0,.07);border-radius:10px;border:1px solid rgba(255,179,0,.15);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">Leave $0 for any you don't have. You can update these anytime in Settings → Monthly Costs.</div>`;
+      html += moneyField('wz_ins',    'Insurance (monthly)',       '0');
+      html += moneyField('wz_van',    'Van / Vehicle payment',     '0');
+      html += moneyField('wz_phone',  'Phone & data plan',         '0');
+      html += moneyField('wz_disp',   'Dispatch / platform fees',  '0');
+      html += moneyField('wz_park',   'Parking / storage',         '0');
+      html += moneyField('wz_subs',   'Subscriptions (DAT, etc.)', '0');
+      html += moneyField('wz_maint',  'Maintenance reserve',       '0');
+    } else if (step === 4){
+      html += `<div style="margin-bottom:14px">
+        <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Preferred Operating Region</label>
+        <select id="wz_region" class="input" style="width:100%">
+          <option value=""${!vals.region?' selected':''}>No preference</option>
+          <option${vals.region==='Midwest'?' selected':''}>Midwest</option>
+          <option${vals.region==='Southeast'?' selected':''}>Southeast</option>
+          <option${vals.region==='Northeast'?' selected':''}>Northeast</option>
+          <option${vals.region==='South / Texas'?' selected':''}>South / Texas</option>
+          <option${vals.region==='Mountain / West'?' selected':''}>Mountain / West</option>
+          <option${vals.region==='Pacific'?' selected':''}>Pacific</option>
+          <option${vals.region==='National'?' selected':''}>National</option>
+        </select>
+      </div>`;
+      html += field('wz_payload','Cargo Payload Limit (lbs, optional)','number','e.g. 2000', vals.payloadLimit);
+      html += `<div style="margin-top:16px;padding:12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;font-size:12px;color:var(--text-secondary)">
+        All set! You can update any of this later in <b>Settings</b>.
+      </div>`;
+    }
+
+    content.innerHTML = html;
+
+    // Restore monthly values into inputs (step 3)
+    if (step === 3){
+      const pairs = [['wz_ins',vals.mIns],['wz_van',vals.mVan],['wz_phone',vals.mPhone],['wz_disp',vals.mDispatch],['wz_park',vals.mParking],['wz_subs',vals.mSubs],['wz_maint',vals.mMaint]];
+      pairs.forEach(([id,v]) => { const el=document.getElementById(id); if (el && v) el.value = v; });
+    }
+
+    // Nav buttons
+    nav.innerHTML = '';
+    if (step > 0){
+      const back = document.createElement('button');
+      back.className = 'btn'; back.textContent = '← Back';
+      back.style.cssText = 'flex:1';
+      back.addEventListener('click', ()=>{ haptic(); readVals(); step--; renderStep(); });
+      nav.appendChild(back);
+    }
+    const next = document.createElement('button');
+    next.className = 'btn primary'; next.style.cssText = 'flex:2';
+    next.textContent = step < STEPS.length - 1 ? 'Next →' : 'Start Using FreightLogic ✓';
+    next.addEventListener('click', async ()=>{
+      haptic();
+      readVals();
+      if (step < STEPS.length - 1){ step++; renderStep(); return; }
+      await _saveSetupWizardResults(vals);
+      closeModal();
+      toast('Setup complete! FreightLogic is personalized for you.');
+      await renderHome();
+    });
+    nav.appendChild(next);
+
+    // Skip link (first step only)
+    if (step === 0){
+      const skip = document.createElement('button');
+      skip.className = 'btn'; skip.textContent = 'Skip for now';
+      skip.style.cssText = 'flex:1;color:var(--text-tertiary)';
+      skip.addEventListener('click', async ()=>{
+        haptic();
+        await setSetting('f26SetupComplete', true);
+        closeModal();
+      });
+      nav.appendChild(skip);
+    }
+  }
+
+  renderStep();
+  openModal('Welcome to FreightLogic', body);
+}
+
+async function _saveSetupWizardResults(vals){
+  const tasks = [];
+  if (vals.homeBase)    tasks.push(setSetting('homeLocation', clampStr(vals.homeBase, 80)));
+  if (vals.vehicleType) tasks.push(setSetting('vehicleClass', vals.vehicleType));
+  if (vals.avgMpg)      tasks.push(setSetting('vehicleMpg', posNum(vals.avgMpg)));
+  if (vals.fuelCost)    tasks.push(setSetting('fuelPrice', posNum(vals.fuelCost)));
+  if (vals.weeklyGoal)  tasks.push(setSetting('weeklyGoal', posNum(vals.weeklyGoal)));
+  if (vals.region)      tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
+  if (vals.payloadLimit) tasks.push(setSetting('payloadLimitLbs', posNum(vals.payloadLimit)));
+
+  // Build monthly expense config (all non-zero items)
+  const monthlyItems = [
+    { id:'ins',      label:'Insurance',            category:'Insurance',        amount: vals.mIns },
+    { id:'van',      label:'Van Payment',          category:'Vehicle Payment',  amount: vals.mVan },
+    { id:'phone',    label:'Phone & Data',         category:'Phone / Data',     amount: vals.mPhone },
+    { id:'dispatch', label:'Dispatch Fees',        category:'Other',            amount: vals.mDispatch },
+    { id:'parking',  label:'Parking / Storage',   category:'Other',            amount: vals.mParking },
+    { id:'subs',     label:'Subscriptions',        category:'Other',            amount: vals.mSubs },
+    { id:'maint',    label:'Maintenance Reserve',  category:'Maintenance',      amount: vals.mMaint },
+  ].filter(x => x.amount > 0);
+  tasks.push(setSetting('monthlyExpensesConfig', monthlyItems));
+
+  // Legacy compat: keep old individual keys in sync
+  tasks.push(setSetting('monthlyInsurance', vals.mIns || 0));
+  tasks.push(setSetting('monthlyVehicle',   vals.mVan || 0));
+  tasks.push(setSetting('monthlyMaintenance', vals.mMaint || 0));
+  const otherTotal = (vals.mPhone||0) + (vals.mDispatch||0) + (vals.mParking||0) + (vals.mSubs||0);
+  tasks.push(setSetting('monthlyOther', otherTotal));
+
+  tasks.push(setSetting('f26SetupComplete', true));
+  tasks.push(setSetting('autoRecurringExpenses', monthlyItems.length > 0));
+  await Promise.all(tasks);
+}
+
 // ---- UI: Home ----
 async function renderHome(){
   refreshUnpaidBadge().catch(()=>{});
+
+  // F26: Driver Command Strip wiring (idempotent — only bind once)
+  const dcEval = $('#dcEvaluate');
+  if (dcEval && !dcEval.__bound) {
+    dcEval.__bound = true;
+    dcEval.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
+    $('#dcAddTrip').addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
+    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnExpAdd')?.click(), 150); });
+    $('#dcMoney').addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
+    $('#dcBestMove').addEventListener('click', ()=>{
+      haptic();
+      const pc = $('#homePositioningCard');
+      if (pc && pc.style.display !== 'none') pc.scrollIntoView({behavior:'smooth', block:'start'});
+      else renderPositioningCard().catch(()=>{});
+    });
+  }
+
   const state = await getOnboardState();
   const trips = await listTrips({cursor:null});
   const recent = trips.items.slice(0, 3); // v20: limit to 3
@@ -4361,6 +4615,7 @@ const MORE_TILES = [
   { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY' },
   { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY' },
+  { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY' },
   { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY' },
   { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY' },
@@ -4370,6 +4625,7 @@ const MORE_TILES = [
   { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED' },
   { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED' },
   { icon:'💿', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED' },
+  { icon:'🔬', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED' },
 ];
 
 // ── Intel Page Renderer ──
@@ -4468,6 +4724,8 @@ async function renderMore(){
           }, 100);
         }
         else if (tile.act === 'maintenance') openMaintenanceTracker();
+        else if (tile.act === 'monthlyCosts') openMonthlyExpenseManager();
+        else if (tile.act === 'diagnostics') openDiagnosticsPanel();
         else if (tile.act === 'storageHealth'){
           location.hash = '#insights';
           setTimeout(()=>{
@@ -6936,6 +7194,12 @@ function omegaCompute(){
 }
 
 async function renderOmega(){
+  // F27: Load Intake button binding (idempotent)
+  const liBtn = $('#btnLoadIntake');
+  if (liBtn && !liBtn.__bound){
+    liBtn.__bound = true;
+    liBtn.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
+  }
   // F23: Smart Load Inbox — renders once, guards against re-init
   renderLoadInbox().catch(()=>{});
   await mwInit();
@@ -9999,53 +10263,51 @@ function initCollapsibleSettings(){
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
 // Runs once per boot. Only creates if not already logged this month.
+// v23.3.0: reads from monthlyExpensesConfig (full item list) first;
+//          falls back to legacy individual keys for upgrades.
 // ========================================================================
 async function checkRecurringExpenses(){
   try {
-    const mIns = Number(await getSetting('monthlyInsurance', 0) || 0);
-    const mVeh = Number(await getSetting('monthlyVehicle', 0) || 0);
-    const mMaint = Number(await getSetting('monthlyMaintenance', 0) || 0);
-    const mOther = Number(await getSetting('monthlyOther', 0) || 0);
-
-    // Skip if no fixed costs configured
-    if (!mIns && !mVeh && !mMaint && !mOther) return;
+    const autoRecurring = await getSetting('autoRecurringExpenses', null);
+    if (autoRecurring === false) return;
 
     const now = new Date();
     const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     const lastRecurring = await getSetting('lastRecurringMonth', '');
     if (lastRecurring === monthKey) return; // Already processed this month
 
-    // Check if user wants auto-recurring (first time: ask)
-    const autoRecurring = await getSetting('autoRecurringExpenses', null);
-    if (autoRecurring === null){
-      // First time: ask user
-      const doIt = confirm(
-        'FreightLogic can auto-log your monthly fixed costs as expenses each month.\n\n' +
-        'Insurance: $' + mIns + '\nVehicle: $' + mVeh + '\nMaintenance: $' + mMaint + '\nOther: $' + mOther + '\n\n' +
-        'Enable auto-recurring expenses?'
-      );
-      await setSetting('autoRecurringExpenses', doIt);
-      if (!doIt) { await setSetting('lastRecurringMonth', monthKey); return; }
+    // Build entry list from config (v23.3.0+) or legacy individual keys
+    let entries = [];
+    const config = await getSetting('monthlyExpensesConfig', null);
+    if (Array.isArray(config) && config.length > 0){
+      entries = config.filter(x => posNum(x?.amount) > 0).map((x,i) => ({
+        id: 'rec_' + monthKey + '_' + (x.id || i),
+        category: clampStr(x.category || 'Other', 40),
+        amount: posNum(x.amount),
+        note: clampStr(x.label || x.category || 'Monthly fixed cost', 80) + ' (auto)',
+      }));
+    } else {
+      // Legacy fallback
+      const mIns = posNum(await getSetting('monthlyInsurance', 0));
+      const mVeh = posNum(await getSetting('monthlyVehicle', 0));
+      const mMaint = posNum(await getSetting('monthlyMaintenance', 0));
+      const mOther = posNum(await getSetting('monthlyOther', 0));
+      if (!mIns && !mVeh && !mMaint && !mOther) return;
+      if (mIns)   entries.push({ id:'rec_'+monthKey+'_ins',  category:'Insurance',       amount:mIns,   note:'Monthly insurance (auto)' });
+      if (mVeh)   entries.push({ id:'rec_'+monthKey+'_van',  category:'Vehicle Payment', amount:mVeh,   note:'Monthly vehicle payment (auto)' });
+      if (mMaint) entries.push({ id:'rec_'+monthKey+'_mnt',  category:'Maintenance',     amount:mMaint, note:'Monthly maintenance reserve (auto)' });
+      if (mOther) entries.push({ id:'rec_'+monthKey+'_oth',  category:'Other',           amount:mOther, note:'Monthly fixed costs (auto)' });
     }
-    if (autoRecurring === false) { await setSetting('lastRecurringMonth', monthKey); return; }
+    if (!entries.length) return;
 
-    // Create expense entries
-    const entries = [];
-    if (mIns > 0) entries.push({ category: 'Insurance', amount: mIns, note: 'Monthly insurance (auto)' });
-    if (mVeh > 0) entries.push({ category: 'Vehicle Payment', amount: mVeh, note: 'Monthly vehicle payment (auto)' });
-    if (mMaint > 0) entries.push({ category: 'Maintenance', amount: mMaint, note: 'Monthly maintenance reserve (auto)' });
-    if (mOther > 0) entries.push({ category: 'Other', amount: mOther, note: 'Monthly fixed costs (auto)' });
+    // First time with real items: auto-enable (setup wizard already asked)
+    if (autoRecurring === null) await setSetting('autoRecurringExpenses', true);
 
-    for (var i = 0; i < entries.length; i++){
-      var e = entries[i];
+    for (const e of entries){
       await upsertExpense({
-        id: 'rec_' + monthKey + '_' + i,
-        category: e.category,
-        amount: e.amount,
-        date: now.toISOString().slice(0, 10),
-        note: e.note,
-        recurring: true,
-        created: Date.now(),
+        id: e.id, category: e.category, amount: e.amount,
+        date: now.toISOString().slice(0, 10), note: e.note,
+        recurring: true, created: Date.now(),
       });
     }
 
@@ -10055,6 +10317,464 @@ async function checkRecurringExpenses(){
   } catch(e) { console.warn('[FL] Recurring expense check failed:', e); }
 }
 
+// ---- Monthly Expense Manager (F26 companion) ----
+async function openMonthlyExpenseManager(){
+  const config = await getSetting('monthlyExpensesConfig', []);
+  const items = Array.isArray(config) ? config.map(x=>({...x})) : [];
+
+  const defaults = [
+    { id:'ins',      label:'Insurance',           category:'Insurance',       amount:0 },
+    { id:'van',      label:'Van / Vehicle Payment', category:'Vehicle Payment', amount:0 },
+    { id:'phone',    label:'Phone & Data',         category:'Phone / Data',   amount:0 },
+    { id:'dispatch', label:'Dispatch Fees',        category:'Other',          amount:0 },
+    { id:'parking',  label:'Parking / Storage',   category:'Other',          amount:0 },
+    { id:'subs',     label:'Subscriptions',        category:'Other',          amount:0 },
+    { id:'maint',    label:'Maintenance Reserve',  category:'Maintenance',    amount:0 },
+  ];
+  // Merge saved amounts into defaults, then append any custom items
+  const knownIds = new Set(defaults.map(d=>d.id));
+  const merged = defaults.map(d => {
+    const saved = items.find(x=>x.id===d.id);
+    return saved ? {...d, amount: posNum(saved.amount)} : d;
+  });
+  const custom = items.filter(x=>!knownIds.has(x.id));
+  const all = [...merged, ...custom];
+
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:0';
+
+  const autoOn = await getSetting('autoRecurringExpenses', null) !== false;
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const lastDone = await getSetting('lastRecurringMonth', '');
+
+  body.innerHTML = `
+    <div style="padding:12px;background:rgba(var(--accent-rgb),.07);border-radius:10px;border:1px solid var(--accent-border);margin-bottom:16px;font-size:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;color:var(--accent)">Auto-Log Monthly</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="memAutoToggle"${autoOn?' checked':''} style="width:16px;height:16px" />
+          <span style="font-size:12px">${autoOn ? 'Enabled' : 'Disabled'}</span>
+        </label>
+      </div>
+      <div class="muted" style="font-size:11px">These are posted on the 1st of each month. This month: <b>${lastDone===monthKey?'✓ Done':'Pending'}</b></div>
+    </div>
+    <div id="memItemList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+    <button class="btn" id="memAddCustom" style="font-size:12px;padding:8px">+ Add Custom Expense</button>
+    <div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <button class="btn primary" id="memSave" style="flex:2">Save Changes</button>
+      <button class="btn" id="memRunNow" style="flex:1;font-size:12px"${lastDone===monthKey?' disabled':''}>Post Now</button>
+    </div>`;
+
+  const list = body.querySelector('#memItemList');
+
+  function renderList(arr){
+    list.innerHTML = '';
+    arr.forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface-1);border-radius:10px';
+      row.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600">${escapeHtml(item.label)}</div>
+          <div class="muted" style="font-size:10px">${escapeHtml(item.category)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:12px;color:var(--text-secondary)">$</span>
+          <input type="number" min="0" step="1" class="input" value="${posNum(item.amount)||''}" placeholder="0" data-idx="${idx}" style="width:72px;text-align:right;font-size:13px;padding:6px 8px" />
+        </div>`;
+      if (!knownIds.has(item.id)){
+        const del = document.createElement('button');
+        del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:6px 8px;font-size:12px;color:var(--bad);flex-shrink:0';
+        del.addEventListener('click', ()=>{ all.splice(idx,1); renderList(all); });
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    });
+  }
+  renderList(all);
+
+  body.querySelector('#memAddCustom').addEventListener('click', ()=>{
+    const label = prompt('Expense label (e.g. "Parking storage"):');
+    if (!label?.trim()) return;
+    const cat = prompt('Category (Insurance / Maintenance / Other / etc.):') || 'Other';
+    all.push({ id:'cust_'+Date.now(), label:clampStr(label.trim(),60), category:clampStr(cat.trim(),40), amount:0 });
+    renderList(all);
+  });
+
+  body.querySelector('#memSave').addEventListener('click', async ()=>{
+    haptic();
+    // Read current amounts from inputs
+    list.querySelectorAll('input[data-idx]').forEach(inp => {
+      const idx = Number(inp.dataset.idx);
+      if (all[idx]) all[idx].amount = posNum(inp.value);
+    });
+    const toSave = all.filter(x=>posNum(x.amount)>0).map(x=>({...x, amount:posNum(x.amount)}));
+    await setSetting('monthlyExpensesConfig', toSave);
+    const autoVal = body.querySelector('#memAutoToggle')?.checked;
+    await setSetting('autoRecurringExpenses', !!autoVal);
+    // Update legacy keys
+    const ins = (toSave.find(x=>x.id==='ins')?.amount)||0;
+    const van = (toSave.find(x=>x.id==='van')?.amount)||0;
+    const maint = (toSave.find(x=>x.id==='maint')?.amount)||0;
+    const otherTotal = toSave.filter(x=>!['ins','van','maint'].includes(x.id)).reduce((s,x)=>s+x.amount,0);
+    await Promise.all([
+      setSetting('monthlyInsurance', ins),
+      setSetting('monthlyVehicle', van),
+      setSetting('monthlyMaintenance', maint),
+      setSetting('monthlyOther', otherTotal),
+    ]);
+    closeModal();
+    toast('Monthly expenses saved.');
+  });
+
+  body.querySelector('#memRunNow').addEventListener('click', async ()=>{
+    haptic();
+    await setSetting('lastRecurringMonth', ''); // Force re-run
+    await checkRecurringExpenses();
+    closeModal();
+  });
+
+  openModal('Monthly Fixed Costs', body);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// F27 — Unified Load Intake (v23.3.0)
+// Paste / voice / photo → parsed draft review → score → save
+// Replaces the ad-hoc parse-then-silently-fill flow. Driver sees
+// exactly what was parsed and can correct it before it hits the evaluator.
+// ════════════════════════════════════════════════════════════════════════════
+
+function openLoadIntake(){
+  let rawText = '';
+  let parsed = null; // will hold parseLoadTextForInbox result
+
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:0';
+
+  // Stage 1: Input pane
+  const stage1 = document.createElement('div');
+  stage1.innerHTML = `
+    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Paste a load confirmation, type load details, or use voice. We'll parse it and show you exactly what was found before scoring.</p>
+    <textarea id="liRawText" class="input" rows="7" placeholder="Paste load text here — rate confirmation, load board copy, or free text…" style="width:100%;box-sizing:border-box;resize:vertical;font-size:13px;line-height:1.5;font-family:monospace"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" id="liVoice" style="flex:1;font-size:13px">🎤 Voice</button>
+      <button class="btn primary" id="liParse" style="flex:2;font-size:13px">Parse Load →</button>
+    </div>
+    <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
+  body.appendChild(stage1);
+
+  // Stage 2: Draft review pane (hidden until parsed)
+  const stage2 = document.createElement('div');
+  stage2.style.display = 'none';
+  stage2.innerHTML = `
+    <div style="padding:10px 12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;border:1px solid var(--accent-border);margin-bottom:14px;font-size:12px">
+      <b style="color:var(--accent)">Review your load draft</b> — edit any field before scoring.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Revenue ($)</label>
+        <input id="liRevenue" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Loaded Miles</label>
+        <input id="liMiles" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Deadhead Miles</label>
+        <input id="liDead" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Weight (lbs)</label>
+        <input id="liWeight" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Origin</label>
+        <input id="liOrigin" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Destination</label>
+        <input id="liDest" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Order / Load #</label>
+        <input id="liOrderNo" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Broker</label>
+        <input id="liBroker" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Commodity / Notes</label>
+      <input id="liNotes" type="text" class="input" style="width:100%;box-sizing:border-box" />
+    </div>
+    <div id="liConfidence" style="margin-bottom:14px;font-size:11px;color:var(--text-tertiary)"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="liBack" style="flex:1">← Edit Text</button>
+      <button class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
+    </div>`;
+  body.appendChild(stage2);
+
+  // Helpers
+  function showError(msg){ const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display=''; }
+  function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
+  function getField(id){ return body.querySelector('#'+id); }
+
+  function populateDraft(fields){
+    const get = k => fields[k] ?? '';
+    getField('liRevenue').value  = posNum(get('pay')) || posNum(get('revenue')) || '';
+    getField('liMiles').value    = intNum(get('loadedMiles')) || '';
+    getField('liDead').value     = intNum(get('deadheadMiles')) || '';
+    getField('liWeight').value   = intNum(get('weight')) || '';
+    getField('liOrigin').value   = clampStr(get('origin'),80);
+    getField('liDest').value     = clampStr(get('destination'),80);
+    getField('liOrderNo').value  = clampStr(get('orderNo'),40);
+    getField('liBroker').value   = clampStr(get('broker'),60);
+    getField('liNotes').value    = clampStr(get('commodity')||get('notes'),120);
+  }
+
+  function readDraftFields(){
+    return {
+      pay:           posNum(getField('liRevenue')?.value),
+      loadedMiles:   intNum(getField('liMiles')?.value),
+      deadheadMiles: intNum(getField('liDead')?.value),
+      weight:        intNum(getField('liWeight')?.value),
+      origin:        clampStr(getField('liOrigin')?.value.trim(),80),
+      destination:   clampStr(getField('liDest')?.value.trim(),80),
+      orderNo:       clampStr(getField('liOrderNo')?.value.trim(),40),
+      broker:        clampStr(getField('liBroker')?.value.trim(),60),
+      notes:         clampStr(getField('liNotes')?.value.trim(),120),
+    };
+  }
+
+  // Parse action
+  stage1.querySelector('#liParse').addEventListener('click', ()=>{
+    haptic();
+    rawText = getField('liRawText')?.value.trim() || '';
+    if (!rawText){ showError('Please paste or type some load text first.'); return; }
+    hideError();
+    // Use existing parser
+    let result;
+    try { result = (typeof parseLoadTextForInbox === 'function') ? parseLoadTextForInbox(rawText) : null; }
+    catch(e){ result = null; }
+    if (!result || (!result.fields && !result.pay)){
+      // Fallback: try parseLoadTextEnhanced directly
+      try { result = (typeof parseLoadTextEnhanced === 'function') ? { fields: parseLoadTextEnhanced(rawText), confidence: 40 } : null; }
+      catch(e){ result = null; }
+    }
+    const fields = result?.fields || result || {};
+    const confidence = result?.confidence ?? result?.score ?? 0;
+    parsed = { fields, confidence, rawText };
+    populateDraft(fields);
+    const confEl = getField('liConfidence');
+    if (confEl){
+      const color = confidence >= 70 ? 'var(--good)' : confidence >= 40 ? 'var(--warn)' : 'var(--bad)';
+      confEl.innerHTML = `Parse confidence: <b style="color:${color}">${confidence}%</b> — verify highlighted fields before scoring.`;
+    }
+    stage1.style.display = 'none';
+    stage2.style.display = '';
+  });
+
+  // Voice input
+  stage1.querySelector('#liVoice').addEventListener('click', ()=>{
+    haptic();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition){ toast('Voice input not supported in this browser.', true); return; }
+    const rec = new SpeechRecognition();
+    rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = false;
+    toast('Listening… speak load details now.');
+    rec.start();
+    rec.onresult = e => {
+      const t = e.results[0][0].transcript;
+      const ta = getField('liRawText');
+      if (ta) ta.value = (ta.value ? ta.value + '\n' : '') + t;
+    };
+    rec.onerror = () => toast('Could not hear clearly. Try again.', true);
+  });
+
+  // Back to edit text
+  stage2.querySelector('#liBack').addEventListener('click', ()=>{
+    haptic();
+    stage2.style.display = 'none';
+    stage1.style.display = '';
+  });
+
+  // Score load — pushes fields into evaluator and navigates
+  stage2.querySelector('#liScore').addEventListener('click', ()=>{
+    haptic();
+    const f = readDraftFields();
+    // Fill evaluator fields
+    const rev = $('#mwRevenue'), mi = $('#mwLoadedMi'), dead = $('#mwDeadMi');
+    const orig = $('#mwOrigin'), dest = $('#mwDest');
+    if (rev && f.pay)          { rev.value  = f.pay;          rev.dispatchEvent(new Event('input')); }
+    if (mi  && f.loadedMiles)  { mi.value   = f.loadedMiles;  mi.dispatchEvent(new Event('input')); }
+    if (dead && f.deadheadMiles){ dead.value = f.deadheadMiles; dead.dispatchEvent(new Event('input')); }
+    if (orig && f.origin)      { orig.value = f.origin;       orig.dispatchEvent(new Event('input')); }
+    if (dest && f.destination) { dest.value = f.destination;  dest.dispatchEvent(new Event('input')); }
+    closeModal();
+    location.hash = '#omega';
+    setTimeout(()=> window.scrollTo({top:0,behavior:'instant'}), 100);
+  });
+
+  // Save as trip draft
+  stage2.querySelector('#liSaveTrip').addEventListener('click', async ()=>{
+    haptic();
+    const f = readDraftFields();
+    const draft = {
+      orderNo:     f.orderNo || ('DRAFT-' + Date.now()),
+      customer:    f.broker || '',
+      origin:      f.origin || '',
+      destination: f.destination || '',
+      pay:         f.pay || 0,
+      loadedMiles: f.loadedMiles || 0,
+      deadMiles:   f.deadheadMiles || 0,
+      weight:      f.weight || 0,
+      notes:       f.notes || '',
+      status:      'pending',
+      created:     Date.now(),
+    };
+    await setSetting('tripDraft', draft);
+    closeModal();
+    toast('Load draft saved — tap + Trip to review and complete it.');
+    // Open trip form pre-filled
+    setTimeout(()=> openQuickAddSheet(), 300);
+  });
+
+  openModal('Load Intake', body);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// F28 — Built-in Diagnostics / Self-Test (v23.3.0)
+// Accessible via More → Advanced → Diagnostics
+// ════════════════════════════════════════════════════════════════════════════
+
+async function openDiagnosticsPanel(){
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:10px';
+
+  const row = (label, id, status='') => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface-1);border-radius:10px;gap:8px">
+      <span style="font-size:13px;font-weight:600">${escapeHtml(label)}</span>
+      <span id="${id}" style="font-size:12px;color:var(--text-secondary);text-align:right;max-width:60%">${escapeHtml(status)}</span>
+    </div>`;
+
+  body.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:4px 0 2px">App</div>
+    ${row('App Version',       'dxAppVer',  APP_VERSION)}
+    ${row('Service Worker',    'dxSwVer',   '...')}
+    ${row('Cache Status',      'dxCache',   '...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Database</div>
+    ${row('Trips',             'dxTrips',   '...')}
+    ${row('Expenses',          'dxExp',     '...')}
+    ${row('Fuel Logs',         'dxFuel',    '...')}
+    ${row('Receipt Sets',      'dxRec',     '...')}
+    ${row('Lane History',      'dxLane',    '...')}
+    ${row('IDB Status',        'dxIdb',     '...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Features</div>
+    ${row('Voice Input',       'dxVoice',   '...')}
+    ${row('File Input',        'dxFile',    '...')}
+    ${row('Offline (SW)',      'dxOffline', '...')}
+    ${row('Cloud Backup',      'dxCloud',   '...')}
+    ${row('AI Endpoint',       'dxAi',      '...')}
+    <button class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
+
+  openModal('Diagnostics', body);
+
+  async function runTests(){
+    const set = (id, val, ok) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = String(val);
+      el.style.color = ok === true ? 'var(--good)' : ok === false ? 'var(--bad)' : 'var(--text-secondary)';
+    };
+
+    // SW version
+    try {
+      const swReg = await navigator.serviceWorker?.getRegistration();
+      if (swReg && swReg.active){
+        set('dxSwVer', 'SW active', true);
+      } else if (swReg && swReg.installing) {
+        set('dxSwVer', 'SW installing', null);
+      } else {
+        set('dxSwVer', 'No SW', false);
+      }
+    } catch(e){ set('dxSwVer', 'Unavailable', null); }
+
+    // Cache API
+    try {
+      if (typeof caches !== 'undefined'){
+        const keys = await caches.keys();
+        set('dxCache', keys.length + ' cache(s): ' + (keys.join(', ') || '—'), keys.length > 0);
+      } else {
+        set('dxCache', 'Not supported', false);
+      }
+    } catch(e){ set('dxCache', 'Error', false); }
+
+    // IDB counts
+    try {
+      const snap = await storageHealthSnapshot();
+      set('dxTrips',  snap.trips,      snap.trips >= 0);
+      set('dxExp',    snap.expenses,   snap.expenses >= 0);
+      set('dxFuel',   snap.fuel,       snap.fuel >= 0);
+      set('dxRec',    snap.receiptSets, snap.receiptSets >= 0);
+      set('dxLane',   await countStore('laneHistory'), true);
+      set('dxIdb',    'OK', true);
+    } catch(e){ set('dxIdb', 'Error: ' + (e?.message||e), false); }
+
+    // Voice input
+    const hasVoice = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    set('dxVoice', hasVoice ? 'Supported' : 'Not supported', hasVoice);
+
+    // File input
+    const hasFile = typeof FileReader !== 'undefined' && typeof File !== 'undefined';
+    set('dxFile', hasFile ? 'Supported' : 'Not supported', hasFile);
+
+    // Offline / SW ready
+    const swReady = 'serviceWorker' in navigator;
+    set('dxOffline', swReady ? (navigator.onLine ? 'Online + SW ready' : 'Offline mode') : 'SW not available', swReady);
+
+    // Cloud backup
+    try {
+      const token = await getSetting('cloudBackupToken', '');
+      const pass  = sessionStorage.getItem('fl_cloud_pass') || '';
+      if (token && pass) set('dxCloud', 'Enabled & authenticated', true);
+      else if (token)    set('dxCloud', 'Token set, no passphrase', null);
+      else               set('dxCloud', 'Not configured', null);
+    } catch(e){ set('dxCloud', 'Error', false); }
+
+    // AI endpoint ping
+    set('dxAi', 'Testing…', null);
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(()=> ctrl.abort(), 6000);
+      const r = await fetch(CLOUD_WORKER_URL + '/status', { signal: ctrl.signal, headers:{'X-Backup-Token':'ping','X-Device-Id':'diag'} });
+      clearTimeout(timeout);
+      set('dxAi', r.ok ? 'Reachable (' + r.status + ')' : 'HTTP ' + r.status, r.ok);
+    } catch(e){
+      set('dxAi', e?.name === 'AbortError' ? 'Timeout (>6s)' : 'Unreachable', false);
+    }
+  }
+
+  body.querySelector('#dxRunTests').addEventListener('click', async ()=>{
+    haptic();
+    body.querySelector('#dxRunTests').textContent = 'Running…';
+    body.querySelector('#dxRunTests').disabled = true;
+    await runTests();
+    body.querySelector('#dxRunTests').textContent = 'Run Tests Again';
+    body.querySelector('#dxRunTests').disabled = false;
+  });
+
+  // Auto-run on open
+  setTimeout(()=> runTests(), 100);
+}
 
 // ==================== CLOUD BACKUP MODULE v3.0 (Simplified Multi-User) =========
 // Client-side AES-256-GCM encryption. Passphrase never leaves device.
@@ -10826,7 +11546,141 @@ function renderLaneIntelHTML(intel){
 }
 
 // Hook lane recording into trip saves — call after saveTrip
-async function _postTripSaveLaneHook(trip){ try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); } }
+async function _postTripSaveLaneHook(trip){
+  try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+  // F29: Post-trip review prompt when trip has a delivery date
+  if (trip && trip.deliveryDate && trip.origin && trip.destination){
+    const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
+    const alreadyDone = await getSetting(reviewKey, false).catch(()=>false);
+    if (!alreadyDone) setTimeout(()=> openPostTripReview(trip).catch(()=>{}), 1200);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// F29 — Post-Trip Lane & Broker Review (v23.3.0)
+// After delivery: 6 quick-tap questions that turn FreightLogic into a
+// real decision engine — not just a tracker.
+// ════════════════════════════════════════════════════════════════════════════
+
+async function openPostTripReview(trip){
+  if (!trip?.origin || !trip?.destination) return;
+  const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
+
+  const body = document.createElement('div');
+  const lane = `${clampStr(trip.origin,40)} → ${clampStr(trip.destination,40)}`;
+  const rpm = (trip.pay && (trip.loadedMiles||0) > 0) ? '$' + (trip.pay / trip.loadedMiles).toFixed(2) + '/mi' : '';
+
+  const answers = {
+    laneRating: null,     // 1-5
+    brokerPay: null,      // 'fast'|'slow'|'dispute'
+    reloadEase: null,     // 'easy'|'ok'|'hard'
+    destStrength: null,   // 'strong'|'neutral'|'weak'
+    rateVsStrategy: null, // 'yes'|'close'|'no'
+    wouldRunAgain: null,  // true|false
+  };
+
+  function chip(id, val, label, color='var(--surface-2)'){
+    return `<button class="btn" data-qid="${id}" data-val="${val}" style="flex:1;min-width:0;padding:8px 6px;font-size:12px;border-radius:10px;background:${color};border:2px solid transparent;transition:all .15s">${escapeHtml(label)}</button>`;
+  }
+  function row(label, html){ return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(label)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${html}</div></div>`; }
+
+  body.innerHTML = `
+    <div style="padding:10px 12px;background:var(--surface-1);border-radius:10px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent)">${escapeHtml(lane)}</div>
+      ${rpm ? `<div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(rpm)} loaded • ${escapeHtml(trip.customer||trip.broker||'')}</div>` : ''}
+    </div>
+    ${row('How was this lane? (1–5)', [1,2,3,4,5].map(n=> chip('laneRating',n,['1 Bad','2','3 OK','4','5 Great'][n-1])).join(''))}
+    ${row('Broker payment?', chip('brokerPay','fast','✓ Fast & correct') + chip('brokerPay','slow','⏳ Slow') + chip('brokerPay','dispute','⚠️ Issue'))}
+    ${row('Reload from destination?', chip('reloadEase','easy','Easy loads out') + chip('reloadEase','ok','OK / neutral') + chip('reloadEase','hard','Tough to reload'))}
+    ${row('Destination market strength?', chip('destStrength','strong','Strong') + chip('destStrength','neutral','Neutral') + chip('destStrength','weak','Weak / avoid'))}
+    ${row('Did rate match your strategy?', chip('rateVsStrategy','yes','Yes') + chip('rateVsStrategy','close','Close') + chip('rateVsStrategy','no','No'))}
+    ${row('Would you run this lane again?', chip('wouldRunAgain','true','Yes, take it') + chip('wouldRunAgain','false','Pass next time'))}
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn primary" id="reviewSave" style="flex:2;font-weight:700">Save Review</button>
+      <button class="btn" id="reviewSkip" style="flex:1;font-size:12px;color:var(--text-tertiary)">Skip</button>
+    </div>`;
+
+  // Chip selection logic
+  body.addEventListener('click', e => {
+    const btn = e.target.closest('[data-qid]');
+    if (!btn) return;
+    haptic(10);
+    const qid = btn.dataset.qid;
+    const val = btn.dataset.val;
+    answers[qid] = val === 'true' ? true : val === 'false' ? false : (isNaN(Number(val)) ? val : Number(val));
+    // Visual feedback: highlight selected chip in group
+    body.querySelectorAll(`[data-qid="${qid}"]`).forEach(b => {
+      b.style.borderColor = 'transparent';
+      b.style.background = 'var(--surface-2)';
+    });
+    btn.style.borderColor = 'var(--accent)';
+    btn.style.background = 'rgba(var(--accent-rgb),.15)';
+  });
+
+  body.querySelector('#reviewSave').addEventListener('click', async ()=>{
+    haptic();
+    await _savePostTripReview(trip, answers);
+    await setSetting(reviewKey, true);
+    closeModal();
+    toast('Lane review saved. FreightLogic is learning.');
+  });
+  body.querySelector('#reviewSkip').addEventListener('click', async ()=>{
+    await setSetting(reviewKey, true);
+    closeModal();
+  });
+
+  openModal('Lane Review', body);
+}
+
+async function _savePostTripReview(trip, answers){
+  try {
+    // Update lane history with review data
+    const lane = normalizeLane(trip.origin, trip.destination);
+    const {stores} = tx('laneHistory');
+    const idx = stores.laneHistory.index('lane');
+    const existing = await idbReq(idx.getAll(lane));
+    const now = Date.now();
+
+    const ratingNum = Number(answers.laneRating) || null;
+    const wouldRunAgain = answers.wouldRunAgain;
+
+    if (existing && existing.length > 0){
+      const rec = existing[0];
+      if (ratingNum){ rec.ratingTotal = (rec.ratingTotal||0) + ratingNum; rec.ratingCount = (rec.ratingCount||0) + 1; rec.avgRating = roundCents(rec.ratingTotal / rec.ratingCount); }
+      if (wouldRunAgain !== null){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (wouldRunAgain === true) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      rec.lastBrokerPay     = answers.brokerPay || rec.lastBrokerPay;
+      rec.lastReloadEase    = answers.reloadEase || rec.lastReloadEase;
+      rec.lastDestStrength  = answers.destStrength || rec.lastDestStrength;
+      rec.lastRateVsStrat   = answers.rateVsStrategy || rec.lastRateVsStrat;
+      rec.updated = now;
+      const {t, stores: ws} = tx('laneHistory','readwrite');
+      ws.laneHistory.put(rec);
+      await waitTxn(t);
+    } else {
+      // No lane history entry yet — create minimal one with review data
+      const rec = { id: 'lane_rev_' + now, lane, count: 1,
+        totalPay: posNum(trip.pay), totalMiles: posNum(trip.loadedMiles), bestPay: posNum(trip.pay),
+        avgRPM: (trip.pay && trip.loadedMiles) ? roundCents(trip.pay / trip.loadedMiles) : 0,
+        ratingTotal: ratingNum||0, ratingCount: ratingNum?1:0, avgRating: ratingNum,
+        wouldRunCount: wouldRunAgain!==null?1:0, wouldRunYes: wouldRunAgain===true?1:0,
+        lastBrokerPay: answers.brokerPay, lastReloadEase: answers.reloadEase,
+        lastDestStrength: answers.destStrength, lastRateVsStrat: answers.rateVsStrategy,
+        lastDate: isoDate(), created: now, updated: now,
+        displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
+      const {t, stores: ws} = tx('laneHistory','readwrite');
+      ws.laneHistory.put(rec);
+      await waitTxn(t);
+    }
+
+    // Also store broker feedback in bidHistory for broker grading
+    if (answers.brokerPay && trip.customer){
+      const bk = clampStr(trip.customer, 60);
+      const {t, stores: ws} = tx('bidHistory','readwrite');
+      ws.bidHistory.put({ id: 'brev_' + now, broker: bk, paySpeed: answers.brokerPay, lane, orderNo: trip.orderNo||'', created: now });
+      await waitTxn(t);
+    }
+  } catch(e){ console.warn('[FL] _savePostTripReview:', e); }
+}
 
 // ================================================================================
 // F24: PROACTIVE POSITIONING ENGINE (v23.0.0)
@@ -14272,6 +15126,9 @@ if (typeof window !== 'undefined'){
 
     // v20: FAB removed — onboarding handled via Home welcome card
     await getOnboardState();
+
+    // F26: First-run setup wizard (non-blocking, fires after first render)
+    setTimeout(()=> checkFirstRunSetup().catch(()=>{}), 800);
 
     // v14.4.0: Deferred boot tasks (non-blocking)
     setTimeout(async ()=>{
