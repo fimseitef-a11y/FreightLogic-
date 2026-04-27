@@ -1,9 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.3.1 USA ENGINE — Driver Command Upgrade
+/** FreightLogic v23.3.2 USA ENGINE — Driver Command Upgrade
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
- *  v23.3.1: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
+ *  v23.3.2: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
  *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
  *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
  *  v23: Proactive Positioning Engine (F24)
@@ -13,7 +13,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.3.1';
+const APP_VERSION = '23.3.2';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -43,7 +43,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.3.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.3.2 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1367,7 +1367,9 @@ async function importJSON(file, opts={}){
       'maintenanceSchedule','lastMaintenanceNotify',
       // v23.3 F26/F27/F29 new keys
       'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
-      'vehicleClass','laneReviewEnabled']);
+      'vehicleClass','laneReviewEnabled',
+      // laneReviewsDone: consolidated map of {orderNo → timestamp} — survives cloud restore
+      'laneReviewsDone']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -3304,7 +3306,7 @@ function openQuickEvalModal(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F26 — First-Time Setup Wizard (v23.3.1)
+// F26 — First-Time Setup Wizard (v23.3.2)
 // Shows once on first boot. Multi-step modal collecting personalization data.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -4147,6 +4149,9 @@ async function renderTrips(reset=false){
   _enrichBrokerBadges(list).catch(()=>{});
 }
 
+// 5-minute cache for the full bidHistory grade computation
+let _brokerGradeCache = null; // { ts, allGrades: { [broker]: grade object } }
+
 // Fetches broker grade data from bidHistory and stamps badges on rendered trip rows.
 async function _enrichBrokerBadges(container){
   const slots = (container || document).querySelectorAll('.broker-badge-slot[data-broker]');
@@ -4167,36 +4172,49 @@ async function _enrichBrokerBadges(container){
 
 // Compute A-F grades for an array of broker names from bidHistory.
 // Returns { [brokerName]: { grade, count, fastPct } }
+// Full table is cached for 5 minutes to avoid repeated IDB reads on re-renders.
 async function _getBrokerGrades(brokerNames){
   if (!brokerNames.length) return {};
   try {
-    const all = await idbReq(tx('bidHistory').stores.bidHistory.getAll());
-    const map = {};
-    for (const r of (all||[])){
-      const bk = clampStr(r.broker||'', 60);
-      if (!brokerNames.includes(bk)) continue;
-      if (!map[bk]) map[bk] = { fast:0, slow:0, dispute:0 };
-      if (r.paySpeed === 'fast')    map[bk].fast++;
-      else if (r.paySpeed === 'slow')    map[bk].slow++;
-      else if (r.paySpeed === 'dispute') map[bk].dispute++;
+    const now = Date.now();
+    // Rebuild cache if stale (>5 min) or missing
+    if (!_brokerGradeCache || (now - _brokerGradeCache.ts) > 300000){
+      const all = await idbReq(tx('bidHistory').stores.bidHistory.getAll());
+      const map = {};
+      for (const r of (all||[])){
+        const bk = clampStr(r.broker||'', 60);
+        if (!bk) continue;
+        if (!map[bk]) map[bk] = { fast:0, slow:0, dispute:0 };
+        if (r.paySpeed === 'fast')         map[bk].fast++;
+        else if (r.paySpeed === 'slow')    map[bk].slow++;
+        else if (r.paySpeed === 'dispute') map[bk].dispute++;
+      }
+      const grades = {};
+      for (const [bk, counts] of Object.entries(map)){
+        const total = counts.fast + counts.slow + counts.dispute;
+        if (!total) continue;
+        const fastPct    = counts.fast    / total;
+        const disputePct = counts.dispute / total;
+        let grade;
+        if (disputePct >= 0.3)   grade = 'F';
+        else if (fastPct >= 0.8) grade = 'A';
+        else if (fastPct >= 0.6) grade = 'B';
+        else if (fastPct >= 0.4) grade = 'C';
+        else                      grade = 'D';
+        grades[bk] = { grade, count: total, fastPct: Math.round(fastPct*100) };
+      }
+      _brokerGradeCache = { ts: now, allGrades: grades };
     }
+    // Return only the requested brokers
     const out = {};
-    for (const [bk, counts] of Object.entries(map)){
-      const total = counts.fast + counts.slow + counts.dispute;
-      if (!total) continue;
-      const fastPct = total > 0 ? counts.fast / total : 0;
-      const disputePct = total > 0 ? counts.dispute / total : 0;
-      let grade;
-      if (disputePct >= 0.3)   grade = 'F';
-      else if (fastPct >= 0.8) grade = 'A';
-      else if (fastPct >= 0.6) grade = 'B';
-      else if (fastPct >= 0.4) grade = 'C';
-      else                      grade = 'D';
-      out[bk] = { grade, count: total, fastPct: Math.round(fastPct*100) };
+    for (const bk of brokerNames){
+      if (_brokerGradeCache.allGrades[bk]) out[bk] = _brokerGradeCache.allGrades[bk];
     }
     return out;
   } catch(e){ return {}; }
 }
+// Invalidate broker grade cache when a new review is saved
+function _invalidateBrokerGradeCache(){ _brokerGradeCache = null; }
 
 // ── v20: Swipe actions helper ──────────────────────────────────────────────
 // Wraps el in a swipe-wrap container.
@@ -8486,6 +8504,7 @@ function openTripWizard(existing=null){
     const saved = await upsertTrip(trip);
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     _positioningCache = null; // F24: clear positioning cache on trip save
+    _laneHistoryReviewCache = null; // F29: clear lane review cache on trip save
     if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
     if (stepNo >= 2){
@@ -8677,6 +8696,7 @@ function openTripWizard(existing=null){
         s('f_customer', draft.customer);
         s('f_origin',   draft.origin);
         s('f_dest',     draft.dest);
+        if (draft._fromIntake) _intakeDraft = true;
         const hint = $('#tripHint', body);
         if (hint && (draft.orderNo || draft.pay)){
           hint.innerHTML = draft._fromIntake
@@ -8687,6 +8707,8 @@ function openTripWizard(existing=null){
     }).catch(()=>{});
 
     // Save draft on every input change (debounced)
+    // _intakeDraft tracks whether this form session was seeded from Load Intake
+    let _intakeDraft = false;
     let _draftTimer = null;
     const saveDraft = () => {
       if (_draftTimer) clearTimeout(_draftTimer);
@@ -8701,6 +8723,7 @@ function openTripWizard(existing=null){
           origin: $('#f_origin', body)?.value || '',
           dest: $('#f_dest', body)?.value || '',
           savedAt: Date.now(),
+          _fromIntake: _intakeDraft,
         };
         setSetting('tripDraft', draft).catch(()=>{});
       }, 800);
@@ -10326,7 +10349,7 @@ function initCollapsibleSettings(){
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
 // Runs once per boot. Only creates if not already logged this month.
-// v23.3.1: reads from monthlyExpensesConfig (full item list) first;
+// v23.3.2: reads from monthlyExpensesConfig (full item list) first;
 //          falls back to legacy individual keys for upgrades.
 // ========================================================================
 async function checkRecurringExpenses(){
@@ -10339,7 +10362,7 @@ async function checkRecurringExpenses(){
     const lastRecurring = await getSetting('lastRecurringMonth', '');
     if (lastRecurring === monthKey) return; // Already processed this month
 
-    // Build entry list from config (v23.3.1+) or legacy individual keys
+    // Build entry list from config (v23.3.2+) or legacy individual keys
     let entries = [];
     const config = await getSetting('monthlyExpensesConfig', null);
     if (Array.isArray(config) && config.length > 0){
@@ -10502,7 +10525,7 @@ async function openMonthlyExpenseManager(){
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// F27 — Unified Load Intake (v23.3.1)
+// F27 — Unified Load Intake (v23.3.2)
 // Paste / voice / photo → parsed draft review → score → save
 // Replaces the ad-hoc parse-then-silently-fill flow. Driver sees
 // exactly what was parsed and can correct it before it hits the evaluator.
@@ -10713,7 +10736,7 @@ function openLoadIntake(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F28 — Built-in Diagnostics / Self-Test (v23.3.1)
+// F28 — Built-in Diagnostics / Self-Test (v23.3.2)
 // Accessible via More → Advanced → Diagnostics
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -11606,26 +11629,47 @@ function renderLaneIntelHTML(intel){
   </div>`;
 }
 
+// In-session guard — prevents re-prompt if the same trip is saved again during this session
+const _reviewedThisSession = new Set();
+
 // Hook lane recording into trip saves — call after saveTrip
 async function _postTripSaveLaneHook(trip){
   try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
   // F29: Post-trip review prompt when trip has a delivery date
   if (trip && trip.deliveryDate && trip.origin && trip.destination){
-    const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
-    const alreadyDone = await getSetting(reviewKey, false).catch(()=>false);
-    if (!alreadyDone) setTimeout(()=> openPostTripReview(trip).catch(()=>{}), 1200);
+    const orderKey = clampStr(trip.orderNo || 'unknown', 60);
+    // In-session guard (fast path — avoids IDB round-trip for re-edits this session)
+    if (_reviewedThisSession.has(orderKey)) return;
+    // Persistent guard — check the consolidated laneReviewsDone object
+    const done = await getSetting('laneReviewsDone', {}).catch(()=>({}));
+    if (done && done[orderKey]) return;
+    // Mark in-session immediately to block concurrent re-saves
+    _reviewedThisSession.add(orderKey);
+    setTimeout(()=> openPostTripReview(trip, orderKey).catch(()=>{}), 1200);
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F29 — Post-Trip Lane & Broker Review (v23.3.1)
+// F29 — Post-Trip Lane & Broker Review (v23.3.2)
 // After delivery: 6 quick-tap questions that turn FreightLogic into a
 // real decision engine — not just a tracker.
 // ════════════════════════════════════════════════════════════════════════════
 
-async function openPostTripReview(trip){
+async function openPostTripReview(trip, orderKey){
   if (!trip?.origin || !trip?.destination) return;
-  const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
+  const _orderKey = orderKey || clampStr(trip.orderNo || 'unknown', 60);
+
+  async function markDone(){
+    try {
+      const done = await getSetting('laneReviewsDone', {}).catch(()=>({}));
+      const updated = Object.assign({}, done || {});
+      updated[_orderKey] = Date.now();
+      // Keep map bounded — drop entries older than 90 days
+      const cutoff = Date.now() - 90*24*3600*1000;
+      for (const k of Object.keys(updated)) if (updated[k] < cutoff) delete updated[k];
+      await setSetting('laneReviewsDone', updated);
+    } catch(e){ console.warn('[FL] markDone failed:', e); }
+  }
 
   const body = document.createElement('div');
   const lane = `${clampStr(trip.origin,40)} → ${clampStr(trip.destination,40)}`;
@@ -11681,12 +11725,14 @@ async function openPostTripReview(trip){
   body.querySelector('#reviewSave').addEventListener('click', async ()=>{
     haptic();
     await _savePostTripReview(trip, answers);
-    await setSetting(reviewKey, true);
+    _invalidateBrokerGradeCache();
+    _laneHistoryReviewCache = null;
+    await markDone();
     closeModal();
     toast('Lane review saved. FreightLogic is learning.');
   });
   body.querySelector('#reviewSkip').addEventListener('click', async ()=>{
-    await setSetting(reviewKey, true);
+    await markDone();
     closeModal();
   });
 
@@ -11748,6 +11794,7 @@ async function _savePostTripReview(trip, answers){
 // ================================================================================
 
 let _positioningCache = null; // { city, brief, ts }
+let _laneHistoryReviewCache = null; // { ts, map: { [lane]: rec } } — 5-min cache
 
 async function getPositioningBrief(city) {
   if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
@@ -14311,13 +14358,19 @@ async function renderPositioningCard(overrideCity, isExploring) {
     ? `<div style="font-size:12px;margin-top:4px;opacity:.8">Best day: ${escapeHtml(patterns.bestDay.name)} ($${patterns.bestDay.avgRPM.toFixed(2)} RPM)</div>`
     : '';
 
-  // Load lane review data from laneHistory for outbound lanes
+  // Load lane review data from laneHistory — cached 5 min to avoid repeated IDB reads
   const laneReviewMap = {};
   try {
-    const allLH = await idbReq(tx('laneHistory').stores.laneHistory.getAll());
-    for (const rec of (allLH||[])){
-      if (rec.avgRating || rec.wouldRunCount) laneReviewMap[rec.lane] = rec;
+    const now2 = Date.now();
+    if (!_laneHistoryReviewCache || (now2 - _laneHistoryReviewCache.ts) > 300000){
+      const allLH = await idbReq(tx('laneHistory').stores.laneHistory.getAll());
+      const map = {};
+      for (const rec of (allLH||[])){
+        if (rec.avgRating || rec.wouldRunCount) map[rec.lane] = rec;
+      }
+      _laneHistoryReviewCache = { ts: now2, map };
     }
+    Object.assign(laneReviewMap, _laneHistoryReviewCache.map);
   } catch(e){ /* non-fatal */ }
 
   // Outbound lanes HTML
