@@ -1,9 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.3.0 USA ENGINE — Driver Command Upgrade
+/** FreightLogic v23.3.1 USA ENGINE — Driver Command Upgrade
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
- *  v23.3.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
+ *  v23.3.1: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
  *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
  *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
  *  v23: Proactive Positioning Engine (F24)
@@ -13,7 +13,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.3.0';
+const APP_VERSION = '23.3.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -43,7 +43,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.3.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.3.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -3304,7 +3304,7 @@ function openQuickEvalModal(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F26 — First-Time Setup Wizard (v23.3.0)
+// F26 — First-Time Setup Wizard (v23.3.1)
 // Shows once on first boot. Multi-step modal collecting personalization data.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -3578,7 +3578,7 @@ async function renderHome(){
     if (kpiCard) kpiCard.style.display = '';
 
     if (!recent.length) box.innerHTML = `<div class="muted" style="font-size:12px">No trips yet. Tap ＋ Trip to add your first.</div>`;
-    else { recent.forEach(t => box.appendChild(tripRow(t, {compact:true}))); staggerItems(box); }
+    else { recent.forEach(t => box.appendChild(tripRow(t, {compact:true}))); staggerItems(box); _enrichBrokerBadges(box).catch(()=>{}); }
   }
 
   // ── Coaching: beginner encouragement ──
@@ -4143,6 +4143,59 @@ async function renderTrips(reset=false){
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
+  // F29: Enrich broker badges asynchronously (non-blocking)
+  _enrichBrokerBadges(list).catch(()=>{});
+}
+
+// Fetches broker grade data from bidHistory and stamps badges on rendered trip rows.
+async function _enrichBrokerBadges(container){
+  const slots = (container || document).querySelectorAll('.broker-badge-slot[data-broker]');
+  if (!slots.length) return;
+  // Build a set of unique broker names in this container
+  const brokers = new Set();
+  slots.forEach(s => { if (s.dataset.broker) brokers.add(s.dataset.broker); });
+  // Aggregate bidHistory records
+  const grades = await _getBrokerGrades([...brokers]);
+  slots.forEach(slot => {
+    const bk = slot.dataset.broker;
+    const g = grades[bk];
+    if (!g) return;
+    const color = g.grade === 'A' ? 'var(--good)' : g.grade === 'B' ? 'rgba(88,166,255,.9)' : g.grade === 'C' ? 'var(--warn)' : 'var(--bad)';
+    slot.innerHTML = `<span class="tag" style="background:${color}20;border-color:${color}50;color:${color};font-size:10px" title="Broker grade based on ${g.count} pay review${g.count!==1?'s':''}">${escapeHtml(g.grade)}</span>`;
+  });
+}
+
+// Compute A-F grades for an array of broker names from bidHistory.
+// Returns { [brokerName]: { grade, count, fastPct } }
+async function _getBrokerGrades(brokerNames){
+  if (!brokerNames.length) return {};
+  try {
+    const all = await idbReq(tx('bidHistory').stores.bidHistory.getAll());
+    const map = {};
+    for (const r of (all||[])){
+      const bk = clampStr(r.broker||'', 60);
+      if (!brokerNames.includes(bk)) continue;
+      if (!map[bk]) map[bk] = { fast:0, slow:0, dispute:0 };
+      if (r.paySpeed === 'fast')    map[bk].fast++;
+      else if (r.paySpeed === 'slow')    map[bk].slow++;
+      else if (r.paySpeed === 'dispute') map[bk].dispute++;
+    }
+    const out = {};
+    for (const [bk, counts] of Object.entries(map)){
+      const total = counts.fast + counts.slow + counts.dispute;
+      if (!total) continue;
+      const fastPct = total > 0 ? counts.fast / total : 0;
+      const disputePct = total > 0 ? counts.dispute / total : 0;
+      let grade;
+      if (disputePct >= 0.3)   grade = 'F';
+      else if (fastPct >= 0.8) grade = 'A';
+      else if (fastPct >= 0.6) grade = 'B';
+      else if (fastPct >= 0.4) grade = 'C';
+      else                      grade = 'D';
+      out[bk] = { grade, count: total, fastPct: Math.round(fastPct*100) };
+    }
+    return out;
+  } catch(e){ return {}; }
 }
 
 // ── v20: Swipe actions helper ──────────────────────────────────────────────
@@ -4226,9 +4279,12 @@ function tripRow(t, {compact=false}={}){
   const _mapsHtml = _destRaw
     ? `<a href="https://www.google.com/maps/dir/?api=1&${_origRaw ? 'origin=' + encodeURIComponent(_origRaw) + '&' : ''}destination=${encodeURIComponent(_destRaw)}&travelmode=driving" target="_blank" rel="noopener noreferrer" class="btn sm" style="text-decoration:none">Maps</a>`
     : '';
+  // Broker badge placeholder — enriched asynchronously after render
+  const brokerBadgeSlot = t.customer ? `<span class="broker-badge-slot" data-broker="${escapeHtml(t.customer||'')}"></span>` : '';
+  if (t.customer) d.dataset.broker = t.customer;
   d.innerHTML = `
     <div class="left">
-      <div class="split"><div class="v">${escapeHtml(t.orderNo||'')}</div>${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
+      <div class="split"><div class="v">${escapeHtml(t.orderNo||'')}</div>${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}${brokerBadgeSlot}</div>
       <div class="sub">${escapeHtml(t.customer || '')}${t.customer ? ' • ' : ''}${escapeHtml(route)}${escapeHtml(t.pickupDate||'')}</div>
       ${compact ? '' : `<div class="k">${fmtNum(miles)} mi • <b>$${rpm.toFixed(2)} RPM</b></div>`}
     </div>
@@ -4599,6 +4655,7 @@ async function renderInsights(){
 const INTEL_TILES = [
   { icon:'📋', title:'Weekly Reports', sub:'Auto P&L summaries', act:'weeklyReports' },
   { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
+  { icon:'🏅', title:'Broker Grades', sub:'A–F pay reliability scores', act:'brokerGrades' },
   { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
   { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
   { icon:'📅', title:'Weekly Strategy', sub:'Mode & week projection', act:'weeklyStrategy' },
@@ -4646,6 +4703,7 @@ function renderIntel(){
       haptic(15);
       if (tile.act === 'weeklyReports') openWeeklyReports();
       else if (tile.act === 'rateTrends') openRateTrends();
+      else if (tile.act === 'brokerGrades') openBrokerGrades();
       else if (tile.act === 'reloadScoring') openReloadScoring();
       else if (tile.act === 'chainAnalysis') openChainAnalysis();
       else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
@@ -8610,16 +8668,21 @@ function openTripWizard(existing=null){
     // Restore saved draft if one exists
     getSetting('tripDraft', null).then(draft => {
       if (draft && !existing){
-        if (draft.orderNo && !$('#f_orderNo', body)?.value) $('#f_orderNo', body).value = draft.orderNo;
-        if (draft.pay && !$('#f_pay', body)?.value) $('#f_pay', body).value = draft.pay;
-        if (draft.loaded && !$('#f_loaded', body)?.value) $('#f_loaded', body).value = draft.loaded;
-        if (draft.empty && !$('#f_empty', body)?.value) $('#f_empty', body).value = draft.empty;
-        if (draft.pickup && !$('#f_pickup', body)?.value) $('#f_pickup', body).value = draft.pickup;
-        if (draft.customer && !$('#f_customer', body)?.value) $('#f_customer', body).value = draft.customer;
-        if (draft.origin && !$('#f_origin', body)?.value) $('#f_origin', body).value = draft.origin;
-        if (draft.dest && !$('#f_dest', body)?.value) $('#f_dest', body).value = draft.dest;
+        const s = (id, val) => { if (val && !$('#'+id, body)?.value) $('#'+id, body).value = val; };
+        s('f_orderNo',  draft.orderNo);
+        s('f_pay',      draft.pay);
+        s('f_loaded',   draft.loaded);
+        s('f_empty',    draft.empty);
+        s('f_pickup',   draft.pickup);
+        s('f_customer', draft.customer);
+        s('f_origin',   draft.origin);
+        s('f_dest',     draft.dest);
         const hint = $('#tripHint', body);
-        if (hint && (draft.orderNo || draft.pay)) hint.innerHTML = '<span style="color:var(--good)">📝 Draft restored</span>';
+        if (hint && (draft.orderNo || draft.pay)){
+          hint.innerHTML = draft._fromIntake
+            ? '<span style="color:var(--accent)">📋 Load Intake draft loaded — review and save</span>'
+            : '<span style="color:var(--good)">📝 Draft restored</span>';
+        }
       }
     }).catch(()=>{});
 
@@ -10263,7 +10326,7 @@ function initCollapsibleSettings(){
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
 // Runs once per boot. Only creates if not already logged this month.
-// v23.3.0: reads from monthlyExpensesConfig (full item list) first;
+// v23.3.1: reads from monthlyExpensesConfig (full item list) first;
 //          falls back to legacy individual keys for upgrades.
 // ========================================================================
 async function checkRecurringExpenses(){
@@ -10276,7 +10339,7 @@ async function checkRecurringExpenses(){
     const lastRecurring = await getSetting('lastRecurringMonth', '');
     if (lastRecurring === monthKey) return; // Already processed this month
 
-    // Build entry list from config (v23.3.0+) or legacy individual keys
+    // Build entry list from config (v23.3.1+) or legacy individual keys
     let entries = [];
     const config = await getSetting('monthlyExpensesConfig', null);
     if (Array.isArray(config) && config.length > 0){
@@ -10439,7 +10502,7 @@ async function openMonthlyExpenseManager(){
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// F27 — Unified Load Intake (v23.3.0)
+// F27 — Unified Load Intake (v23.3.1)
 // Paste / voice / photo → parsed draft review → score → save
 // Replaces the ad-hoc parse-then-silently-fill flow. Driver sees
 // exactly what was parsed and can correct it before it hits the evaluator.
@@ -10624,22 +10687,20 @@ function openLoadIntake(){
     setTimeout(()=> window.scrollTo({top:0,behavior:'instant'}), 100);
   });
 
-  // Save as trip draft
+  // Save as trip draft — use same field names as the trip form autosave
   stage2.querySelector('#liSaveTrip').addEventListener('click', async ()=>{
     haptic();
     const f = readDraftFields();
     const draft = {
-      orderNo:     f.orderNo || ('DRAFT-' + Date.now()),
-      customer:    f.broker || '',
-      origin:      f.origin || '',
-      destination: f.destination || '',
-      pay:         f.pay || 0,
-      loadedMiles: f.loadedMiles || 0,
-      deadMiles:   f.deadheadMiles || 0,
-      weight:      f.weight || 0,
-      notes:       f.notes || '',
-      status:      'pending',
-      created:     Date.now(),
+      orderNo:  f.orderNo  || ('DRAFT-' + Date.now()),
+      customer: f.broker   || '',
+      origin:   f.origin   || '',
+      dest:     f.destination || '',
+      pay:      f.pay      || 0,
+      loaded:   f.loadedMiles || 0,
+      empty:    f.deadheadMiles || 0,
+      savedAt:  Date.now(),
+      _fromIntake: true,
     };
     await setSetting('tripDraft', draft);
     closeModal();
@@ -10652,7 +10713,7 @@ function openLoadIntake(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F28 — Built-in Diagnostics / Self-Test (v23.3.0)
+// F28 — Built-in Diagnostics / Self-Test (v23.3.1)
 // Accessible via More → Advanced → Diagnostics
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -11557,7 +11618,7 @@ async function _postTripSaveLaneHook(trip){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F29 — Post-Trip Lane & Broker Review (v23.3.0)
+// F29 — Post-Trip Lane & Broker Review (v23.3.1)
 // After delivery: 6 quick-tap questions that turn FreightLogic into a
 // real decision engine — not just a tracker.
 // ════════════════════════════════════════════════════════════════════════════
@@ -12251,6 +12312,79 @@ function renderRateTrendHTML(trend){
     <div style="font-size:13px;margin-bottom:8px"><span class="muted">${prev.mo}:</span> <b>$${prev.rpm.toFixed(2)}</b> <span style="color:var(--text-tertiary)">→</span> <span class="muted">${cur.mo}:</span> <b style="color:${color}">$${cur.rpm.toFixed(2)}</b> <span style="color:${color};font-weight:700">${arrow} ${Math.abs(changePct).toFixed(0)}%</span></div>
     <div style="display:flex;gap:4px;align-items:flex-end;height:50px">${sparkline}</div>
   </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// F29 Companion — Broker Grades View
+// Aggregates all post-trip pay reviews into A–F grades per broker.
+// ════════════════════════════════════════════════════════════════════════════
+async function openBrokerGrades(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading broker data…</div>`;
+  openModal('🏅 Broker Grades', body);
+
+  try {
+    const all = await idbReq(tx('bidHistory').stores.bidHistory.getAll());
+    const byBroker = {};
+    for (const r of (all||[])){
+      const bk = clampStr(r.broker||'Unknown', 60);
+      if (!byBroker[bk]) byBroker[bk] = { fast:0, slow:0, dispute:0, lanes: new Set() };
+      if (r.paySpeed === 'fast')    byBroker[bk].fast++;
+      else if (r.paySpeed === 'slow')    byBroker[bk].slow++;
+      else if (r.paySpeed === 'dispute') byBroker[bk].dispute++;
+      if (r.lane) byBroker[bk].lanes.add(r.lane);
+    }
+
+    const brokers = Object.entries(byBroker).map(([name, c]) => {
+      const total = c.fast + c.slow + c.dispute;
+      const fastPct = total ? c.fast / total : 0;
+      const disputePct = total ? c.dispute / total : 0;
+      let grade, color;
+      if (disputePct >= 0.3)   { grade = 'F'; color = 'var(--bad)'; }
+      else if (fastPct >= 0.8) { grade = 'A'; color = 'var(--good)'; }
+      else if (fastPct >= 0.6) { grade = 'B'; color = 'rgba(88,166,255,.9)'; }
+      else if (fastPct >= 0.4) { grade = 'C'; color = 'var(--accent)'; }
+      else                      { grade = 'D'; color = 'var(--warn)'; }
+      return { name, grade, color, total, fastPct: Math.round(fastPct*100), disputePct: Math.round(disputePct*100), lanes: c.lanes.size };
+    }).sort((a,b) => 'ABCDF'.indexOf(a.grade) - 'ABCDF'.indexOf(b.grade));
+
+    if (!brokers.length){
+      body.innerHTML = `<div style="text-align:center;padding:32px 20px">
+        <div style="font-size:36px;margin-bottom:12px">🏅</div>
+        <div style="font-weight:700;font-size:15px;margin-bottom:8px">No broker reviews yet</div>
+        <div class="muted" style="font-size:13px;line-height:1.5">After completing a trip with a delivery date, the app will ask you to rate the broker's payment speed. Grades appear here.</div>
+      </div>`;
+      return;
+    }
+
+    let html = `<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px">${brokers.length} broker${brokers.length!==1?'s':''} graded from post-trip reviews</div>`;
+    for (const b of brokers){
+      const barW = Math.max(4, b.fastPct);
+      html += `<div style="padding:12px 0;border-bottom:1px solid var(--border-subtle)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="font-size:22px;font-weight:900;color:${b.color};min-width:28px;text-align:center">${escapeHtml(b.grade)}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(b.name)}</div>
+            <div style="font-size:11px;color:var(--text-tertiary)">${b.total} review${b.total!==1?'s':''} · ${b.lanes} lane${b.lanes!==1?'s':''}</div>
+          </div>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--surface-0);overflow:hidden;margin-bottom:4px">
+          <div style="height:100%;width:${barW}%;border-radius:3px;background:${b.color};transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-tertiary)">
+          <span style="color:var(--good)">${b.fastPct}% paid fast</span>
+          ${b.disputePct > 0 ? `<span style="color:var(--bad)">${b.disputePct}% disputed</span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += `<div style="font-size:11px;color:var(--text-tertiary);margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
+      Grades update automatically after each post-trip review.<br>
+      A = fast &amp; correct · B = mostly fast · C = mixed · D = slow · F = disputes
+    </div>`;
+    body.innerHTML = html;
+  } catch(e){
+    body.innerHTML = `<div class="muted" style="text-align:center;padding:24px">Error loading data: ${escapeHtml(e?.message||String(e))}</div>`;
+  }
 }
 
 async function openRateTrends(){
@@ -14177,6 +14311,15 @@ async function renderPositioningCard(overrideCity, isExploring) {
     ? `<div style="font-size:12px;margin-top:4px;opacity:.8">Best day: ${escapeHtml(patterns.bestDay.name)} ($${patterns.bestDay.avgRPM.toFixed(2)} RPM)</div>`
     : '';
 
+  // Load lane review data from laneHistory for outbound lanes
+  const laneReviewMap = {};
+  try {
+    const allLH = await idbReq(tx('laneHistory').stores.laneHistory.getAll());
+    for (const rec of (allLH||[])){
+      if (rec.avgRating || rec.wouldRunCount) laneReviewMap[rec.lane] = rec;
+    }
+  } catch(e){ /* non-fatal */ }
+
   // Outbound lanes HTML
   let lanesHtml = '';
   if (outboundLanes.length) {
@@ -14184,9 +14327,26 @@ async function renderPositioningCard(overrideCity, isExploring) {
     lanesHtml = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin:14px 0 6px">Best Outbound Lanes</div>`;
     for (const lane of outboundLanes) {
       const roleHtml = lane.destRole ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border-subtle);margin-left:6px">${escapeHtml(lane.destRole)}</span>` : '';
+      // Review badge from F29 data
+      const lk = normalizeLane(city, lane.dest);
+      const rev = laneReviewMap[lk];
+      let reviewBadge = '';
+      if (rev){
+        if (rev.avgRating){
+          const stars = '\u2605'.repeat(Math.round(rev.avgRating)) + '\u2606'.repeat(5 - Math.round(rev.avgRating));
+          const ratingColor = rev.avgRating >= 4 ? 'var(--good)' : rev.avgRating >= 3 ? 'var(--accent)' : 'var(--warn)';
+          reviewBadge += `<span style="font-size:11px;color:${ratingColor};margin-left:4px" title="${rev.avgRating.toFixed(1)}/5 avg rating">${stars}</span>`;
+        }
+        if (rev.wouldRunCount > 0){
+          const wouldPct = Math.round((rev.wouldRunYes||0) / rev.wouldRunCount * 100);
+          const wColor = wouldPct >= 70 ? 'var(--good)' : wouldPct >= 40 ? 'var(--warn)' : 'var(--bad)';
+          reviewBadge += `<span style="font-size:10px;color:${wColor};margin-left:6px" title="${wouldPct}% would run again">${wouldPct}% \u21bb</span>`;
+        }
+      }
       lanesHtml += `<div class="f24-lane-row" data-dest="${escapeHtml(lane.dest)}" style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:8px 4px;border-bottom:1px solid var(--border-subtle);cursor:pointer">
         <div style="flex:1;min-width:0">
-          <span style="font-size:13px;font-weight:600">${escapeHtml(cityDisplay)} \u2192 ${escapeHtml(lane.destDisplay)}</span>${roleHtml}
+          <div><span style="font-size:13px;font-weight:600">${escapeHtml(cityDisplay)} \u2192 ${escapeHtml(lane.destDisplay)}</span>${roleHtml}</div>
+          ${reviewBadge ? `<div style="margin-top:2px">${reviewBadge}</div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0;margin-left:10px">
           <div style="font-size:13px;font-weight:700;color:var(--accent)">$${lane.avgRPM.toFixed(2)}</div>
@@ -14647,6 +14807,30 @@ async function renderMoneyCard() {
   const dayOfWeek = now.getDay();
   const daysLeft = dayOfWeek === 0 ? 1 : 7 - dayOfWeek;
 
+  // Monthly fixed costs from config
+  const monthlyConfig = await getSetting('monthlyExpensesConfig', null);
+  let monthlyFixedTotal = 0;
+  if (Array.isArray(monthlyConfig) && monthlyConfig.length){
+    monthlyFixedTotal = monthlyConfig.reduce((s,x) => s + posNum(x?.amount), 0);
+  } else {
+    // Legacy fallback
+    monthlyFixedTotal = posNum(await getSetting('monthlyInsurance',0))
+      + posNum(await getSetting('monthlyVehicle',0))
+      + posNum(await getSetting('monthlyMaintenance',0))
+      + posNum(await getSetting('monthlyOther',0));
+  }
+
+  // Monthly gross pace — annualise from last 30 days of trips
+  const thirtyDaysAgo = Date.now() - 30*24*3600*1000;
+  let last30Gross = 0;
+  for (const t of validTrips){
+    const dt = t.pickupDate || t.deliveryDate;
+    if (dt && new Date(dt).getTime() >= thirtyDaysAgo) last30Gross += posNum(t.pay);
+  }
+  const projectedMonthlyGross = last30Gross;
+  const projectedMonthlyNet = projectedMonthlyGross - monthlyFixedTotal;
+  const breakEvenWeekly = monthlyFixedTotal > 0 ? roundCents(monthlyFixedTotal / 4.33) : 0;
+
   // Quarter tax estimate
   const qTrips = validTrips.filter(t => {
     const dt = t.pickupDate || t.deliveryDate;
@@ -14706,6 +14890,22 @@ async function renderMoneyCard() {
       + '</div>'
     : '<div style="font-size:13px;color:var(--text-tertiary);padding-top:10px">Add more trips to see a tax estimate.</div>';
 
+  // Monthly P&L projection HTML
+  const monthlyProjHtml = monthlyFixedTotal > 0
+    ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Monthly Projection</div>'
+      + `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">`
+      + `<div style="padding:10px;background:var(--surface-1);border-radius:8px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:2px">30-Day Gross</div><div style="font-size:15px;font-weight:700">${escapeHtml(fmtMoney(projectedMonthlyGross))}</div></div>`
+      + `<div style="padding:10px;background:var(--surface-1);border-radius:8px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:2px">Fixed Costs</div><div style="font-size:15px;font-weight:700;color:var(--bad)">-${escapeHtml(fmtMoney(monthlyFixedTotal))}</div></div>`
+      + '</div>'
+      + `<div style="padding:12px;border-radius:10px;background:${projectedMonthlyNet >= 0 ? 'rgba(var(--good-rgb),.08)' : 'rgba(255,59,48,.08)'};border:1px solid ${projectedMonthlyNet >= 0 ? 'rgba(var(--good-rgb),.2)' : 'rgba(255,59,48,.2)'};margin-bottom:6px">`
+      + `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:2px">Est. monthly net after fixed costs</div>`
+      + `<div style="font-size:18px;font-weight:800;color:${projectedMonthlyNet >= 0 ? 'var(--good)' : 'var(--bad)'}">${escapeHtml(fmtMoney(projectedMonthlyNet))}</div>`
+      + '</div>'
+      + (breakEvenWeekly > 0 ? `<div style="font-size:12px;color:var(--text-tertiary)">Break-even: <b style="color:var(--text-secondary)">${escapeHtml(fmtMoney(breakEvenWeekly))}/week</b> just to cover fixed costs</div>` : '')
+      + '</div>'
+    : '';
+
   card.innerHTML = '<div class="card" style="margin-top:12px">'
     + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:18px">\u{1F4B0}</span><h3 style="margin:0">Your Money</h3></div>'
     // This Week
@@ -14729,6 +14929,8 @@ async function renderMoneyCard() {
     + '</div>'
     // Weekly Goal
     + goalHtml
+    // Monthly P&L Projection
+    + monthlyProjHtml
     // Tax toggle
     + '<div id="f22TaxToggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 0 4px;border-top:1px solid var(--border-subtle);margin-top:12px;color:var(--text-secondary);font-size:13px;font-weight:600">'
     + '<span id="f22TaxArrow" style="font-size:10px;transition:transform .2s">&#9660;</span> Tax Estimate (tap to expand)</div>'
