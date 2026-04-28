@@ -1,4 +1,4 @@
-/* FreightLogic v23.2.0 — Voice Load Module */
+/* FreightLogic v23.3.0 — Voice Load Module */
 (() => {
   'use strict';
 
@@ -37,6 +37,56 @@
     success: 'success',
     warn: 'warn'
   };
+
+  function haptic(ms = 10) {
+    try { navigator?.vibrate?.(ms); } catch (_) {}
+  }
+
+  // Convert spoken English number sequences to digits.
+  // "three fifty" → 350, "twelve hundred" → 1200, "four hundred twenty" → 420
+  function wordsToNumber(text) {
+    const ones = {
+      zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+      six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+      thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+      eighteen: 18, nineteen: 19
+    };
+    const tensMap = {
+      twenty: 20, thirty: 30, forty: 40, fifty: 50,
+      sixty: 60, seventy: 70, eighty: 80, ninety: 90
+    };
+    const words = String(text || '').toLowerCase()
+      .replace(/[^a-z\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    // "X tens" shorthand: "three fifty" → 350, "twelve fifty" → 1250
+    if (words.length === 2 && words[0] in ones && words[1] in tensMap) {
+      const first = ones[words[0]];
+      if (first >= 1 && first <= 19) return first * 100 + tensMap[words[1]];
+    }
+    let total = 0;
+    let chunk = 0;
+    for (const word of words) {
+      if (word in ones) chunk += ones[word];
+      else if (word in tensMap) chunk += tensMap[word];
+      else if (word === 'hundred') chunk = chunk ? chunk * 100 : 100;
+      else if (word === 'thousand') { total += (chunk || 1) * 1000; chunk = 0; }
+    }
+    total += chunk;
+    return total > 0 ? total : null;
+  }
+
+  // Replace spoken number word sequences in text with digit strings.
+  // e.g. "revenue four hundred twenty dollars" → "revenue 420 dollars"
+  function convertSpokenNumbers(text) {
+    const NW = '(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|ten|' +
+      'eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|' +
+      'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)';
+    const pattern = new RegExp(`\\b${NW}(?:\\s+${NW}){0,7}\\b`, 'gi');
+    return text.replace(pattern, (match) => {
+      const n = wordsToNumber(match.trim());
+      return (n !== null && n > 0) ? String(n) : match;
+    });
+  }
 
   let recognition = null;
   let listening = false;
@@ -511,6 +561,8 @@
 
   function onTranscript(transcript, correctionMode = false) {
     const normalized = normalizeText(transcript);
+    // Convert spoken numbers before parsing ("three fifty" → "350")
+    const forParsing = convertSpokenNumbers(normalized);
     lastTranscript = normalized;
 
     if (!normalized) {
@@ -519,7 +571,7 @@
     }
 
     try {
-      const fix = parseFixCommand(normalized);
+      const fix = parseFixCommand(forParsing);
       if (fix) {
         mergeDraft({
           fields: { [fix.field]: fix.value },
@@ -535,7 +587,7 @@
         return;
       }
 
-      const parsed = parseEntryCommand(normalized);
+      const parsed = parseEntryCommand(forParsing);
       mergeDraft(parsed, {
         action: correctionMode ? 'speak-fix' : 'voice-entry',
         summary: parsed.summary,
@@ -564,6 +616,7 @@
       stopListening();
       return;
     }
+    haptic(20);
     listening = true;
     pulseVoiceButton(true);
     setStatus(correctionMode
@@ -583,6 +636,7 @@
   function stopListening() {
     if (!recognition || !listening) return;
     listening = false;
+    haptic(10);
     pulseVoiceButton(false);
     try { recognition.stop(); } catch (_) {}
     setStatus('Voice input stopped.', STATUS_KIND.idle);
@@ -611,16 +665,39 @@
 
     const rec = new SR();
     rec.lang = 'en-US';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
     rec.continuous = false;
 
     rec.addEventListener('result', (event) => {
-      const transcript = Array.from(event.results || [])
-        .map(result => result[0] && result[0].transcript ? result[0].transcript : '')
+      const results = Array.from(event.results || []);
+
+      // Show live interim transcript in status while user is still speaking
+      const interimText = results
+        .filter(r => !r.isFinal)
+        .map(r => r[0]?.transcript || '')
         .join(' ')
         .trim();
-      onTranscript(transcript, !!rec.__correctionMode);
+      if (interimText) {
+        setStatus(`🎙️ "${interimText}"`, STATUS_KIND.listening);
+      }
+
+      // Only process final results; pick highest-confidence alternative
+      const finalText = results
+        .filter(r => r.isFinal)
+        .map(r => {
+          let best = r[0];
+          for (let i = 1; i < r.length; i++) {
+            if ((r[i]?.confidence ?? 0) > (best?.confidence ?? 0)) best = r[i];
+          }
+          return best?.transcript || '';
+        })
+        .join(' ')
+        .trim();
+
+      if (finalText) {
+        onTranscript(finalText, !!rec.__correctionMode);
+      }
     });
 
     rec.addEventListener('end', () => {
@@ -630,6 +707,7 @@
 
     rec.addEventListener('error', (event) => {
       listening = false;
+      haptic(30);
       pulseVoiceButton(false);
       const msg = event.error === 'not-allowed'
         ? 'Microphone access was denied.'
