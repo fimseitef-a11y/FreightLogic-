@@ -44,6 +44,7 @@
   let lastTranscript = '';
   let dom = null;
   let reviewBound = false;
+  let recognitionTimeout = null;
 
   function blankDraft() {
     return {
@@ -145,8 +146,35 @@
       .trim();
   }
 
+  const WORD_NUMS = {
+    zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+    eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
+    eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,
+    seventy:70,eighty:80,ninety:90,hundred:100,thousand:1000
+  };
+
+  function wordsToNumber(text) {
+    const tokens = text.toLowerCase().trim().split(/\s+/);
+    let total = 0, current = 0, matched = 0;
+    for (const token of tokens) {
+      const w = WORD_NUMS[token];
+      if (w === undefined) continue;
+      matched++;
+      if (w === 1000) { total += (current || 1) * 1000; current = 0; }
+      else if (w === 100) { current = (current || 1) * 100; }
+      else { current += w; }
+    }
+    total += current;
+    return matched > 0 && total > 0 ? total : null;
+  }
+
   function toNumber(raw) {
-    const cleaned = String(raw || '').replace(/[^\d.\-]/g, '');
+    const str = String(raw || '').trim();
+    if (/[a-zA-Z]/.test(str)) {
+      const fromWords = wordsToNumber(str);
+      if (fromWords !== null) return fromWords;
+    }
+    const cleaned = str.replace(/[^\d.\-]/g, '');
     const num = Number(cleaned);
     return Number.isFinite(num) ? num : null;
   }
@@ -274,8 +302,9 @@
   }
 
   function extractLabeledNumber(text, labels) {
-    for (const label of labels) {
-      const pattern = new RegExp(`${label}\\s*(?:is|to|at|of)?\\s*\$?([\d,]+(?:\.\d+)?)`, 'i');
+    const sorted = [...labels].sort((a, b) => b.length - a.length);
+    for (const label of sorted) {
+      const pattern = new RegExp(`${label}\\s*(?:is|to|at|of)?\\s*\\$?([\\d,]+(?:\\.\\d+)?)`, 'i');
       const match = text.match(pattern);
       if (match) return match[1];
     }
@@ -323,10 +352,14 @@
     if (!commandMatch) return null;
 
     let fieldKey = null;
+    let bestLen = 0;
     Object.entries(COMMAND_ALIASES).forEach(([key, aliases]) => {
-      if (!fieldKey && aliases.some(alias => commandMatch[1].includes(alias))) {
-        fieldKey = key;
-      }
+      aliases.forEach((alias) => {
+        if (commandMatch[1].includes(alias) && alias.length > bestLen) {
+          bestLen = alias.length;
+          fieldKey = key;
+        }
+      });
     });
     if (!fieldKey) return null;
 
@@ -373,11 +406,9 @@
 
     const deadRaw = extractLabeledNumber(normalized, COMMAND_ALIASES.deadMiles);
     const dead = toMiles(deadRaw);
-    if (dead !== null && dead !== undefined && dead !== false) {
-      if (deadRaw !== null) {
-        fields.deadMiles = String(dead);
-        confidence.deadMiles = /dead|empty/.test(lower) ? 90 : 60;
-      }
+    if (dead !== null && deadRaw !== null) {
+      fields.deadMiles = String(dead);
+      confidence.deadMiles = /dead|empty/.test(lower) ? 90 : 60;
     }
 
     const noteText = extractFieldText(normalized, COMMAND_ALIASES.notes);
@@ -573,6 +604,12 @@
     try {
       recognition.__correctionMode = correctionMode;
       recognition.start();
+      recognitionTimeout = setTimeout(() => {
+        if (listening) {
+          stopListening();
+          setStatus('No speech detected. Tap the mic to try again.', STATUS_KIND.warn);
+        }
+      }, 9000);
     } catch (err) {
       listening = false;
       pulseVoiceButton(false);
@@ -582,6 +619,7 @@
 
   function stopListening() {
     if (!recognition || !listening) return;
+    _clearRecognitionTimeout();
     listening = false;
     pulseVoiceButton(false);
     try { recognition.stop(); } catch (_) {}
@@ -605,36 +643,67 @@
     setStatus('Loaded local voice draft. Review it before applying.', STATUS_KIND.idle);
   }
 
+  function _clearRecognitionTimeout() {
+    clearTimeout(recognitionTimeout);
+    recognitionTimeout = null;
+  }
+
+  function _bestAlternative(results) {
+    const finals = Array.from(results || []).filter(r => r.isFinal);
+    if (!finals.length) return null;
+    const last = finals[finals.length - 1];
+    const alts = Array.from(last).map(a => a.transcript || '').filter(Boolean);
+    if (alts.length <= 1) return alts[0] || '';
+    let best = alts[0], bestCount = 0;
+    for (const alt of alts) {
+      const parsed = parseEntryCommand(normalizeText(alt));
+      const count = Object.values(parsed.fields).filter(Boolean).length;
+      if (count > bestCount) { bestCount = count; best = alt; }
+    }
+    return best;
+  }
+
   function initRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
 
     const rec = new SR();
     rec.lang = 'en-US';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
     rec.continuous = false;
 
     rec.addEventListener('result', (event) => {
-      const transcript = Array.from(event.results || [])
-        .map(result => result[0] && result[0].transcript ? result[0].transcript : '')
-        .join(' ')
-        .trim();
-      onTranscript(transcript, !!rec.__correctionMode);
+      const results = event.results || [];
+      const hasFinal = Array.from(results).some(r => r.isFinal);
+
+      if (!hasFinal) {
+        const interim = Array.from(results)
+          .map(r => (r[0] && r[0].transcript) ? r[0].transcript : '')
+          .join(' ').trim();
+        if (interim) setStatus(`Hearing: ${interim.slice(0, 60)}…`, STATUS_KIND.listening);
+        return;
+      }
+
+      _clearRecognitionTimeout();
+      const transcript = _bestAlternative(results);
+      if (transcript !== null) onTranscript(transcript, !!rec.__correctionMode);
     });
 
     rec.addEventListener('end', () => {
+      _clearRecognitionTimeout();
       listening = false;
       pulseVoiceButton(false);
     });
 
     rec.addEventListener('error', (event) => {
+      _clearRecognitionTimeout();
       listening = false;
       pulseVoiceButton(false);
       const msg = event.error === 'not-allowed'
         ? 'Microphone access was denied.'
         : event.error === 'no-speech'
-          ? 'No speech detected. Try again.'
+          ? 'No speech detected. Tap the mic and try again.'
           : 'Voice input error. Try again.';
       setStatus(msg, STATUS_KIND.error);
     });
@@ -666,6 +735,7 @@
       }
     };
 
+    if (dom.status) dom.status.setAttribute('aria-live', 'polite');
     recognition = initRecognition();
     bindUI();
     hydrateFromStorage();
