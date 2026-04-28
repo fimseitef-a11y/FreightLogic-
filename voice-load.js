@@ -1,4 +1,4 @@
-/* FreightLogic v23.2.0 — Voice Load Module */
+/* FreightLogic v23.3.0 — Voice Load Module */
 (() => {
   'use strict';
 
@@ -275,7 +275,8 @@
 
   function extractLabeledNumber(text, labels) {
     for (const label of labels) {
-      const pattern = new RegExp(`${label}\\s*(?:is|to|at|of)?\\s*\$?([\d,]+(?:\.\d+)?)`, 'i');
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped + '\\s*(?:is|to|at|of)?\\s*\\$?([\\d,]+(?:\\.[\\d]+)?)', 'i');
       const match = text.match(pattern);
       if (match) return match[1];
     }
@@ -611,16 +612,20 @@
 
     const rec = new SR();
     rec.lang = 'en-US';
-    rec.interimResults = false;
+    rec.interimResults = true;
     rec.maxAlternatives = 1;
     rec.continuous = false;
 
     rec.addEventListener('result', (event) => {
-      const transcript = Array.from(event.results || [])
-        .map(result => result[0] && result[0].transcript ? result[0].transcript : '')
-        .join(' ')
-        .trim();
-      onTranscript(transcript, !!rec.__correctionMode);
+      const results = Array.from(event.results || []);
+      const lastResult = results[results.length - 1];
+      const allText = results.map(r => (r[0] && r[0].transcript) ? r[0].transcript : '').join(' ').trim();
+
+      if (!lastResult || !lastResult.isFinal) {
+        if (allText) setStatus(`Hearing: "${allText.slice(0, 80)}"`, STATUS_KIND.listening);
+        return;
+      }
+      onTranscript(allText, !!rec.__correctionMode);
     });
 
     rec.addEventListener('end', () => {
@@ -632,10 +637,12 @@
       listening = false;
       pulseVoiceButton(false);
       const msg = event.error === 'not-allowed'
-        ? 'Microphone access was denied.'
+        ? 'Microphone access was denied. Check browser permissions.'
         : event.error === 'no-speech'
           ? 'No speech detected. Try again.'
-          : 'Voice input error. Try again.';
+          : event.error === 'network'
+            ? 'Network error during voice recognition. Try again.'
+            : 'Voice input error. Try again.';
       setStatus(msg, STATUS_KIND.error);
     });
 
@@ -665,6 +672,11 @@
         notes: document.getElementById('mwLoadNotes')
       }
     };
+
+    if (dom.status) {
+      dom.status.setAttribute('aria-live', 'polite');
+      dom.status.setAttribute('role', 'status');
+    }
 
     recognition = initRecognition();
     bindUI();

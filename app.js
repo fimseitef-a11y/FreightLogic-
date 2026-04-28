@@ -7105,8 +7105,7 @@ async function mwInit(){
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
 
-  // F10: Voice input — init after evaluator binds
-  initVoiceInput();
+  // F10: Voice input is handled entirely by voice-load.js (loaded after app.js)
 }
 
 let omegaBound = false;
@@ -10588,16 +10587,28 @@ function openLoadIntake(){
     haptic();
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition){ toast('Voice input not supported in this browser.', true); return; }
+    const voiceBtn = stage1.querySelector('#liVoice');
     const rec = new SpeechRecognition();
-    rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = false;
+    rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true;
+    const origLabel = voiceBtn ? voiceBtn.textContent : '';
+    if (voiceBtn) { voiceBtn.textContent = '⏹️ Listening…'; voiceBtn.disabled = true; }
     toast('Listening… speak load details now.');
     rec.start();
     rec.onresult = e => {
-      const t = e.results[0][0].transcript;
+      const results = Array.from(e.results);
+      const last = results[results.length - 1];
+      if (!last.isFinal) return;
+      const t = results.map(r => r[0].transcript).join(' ').trim();
       const ta = getField('liRawText');
       if (ta) ta.value = (ta.value ? ta.value + '\n' : '') + t;
     };
-    rec.onerror = () => toast('Could not hear clearly. Try again.', true);
+    rec.onerror = (ev) => {
+      const msg = ev.error === 'not-allowed' ? 'Microphone permission denied.' : "Couldn't hear clearly. Try again.";
+      toast(msg, true);
+    };
+    rec.onend = () => {
+      if (voiceBtn) { voiceBtn.textContent = origLabel; voiceBtn.disabled = false; }
+    };
   });
 
   // Back to edit text
@@ -12382,89 +12393,6 @@ document.addEventListener('visibilitychange', ()=>{
 // ════════════════════════════════════════════════════════════════════════
 // v18 FEATURE BLOCK — Features 10-13
 // ════════════════════════════════════════════════════════════════════════
-
-// ── F10: Voice Input ─────────────────────────────────────────────────────
-// Uses Web Speech API to fill evaluator fields via spoken load details.
-// Parses natural language: "Chicago to Indianapolis 185 miles $420"
-
-function initVoiceInput(){
-  const btn = $('#mwVoiceBtn');
-  const status = $('#mwVoiceStatus');
-  if (!btn || !status) return;
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR){ btn.style.display = 'none'; return; }
-  btn.style.display = '';
-  let rec = null;
-  let active = false;
-
-  function parseVoiceText(txt){
-    const t = txt.toLowerCase();
-    // Origin → Destination
-    const toMatch = t.match(/(?:from\s+)?([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s+\d|$|\s+for|\s+loaded|\s+miles|\.)/);
-    if (toMatch){
-      const orig = toMatch[1].trim();
-      const dest = toMatch[2].trim();
-      const _voO = $('#mwOrigin'); const _voD = $('#mwDest');
-      if (orig.length > 2 && _voO) _voO.value = orig.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-      if (dest.length > 2 && _voD) _voD.value = dest.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-    }
-    // Revenue — "$420", "four hundred twenty dollars", "420 dollars"
-    const revMatch = t.match(/\$?\s*(\d[\d,]*)\s*(?:dollars?|bucks?|pay)/);
-    if (revMatch) $('#mwRevenue').value = revMatch[1].replace(',','');
-    // Loaded miles
-    const ldMatch = t.match(/(\d+)\s*(?:loaded\s*)?miles?(?:\s+loaded)?/);
-    if (ldMatch) $('#mwLoadedMi').value = ldMatch[1];
-    // Deadhead / empty miles
-    const dhMatch = t.match(/(\d+)\s*(?:dead\s*head|empty|dh)\s*miles?/);
-    if (dhMatch) $('#mwDeadMi').value = dhMatch[1];
-    // Fatigue
-    const fatMatch = t.match(/fatigue\s+(?:level\s+)?(\d+)/);
-    if (fatMatch) $('#mwFatigue').value = fatMatch[1];
-    // Notes (pass-through)
-    if (t.includes('asap') || t.includes('hot load') || t.includes('rush') || t.includes('line down')){
-      const notes = $('#mwLoadNotes');
-      if (notes && !notes.value) notes.value = txt;
-    }
-  }
-
-  btn.addEventListener('click', ()=>{
-    haptic(20);
-    if (active){
-      rec?.stop();
-      return;
-    }
-    rec = new SR();
-    rec.lang = 'en-US';
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    active = true;
-    btn.textContent = '⏹️';
-    btn.style.color = 'var(--bad)';
-    status.style.display = '';
-    status.textContent = '🎙️ Listening… say the load details';
-
-    rec.onresult = (ev) => {
-      const interim = Array.from(ev.results).map(r => r[0].transcript).join(' ');
-      status.textContent = `🎙️ "${interim}"`;
-      if (ev.results[ev.results.length - 1].isFinal){
-        const final = ev.results[ev.results.length - 1][0].transcript;
-        parseVoiceText(final);
-        status.textContent = `✅ Parsed: "${final}"`;
-        setTimeout(()=>{ status.style.display = 'none'; }, 3000);
-      }
-    };
-    rec.onerror = (ev) => {
-      status.textContent = `⚠️ ${ev.error === 'not-allowed' ? 'Microphone permission denied' : 'Voice error — try again'}`;
-      setTimeout(()=>{ status.style.display = 'none'; }, 3000);
-    };
-    rec.onend = () => {
-      active = false;
-      btn.textContent = '🎙️';
-      btn.style.color = '';
-    };
-    rec.start();
-  });
-}
 
 // ── F11: Document Vault ──────────────────────────────────────────────────
 // Store insurance cards, MC authority, W-9s, carrier packets as blobs.
@@ -15040,16 +14968,28 @@ function _renderInboxFailure(card) {
 function _startInboxVoice(textarea, card) {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) { toast('Voice input is not supported in this browser.', true); return; }
+  const voiceBtn = card?.querySelector('#f23VoiceBtn');
+  const origLabel = voiceBtn ? voiceBtn.textContent : '';
+  if (voiceBtn) { voiceBtn.textContent = '⏹️ Listening…'; voiceBtn.disabled = true; }
   const rec = new SpeechRec();
-  rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = false;
-  toast('Listening... Speak your load details now.');
+  rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true;
+  toast('Listening… Speak your load details now.');
   rec.start();
   rec.onresult = (e) => {
-    const transcript = e.results[0][0].transcript;
+    const results = Array.from(e.results);
+    const last = results[results.length - 1];
+    if (!last.isFinal) return;
+    const transcript = results.map(r => r[0].transcript).join(' ').trim();
     if (textarea) textarea.value = transcript;
     _processInboxText(transcript, card);
   };
-  rec.onerror = () => { toast("Couldn't hear that clearly. Try again.", true); };
+  rec.onerror = (ev) => {
+    const msg = ev.error === 'not-allowed' ? 'Microphone permission denied.' : "Couldn't hear clearly. Try again.";
+    toast(msg, true);
+  };
+  rec.onend = () => {
+    if (voiceBtn) { voiceBtn.textContent = origLabel; voiceBtn.disabled = false; }
+  };
 }
 
 
