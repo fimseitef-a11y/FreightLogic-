@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.3.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.4.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -14,9 +14,11 @@
 
 ```
 index.html              — Single-page app shell + all CSS (Design System v3.0 "Command")
-app.js                  — Core application (~448KB, all logic in one IIFE)
+app.js                  — Core application (~460KB, all logic in one IIFE)
+voice-load.js           — Voice input enhancement module (spoken numbers, interim results)
+admin-driver-ui.js      — Admin driver management UI (injected via service worker)
 sw-bridge.js            — Service worker auto-update bridge (SKIP_WAITING + reload)
-service-worker.js       — PWA offline caching
+service-worker.js       — PWA offline caching; injects admin-driver-ui.js into HTML responses
 cloud-backup-worker.js  — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json           — PWA manifest
 favicon*.png / icon*.png — App icons
@@ -48,6 +50,11 @@ README.txt              — Notes on optional offline vendor files
 14. **F22 Money Dashboard** — `renderMoneyCard` with weekly P&L, unpaid summary, goal progress, quarterly tax estimate
 15. **F23 Smart Load Inbox** — `parseLoadTextForInbox`, `renderLoadInbox`, auto-fills evaluator fields
 16. **F24 Proactive Positioning Engine** — `getPositioningBrief`, `renderPositioningCard`, `_triggerPostDeliveryBrief`
+17. **F25 Vehicle Maintenance Tracker** — `openMaintenanceTracker`, `checkMaintenanceDue`, `_getMaintenanceSchedule`
+18. **F26 First-Time Setup Wizard** — `checkFirstRunSetup`, `openSetupWizard`, `_saveSetupWizardResults`
+19. **F27 Unified Load Intake** — `openLoadIntake`; paste/voice/photo → parsed draft review → score or save as trip
+20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
+21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
 
 ### IndexedDB schema (`DB_VERSION = 12`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
@@ -79,7 +86,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.1.0';
+const APP_VERSION = '23.4.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -184,8 +191,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.1.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.1.0`; caches `sw-bridge.js`.
+- `manifest.json` references `v=23.4.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.4.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -208,7 +215,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ---
 
-## v22–v23.1 Features (F21–F25)
+## v22–v23.3 Features (F21–F31)
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
@@ -253,6 +260,49 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - Intel tile: `🔧 Maintenance` in `INTEL_TILES`; accessible via More page tile handler
 - No new IDB store — schedule persists in `settings['maintenanceSchedule']`; service cost events stored as ordinary expenses
 - Settings keys: `maintenanceSchedule` (array), `lastMaintenanceNotify` (timestamp, reserved)
+
+### F26 — First-Time Setup Wizard (v23.4.0)
+- `checkFirstRunSetup()` — called on boot; skips if `f26SetupComplete` or user already has trips (migration-safe)
+- `openSetupWizard()` — 5-step modal: home base, vehicle info, weekly goal + fuel cost, monthly fixed expenses, operating preferences
+- `_saveSetupWizardResults(vals)` — persists all wizard values to settings; builds `monthlyExpensesConfig` array (non-zero items only); keeps legacy individual monthly cost keys in sync; saves `vehicleYear` and `vehicleMake`
+- Driver Command Strip wired in `renderHome()` (idempotent): `#dcEvaluate`, `#dcAddTrip`, `#dcAddExpense`, `#dcMoney`, `#dcBestMove`
+- Monthly Expense Manager (F26 companion) — `openMonthlyExpenseManager()` accessible from Settings
+- Settings keys: `f26SetupComplete` (bool), `monthlyExpensesConfig` (array), `homeLocation`, `vehicleClass`, `vehicleMpg`, `fuelPrice`, `weeklyGoal`, `preferredRegion`, `payloadLimitLbs`, `vehicleYear`, `vehicleMake`, `autoRecurringExpenses` (bool)
+
+### F27 — Unified Load Intake (v23.4.0)
+- `openLoadIntake()` — replaces the ad-hoc parse-then-fill flow; two-stage modal (text input → parsed draft review)
+- Stage 1: paste area + voice button + Parse action; voice uses `SpeechRecognition` (same as voice-load.js)
+- Stage 2: editable draft grid (revenue, miles, deadhead, weight, origin, dest, order#, broker, notes) with parse-confidence indicator; "Score This Load" fills evaluator fields and navigates to Evaluate tab; "Save as Trip Draft" saves to `settings['tripDraft']` and opens `openQuickAddSheet()`
+- Parse confidence color-coded: ≥70% green, ≥40% amber, <40% red
+- Accessible via Driver Command Strip (`#dcEvaluate`) and F23 Load Inbox
+
+### F28 — Built-in Diagnostics / Self-Test (v23.4.0)
+- `openDiagnosticsPanel()` — accessible via More → Advanced → Diagnostics Intel tile
+- Auto-runs on open; "Run Tests Again" button for manual re-run
+- Tests: SW registration state, Cache API keys, IDB record counts (trips/expenses/fuel/receipts/laneHistory), voice input support, File API, offline/SW readiness, cloud backup config, AI endpoint ping (6s timeout)
+- Color-coded pass/fail per row (green/red/neutral)
+
+### F29 — Post-Trip Lane & Broker Review (v23.4.0)
+- `openPostTripReview(trip)` — fires ~1.2s after trip save when trip has `deliveryDate`, `origin`, `destination` and review not yet done
+- 6 chip-tap questions: lane rating (1–5), broker payment speed, reload ease from destination, destination market strength, rate vs. strategy, would-run-again
+- `_savePostTripReview(trip, answers)` — merges review into existing `laneHistory` record (running avg rating, would-run %, last broker pay/reload/dest fields) or creates a new minimal record; stores broker feedback in `bidHistory` for broker grading
+- One-time-per-trip guard: `laneReviewDone_<orderNo>` settings key; review prompt suppressed on re-save of same trip
+- Settings keys: `laneReviewDone_<orderNo>` (bool per trip), `laneReviewEnabled` (global opt-out, reserved)
+
+### F30 — Tax Season Export (v23.4.0)
+- `openTaxSeasonExport()` — Intel tile modal; year selector (prior 3 years); Schedule C summary with gross income, expense line items by IRS category, total deductions, net profit, mileage deduction, per diem deduction, and SE tax estimate
+- "Export CSV" downloads IRS-ready Schedule C summary + full mileage log as a two-sheet CSV
+- "Print / Save PDF" opens a `window.print()`-friendly formatted view
+- Accessible via More → Tax & Finance Intel tile
+- Settings keys: `f30LastExportYear` (int)
+
+### F31 — Earnings Trends (v23.4.0)
+- `renderEarningsTrends()` — appended to `#homeMoneyCard` when 4+ weeks of data exist; pure SVG bar chart (no canvas)
+- Week view: last 8 weeks, gross revenue bars with net overlay line; tap bar to see week detail
+- Month toggle: last 6 calendar months; same bar/line treatment
+- `_buildWeeklyBuckets(trips, exps, n)` / `_buildMonthlyBuckets(trips, exps, n)` — aggregate helpers
+- Hidden at < 4 weeks of data to avoid noisy single-bar charts
+- Settings keys: `f31TrendView` (`'week'`|`'month'`, persists toggle state)
 
 ---
 

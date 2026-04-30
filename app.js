@@ -1,9 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.3.0 USA ENGINE — Driver Command Upgrade
+/** FreightLogic v23.4.0 USA ENGINE — Driver Command Upgrade
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
- *  v23.3.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
+ *  v23.4.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
  *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
  *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
  *  v23: Proactive Positioning Engine (F24)
@@ -13,7 +13,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.3.0';
+const APP_VERSION = '23.4.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -43,7 +43,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.3.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.4.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1367,7 +1367,9 @@ async function importJSON(file, opts={}){
       'maintenanceSchedule','lastMaintenanceNotify',
       // v23.3 F26/F27/F29 new keys
       'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
-      'vehicleClass','laneReviewEnabled']);
+      'vehicleYear','vehicleMake','laneReviewEnabled',
+      // v23.4 F30/F31
+      'f30LastExportYear','f31TrendView']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
@@ -3304,7 +3306,7 @@ function openQuickEvalModal(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F26 — First-Time Setup Wizard (v23.3.0)
+// F26 — First-Time Setup Wizard (v23.4.0)
 // Shows once on first boot. Multi-step modal collecting personalization data.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -3503,12 +3505,14 @@ async function openSetupWizard(){
 
 async function _saveSetupWizardResults(vals){
   const tasks = [];
-  if (vals.homeBase)    tasks.push(setSetting('homeLocation', clampStr(vals.homeBase, 80)));
-  if (vals.vehicleType) tasks.push(setSetting('vehicleClass', vals.vehicleType));
-  if (vals.avgMpg)      tasks.push(setSetting('vehicleMpg', posNum(vals.avgMpg)));
-  if (vals.fuelCost)    tasks.push(setSetting('fuelPrice', posNum(vals.fuelCost)));
-  if (vals.weeklyGoal)  tasks.push(setSetting('weeklyGoal', posNum(vals.weeklyGoal)));
-  if (vals.region)      tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
+  if (vals.homeBase)     tasks.push(setSetting('homeLocation',   clampStr(vals.homeBase, 80)));
+  if (vals.vehicleType)  tasks.push(setSetting('vehicleClass',   vals.vehicleType));
+  if (vals.vehicleYear)  tasks.push(setSetting('vehicleYear',    clampStr(vals.vehicleYear, 10)));
+  if (vals.vehicleMake)  tasks.push(setSetting('vehicleMake',    clampStr(vals.vehicleMake, 60)));
+  if (vals.avgMpg)       tasks.push(setSetting('vehicleMpg',     posNum(vals.avgMpg)));
+  if (vals.fuelCost)     tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
+  if (vals.weeklyGoal)   tasks.push(setSetting('weeklyGoal',     posNum(vals.weeklyGoal)));
+  if (vals.region)       tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
   if (vals.payloadLimit) tasks.push(setSetting('payloadLimitLbs', posNum(vals.payloadLimit)));
 
   // Build monthly expense config (all non-zero items)
@@ -4623,6 +4627,7 @@ const MORE_TILES = [
   { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED' },
   { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED' },
+  { icon:'🗂️', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED' },
   { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED' },
   { icon:'💿', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED' },
   { icon:'🔬', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED' },
@@ -4725,6 +4730,7 @@ async function renderMore(){
         }
         else if (tile.act === 'maintenance') openMaintenanceTracker();
         else if (tile.act === 'monthlyCosts') openMonthlyExpenseManager();
+        else if (tile.act === 'taxExport') openTaxSeasonExport();
         else if (tile.act === 'diagnostics') openDiagnosticsPanel();
         else if (tile.act === 'storageHealth'){
           location.hash = '#insights';
@@ -10262,7 +10268,7 @@ function initCollapsibleSettings(){
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
 // Runs once per boot. Only creates if not already logged this month.
-// v23.3.0: reads from monthlyExpensesConfig (full item list) first;
+// v23.4.0: reads from monthlyExpensesConfig (full item list) first;
 //          falls back to legacy individual keys for upgrades.
 // ========================================================================
 async function checkRecurringExpenses(){
@@ -10275,7 +10281,7 @@ async function checkRecurringExpenses(){
     const lastRecurring = await getSetting('lastRecurringMonth', '');
     if (lastRecurring === monthKey) return; // Already processed this month
 
-    // Build entry list from config (v23.3.0+) or legacy individual keys
+    // Build entry list from config (v23.4.0+) or legacy individual keys
     let entries = [];
     const config = await getSetting('monthlyExpensesConfig', null);
     if (Array.isArray(config) && config.length > 0){
@@ -10438,7 +10444,7 @@ async function openMonthlyExpenseManager(){
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// F27 — Unified Load Intake (v23.3.0)
+// F27 — Unified Load Intake (v23.4.0)
 // Paste / voice / photo → parsed draft review → score → save
 // Replaces the ad-hoc parse-then-silently-fill flow. Driver sees
 // exactly what was parsed and can correct it before it hits the evaluator.
@@ -10660,7 +10666,7 @@ function openLoadIntake(){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F28 — Built-in Diagnostics / Self-Test (v23.3.0)
+// F28 — Built-in Diagnostics / Self-Test (v23.4.0)
 // Accessible via More → Advanced → Diagnostics
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -11565,7 +11571,7 @@ async function _postTripSaveLaneHook(trip){
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// F29 — Post-Trip Lane & Broker Review (v23.3.0)
+// F29 — Post-Trip Lane & Broker Review (v23.4.0)
 // After delivery: 6 quick-tap questions that turn FreightLogic into a
 // real decision engine — not just a tracker.
 // ════════════════════════════════════════════════════════════════════════════
@@ -11688,6 +11694,251 @@ async function _savePostTripReview(trip, answers){
       await waitTxn(t);
     }
   } catch(e){ console.warn('[FL] _savePostTripReview:', e); }
+}
+
+// ================================================================================
+// F30 — Tax Season Export (v23.4.0)
+// Annual Schedule C summary + per-trip mileage log. Year-selector covers current
+// and prior two years. Differentiated from CPA Package (quarterly/current-year)
+// by: multi-year support, Schedule C line numbers, printable view, mileage log CSV.
+// ================================================================================
+
+async function openTaxSeasonExport(){
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear, currentYear - 1, currentYear - 2];
+  let selectedYear = currentYear;
+
+  const body = document.createElement('div');
+
+  const yearBtns = years.map((y, i) =>
+    `<button class="btn f30-yr${i === 0 ? ' active' : ''}" data-year="${y}" style="flex:1;min-width:0;font-size:13px">${y}</button>`
+  ).join('');
+
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px">${yearBtns}</div>
+    <div id="f30Content"><div class="muted" style="text-align:center;padding:24px 0">Loading…</div></div>`;
+
+  openModal('Tax Season Export', body);
+
+  body.querySelectorAll('.f30-yr').forEach(btn => {
+    btn.addEventListener('click', () => {
+      haptic(10);
+      body.querySelectorAll('.f30-yr').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedYear = Number(btn.dataset.year);
+      loadYear(selectedYear);
+    });
+  });
+
+  async function loadYear(year){
+    const content = body.querySelector('#f30Content');
+    content.innerHTML = '<div class="muted" style="text-align:center;padding:24px 0">Loading…</div>';
+
+    const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+    const inYear = d => d && d >= yStart && d <= yEnd;
+
+    const [allTrips, allExps, allFuel, vehicleClass, perDiemRateSetting] = await Promise.all([
+      dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
+      getSetting('vehicleClass', 'cargo_van'),
+      getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+    ]);
+
+    const trips = allTrips.filter(t => !t.needsReview && inYear(t.pickupDate || t.deliveryDate));
+    const exps  = allExps.filter(e => inYear(e.date));
+    const fuel  = allFuel.filter(f => inYear(f.date));
+
+    const mileageRate = year >= 2026 ? IRS.MILEAGE_RATE_2026 : IRS.MILEAGE_RATE_2025;
+    const isDOT = vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl';
+    const pdPct = isDOT ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+    const pdRate = Number(perDiemRateSetting || IRS.PER_DIEM_CONUS);
+
+    // Gross income
+    const grossIncome = trips.reduce((s, t) => s + posNum(t.pay), 0);
+
+    // Mileage
+    const totalLoadedMi  = trips.reduce((s, t) => s + posNum(t.loadedMiles || t.miles), 0);
+    const totalDeadMi    = trips.reduce((s, t) => s + posNum(t.deadMiles || t.deadheadMiles), 0);
+    const totalBizMi     = totalLoadedMi + totalDeadMi;
+    const mileageDeduction = roundCents(totalBizMi * mileageRate);
+
+    // Per diem (count unique work days)
+    const workDays = new Set(trips.map(t => t.pickupDate || t.deliveryDate).filter(Boolean)).size;
+    const perDiemDeduction = roundCents(workDays * pdRate * pdPct);
+
+    // Expense categories mapped to Schedule C lines
+    const expByCategory = {};
+    for (const e of exps){
+      const cat = (e.category || 'Other').trim();
+      expByCategory[cat] = (expByCategory[cat] || 0) + posNum(e.amount);
+    }
+    const fuelTotal = fuel.reduce((s, f) => s + posNum(f.totalCost || f.cost), 0);
+    if (fuelTotal > 0) expByCategory['Fuel'] = (expByCategory['Fuel'] || 0) + fuelTotal;
+
+    // Map to Schedule C buckets
+    const schedC = {
+      insurance:   0, // Line 15
+      repairs:     0, // Line 21
+      utilities:   0, // Line 25 (phone)
+      fuel:        0, // Line 27a bucket: Fuel
+      tolls:       0, // Line 27a bucket: Tolls
+      parking:     0, // Line 27a bucket: Parking
+      other:       0, // Line 27a bucket: Other
+    };
+    for (const [cat, amt] of Object.entries(expByCategory)){
+      const c = cat.toLowerCase();
+      if      (c.includes('insurance'))                       schedC.insurance += amt;
+      else if (c.includes('repair') || c.includes('maint'))  schedC.repairs   += amt;
+      else if (c.includes('phone') || c.includes('util'))    schedC.utilities += amt;
+      else if (c.includes('fuel') || c.includes('gas'))      schedC.fuel      += amt;
+      else if (c.includes('toll'))                            schedC.tolls     += amt;
+      else if (c.includes('park'))                            schedC.parking   += amt;
+      else                                                     schedC.other    += amt;
+    }
+    const other27a = schedC.fuel + schedC.tolls + schedC.parking + schedC.other;
+    const totalDeductions = schedC.insurance + schedC.repairs + schedC.utilities + other27a + perDiemDeduction + mileageDeduction;
+    const netProfit = grossIncome - totalDeductions;
+    const seTax = roundCents(Math.max(0, netProfit * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+
+    function line(num, label, amt, isBold=false, color=''){
+      const style = `font-size:13px;${isBold ? 'font-weight:700;' : ''}${color ? `color:${color};` : ''}`;
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border-subtle)">
+        <span style="${style}"><span style="font-size:11px;color:var(--text-tertiary);margin-right:8px">Ln ${num}</span>${escapeHtml(label)}</span>
+        <span style="${style}">${escapeHtml(fmtMoney(amt))}</span>
+      </div>`;
+    }
+    function subLine(label, amt){
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0 3px 16px">
+        <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(label)}</span>
+        <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(fmtMoney(amt))}</span>
+      </div>`;
+    }
+
+    const rateLabel = `@ $${mileageRate.toFixed(3)}/mi (${year})`;
+
+    content.innerHTML = `
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+        Schedule C Summary &mdash; Tax Year ${year}
+      </div>
+      ${line('1',  'Gross receipts / freight income', grossIncome, true)}
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">Deductions</div>
+      ${schedC.insurance  > 0 ? line('15', 'Insurance',         schedC.insurance)  : ''}
+      ${schedC.repairs    > 0 ? line('21', 'Repairs & maintenance', schedC.repairs) : ''}
+      ${schedC.utilities  > 0 ? line('25', 'Utilities (phone/data)', schedC.utilities) : ''}
+      ${other27a          > 0 ? line('27a','Other expenses',    other27a)           : ''}
+      ${schedC.fuel       > 0 ? subLine('Fuel & oil', schedC.fuel) : ''}
+      ${schedC.tolls      > 0 ? subLine('Tolls', schedC.tolls) : ''}
+      ${schedC.parking    > 0 ? subLine('Parking & storage', schedC.parking) : ''}
+      ${schedC.other      > 0 ? subLine('Other / misc', schedC.other) : ''}
+      ${line('9',  `Vehicle mileage deduction ${rateLabel}`, mileageDeduction)}
+      ${subLine(`${totalBizMi.toLocaleString()} total business miles (${totalLoadedMi.toLocaleString()} loaded + ${totalDeadMi.toLocaleString()} DH)`, 0)}
+      ${line('24b',`Per diem deduction (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction)}
+      ${line('28', 'Total deductions', totalDeductions, true)}
+      ${line('29', 'Tentative net profit', netProfit, true, netProfit >= 0 ? 'var(--good)' : 'var(--bad)')}
+      <div style="margin-top:12px;padding:12px;background:rgba(var(--accent-rgb),.07);border-radius:10px;border:1px solid var(--accent-border)">
+        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Schedule SE Estimate</div>
+        <div style="font-size:13px;line-height:1.9">
+          Net × 92.35% × 15.3% SE tax: <strong style="color:var(--accent-text)">${escapeHtml(fmtMoney(seTax))}</strong><br>
+          <span style="font-size:11px;color:var(--text-tertiary)">Estimate only — not tax advice. Verify with your CPA.</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn primary" id="f30ExportCsv" style="flex:2;font-weight:700">Export CSV</button>
+        <button class="btn" id="f30Print" style="flex:1">Print</button>
+      </div>`;
+
+    // CSV export — two sections: Schedule C summary + mileage log
+    content.querySelector('#f30ExportCsv').addEventListener('click', ()=>{
+      haptic();
+      const rows = [
+        ['FreightLogic Tax Export — Schedule C Summary', '', `Tax Year ${year}`],
+        [],
+        ['Line', 'Description', 'Amount'],
+        ['1',  'Gross receipts / freight income',                  grossIncome.toFixed(2)],
+        ['9',  `Vehicle mileage (${totalBizMi} mi @ $${mileageRate}/mi)`, mileageDeduction.toFixed(2)],
+        ['15', 'Insurance',                                         schedC.insurance.toFixed(2)],
+        ['21', 'Repairs & maintenance',                             schedC.repairs.toFixed(2)],
+        ['25', 'Utilities (phone/data)',                            schedC.utilities.toFixed(2)],
+        ['27a','Fuel & oil',                                        schedC.fuel.toFixed(2)],
+        ['27a','Tolls',                                             schedC.tolls.toFixed(2)],
+        ['27a','Parking & storage',                                 schedC.parking.toFixed(2)],
+        ['27a','Other expenses',                                    schedC.other.toFixed(2)],
+        ['24b',`Per diem (${workDays} days)`,                      perDiemDeduction.toFixed(2)],
+        ['28', 'Total deductions',                                  totalDeductions.toFixed(2)],
+        ['29', 'Tentative net profit',                              netProfit.toFixed(2)],
+        [],
+        ['Schedule SE Estimate', '',                                seTax.toFixed(2)],
+        [],
+        ['MILEAGE LOG', '', ''],
+        ['Date', 'Trip #', 'From', 'To', 'Loaded Mi', 'Deadhead Mi', 'Total Mi', `Rate ($/mi)`, 'Deduction ($)'],
+        ...trips
+          .filter(t => posNum(t.loadedMiles || t.miles) > 0)
+          .sort((a, b) => (a.pickupDate || a.deliveryDate || '').localeCompare(b.pickupDate || b.deliveryDate || ''))
+          .map(t => {
+            const loaded = posNum(t.loadedMiles || t.miles);
+            const dead   = posNum(t.deadMiles || t.deadheadMiles);
+            const total  = loaded + dead;
+            return [
+              t.pickupDate || t.deliveryDate || '',
+              t.orderNo || '',
+              clampStr(t.origin || '', 60),
+              clampStr(t.destination || '', 60),
+              loaded, dead, total,
+              mileageRate.toFixed(3),
+              roundCents(total * mileageRate).toFixed(2),
+            ];
+          }),
+      ];
+      const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `FreightLogic_TaxExport_${year}.csv`;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      toast('Tax CSV downloaded.');
+    });
+
+    // Print view
+    content.querySelector('#f30Print').addEventListener('click', ()=>{
+      haptic();
+      const win = window.open('', '_blank', 'width=700,height=900');
+      if (!win) { toast('Allow pop-ups to use the print view.', true); return; }
+      const rows2 = [
+        ['1','Gross receipts / freight income', grossIncome],
+        ['9',`Vehicle mileage (${totalBizMi.toLocaleString()} mi @ $${mileageRate}/mi)`, mileageDeduction],
+        ['15','Insurance', schedC.insurance],
+        ['21','Repairs & maintenance', schedC.repairs],
+        ['25','Utilities (phone/data)', schedC.utilities],
+        ['27a','Fuel & oil', schedC.fuel],
+        ['27a','Tolls', schedC.tolls],
+        ['27a','Parking & storage', schedC.parking],
+        ['27a','Other expenses', schedC.other],
+        ['24b',`Per diem (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction],
+        ['28','Total deductions', totalDeductions],
+        ['29','Tentative net profit', netProfit],
+      ].filter(r => r[2] !== 0);
+      win.document.write(`<!doctype html><html><head><title>FreightLogic Tax Export ${year}</title>
+        <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;color:#111;font-size:14px}
+        h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;margin:24px 0 8px;border-bottom:2px solid #ccc;padding-bottom:4px}
+        table{width:100%;border-collapse:collapse}td{padding:6px 8px;border-bottom:1px solid #eee}
+        .num{text-align:right}.bold{font-weight:700}.neg{color:#c00}.pos{color:#080}
+        .note{font-size:11px;color:#666;margin-top:24px}@media print{.note{font-size:10px}}</style></head><body>
+        <h1>FreightLogic — Schedule C Summary</h1>
+        <p style="margin:0;color:#666;font-size:13px">Tax Year ${year} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
+        <h2>Income & Deductions</h2>
+        <table>${rows2.map(r=>`<tr><td style="width:48px;color:#888;font-size:12px">Ln ${r[0]}</td><td>${r[1]}</td><td class="num${r[0]==='29'?r[2]<0?' neg':' pos':''}">${r[0]==='29'?'<b>':''}$${Math.abs(r[2]).toLocaleString('en-US',{minimumFractionDigits:2})}${r[0]==='29'?'</b>':''}</td></tr>`).join('')}</table>
+        <h2>Schedule SE Estimate</h2>
+        <p>Self-employment tax estimate: <strong>$${seTax.toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
+        (net × 92.35% × 15.3%)</p>
+        <p class="note">This is an estimate only and not tax advice. Mileage deduction uses the IRS standard rate of $${mileageRate}/mile.
+        Per diem uses $${pdRate}/day at ${Math.round(pdPct*100)}% deductibility.
+        Consult your CPA for final tax filings.</p>
+        <script>window.print();window.onafterprint=()=>window.close();<\/script></body></html>`);
+      win.document.close();
+    });
+  }
+
+  await loadYear(selectedYear);
 }
 
 // ================================================================================
@@ -14674,6 +14925,162 @@ async function renderMoneyCard() {
     tb.style.display = open ? 'none' : '';
     if (arr) arr.style.transform = open ? '' : 'rotate(180deg)';
   });
+
+  // F31: Earnings trends chart — appended non-blocking
+  renderEarningsTrends(card, validTrips, exps).catch(()=>{});
+}
+
+// ================================================================================
+// F31 — Earnings Trends (v23.4.0)
+// Pure-SVG bar chart appended to the Money Dashboard card. Shows last 8 weeks
+// (or 6 months) of gross revenue bars + net income overlay line.
+// Requires ≥4 weeks of data to render (avoids noisy single-bar charts).
+// ================================================================================
+
+function _buildWeeklyBuckets(trips, exps, n){
+  const now = new Date();
+  const buckets = [];
+  for (let i = n - 1; i >= 0; i--){
+    const wkStart = startOfWeek(new Date(now.getTime() - i * 7 * 86400000));
+    const wkEnd   = new Date(wkStart.getTime() + 6 * 86400000);
+    const wkStartIso = isoDate(wkStart), wkEndIso = isoDate(wkEnd);
+    const label = `${wkStart.getMonth() + 1}/${wkStart.getDate()}`;
+    let gross = 0, spent = 0;
+    for (const t of trips){
+      const d = t.pickupDate || t.deliveryDate;
+      if (d && d >= wkStartIso && d <= wkEndIso) gross += posNum(t.pay);
+    }
+    for (const e of exps){
+      if (e.date && e.date >= wkStartIso && e.date <= wkEndIso) spent += posNum(e.amount);
+    }
+    buckets.push({ label, gross, net: gross - spent, wkStartIso });
+  }
+  return buckets;
+}
+
+function _buildMonthlyBuckets(trips, exps, n){
+  const now = new Date();
+  const buckets = [];
+  for (let i = n - 1; i >= 0; i--){
+    const d0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 0);
+    const m0 = isoDate(d0).slice(0, 7), label = d0.toLocaleDateString('en-US', { month:'short' });
+    let gross = 0, spent = 0;
+    for (const t of trips){
+      const d = (t.pickupDate || t.deliveryDate || '').slice(0, 7);
+      if (d === m0) gross += posNum(t.pay);
+    }
+    for (const e of exps){
+      const d = (e.date || '').slice(0, 7);
+      if (d === m0) spent += posNum(e.amount);
+    }
+    buckets.push({ label, gross, net: gross - spent });
+    void d1;
+  }
+  return buckets;
+}
+
+async function renderEarningsTrends(card, trips, exps){
+  if (!card) return;
+  const existing = card.querySelector('#f31TrendsSection');
+  if (existing) existing.remove();
+
+  // Need ≥4 weeks with any revenue to show chart
+  const wkBuckets = _buildWeeklyBuckets(trips, exps, 8);
+  const activeWeeks = wkBuckets.filter(b => b.gross > 0).length;
+  if (activeWeeks < 4) return;
+
+  const savedView = await getSetting('f31TrendView', 'week').catch(()=>'week');
+
+  const section = document.createElement('div');
+  section.id = 'f31TrendsSection';
+  section.style.cssText = 'border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px';
+
+  function buildChart(buckets, view){
+    const W = 320, H = 120, pad = { l:8, r:8, t:8, b:22 };
+    const innerW = W - pad.l - pad.r;
+    const innerH = H - pad.t - pad.b;
+    const n = buckets.length;
+    const barW = Math.floor(innerW / n) - 3;
+    const maxVal = Math.max(...buckets.map(b => b.gross), 1);
+
+    const bars = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + 1;
+      const bh = Math.max(2, Math.round((b.gross / maxVal) * innerH));
+      const by = pad.t + innerH - bh;
+      const isCurrentWeek = i === n - 1;
+      return `<rect x="${x}" y="${by}" width="${barW}" height="${bh}"
+        rx="2" fill="${isCurrentWeek ? 'var(--accent)' : 'var(--accent-muted, rgba(255,179,0,.35))'}"
+        data-gross="${b.gross.toFixed(0)}" data-net="${b.net.toFixed(0)}" data-label="${escapeHtml(b.label)}" />`;
+    }).join('');
+
+    // Net line
+    const netPts = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + barW / 2 + 1;
+      const y = pad.t + innerH - Math.max(0, Math.round((b.net / maxVal) * innerH));
+      return `${x},${y}`;
+    }).join(' ');
+    const netLine = `<polyline points="${netPts}" fill="none" stroke="var(--good)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity=".85" />`;
+
+    // X-axis labels
+    const labels = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + barW / 2 + 1;
+      return `<text x="${x}" y="${H - 3}" text-anchor="middle" font-size="9" fill="var(--text-tertiary)">${escapeHtml(b.label)}</text>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:${H}px;display:block;overflow:visible" role="img" aria-label="Earnings chart">${bars}${netLine}${labels}</svg>`;
+  }
+
+  function render(view, buckets){
+    const grossTotal = buckets.reduce((s, b) => s + b.gross, 0);
+    const netTotal   = buckets.reduce((s, b) => s + b.net,   0);
+    const label      = view === 'week' ? 'Last 8 Weeks' : 'Last 6 Months';
+    section.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px">${escapeHtml(label)}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn f31-toggle${view==='week'?' active':''}" data-v="week" style="font-size:11px;padding:4px 10px;min-height:28px">Weeks</button>
+          <button class="btn f31-toggle${view==='month'?' active':''}" data-v="month" style="font-size:11px;padding:4px 10px;min-height:28px">Months</button>
+        </div>
+      </div>
+      ${buildChart(buckets, view)}
+      <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text-secondary)">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:4px"></span>Gross: <b>${escapeHtml(fmtMoney(grossTotal))}</b></span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:var(--good);vertical-align:middle;margin-right:4px"></span>Net: <b style="color:${netTotal>=0?'var(--good)':'var(--bad)'}">${escapeHtml(fmtMoney(netTotal))}</b></span>
+      </div>
+      <div id="f31Tooltip" style="display:none;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:6px 10px;background:var(--surface-1);border-radius:8px"></div>`;
+
+    section.querySelectorAll('.f31-toggle').forEach(btn => {
+      btn.addEventListener('click', async ()=>{
+        haptic(10);
+        const v = btn.dataset.v;
+        await setSetting('f31TrendView', v).catch(()=>{});
+        const newBuckets = v === 'week' ? _buildWeeklyBuckets(trips, exps, 8) : _buildMonthlyBuckets(trips, exps, 6);
+        render(v, newBuckets);
+      });
+    });
+
+    // Bar tap tooltip
+    section.querySelectorAll('rect[data-gross]').forEach(rect => {
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('click', ()=>{
+        haptic(8);
+        const tip = section.querySelector('#f31Tooltip');
+        if (!tip) return;
+        const g = Number(rect.dataset.gross), net = Number(rect.dataset.net), lbl = rect.dataset.label;
+        tip.style.display = '';
+        tip.innerHTML = `<b>${escapeHtml(lbl)}</b> &mdash; Gross: <b>${escapeHtml(fmtMoney(g))}</b> &bull; Net: <b style="color:${net>=0?'var(--good)':'var(--bad)'}">${escapeHtml(fmtMoney(net))}</b>`;
+      });
+    });
+  }
+
+  const initView = savedView || 'week';
+  const initBuckets = initView === 'week' ? wkBuckets : _buildMonthlyBuckets(trips, exps, 6);
+  render(initView, initBuckets);
+
+  // Append to the .card element inside the host div
+  const cardEl = card.querySelector('.card') || card;
+  cardEl.appendChild(section);
 }
 
 
