@@ -1,4 +1,4 @@
-/* FreightLogic v23.3.0 — Voice Load Module */
+/* FreightLogic v23.4.0 — Voice Load Module */
 (() => {
   'use strict';
 
@@ -424,10 +424,8 @@
     const deadRaw = extractLabeledNumber(normalized, COMMAND_ALIASES.deadMiles);
     const dead = toMiles(deadRaw);
     if (dead !== null && dead !== undefined && dead !== false) {
-      if (deadRaw !== null) {
-        fields.deadMiles = String(dead);
-        confidence.deadMiles = /dead|empty/.test(lower) ? 90 : 60;
-      }
+      fields.deadMiles = String(dead);
+      confidence.deadMiles = /dead|empty/.test(lower) ? 90 : 60;
     }
 
     const noteText = extractFieldText(normalized, COMMAND_ALIASES.notes);

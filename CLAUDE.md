@@ -170,8 +170,8 @@ Do not move the passphrase or admin token back to persistent storage.
 - `DELETE /backup` — delete all backups for this user+device
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
-- `POST /evaluate` — AI load evaluation (OpenAI); rate limited 20 req/min per user; returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
-- `POST /extract` — AI field extraction from raw load text; rate limited 10 req/min per user; returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
+- `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
+- `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 
 Token format: `flk_<uuid-no-dashes>`

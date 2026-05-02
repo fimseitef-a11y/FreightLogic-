@@ -1997,7 +1997,7 @@ async function computeKPIs(){
       const el2 = document.createElement('div'); el2.className = 'sub'; el2.textContent = 'Unpaid';
       right.appendChild(ud); right.appendChild(el2);
       el.appendChild(left); el.appendChild(right); box.appendChild(el);
-      el.addEventListener('click', ()=>{ haptic(15); openBrokerScorecard(gradeObj, globalAvgRpm); });
+      el.addEventListener('click', ()=>{ haptic(15); openBrokerScorecard(gradeObj, globalAvgRpm).catch(()=>{}); });
     }); }
   }
 
@@ -3549,7 +3549,7 @@ async function renderHome(){
     dcEval.__bound = true;
     dcEval.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
     $('#dcAddTrip').addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
-    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnExpAdd')?.click(), 150); });
+    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnAddExp2')?.click(), 150); });
     $('#dcMoney').addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
     $('#dcBestMove').addEventListener('click', ()=>{
       haptic();
@@ -4257,7 +4257,7 @@ function tripRow(t, {compact=false}={}){
   }
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
-  $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo); });
+  $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo).catch(()=>{}); });
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
@@ -4647,16 +4647,17 @@ function renderIntel(){
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', tile.title);
     el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-    const tileAction = ()=>{
+    const tileAction = async ()=>{
+      try {
       haptic(15);
-      if (tile.act === 'weeklyReports') openWeeklyReports();
-      else if (tile.act === 'rateTrends') openRateTrends();
-      else if (tile.act === 'reloadScoring') openReloadScoring();
-      else if (tile.act === 'chainAnalysis') openChainAnalysis();
-      else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
-      else if (tile.act === 'seasonalIntel') openSeasonalIntel();
-      else if (tile.act === 'costPerDay') openCostPerDay();
-      else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
+      if (tile.act === 'weeklyReports') await openWeeklyReports();
+      else if (tile.act === 'rateTrends') await openRateTrends();
+      else if (tile.act === 'reloadScoring') await openReloadScoring();
+      else if (tile.act === 'chainAnalysis') await openChainAnalysis();
+      else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
+      else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
+      else if (tile.act === 'costPerDay') await openCostPerDay();
+      else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
       else if (tile.act === 'omegaTiers'){
         location.hash = '#omega';
         setTimeout(()=>{
@@ -4673,7 +4674,8 @@ function renderIntel(){
           window.scrollTo({top:0,behavior:'instant'});
         }, 100);
       }
-      else if (tile.act === 'maintenance') openMaintenanceTracker();
+      else if (tile.act === 'maintenance') await openMaintenanceTracker();
+      } catch(e){ console.warn('[FL] Intel tile error:', e); }
     };
     el.addEventListener('click', tileAction);
     el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -4696,22 +4698,23 @@ async function renderMore(){
       el.setAttribute('tabindex', '0');
       el.setAttribute('aria-label', tile.title);
       el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-      const tileAction = ()=>{
+      const tileAction = async ()=>{
+        try {
         haptic(15);
         if (tile.hash) location.hash = tile.hash;
         else if (tile.act === 'import') openUniversalImport();
-        else if (tile.act === 'export') exportJSON();
+        else if (tile.act === 'export') await exportJSON();
         else if (tile.act === 'security') openSecurityLockModal();
-        else if (tile.act === 'weeklyReports') openWeeklyReports();
-        else if (tile.act === 'documents') openDocumentVault();
-        else if (tile.act === 'rateTrends') openRateTrends();
-        else if (tile.act === 'reloadScoring') openReloadScoring();
-        else if (tile.act === 'chainAnalysis') openChainAnalysis();
-        else if (tile.act === 'weeklyStrategy') openWeeklyStrategy();
-        else if (tile.act === 'seasonalIntel') openSeasonalIntel();
-        else if (tile.act === 'costPerDay') openCostPerDay();
-        else if (tile.act === 'counterOfferMemory') openCounterOfferMemory();
-        else if (tile.act === 'cpaPackage') openCPAPackage();
+        else if (tile.act === 'weeklyReports') await openWeeklyReports();
+        else if (tile.act === 'documents') await openDocumentVault();
+        else if (tile.act === 'rateTrends') await openRateTrends();
+        else if (tile.act === 'reloadScoring') await openReloadScoring();
+        else if (tile.act === 'chainAnalysis') await openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
+        else if (tile.act === 'costPerDay') await openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
+        else if (tile.act === 'cpaPackage') await openCPAPackage();
         else if (tile.act === 'omegaTiers'){
           location.hash = '#omega';
           setTimeout(()=>{
@@ -4728,10 +4731,10 @@ async function renderMore(){
             window.scrollTo({top:0,behavior:'instant'});
           }, 100);
         }
-        else if (tile.act === 'maintenance') openMaintenanceTracker();
-        else if (tile.act === 'monthlyCosts') openMonthlyExpenseManager();
-        else if (tile.act === 'taxExport') openTaxSeasonExport();
-        else if (tile.act === 'diagnostics') openDiagnosticsPanel();
+        else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        else if (tile.act === 'monthlyCosts') await openMonthlyExpenseManager();
+        else if (tile.act === 'taxExport') await openTaxSeasonExport();
+        else if (tile.act === 'diagnostics') await openDiagnosticsPanel();
         else if (tile.act === 'storageHealth'){
           location.hash = '#insights';
           setTimeout(()=>{
@@ -4740,6 +4743,7 @@ async function renderMore(){
             refreshStorageHealth();
           }, 200);
         }
+        } catch(e){ console.warn('[FL] More tile error:', e); }
       };
       el.addEventListener('click', tileAction);
       el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
@@ -7329,7 +7333,7 @@ function openQuickAddSheet(){
   const _close = closeModal;
   openModal('Quick Add', wrap);
   // Reset FAB on close
-  const obs = new MutationObserver(()=> { if ($('#modal').style.display === 'none'){ fab.classList.remove('open'); obs.disconnect(); } });
+  const obs = new MutationObserver(()=> { if ($('#modal').style.display === 'none'){ $('#fab')?.classList.remove('open'); obs.disconnect(); } });
   obs.observe($('#modal'), {attributes:true, attributeFilter:['style']});
 }
 
@@ -8370,7 +8374,7 @@ function openTripWizard(existing=null){
   }
 
   // v14.5.0: Camera button opens receipt camera
-  $('#f_camera', body)?.addEventListener('click', ()=> { haptic(15); openReceiptCamera(trip.orderNo || 'new'); });
+  $('#f_camera', body)?.addEventListener('click', ()=> { haptic(15); openReceiptCamera(trip.orderNo || 'new').catch(()=>{}); });
 
   async function validateStep1(){
     const orderNo = normOrderNo($('#f_orderNo', body).value);
@@ -12807,7 +12811,7 @@ async function openDocumentVault(filterTripOrderNo=null){
       await addDocument(chosenFile, type, note, expiresAt, tripOrderNo);
       closeModal();
       // Re-open vault
-      setTimeout(() => openDocumentVault(filterTripOrderNo), 100);
+      setTimeout(() => openDocumentVault(filterTripOrderNo).catch(()=>{}), 100);
     });
   });
 
@@ -14609,7 +14613,7 @@ async function checkMaintenanceDue() {
       </div>
       <div style="font-size:11px;font-weight:600;color:${color};white-space:nowrap">Service →</div>
     </div>`;
-    slot.querySelector('#maintAlertBanner')?.addEventListener('click', () => { haptic(15); openMaintenanceTracker(); });
+    slot.querySelector('#maintAlertBanner')?.addEventListener('click', () => { haptic(15); openMaintenanceTracker().catch(()=>{}); });
   } catch(e) { console.warn('[F25]', e); }
 }
 
@@ -14716,7 +14720,7 @@ async function _logMaintenanceService(items, idx, onDone) {
 
   sub.querySelector('#maintLogCancel')?.addEventListener('click', () => {
     closeModal();
-    setTimeout(() => openMaintenanceTracker(), 300);
+    setTimeout(() => openMaintenanceTracker().catch(()=>{}), 300);
   });
 
   sub.querySelector('#maintLogSave')?.addEventListener('click', async () => {
@@ -14750,7 +14754,7 @@ async function _logMaintenanceService(items, idx, onDone) {
     closeModal();
     await checkMaintenanceDue();   // Refresh home alert
     if (typeof onDone === 'function') onDone();
-    setTimeout(() => openMaintenanceTracker(), 300);
+    setTimeout(() => openMaintenanceTracker().catch(()=>{}), 300);
   });
 }
 
