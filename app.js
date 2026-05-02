@@ -4617,24 +4617,6 @@ const INTEL_TILES = [
   { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
 ];
 
-const MORE_TILES = [
-  // PRIMARY — visible immediately
-  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY' },
-  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#logbook', section:'PRIMARY' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#logbook', section:'PRIMARY' },
-  { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY' },
-  { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY' },
-  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY' },
-  { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#settings', section:'PRIMARY' },
-  // ADVANCED — hidden behind toggle
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#settings', section:'ADVANCED' },
-  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED' },
-  { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED' },
-  { icon:'🗂️', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED' },
-  { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED' },
-  { icon:'💿', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED' },
-  { icon:'🔬', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED' },
-];
 
 // ── Intel Page Renderer ──
 let _intelBound = false;
@@ -4684,112 +4666,6 @@ function renderIntel(){
     el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
     grid.appendChild(el);
   }
-}
-
-let _moreBound = false;
-async function renderMore(){
-  const grid = $('#moreMenu');
-  if (!_moreBound){
-    _moreBound = true;
-    grid.innerHTML = '';
-
-    // v20.1: Two-tier layout — PRIMARY tiles always visible, ADVANCED behind toggle
-    const makeTileEl = (tile) => {
-      const el = document.createElement('div');
-      el.className = 'menu-tile';
-      el.setAttribute('role', 'button');
-      el.setAttribute('tabindex', '0');
-      el.setAttribute('aria-label', tile.title);
-      el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-      const tileAction = async ()=>{
-        try {
-        haptic(15);
-        if (tile.hash) location.hash = tile.hash;
-        else if (tile.act === 'import') openUniversalImport();
-        else if (tile.act === 'export') await exportJSON();
-        else if (tile.act === 'security') openSecurityLockModal();
-        else if (tile.act === 'weeklyReports') await openWeeklyReports();
-        else if (tile.act === 'documents') await openDocumentVault();
-        else if (tile.act === 'rateTrends') await openRateTrends();
-        else if (tile.act === 'reloadScoring') await openReloadScoring();
-        else if (tile.act === 'chainAnalysis') await openChainAnalysis();
-        else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
-        else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
-        else if (tile.act === 'costPerDay') await openCostPerDay();
-        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
-        else if (tile.act === 'cpaPackage') await openCPAPackage();
-        else if (tile.act === 'omegaTiers'){
-          location.hash = '#omega';
-          setTimeout(()=>{
-            const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
-            if (btn) btn.click();
-            window.scrollTo({top:0,behavior:'instant'});
-          }, 100);
-        }
-        else if (tile.act === 'marketBoard'){
-          location.hash = '#omega';
-          setTimeout(()=>{
-            const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
-            if (btn) btn.click();
-            window.scrollTo({top:0,behavior:'instant'});
-          }, 100);
-        }
-        else if (tile.act === 'maintenance') await openMaintenanceTracker();
-        else if (tile.act === 'monthlyCosts') await openMonthlyExpenseManager();
-        else if (tile.act === 'taxExport') await openTaxSeasonExport();
-        else if (tile.act === 'diagnostics') await openDiagnosticsPanel();
-        else if (tile.act === 'storageHealth'){
-          location.hash = '#settings';
-          setTimeout(()=>{
-            const el = $('#stTrips')?.closest('.card');
-            if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
-            refreshStorageHealth();
-          }, 200);
-        }
-        } catch(e){ console.warn('[FL] More tile error:', e); }
-      };
-      el.addEventListener('click', tileAction);
-      el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
-      return el;
-    };
-
-    // Render PRIMARY tiles
-    for (const tile of MORE_TILES){
-      if (tile.section === 'PRIMARY') grid.appendChild(makeTileEl(tile));
-    }
-
-    // Advanced toggle
-    const advToggle = document.createElement('div');
-    advToggle.style.cssText = 'grid-column:1/-1;cursor:pointer;display:flex;align-items:center;gap:8px;padding:14px 4px 6px;color:var(--text-secondary);font-size:13px;font-weight:600';
-    const advArrow = document.createElement('span');
-    advArrow.textContent = '▶';
-    advArrow.style.cssText = 'font-size:10px;transition:transform .2s';
-    advToggle.appendChild(advArrow);
-    advToggle.appendChild(document.createTextNode(' More Tools'));
-    grid.appendChild(advToggle);
-
-    // Advanced tiles container
-    const advGrid = document.createElement('div');
-    advGrid.className = 'menu-grid';
-    advGrid.style.cssText = 'display:none;grid-column:1/-1';
-    for (const tile of MORE_TILES){
-      if (tile.section === 'ADVANCED') advGrid.appendChild(makeTileEl(tile));
-    }
-    grid.appendChild(advGrid);
-
-    advToggle.addEventListener('click', ()=>{
-      const open = advGrid.style.display !== 'none';
-      advGrid.style.display = open ? 'none' : '';
-      advArrow.style.transform = open ? '' : 'rotate(90deg)';
-      haptic(10);
-    });
-  }
-  // Populate current values
-  $('#moreWeeklyGoal').value = await getSetting('weeklyGoal', '') || '';
-  $('#moreVehicleMpg').value = await getSetting('vehicleMpg', '') || '';
-  $('#moreFuelPrice').value = await getSetting('fuelPrice', '') || '';
-  $('#morePerDiem').value = await getSetting('perDiemRate', '') || '';
-  $('#moreVersion').textContent = APP_VERSION;
 }
 
 // ── Settings tab (was "Insights") ──
@@ -4861,7 +4737,7 @@ function _renderSettingsTools(){
       else if (tile.act==='cpaPackage') await openCPAPackage();
       else if (tile.act==='maintenance') await openMaintenanceTracker();
       else if (tile.act==='security') openSecurityLockModal();
-      else if (tile.act==='storageHealth'){ const c=$('stTrips')?.closest('.card'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); refreshStorageHealth(); }
+      else if (tile.act==='storageHealth'){ const c=$('#stTrips')?.closest('.card'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); refreshStorageHealth(); }
       else if (tile.act==='diagnostics') await openDiagnosticsPanel();
     }catch(e){} };
     el.addEventListener('click', act);
@@ -4886,10 +4762,6 @@ async function renderLogbook(activeTab){
         else if (tab==='fuel') await renderFuel(true);
       });
     });
-    // Set up PTR for all three panels (safe to call even if already set)
-    setupPTR('tripsPTR','#tripList',()=>renderTrips(true));
-    setupPTR('expPTR','#expenseList',()=>renderExpenses(true));
-    setupPTR('fuelPTR','#fuelList',()=>renderFuel(true));
   }
   _activateLogbookTab(activeTab);
   if (activeTab==='trips') await renderTrips(true);
