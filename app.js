@@ -4619,55 +4619,6 @@ const INTEL_TILES = [
 
 
 // ── Intel Page Renderer ──
-let _intelBound = false;
-function renderIntel(){
-  const grid = $('#intelMenu');
-  if (!grid || _intelBound) return;
-  _intelBound = true;
-  grid.innerHTML = '';
-  for (const tile of INTEL_TILES){
-    const el = document.createElement('div');
-    el.className = 'menu-tile';
-    el.setAttribute('role', 'button');
-    el.setAttribute('tabindex', '0');
-    el.setAttribute('aria-label', tile.title);
-    el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-    const tileAction = async ()=>{
-      try {
-      haptic(15);
-      if (tile.act === 'weeklyReports') await openWeeklyReports();
-      else if (tile.act === 'rateTrends') await openRateTrends();
-      else if (tile.act === 'reloadScoring') await openReloadScoring();
-      else if (tile.act === 'chainAnalysis') await openChainAnalysis();
-      else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
-      else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
-      else if (tile.act === 'costPerDay') await openCostPerDay();
-      else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
-      else if (tile.act === 'omegaTiers'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'marketBoard'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'maintenance') await openMaintenanceTracker();
-      } catch(e){ console.warn('[FL] Intel tile error:', e); }
-    };
-    el.addEventListener('click', tileAction);
-    el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
-    grid.appendChild(el);
-  }
-}
-
 // ── Settings tab (was "Insights") ──
 const renderSettings = renderInsights;
 
@@ -11187,7 +11138,7 @@ async function cloudRefreshButtons(){
 
 function cloudCheckSetupLink(){
   try { const p = new URLSearchParams(window.location.search); const t = p.get('token');
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname + window.location.hash); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#settings'); }, 500); }
+    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname + window.location.hash); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ location.hash = '#settings'; }, 500); }
   } catch(e) {}
 }
 
