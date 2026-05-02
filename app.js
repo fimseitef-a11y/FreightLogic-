@@ -373,7 +373,7 @@ function showQuarterlyNudge(msg){
     el.querySelector('#nudgeQuarterlyExport').addEventListener('click', ()=>{
       haptic(20);
       // Navigate to the accountant export section
-      navigateTo('insights');
+      location.hash = '#settings';
       toast('Scroll to "Export to Accountant" and generate your package.');
       el.remove();
     });
@@ -3010,12 +3010,20 @@ async function handleShareTarget(){
 }
 
 // ---- Router ----
-const views = { home:$('#view-home'), trips:$('#view-trips'), expenses:$('#view-expenses'),
-  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
+const views = {
+  home:     $('#view-home'),
+  logbook:  $('#view-logbook'),
+  money:    $('#view-money'),
+  omega:    $('#view-omega'),
+  settings: $('#view-settings'),
+  // Legacy aliases — navigate() redirects these before touching the views object
+  trips: null, expenses: null, fuel: null,
+  insights: null, intel: null, more: null
+};
 
 function setActiveNav(name){
-  // Sub-sections accessible from More menu highlight the More tab
-  const navName = ['expenses','fuel','insights'].includes(name) ? 'more' : name;
+  const NAV_MAP = { trips:'logbook', expenses:'logbook', fuel:'logbook', insights:'settings', more:'settings', intel:'money' };
+  const navName = NAV_MAP[name] || name;
   $$('[data-nav]').forEach(a => {
     const isActive = a.dataset.nav === navName;
     a.classList.toggle('active', isActive);
@@ -3039,35 +3047,39 @@ async function refreshUnpaidBadge(){
 }
 
 async function navigate(){
-  const hash = (location.hash || '#home').slice(1);
+  const raw = (location.hash || '#home').slice(1);
 
-  // ── Handle share target: process shared files, then redirect to home ──
-  if (hash === 'share') {
-    await handleShareTarget();
-    location.hash = '#home';
+  if (raw === 'share') { await handleShareTarget(); location.hash = '#home'; return; }
+
+  // Hard redirects — old hashes silently forwarded to new destinations
+  const REDIRECTS = { insights:'settings', more:'settings', intel:'money' };
+  if (REDIRECTS[raw]) { location.hash = '#' + REDIRECTS[raw]; return; }
+
+  // Logbook sub-routes — show the logbook view with the right pill active
+  const LOGBOOK_TABS = ['trips','expenses','fuel'];
+  if (LOGBOOK_TABS.includes(raw)) {
+    const lbEl = views.logbook;
+    Object.values(views).forEach(el => { if (el) { el.style.display = 'none'; el.classList.remove('entering'); } });
+    if (lbEl) { lbEl.style.display = ''; void lbEl.offsetWidth; lbEl.classList.add('entering'); }
+    setActiveNav('logbook');
+    window.scrollTo({top:0, behavior:'instant'});
+    await renderLogbook(raw);
     return;
   }
 
-  const name = views[hash] ? hash : 'home';
-  Object.entries(views).forEach(([k,el]) => {
-    if (k === name){
-      el.style.display = '';
-      el.classList.remove('entering');
-      void el.offsetWidth; // force reflow
-      el.classList.add('entering');
-    } else { el.style.display = 'none'; el.classList.remove('entering'); }
+  const name = views[raw] ? raw : 'home';
+  Object.entries(views).forEach(([k, el]) => {
+    if (!el) return;
+    if (k === name) { el.style.display = ''; el.classList.remove('entering'); void el.offsetWidth; el.classList.add('entering'); }
+    else { el.style.display = 'none'; el.classList.remove('entering'); }
   });
   setActiveNav(name);
   window.scrollTo({top:0, behavior:'instant'});
-  if (name === 'home') await renderHome();
-  if (name === 'trips') await renderTrips(true);
-  if (name === 'expenses') await renderExpenses(true);
-  if (name === 'money') await renderAR();
-  if (name === 'fuel') await renderFuel(true);
-  if (name === 'insights') await renderInsights();
-  if (name === 'omega') await renderOmega();
-  if (name === 'intel') renderIntel();
-  if (name === 'more') await renderMore();
+  if (name === 'home')     await renderHome();
+  if (name === 'logbook')  await renderLogbook('trips');
+  if (name === 'money')    await renderMoneyPage();
+  if (name === 'settings') await renderSettings();
+  if (name === 'omega')    await renderOmega();
 }
 window.addEventListener('hashchange', navigate);
 
@@ -3543,20 +3555,17 @@ async function _saveSetupWizardResults(vals){
 async function renderHome(){
   refreshUnpaidBadge().catch(()=>{});
 
-  // F26: Driver Command Strip wiring (idempotent — only bind once)
+  // Driver Command Strip wiring (idempotent — only bind once)
   const dcEval = $('#dcEvaluate');
   if (dcEval && !dcEval.__bound) {
     dcEval.__bound = true;
     dcEval.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
-    $('#dcAddTrip').addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
-    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnAddExp2')?.click(), 150); });
-    $('#dcMoney').addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
-    $('#dcBestMove').addEventListener('click', ()=>{
-      haptic();
-      const pc = $('#homePositioningCard');
-      if (pc && pc.style.display !== 'none') pc.scrollIntoView({behavior:'smooth', block:'start'});
-      else renderPositioningCard().catch(()=>{});
-    });
+    $('#dcAdd')?.addEventListener('click', ()=>{ haptic(); _openAddSheet(); });
+    $('#dcBestMove')?.addEventListener('click', ()=>{ haptic(); renderPositioningCard().catch(()=>{}); });
+    // Hidden preserved buttons
+    $('#dcAddTrip')?.addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
+    $('#dcAddExpense')?.addEventListener('click', ()=>{ haptic(); location.hash = '#logbook'; setTimeout(()=>_activateLogbookTab('expenses'), 150); });
+    $('#dcMoney')?.addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
   }
 
   const state = await getOnboardState();
@@ -3629,21 +3638,11 @@ async function renderHome(){
   ]);
   // F6: Fuel price staleness nudge (non-blocking)
   checkFuelPriceStaleness().catch(()=>{});
-  // F5: Weekly report card (non-blocking, renders into homeWeeklyReport slot)
-  if (!state.isEmpty){ getLatestWeeklyReport().then(r => renderWeeklyReportCard(r)).catch(()=>{}); }
-  // F21: Trip tracking UI (always visible, even when empty)
+  // F21: Trip tracking UI — GPS active tracking card
   renderTripTrackingUI().catch(()=>{});
-  // F22: Money dashboard card (shown after 1+ trips)
-  renderMoneyCard().catch(()=>{});
-  // F24: Positioning Engine card (non-blocking)
-  renderPositioningCard().catch(()=>{});
   // F25: Maintenance due alert (non-blocking)
   checkMaintenanceDue().catch(()=>{});
-  // UX: Position context banner (non-blocking)
-  renderPositionContextBanner().catch(()=>{});
-  // UX: Quick Evaluate button (always shown)
-  renderQuickEvalCard().catch(()=>{});
-  // UX: Calm home — hide empty cards with zero content
+  // UX: Calm home — hide empty alerts card when nothing to show
   _applyCalmHomeState(state).catch(()=>{});
 }
 
@@ -3970,9 +3969,9 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
   const dhPct7 = mi7 > 0 ? (dh7/mi7)*100 : 0;
   const dhPct14 = mi14 > 0 ? (dh14/mi14)*100 : 0;
   if (mi7 > 0 && dhPct7 > 25){
-    alerts.push({ severity:'danger', title:`Deadhead at ${dhPct7.toFixed(0)}%`, detail:`High empty miles. Prior week: ${dhPct14.toFixed(0)}%`, action:()=> location.hash='#insights', cta:'View insights' });
+    alerts.push({ severity:'danger', title:`Deadhead at ${dhPct7.toFixed(0)}%`, detail:`High empty miles. Prior week: ${dhPct14.toFixed(0)}%`, action:()=> location.hash='#settings', cta:'View insights' });
   } else if (mi7 > 0 && mi14 > 0 && dhPct7 > dhPct14 * 1.3 && dhPct7 > 15){
-    alerts.push({ severity:'warn', title:`Deadhead trending up`, detail:`${dhPct7.toFixed(0)}% this week vs ${dhPct14.toFixed(0)}% prior`, action:()=> location.hash='#insights', cta:'View insights' });
+    alerts.push({ severity:'warn', title:`Deadhead trending up`, detail:`${dhPct7.toFixed(0)}% this week vs ${dhPct14.toFixed(0)}% prior`, action:()=> location.hash='#settings', cta:'View insights' });
   }
 
   // 3. Broker with old unpaid loads (>30 days)
@@ -4001,9 +4000,9 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
   if (ctx.ppg30 > 0 && ctx.ppg60 > 0){
     const drift = ((ctx.ppg30 - ctx.ppg60) / ctx.ppg60) * 100;
     if (drift > 8){
-      alerts.push({ severity:'danger', title:`Fuel cost up ${drift.toFixed(0)}%`, detail:`$${ctx.ppg30.toFixed(3)}/gal vs $${ctx.ppg60.toFixed(3)} prior month`, action:()=> location.hash='#fuel', cta:'Review fuel' });
+      alerts.push({ severity:'danger', title:`Fuel cost up ${drift.toFixed(0)}%`, detail:`$${ctx.ppg30.toFixed(3)}/gal vs $${ctx.ppg60.toFixed(3)} prior month`, action:()=>{ location.hash='#logbook'; setTimeout(()=>_activateLogbookTab('fuel'),200); }, cta:'Review fuel' });
     } else if (drift > 3){
-      alerts.push({ severity:'warn', title:`Fuel cost up ${drift.toFixed(1)}%`, detail:`$${ctx.ppg30.toFixed(3)}/gal vs $${ctx.ppg60.toFixed(3)} prior`, action:()=> location.hash='#fuel', cta:'Review fuel' });
+      alerts.push({ severity:'warn', title:`Fuel cost up ${drift.toFixed(1)}%`, detail:`$${ctx.ppg30.toFixed(3)}/gal vs $${ctx.ppg60.toFixed(3)} prior`, action:()=>{ location.hash='#logbook'; setTimeout(()=>_activateLogbookTab('fuel'),200); }, cta:'Review fuel' });
     }
   }
 
@@ -4020,12 +4019,12 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
 
   // 6. Revenue velocity dropping
   if (ctx.velPrev > 0 && ctx.velNow < ctx.velPrev * 0.7 && ctx.velPrev > 100){
-    alerts.push({ severity:'warn', title:`Revenue velocity dropped`, detail:`${fmtMoney(ctx.velNow)}/day vs ${fmtMoney(ctx.velPrev)}/day last week`, action:()=> location.hash='#trips', cta:'View trips' });
+    alerts.push({ severity:'warn', title:`Revenue velocity dropped`, detail:`${fmtMoney(ctx.velNow)}/day vs ${fmtMoney(ctx.velPrev)}/day last week`, action:()=> location.hash='#logbook', cta:'View trips' });
   }
 
   // 7. Low efficiency
   if (ctx.all30 > 0 && ctx.eff < 70){
-    alerts.push({ severity:'warn', title:`Efficiency low: ${ctx.eff.toFixed(0)}%`, detail:`${(100-ctx.eff).toFixed(0)}% of miles are deadhead (30d avg)`, action:()=> location.hash='#insights', cta:'View insights' });
+    alerts.push({ severity:'warn', title:`Efficiency low: ${ctx.eff.toFixed(0)}%`, detail:`${(100-ctx.eff).toFixed(0)}% of miles are deadhead (30d avg)`, action:()=> location.hash='#settings', cta:'View insights' });
   }
 
   // 8. Concentration risk
@@ -4595,6 +4594,8 @@ async function renderInsights(){
   invalidateKPICache();
   await computeKPIs();
   await refreshStorageHealth('');
+  _renderSettingsTools();
+  $('#moreVersion').textContent = APP_VERSION;
 }
 
 // ---- More menu ----
@@ -4617,14 +4618,14 @@ const INTEL_TILES = [
 const MORE_TILES = [
   // PRIMARY — visible immediately
   { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY' },
-  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY' },
+  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#logbook', section:'PRIMARY' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#logbook', section:'PRIMARY' },
   { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY' },
   { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY' },
-  { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY' },
+  { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#settings', section:'PRIMARY' },
   // ADVANCED — hidden behind toggle
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED' },
+  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#settings', section:'ADVANCED' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED' },
   { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED' },
   { icon:'🗂️', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED' },
@@ -4736,7 +4737,7 @@ async function renderMore(){
         else if (tile.act === 'taxExport') await openTaxSeasonExport();
         else if (tile.act === 'diagnostics') await openDiagnosticsPanel();
         else if (tile.act === 'storageHealth'){
-          location.hash = '#insights';
+          location.hash = '#settings';
           setTimeout(()=>{
             const el = $('#stTrips')?.closest('.card');
             if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
@@ -4789,6 +4790,134 @@ async function renderMore(){
   $('#moreVersion').textContent = APP_VERSION;
 }
 
+// ── Settings tab (was "Insights") ──
+const renderSettings = renderInsights;
+
+// ── Money page: summary card + AR + analytics ──
+async function renderMoneyPage(){
+  await renderMoneyCard().catch(()=>{});
+  await renderAR();
+  _renderMoneyAnalytics();
+}
+
+function _renderMoneyAnalytics(){
+  const grid = $('#moneyAnalyticsGrid');
+  if (!grid || grid.dataset.rendered) return;
+  grid.dataset.rendered = '1';
+  const tiles = INTEL_TILES.filter(t =>
+    ['weeklyReports','rateTrends','reloadScoring','chainAnalysis','weeklyStrategy','seasonalIntel','costPerDay','counterOfferMemory'].includes(t.act)
+  );
+  for (const tile of tiles){
+    const el = document.createElement('div');
+    el.className = 'menu-tile';
+    el.setAttribute('role','button'); el.setAttribute('tabindex','0'); el.setAttribute('aria-label', tile.title);
+    el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
+    const act = async()=>{ try{ haptic(15);
+      if (tile.act==='weeklyReports') await openWeeklyReports();
+      else if (tile.act==='rateTrends') await openRateTrends();
+      else if (tile.act==='reloadScoring') await openReloadScoring();
+      else if (tile.act==='chainAnalysis') await openChainAnalysis();
+      else if (tile.act==='weeklyStrategy') await openWeeklyStrategy();
+      else if (tile.act==='seasonalIntel') await openSeasonalIntel();
+      else if (tile.act==='costPerDay') await openCostPerDay();
+      else if (tile.act==='counterOfferMemory') await openCounterOfferMemory();
+    }catch(e){} };
+    el.addEventListener('click', act);
+    el.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); act(); } });
+    grid.appendChild(el);
+  }
+}
+
+// ── Settings tools grid ──
+function _renderSettingsTools(){
+  const grid = $('#settingsToolsGrid');
+  if (!grid || grid.dataset.rendered) return;
+  grid.dataset.rendered = '1';
+  const toolTiles = [
+    { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts' },
+    { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents' },
+    { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export' },
+    { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import' },
+    { icon:'🗂️', title:'Tax Season Export', sub:'Schedule C + mileage log', act:'taxExport' },
+    { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown', act:'cpaPackage' },
+    { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
+    { icon:'🔒', title:'Security Lock', sub:'PIN lock for this device', act:'security' },
+    { icon:'💿', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth' },
+    { icon:'🔬', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics' },
+  ];
+  for (const tile of toolTiles){
+    const el = document.createElement('div');
+    el.className = 'menu-tile';
+    el.setAttribute('role','button'); el.setAttribute('tabindex','0'); el.setAttribute('aria-label', tile.title);
+    el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
+    const act = async()=>{ try{ haptic(15);
+      if (tile.act==='monthlyCosts') await openMonthlyExpenseManager();
+      else if (tile.act==='documents') await openDocumentVault();
+      else if (tile.act==='export') await exportJSON();
+      else if (tile.act==='import') openUniversalImport();
+      else if (tile.act==='taxExport') await openTaxSeasonExport();
+      else if (tile.act==='cpaPackage') await openCPAPackage();
+      else if (tile.act==='maintenance') await openMaintenanceTracker();
+      else if (tile.act==='security') openSecurityLockModal();
+      else if (tile.act==='storageHealth'){ const c=$('stTrips')?.closest('.card'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); refreshStorageHealth(); }
+      else if (tile.act==='diagnostics') await openDiagnosticsPanel();
+    }catch(e){} };
+    el.addEventListener('click', act);
+    el.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); act(); } });
+    grid.appendChild(el);
+  }
+}
+
+// ── Logbook tab: pill switcher for Trips / Expenses / Fuel ──
+let _logbookBound = false;
+async function renderLogbook(activeTab){
+  activeTab = activeTab || 'trips';
+  if (!_logbookBound){
+    _logbookBound = true;
+    $$('#logbookPills [data-lbtab]').forEach(btn=>{
+      btn.addEventListener('click', async()=>{
+        haptic(5);
+        const tab = btn.dataset.lbtab;
+        _activateLogbookTab(tab);
+        if (tab==='trips') await renderTrips(true);
+        else if (tab==='expenses') await renderExpenses(true);
+        else if (tab==='fuel') await renderFuel(true);
+      });
+    });
+    // Set up PTR for all three panels (safe to call even if already set)
+    setupPTR('tripsPTR','#tripList',()=>renderTrips(true));
+    setupPTR('expPTR','#expenseList',()=>renderExpenses(true));
+    setupPTR('fuelPTR','#fuelList',()=>renderFuel(true));
+  }
+  _activateLogbookTab(activeTab);
+  if (activeTab==='trips') await renderTrips(true);
+  else if (activeTab==='expenses') await renderExpenses(true);
+  else if (activeTab==='fuel') await renderFuel(true);
+}
+
+function _activateLogbookTab(tab){
+  $$('#logbookPills [data-lbtab]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.lbtab === tab);
+  });
+  ['trips','expenses','fuel'].forEach(key=>{
+    const el = $('#logbook-'+key);
+    if (el) el.style.display = key===tab ? '' : 'none';
+  });
+}
+
+// ── "+ Add" bottom sheet ──
+function _openAddSheet(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;padding:8px 0">
+    <button class="btn primary" id="addSheetTrip" style="font-size:15px;padding:16px;border-radius:14px">🚚 Add Trip</button>
+    <button class="btn" id="addSheetExpense" style="font-size:15px;padding:16px;border-radius:14px">💰 Add Expense</button>
+    <button class="btn" id="addSheetFuel" style="font-size:15px;padding:16px;border-radius:14px">⛽ Add Fuel Fill-up</button>
+  </div>`;
+  openModal('What are you adding?', body);
+  body.querySelector('#addSheetTrip')?.addEventListener('click',()=>{ closeModal(); haptic(); openQuickAddSheet(); });
+  body.querySelector('#addSheetExpense')?.addEventListener('click',()=>{ closeModal(); haptic(); openExpenseForm(); });
+  body.querySelector('#addSheetFuel')?.addEventListener('click',()=>{ closeModal(); haptic(); openFuelForm(); });
+}
 
 
 function openSecurityLockModal(){
@@ -7236,6 +7365,25 @@ async function renderOmega(){
       if (last.erosionOk) $('#omErosionOk').checked = true;
     }
     $('#omOutput').textContent = OMEGA_DEFAULT;
+
+    // Visible tool row buttons (surface hidden sub-panels)
+    $('#btnShowOmegaTiers')?.addEventListener('click', ()=>{
+      haptic(10);
+      const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
+      if (btn) btn.click();
+      window.scrollTo({top:0, behavior:'instant'});
+    });
+    $('#btnShowMarketBoard')?.addEventListener('click', ()=>{
+      haptic(10);
+      const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
+      if (btn) btn.click();
+      window.scrollTo({top:0, behavior:'instant'});
+    });
+    $('#btnShowPositioning')?.addEventListener('click', ()=>{
+      haptic(10);
+      renderPositioningCard().catch(()=>{});
+      location.hash = '#home';
+    });
   }
   // Render top lanes
   await renderTopLanes();
@@ -11165,7 +11313,7 @@ async function cloudRefreshButtons(){
 
 function cloudCheckSetupLink(){
   try { const p = new URLSearchParams(window.location.search); const t = p.get('token');
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname + window.location.hash); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
+    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname + window.location.hash); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#settings'); }, 500); }
   } catch(e) {}
 }
 
@@ -14877,7 +15025,7 @@ async function renderMoneyCard() {
       + '</div>'
     : '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
       + '<div style="font-size:13px;color:var(--text-tertiary)">No weekly goal set &mdash; '
-      + '<a href="#insights" style="color:var(--accent-text);text-decoration:none;font-weight:600">Set one &rarr;</a></div></div>';
+      + '<a href="#settings" style="color:var(--accent-text);text-decoration:none;font-weight:600">Set one &rarr;</a></div></div>';
 
   const taxBodyHtml = seTax > 0
     ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:0">'

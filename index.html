@@ -793,14 +793,14 @@
   </datalist>
   <main class="app">
     <section id="view-home" class="view">
-      <!-- F26: Driver Command Strip — always-visible primary actions -->
+      <!-- Driver Command Strip -->
       <div id="driverCommandStrip" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-        <button class="btn primary" id="dcEvaluate" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">⚡ Evaluate Load</button>
-        <button class="btn primary" id="dcAddTrip" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">＋ Add Trip</button>
-        <button class="btn" id="dcAddExpense" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">📋 Add Expense</button>
-        <button class="btn" id="dcMoney" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">💵 Today's Money</button>
-        <button class="btn" id="dcBestMove" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px;grid-column:1/-1">📍 Best Move Now</button>
+        <button class="btn primary" id="dcEvaluate" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px">⚡ Evaluate</button>
+        <button class="btn primary" id="dcAdd" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px">＋ Add</button>
+        <button class="btn" id="dcBestMove" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;grid-column:1/-1">📍 Best Move Now</button>
       </div>
+      <!-- Preserved IDs used internally by app.js -->
+      <div style="display:none"><button id="dcAddTrip"></button><button id="dcAddExpense"></button><button id="dcMoney"></button></div>
 
       <!-- Card 1: Welcome (new users only) -->
       <div id="homeWelcome" style="display:none"></div>
@@ -841,37 +841,30 @@
         <div class="pill" id="kpiDailyBurn" style="margin-top:8px;width:100%;justify-content:center;font-size:12px"></div>
         <div id="pcCoaching" style="margin-top:10px"></div>
         <div id="pcDZBadge" style="display:none;margin-top:6px"></div>
-        <div class="quick-actions" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
-          <button class="btn primary" id="btnQuickTrip" style="gap:4px">＋ Trip</button>
-          <button class="btn" id="btnQuickExpense">＋ Expense</button>
-          <button class="btn" id="btnQuickFuel">＋ Fuel</button>
-        </div>
+        <!-- Preserved IDs bound at init time -->
+        <div style="display:none"><button id="btnQuickTrip"></button><button id="btnQuickExpense"></button><button id="btnQuickFuel"></button></div>
       </div>
 
-      <!-- UX: Quick Evaluate button (populated by renderHome) -->
-      <div id="homeQuickEvalCard" style="display:none;margin-top:12px"></div>
-
-      <!-- F22: Money Dashboard slot (populated by renderMoneyCard) -->
-      <div id="homeMoneyCard" style="display:none"></div>
-
-      <!-- Card 2: Alerts & Actions -->
-      <div class="card" style="margin-top:12px">
-        <h3>What's Next</h3>
+      <!-- Alerts & Actions (hidden when empty by _applyCalmHomeState) -->
+      <div id="homeAlertsCard" class="card" style="margin-top:12px">
         <div class="list" id="trendAlerts"></div>
         <div class="list" id="homeActions"></div>
-        <!-- Preserved slots for dynamic content (hidden by default) -->
-        <div id="homeStrategyBadge" style="display:none"></div>
-        <div id="homeWeeklyReport" style="display:none"></div>
-        <div id="homeFuelNudge" style="display:none"></div>
-        <div id="homeReloadPrompt" style="display:none"></div>
         <div id="overdueAlert" style="display:none"></div>
+      </div>
+      <!-- Preserved slots: JS writes to these but they stay hidden on Home -->
+      <div style="display:none">
+        <div id="homeQuickEvalCard"></div>
+        <div id="homeStrategyBadge"></div>
+        <div id="homeWeeklyReport"></div>
+        <div id="homeFuelNudge"></div>
+        <div id="homeReloadPrompt"></div>
       </div>
 
       <!-- Card 3: Recent Trips -->
       <div class="card" style="margin-top:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <h3 style="margin:0">Recent Trips</h3>
-          <a href="#trips" style="font-size:12px;color:var(--accent-text);font-weight:600;text-decoration:none">See all →</a>
+          <a href="#logbook" style="font-size:12px;color:var(--accent-text);font-weight:600;text-decoration:none">See all →</a>
         </div>
         <div class="list" id="homeRecentTrips"></div>
       </div>
@@ -890,40 +883,80 @@
         <button id="btnQuickEval"></button>
       </div>
     </section>
-    <section id="view-trips" class="view" style="display:none">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <h3 style="margin:0">Trips</h3>
-          <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+    <section id="view-logbook" class="view" style="display:none">
+      <!-- Logbook pill switcher -->
+      <div id="logbookPills" style="display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+        <button class="chip active" data-lbtab="trips">🚚 Trips</button>
+        <button class="chip" data-lbtab="expenses">💰 Expenses</button>
+        <button class="chip" data-lbtab="fuel">⛽ Fuel</button>
+      </div>
+
+      <!-- Trips sub-panel -->
+      <div id="logbook-trips">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h3 style="margin:0">Trips</h3>
+            <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+          </div>
+          <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
+          <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+            <button class="chip active" data-chip="all">All</button>
+            <button class="chip" data-chip="unpaid">Unpaid</button>
+            <button class="chip" data-chip="week">This Week</button>
+            <button class="chip" data-chip="month">This Month</button>
+          </div>
         </div>
-        <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
-        <!-- v20: Filter chips -->
-        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
-          <button class="chip active" data-chip="all">All</button>
-          <button class="chip" data-chip="unpaid">Unpaid</button>
-          <button class="chip" data-chip="week">This Week</button>
-          <button class="chip" data-chip="month">This Month</button>
+        <div class="spacer"></div><div class="ptr-zone" id="tripsPTR"></div><div class="list" id="tripList"></div><div class="spacer"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="btnTripMore" style="flex:1">Load more</button>
+          <button class="btn" id="btnTripFilter" style="flex:1">Date Filter</button>
+          <button class="btn" id="btnTripExport" style="flex:1">Export JSON</button>
+          <button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button>
+          <button class="btn" id="btnTripImport" style="flex:1">Import</button>
         </div>
       </div>
-      <div class="spacer"></div><div class="ptr-zone" id="tripsPTR"></div><div class="list" id="tripList"></div><div class="spacer"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" id="btnTripMore" style="flex:1">Load more</button>
-        <button class="btn" id="btnTripFilter" style="flex:1">Date Filter</button>
-        <button class="btn" id="btnTripExport" style="flex:1">Export JSON</button>
-        <button class="btn" id="btnTripExportCSV" style="flex:1">Export CSV</button>
-        <button class="btn" id="btnTripImport" style="flex:1">Import</button>
+
+      <!-- Expenses sub-panel -->
+      <div id="logbook-expenses" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h3 style="margin:0">Expenses</h3>
+            <button class="btn primary" id="btnAddExp2" style="padding:8px 14px">＋ Add</button>
+          </div>
+          <input id="expSearch" placeholder="Search category or notes…" />
+        </div>
+        <div class="spacer"></div><div class="ptr-zone" id="expPTR"></div><div class="list" id="expenseList"></div><div class="spacer"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="btnExpMore" style="flex:1">Load more</button>
+          <button class="btn" id="btnExpExport" style="flex:1">Export JSON</button>
+          <button class="btn" id="btnExpExportCSV" style="flex:1">Export CSV</button>
+          <button class="btn" id="btnExpImport" style="flex:1">Import</button>
+        </div>
       </div>
-    </section>
-    <section id="view-expenses" class="view" style="display:none">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Expenses</h3><button class="btn primary" id="btnAddExp2" style="padding:8px 14px">＋ Add</button></div>
-        <input id="expSearch" placeholder="Search category or notes…" />
+
+      <!-- Fuel sub-panel -->
+      <div id="logbook-fuel" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h3 style="margin:0">Fuel Log</h3>
+            <button class="btn primary" id="btnAddFuel2" style="padding:8px 14px">＋ Fill-up</button>
+          </div>
+          <div class="muted" style="font-size:13px">Track every fill-up. Powers fuel cost analysis and per-mile calculations.</div>
+        </div>
+        <div class="spacer"></div><div class="ptr-zone" id="fuelPTR"></div><div class="list" id="fuelList"></div><div class="spacer"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="btnFuelMore" style="flex:1">Load more</button>
+          <button class="btn" id="btnFuelExportCSV" style="flex:1">Export CSV</button>
+          <button class="btn" id="btnFuelImport" style="flex:1">Import</button>
+        </div>
       </div>
-      <div class="spacer"></div><div class="ptr-zone" id="expPTR"></div><div class="list" id="expenseList"></div><div class="spacer"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnExpMore" style="flex:1">Load more</button><button class="btn" id="btnExpExport" style="flex:1">Export JSON</button><button class="btn" id="btnExpExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnExpImport" style="flex:1">Import</button></div>
     </section>
     <section id="view-money" class="view" style="display:none">
-      <div class="card">
+      <!-- F22 Money Card: summary stats, goal progress, tax estimate (populated by renderMoneyCard) -->
+      <div id="homeMoneyCard"></div>
+
+      <!-- AR: Unpaid trips by age -->
+      <div class="card" style="margin-top:12px">
         <h3>Money Owed To You</h3>
         <div class="muted" style="font-size:13px;line-height:1.5">Unpaid trips by age. Tap "Mark Paid" when the check arrives.</div>
         <div class="row" style="margin-top:12px">
@@ -934,19 +967,17 @@
         </div>
       </div>
       <div class="spacer"></div><div class="list" id="arList"></div>
-    </section>
-    <section id="view-fuel" class="view" style="display:none">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Fuel Log</h3><button class="btn primary" id="btnAddFuel2" style="padding:8px 14px">＋ Fill-up</button></div>
-        <div class="muted" style="font-size:13px">Track every fill-up. Powers fuel cost analysis and per-mile calculations.</div>
+
+      <!-- Analytics tools (populated by _renderMoneyAnalytics) -->
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin-bottom:10px">Analytics</h3>
+        <div class="menu-grid" id="moneyAnalyticsGrid"></div>
       </div>
-      <div class="spacer"></div><div class="ptr-zone" id="fuelPTR"></div><div class="list" id="fuelList"></div><div class="spacer"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnFuelMore" style="flex:1">Load more</button><button class="btn" id="btnFuelExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnFuelImport" style="flex:1">Import</button></div>
     </section>
-    <section id="view-insights" class="view" style="display:none">
-      <div class="grid2">
-        <div class="card"><h3>Weekly Snapshot</h3><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="wkGross">—</b></div><div class="pill"><span class="muted">Exp</span> <b id="wkExp">—</b></div><div class="pill"><span class="muted">Net</span> <b id="wkNet">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Loaded mi</span> <b id="wkLoaded">—</b></div><div class="pill"><span class="muted">All mi</span> <b id="wkAll">—</b></div><div class="pill"><span class="muted">RPM</span> <b id="wkRpm">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill" id="deadheadPill"><span class="muted">Deadhead</span> <b id="wkDeadhead">—</b></div></div></div>
-        <div class="card"><h3>Settings</h3>
+    <section id="view-settings" class="view" style="display:none">
+      <div class="card"><h3>Settings</h3>
+      <!-- Preserved weekly snapshot IDs (used by renderInsights KPI calc) -->
+      <div style="display:none"><b id="wkGross"></b><b id="wkExp"></b><b id="wkNet"></b><b id="wkLoaded"></b><b id="wkAll"></b><b id="wkRpm"></b><div id="deadheadPill"><b id="wkDeadhead"></b></div></div>
 <!-- ── 3 Essential Settings (always visible) ── -->
 <div class="grid2" style="gap:10px;margin-bottom:6px">
 <div><label>Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
@@ -1006,23 +1037,24 @@
 </div>
 <!-- ── end advanced ── -->
 <div class="spacer"></div><div class="btn-row"><button class="btn primary" id="btnSaveSettings">Save</button><button class="btn danger" id="btnHardReset">Hard Reset</button></div><div class="muted" style="font-size:11px;margin-top:8px">Hard reset clears all local data.</div></div>        <div class="card" id="cloudBackupCard"><h3>☁️ Cloud Backup</h3><div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Encrypted backups — your data is encrypted on your phone before upload. Your passphrase never leaves this device.</div><div id="cloudStatusPanel" class="cloud-status-panel" style="display:none"><div class="cloud-status-row"><span class="label">Status</span><span class="value" id="cloudStatusDot"><span class="cloud-dot off"></span> Not connected</span></div><div class="cloud-status-row"><span class="label">Last sync</span><span class="value" id="cloudStatusTime">—</span></div><div class="cloud-status-row"><span class="label">User</span><span class="value" id="cloudStatusUser">—</span></div><div class="cloud-status-row"><span class="label">Backups</span><span class="value" id="cloudStatusCount">—</span></div></div><div id="cloudSetupSection"><label>Your Token</label><div class="pass-wrap"><input id="cloudBackupToken" type="password" placeholder="flk_... (given to you)" autocomplete="off" /><button type="button" class="pass-toggle" id="btnTokenToggle" aria-label="Show token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Paste the token you received</div><label>Encryption Passphrase</label><div class="pass-wrap"><input id="cloudBackupPass" type="password" placeholder="Min 8 characters — pick your own" autocomplete="off" /><button type="button" class="pass-toggle" id="btnPassToggle" aria-label="Show passphrase">👁</button></div><div class="pass-strength" id="passStrength"><div class="pass-strength-fill" id="passStrengthFill"></div></div><div class="muted" style="font-size:11px;margin-top:4px" id="passStrengthLabel">If you forget this, backups cannot be recovered.</div><div class="cloud-actions"><button class="btn" id="btnCloudTest">🔌 Test</button><button class="btn primary" id="btnCloudSave" style="font-weight:700">Connect</button></div></div><div class="cloud-actions"><button class="btn" id="btnCloudPush" disabled>☁️ Backup Now</button><button class="btn" id="btnCloudPull" disabled>📥 Restore</button></div><div id="cloudSyncStatus" class="muted" style="font-size:12px;margin-top:8px;min-height:18px"></div><div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px"><button class="btn sm" id="btnAdminToggle" style="font-size:12px;width:100%">👑 Admin — Add / Manage Drivers</button><div id="adminPanel" style="display:none;margin-top:12px"><label>Admin Token</label><div class="pass-wrap"><input id="adminToken" type="password" placeholder="Your ADMIN_TOKEN secret" autocomplete="off" /><button type="button" class="pass-toggle" id="btnAdminTokenToggle" aria-label="Show admin token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">The ADMIN_TOKEN from Cloudflare Worker settings</div><label>New driver name</label><input id="adminDriverName" type="text" placeholder="e.g., John" /><button class="btn" id="btnAdminCreate" style="margin-top:10px;width:100%">➕ Create Driver Account</button><div id="adminCreateResult" style="display:none;margin-top:10px"></div><div id="adminUserList" style="margin-top:14px"></div><button class="btn sm" id="btnAdminRefresh" style="font-size:11px;margin-top:8px;color:var(--text-tertiary)">Refresh driver list</button></div></div><div style="margin-top:8px"><button class="btn sm" id="btnCloudClear" style="font-size:11px;color:var(--text-tertiary)">Disconnect Cloud Backup</button></div></div>
-      </div>
       <div class="spacer"></div>
       <div class="card"><h3>Storage &amp; Recovery</h3><div class="row"><div class="pill"><span class="muted">Trips</span> <b id="stTrips">0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="stExpenses">0</b></div><div class="pill"><span class="muted">Fuel</span> <b id="stFuel">0</b></div><div class="pill"><span class="muted">Receipts</span> <b id="stReceiptSets">0</b></div><div class="pill"><span class="muted">Blobs</span> <b id="stReceiptBlobs">0</b></div></div><div class="spacer"></div><div class="btn-row"><button class="btn" id="btnStorageRefresh">Refresh</button><button class="btn" id="btnStorageAnalyze">Analyze</button><button class="btn" id="btnStorageRebuild">Rebuild Index</button><button class="btn danger" id="btnStorageClearCache">Clear Cache</button></div><div class="muted" style="font-size:11px;margin-top:8px" id="stStatus">—</div></div>
-      <div class="spacer"></div>
-      <div class="card"><h3>Money &amp; AR</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Track unpaid trips and aging.</div><a class="btn" href="#money">View AR / Unpaid</a></div>
       <div class="spacer"></div>
       <div class="card"><h3>Tax Quick View</h3><div class="ptabs" id="taxPeriodTabs"><button class="btn sm act" data-period="week">Week</button><button class="btn sm" data-period="month">Month</button><button class="btn sm" data-period="quarter">Quarter</button><button class="btn sm" data-period="ytd">YTD</button></div><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="taxGross">$0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="taxExpenses">$0</b></div><div class="pill"><span class="muted">Net</span> <b id="taxNet">$0</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Per diem</span> <b id="taxPerDiem">$0</b></div><div class="pill"><span class="muted">SE tax</span> <b id="taxSE">$0</b></div><div class="pill"><span class="muted">Profit</span> <b id="taxProfit">$0</b></div></div><div class="muted" style="font-size:11px;margin-top:10px">Quick estimate — not tax advice.</div></div>
       <div class="spacer"></div>
       <div class="card"><h3>Export to Accountant</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Quarterly P&amp;L, expenses, IFTA fuel, per diem — for your CPA.</div><div class="ptabs" id="acctPeriodTabs"><button class="btn sm" data-acct="q1">Q1</button><button class="btn sm" data-acct="q2">Q2</button><button class="btn sm" data-acct="q3">Q3</button><button class="btn sm" data-acct="q4">Q4</button><button class="btn sm act" data-acct="ytd">YTD</button></div><button class="btn primary" id="btnAccountantExport" style="margin-top:10px">Generate Package</button></div>
       <div class="spacer"></div>
-    </section>
-    <section id="view-intel" class="view" style="display:none">
-      <div class="card" style="margin-top:10px">
-        <h3 style="margin:0">Intelligence</h3>
-        <div class="muted" style="font-size:12px;margin-top:4px">Your freight data, analyzed.</div>
+      <div class="card">
+        <h3 style="margin-bottom:10px">Tools</h3>
+        <div class="menu-grid" id="settingsToolsGrid"></div>
       </div>
-      <div class="menu-grid" id="intelMenu" style="margin-top:12px"></div>
+      <div class="spacer"></div>
+      <!-- Preserved IDs used by renderMore / renderInsights -->
+      <div style="display:none"><input id="moreWeeklyGoal" /><input id="moreVehicleMpg" /><input id="moreFuelPrice" /><input id="morePerDiem" /><button id="moreSaveSettings"></button><span id="moreVersion"></span></div>
+    </section>
+    <!-- view-intel kept hidden for backward compat; navigate() redirects #intel → #money -->
+    <section id="view-intel" class="view" style="display:none">
+      <div style="display:none" id="intelMenu"></div>
     </section>
     <section id="view-omega" class="view" style="display:none">
 
@@ -1132,6 +1164,13 @@
       <!-- ── Eval History (rendered by _renderEvalHistory) ── -->
       <div id="mwEvalHistory"></div>
 
+      <!-- ── Advanced Tools Row ── -->
+      <div style="display:flex;gap:8px;margin-top:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+        <button class="btn sm" id="btnShowOmegaTiers" style="white-space:nowrap;font-size:12px">Ω Rate Tiers</button>
+        <button class="btn sm" id="btnShowMarketBoard" style="white-space:nowrap;font-size:12px">📡 Market Board</button>
+        <button class="btn sm" id="btnShowPositioning" style="white-space:nowrap;font-size:12px">📍 Positioning</button>
+      </div>
+
       <!-- ── Week Structure (always visible) ── -->
       <div class="card" style="margin-top:12px">
         <h3>This Week</h3>
@@ -1198,18 +1237,9 @@
         <button class="btn sm" data-mwtab="board">Market Board</button>
       </div>
     </section>
+    <!-- view-more kept hidden; navigate() redirects #more → #settings -->
     <section id="view-more" class="view" style="display:none">
-      <div class="menu-grid" id="moreMenu"></div>
-      <!-- Hidden: preserved IDs for Quick Settings sync (JS references these) -->
-      <div style="display:none"><input id="moreWeeklyGoal" /><input id="moreVehicleMpg" /><input id="moreFuelPrice" /><input id="morePerDiem" /><button id="moreSaveSettings"></button></div>
-      <div class="spacer"></div>
-      <div class="card" style="text-align:center;padding:24px 16px">
-        <img src="./icon192.png" alt="FreightLogic" width="72" height="72"
-             style="border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,.3);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto" />
-        <div style="font-size:18px;font-weight:800;letter-spacing:-.3px;margin-bottom:2px">FreightLogic</div>
-        <div class="muted" style="font-size:12px;margin-bottom:10px">v<span id="moreVersion"></span></div>
-        <div class="muted" style="font-size:11px;line-height:1.5">Freight decision intelligence for expedited operators.<br>Your data stays on this device.</div>
-      </div>
+      <div style="display:none"><div id="moreMenu"></div></div>
     </section>
   </main>
   <div class="modal-backdrop" id="backdrop"></div>
@@ -1221,21 +1251,21 @@
       <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
       <div class="nl">Home</div>
     </a>
-    <a href="#trips" data-nav="trips" aria-label="Trips">
-      <div class="ni" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><span id="navUnpaidBadge" style="display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center"></span></div>
-      <div class="nl">Trips</div>
+    <a href="#logbook" data-nav="logbook" aria-label="Logbook">
+      <div class="ni" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span id="navUnpaidBadge" style="display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center"></span></div>
+      <div class="nl">Logbook</div>
     </a>
     <a href="#omega" data-nav="omega" aria-label="Evaluate load" class="nav-eval-center">
       <div class="ni">⚡</div>
       <div class="nl">Evaluate</div>
     </a>
-    <a href="#intel" data-nav="intel" aria-label="Intelligence">
-      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg></div>
-      <div class="nl">Intel</div>
+    <a href="#money" data-nav="money" aria-label="Money">
+      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div class="nl">Money</div>
     </a>
-    <a href="#more" data-nav="more" aria-label="More">
-      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></div>
-      <div class="nl">More</div>
+    <a href="#settings" data-nav="settings" aria-label="Settings">
+      <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+      <div class="nl">Settings</div>
     </a>
   </nav></div>
   <!-- PWA Install Banner -->
