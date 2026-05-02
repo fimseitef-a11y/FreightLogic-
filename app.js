@@ -3549,7 +3549,7 @@ async function renderHome(){
     dcEval.__bound = true;
     dcEval.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
     $('#dcAddTrip').addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
-    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnExpAdd')?.click(), 150); });
+    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnAddExp2')?.click(), 150); });
     $('#dcMoney').addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
     $('#dcBestMove').addEventListener('click', ()=>{
       haptic();
@@ -7333,7 +7333,7 @@ function openQuickAddSheet(){
   const _close = closeModal;
   openModal('Quick Add', wrap);
   // Reset FAB on close
-  const obs = new MutationObserver(()=> { if ($('#modal').style.display === 'none'){ fab.classList.remove('open'); obs.disconnect(); } });
+  const obs = new MutationObserver(()=> { if ($('#modal').style.display === 'none'){ $('#fab')?.classList.remove('open'); obs.disconnect(); } });
   obs.observe($('#modal'), {attributes:true, attributeFilter:['style']});
 }
 
