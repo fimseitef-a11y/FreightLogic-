@@ -125,7 +125,7 @@ This app handles financial data. All security mitigations are intentional and mu
 |---|---|---|
 | Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |
 | Encryption passphrase | `sessionStorage` (`fl_cloud_pass`) | Cleared on tab/browser close — never written to disk |
-| Admin token | `sessionStorage` (`fl_admin_token`) | Cleared on tab/browser close |
+| Admin token | `localStorage` (`fl_admin_tok`) | Persists — entered once, remembered on device; "change" link clears it |
 | Device ID | `localStorage` (`fl_device_id`) | Persists — non-secret identifier |
 
 Do not move the passphrase or admin token back to persistent storage.
