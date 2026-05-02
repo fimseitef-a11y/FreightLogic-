@@ -1,8 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.4.0 USA ENGINE — Driver Command Upgrade
+/** FreightLogic v23.5.0 USA ENGINE — Driver Command Upgrade
  *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
+ *  v23.5.0: Restructured navigation (Home·Logbook·Evaluate·Money·Settings), simplified admin
+ *           driver creation with share-sheet invite links, no raw token exposure
  *  v23.4.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
  *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
  *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
@@ -13,7 +15,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.4.0';
+const APP_VERSION = '23.5.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -43,7 +45,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.4.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.5.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)

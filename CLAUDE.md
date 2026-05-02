@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.4.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.5.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -86,7 +86,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.4.0';
+const APP_VERSION = '23.5.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -191,8 +191,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.4.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.4.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`.
+- `manifest.json` references `v=23.5.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.5.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -215,7 +215,25 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ---
 
-## v22–v23.3 Features (F21–F31)
+## v23.5.0 Changes
+
+### Navigation Restructure
+- Bottom nav: Home · Logbook · ⚡ Evaluate · Money · Settings (was Home · Trips · ⚡ · Intel · More)
+- **Logbook tab** — pill switcher consolidates Trips / Expenses / Fuel; all original element IDs preserved so render functions work unchanged
+- **Money tab** — absorbs AR aging, analytics, and Earnings Trends (Intel removed as separate tab)
+- **Settings tab** — consolidates Insights + More into one screen with a tools grid
+- **Home** — simplified to 3-button command strip (Evaluate, Add, Best Move); 5 stacking cards removed from home load
+- `navigate()` REDIRECTS map: `#insights→#settings`, `#intel→#money`, `#more→#settings`
+- `navigate()` LOGBOOK_TABS: `#trips`, `#expenses`, `#fuel` show Logbook view with correct pill active
+
+### Admin Driver Creation
+- Admin token stored permanently in `localStorage` (`fl_admin_tok`); shown as "🔐 Admin connected" bar after first entry
+- After creating a driver: only action shown is `📤 Send to [Name]` — fires `navigator.share()` or clipboard fallback with full invite message embedding `?token=…` URL
+- Neither admin nor driver ever sees the raw `flk_…` token
+
+---
+
+## v22–v23.4 Features (F21–F31)
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
