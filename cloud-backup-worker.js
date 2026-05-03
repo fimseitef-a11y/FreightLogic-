@@ -1,4 +1,4 @@
-// FreightLogic Cloud Backup Worker v8 - Multi-User + AI Evaluate + AI Extract + Delta Sync
+// FreightLogic Cloud Backup Worker v9 - Multi-User + AI Evaluate + AI Extract + Delta Sync
 // Optimized for Cloudflare free tier: pointer keys replace list() calls; hourly rate-limit windows.
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
@@ -53,7 +53,7 @@ export default {
           const name = (body.name || 'Driver').slice(0, 50);
           const userId = 'u_' + crypto.randomUUID().slice(0, 12);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
-          const rec = { userId, name, token, createdAt: new Date().toISOString(), active: true };
+          const rec = { userId, name, token, createdAt: new Date().toISOString(), active: true, backupCount: 0 };
           // Write both records in parallel
           await Promise.all([
             env.BACKUPS.put('token:' + token, JSON.stringify(rec)),
@@ -70,7 +70,13 @@ export default {
           const vals = await Promise.all(userKeys.map(k => env.BACKUPS.get(k.name)));
           const users = [];
           for (const val of vals) {
-            if (val) { try { users.push(JSON.parse(val)); } catch {} }
+            if (val) {
+              try {
+                const u = JSON.parse(val);
+                // Never expose driver tokens in the admin listing
+                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
+              } catch {}
+            }
           }
           return json({ ok: true, users }, 200, cors);
         }
@@ -285,18 +291,17 @@ export default {
         ]);
 
         ptr.keys.push(key);
+        const ptrOps = [];
         if (ptr.keys.length > 3) {
           const toDelete = ptr.keys.splice(0, ptr.keys.length - 3);
           ptr.count = ptr.keys.length;
-          // Delete old backups and save updated pointer in parallel
-          await Promise.all([
-            ...toDelete.map(k => env.BACKUPS.delete(k)),
-            savePtr(env, driverUserId, deviceId, 'b', ptr)
-          ]);
+          toDelete.forEach(k => ptrOps.push(env.BACKUPS.delete(k)));
         } else {
           ptr.count = ptr.keys.length;
-          await savePtr(env, driverUserId, deviceId, 'b', ptr);
         }
+        ptrOps.push(savePtr(env, driverUserId, deviceId, 'b', ptr));
+        // Increment per-user backup count in parallel with pointer ops
+        await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
         return json({ ok: true, key, size: payload.length }, 200, cors);
       }
@@ -412,6 +417,17 @@ async function getPtr(env, userId, deviceId, type) {
 async function savePtr(env, userId, deviceId, type, ptr) {
   const ptrKey = 'user:' + userId + ':device:' + deviceId + ':' + type + 'ptr';
   await env.BACKUPS.put(ptrKey, JSON.stringify(ptr));
+}
+
+async function incrementUserBackupCount(env, userId) {
+  const key = 'user:' + userId;
+  const raw = await env.BACKUPS.get(key);
+  if (!raw) return;
+  try {
+    const u = JSON.parse(raw);
+    u.backupCount = (u.backupCount || 0) + 1;
+    await env.BACKUPS.put(key, JSON.stringify(u));
+  } catch {}
 }
 
 // ─── Rate limiter (sliding hour window via KV) ────────────────────────────────
