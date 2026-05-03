@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.4.0">
+  <link rel="manifest" href="manifest.json?v=23.5.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -765,6 +765,183 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.45; transform: scale(1.35); }
     }
+
+    /* ═══════════════════════════════════════════════════════════════
+       v23.5.0 — DESIGN SYSTEM v3.1 "Command+"
+       Depth · motion · hierarchy
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── Ambient background glow (dark mode only) ───────────────── */
+    html:not([data-theme="light"]) body {
+      background-image: radial-gradient(ellipse 100vw 300px at 50% -60px, rgba(85,60,175,0.09) 0%, transparent 100%);
+    }
+
+    /* ── Card — layered depth ───────────────────────────────────── */
+    .card {
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.055),
+        inset 0 -1px 0 rgba(0,0,0,0.12),
+        0 1px 4px rgba(0,0,0,0.20),
+        0 8px 24px rgba(0,0,0,0.12);
+    }
+    [data-theme="light"] .card {
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.80),
+        0 1px 3px rgba(0,0,0,0.07),
+        0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    /* ── Primary button — richer gradient + hover shimmer ───────── */
+    .btn.primary {
+      background: linear-gradient(155deg, #ffc82a 0%, #f0a800 50%, #d08500 100%);
+      box-shadow: 0 4px 20px rgba(240,168,0,.24), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.10);
+      text-shadow: 0 1px 2px rgba(80,40,0,0.16);
+    }
+    .btn.primary:active {
+      box-shadow: 0 1px 6px rgba(240,168,0,.12), inset 0 1px 0 rgba(255,255,255,0.10);
+    }
+    .btn.primary::after {
+      content: '';
+      position: absolute; top: 0; left: -100%;
+      width: 50%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+      transform: skewX(-20deg);
+      pointer-events: none;
+    }
+    @media (hover: hover) {
+      .btn.primary:hover::after { animation: btnShine .5s ease forwards }
+    }
+    @keyframes btnShine { to { left: 160% } }
+
+    /* ── KPI hero — flowing gold gradient text ──────────────────── */
+    .kpi-hero-value {
+      background: linear-gradient(120deg, #e8e8f8 0%, #ffd060 30%, #f0a800 58%, #e8e8f8 100%);
+      background-size: 220% 100%;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: kpiTextFlow 7s ease-in-out infinite;
+    }
+    @keyframes kpiTextFlow {
+      0%, 100% { background-position: 0% 50% }
+      50%       { background-position: 100% 50% }
+    }
+
+    /* ── Bottom nav — warm pill behind active icon ──────────────── */
+    .nav a::before {
+      content: '';
+      position: absolute; top: 3px; left: 50%;
+      width: 38px; height: 32px;
+      transform: translateX(-50%) scaleX(0);
+      background: rgba(240,168,0,0.10);
+      border-radius: 10px;
+      transition: transform .22s var(--spring);
+      pointer-events: none;
+    }
+    .nav a.active::before { transform: translateX(-50%) scaleX(1) }
+    .nav a.nav-eval-center::before { display: none }
+
+    /* ── Nav eval center — vivid gradient ───────────────────────── */
+    .nav a.nav-eval-center .ni {
+      background: linear-gradient(140deg, #ffc82a 0%, #e09500 100%);
+    }
+
+    /* ── Brand title — gradient text (dark mode) ────────────────── */
+    html:not([data-theme="light"]) .title strong {
+      background: linear-gradient(120deg, var(--text) 0%, var(--accent-text) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── KPI cells — dark gradient ──────────────────────────────── */
+    html:not([data-theme="light"]) .kpi-cell {
+      background: linear-gradient(175deg, #111122 0%, #0d0d1c 100%);
+      border-color: rgba(255,255,255,0.065);
+    }
+
+    /* ── Menu tile — icon squircle container ────────────────────── */
+    .menu-tile .ti {
+      width: 48px; height: 48px;
+      background: var(--surface-2);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.18);
+      transition: transform .12s var(--spring), background .15s;
+    }
+    .menu-tile:active .ti { transform: scale(.88); background: var(--surface-3) }
+
+    /* ── Verdict banner — left accent stripe ────────────────────── */
+    .verdict-banner { border-left-width: 3px; padding-left: 13px }
+
+    /* ── Status dot live — sonar ring ───────────────────────────── */
+    .status-dot.live {
+      box-shadow: none;
+      animation: sonarRing 2.2s ease-out infinite;
+    }
+    @keyframes sonarRing {
+      0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0.55) }
+      70%  { box-shadow: 0 0 0 7px rgba(52,211,153,0) }
+      100% { box-shadow: 0 0 0 0 rgba(52,211,153,0) }
+    }
+
+    /* ── Chip active — gradient fill ────────────────────────────── */
+    .chip.active {
+      background: linear-gradient(135deg, #ffc82a, #e09500);
+      border-color: transparent;
+      box-shadow: 0 2px 10px rgba(240,168,0,0.22);
+    }
+
+    /* ── Command chips — glow shadows ───────────────────────────── */
+    .cmd-chip.prime    { box-shadow: 0 2px 10px rgba(52,211,153,0.14) }
+    .cmd-chip.flex     { box-shadow: 0 2px 10px rgba(240,168,0,0.14) }
+    .cmd-chip.recovery { box-shadow: 0 2px 10px rgba(248,113,113,0.14) }
+
+    /* ── Eval grade badge — luminous glow ───────────────────────── */
+    .eval-grade-badge { filter: drop-shadow(0 0 20px currentColor) }
+
+    /* ── Grade badges — outer ring glow ─────────────────────────── */
+    .grade-A { box-shadow: 0 0 0 1px var(--good-border), 0 2px 14px rgba(52,211,153,0.14) }
+    .grade-B { box-shadow: 0 0 0 1px rgba(52,180,220,0.28), 0 2px 14px rgba(52,180,220,0.12) }
+    .grade-C { box-shadow: 0 0 0 1px var(--warn-border), 0 2px 14px rgba(251,191,36,0.12) }
+    .grade-D { box-shadow: 0 0 0 1px rgba(248,150,100,0.28), 0 2px 14px rgba(248,150,100,0.10) }
+    .grade-E { box-shadow: 0 0 0 1px var(--bad-border), 0 2px 14px rgba(248,113,113,0.12) }
+
+    /* ── FAB — premium gradient ─────────────────────────────────── */
+    .fab {
+      background: linear-gradient(135deg, #ffc82a 0%, #e09500 100%);
+      box-shadow: 0 4px 24px rgba(240,168,0,.30), 0 0 0 1px rgba(240,168,0,0.18);
+    }
+
+    /* ── Progress fill — vivid three-stop gradient ──────────────── */
+    .progress-fill { background: linear-gradient(90deg, #d08500, #f0a800, #ffe270) }
+
+    /* ── Section badge — warm gradient ─────────────────────────── */
+    .section-badge {
+      background: linear-gradient(135deg, rgba(240,168,0,0.16), rgba(240,168,0,0.08));
+    }
+
+    /* ── Item rows — ambient status tint ───────────────────────── */
+    .item.paid   { background: linear-gradient(90deg, rgba(52,211,153,0.05) 0%, var(--surface-1) 55%) }
+    .item.unpaid { background: linear-gradient(90deg, rgba(251,191,36,0.05) 0%, var(--surface-1) 55%) }
+    .item.overdue { background: linear-gradient(90deg, rgba(248,113,113,0.06) 0%, var(--surface-1) 55%) }
+
+    /* ── Toast — frosted glass ──────────────────────────────────── */
+    html:not([data-theme="light"]) .toast {
+      background: rgba(18,18,32,0.96);
+      border-color: rgba(255,255,255,0.12);
+      box-shadow: 0 8px 32px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,0.07);
+      border-radius: 14px;
+    }
+
+    /* ── Input focus ring — vivid accent ────────────────────────── */
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(240,168,0,0.50);
+      box-shadow: 0 0 0 3px rgba(240,168,0,0.13), 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    /* ── Header — amber bottom-border tint (dark) ───────────────── */
+    html:not([data-theme="light"]) header {
+      border-bottom-color: rgba(240,168,0,0.09);
+    }
   </style>
 </head>
 <body>
@@ -1250,8 +1427,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.4.0"></script>
-  <script src="voice-load.js?v=23.4.0"></script>
-  <script src="sw-bridge.js?v=23.4.0"></script>
+  <script src="app.js?v=23.5.0"></script>
+  <script src="voice-load.js?v=23.5.0"></script>
+  <script src="sw-bridge.js?v=23.5.0"></script>
 </body>
 </html>
