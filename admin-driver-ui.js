@@ -1,4 +1,5 @@
 (function(){'use strict';
+window._flAdminUiJs=true;
 const API='https://freightlogic-backup.fimseitef.workers.dev';
 const $=id=>document.getElementById(id);
 const T=(m,e)=>{try{window.toast?window.toast(m,!!e):console[e?'warn':'log'](m)}catch(_){console[e?'warn':'log'](m)}};

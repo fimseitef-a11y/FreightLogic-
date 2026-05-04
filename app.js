@@ -11277,25 +11277,30 @@ async function cloudAdminLoadUsers(){
 
 function cloudInitUI(){
   cloudCheckSetupLink();
-  var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
-  makeToggle('#btnPassToggle', '#cloudBackupPass');
-  makeToggle('#btnTokenToggle', '#cloudBackupToken');
-  makeToggle('#btnAdminTokenToggle', '#adminToken');
-  $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
-  $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
-  $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
-  $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
-  $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token') || localStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
-  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
-  $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
-  $('#btnCloudClear')?.addEventListener('click', async ()=>{
-    if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
-    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
-    _lastCloudSync = 0; _cloudLastStatus = null;
-    var pe = $('#cloudBackupPass'); if (pe) pe.value = ''; var te = $('#cloudBackupToken'); if (te) te.value = '';
-    toast('Cloud backup disconnected'); cloudRefreshButtons(); cloudRefreshStatusPanel();
-  });
+  if (!document.body.dataset.cloudUiBound) {
+    document.body.dataset.cloudUiBound = '1';
+    var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
+    makeToggle('#btnPassToggle', '#cloudBackupPass');
+    makeToggle('#btnTokenToggle', '#cloudBackupToken');
+    makeToggle('#btnAdminTokenToggle', '#adminToken');
+    $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
+    $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
+    $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
+    $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
+    $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
+    if (!window._flAdminUiJs) {
+      $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token') || localStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+      $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
+      $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
+    }
+    $('#btnCloudClear')?.addEventListener('click', async ()=>{
+      if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
+      await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
+      _lastCloudSync = 0; _cloudLastStatus = null;
+      var pe = $('#cloudBackupPass'); if (pe) pe.value = ''; var te = $('#cloudBackupToken'); if (te) te.value = '';
+      toast('Cloud backup disconnected'); cloudRefreshButtons(); cloudRefreshStatusPanel();
+    });
+  }
   cloudRefreshButtons(); cloudRefreshStatusPanel();
 }
 
