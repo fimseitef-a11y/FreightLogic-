@@ -1254,15 +1254,16 @@ async function exportJSON(){
   const checksum = await computeExportChecksum(trips, expenses, fuel);
   const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
   const gpsLogs = await dumpStore('gpsLogs');
+  const marketBoard = await dumpStore('marketBoard');
   const payload = {
-    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length } },
+    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length, marketBoard: marketBoard.length } },
     trips,
     expenses,
     fuel,
     receipts: await dumpStore('receipts'),
     settings: await dumpStore('settings'),
     auditLog: await dumpStore('auditLog'),
-    marketBoard: await dumpStore('marketBoard'),
+    marketBoard,
     laneHistory: await dumpStore('laneHistory'),
     weeklyReports: await dumpStore('weeklyReports'),
     reloadOutcomes: await dumpStore('reloadOutcomes'),
@@ -11916,13 +11917,15 @@ async function openTaxSeasonExport(){
             ];
           }),
       ];
-      const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n');
+      const bom = '﻿';
+      const csv = bom + rows.map(r => r.map(v => `"${csvSafeCell(String(v ?? '')).replace(/"/g, '""')}"`).join(',')).join('\r\n');
       const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `FreightLogic_TaxExport_${year}.csv`;
       document.body.appendChild(a); a.click();
       setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      setSetting('f30LastExportYear', year).catch(()=>{});
       toast('Tax CSV downloaded.');
     });
 
@@ -11963,6 +11966,7 @@ async function openTaxSeasonExport(){
         Consult your CPA for final tax filings.</p>
         <script>window.print();window.onafterprint=()=>window.close();<\/script></body></html>`);
       win.document.close();
+      setSetting('f30LastExportYear', year).catch(()=>{});
     });
   }
 
