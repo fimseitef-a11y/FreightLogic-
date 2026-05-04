@@ -258,7 +258,7 @@ function showSafariWarning(){
   if (dismissed) return;
   const banner = document.createElement('div');
   banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;padding:14px 16px;background:linear-gradient(135deg,#ff6b35,#d63031);color:#fff;font-size:13px;line-height:1.5;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.4)';
-  banner.innerHTML = `<b>⚠️ Safari/iOS Data Warning</b><br>Safari may delete your data if you don't use this app for 7 days. <b>Add to Home Screen</b> and <b>export backups regularly</b> to protect your records.<br><button id="safariWarnDismiss" style="margin-top:8px;padding:8px 24px;border:2px solid #fff;border-radius:8px;background:transparent;color:#fff;font-weight:700;cursor:pointer;font-size:13px">I Understand — Dismiss</button>`;
+  banner.innerHTML = `<b>⚠️ Safari/iOS Data Warning</b><br>Safari may delete your data if you don't use this app for 7 days. <b>Add to Home Screen</b> and <b>export backups regularly</b> to protect your records.<br><button type="button" id="safariWarnDismiss" style="margin-top:8px;padding:8px 24px;border:2px solid #fff;border-radius:8px;background:transparent;color:#fff;font-weight:700;cursor:pointer;font-size:13px">I Understand — Dismiss</button>`;
   document.body.appendChild(banner);
   banner.querySelector('#safariWarnDismiss').addEventListener('click', ()=>{
     localStorage.setItem('fl_safari_warn_v1', '1');
@@ -291,7 +291,7 @@ function showBackupNudge(msg){
   el.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
     <div style="font-size:24px;line-height:1">💾</div>
     <div style="flex:1"><div style="font-weight:700;font-size:13px;margin-bottom:2px">Backup Reminder</div><div class="muted" style="font-size:12px;line-height:1.4">${escapeHtml(msg)}</div></div>
-    <button class="btn primary" id="nudgeExport" style="padding:10px 16px;white-space:nowrap">Export Now</button>
+    <button type="button" class="btn primary" id="nudgeExport" style="padding:10px 16px;white-space:nowrap">Export Now</button>
   </div>`;
   const home = document.querySelector('#view-home');
   if (home){
@@ -365,7 +365,7 @@ function showQuarterlyNudge(msg){
   el.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
     <div style="font-size:24px;line-height:1">📊</div>
     <div style="flex:1"><div style="font-weight:700;font-size:13px;margin-bottom:2px">CPA Export Reminder</div><div class="muted" style="font-size:12px;line-height:1.4">${escapeHtml(msg)}</div></div>
-    <button class="btn primary" id="nudgeQuarterlyExport" style="padding:10px 16px;white-space:nowrap">Export</button>
+    <button type="button" class="btn primary" id="nudgeQuarterlyExport" style="padding:10px 16px;white-space:nowrap">Export</button>
   </div>`;
   const home = document.querySelector('#view-home');
   if (home){
@@ -1779,12 +1779,12 @@ function openUniversalImport(){
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
     <div class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">Pick a file and we'll figure out what's in it. Supports trips, expenses, and fuel data.</div>
     <div style="display:flex;flex-direction:column;gap:10px">
-      <button class="btn primary imp-btn" data-accept=".csv,.tsv" style="padding:16px;font-size:15px;text-align:left">📄 CSV or TSV file</button>
-      <button class="btn primary imp-btn" data-accept=".xlsx,.xls" style="padding:16px;font-size:15px;text-align:left">📊 Excel spreadsheet (.xlsx)</button>
-      <button class="btn primary imp-btn" data-accept=".json" style="padding:16px;font-size:15px;text-align:left">🔒 Freight Logic backup (.json)</button>
-      <button class="btn imp-btn" data-accept=".pdf,application/pdf" style="padding:16px;font-size:15px;text-align:left">📸 Rate confirmation (PDF) — uses OCR</button>
-      <button class="btn imp-btn" data-accept=".txt" style="padding:16px;font-size:15px;text-align:left">📝 Plain text file (.txt)</button>
-      <button class="btn primary imp-btn" data-accept="${IMPORT_ACCEPT}" style="padding:16px;font-size:15px;text-align:left;border-color:var(--accent)">📂 Any file — auto-detect type</button>
+      <button type="button" class="btn primary imp-btn" data-accept=".csv,.tsv" style="padding:16px;font-size:15px;text-align:left">📄 CSV or TSV file</button>
+      <button type="button" class="btn primary imp-btn" data-accept=".xlsx,.xls" style="padding:16px;font-size:15px;text-align:left">📊 Excel spreadsheet (.xlsx)</button>
+      <button type="button" class="btn primary imp-btn" data-accept=".json" style="padding:16px;font-size:15px;text-align:left">🔒 Freight Logic backup (.json)</button>
+      <button type="button" class="btn imp-btn" data-accept=".pdf,application/pdf" style="padding:16px;font-size:15px;text-align:left">📸 Rate confirmation (PDF) — uses OCR</button>
+      <button type="button" class="btn imp-btn" data-accept=".txt" style="padding:16px;font-size:15px;text-align:left">📝 Plain text file (.txt)</button>
+      <button type="button" class="btn primary imp-btn" data-accept="${IMPORT_ACCEPT}" style="padding:16px;font-size:15px;text-align:left;border-color:var(--accent)">📂 Any file — auto-detect type</button>
     </div>
     <div class="muted" style="font-size:11px;margin-top:14px;line-height:1.4">CSV/Excel: auto-detects trips vs expenses vs fuel by column headers.<br>PDF: extracts text via OCR and prefills a trip.</div>
   </div>`;
@@ -2417,7 +2417,7 @@ async function openBrokerScorecard(gradeObj, globalAvgRpm){
   const existingNote = await getSetting(noteKey, '');
   notesCard.innerHTML = `<h3>Your Notes on This Broker</h3>
     <textarea id="brokerNoteInput" rows="3" placeholder="e.g., Always late with paperwork, dispatchers ghost after booking…" style="width:100%;font-size:13px">${escapeHtml(existingNote)}</textarea>
-    <button class="btn" id="brokerNoteSave" style="margin-top:8px;width:100%">Save Note</button>
+    <button type="button" class="btn" id="brokerNoteSave" style="margin-top:8px;width:100%">Save Note</button>
     <div class="muted" style="font-size:11px;margin-top:4px">Private — only visible to you.</div>`;
   body.appendChild(notesCard);
 
@@ -2748,7 +2748,7 @@ function bidRangeHTML(bids){
       <span style="display:flex;align-items:center;gap:6px">
         <span style="color:${color};font-weight:700;font-family:var(--font-mono)">${fmtMoney(bid.amount)}</span>
         <span class="muted" style="font-size:11px">($${bid.rpm.toFixed(2)}/mi)</span>
-        <button data-copybid="${bid.amount}" style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--text-secondary);cursor:pointer;line-height:1.4" aria-label="Copy ${escapeHtml(bid.label)} rate">📋</button>
+        <button type="button" data-copybid="${bid.amount}" style="background:none;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:10px;color:var(--text-secondary);cursor:pointer;line-height:1.4" aria-label="Copy ${escapeHtml(bid.label)} rate">📋</button>
       </span>
     </div>`;
   }
@@ -2951,8 +2951,8 @@ function showScoreFlash(trip, score){
       <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmtMoney(score.counterOffer)} <span class="muted" style="font-size:13px">($${score.counterRpm.toFixed(2)} RPM)</span></div>
     </div>` : ''}
     <div class="btn-row" style="justify-content:center">
-      <button class="btn" id="scoreDetail">Full Breakdown</button>
-      <button class="btn primary" id="scoreDismiss">Got it</button>
+      <button type="button" class="btn" id="scoreDetail">Full Breakdown</button>
+      <button type="button" class="btn primary" id="scoreDismiss">Got it</button>
     </div>`;
 
   openModal(`Score • ${escapeHtml(trip.orderNo)}`, body);
@@ -3015,9 +3015,9 @@ async function handleShareTarget(){
         const body = document.createElement('div');
         body.innerHTML = `<div class="muted" style="font-size:13px;margin-bottom:14px">What would you like to do with this image?</div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <button class="btn primary" id="shareOptScan" style="padding:16px;font-size:15px;text-align:left">⚡ Scan for Load Details<br><span class="muted" style="font-size:12px">OCR the screenshot and send to the Load Evaluator</span></button>
-            <button class="btn" id="shareOptReceipt" style="padding:16px;font-size:15px;text-align:left">🧾 Save as Receipt<br><span class="muted" style="font-size:12px">Attach to an existing or new trip</span></button>
-            <button class="btn" id="shareOptSnap" style="padding:16px;font-size:15px;text-align:left">📸 Snap Load OCR<br><span class="muted" style="font-size:12px">Run full OCR and auto-create a trip</span></button>
+            <button type="button" class="btn primary" id="shareOptScan" style="padding:16px;font-size:15px;text-align:left">⚡ Scan for Load Details<br><span class="muted" style="font-size:12px">OCR the screenshot and send to the Load Evaluator</span></button>
+            <button type="button" class="btn" id="shareOptReceipt" style="padding:16px;font-size:15px;text-align:left">🧾 Save as Receipt<br><span class="muted" style="font-size:12px">Attach to an existing or new trip</span></button>
+            <button type="button" class="btn" id="shareOptSnap" style="padding:16px;font-size:15px;text-align:left">📸 Snap Load OCR<br><span class="muted" style="font-size:12px">Run full OCR and auto-create a trip</span></button>
           </div>`;
         openModal('Shared Image', body);
         // Wire up buttons
@@ -3211,7 +3211,7 @@ async function renderPositionContextBanner(){
 async function renderQuickEvalCard(){
   const slot = $('#homeQuickEvalCard');
   if (!slot) return;
-  slot.innerHTML = `<button id="homeQuickEvalBtn" style="width:100%;min-height:52px;border-radius:var(--r);background:linear-gradient(135deg,rgba(240,168,0,0.15),rgba(240,168,0,0.08));border:1.5px solid var(--accent-border);color:var(--accent-text);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:.2px" aria-label="Evaluate a load">
+  slot.innerHTML = `<button type="button" id="homeQuickEvalBtn" style="width:100%;min-height:52px;border-radius:var(--r);background:linear-gradient(135deg,rgba(240,168,0,0.15),rgba(240,168,0,0.08));border:1.5px solid var(--accent-border);color:var(--accent-text);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:.2px" aria-label="Evaluate a load">
     <span style="font-size:22px">⚡</span> Evaluate Load
   </button>`;
   slot.style.display = '';
@@ -3226,19 +3226,19 @@ function openQuickEvalModal(){
     <div id="qeInputSlot">
       <p style="font-size:13px;color:var(--text-secondary);margin:0 0 14px;line-height:1.5">Paste a load offer or snap a photo of a rate confirmation to get an instant grade.</p>
       <div style="display:flex;gap:10px;margin-bottom:14px">
-        <button id="qeModeText" class="btn primary" style="flex:1;min-height:48px;font-size:14px">📋 Paste Text</button>
-        <button id="qeModePhoto" class="btn" style="flex:1;min-height:48px;font-size:14px">📷 Take Photo</button>
+        <button type="button" id="qeModeText" class="btn primary" style="flex:1;min-height:48px;font-size:14px">📋 Paste Text</button>
+        <button type="button" id="qeModePhoto" class="btn" style="flex:1;min-height:48px;font-size:14px">📷 Take Photo</button>
       </div>
       <div id="qeTextSection" style="display:none">
         <textarea id="qeText" rows="5" placeholder="Paste load details here — rate, miles, origin, destination..." style="width:100%;resize:vertical;font-size:13px;padding:12px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);color:var(--text)"></textarea>
         <div class="btn-row" style="margin-top:10px">
-          <button class="btn primary" id="qeSubmitText" style="flex:1;min-height:48px">Score Load ⚡</button>
+          <button type="button" class="btn primary" id="qeSubmitText" style="flex:1;min-height:48px">Score Load ⚡</button>
         </div>
       </div>
       <div id="qePhotoSection" style="display:none">
         <input id="qePhoto" type="file" accept="image/*" capture="environment" style="width:100%;margin-bottom:10px" />
         <div class="btn-row" style="margin-top:10px">
-          <button class="btn primary" id="qeSubmitPhoto" style="flex:1;min-height:48px">Score Load ⚡</button>
+          <button type="button" class="btn primary" id="qeSubmitPhoto" style="flex:1;min-height:48px">Score Load ⚡</button>
         </div>
       </div>
     </div>
@@ -3300,8 +3300,8 @@ function openQuickEvalModal(){
         <div style="font-size:11px;color:var(--good);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">✓ Scored: ${escapeHtml(origin||'?')} → ${escapeHtml(dest||'?')} • ${fmtMoney(rev)} • ${lm}mi loaded</div>
         <div id="qeEvalPreview" style="max-height:60vh;overflow-y:auto">${evalSummary}</div>
         <div class="btn-row" style="margin-top:14px">
-          <button class="btn primary" id="qeBookBtn" style="flex:1;min-height:48px">Book This Load →</button>
-          <button class="btn" id="qeFullBtn" style="flex:1;min-height:48px">Full Analysis</button>
+          <button type="button" class="btn primary" id="qeBookBtn" style="flex:1;min-height:48px">Book This Load →</button>
+          <button type="button" class="btn" id="qeFullBtn" style="flex:1;min-height:48px">Full Analysis</button>
         </div>
       </div>`;
       $('#qeBookBtn', body)?.addEventListener('click', ()=>{
@@ -4129,7 +4129,7 @@ function alertCard(alert){
   d.innerHTML = `<div class="left">
     <div class="v" style="font-size:13px">${icon} ${escapeHtml(alert.title)}</div>
     <div class="sub" style="font-size:12px">${escapeHtml(alert.detail)}</div>
-  </div>${alert.cta ? `<div class="right"><button class="btn sm">${escapeHtml(alert.cta)}</button></div>` : ''}`;
+  </div>${alert.cta ? `<div class="right"><button type="button" class="btn sm">${escapeHtml(alert.cta)}</button></div>` : ''}`;
   if (alert.action){
     const btn = $('button', d);
     if (btn) btn.addEventListener('click', alert.action);
@@ -4139,7 +4139,7 @@ function alertCard(alert){
 
 function actionCard(title, cta, onClick){
   const d = document.createElement('div'); d.className = 'item';
-  d.innerHTML = `<div class="left"><div class="v">${escapeHtml(title)}</div><div class="sub">Tap once — no clutter</div></div><div class="right"><button class="btn">${escapeHtml(cta)}</button></div>`;
+  d.innerHTML = `<div class="left"><div class="v">${escapeHtml(title)}</div><div class="sub">Tap once — no clutter</div></div><div class="right"><button type="button" class="btn">${escapeHtml(cta)}</button></div>`;
   $('button', d).addEventListener('click', onClick);
   return d;
 }
@@ -4281,11 +4281,11 @@ function tripRow(t, {compact=false}={}){
     <div class="right">
       <div class="v">${pay}</div>
       <div class="split">
-        <button class="btn sm" data-act="edit">Edit</button>
-        <button class="btn sm" data-act="receipts">Receipts</button>
-        <button class="btn sm" data-act="docs">📎 Docs</button>
+        <button type="button" class="btn sm" data-act="edit">Edit</button>
+        <button type="button" class="btn sm" data-act="receipts">Receipts</button>
+        <button type="button" class="btn sm" data-act="docs">📎 Docs</button>
         ${_mapsHtml}
-        <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
+        <button type="button" class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
       </div>
     </div>`;
   // Score badge tap → open breakdown
@@ -4344,7 +4344,7 @@ async function openReceiptManager(orderNo){
   if (!files.length){
     body.innerHTML = `<div class="muted" style="font-size:12px">No receipts for this trip.</div>`;
     const addWrap = document.createElement('div'); addWrap.style.marginTop = '12px';
-    addWrap.innerHTML = `<label>Add receipts</label><input id="rm_files" type="file" accept="image/*,application/pdf" multiple /><div class="btn-row" style="margin-top:10px"><button class="btn primary" id="rm_save">Upload</button></div>`;
+    addWrap.innerHTML = `<label>Add receipts</label><input id="rm_files" type="file" accept="image/*,application/pdf" multiple /><div class="btn-row" style="margin-top:10px"><button type="button" class="btn primary" id="rm_save">Upload</button></div>`;
     body.appendChild(addWrap);
     addWrap.querySelector('#rm_save').addEventListener('click', async ()=>{
       const inp = addWrap.querySelector('#rm_files');
@@ -4397,7 +4397,7 @@ async function openReceiptManager(orderNo){
   body.appendChild(grid);
 
   const addWrap = document.createElement('div');
-  addWrap.innerHTML = `<label>Add more receipts</label><input id="rm_files" type="file" accept="image/*,application/pdf" multiple /><div class="btn-row" style="margin-top:10px"><button class="btn primary" id="rm_save">Upload</button></div>`;
+  addWrap.innerHTML = `<label>Add more receipts</label><input id="rm_files" type="file" accept="image/*,application/pdf" multiple /><div class="btn-row" style="margin-top:10px"><button type="button" class="btn primary" id="rm_save">Upload</button></div>`;
   body.appendChild(addWrap);
   addWrap.querySelector('#rm_save').addEventListener('click', async ()=>{
     const inp = addWrap.querySelector('#rm_files');
@@ -4448,7 +4448,7 @@ async function renderExpenses(reset=false){
 function expenseRow(e){
   const d = document.createElement('div'); d.className = 'item';
   d.innerHTML = `<div class="left"><div class="v">${escapeHtml(e.category||'Expense')}</div><div class="sub">${escapeHtml([e.date, e.notes].filter(Boolean).join(' • '))}</div></div>
-    <div class="right"><div class="v">${fmtMoney(e.amount||0)}</div><div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
+    <div class="right"><div class="v">${fmtMoney(e.amount||0)}</div><div class="split"><button type="button" class="btn sm" data-act="edit">Edit</button><button type="button" class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openExpenseForm(e));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     const mode = await getSetting('uiMode','simple');
@@ -4486,7 +4486,7 @@ function fuelRow(f){
   d.innerHTML = `<div class="left"><div class="v">${escapeHtml(f.date||'')}${f.state?' • '+escapeHtml(f.state):''}</div>
     <div class="sub">${f.gallons.toFixed(1)} gal • $${ppg}/gal${f.notes?' • '+escapeHtml(f.notes):''}</div></div>
     <div class="right"><div class="v">${fmtMoney(f.amount||0)}</div>
-    <div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
+    <div class="split"><button type="button" class="btn sm" data-act="edit">Edit</button><button type="button" class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openFuelForm(f));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     const mode = await getSetting('uiMode','simple');
@@ -4542,7 +4542,7 @@ async function renderAR(){
   items.forEach(t => {
     const d = document.createElement('div'); d.className = 'item';
     d.innerHTML = `<div class="left"><div class="v">${escapeHtml(t.orderNo)}</div><div class="sub">${escapeHtml([t.customer, t.pickupDate].filter(Boolean).join(' • '))}</div></div>
-      <div class="right"><div class="v">${fmtMoney(t.pay||0)}</div><button class="btn primary sm">Mark Paid</button></div>`;
+      <div class="right"><div class="v">${fmtMoney(t.pay||0)}</div><button type="button" class="btn primary sm">Mark Paid</button></div>`;
     $('button', d).addEventListener('click', async ()=>{
       haptic(20);
       t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs(); refreshUnpaidBadge().catch(()=>{});
@@ -4839,7 +4839,7 @@ function openSecurityLockModal(){
     <div class="muted" style="font-size:12px;margin-bottom:12px">Protect this device with a local PIN. This locks the app UI on this browser only.</div>
     <label><input type="checkbox" id="lockEnabled" style="width:auto;margin-right:8px" /> Enable profile lock</label>
     <label>PIN</label><input id="lockPin" type="password" inputmode="numeric" placeholder="4 to 8 digits" maxlength="8" />
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="saveLockBtn">Save</button><button class="btn" id="clearLockBtn">Disable</button></div>
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="saveLockBtn">Save</button><button type="button" class="btn" id="clearLockBtn">Disable</button></div>
   </div>`;
   openModal('Security Lock', body);
   getSetting('appLockEnabled', false).then(v => { const el = document.getElementById('lockEnabled'); if (el) el.checked = !!v; });
@@ -4869,7 +4869,7 @@ async function requireAppUnlock(){
     body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
       <div class="muted" style="font-size:12px;margin-bottom:12px">Enter your profile PIN to unlock this device.</div>
       <label>PIN</label><input id="unlockPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" />
-      <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="unlockNow">Unlock</button></div>
+      <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="unlockNow">Unlock</button></div>
       <div id="unlockHint" class="muted" style="font-size:12px;margin-top:10px"></div>
     </div>`;
     openModal('Unlock Freight Logic', body);
@@ -4920,7 +4920,7 @@ function renderWelcomeCard(){
         <div><div style="font-weight:700;font-size:13px">Watch your dashboard light up</div><div class="muted" style="font-size:12px">RPM, profit scores, broker grades — all automatic</div></div>
       </div>
     </div>
-    <button class="btn primary" id="welcomeAddTrip" style="font-size:15px;padding:12px 32px">＋ Add Your First Trip</button>
+    <button type="button" class="btn primary" id="welcomeAddTrip" style="font-size:15px;padding:12px 32px">＋ Add Your First Trip</button>
     <div class="muted" style="font-size:11px;margin-top:14px">Or tap 📸 Snap Load to scan a rate confirmation photo</div>
   </div>`;
 }
@@ -4932,7 +4932,7 @@ function renderEmptyState(icon, title, subtitle, btnLabel, btnAction){
   wrap.innerHTML = `${iconHTML}
     <div style="font-weight:700;font-size:14px;margin-bottom:6px">${escapeHtml(title)}</div>
     <div class="muted" style="font-size:12px;margin-bottom:16px;max-width:280px;margin-left:auto;margin-right:auto">${escapeHtml(subtitle)}</div>
-    ${btnLabel ? `<button class="btn primary emptyBtn">${escapeHtml(btnLabel)}</button>` : ''}`;
+    ${btnLabel ? `<button type="button" class="btn primary emptyBtn">${escapeHtml(btnLabel)}</button>` : ''}`;
   if (btnLabel && btnAction){
     wrap.querySelector('.emptyBtn').addEventListener('click', ()=> { haptic(); btnAction(); });
   }
@@ -6477,12 +6477,12 @@ function _mwRenderDecision(out, d){
   // "Book as Trip" button — pre-fill trip wizard with evaluated load data
   html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
-      <button class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
+      <button type="button" class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
+      <button type="button" class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <button class="btn" id="mwAskAI" style="background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI</button>
-      <button class="btn" id="mwShareBid" style="border-color:var(--border)">📤 Share Bid</button>
+      <button type="button" class="btn" id="mwAskAI" style="background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI</button>
+      <button type="button" class="btn" id="mwShareBid" style="border-color:var(--border)">📤 Share Bid</button>
     </div>
     <div id="mwBrokerNotesSlot"></div>
     <div id="mwWeatherAlertSlot" style="margin-top:8px"></div>
@@ -6527,7 +6527,7 @@ function _mwRenderDecision(out, d){
   const brokerNotesSlot = $('#mwBrokerNotesSlot', out);
   const mwBroker = ($('#mwDest')?.value || '').trim() || origin;
   if (brokerNotesSlot && mwBroker){
-    brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
+    brokerNotesSlot.innerHTML = `<button type="button" class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
     $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(mwBroker));
   }
 
@@ -7366,8 +7366,8 @@ function openQuickAddSheet(){
   haptic(20);
   $('#fab')?.classList.add('open');
   const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.cssText='border:0;box-shadow:none;background:transparent';
-  wrap.innerHTML = `<div class="btn-row"><button class="btn primary" id="qaTrip">＋ Trip</button><button class="btn" id="qaExpense">＋ Expense</button><button class="btn" id="qaFuel">＋ Fuel</button><button class="btn" id="qaCompare">⚖️ Compare</button></div>
-    <div style="margin-top:10px"><button class="btn primary" id="qaSnapLoad" style="width:100%;background:var(--accent2,#e67e22)">📸 Snap Load — OCR from Photo</button></div>
+  wrap.innerHTML = `<div class="btn-row"><button type="button" class="btn primary" id="qaTrip">＋ Trip</button><button type="button" class="btn" id="qaExpense">＋ Expense</button><button type="button" class="btn" id="qaFuel">＋ Fuel</button><button type="button" class="btn" id="qaCompare">⚖️ Compare</button></div>
+    <div style="margin-top:10px"><button type="button" class="btn primary" id="qaSnapLoad" style="width:100%;background:var(--accent2,#e67e22)">📸 Snap Load — OCR from Photo</button></div>
     <div class="muted" style="font-size:12px;margin-top:10px">Trip is Order # + Pay + Miles. Everything else is optional.</div>`;
   $('#qaTrip', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openTripWizard(); });
   $('#qaExpense', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openExpenseForm(); });
@@ -7575,8 +7575,8 @@ async function openReceiptExpenseForm(parsed, blob){
     <label>Category</label><input id="rof_cat" list="catList" placeholder="Fuel, Tolls..." />
     <label>Vendor / Notes</label><input id="rof_notes" placeholder="Vendor or note" />
     <div class="btn-row" style="margin-top:12px">
-      <button class="btn primary" id="rof_save">Save Expense</button>
-      <button class="btn" id="rof_cancel">Cancel</button>
+      <button type="button" class="btn primary" id="rof_save">Save Expense</button>
+      <button type="button" class="btn" id="rof_cancel">Cancel</button>
     </div>
     <div class="muted" id="rof_hint" style="font-size:12px;margin-top:8px"></div>
   </div>`;
@@ -7861,15 +7861,15 @@ function openSnapLoad(preFile){
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
     <div class="muted" style="font-size:12px;margin-bottom:10px">Take a photo or select a screenshot of a rate confirmation, load board posting, or dispatch sheet. OCR will extract the details.</div>
     <div class="btn-row" style="margin-bottom:12px">
-      <button class="btn primary" id="snapCamera">📷 Camera</button>
-      <button class="btn" id="snapFile">📁 Choose File</button>
+      <button type="button" class="btn primary" id="snapCamera">📷 Camera</button>
+      <button type="button" class="btn" id="snapFile">📁 Choose File</button>
     </div>
     <div style="margin:10px 0 6px;font-size:12px" class="muted">Or paste a load listing / dispatch text (or import a CSV of loads):</div>
     <textarea id="snapPaste" placeholder="Paste load text here (example: Origin Pryor, OK Destination Tolleson, AZ Deadhead 36 mi Distance 1161 mi Price $2400)" style="width:100%;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--text);font-size:12px;line-height:1.35;margin-bottom:8px"></textarea>
     <div class="btn-row" style="margin-bottom:12px">
-      <button class="btn" id="snapParsePaste">🧠 Analyze Paste</button>
-      <button class="btn" id="snapAiExtract">✨ AI Extract</button>
-      <button class="btn" id="snapCsvBtn">📄 Import CSV</button>
+      <button type="button" class="btn" id="snapParsePaste">🧠 Analyze Paste</button>
+      <button type="button" class="btn" id="snapAiExtract">✨ AI Extract</button>
+      <button type="button" class="btn" id="snapCsvBtn">📄 Import CSV</button>
     </div>
     <input type="file" id="snapCsvInput" accept=".csv,text/csv" style="display:none" />
 </div>
@@ -7885,8 +7885,8 @@ function openSnapLoad(preFile){
       <div id="snapLoadList" style="display:none;margin-top:10px"></div>
       <div class="muted" style="font-size:11px;margin-bottom:12px">You can edit everything in the trip form. OCR isn't perfect — always verify.</div>
       <div class="btn-row">
-        <button class="btn primary" id="snapAccept">✓ Send to Load Evaluator</button>
-        <button class="btn" id="snapRetry">↻ Try Another</button>
+        <button type="button" class="btn primary" id="snapAccept">✓ Send to Load Evaluator</button>
+        <button type="button" class="btn" id="snapRetry">↻ Try Another</button>
       </div>
       <details style="margin-top:12px"><summary class="muted" style="font-size:11px;cursor:pointer">Raw OCR text</summary>
         <pre id="snapRawText" style="font-size:10px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-top:6px"></pre>
@@ -7940,7 +7940,7 @@ function openSnapLoad(preFile){
             ${l.loadedMiles||0} mi + ${l.deadheadMiles||0} dh • ${fmtMoney(l.pay||0)} • True RPM ${l.trueRPM.toFixed(2)} • Grade ${grade} (${escapeHtml(verdict)})
           </div>
         </div>
-        <button class="btn primary" data-sendload="${i}">Use</button>
+        <button type="button" class="btn primary" data-sendload="${i}">Use</button>
       </div>`;
     }).join('');
 
@@ -8302,9 +8302,9 @@ function openTripWizard(existing=null){
       <div><label>Pickup date</label><input id="f_pickup" type="date" /></div></div>
     <div class="grid2"><div><label>Loaded miles</label><input id="f_loaded" type="number" step="1" placeholder="Miles with freight" /></div>
       <div><label>Empty miles</label><input id="f_empty" type="number" step="1" placeholder="Deadhead to pickup" /></div></div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn" id="toStep2">Next (optional)</button>
-      <button class="btn primary" id="saveTrip">Save</button>
-      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn" id="toStep2">Next (optional)</button>
+      <button type="button" class="btn primary" id="saveTrip">Save</button>
+      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button type="button" class="btn danger" id="delTrip">Delete</button>' : ''}</div>
     <div class="muted" id="tripHint" style="font-size:12px;margin-top:10px"></div></div>`;
 
   step2.style.display = 'none';
@@ -8334,7 +8334,7 @@ function openTripWizard(existing=null){
       <input id="f_receipts" type="file" accept="image/*,application/pdf" multiple style="flex:1" />
       <button class="btn sm" id="f_camera" type="button" style="font-size:12px">📷 Camera</button>
     </div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn" id="backStep1">Back</button><button class="btn primary" id="saveTrip2">Save</button></div></div>`;
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn" id="backStep1">Back</button><button type="button" class="btn primary" id="saveTrip2">Save</button></div></div>`;
 
   body.appendChild(step1); body.appendChild(step2);
 
@@ -8711,8 +8711,8 @@ function openExpenseForm(existing=null){
     <label>Amount $</label><input id="f_amt" type="number" step="0.01" placeholder="0.00" />
     <label>Category</label><input id="f_cat" list="catList" placeholder="e.g., Fuel, Tolls..." />
     <label>Notes</label><input id="f_notes" placeholder="Optional" />
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="f_save">Save</button>
-      ${mode==='edit'?'<button class="btn danger" id="f_del">Delete</button>':''}</div>
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="f_save">Save</button>
+      ${mode==='edit'?'<button type="button" class="btn danger" id="f_del">Delete</button>':''}</div>
     <div class="muted" id="f_hint" style="font-size:12px;margin-top:10px"></div></div>`;
   $('#f_date', body).value = e.date || isoDate();
   $('#f_amt', body).value = e.amount || '';
@@ -8790,8 +8790,8 @@ function openFuelForm(existing=null){
       <div><label>Total $</label><input id="f_amt" type="number" step="0.01" placeholder="0.00" /></div></div>
     <div class="grid2"><div><label>State</label><input id="f_state" placeholder="IL, IN, OH..." /></div>
       <div><label>Notes</label><input id="f_notes" placeholder="Optional" /></div></div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="f_save">Save</button>
-      ${mode==='edit'?'<button class="btn danger" id="f_del">Delete</button>':''}</div></div>`;
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="f_save">Save</button>
+      ${mode==='edit'?'<button type="button" class="btn danger" id="f_del">Delete</button>':''}</div></div>`;
   $('#f_date', body).value = f.date || isoDate();
   $('#f_gal', body).value = f.gallons || '';
   $('#f_amt', body).value = f.amount || '';
@@ -8885,14 +8885,14 @@ async function openWeeklyReflection(){
     </div>
     <label>Rate your week (1-10)</label>
     <div style="display:flex;gap:4px;margin-bottom:14px" id="ratingRow">${
-      [1,2,3,4,5,6,7,8,9,10].map(n => `<button class="btn sm" data-rating="${n}" style="min-width:32px;padding:6px">${n}</button>`).join('')
+      [1,2,3,4,5,6,7,8,9,10].map(n => `<button type="button" class="btn sm" data-rating="${n}" style="min-width:32px;padding:6px">${n}</button>`).join('')
     }</div>
     <input type="hidden" id="rf_rating" value="" />
     <label class="chk" style="font-size:14px;margin-bottom:14px"><input type="checkbox" id="rf_structured" /> Was the week structured?</label>
     <label>Wins</label><input id="rf_wins" placeholder="Best load, new broker, hit target..." />
     <label>Mistakes</label><input id="rf_mistakes" placeholder="Bad load, waited too long, fatigue..." />
     <label>Lessons</label><input id="rf_lessons" placeholder="What to do differently next week" />
-    <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="rf_save">Save Reflection</button></div>
+    <div class="btn-row" style="margin-top:14px"><button type="button" class="btn primary" id="rf_save">Save Reflection</button></div>
   </div>`;
 
   // Rating buttons
@@ -8971,7 +8971,7 @@ addManagedListener($('#btnTripFilter'), 'click', async ()=>{
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
     <label>Show</label><select id="flt_paid"><option value="all">All</option><option value="unpaid">Unpaid only</option><option value="paid">Paid only</option></select>
     <div class="grid2"><div><label>From date</label><input id="flt_from" type="date" /></div><div><label>To date</label><input id="flt_to" type="date" /></div></div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="flt_apply">Apply</button><button class="btn" id="flt_clear">Clear</button></div></div>`;
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="flt_apply">Apply</button><button type="button" class="btn" id="flt_clear">Clear</button></div></div>`;
   $('#flt_from', body).value = tripFilterDateFrom || '';
   $('#flt_to', body).value = tripFilterDateTo || '';
   $('#flt_apply', body).addEventListener('click', async ()=>{
@@ -9353,7 +9353,7 @@ function openLoadCompare(){
           <div><label>Dest</label><input id="cmpB_dest" placeholder="City, ST" /></div></div>
       </div>
     </div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="cmpRun">Compare Loads</button></div>
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="cmpRun">Compare Loads</button></div>
     <div id="cmpResult" style="margin-top:12px"></div>`;
 
   $('#cmpRun', body).addEventListener('click', async ()=>{
@@ -9707,8 +9707,8 @@ async function openReceiptCamera(orderNo){
     </div>
   </div>
   <div id="camControls" style="display:flex;gap:8px;margin-top:12px;justify-content:center">
-    <button class="btn" id="camFlip" style="font-size:18px" title="Flip camera">🔄</button>
-    <button class="btn primary" id="camCapture" style="padding:12px 32px;font-size:15px">📷 Capture</button>
+    <button type="button" class="btn" id="camFlip" style="font-size:18px" title="Flip camera">🔄</button>
+    <button type="button" class="btn primary" id="camCapture" style="padding:12px 32px;font-size:15px">📷 Capture</button>
   </div>
   <div id="camPreview" style="display:none;margin-top:12px">
     <div style="font-weight:600;font-size:13px;margin-bottom:8px">Preview</div>
@@ -9718,9 +9718,9 @@ async function openReceiptCamera(orderNo){
       <div class="pill" id="camDimInfo"><span class="muted">Dim</span> <b>—</b></div>
     </div>
     <div class="btn-row" style="margin-top:10px">
-      <button class="btn" id="camRetake">Retake</button>
-      <button class="btn primary" id="camSave">Save Receipt</button>
-      <button class="btn" id="camSaveAsExpense" style="border-color:var(--accent)">💰 Save as Expense</button>
+      <button type="button" class="btn" id="camRetake">Retake</button>
+      <button type="button" class="btn primary" id="camSave">Save Receipt</button>
+      <button type="button" class="btn" id="camSaveAsExpense" style="border-color:var(--accent)">💰 Save as Expense</button>
     </div>
   </div>
   <div class="muted" style="font-size:11px;margin-top:10px;text-align:center">Align receipt within the guide frame. Auto-compressed to save storage.</div>`;
@@ -10041,7 +10041,7 @@ async function checkOverduePayments(){
           <div style="font-weight:700;font-size:13px;color:var(--bad)">${overdueTrips.length} Overdue Payment${overdueTrips.length > 1 ? 's' : ''}</div>
           <div class="muted" style="font-size:12px">${fmtMoney(total)} unpaid 30+ days. Worst: ${escapeHtml(worst.customer)} (${worst.days}d)</div>
         </div>
-        <button class="btn" onclick="location.hash='#money'" style="white-space:nowrap">View</button>
+        <button type="button" class="btn" onclick="location.hash='#money'" style="white-space:nowrap">View</button>
       </div>`;
     }
 
@@ -10414,10 +10414,10 @@ async function openMonthlyExpenseManager(){
       <div class="muted" style="font-size:11px">These are posted on the 1st of each month. This month: <b>${lastDone===monthKey?'✓ Done':'Pending'}</b></div>
     </div>
     <div id="memItemList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
-    <button class="btn" id="memAddCustom" style="font-size:12px;padding:8px">+ Add Custom Expense</button>
+    <button type="button" class="btn" id="memAddCustom" style="font-size:12px;padding:8px">+ Add Custom Expense</button>
     <div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <button class="btn primary" id="memSave" style="flex:2">Save Changes</button>
-      <button class="btn" id="memRunNow" style="flex:1;font-size:12px"${lastDone===monthKey?' disabled':''}>Post Now</button>
+      <button type="button" class="btn primary" id="memSave" style="flex:2">Save Changes</button>
+      <button type="button" class="btn" id="memRunNow" style="flex:1;font-size:12px"${lastDone===monthKey?' disabled':''}>Post Now</button>
     </div>`;
 
   const list = body.querySelector('#memItemList');
@@ -10512,8 +10512,8 @@ function openLoadIntake(){
     <p class="muted" style="font-size:12px;margin:0 0 12px 0">Paste a load confirmation, type load details, or use voice. We'll parse it and show you exactly what was found before scoring.</p>
     <textarea id="liRawText" class="input" rows="7" placeholder="Paste load text here — rate confirmation, load board copy, or free text…" style="width:100%;box-sizing:border-box;resize:vertical;font-size:13px;line-height:1.5;font-family:monospace"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" id="liVoice" style="flex:1;font-size:13px">🎤 Voice</button>
-      <button class="btn primary" id="liParse" style="flex:2;font-size:13px">Parse Load →</button>
+      <button type="button" class="btn" id="liVoice" style="flex:1;font-size:13px">🎤 Voice</button>
+      <button type="button" class="btn primary" id="liParse" style="flex:2;font-size:13px">Parse Load →</button>
     </div>
     <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
   body.appendChild(stage1);
@@ -10569,11 +10569,11 @@ function openLoadIntake(){
     </div>
     <div id="liConfidence" style="margin-bottom:14px;font-size:11px;color:var(--text-tertiary)"></div>
     <div style="display:flex;gap:8px">
-      <button class="btn" id="liBack" style="flex:1">← Edit Text</button>
-      <button class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
+      <button type="button" class="btn" id="liBack" style="flex:1">← Edit Text</button>
+      <button type="button" class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
+      <button type="button" class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
     </div>`;
   body.appendChild(stage2);
 
@@ -10747,7 +10747,7 @@ async function openDiagnosticsPanel(){
     ${row('Offline (SW)',      'dxOffline', '...')}
     ${row('Cloud Backup',      'dxCloud',   '...')}
     ${row('AI Endpoint',       'dxAi',      '...')}
-    <button class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
+    <button type="button" class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
 
   openModal('Diagnostics', body);
 
@@ -11235,7 +11235,7 @@ async function cloudAdminCreateUser(){
       const setupLink = appUrl + '?token=' + encodeURIComponent(data.token);
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
       if (result) {
-        result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
+        result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button type="button" class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
         const shareBtn = result.querySelector('.admin-share-btn');
         if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
       }
@@ -11386,8 +11386,8 @@ function openQuickEvalFlow(){
       <div class="muted" style="font-size:13px;line-height:1.5">Take a photo or pick from gallery — the app will scan for load details and score it instantly.</div>
     </div>
     <div class="btn-row" style="margin-top:20px;flex-direction:column;gap:10px">
-      <button class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
-      <button class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
+      <button type="button" class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
+      <button type="button" class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
     </div>
     <input type="file" id="qeCameraInput" accept="image/*" capture="environment" style="display:none">
     <input type="file" id="qeGalleryInput" accept="image/*" style="display:none">
@@ -11649,7 +11649,7 @@ async function openPostTripReview(trip){
   };
 
   function chip(id, val, label, color='var(--surface-2)'){
-    return `<button class="btn" data-qid="${id}" data-val="${val}" style="flex:1;min-width:0;padding:8px 6px;font-size:12px;border-radius:10px;background:${color};border:2px solid transparent;transition:all .15s">${escapeHtml(label)}</button>`;
+    return `<button type="button" class="btn" data-qid="${id}" data-val="${val}" style="flex:1;min-width:0;padding:8px 6px;font-size:12px;border-radius:10px;background:${color};border:2px solid transparent;transition:all .15s">${escapeHtml(label)}</button>`;
   }
   function row(label, html){ return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(label)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${html}</div></div>`; }
 
@@ -11665,8 +11665,8 @@ async function openPostTripReview(trip){
     ${row('Did rate match your strategy?', chip('rateVsStrategy','yes','Yes') + chip('rateVsStrategy','close','Close') + chip('rateVsStrategy','no','No'))}
     ${row('Would you run this lane again?', chip('wouldRunAgain','true','Yes, take it') + chip('wouldRunAgain','false','Pass next time'))}
     <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn primary" id="reviewSave" style="flex:2;font-weight:700">Save Review</button>
-      <button class="btn" id="reviewSkip" style="flex:1;font-size:12px;color:var(--text-tertiary)">Skip</button>
+      <button type="button" class="btn primary" id="reviewSave" style="flex:2;font-weight:700">Save Review</button>
+      <button type="button" class="btn" id="reviewSkip" style="flex:1;font-size:12px;color:var(--text-tertiary)">Skip</button>
     </div>`;
 
   // Chip selection logic
@@ -11766,7 +11766,7 @@ async function openTaxSeasonExport(){
   const body = document.createElement('div');
 
   const yearBtns = years.map((y, i) =>
-    `<button class="btn f30-yr${i === 0 ? ' active' : ''}" data-year="${y}" style="flex:1;min-width:0;font-size:13px">${y}</button>`
+    `<button type="button" class="btn f30-yr${i === 0 ? ' active' : ''}" data-year="${y}" style="flex:1;min-width:0;font-size:13px">${y}</button>`
   ).join('');
 
   body.innerHTML = `
@@ -11902,8 +11902,8 @@ async function openTaxSeasonExport(){
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn primary" id="f30ExportCsv" style="flex:2;font-weight:700">Export CSV</button>
-        <button class="btn" id="f30Print" style="flex:1">Print</button>
+        <button type="button" class="btn primary" id="f30ExportCsv" style="flex:2;font-weight:700">Export CSV</button>
+        <button type="button" class="btn" id="f30Print" style="flex:1">Print</button>
       </div>`;
 
     // CSV export — two sections: Schedule C summary + mileage log
@@ -12349,7 +12349,7 @@ async function renderWeeklyReportCard(report){
   slot.innerHTML = `<div class="card" style="border:1px solid var(--accent-border);background:var(--accent-glow)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">📊 Weekly P&L — ${report.weekStart}</div>
-      <button class="btn sm" id="weekReportShare" style="min-height:36px;font-size:11px">Share</button>
+      <button type="button" class="btn sm" id="weekReportShare" style="min-height:36px;font-size:11px">Share</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
       <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--good)">${fmtMoney(report.grossRev||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Gross</div></div>
@@ -12371,7 +12371,7 @@ async function renderWeeklyReportCard(report){
 async function openWeeklyReports(){
   const body = document.createElement('div');
   body.innerHTML = `<div id="wkrList"><div class="muted" style="font-size:13px;text-align:center;padding:24px">Loading reports…</div></div>
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="wkrGenerate">Generate This Week's Report</button></div>`;
+    <div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="wkrGenerate">Generate This Week's Report</button></div>`;
   openModal('📊 Weekly Reports', body);
   const allReports = (await dumpStore('weeklyReports')).sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1);
   const list = $('#wkrList', body);
@@ -12392,7 +12392,7 @@ async function openWeeklyReports(){
         if (!r) return;
         const txt = formatWeeklyReportText(r);
         const detail = document.createElement('div');
-        detail.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--text)">${escapeHtml(txt)}</pre><div class="btn-row" style="margin-top:12px"><button class="btn primary" id="drShare">Share</button></div>`;
+        detail.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--text)">${escapeHtml(txt)}</pre><div class="btn-row" style="margin-top:12px"><button type="button" class="btn primary" id="drShare">Share</button></div>`;
         openModal(`Report ${escapeHtml(r.weekId)}`, detail);
         $('#drShare', detail)?.addEventListener('click', async ()=>{ haptic(); if (navigator.share){ try{ await navigator.share({text:txt}); return; }catch{} } await copyTextToClipboard(txt); toast('Copied!'); });
       });
@@ -12671,8 +12671,8 @@ function showCloudSyncBanner(msg){
   el.id = 'cloudSyncBanner';
   el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;background:linear-gradient(135deg,#1a1a3a,#252545);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;gap:12px;font-size:13px';
   el.innerHTML = `<div style="flex:1">☁️ <b style="color:var(--accent)">Cloud Sync</b> — ${escapeHtml(msg)}</div>
-    <button class="btn sm" id="cloudBannerSync" style="min-height:36px;background:var(--accent);color:#000;border:none;font-weight:700">Sync Now</button>
-    <button class="btn sm" id="cloudBannerDismiss" style="min-height:36px">✕</button>`;
+    <button type="button" class="btn sm" id="cloudBannerSync" style="min-height:36px;background:var(--accent);color:#000;border:none;font-weight:700">Sync Now</button>
+    <button type="button" class="btn sm" id="cloudBannerDismiss" style="min-height:36px">✕</button>`;
   document.body.appendChild(el);
   document.getElementById('cloudBannerSync')?.addEventListener('click', async ()=>{
     haptic(20); el.remove();
@@ -12729,7 +12729,7 @@ async function openDocumentVault(filterTripOrderNo=null){
           <option value="pod">Proof of Delivery (POD)</option>
           <option value="other">Other</option>
         </select>
-        <button class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
+        <button type="button" class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
       </div>
       ${filterTripOrderNo ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Showing documents for trip <b>${escapeHtml(filterTripOrderNo)}</b></div>` : ''}
       <div id="dvList"><div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading…</div></div>
@@ -12768,8 +12768,8 @@ async function openDocumentVault(filterTripOrderNo=null){
           ${d.note ? `<div class="muted" style="font-size:11px;margin-top:2px;font-style:italic">${escapeHtml(d.note.slice(0,60))}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
-          <button class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
+          <button type="button" class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
+          <button type="button" class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
         </div>
       </div>`;
     }).join('');
@@ -12852,7 +12852,7 @@ async function openDocumentVault(filterTripOrderNo=null){
         <input type="file" id="addDvFile" accept="image/*,application/pdf" style="display:none" />
         <div id="addDvFilename" class="muted" style="font-size:12px;margin-top:6px"></div>
       </div>
-      <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="addDvSave">Save to Vault</button></div>`;
+      <div class="btn-row" style="margin-top:14px"><button type="button" class="btn primary" id="addDvSave">Save to Vault</button></div>`;
     openModal('Add Document', addBody);
     let chosenFile = null;
     $('#addDvDropzone', addBody).addEventListener('click', () => $('#addDvFile', addBody).click());
@@ -12923,7 +12923,7 @@ async function openReloadScoring(){
       <div style="font-weight:700;font-size:13px;margin-bottom:8px">Log a Reload Outcome</div>
       <div class="field"><label>Delivery city</label><input id="rsCity" placeholder="e.g. Indianapolis" /></div>
       <div class="field"><label>Hours to reload (after delivery)</label><input id="rsHours" inputmode="decimal" placeholder="e.g. 6.5" /></div>
-      <div class="btn-row"><button class="btn primary" id="rsSave">Log Outcome</button></div>
+      <div class="btn-row"><button type="button" class="btn primary" id="rsSave">Log Outcome</button></div>
     </div>`;
   openModal('🔄 Reload Scoring', body);
 
@@ -12987,7 +12987,7 @@ async function openChainAnalysis(){
     </div>
     <div class="field"><label>You are delivering to…</label>
       <input id="caCity" placeholder="e.g. Indianapolis" style="width:100%" /></div>
-    <button class="btn primary" id="caAnalyze" style="width:100%;margin-top:4px">Analyze Chain</button>
+    <button type="button" class="btn primary" id="caAnalyze" style="width:100%;margin-top:4px">Analyze Chain</button>
     <div id="caResults" style="margin-top:16px"></div>`;
   openModal('🔗 Chain Analysis', body);
 
@@ -13407,7 +13407,7 @@ async function openCounterOfferMemory(){
           <option value="no_response">🚫 No response / walked</option>
         </select>
       </div>
-      <button class="btn primary" id="comSave" style="width:100%">Save Attempt</button>
+      <button type="button" class="btn primary" id="comSave" style="width:100%">Save Attempt</button>
     </div>
     <div id="comHistory"></div>`;
   openModal('🤝 Counter-Offer Memory', body);
@@ -13523,11 +13523,11 @@ async function openCPAPackage(){
   const body = document.createElement('div');
   body.innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="btn cpa-period-btn active" data-period="ytd" style="flex:1;min-width:0;font-size:12px">YTD ${year}</button>
-      <button class="btn cpa-period-btn" data-period="q1"  style="flex:1;min-width:0;font-size:12px">Q1</button>
-      <button class="btn cpa-period-btn" data-period="q2"  style="flex:1;min-width:0;font-size:12px">Q2</button>
-      <button class="btn cpa-period-btn" data-period="q3"  style="flex:1;min-width:0;font-size:12px">Q3</button>
-      <button class="btn cpa-period-btn" data-period="q4"  style="flex:1;min-width:0;font-size:12px">Q4</button>
+      <button type="button" class="btn cpa-period-btn active" data-period="ytd" style="flex:1;min-width:0;font-size:12px">YTD ${year}</button>
+      <button type="button" class="btn cpa-period-btn" data-period="q1"  style="flex:1;min-width:0;font-size:12px">Q1</button>
+      <button type="button" class="btn cpa-period-btn" data-period="q2"  style="flex:1;min-width:0;font-size:12px">Q2</button>
+      <button type="button" class="btn cpa-period-btn" data-period="q3"  style="flex:1;min-width:0;font-size:12px">Q3</button>
+      <button type="button" class="btn cpa-period-btn" data-period="q4"  style="flex:1;min-width:0;font-size:12px">Q4</button>
     </div>
     <div id="cpaContent"><div class="muted" style="text-align:center;padding:24px">Loading…</div></div>`;
 
@@ -13738,7 +13738,7 @@ async function openCPAPackage(){
         </div>
 
         <!-- Export -->
-        <button class="btn primary" id="cpaExportBtn" style="width:100%;font-size:14px;font-weight:700;padding:14px">
+        <button type="button" class="btn primary" id="cpaExportBtn" style="width:100%;font-size:14px;font-weight:700;padding:14px">
           ⬇ Download CPA Package — ${escapeHtml(d.label)}
         </button>
         <div style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-bottom:4px">
@@ -13806,7 +13806,7 @@ async function openBrokerNotes(brokerName){
       <div id="bnList" style="margin-bottom:12px;max-height:200px;overflow-y:auto"></div>
       <label>Add note</label>
       <input id="bnText" placeholder="e.g. Always counters $50 below first offer" style="margin-bottom:8px"/>
-      <button class="btn primary" id="bnSave" style="width:100%">Add Note</button>
+      <button type="button" class="btn primary" id="bnSave" style="width:100%">Add Note</button>
     </div>`;
   function renderNotes(){
     const list = $('#bnList', body);
@@ -14046,7 +14046,7 @@ async function renderTripTrackingUI() {
       + '<strong style="font-size:14px;color:var(--accent-text)">New: Track Your Trips Live</strong></div>'
       + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Tap &ldquo;Start Trip&rdquo; when you pick up a load. FreightLogic tracks your miles automatically. When you deliver, tap &ldquo;Stop&rdquo; and your trip is ready to save.</div>'
       + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px">Your location stays on your phone and is never shared.</div>'
-      + '<div style="margin-top:12px"><button class="btn primary" id="f21ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      + '<div style="margin-top:12px"><button type="button" class="btn primary" id="f21ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
     const f21Dismiss = async () => { await setSetting('f21OnboardingSeen', true); ob.remove(); };
     ob.querySelector('#f21ObDismiss')?.addEventListener('click', f21Dismiss);
     ob.addEventListener('click', f21Dismiss);
@@ -14094,7 +14094,7 @@ function _renderTrackingActive(container) {
     + '<span class="f21-pulse-dot"></span>'
     + '<strong style="font-size:14px">Trip in progress</strong></div>'
     + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(elapsed)} &nbsp;&bull;&nbsp; ${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${gpsQ}</div>`
-    + '<button class="btn danger" id="f21StopBtn" style="width:100%;min-height:48px;font-weight:700">Stop &amp; Save Trip</button>'
+    + '<button type="button" class="btn danger" id="f21StopBtn" style="width:100%;min-height:48px;font-weight:700">Stop &amp; Save Trip</button>'
     + '</div>';
   container.querySelector('#f21StopBtn')?.addEventListener('click', () => { haptic(20); stopTripTracking(); });
 }
@@ -14134,8 +14134,8 @@ function _showLocationPermissionModal() {
     + '<li>You can stop tracking anytime</li>'
     + '<li>Works best with the app open</li></ul>'
     + '<div style="display:flex;gap:10px">'
-    + '<button class="btn primary" id="permAllow" style="flex:1;min-height:48px">Allow Location</button>'
-    + '<button class="btn" id="permDeny" style="flex:1;min-height:48px">Not Now</button>'
+    + '<button type="button" class="btn primary" id="permAllow" style="flex:1;min-height:48px">Allow Location</button>'
+    + '<button type="button" class="btn" id="permDeny" style="flex:1;min-height:48px">Not Now</button>'
     + '</div>';
   body.querySelector('#permAllow')?.addEventListener('click', async () => {
     await setSetting('f21PermissionSeen', true); closeModal(); _initTrackingObject(); _doStartTracking();
@@ -14250,8 +14250,8 @@ async function stopTripTracking() {
     + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Order #</label>'
     + '<input id="trkOrder" type="text" placeholder="Optional" style="min-height:48px" /></div>'
     + '<div style="display:flex;gap:10px;margin-top:4px">'
-    + '<button class="btn primary" id="trkSave" style="flex:2;min-height:48px;font-weight:700">Save Trip</button>'
-    + '<button class="btn danger" id="trkDiscard" style="flex:1;min-height:48px">Discard</button></div>'
+    + '<button type="button" class="btn primary" id="trkSave" style="flex:2;min-height:48px;font-weight:700">Save Trip</button>'
+    + '<button type="button" class="btn danger" id="trkDiscard" style="flex:1;min-height:48px">Discard</button></div>'
     + '<div id="trkHint" style="font-size:12px;color:var(--bad);margin-top:8px;display:none"></div>';
 
   body.querySelector('#trkSave')?.addEventListener('click', async () => {
@@ -14390,7 +14390,7 @@ async function renderPositioningCard(overrideCity, isExploring) {
         + '<span style="font-size:22px">\uD83D\uDCCD</span>'
         + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Co-Driver</strong></div>'
         + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">After every delivery, FreightLogic shows what to do next \u2014 reload intel, best lanes out, weather, and nearby markets. Powered by YOUR trips. The more you log, the smarter this gets.</div>'
-        + '<div style="margin-top:12px"><button class="btn primary" id="f24ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+        + '<div style="margin-top:12px"><button type="button" class="btn primary" id="f24ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
       const f24Dismiss = async () => { await setSetting('f24OnboardingSeen', true); ob.remove(); };
       ob.querySelector('#f24ObDismiss')?.addEventListener('click', f24Dismiss);
       slot.insertBefore(ob, card);
@@ -14450,7 +14450,7 @@ async function renderPositioningCard(overrideCity, isExploring) {
   let nearbyHtml = '';
   if (!isExploring && nearbyMarkets.length) {
     nearbyHtml = `<div id="f24NearbySection" style="margin-top:12px">
-      <button id="f24NearbyToggle" class="btn" style="width:100%;text-align:left;font-size:12px;color:var(--text-secondary);background:none;border:none;padding:4px 0;cursor:pointer">\u25B8 Nearby Markets (tap to expand)</button>
+      <button type="button" id="f24NearbyToggle" class="btn" style="width:100%;text-align:left;font-size:12px;color:var(--text-secondary);background:none;border:none;padding:4px 0;cursor:pointer">\u25B8 Nearby Markets (tap to expand)</button>
       <div id="f24NearbyList" style="display:none"></div>
     </div>`;
   }
@@ -14474,8 +14474,8 @@ async function renderPositioningCard(overrideCity, isExploring) {
     ${nearbyHtml}
     ${confidenceLine}
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn primary f24-eval-btn" style="flex:1;min-height:48px;font-size:13px">Open Evaluator</button>
-      <button class="btn f24-reload-btn" style="flex:1;min-height:48px;font-size:13px">Log Reload Outcome</button>
+      <button type="button" class="btn primary f24-eval-btn" style="flex:1;min-height:48px;font-size:13px">Open Evaluator</button>
+      <button type="button" class="btn f24-reload-btn" style="flex:1;min-height:48px;font-size:13px">Log Reload Outcome</button>
     </div>
   </div>`;
 
@@ -14583,8 +14583,8 @@ async function _triggerPostDeliveryBrief(city) {
       ${statsBullets ? `<ul style="font-size:13px;padding-left:18px;margin:0 0 8px;line-height:1.8">${statsBullets}</ul>` : ''}
       ${optOutHtml}
       <div style="display:flex;gap:10px;margin-top:14px">
-        <button class="btn primary f24-gotit-btn" style="flex:1;min-height:48px">Got It</button>
-        <button class="btn f24-fullbrief-btn" style="flex:1;min-height:48px">Full Brief</button>
+        <button type="button" class="btn primary f24-gotit-btn" style="flex:1;min-height:48px">Got It</button>
+        <button type="button" class="btn f24-fullbrief-btn" style="flex:1;min-height:48px">Full Brief</button>
       </div>`;
 
     body.querySelector('.f24-gotit-btn')?.addEventListener('click', async () => {
@@ -14699,7 +14699,7 @@ async function openMaintenanceTracker() {
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${badgeBg};color:${badgeColor};white-space:nowrap">${escapeHtml(s.label)}</div>
-          <button class="btn sm" data-maint-log="${i}" style="font-size:11px;min-height:36px;min-width:72px">Log Service</button>
+          <button type="button" class="btn sm" data-maint-log="${i}" style="font-size:11px;min-height:36px;min-width:72px">Log Service</button>
         </div>
       </div>`;
     }
@@ -14721,7 +14721,7 @@ async function openMaintenanceTracker() {
       <div><label>Name</label><input id="maintNewLabel" placeholder="e.g., Spark Plugs" /></div>
       <div><label>Interval (days)</label><input id="maintNewInterval" type="number" step="1" placeholder="180" inputmode="numeric" /></div>
     </div>
-    <button class="btn" id="maintAddBtn" style="width:100%;min-height:44px">Add Item</button>`;
+    <button type="button" class="btn" id="maintAddBtn" style="width:100%;min-height:44px">Add Item</button>`;
   body.appendChild(addCard);
 
   openModal('🔧 Maintenance Tracker', body);
@@ -14771,8 +14771,8 @@ async function _logMaintenanceService(items, idx, onDone) {
     <div class="field"><label>Cost ($)</label><input id="maintLogCost" type="number" step="0.01" placeholder="0.00" inputmode="decimal" /></div>
     <div class="field"><label>Notes</label><input id="maintLogNotes" placeholder="Shop, parts used, etc." /></div>
     <div class="btn-row" style="margin-top:16px">
-      <button class="btn" id="maintLogCancel">Cancel</button>
-      <button class="btn primary" id="maintLogSave" style="flex:1">Save Service</button>
+      <button type="button" class="btn" id="maintLogCancel">Cancel</button>
+      <button type="button" class="btn primary" id="maintLogSave" style="flex:1">Save Service</button>
     </div>`;
 
   openModal(`Log Service — ${escapeHtml(it.label)}`, sub);
@@ -14837,7 +14837,7 @@ async function renderMoneyCard() {
         + '<span style="font-size:22px">\u{1F4B0}</span>'
         + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Money at a Glance</strong></div>'
         + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">See your weekly earnings, unpaid loads, and tax estimate &mdash; all in one place. No more jumping between screens.</div>'
-        + '<div style="margin-top:12px"><button class="btn primary" id="f22ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+        + '<div style="margin-top:12px"><button type="button" class="btn primary" id="f22ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
       const f22Dismiss = async () => { await setSetting('f22OnboardingSeen', true); ob.remove(); };
       ob.querySelector('#f22ObDismiss')?.addEventListener('click', f22Dismiss);
       ob.addEventListener('click', f22Dismiss);
@@ -15102,8 +15102,8 @@ async function renderEarningsTrends(card, trips, exps){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px">${escapeHtml(label)}</div>
         <div style="display:flex;gap:4px">
-          <button class="btn f31-toggle${view==='week'?' active':''}" data-v="week" style="font-size:11px;padding:4px 10px;min-height:28px">Weeks</button>
-          <button class="btn f31-toggle${view==='month'?' active':''}" data-v="month" style="font-size:11px;padding:4px 10px;min-height:28px">Months</button>
+          <button type="button" class="btn f31-toggle${view==='week'?' active':''}" data-v="week" style="font-size:11px;padding:4px 10px;min-height:28px">Weeks</button>
+          <button type="button" class="btn f31-toggle${view==='month'?' active':''}" data-v="month" style="font-size:11px;padding:4px 10px;min-height:28px">Months</button>
         </div>
       </div>
       ${buildChart(buckets, view)}
@@ -15220,7 +15220,7 @@ async function renderLoadInbox() {
       + '<span style="font-size:22px">\u{1F4E5}</span>'
       + '<strong style="font-size:14px;color:var(--accent-text)">New: Paste &amp; Score Loads</strong></div>'
       + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Got a load offer by email or text? Copy it, paste it here, and FreightLogic scores it instantly. Works with emails from Sylectus, DAT, Dispatchland, or any broker.</div>'
-      + '<div style="margin-top:12px"><button class="btn primary" id="f23ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      + '<div style="margin-top:12px"><button type="button" class="btn primary" id="f23ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
     ob.querySelector('#f23ObDismiss')?.addEventListener('click', async () => {
       await setSetting('f23OnboardingSeen', true); ob.remove();
     });
@@ -15244,8 +15244,8 @@ function _renderInboxInput(card) {
     + 'placeholder="Paste load email or text here&#10;&#10;Example:&#10;Chicago IL to Detroit MI&#10;280 miles, $560 all-in&#10;Pickup tomorrow 8am&#10;XPO Logistics" '
     + 'style="width:100%;font-size:15px;resize:vertical;min-height:120px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text);padding:10px;box-sizing:border-box"></textarea>'
     + '<div style="display:flex;gap:10px;margin-top:10px">'
-    + '<button class="btn primary" id="f23ScoreBtn" style="flex:2;min-height:48px;font-weight:700">Score This Load</button>'
-    + `<button class="btn" id="f23VoiceBtn" style="flex:1;min-height:48px;${hasSpeech ? '' : 'display:none'}" title="Voice input">\u{1F3A4} Voice</button>`
+    + '<button type="button" class="btn primary" id="f23ScoreBtn" style="flex:2;min-height:48px;font-weight:700">Score This Load</button>'
+    + `<button type="button" class="btn" id="f23VoiceBtn" style="flex:1;min-height:48px;${hasSpeech ? '' : 'display:none'}" title="Voice input">\u{1F3A4} Voice</button>`
     + '</div>'
     + '<div id="f23RecentBar" style="margin-top:10px"></div>';
 
@@ -15344,9 +15344,9 @@ function _renderInboxParsed(parsed, card) {
     + `<label style="font-size:12px">Deadhead Miles</label><input id="f23eDH" type="number" value="${parsed.emptyMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
     + `<label style="font-size:12px">Pay ($)</label><input id="f23ePay" type="number" step="0.01" value="${parsed.pay || ''}" style="min-height:48px;margin-bottom:8px" /></div>`
     + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
-    + '<button class="btn primary" id="f23ScoreLoad" style="flex:2;min-height:48px;font-weight:700">Score Load &rarr;</button>'
-    + '<button class="btn" id="f23EditDetails" style="flex:1;min-height:48px">&#9998; Edit</button></div>'
-    + '<button class="btn" id="f23PasteDiff" style="width:100%;margin-top:8px;min-height:44px;font-size:13px">&larr; Paste Different Load</button>';
+    + '<button type="button" class="btn primary" id="f23ScoreLoad" style="flex:2;min-height:48px;font-weight:700">Score Load &rarr;</button>'
+    + '<button type="button" class="btn" id="f23EditDetails" style="flex:1;min-height:48px">&#9998; Edit</button></div>'
+    + '<button type="button" class="btn" id="f23PasteDiff" style="width:100%;margin-top:8px;min-height:44px;font-size:13px">&larr; Paste Different Load</button>';
 
   // Insert before input area
   const inputArea = card.querySelector('#f23InputArea');
@@ -15416,8 +15416,8 @@ function _renderInboxFailure(card) {
     + '<div style="font-weight:700;font-size:15px;margin-bottom:8px">Couldn\'t read that load offer</div>'
     + '<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:16px">FreightLogic couldn\'t find enough details in that text. This works best with load emails that include cities, miles, and a rate.</div>'
     + '<div style="display:flex;gap:10px">'
-    + '<button class="btn primary" id="f23FailRetry" style="flex:1;min-height:48px">Try Again</button>'
-    + '<button class="btn" id="f23FailManual" style="flex:1;min-height:48px">Enter Manually &#8595;</button>'
+    + '<button type="button" class="btn primary" id="f23FailRetry" style="flex:1;min-height:48px">Try Again</button>'
+    + '<button type="button" class="btn" id="f23FailManual" style="flex:1;min-height:48px">Enter Manually &#8595;</button>'
     + '</div></div>';
 
   const inputArea = card.querySelector('#f23InputArea');
@@ -15512,7 +15512,7 @@ if (typeof window !== 'undefined'){
               const banner = document.createElement('div');
               banner.id = 'swUpdateBanner';
               banner.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:9000;padding:12px 14px;background:var(--surface-2);border:1px solid var(--accent-border);border-radius:14px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:12px;font-size:13px';
-              banner.innerHTML = '<span style="font-size:18px">🔄</span><div style="flex:1"><b style="color:var(--accent)">Update ready</b> — new Freight Logic version available</div><button id="swUpdateNow" class="btn primary" style="white-space:nowrap;padding:8px 14px">Reload</button><button id="swUpdateLater" class="btn" style="padding:8px 10px;font-size:11px">Later</button>';
+              banner.innerHTML = '<span style="font-size:18px">🔄</span><div style="flex:1"><b style="color:var(--accent)">Update ready</b> — new Freight Logic version available</div><button type="button" id="swUpdateNow" class="btn primary" style="white-space:nowrap;padding:8px 14px">Reload</button><button type="button" id="swUpdateLater" class="btn" style="padding:8px 10px;font-size:11px">Later</button>';
               document.body.appendChild(banner);
               document.getElementById('swUpdateNow')?.addEventListener('click', ()=>{
                 banner.remove();
