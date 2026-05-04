@@ -12790,7 +12790,8 @@ async function openDocumentVault(filterTripOrderNo=null){
         const doc = docs.find(d => d.id === btn2.dataset.dvopen);
         if (!doc || !doc.blob) return toast('Document data not found', true);
         const url = URL.createObjectURL(new Blob([doc.blob], {type: doc.mimeType || 'application/octet-stream'}));
-        window.open(url, '_blank');
+        const win = window.open(url, '_blank');
+        if (!win) toast('Allow pop-ups to open documents', true);
         setTimeout(() => URL.revokeObjectURL(url), 30000);
       });
     });
@@ -13899,7 +13900,7 @@ async function fetchEIADieselPrice(){
         if (fpEl) fpEl.value = price.toFixed(2);
         toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA)`);
       }
-    }, { once: false });
+    }, { once: true });
     return { price, period };
   } catch(e){ console.warn('[FL] EIA fetch', e); return null; }
 }
