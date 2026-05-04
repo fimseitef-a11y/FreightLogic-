@@ -1245,6 +1245,20 @@ async function computeExportChecksumFull(trips, expenses, fuel, settings){
     return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
   }
 }
+// checksumV2 extends checksumFull to cover marketBoard (and all future stores).
+// Kept separate to remain backward-compatible — old exports still verify against checksumFull.
+async function computeExportChecksumV2(trips, expenses, fuel, settings, marketBoard){
+  const raw = JSON.stringify({ trips, expenses, fuel, settings, marketBoard });
+  const buf = new TextEncoder().encode(raw);
+  try {
+    const hash = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
+  }
+}
 
 async function exportJSON(){
   const trips = await dumpStore('trips');
@@ -1253,10 +1267,11 @@ async function exportJSON(){
   const settings = await dumpStore('settings');
   const checksum = await computeExportChecksum(trips, expenses, fuel);
   const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
+  const checksumV2 = await computeExportChecksumV2(trips, expenses, fuel, settings, marketBoard);
   const gpsLogs = await dumpStore('gpsLogs');
   const marketBoard = await dumpStore('marketBoard');
   const payload = {
-    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length, marketBoard: marketBoard.length } },
+    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, checksumV2, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length, marketBoard: marketBoard.length } },
     trips,
     expenses,
     fuel,
@@ -1327,8 +1342,16 @@ async function importJSON(file, opts={}){
     const data = deepCleanObj(JSON.parse(await file.text()));
     const arr = (x)=> Array.isArray(x) ? x : [];
 
-    // P1-5: Verify export integrity checksum (full first, then legacy partial)
-    if (data.meta?.checksumFull){
+    // P1-5: Verify export integrity checksum (v2 first, then full, then legacy partial)
+    if (data.meta?.checksumV2){
+      try {
+        const verify = await computeExportChecksumV2(arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings), arr(data.marketBoard));
+        if (verify !== data.meta.checksumV2){
+          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Settings or data may have been tampered with.\n\nImport anyway?');
+          if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
+        }
+      } catch(e){ console.warn("[FL]", e); }
+    } else if (data.meta?.checksumFull){
       try {
         const verify = await computeExportChecksumFull(arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings));
         if (verify !== data.meta.checksumFull){
@@ -10961,6 +10984,7 @@ async function cloudPushBackup(silent = true){
     const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
     const allFuel = await dumpStore('fuel'); const settings = await dumpStore('settings');
     const receipts = await dumpStore('receipts');
+    const allMarketBoard = await dumpStore('marketBoard');
     const laneHistory = await dumpStore('laneHistory');
     const weeklyReports = await dumpStore('weeklyReports');
     const reloadOutcomes = await dumpStore('reloadOutcomes');
@@ -10979,7 +11003,8 @@ async function cloudPushBackup(silent = true){
     const changedBidHistory = lastSynced > 0 ? bidHistory.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : bidHistory;
     const changedDocuments = lastSynced > 0 ? documents.filter(r => (r.updatedAt || r.createdAt || 0) > lastSynced) : documents;
     const changedGpsLogs = lastSynced > 0 ? gpsLogs.filter(r => (r.timestamp || 0) > lastSynced) : gpsLogs;
-    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length) < 50;
+    const changedMarketBoard = lastSynced > 0 ? allMarketBoard.filter(r => (r.ts || r.updatedAt || 0) > lastSynced) : allMarketBoard;
+    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length + changedMarketBoard.length) < 50;
 
     const trips = isDelta ? changedTrips : allTrips;
     const expenses = isDelta ? changedExps : allExpenses;
@@ -10990,17 +11015,18 @@ async function cloudPushBackup(silent = true){
     const bh = isDelta ? changedBidHistory : bidHistory;
     const docs = isDelta ? changedDocuments : documents;
     const gl = isDelta ? changedGpsLogs : gpsLogs;
+    const mb = isDelta ? changedMarketBoard : allMarketBoard;
 
-    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0){
+    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && mb.length === 0){
       _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
       if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
     }
 
     const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
-      laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
+      marketBoard: allMarketBoard.length, laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
       documents: documents.length, gpsLogs: gpsLogs.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, gpsLogs: gl });
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, marketBoard: mb, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, gpsLogs: gl });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
     const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
@@ -11790,8 +11816,13 @@ async function openTaxSeasonExport(){
     const totalBizMi     = totalLoadedMi + totalDeadMi;
     const mileageDeduction = roundCents(totalBizMi * mileageRate);
 
-    // Per diem (count unique work days)
-    const workDays = new Set(trips.map(t => t.pickupDate || t.deliveryDate).filter(Boolean)).size;
+    // Per diem: sum calendar days per trip (pickup → delivery inclusive), min 1 per trip with dates
+    const workDays = trips.reduce((s, t) => {
+      const p = t.pickupDate, d = t.deliveryDate || t.pickupDate;
+      if (!p) return s;
+      if (!d || d === p) return s + 1;
+      return s + Math.max(1, Math.round((new Date(d) - new Date(p)) / 86400000) + 1);
+    }, 0);
     const perDiemDeduction = roundCents(workDays * pdRate * pdPct);
 
     // Expense categories mapped to Schedule C lines
@@ -15447,7 +15478,7 @@ if (typeof window !== 'undefined'){
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel,
-    computeExportChecksum, computeExportChecksumFull,
+    computeExportChecksum, computeExportChecksumFull, computeExportChecksumV2,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
     mwClassifyRPM, MW,
