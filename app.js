@@ -1265,11 +1265,11 @@ async function exportJSON(){
   const expenses = await dumpStore('expenses');
   const fuel = await dumpStore('fuel');
   const settings = await dumpStore('settings');
+  const gpsLogs = await dumpStore('gpsLogs');
+  const marketBoard = await dumpStore('marketBoard');
   const checksum = await computeExportChecksum(trips, expenses, fuel);
   const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
   const checksumV2 = await computeExportChecksumV2(trips, expenses, fuel, settings, marketBoard);
-  const gpsLogs = await dumpStore('gpsLogs');
-  const marketBoard = await dumpStore('marketBoard');
   const payload = {
     meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, checksumV2, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length, marketBoard: marketBoard.length } },
     trips,

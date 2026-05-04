@@ -138,8 +138,11 @@ export default {
         }
 
         const payload = await request.json().catch(() => null);
-        if (!payload) {
+        if (!payload || typeof payload !== 'object') {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
+        }
+        if (!payload.origin && !payload.destination && !payload.revenue && !payload.pay && !payload.loadedMiles) {
+          return json({ ok: false, error: 'Payload must include at least origin, destination, or revenue' }, 400, cors);
         }
 
         const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -170,9 +173,11 @@ export default {
         }
 
         const aiJson = await aiRes.json();
+        const aiContent = aiJson?.choices?.[0]?.message?.content;
         let parsed = null;
         try {
-          parsed = JSON.parse(aiJson.choices[0].message.content);
+          if (!aiContent) throw new Error('empty');
+          parsed = JSON.parse(aiContent);
         } catch {
           return json({ ok: false, error: 'AI response parse error. Local evaluation is still valid.' }, 502, cors);
         }
@@ -243,9 +248,11 @@ export default {
         }
 
         const aiJson = await aiRes.json();
+        const aiContent = aiJson?.choices?.[0]?.message?.content;
         let parsed = null;
         try {
-          parsed = JSON.parse(aiJson.choices[0].message.content);
+          if (!aiContent) throw new Error('empty');
+          parsed = JSON.parse(aiContent);
         } catch {
           return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
         }
@@ -308,6 +315,10 @@ export default {
 
       // POST /backup/delta — store delta (partial sync payload)
       if (request.method === 'POST' && path === '/backup/delta') {
+        const deltaRateLimited = await checkRateLimit(env, driverUserId, 120, 'delta');
+        if (deltaRateLimited) {
+          return json({ ok: false, error: 'Rate limit exceeded. Try again later.' }, 429, cors);
+        }
         const payload = await request.text();
         if (!payload || payload.length < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
