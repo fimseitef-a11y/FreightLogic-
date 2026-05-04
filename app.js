@@ -6611,7 +6611,10 @@ function _mwRenderDecision(out, d){
 
         if (!res.ok){
           const errData = await res.json().catch(function(){ return {}; });
-          resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">' + escapeHtml(errData.error || 'AI unavailable') + '</div>';
+          const errMsg = res.status === 429
+            ? 'AI rate limit reached (100/hr). Try again in a few minutes.'
+            : (errData.error || 'AI unavailable');
+          resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">' + escapeHtml(errMsg) + '</div>';
           aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis';
           return;
         }
@@ -10895,7 +10898,10 @@ async function cloudExtractLoad(rawText){
     body: JSON.stringify({ text: String(rawText).slice(0, 4000) }),
   }, 20000);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
+  if (!res.ok || !data.ok) {
+    if (res.status === 429) throw new Error('AI rate limit reached (50/hr). Try again in a few minutes.');
+    throw new Error(data.error || 'AI extraction failed.');
+  }
   return data.fields;
 }
 
