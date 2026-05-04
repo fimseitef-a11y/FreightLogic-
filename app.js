@@ -4643,17 +4643,14 @@ async function renderInsights(){
 // v20: More tiles organized into sections
 // ── Intelligence tiles (own nav tab) ──
 const INTEL_TILES = [
-  { icon:'📋', title:'Weekly Reports', sub:'Auto P&L summaries', act:'weeklyReports' },
-  { icon:'📈', title:'Rate Trends', sub:'Lane RPM trends over time', act:'rateTrends' },
-  { icon:'🔄', title:'Reload Scoring', sub:'City reload speed intelligence', act:'reloadScoring' },
-  { icon:'🔗', title:'Chain Analysis', sub:'Best next load after delivery', act:'chainAnalysis' },
-  { icon:'📅', title:'Weekly Strategy', sub:'Mode & week projection', act:'weeklyStrategy' },
-  { icon:'🌦️', title:'Seasonal Intel', sub:'Best & worst months by RPM', act:'seasonalIntel' },
-  { icon:'💸', title:'Cost-Per-Day', sub:'Daily breakeven vs actuals', act:'costPerDay' },
-  { icon:'🤝', title:'Counter-Offers', sub:'Broker negotiation tracking', act:'counterOfferMemory' },
-  { icon:'Ω', title:'Rate Tiers / Bid Calc', sub:'All-in pricing by mileage band', act:'omegaTiers' },
-  { icon:'📡', title:'Market Board', sub:'Log market observations', act:'marketBoard' },
-  { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
+  { icon:'📋', title:'Weekly Reports',  sub:'Auto P&L summaries',              act:'weeklyReports',      section:'PRIMARY' },
+  { icon:'📈', title:'Rate Trends',     sub:'Lane RPM over time',               act:'rateTrends',         section:'PRIMARY' },
+  { icon:'🔄', title:'Reload Scoring',  sub:'City reload speed intel',          act:'reloadScoring',      section:'PRIMARY' },
+  { icon:'🔗', title:'Chain Analysis',  sub:'Best next load after delivery',    act:'chainAnalysis',      section:'PRIMARY' },
+  { icon:'🌦️', title:'Seasonal Intel',  sub:'Best & worst months by RPM',       act:'seasonalIntel',      section:'PRIMARY' },
+  { icon:'🔧', title:'Maintenance',     sub:'Service schedule & history',       act:'maintenance',        section:'PRIMARY' },
+  { icon:'💸', title:'Cost-Per-Day',    sub:'Daily breakeven vs actuals',       act:'costPerDay',         section:'ADVANCED' },
+  { icon:'🤝', title:'Counter-Offers',  sub:'Broker negotiation tracking',      act:'counterOfferMemory', section:'ADVANCED' },
 ];
 
 const MORE_TILES = [
@@ -4682,47 +4679,61 @@ function renderIntel(){
   if (!grid || _intelBound) return;
   _intelBound = true;
   grid.innerHTML = '';
-  for (const tile of INTEL_TILES){
+
+  const makeTileEl = (tile) => {
     const el = document.createElement('div');
     el.className = 'menu-tile';
     el.setAttribute('role', 'button');
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', tile.title);
     el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-    const tileAction = async ()=>{
+    const tileAction = async () => {
       try {
-      haptic(15);
-      if (tile.act === 'weeklyReports') await openWeeklyReports();
-      else if (tile.act === 'rateTrends') await openRateTrends();
-      else if (tile.act === 'reloadScoring') await openReloadScoring();
-      else if (tile.act === 'chainAnalysis') await openChainAnalysis();
-      else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
-      else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
-      else if (tile.act === 'costPerDay') await openCostPerDay();
-      else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
-      else if (tile.act === 'omegaTiers'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'marketBoard'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        haptic(15);
+        if      (tile.act === 'weeklyReports')     await openWeeklyReports();
+        else if (tile.act === 'rateTrends')         await openRateTrends();
+        else if (tile.act === 'reloadScoring')      await openReloadScoring();
+        else if (tile.act === 'chainAnalysis')      await openChainAnalysis();
+        else if (tile.act === 'seasonalIntel')      await openSeasonalIntel();
+        else if (tile.act === 'maintenance')        await openMaintenanceTracker();
+        else if (tile.act === 'costPerDay')         await openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
       } catch(e){ console.warn('[FL] Intel tile error:', e); }
     };
     el.addEventListener('click', tileAction);
     el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
-    grid.appendChild(el);
+    return el;
+  };
+
+  // PRIMARY — 6 tiles always visible
+  for (const tile of INTEL_TILES){
+    if (tile.section === 'PRIMARY') grid.appendChild(makeTileEl(tile));
   }
+
+  // ADVANCED — 2 tools behind toggle
+  const advToggle = document.createElement('div');
+  advToggle.style.cssText = 'grid-column:1/-1;cursor:pointer;display:flex;align-items:center;gap:8px;padding:14px 4px 6px;color:var(--text-secondary);font-size:13px;font-weight:600';
+  const advArrow = document.createElement('span');
+  advArrow.textContent = '▶';
+  advArrow.style.cssText = 'font-size:10px;transition:transform .2s';
+  advToggle.appendChild(advArrow);
+  advToggle.appendChild(document.createTextNode(' More Tools'));
+  grid.appendChild(advToggle);
+
+  const advGrid = document.createElement('div');
+  advGrid.className = 'menu-grid';
+  advGrid.style.cssText = 'display:none;grid-column:1/-1';
+  for (const tile of INTEL_TILES){
+    if (tile.section === 'ADVANCED') advGrid.appendChild(makeTileEl(tile));
+  }
+  grid.appendChild(advGrid);
+
+  advToggle.addEventListener('click', ()=>{
+    const open = advGrid.style.display !== 'none';
+    advGrid.style.display = open ? 'none' : '';
+    advArrow.style.transform = open ? '' : 'rotate(90deg)';
+    haptic(10);
+  });
 }
 
 let _moreBound = false;
