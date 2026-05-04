@@ -805,16 +805,16 @@
     }
     .btn.primary::after {
       content: '';
-      position: absolute; top: 0; left: -100%;
+      position: absolute; top: 0; left: 0;
       width: 50%; height: 100%;
       background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
-      transform: skewX(-20deg);
+      transform: translateX(-200%) skewX(-20deg);
       pointer-events: none;
     }
     @media (hover: hover) {
       .btn.primary:hover::after { animation: btnShine .5s ease forwards }
     }
-    @keyframes btnShine { to { left: 160% } }
+    @keyframes btnShine { to { transform: translateX(320%) skewX(-20deg) } }
 
     /* ── KPI hero — flowing gold gradient text ──────────────────── */
     .kpi-hero-value {

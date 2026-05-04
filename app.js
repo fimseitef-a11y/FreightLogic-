@@ -1262,6 +1262,7 @@ async function exportJSON(){
     receipts: await dumpStore('receipts'),
     settings: await dumpStore('settings'),
     auditLog: await dumpStore('auditLog'),
+    marketBoard: await dumpStore('marketBoard'),
     laneHistory: await dumpStore('laneHistory'),
     weeklyReports: await dumpStore('weeklyReports'),
     reloadOutcomes: await dumpStore('reloadOutcomes'),
@@ -1379,7 +1380,7 @@ async function importJSON(file, opts={}){
       // home base GPS coords (set by setup wizard / location picker)
       'homeBaseLat','homeBaseLng']);
     // T5-FIX: Validate settings value types and cap size
-    const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
+    const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && (ALLOWED_SETTINGS_KEYS.has(s.key) || s.key.startsWith('laneReviewDone_')) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
     }));
     // P0-3: auditLog sanitization
@@ -1418,13 +1419,20 @@ async function importJSON(file, opts={}){
       type: clampStr(r.type || '', 40),
     }));
 
+    const safeMarketBoardArr = arr(data.marketBoard).filter(r => r && typeof r === 'object' && typeof r.id === 'string').map(r => ({
+      ...deepCleanObj(r),
+      id: clampStr(r.id || '', 60),
+      location: clampStr(r.location || '', 120),
+      notes: clampStr(r.notes || '', 500),
+    }));
+
     const safeGpsLogsArr = arr(data.gpsLogs).filter(r => r && typeof r === 'object' && typeof r.timestamp === 'number').map(r => ({
       ...deepCleanObj(r),
       tripTrackingId: clampStr(r.tripTrackingId || '', 60),
     }));
 
     const mode = opts.mode || 'merge';
-    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'],'readwrite');
+    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','marketBoard','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'],'readwrite');
     if (mode === 'replace'){
       try{ stores.trips.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.expenses.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -1432,6 +1440,7 @@ async function importJSON(file, opts={}){
       try{ stores.receipts.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.settings.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.auditLog.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.marketBoard.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.laneHistory.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.weeklyReports.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.reloadOutcomes.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -1446,6 +1455,7 @@ async function importJSON(file, opts={}){
     putAll(stores.receipts, safeReceiptArr);
     putAll(stores.settings, safeSettingsArr);
     putAll(stores.auditLog, safeAuditArr);
+    putAll(stores.marketBoard, safeMarketBoardArr);
     putAll(stores.laneHistory, safeLaneHistoryArr);
     putAll(stores.weeklyReports, safeWeeklyReportsArr);
     putAll(stores.reloadOutcomes, safeReloadOutcomesArr);
@@ -2165,8 +2175,8 @@ function computeLaneStats(trips){
       const half = Math.floor(sorted.length / 2);
       const firstHalf = sorted.slice(0, half);
       const secondHalf = sorted.slice(half);
-      const avgFirst = firstHalf.reduce((s,x)=>s+x.rpm,0) / firstHalf.length;
-      const avgSecond = secondHalf.reduce((s,x)=>s+x.rpm,0) / secondHalf.length;
+      const avgFirst = firstHalf.reduce((s,x)=>s+x.rpm,0) / (firstHalf.length || 1);
+      const avgSecond = secondHalf.reduce((s,x)=>s+x.rpm,0) / (secondHalf.length || 1);
       if (avgSecond > avgFirst * 1.05) trend = 1;
       else if (avgSecond < avgFirst * 0.95) trend = -1;
     }
@@ -11215,7 +11225,7 @@ function cloudAdminShare(text){
 }
 
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_token') || '').trim();
+  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_token') || localStorage.getItem('fl_admin_tok') || '').trim();
   const list = $('#adminUserList'); if (!adminToken || !list) return;
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
@@ -11238,7 +11248,7 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token') || localStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
   $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
