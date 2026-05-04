@@ -335,14 +335,13 @@
     .mono { font-family: var(--font-mono); font-size: 13px; line-height: 1.6 }
 
     /* ── View transitions ──────────────────────────────────────── */
-    @keyframes viewIn { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: translateY(0) } }
+    /* @keyframes viewIn defined with v17 upgrade below */
     .view.entering { animation: viewIn .2s var(--ease-smooth) both }
 
     /* ── Pull to refresh ───────────────────────────────────────── */
     .ptr-zone { text-align: center; height: 0; overflow: hidden; transition: height .2s; color: var(--accent-text); font-size: 12px; font-weight: 600 }
     .ptr-zone.active { height: 40px; line-height: 40px }
     .ptr-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--accent-muted); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px }
-    @keyframes spin { to { transform: rotate(360deg) } }
 
     /* ── Bottom nav ────────────────────────────────────────────── */
     .bottom {

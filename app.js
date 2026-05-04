@@ -1371,7 +1371,13 @@ async function importJSON(file, opts={}){
       'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
       'vehicleYear','vehicleMake','laneReviewEnabled',
       // v23.4 F30/F31
-      'f30LastExportYear','f31TrendView']);
+      'f30LastExportYear','f31TrendView',
+      // system / migration keys (must survive import to prevent re-running)
+      'legacyMigrated','legacyMigratedCount','localUserCreatedAt','lastOverdueNotify',
+      // Dead Zone settings
+      'dzEnabled','dzActivationDistance','dzFloorRPM',
+      // home base GPS coords (set by setup wizard / location picker)
+      'homeBaseLat','homeBaseLng']);
     // T5-FIX: Validate settings value types and cap size
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
