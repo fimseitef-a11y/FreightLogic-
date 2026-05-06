@@ -5,19 +5,19 @@ const H=()=>{try{window.haptic&&window.haptic(10)}catch(_){}};
 const X=s=>String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const S=s=>{let p=String(s||'Driver').split(' | ');return{n:(p[0]||'Driver').trim()||'Driver'}};
 
-// Admin token stored in localStorage — entered once, remembered on this device forever.
+// Admin token stored in sessionStorage — cleared on tab/browser close per security policy.
 const LOC_KEY='fl_admin_tok';
-function saveTok(v){try{if(v)localStorage.setItem(LOC_KEY,v);else localStorage.removeItem(LOC_KEY)}catch(_){}}
-function loadTok(){try{return localStorage.getItem(LOC_KEY)||''}catch(_){return''}}
+function saveTok(v){try{if(v)sessionStorage.setItem(LOC_KEY,v);else sessionStorage.removeItem(LOC_KEY)}catch(_){}}
+function loadTok(){try{return sessionStorage.getItem(LOC_KEY)||''}catch(_){return''}}
 function getTok(){return(($('adminToken')||{}).value||'').trim()||loadTok()}
 const G=()=>({'Content-Type':'application/json','X-Admin-Token':getTok()});
 const Q=async(u,o)=>{let r=await fetch(API+u,o||{}),j=await r.json().catch(()=>null);if(!r.ok||!j||j.ok===false)throw Error(j&&j.error||`HTTP ${r.status}`);return j};
 const R=id=>{let e=$(id);if(!e)return null;let n=e.cloneNode(true);e.parentNode.replaceChild(n,e);return n};
 
-// Build the invite link for a driver — token is embedded in the URL, never shown raw.
+// Build the invite link for a driver — token in fragment so it's never sent to servers or logged.
 function buildInviteLink(token){
-  try{return window.location.origin+window.location.pathname+'?token='+encodeURIComponent(token)}
-  catch(_){return API+'?token='+encodeURIComponent(token)}
+  try{return window.location.origin+window.location.pathname+'#token='+encodeURIComponent(token)}
+  catch(_){return API+'#token='+encodeURIComponent(token)}
 }
 
 // Share the invite or fall back to clipboard copy.
@@ -167,5 +167,10 @@ function init(){
 }
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
-let _n=0,_i=setInterval(()=>{if(document.body?.dataset.flAdminUiReady==='1')return clearInterval(_i);init();if(++_n>=30)clearInterval(_i)},1000);
+// Fallback: observe DOM for admin elements to appear (SW-injected script may run before elements exist)
+if(document.body?.dataset.flAdminUiReady!=='1'){
+  const _obs=new MutationObserver(()=>{if($('adminPanel')){init();if(document.body?.dataset.flAdminUiReady==='1')_obs.disconnect()}});
+  _obs.observe(document.body||document.documentElement,{childList:true,subtree:true});
+  setTimeout(()=>_obs.disconnect(),30000);
+}
 })();

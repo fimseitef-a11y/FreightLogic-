@@ -65,7 +65,7 @@ self.addEventListener('message', (event) => {
   if (msg.type === 'GET_VERSION') {
     try { event.ports?.[0]?.postMessage({ version: SW_VERSION }); } catch {}
   }
-  if (msg.type === 'SKIP_WAITING') self.skipWaiting();
+  if (msg.type === 'SKIP_WAITING' && event.source) self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -83,9 +83,11 @@ self.addEventListener('fetch', (event) => {
             JSON.stringify({ count: files.length, ts: Date.now() }),
             { headers: { 'Content-Type': 'application/json' } }
           ));
+          const ALLOWED_SHARE_TYPES = new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','image/heic','image/heif']);
           for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': file.type, 'X-Filename': file.name } }));
+            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
+            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': file.name } }));
           }
         }
       } catch {}

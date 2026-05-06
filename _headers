@@ -1,0 +1,6 @@
+/*
+  Content-Security-Policy: default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(self), microphone=(self), camera=()
