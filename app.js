@@ -5661,8 +5661,9 @@ function getActiveCVSAEvent(today = new Date()) {
   const d = today.toISOString().slice(0, 10);
   for (const e of CVSA_EVENTS_2026) {
     if (d >= e.start && d <= e.end) return { ...e, status: 'active' };
+    // Pre-blitz tightening window: 6 days before
     const preStart = new Date(e.start);
-    preStart.setDate(preStart.getDate() - 5);
+    preStart.setDate(preStart.getDate() - 6);
     const preStartStr = preStart.toISOString().slice(0, 10);
     if (d >= preStartStr && d < e.start) return { ...e, status: 'pre' };
   }
