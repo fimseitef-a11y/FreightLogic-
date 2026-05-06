@@ -128,11 +128,11 @@
   }
 
   function getDraftStore() {
-    return safeJSONParse(localStorage.getItem(STORAGE_KEYS.drafts), []);
+    return safeJSONParse(sessionStorage.getItem(STORAGE_KEYS.drafts), []);
   }
 
   function saveDraftStore(store) {
-    localStorage.setItem(STORAGE_KEYS.drafts, JSON.stringify(store.slice(-20)));
+    sessionStorage.setItem(STORAGE_KEYS.drafts, JSON.stringify(store.slice(-20)));
   }
 
   function persistDraft() {
@@ -165,17 +165,17 @@
   }
 
   function clearDrafts() {
-    localStorage.removeItem(STORAGE_KEYS.drafts);
+    sessionStorage.removeItem(STORAGE_KEYS.drafts);
   }
 
   function getCorrectionStore() {
-    return safeJSONParse(localStorage.getItem(STORAGE_KEYS.corrections), []);
+    return safeJSONParse(sessionStorage.getItem(STORAGE_KEYS.corrections), []);
   }
 
   function saveCorrection(entry) {
     const store = getCorrectionStore();
     store.push({ ...entry, at: Date.now() });
-    localStorage.setItem(STORAGE_KEYS.corrections, JSON.stringify(store.slice(-50)));
+    sessionStorage.setItem(STORAGE_KEYS.corrections, JSON.stringify(store.slice(-50)));
   }
 
   function escapeHtml(str) {
@@ -646,12 +646,27 @@
       renderReview();
       return;
     }
+    const KNOWN_FIELDS = new Set(['revenue','loadedMiles','deadMiles','origin','destination','notes']);
+    const KNOWN_CONF = new Set(['revenue','loadedMiles','deadMiles','origin','destination','notes']);
+    const safeFields = {};
+    const safeConf = {};
+    for (const [k, v] of Object.entries(latest.fields || {})) {
+      if (KNOWN_FIELDS.has(k) && (typeof v === 'string' || typeof v === 'number')) safeFields[k] = v;
+    }
+    for (const [k, v] of Object.entries(latest.confidence || {})) {
+      if (KNOWN_CONF.has(k) && typeof v === 'number') safeConf[k] = v;
+    }
     currentDraft = {
       ...blankDraft(),
-      ...latest,
-      fields: { ...blankDraft().fields, ...(latest.fields || {}) },
-      confidence: { ...blankDraft().confidence, ...(latest.confidence || {}) },
-      history: Array.isArray(latest.history) ? latest.history : []
+      id: typeof latest.id === 'string' ? latest.id : blankDraft().id,
+      createdAt: typeof latest.createdAt === 'number' ? latest.createdAt : Date.now(),
+      updatedAt: typeof latest.updatedAt === 'number' ? latest.updatedAt : Date.now(),
+      source: typeof latest.source === 'string' ? latest.source : 'voice',
+      needsReview: !!latest.needsReview,
+      transcriptSummary: typeof latest.transcriptSummary === 'string' ? latest.transcriptSummary : '',
+      fields: { ...blankDraft().fields, ...safeFields },
+      confidence: { ...blankDraft().confidence, ...safeConf },
+      history: Array.isArray(latest.history) ? latest.history.filter(h => h && typeof h === 'object') : []
     };
     renderReview();
     setStatus('Loaded local voice draft. Review it before applying.', STATUS_KIND.idle);

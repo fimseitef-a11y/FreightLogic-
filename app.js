@@ -146,18 +146,47 @@ function isValidISODate(s){
   return d instanceof Date && !isNaN(d.getTime());
 }
 
-/** Hash a PIN for secure storage — uses SHA-256, falls back to FNV-1a */
+/** Hash a PIN using PBKDF2 with a random salt (310k iterations, SHA-256). Format: pbkdf2v1:<salt_b64>:<hash_b64> */
 async function hashPin(pin){
-  const salt = 'fl_pin_v1:';
-  try {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + pin));
-    return 'h1:' + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-  } catch {
-    let h = 0x811c9dc5;
-    const str = salt + pin;
-    for (let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-    return 'fnv:' + (h >>> 0).toString(16).padStart(8,'0');
+  const enc = new TextEncoder();
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const km = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt:saltBytes, iterations:310000, hash:'SHA-256' }, km, 256);
+  const b64 = bytes => btoa(String.fromCharCode(...bytes));
+  return 'pbkdf2v1:' + b64(saltBytes) + ':' + b64(new Uint8Array(bits));
+}
+
+/** Verify a candidate PIN against any stored hash format (pbkdf2v1, h1, fnv, or plaintext). */
+async function verifyPin(stored, candidate){
+  if (!stored) return false;
+  if (stored.startsWith('pbkdf2v1:')){
+    const parts = stored.split(':');
+    if (parts.length !== 3) return false;
+    try {
+      const enc = new TextEncoder();
+      const saltBytes = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
+      const km = await crypto.subtle.importKey('raw', enc.encode(candidate), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt:saltBytes, iterations:310000, hash:'SHA-256' }, km, 256);
+      const hash64 = btoa(String.fromCharCode(...new Uint8Array(bits)));
+      return ('pbkdf2v1:' + parts[1] + ':' + hash64) === stored;
+    } catch { return false; }
   }
+  // Legacy SHA-256 / FNV-1a — verify then re-hash on success (caller handles migration)
+  if (stored.startsWith('h1:') || stored.startsWith('fnv:')){
+    const salt = 'fl_pin_v1:';
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + candidate));
+      const legacy = 'h1:' + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+      return legacy === stored;
+    } catch {
+      let h = 0x811c9dc5;
+      const str = salt + candidate;
+      for (let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+      return ('fnv:' + (h >>> 0).toString(16).padStart(8,'0')) === stored;
+    }
+  }
+  // Plaintext legacy PIN
+  return candidate === stored;
 }
 
 // ---- Numeric hardening (v14.3.1) ----
@@ -1370,8 +1399,9 @@ async function importJSON(file, opts={}){
       'vehicleYear','vehicleMake','laneReviewEnabled',
       // v23.4 F30/F31
       'f30LastExportYear','f31TrendView']);
-    // T5-FIX: Validate settings value types and cap size
-    const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && ALLOWED_SETTINGS_KEYS.has(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
+    // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
+    const isAllowedSettingsKey = k => ALLOWED_SETTINGS_KEYS.has(k) || k.startsWith('broker_note_') || k.startsWith('laneReviewDone_');
+    const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && isAllowedSettingsKey(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
     }));
     // P0-3: auditLog sanitization
@@ -3253,15 +3283,16 @@ function openQuickEvalModal(){
       const trueRPM = rev / (lm + dm || 1); // rough, actual from evaluator
       const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
       const gradeHTML = actualGradeEl?.outerHTML || '';
-      const evalSummary = evalOut ? evalOut.innerHTML : '';
+      const evalClone = evalOut ? evalOut.cloneNode(true) : null;
       resultSlot.innerHTML = `<div style="margin-bottom:12px">
         <div style="font-size:11px;color:var(--good);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">✓ Scored: ${escapeHtml(origin||'?')} → ${escapeHtml(dest||'?')} • ${fmtMoney(rev)} • ${lm}mi loaded</div>
-        <div id="qeEvalPreview" style="max-height:60vh;overflow-y:auto">${evalSummary}</div>
+        <div id="qeEvalPreview" style="max-height:60vh;overflow-y:auto"></div>
         <div class="btn-row" style="margin-top:14px">
           <button class="btn primary" id="qeBookBtn" style="flex:1;min-height:48px">Book This Load →</button>
           <button class="btn" id="qeFullBtn" style="flex:1;min-height:48px">Full Analysis</button>
         </div>
       </div>`;
+      if (evalClone) resultSlot.querySelector('#qeEvalPreview').appendChild(evalClone);
       $('#qeBookBtn', body)?.addEventListener('click', ()=>{
         closeModal();
         openTripWizard({ _evalPrefill: true, pay: rev, loadedMiles: lm, emptyMiles: dm, origin, destination: dest });
@@ -4833,14 +4864,10 @@ async function requireAppUnlock(){
     openModal('Unlock Freight Logic', body);
     const tryUnlock = async ()=>{
       const val = String(document.getElementById('unlockPin')?.value || '');
-      // Support hashed PINs (h1:/fnv: prefix) and legacy plaintext (migration path)
-      let match = false;
-      if (pin.startsWith('h1:') || pin.startsWith('fnv:')){
-        match = (await hashPin(val)) === pin;
-      } else {
-        // Legacy plaintext PIN — compare directly and migrate to hash on success
-        match = val === pin;
-        if (match){ setSetting('appLockPin', await hashPin(val)).catch(()=>{}); }
+      const match = await verifyPin(pin, val);
+      // Migrate legacy hash formats to PBKDF2 on successful unlock
+      if (match && !pin.startsWith('pbkdf2v1:')){
+        setSetting('appLockPin', await hashPin(val)).catch(()=>{});
       }
       if (match){ closeModal(); resolve(true); }
       else { const h = document.getElementById('unlockHint'); if (h) h.textContent = 'Incorrect PIN'; haptic(35); }
@@ -6496,7 +6523,7 @@ function _mwRenderDecision(out, d){
     checkRouteWeather(origCoords, destCoords).then(alerts => {
       const weatherSlot = $('#mwWeatherAlertSlot', out);
       if (!weatherSlot || !alerts.length) return;
-      const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(a.event)} at ${escapeHtml(a.label)} (NWS)</span></div>`).join('');
+      const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(clampStr(a.event,80))} at ${escapeHtml(clampStr(a.label,80))} (NWS)</span></div>`).join('');
       weatherSlot.innerHTML = `<div style="padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);margin-top:4px">${lines}</div>`;
     }).catch(()=>{});
   }
@@ -10861,7 +10888,7 @@ async function cloudEncrypt(plaintext, passphrase){
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const km = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
   return { encrypted: _bytesToBase64(new Uint8Array(ct)), iv: _bytesToBase64(iv), salt: _bytesToBase64(salt) };
 }
@@ -10872,8 +10899,13 @@ async function cloudDecrypt(encrypted, iv, salt, passphrase){
   const ib = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
   const cb = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
   const km = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: sb, iterations: 100000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-  return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ib }, key, cb));
+  // Try current iteration count first; fall back to legacy 100k for backups made before v23.4.1
+  for (const iterations of [600000, 100000]) {
+    try {
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: sb, iterations, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ib }, key, cb));
+    } catch { if (iterations === 100000) throw new Error('Decryption failed — wrong passphrase or corrupted backup'); }
+  }
 }
 
 async function cloudFetch(url, opts = {}, timeoutMs = 15000){
@@ -11164,8 +11196,18 @@ async function cloudRefreshButtons(){
 }
 
 function cloudCheckSetupLink(){
-  try { const p = new URLSearchParams(window.location.search); const t = p.get('token');
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname + window.location.hash); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
+  try {
+    // Check fragment first (new format — token never sent to servers)
+    const frag = window.location.hash.slice(1);
+    let t = null;
+    if (frag.startsWith('token=')) {
+      t = decodeURIComponent(frag.slice(6));
+    } else {
+      // Legacy: query-param fallback for older invite links
+      const p = new URLSearchParams(window.location.search);
+      t = p.get('token');
+    }
+    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
   } catch(e) {}
 }
 
@@ -11181,7 +11223,7 @@ async function cloudAdminCreateUser(){
     if (res.ok){
       const data = await res.json();
       const appUrl = window.location.origin + window.location.pathname;
-      const setupLink = appUrl + '?token=' + encodeURIComponent(data.token);
+      const setupLink = appUrl + '#token=' + encodeURIComponent(data.token);
       const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
       if (result) {
         result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
@@ -11266,10 +11308,10 @@ async function emergencyAutoBackup(){
       trips, expenses, fuel
     };
     let json = JSON.stringify(snapshot);
-    // Full dump fits — save it
+    // Full dump fits — save it (sessionStorage: cleared on tab close, not persisted to disk)
     if (json.length < 4_000_000){
-      localStorage.setItem('fl_emergency_backup', json);
-      localStorage.setItem('fl_emergency_backup_ts', String(now));
+      sessionStorage.setItem('fl_emergency_backup', json);
+      sessionStorage.setItem('fl_emergency_backup_ts', String(now));
     } else {
       // Full dump too large — fallback: save most recent records to preserve current work
       const recentTrips = trips.sort((a,b) => (b.created||0) - (a.created||0)).slice(0, 20);
@@ -11283,8 +11325,8 @@ async function emergencyAutoBackup(){
       };
       const partialJson = JSON.stringify(partial);
       if (partialJson.length < 4_000_000){
-        localStorage.setItem('fl_emergency_backup', partialJson);
-        localStorage.setItem('fl_emergency_backup_ts', String(now));
+        sessionStorage.setItem('fl_emergency_backup', partialJson);
+        sessionStorage.setItem('fl_emergency_backup_ts', String(now));
       }
       // If even partial is too large, we can't help — cloud backup is the safety net
     }
@@ -15497,21 +15539,21 @@ if (typeof window !== 'undefined'){
       try{ await checkQuarterlyExportReminder(); }catch(e){ console.warn("[FL]", e); }
       // v15.3.0: Check for emergency backup recovery
       try{
-        const emTs = Number(localStorage.getItem('fl_emergency_backup_ts') || 0);
+        const emTs = Number(sessionStorage.getItem('fl_emergency_backup_ts') || 0);
         const onb = await getOnboardState();
         if (onb.isEmpty && emTs > 0){
           const age = Math.floor((Date.now() - emTs) / 86400000);
           if (age < 30){
             const doRecover = confirm('Found emergency backup from ' + age + ' day(s) ago with data. Recover it?');
             if (doRecover){
-              const json = localStorage.getItem('fl_emergency_backup');
+              const json = sessionStorage.getItem('fl_emergency_backup');
               if (json){
                 const blob = new Blob([json], {type:'application/json'});
                 const file = new File([blob], 'recovery.json', {type:'application/json'});
                 await importJSON(file);
                 toast('Emergency backup recovered!');
-                localStorage.removeItem('fl_emergency_backup');
-                localStorage.removeItem('fl_emergency_backup_ts');
+                sessionStorage.removeItem('fl_emergency_backup');
+                sessionStorage.removeItem('fl_emergency_backup_ts');
                 await renderHome();
               }
             }
