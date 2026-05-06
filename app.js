@@ -13,7 +13,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.4.0';
+const APP_VERSION = '23.5.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -1398,7 +1398,10 @@ async function importJSON(file, opts={}){
       'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
       'vehicleYear','vehicleMake','laneReviewEnabled',
       // v23.4 F30/F31
-      'f30LastExportYear','f31TrendView']);
+      'f30LastExportYear','f31TrendView',
+      // v23.5 time-windows / blitz / auction / bid-log
+      'cvsaAlertsEnabled','opportunityCostEnabled','auctionUndercut',
+      'emptyDayThresholdHours','lastWinningBidStats']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     const isAllowedSettingsKey = k => ALLOWED_SETTINGS_KEYS.has(k) || k.startsWith('broker_note_') || k.startsWith('laneReviewDone_');
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && isAllowedSettingsKey(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
@@ -5545,8 +5548,8 @@ function usaScoreLoad(opts){
    ═══════════════════════════════════════════════════════════════ */
 
 const MW = {
-  mpg: 16.1,
-  fuelBaseline: 2.89,
+  mpg: 16.5,           // Field-confirmed 2016 Transit T250 (gas)
+  fuelBaseline: 4.28,  // Midwest gas spot ~May 2026; user override via settings
   weekTarget: { low: 3800, high: 4200, stretch: 5000 },
   monWed: { low: 2200, high: 2600 },
   thuFri: { low: 1200, high: 1600 },
@@ -5575,6 +5578,213 @@ const MW = {
   dzFloorRPM: 0.90,
   dzActivationDistanceMi: 1500,
 };
+
+// ════════════════════════════════════════════════════
+// TIME WINDOWS — Field-calibrated cargo-van auction-app
+// timing. Different from DAT TL behavior.
+// ════════════════════════════════════════════════════
+const TIME_WINDOWS = {
+  EARLY_MORNING: {
+    range: [5, 8],
+    label: 'Early Morning',
+    desc: 'High volume new posts, cheap bids dominate',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.20,
+    advice: 'Bid only at $1.40+. Volume is high but auction undercutting peaks here.',
+  },
+  MORNING: {
+    range: [8, 11],
+    label: 'Morning',
+    desc: 'Best matching window — pickups for same-day still negotiable',
+    cargoVanBias: 'firming',
+    expectedFloor: 1.35,
+    advice: 'Strongest acceptance window for fair-priced bids.',
+  },
+  MIDDAY: {
+    range: [11, 14],
+    label: 'Midday',
+    desc: 'Soft. Brokers wait. Drivers undercut.',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.20,
+    advice: 'Hold bids unless rate is already at $1.50+. Patience pays.',
+  },
+  AFTERNOON: {
+    range: [14, 17],
+    label: 'Afternoon',
+    desc: 'Premium emerges IF dry-van capacity is tight. Cargo van often lags 1 hr.',
+    cargoVanBias: 'mixed',
+    expectedFloor: 1.40,
+    advice: 'Watch for desperation posts. Verify with multi-broker check before assuming premium.',
+  },
+  DESPERATION: {
+    range: [17, 20],
+    label: 'Desperation',
+    desc: 'Brokers must move freight today. Real premium fires here on tight days.',
+    cargoVanBias: 'firm',
+    expectedFloor: 1.60,
+    advice: 'If $1.75+/mi appears, accept fast. Sub-60s decisions.',
+  },
+  EVENING: {
+    range: [20, 24],
+    label: 'Evening',
+    desc: 'Tomorrow-pickup posts at normal rates',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.35,
+    advice: 'Plan tomorrow. Bid only on geographic anchors.',
+  },
+};
+
+function getCurrentTimeWindow() {
+  const h = new Date().getHours();
+  for (const [key, w] of Object.entries(TIME_WINDOWS)) {
+    if (h >= w.range[0] && h < w.range[1]) return { key, ...w };
+  }
+  return { key: 'OVERNIGHT', label: 'Overnight', advice: 'Sleep. Hunt at 6 AM.', expectedFloor: 1.25, cargoVanBias: 'soft', desc: 'Overnight — market dormant' };
+}
+
+// ════════════════════════════════════════════════════
+// CVSA / BLITZ WEEK CALENDAR
+// Predictable 72-hour inspection blitzes. ~5–10% of
+// carriers park. Cargo van sees premium spike.
+// Source: cvsa.org official calendar
+// ════════════════════════════════════════════════════
+const CVSA_EVENTS_2026 = [
+  { name: 'International Roadcheck', start: '2026-05-12', end: '2026-05-14',
+    cargoVanPremiumMult: 1.15, peakDay: '2026-05-13' },
+  { name: 'Brake Safety Week', start: '2026-08-17', end: '2026-08-23',
+    cargoVanPremiumMult: 1.08, peakDay: '2026-08-19' },
+  { name: 'Operation Safe Driver Week', start: '2026-07-13', end: '2026-07-19',
+    cargoVanPremiumMult: 1.05, peakDay: '2026-07-15' },
+];
+
+function getActiveCVSAEvent(today = new Date()) {
+  const d = today.toISOString().slice(0, 10);
+  for (const e of CVSA_EVENTS_2026) {
+    if (d >= e.start && d <= e.end) return { ...e, status: 'active' };
+    const preStart = new Date(e.start);
+    preStart.setDate(preStart.getDate() - 5);
+    const preStartStr = preStart.toISOString().slice(0, 10);
+    if (d >= preStartStr && d < e.start) return { ...e, status: 'pre' };
+  }
+  return null;
+}
+
+function getBlitzAdjustedFloor(baseFloor) {
+  const ev = getActiveCVSAEvent();
+  if (!ev) return baseFloor;
+  if (ev.status === 'active') return Math.round((baseFloor * ev.cargoVanPremiumMult) * 100) / 100;
+  if (ev.status === 'pre')    return Math.round((baseFloor * 1.05) * 100) / 100;
+  return baseFloor;
+}
+
+// ════════════════════════════════════════════════════
+// OPPORTUNITY COST — DZ commitments during blitz prep
+// or weekly peak windows forfeit premium revenue.
+// ════════════════════════════════════════════════════
+function computeOpportunityCost(loadMiles, daysCommitted, today = new Date()) {
+  const NORMAL_DAILY_REV = 600;
+  const ev = getActiveCVSAEvent(today);
+  const blitzMult = ev?.status === 'active' ? 1.4 : ev?.status === 'pre' ? 1.15 : 1.0;
+  const expectedNormalRev = NORMAL_DAILY_REV * daysCommitted * blitzMult;
+  return Math.round(expectedNormalRev);
+}
+
+function evaluateLoadWithOpportunityCost(grossPay, loadMiles, daysCommitted) {
+  const opCost = computeOpportunityCost(loadMiles, daysCommitted);
+  const netAfterOpCost = grossPay - opCost;
+  const realRate = loadMiles > 0 ? netAfterOpCost / loadMiles : 0;
+  return { grossPay, opportunityCost: opCost, netAfterOpCost, realRate };
+}
+
+// ════════════════════════════════════════════════════
+// AUCTION APP STRATEGY — Sylectus / 123LoadBoard /
+// Truckstop Auction. Race-to-bottom dynamics differ
+// from DAT broker-direct.
+// ════════════════════════════════════════════════════
+const AUCTION_RULES = {
+  postedTargetIsCeiling: true,
+  winningBidTypicalDiscount: 0.92,
+  walkAfterMinutes: 30,
+  multiPostDumpThreshold: 3,
+};
+
+function suggestAuctionBid(postedTarget, marketRate, urgency = 'normal') {
+  if (!Number.isFinite(postedTarget)) return null;
+  const undercut = urgency === 'high' ? 0.96 : urgency === 'low' ? 0.90 : AUCTION_RULES.winningBidTypicalDiscount;
+  const suggested = Math.round(postedTarget * undercut);
+  const minFloor = Math.round(postedTarget * 0.85);
+  return {
+    ceiling: postedTarget,
+    suggested,
+    minFloor,
+    rationale: `Auction posts: bid ~${Math.round((1 - undercut) * 100)}% below target ($${suggested}). Posting target ($${postedTarget}) usually loses.`,
+  };
+}
+
+function detectDesperationDump(broker, destination, recentPosts) {
+  const matches = recentPosts.filter(p =>
+    (p.broker || '').toLowerCase() === (broker || '').toLowerCase() &&
+    (p.destination || '').toLowerCase().includes((destination || '').toLowerCase())
+  );
+  return matches.length >= AUCTION_RULES.multiPostDumpThreshold;
+}
+
+// ════════════════════════════════════════════════════
+// EMPTY-DAY DECISION TREE — After N hours of zero
+// accepts, gives clear stay / go-home / take-DZ
+// guidance accounting for fuel, hotel, and blitz prep.
+// ════════════════════════════════════════════════════
+function emptyDayDecision({
+  hoursHunting,
+  bidsAttempted,
+  bidsAccepted,
+  currentCity,
+  homeBaseDistMi,
+  fuelCostHome,
+  hotelCostEstimate = 75,
+  hourOfDay,
+  daysToBlitzPeak,
+}) {
+  const window = getCurrentTimeWindow();
+  const isInDesperationWindow = window.key === 'DESPERATION' || window.key === 'AFTERNOON';
+
+  if (isInDesperationWindow && hoursHunting < 7 && hourOfDay < 19) {
+    return {
+      verdict: 'HOLD',
+      reason: 'Still in desperation window. Premium can fire at any moment.',
+      action: 'Maintain position. Filter aggressively. Do not bid below $1.40.',
+    };
+  }
+
+  const hotelSaves = fuelCostHome - hotelCostEstimate;
+  if (hourOfDay >= 19 || hoursHunting >= 6) {
+    if (hotelSaves > 0 && daysToBlitzPeak !== null && daysToBlitzPeak > 1) {
+      return {
+        verdict: 'STAY_OVERNIGHT',
+        reason: `Hotel ($${hotelCostEstimate}) beats fuel home ($${fuelCostHome}). Save $${hotelSaves}.`,
+        action: `Find lodging in ${currentCity} area. Reset 5 AM tomorrow in this hub.`,
+      };
+    }
+    if (homeBaseDistMi < 200) {
+      return {
+        verdict: 'GO_HOME',
+        reason: 'Close to home base. DH cheaper than hotel. Reset properly.',
+        action: 'Run home empty. Sleep in own bed. Fresh hunt tomorrow.',
+      };
+    }
+    return {
+      verdict: 'STAY_OVERNIGHT',
+      reason: 'Far from home + late in day. Hotel preserves blitz week positioning.',
+      action: `Find lodging in ${currentCity}. Resume hunt 5 AM.`,
+    };
+  }
+
+  return {
+    verdict: 'CONTINUE',
+    reason: 'Window still has time. Hunt continues.',
+    action: 'Refresh board every 5 min. Filter to ≥$1.40/mi within 500mi of base.',
+  };
+}
 
 function getMWWeekTarget(){
   const userGoal = Number(getCachedSetting('weeklyGoal', 0) || 0);
@@ -11742,6 +11952,65 @@ async function _savePostTripReview(trip, answers){
   } catch(e){ console.warn('[FL] _savePostTripReview:', e); }
 }
 
+// ════════════════════════════════════════════════════
+// BID OUTCOME LOG — Track every bid placed, win/loss,
+// and posted-target-vs-bid spread. Builds learning data.
+// ════════════════════════════════════════════════════
+async function logBid({ loadId, broker, origin, destination, miles, postedTarget, bidAmount, outcome }) {
+  const id = `bid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const record = {
+    id,
+    loadId: clampStr(loadId || '', 60),
+    broker: clampStr(broker || '', 80),
+    origin: clampStr(origin || '', 80),
+    destination: clampStr(destination || '', 80),
+    miles: posNum(miles),
+    postedTarget: posNum(postedTarget),
+    bidAmount: posNum(bidAmount),
+    spread: posNum(postedTarget) - posNum(bidAmount),
+    bidRPM: posNum(miles) > 0 ? posNum(bidAmount) / posNum(miles) : 0,
+    outcome: ['won', 'expired', 'rejected'].includes(outcome) ? outcome : 'expired',
+    timestamp: Date.now(),
+    timeWindow: getCurrentTimeWindow().key,
+  };
+  validateRecordSize(record, 'bidOutcome');
+  const { stores } = tx('bidHistory', 'readwrite');
+  await idbReq(stores.bidHistory.add(record));
+  return record;
+}
+
+async function getBidWinRateStats(daysBack = 30) {
+  const cutoff = Date.now() - daysBack * 86400000;
+  const { stores } = tx('bidHistory');
+  const all = await idbReq(stores.bidHistory.getAll());
+  const recent = all.filter(b => b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
+  const won = recent.filter(b => b.outcome === 'won');
+  const winningSpreads = won.map(b => b.spread / b.postedTarget);
+  const avgWinningDiscount = winningSpreads.length > 0
+    ? winningSpreads.reduce((a, v) => a + v, 0) / winningSpreads.length
+    : 0;
+  const byWindow = {};
+  for (const b of recent) {
+    const wk = b.timeWindow || 'UNKNOWN';
+    if (!byWindow[wk]) byWindow[wk] = { total: 0, wins: 0 };
+    byWindow[wk].total++;
+    if (b.outcome === 'won') byWindow[wk].wins++;
+  }
+  let bestWindow = null, bestWinRate = -1;
+  for (const [wk, s] of Object.entries(byWindow)) {
+    const wr = s.total > 0 ? s.wins / s.total : 0;
+    if (wr > bestWinRate) { bestWinRate = wr; bestWindow = wk; }
+  }
+  return {
+    totalBids: recent.length,
+    wins: won.length,
+    winRate: recent.length > 0 ? won.length / recent.length : 0,
+    avgWinningDiscount,
+    bestWindow,
+    byWindow,
+  };
+}
+
 // ================================================================================
 // F30 — Tax Season Export (v23.4.0)
 // Annual Schedule C summary + per-trip mileage log. Year-selector covers current
@@ -14442,11 +14711,36 @@ async function renderPositioningCard(overrideCity, isExploring) {
   const tripWord = patterns.totalTrips === 1 ? 'trip' : 'trips';
   const confidenceLine = `<div style="font-size:12px;color:var(--text-tertiary);margin-top:10px">Based on ${patterns.totalTrips} ${tripWord} from this market</div>`;
 
+  // Time-window line
+  const tw = getCurrentTimeWindow();
+  const twBiasColor = tw.cargoVanBias === 'firm' || tw.cargoVanBias === 'firming'
+    ? 'var(--good)' : tw.cargoVanBias === 'mixed' ? 'var(--warn)' : 'var(--text-secondary)';
+  const timeWindowHtml = `<div style="font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+    <span style="opacity:.6">\u23F0</span>
+    <span style="color:${twBiasColor};font-weight:600">${escapeHtml(tw.label)}</span>
+    <span style="color:var(--text-tertiary)">\u00B7 ${escapeHtml(tw.desc)}</span>
+  </div>`;
+
+  // CVSA / blitz banner
+  let cvsaBannerHtml = '';
+  const cvsaAlertsOn = (await getSetting('cvsaAlertsEnabled', true)) !== false;
+  if (cvsaAlertsOn) {
+    const cvsaEv = getActiveCVSAEvent();
+    if (cvsaEv) {
+      const cvsaMsg = cvsaEv.status === 'active'
+        ? `\u26A0\uFE0F CVSA ${escapeHtml(cvsaEv.name)} ACTIVE (${escapeHtml(cvsaEv.start)}\u2013${escapeHtml(cvsaEv.end)}) \u2014 Cargo van premium expected. Hold Midwest position.`
+        : `\u26A0\uFE0F CVSA ${escapeHtml(cvsaEv.name)} in ${Math.ceil((new Date(cvsaEv.start) - new Date()) / 86400000)} days (${escapeHtml(cvsaEv.start)}) \u2014 Pre-blitz premium building.`;
+      cvsaBannerHtml = `<div style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.30);font-size:12px;color:var(--warn)">${cvsaMsg}</div>`;
+    }
+  }
+
   // Render card
   const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
   card.innerHTML = `<div class="card" style="padding:16px 14px">
     <div style="font-size:16px;font-weight:700;margin-bottom:2px">\uD83D\uDCCD YOUR POSITION: ${escapeHtml(cityDisplay)}</div>
-    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">${marketSub}</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">${marketSub}</div>
+    ${timeWindowHtml}
+    ${cvsaBannerHtml}
     <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
       <div style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(command)}</div>
       <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
