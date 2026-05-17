@@ -1,19 +1,17 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.4.0 USA ENGINE — Driver Command Upgrade
- *  Market Feed + Tomorrow Signal + Strategic Floor (A-E)
- *  v23.4.0: Driver Command Strip, F26 Setup Wizard, F27 Unified Load Intake,
- *           F28 Diagnostics Panel, F29 Lane/Broker Review, Enhanced Recurring Expenses
- *  v23.2.0: audit fixes — True RPM naming, duplicate voice-load removal, SW auto-SKIP_WAITING removed, chunked base64 encryption, AI prompt correction
- *  v23: Proactive Positioning Engine (F24)
+/** FreightLogic v23.1.1 USA ENGINE
+ *  v23.1.1: Ω Calculator HTML cards + Net column, DZ flag, SW cache-buster fix
+ *  v23.1.0: Vehicle Maintenance Tracker (F25), Stabilization
+ *  v23.0.0: Proactive Positioning Engine (F24), Market Feed, Tomorrow Signal, Strategic Floor (A-E)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
  *  v21: Auto-tracking, Cloud Sync Hardening, Workflow/Docs, Live-Data (EIA/NWS/FMCSA/CBP)
  *  v18.2: OpenAI load evaluation, auto-update bridge, session-scoped credentials,
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.5.0';
+const APP_VERSION = '23.1.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -7356,6 +7354,7 @@ async function mwInit(){
 }
 
 let omegaBound = false;
+let omegaLastResult = null; // cached for Save to Bid History
 
 function omegaTierForMiles(m){
   if (m <= 180) return 0; if (m <= 350) return 1; if (m <= 600) return 2; if (m <= 900) return 3; return 4;
@@ -7368,11 +7367,6 @@ const OMEGA_TIERS = [
   { name:'Ultra-Long (901+)', premium:{min:1.48,max:null}, ideal:{min:1.38,max:1.47}, strong:{min:1.30,max:1.37}, floor:{min:1.24,max:1.29}, under:{min:1.18,max:1.23}, underCond:'deadhead replacement only' }
 ];
 
-function omegaFormatMoneyRange(miles, rpmRange){
-  const min$ = Math.round(miles * rpmRange.min);
-  if (rpmRange.max == null) return `${fmtMoney(min$)} (${rpmRange.min.toFixed(2)} RPM)`;
-  return `${fmtMoney(min$)}–${fmtMoney(Math.round(miles * rpmRange.max))} (${rpmRange.min.toFixed(2)}–${rpmRange.max.toFixed(2)} RPM)`;
-}
 function omegaShiftOneTierLower(t){
   return { name: t.name + ' (Erosion)', premium:{...t.ideal}, ideal:{...t.strong}, strong:{...t.floor},
     floor:{...t.under}, under:{min:Math.max(0,t.under.min-0.05), max:t.under.max==null?null:Math.max(0,t.under.max-0.05)}, underCond:t.underCond };
@@ -7381,38 +7375,122 @@ function omegaApplyAdder(r, add){
   return { min:+(r.min+add).toFixed(2), max:r.max==null?null:+(r.max+add).toFixed(2) };
 }
 
-const OMEGA_DEFAULT = 'Premium Win: $___ (___ RPM)\nIdeal Target: $___ (___ RPM)\nStrong Accept: $___ (___ RPM)\nFloor Accept: $___ (___ RPM)\nStrategic Under-Floor: $___ (___ RPM – conditional only)';
+function omegaNetRange(miles, rpmRange, fuelPx, mpg, opCpm){
+  const fuelCpm = (mpg > 0 && fuelPx > 0) ? (fuelPx / mpg) : 0;
+  const totalCpm = fuelCpm + (opCpm || 0);
+  const grossLow = miles * rpmRange.min;
+  const grossHigh = rpmRange.max == null ? null : miles * rpmRange.max;
+  const totalCost = miles * totalCpm;
+  return {
+    netLow: grossLow - totalCost,
+    netHigh: grossHigh == null ? null : grossHigh - totalCost,
+    netRpmLow: rpmRange.min - totalCpm,
+    netRpmHigh: rpmRange.max == null ? null : rpmRange.max - totalCpm,
+    costCpm: totalCpm,
+    fuelCpm,
+    opCpm: opCpm || 0,
+  };
+}
 
-function omegaCompute(){
+function omegaFormatRevenue(miles, rpmRange){
+  const lo = Math.round(miles * rpmRange.min);
+  if (rpmRange.max == null) return `${fmtMoney(lo)}+`;
+  return `${fmtMoney(lo)}–${fmtMoney(Math.round(miles * rpmRange.max))}`;
+}
+function omegaFormatRpm(rpmRange){
+  if (rpmRange.max == null) return `${rpmRange.min.toFixed(2)}+`;
+  return `${rpmRange.min.toFixed(2)}–${rpmRange.max.toFixed(2)}`;
+}
+function omegaFormatNet(netInfo){
+  const lo = Math.round(netInfo.netLow);
+  if (netInfo.netHigh == null) return `${fmtMoney(lo)}+`;
+  return `${fmtMoney(lo)}–${fmtMoney(Math.round(netInfo.netHigh))}`;
+}
+
+function omegaRenderCard(label, miles, rpmRange, netInfo, color, cond){
+  const belowHardFloor = rpmRange.min < 1.25;
+  const dzTag = belowHardFloor
+    ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,140,66,0.12);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px;line-height:1.4"><b style="color:#ff8c42">DZ-ONLY</b> — sub-$1.25 RPM. Verify in Load Evaluator (requires 1500+ mi from home + directional benefit + no $1.25+ reload within 120mi).</div>`
+    : '';
+  const condLine = cond ? `<div class="muted" style="font-size:11px;margin-top:4px">${escapeHtml(cond)}</div>` : '';
+  return `
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;border-left:3px solid ${color}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <b style="color:${color};font-size:13px">${escapeHtml(label)}</b>
+        <span class="mono" style="font-size:11px;color:var(--muted)">${omegaFormatRpm(rpmRange)} RPM</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;font-size:13px">
+        <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Revenue</div><b>${omegaFormatRevenue(miles, rpmRange)}</b></div>
+        <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Net</div><b>${omegaFormatNet(netInfo)}</b></div>
+      </div>
+      ${condLine}${dzTag}
+    </div>`;
+}
+
+async function omegaCompute(){
   const miles = Math.max(0, numVal('omMiles', 0));
   const empty = Math.max(0, numVal('omEmpty', 0));
-  const dropTier = Number($('#omDropTier').value || 1);
+  const dropTier = Number($('#omDropTier')?.value || 1);
   const delayPct = Math.max(0, numVal('omDelayPct', 0));
-  const overnight = $('#omOvernight').checked;
-  const over250 = $('#om250').checked;
-  const risk = $('#omRisk').value;
+  const overnight = !!$('#omOvernight')?.checked;
+  const over250 = !!$('#om250')?.checked;
+  const risk = $('#omRisk')?.value || 'none';
+  const dayOfWeek = $('#omDayOfWeek')?.value || 'mon';
+  const loadNotes = ($('#omLoadNotes')?.value || '').trim();
   const day3Gross = Math.max(0, numVal('omDay3Gross', 0));
-  const erosionOk = $('#omErosionOk').checked;
+  const erosionOk = !!$('#omErosionOk')?.checked;
+  const out = $('#omOutput');
+  if (!out) return;
 
-  // P2-4: save inputs
-  setSetting('omegaLastInputs', { miles, empty, dropTier, delayPct, overnight, over250, risk, day3Gross, erosionOk }).catch(()=>{});
+  setSetting('omegaLastInputs', { miles, empty, dropTier, delayPct, overnight, over250, risk, dayOfWeek, loadNotes, day3Gross, erosionOk }).catch(()=>{});
 
-  if (!miles || miles <= 0){ $('#omOutput').textContent = OMEGA_DEFAULT; toast('Enter all-in miles.'); return; }
+  if (!miles || miles <= 0){
+    out.innerHTML = '<div class="muted" style="font-size:13px;padding:18px 4px">Enter total miles to see tier-based bid ranges with net revenue projections.</div>';
+    const saveBtn = $('#omSaveBidBtn'); if (saveBtn) saveBtn.style.display = 'none';
+    toast('Enter total miles.');
+    return;
+  }
+
+  const fuelPx = Number(await getSetting('fuelPrice', MW.fuelBaseline) || MW.fuelBaseline);
+  const mpg = Number(await getSetting('vehicleMpg', MW.mpg) || MW.mpg);
+  const opCpm = Number(await getSetting('opCostPerMile', 0) || 0);
+
+  const weekTarget = getMWWeekTarget();
+  const erosionThreshold = Math.round(weekTarget.low * 0.5);
 
   let tierIndex = omegaTierForMiles(miles);
   if (delayPct >= 15) tierIndex = Math.min(4, tierIndex + 1);
   let tier = OMEGA_TIERS[tierIndex];
-  if (erosionOk && day3Gross > 0 && day3Gross < 2000) tier = omegaShiftOneTierLower(tier);
+  let erosionApplied = false;
+  if (erosionOk && day3Gross > 0 && day3Gross < erosionThreshold){
+    tier = omegaShiftOneTierLower(tier);
+    erosionApplied = true;
+  }
 
   let add = 0;
-  if (dropTier === 3) add += 0.10;
+  const adderNotes = [];
+  if (dropTier === 3){ add += 0.10; adderNotes.push('+0.10 Tier-3 drop'); }
+  if (risk === 'mod'){ add += 0.05; adderNotes.push('+0.05 moderate weather'); }
+  if (risk === 'winter'){ add += 0.10; adderNotes.push('+0.10 winter advisory'); }
+  if (risk === 'ice'){ add += 0.15; adderNotes.push('+0.15 ice/storm'); }
+
+  const urgency = detectUrgency(loadNotes);
+  let urgencyAdd = 0;
+  if (urgency && urgency.isUrgent){
+    urgencyAdd = Math.min(0.15, Number(urgency.boost || 0));
+    if (urgencyAdd > 0){
+      add += urgencyAdd;
+      adderNotes.push(`+${urgencyAdd.toFixed(2)} urgency (${(urgency.matches || []).slice(0,2).join(', ') || 'detected'})`);
+    }
+  }
+
+  const isLateWeek = (dayOfWeek === 'thu' || dayOfWeek === 'fri');
+  const isWeekend = (dayOfWeek === 'sat' || dayOfWeek === 'sun');
+
   let trapLine = '';
-  if (risk === 'mod') add += 0.05;
-  if (risk === 'winter') add += 0.10;
-  if (risk === 'ice') add += 0.15;
   if (risk === 'closure') trapLine = 'Trap: Major closure risk — PASS unless Premium Win';
   else if (overnight || over250 || add > 0){
-    trapLine = add > 0 ? `Trap: Risk adder applied (+${add.toFixed(2)} RPM)` : 'Trap: Risk protocol required (weather/511/metro check)';
+    trapLine = add > 0 ? `Adders applied: ${adderNotes.join(', ')}` : 'Risk protocol required (weather/511/metro check)';
   }
 
   const p = omegaApplyAdder(tier.premium, add);
@@ -7424,19 +7502,83 @@ function omegaCompute(){
   let underCond = tier.underCond || '';
   if (tierIndex === 0){
     underCond = (empty > 20 || dropTier !== 1)
-      ? 'conditional only (does NOT qualify: requires ≤20 empty & Tier-1 drop)'
-      : 'conditional only (qualifies: ≤20 empty & Tier-1 drop)';
-  } else underCond = `conditional only (${underCond})`;
+      ? 'Conditional: requires ≤20 empty & Tier-1 drop (NOT met)'
+      : 'Conditional: ≤20 empty & Tier-1 drop ✓';
+  } else underCond = `Conditional: ${underCond}`;
 
-  const lines = [
-    `Premium Win: ${omegaFormatMoneyRange(miles, p)}`,
-    `Ideal Target: ${omegaFormatMoneyRange(miles, i)}`,
-    `Strong Accept: ${omegaFormatMoneyRange(miles, s)}`,
-    `Floor Accept: ${omegaFormatMoneyRange(miles, f)}`,
-    `Strategic Under-Floor: ${omegaFormatMoneyRange(miles, u)} – ${underCond}`
+  const pNet = omegaNetRange(miles, p, fuelPx, mpg, opCpm);
+  const iNet = omegaNetRange(miles, i, fuelPx, mpg, opCpm);
+  const sNet = omegaNetRange(miles, s, fuelPx, mpg, opCpm);
+  const fNet = omegaNetRange(miles, f, fuelPx, mpg, opCpm);
+  const uNet = omegaNetRange(miles, u, fuelPx, mpg, opCpm);
+
+  const headerLines = [
+    `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+      <b style="font-size:13px">${escapeHtml(tier.name)}</b>
+      <span class="muted" style="font-size:11px">${miles}mi · ${fmtMoney(pNet.costCpm)}/mi cost (fuel $${fuelPx.toFixed(2)}, ${mpg}mpg, op ${fmtMoney(opCpm)})</span>
+    </div>`
   ];
-  if (trapLine) lines.push('', trapLine);
-  $('#omOutput').textContent = lines.join('\n');
+  if (erosionApplied) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Erosion mode active</b> — day-3 gross ${fmtMoney(day3Gross)} below ${fmtMoney(erosionThreshold)} threshold (50% of weekly low ${fmtMoney(weekTarget.low)}). Tier shifted one level down.</div>`);
+  if (isLateWeek) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(99,102,241,0.1);border-left:3px solid var(--accent);border-radius:4px;font-size:11px"><b>${dayOfWeek === 'thu' ? 'Thursday' : 'Friday'} window</b> — late-week target ${fmtMoney(MW.thuFri.low)}–${fmtMoney(MW.thuFri.high)}. Stretch acceptable if weekly low not hit.</div>`);
+  if (isWeekend) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Weekend operations</b> — low board, reload thin. Bid for premium or hold.</div>`);
+
+  const cards = [
+    omegaRenderCard('Premium Win', miles, p, pNet, 'var(--accent-text)', null),
+    omegaRenderCard('Ideal Target', miles, i, iNet, 'var(--good)', null),
+    omegaRenderCard('Strong Accept', miles, s, sNet, 'var(--text)', null),
+    omegaRenderCard('Floor Accept', miles, f, fNet, '#ff8c42', null),
+    omegaRenderCard('Strategic Under-Floor', miles, u, uNet, 'var(--warn)', underCond),
+  ];
+  if (trapLine){
+    cards.push(`<div class="card" style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);font-size:12px">${escapeHtml(trapLine)}</div>`);
+  }
+
+  out.innerHTML = headerLines.join('') + cards.join('');
+
+  omegaLastResult = {
+    miles, empty, dropTier, delayPct, dayOfWeek, risk, overnight, over250,
+    loadNotes, day3Gross, erosionApplied, tierName: tier.name,
+    bands: { premium: p, ideal: i, strong: s, floor: f, under: u },
+    nets: { premium: pNet, ideal: iNet, strong: sNet, floor: fNet, under: uNet },
+    adders: { total: add, notes: adderNotes },
+    urgency: urgency && urgency.isUrgent ? { boost: urgencyAdd, matches: urgency.matches } : null,
+    fuelPx, mpg, opCpm,
+  };
+  const saveBtn = $('#omSaveBidBtn');
+  if (saveBtn) saveBtn.style.display = 'inline-flex';
+}
+
+async function omegaSaveToBidHistory(){
+  if (!omegaLastResult) return toast('Run Calculate first.', true);
+  try {
+    const { t: txn, stores } = tx('bidHistory', 'readwrite');
+    const id = 'omega_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const record = {
+      id,
+      broker: '',
+      lane: '',
+      date: new Date().toISOString().slice(0, 10),
+      created: Date.now(),
+      updatedAt: Date.now(),
+      source: 'omega_calc',
+      miles: omegaLastResult.miles,
+      empty: omegaLastResult.empty,
+      tierName: omegaLastResult.tierName,
+      idealRpmMin: omegaLastResult.bands.ideal.min,
+      idealRpmMax: omegaLastResult.bands.ideal.max,
+      floorRpmMin: omegaLastResult.bands.floor.min,
+      adders: omegaLastResult.adders.total,
+      adderNotes: omegaLastResult.adders.notes.join('; '),
+      urgency: omegaLastResult.urgency,
+      dayOfWeek: omegaLastResult.dayOfWeek,
+      notes: omegaLastResult.loadNotes,
+    };
+    await idbReq(stores.bidHistory.put(record));
+    toast('Bid recommendation saved to history');
+  } catch(e){
+    console.warn('[FL] omega save', e);
+    toast('Save failed', true);
+  }
 }
 
 async function renderOmega(){
@@ -7451,28 +7593,37 @@ async function renderOmega(){
   await mwInit();
   if (!omegaBound){
     omegaBound = true;
-    $('#omCalcBtn').addEventListener('click', omegaCompute);
-    $('#omResetBtn').addEventListener('click', () => {
-      ['omMiles','omEmpty','omDelayPct','omDay3Gross'].forEach(id => { const el = $('#'+id); if (el) el.value=''; });
-      $('#omDropTier').value='1'; $('#omRisk').value='none';
-      $('#omOvernight').checked=false; $('#om250').checked=false; $('#omErosionOk').checked=false;
-      $('#omOutput').textContent = OMEGA_DEFAULT;
+    $('#omCalcBtn')?.addEventListener('click', omegaCompute);
+    $('#omSaveBidBtn')?.addEventListener('click', omegaSaveToBidHistory);
+    $('#omResetBtn')?.addEventListener('click', () => {
+      ['omMiles','omEmpty','omDelayPct','omDay3Gross','omLoadNotes'].forEach(id => { const el = $('#'+id); if (el) el.value=''; });
+      const dt = $('#omDropTier'); if (dt) dt.value='1';
+      const rk = $('#omRisk'); if (rk) rk.value='none';
+      const dow = $('#omDayOfWeek'); if (dow) dow.value='mon';
+      const ov = $('#omOvernight'); if (ov) ov.checked=false;
+      const o250 = $('#om250'); if (o250) o250.checked=false;
+      const er = $('#omErosionOk'); if (er) er.checked=false;
+      const out = $('#omOutput');
+      if (out) out.innerHTML = '<div class="muted" style="font-size:13px;padding:18px 4px">Enter total miles to see tier-based bid ranges with net revenue projections.</div>';
+      const saveBtn = $('#omSaveBidBtn'); if (saveBtn) saveBtn.style.display = 'none';
+      omegaLastResult = null;
       setSetting('omegaLastInputs', null).catch(()=>{});
     });
-    // P2-4: restore last inputs
+    // Restore last inputs
     const last = await getSetting('omegaLastInputs', null);
     if (last && typeof last === 'object'){
-      if (last.miles) $('#omMiles').value = last.miles;
-      if (last.empty) $('#omEmpty').value = last.empty;
-      if (last.dropTier) $('#omDropTier').value = last.dropTier;
-      if (last.delayPct) $('#omDelayPct').value = last.delayPct;
-      if (last.overnight) $('#omOvernight').checked = true;
-      if (last.over250) $('#om250').checked = true;
-      if (last.risk) $('#omRisk').value = last.risk;
-      if (last.day3Gross) $('#omDay3Gross').value = last.day3Gross;
-      if (last.erosionOk) $('#omErosionOk').checked = true;
+      if (last.miles) { const el = $('#omMiles'); if (el) el.value = last.miles; }
+      if (last.empty) { const el = $('#omEmpty'); if (el) el.value = last.empty; }
+      if (last.dropTier) { const el = $('#omDropTier'); if (el) el.value = last.dropTier; }
+      if (last.delayPct) { const el = $('#omDelayPct'); if (el) el.value = last.delayPct; }
+      if (last.dayOfWeek) { const el = $('#omDayOfWeek'); if (el) el.value = last.dayOfWeek; }
+      if (last.loadNotes) { const el = $('#omLoadNotes'); if (el) el.value = last.loadNotes; }
+      if (last.overnight) { const el = $('#omOvernight'); if (el) el.checked = true; }
+      if (last.over250) { const el = $('#om250'); if (el) el.checked = true; }
+      if (last.risk) { const el = $('#omRisk'); if (el) el.value = last.risk; }
+      if (last.day3Gross) { const el = $('#omDay3Gross'); if (el) el.value = last.day3Gross; }
+      if (last.erosionOk) { const el = $('#omErosionOk'); if (el) el.checked = true; }
     }
-    $('#omOutput').textContent = OMEGA_DEFAULT;
   }
   // Render top lanes
   await renderTopLanes();
