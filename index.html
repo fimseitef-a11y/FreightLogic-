@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.5.0">
+  <link rel="manifest" href="manifest.json?v=23.1.1">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -1149,10 +1149,25 @@
       <!-- ── Hidden sub-panels: Ω Tiers & Market Board (used by More tiles) ── -->
       <div id="mwTabEval" class="mw-tab-panel" style="display:none"></div>
       <div id="mwTabOmega" class="mw-tab-panel" style="display:none;margin-top:12px">
-        <div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:12px">All pricing based on <b>ALL miles</b>. Outputs are locked format.</div></div>
+        <div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:12px">Pricing reflects <b>total miles (loaded + empty)</b>. Net columns subtract fuel + operating cost.</div></div>
         <div class="grid2">
-          <div class="card"><h3>Inputs</h3><div class="field"><label>All-in miles</label><input id="omMiles" inputmode="numeric" placeholder="e.g. 420" /></div><div class="field"><label>Empty miles</label><input id="omEmpty" inputmode="numeric" placeholder="e.g. 15" /></div><div class="field"><label>Drop tier</label><select id="omDropTier"><option value="1">Tier-1 (dense)</option><option value="2">Tier-2 (controlled)</option><option value="3">Tier-3 (thin/rural)</option></select></div><div class="field"><label>Drive time increase %</label><input id="omDelayPct" inputmode="decimal" placeholder="e.g. 0 or 15" /><div class="muted" style="margin-top:4px;font-size:11px">≥15% = next mileage tier up</div></div><div class="field"><label>Risk conditions</label><div class="grid2" style="margin-top:8px"><label class="chk"><input type="checkbox" id="omOvernight"> Overnight</label><label class="chk"><input type="checkbox" id="om250"> Over 250 mi</label></div><div style="margin-top:8px"><select id="omRisk"><option value="none">No risk adder</option><option value="mod">Moderate rain/wind (+0.05)</option><option value="winter">Winter advisory (+0.10)</option><option value="ice">Ice / storm (+0.15)</option><option value="closure">Major closure (PASS)</option></select></div></div><div class="field"><label>Day-3 weekly gross</label><input id="omDay3Gross" inputmode="decimal" placeholder="e.g. 1800" /><label class="chk" style="margin-top:8px"><input type="checkbox" id="omErosionOk"> Allow lower if &lt;$2k</label></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" id="omCalcBtn">Calculate</button><button class="btn" id="omResetBtn">Reset</button></div></div>
-          <div class="card"><h3>Locked Output</h3><pre id="omOutput" class="mono" style="white-space:pre-wrap;margin:0;min-height:240px"></pre></div>
+          <div class="card"><h3>Inputs</h3>
+            <div class="field"><label>Total miles (loaded + empty)</label><input id="omMiles" inputmode="numeric" placeholder="e.g. 420" /></div>
+            <div class="field"><label>Empty miles</label><input id="omEmpty" inputmode="numeric" placeholder="e.g. 15" /></div>
+            <div class="field"><label>Drop tier</label><select id="omDropTier"><option value="1">Tier-1 (dense)</option><option value="2">Tier-2 (controlled)</option><option value="3">Tier-3 (thin/rural)</option></select></div>
+            <div class="field"><label>Day of week</label><select id="omDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select></div>
+            <div class="field"><label>Drive time increase %</label><input id="omDelayPct" inputmode="decimal" placeholder="e.g. 0 or 15" /><div class="muted" style="margin-top:4px;font-size:11px">≥15% = next mileage tier up</div></div>
+            <div class="field"><label>Risk conditions</label>
+              <div class="grid2" style="margin-top:8px"><label class="chk"><input type="checkbox" id="omOvernight"> Overnight</label><label class="chk"><input type="checkbox" id="om250"> Over 250 mi</label></div>
+              <div style="margin-top:8px"><select id="omRisk"><option value="none">No risk adder</option><option value="mod">Moderate rain/wind (+0.05)</option><option value="winter">Winter advisory (+0.10)</option><option value="ice">Ice / storm (+0.15)</option><option value="closure">Major closure (PASS)</option></select></div>
+            </div>
+            <div class="field"><label>Load notes (urgency detection)</label><textarea id="omLoadNotes" rows="2" placeholder="e.g. hot load, must deliver today, team driver needed" style="width:100%;font-size:13px"></textarea></div>
+            <div class="field"><label>Day-3 weekly gross (erosion check)</label><input id="omDay3Gross" inputmode="decimal" placeholder="e.g. 1800" /><label class="chk" style="margin-top:8px"><input type="checkbox" id="omErosionOk"> Allow lower tier if below 50% of weekly goal</label></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary" id="omCalcBtn">Calculate</button><button class="btn" id="omResetBtn">Reset</button><button class="btn" id="omSaveBidBtn" style="display:none">Save to Bid History</button></div>
+          </div>
+          <div class="card"><h3>Bid Recommendations</h3>
+            <div id="omOutput" style="min-height:240px"><div class="muted" style="font-size:13px;padding:18px 4px">Enter total miles to see tier-based bid ranges with net revenue projections.</div></div>
+          </div>
         </div>
       </div>
       <div id="mwTabBoard" class="mw-tab-panel" style="display:none;margin-top:12px">
@@ -1250,8 +1265,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.5.0"></script>
-  <script src="voice-load.js?v=23.5.0"></script>
-  <script src="sw-bridge.js?v=23.5.0"></script>
+  <script src="app.js?v=23.1.1"></script>
+  <script src="voice-load.js?v=23.1.1"></script>
+  <script src="sw-bridge.js?v=23.1.1"></script>
 </body>
 </html>
