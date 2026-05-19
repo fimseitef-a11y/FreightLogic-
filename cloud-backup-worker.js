@@ -147,6 +147,34 @@ export default {
           return json({ ok: true, userId: rotateId, token: newToken, rotatedAt: new Date().toISOString() }, 200, cors);
         }
 
+        // POST /admin/push/send — send push notification to a specific user (or all)
+        if (request.method === 'POST' && path === '/admin/push/send') {
+          const body = await request.json().catch(() => ({}));
+          const title = String(body.title || 'Freight Logic').slice(0, 80);
+          const msg   = String(body.body  || '').slice(0, 200);
+          const url   = (body.url && /^[./#]/.test(body.url)) ? body.url : './#home';
+          const targetUserId = body.userId || null; // null = all users
+          const payload = JSON.stringify({ title, body: msg, url });
+          const vapidKeys = await getOrCreateVapidKeys(env);
+          let sent = 0, failed = 0;
+          const processUser = async (uid) => {
+            const subs = await env.BACKUPS.get('push:' + uid, 'json').catch(() => null);
+            if (!Array.isArray(subs)) return;
+            for (const sub of subs) {
+              try { const r = await sendWebPush(sub, payload, vapidKeys); r.ok ? sent++ : failed++; }
+              catch { failed++; }
+            }
+          };
+          if (targetUserId) {
+            await processUser(targetUserId);
+          } else {
+            const userList = await env.BACKUPS.list({ prefix: 'user:' });
+            const userIds = userList.keys.filter(k => /^user:u_[^:]+$/.test(k.name)).map(k => k.name.replace('user:', ''));
+            await Promise.all(userIds.map(processUser));
+          }
+          return json({ ok: true, sent, failed }, 200, cors);
+        }
+
         return json({ ok: false, error: 'Not found' }, 404, cors);
       }
 

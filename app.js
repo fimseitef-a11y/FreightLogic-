@@ -1,7 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.5.0 USA ENGINE
+/** FreightLogic v23.6.0 USA ENGINE
+ *  v23.6.0: Native app shell — View Transitions, tab swipe, Web Push (RFC 8291),
+ *           Badge API, Wake Lock for GPS, Web Share, offline pill, push settings
  *  v23.5.0: Smart Insight card, improved scoring (day-of-week + stop factors),
  *           better counter-offer targeting, tighter NEGOTIATE/PASS verdict logic,
  *           richer positioning confidence, enhanced AI eval prompt context
@@ -14,7 +16,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.5.0';
+const APP_VERSION = '23.6.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -4534,6 +4536,7 @@ function tripRow(t, {compact=false}={}){
         <button class="btn sm" data-act="receipts">Receipts</button>
         <button class="btn sm" data-act="docs">📎 Docs</button>
         ${_mapsHtml}
+        ${'share' in navigator ? '<button class="btn sm" data-act="share" title="Share">📤</button>' : ''}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
       </div>
     </div>`;
@@ -4549,6 +4552,15 @@ function tripRow(t, {compact=false}={}){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
   $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo).catch(()=>{}); });
+  $('[data-act="share"]', d)?.addEventListener('click', (e)=>{
+    e.stopPropagation(); haptic(15);
+    const mi = Number(t.loadedMiles||0), dh = Number(t.emptyMiles||0);
+    const totalMi = mi + dh;
+    const rpm = totalMi > 0 ? '$' + (Number(t.pay||0)/totalMi).toFixed(2) + '/mi' : '';
+    const route = (t.origin && t.destination) ? `${t.origin} → ${t.destination}` : (t.origin || t.destination || 'Trip');
+    const text = `✅ ${route}\n💰 ${fmtMoney(t.pay||0)}${rpm ? ' • ' + rpm : ''}${mi ? ' • ' + fmtNum(mi) + ' loaded mi' : ''}\n📋 #${t.orderNo||'—'}${t.customer ? ' — ' + t.customer : ''}`;
+    navigator.share({ title: 'FreightLogic Load', text }).catch(()=>{});
+  });
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
@@ -4886,6 +4898,70 @@ async function renderInsights(){
   invalidateKPICache();
   await computeKPIs();
   await refreshStorageHealth('');
+  _renderNotificationSettings();
+}
+
+function _renderNotificationSettings(){
+  // Inject notification settings card after cloudBackupCard if not already present
+  const anchor = document.getElementById('cloudBackupCard');
+  if (!anchor || document.getElementById('notifSettingsCard')) return;
+  const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+  const hasPush = 'PushManager' in window;
+  const card = document.createElement('div');
+  card.id = 'notifSettingsCard';
+  card.className = 'card';
+  card.style.marginTop = '12px';
+  card.innerHTML = `
+    <h3>🔔 Notifications</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Get alerts for late payments and important updates — even when the app is closed.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface-1);border-radius:10px;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:600">Permission</span>
+      <span id="notifPermStatus" style="font-size:12px;color:${perm==='granted'?'var(--good)':perm==='denied'?'var(--bad)':'var(--warn)'};font-weight:600">${escapeHtml(perm==='granted'?'Enabled':perm==='denied'?'Blocked — enable in browser settings':'Not requested')}</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface-1);border-radius:10px;margin-bottom:12px">
+      <span style="font-size:13px;font-weight:600">Push delivery</span>
+      <span id="notifPushStatus" style="font-size:12px;color:var(--text-secondary)">${hasPush?'Checking…':'Not supported'}</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn${perm==='granted'?' primary':''}" id="btnNotifEnable" style="flex:1" ${perm==='denied'?'disabled':''}>
+        ${perm==='granted'?'✓ Notifications On':'Enable Notifications'}
+      </button>
+      <button class="btn" id="btnNotifTest" style="flex:1" ${perm!=='granted'?'disabled':''}>Send Test</button>
+    </div>
+    <div id="notifTestResult" style="margin-top:8px;font-size:12px;color:var(--text-secondary);min-height:16px"></div>`;
+  anchor.insertAdjacentElement('afterend', card);
+
+  // Check push subscription status
+  if (hasPush) {
+    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
+      const el = document.getElementById('notifPushStatus');
+      if (el) { el.textContent = sub ? 'Subscribed' : 'Not subscribed'; el.style.color = sub ? 'var(--good)' : 'var(--text-secondary)'; }
+    }).catch(() => {});
+  }
+
+  document.getElementById('btnNotifEnable')?.addEventListener('click', async () => {
+    if (Notification.permission === 'granted') return;
+    await requestNotificationPermission();
+    _renderNotificationSettings(); // re-render with updated state
+    const existing = document.getElementById('notifSettingsCard');
+    existing?.remove();
+    _renderNotificationSettings();
+  });
+
+  document.getElementById('btnNotifTest')?.addEventListener('click', async () => {
+    const res = document.getElementById('notifTestResult');
+    if (res) res.textContent = 'Sending…';
+    try {
+      const config = await cloudGetConfig();
+      if (!config) { if (res) res.textContent = 'Cloud backup not configured'; return; }
+      const r = await cloudFetch(CLOUD_WORKER_URL + '/push/test', {
+        method: 'POST', headers: { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }
+      }, 10000);
+      const d = await r.json().catch(() => ({}));
+      if (res) res.textContent = r.ok ? '✓ Test notification sent!' : (d.error || 'Failed — ' + r.status);
+      if (res) res.style.color = r.ok ? 'var(--good)' : 'var(--bad)';
+    } catch(e) { if (res) { res.textContent = 'Error: ' + (e.message || 'network'); res.style.color = 'var(--bad)'; } }
+  });
 }
 
 // ---- More menu ----
@@ -11408,6 +11484,8 @@ async function openDiagnosticsPanel(){
     ${row('Offline (SW)',      'dxOffline', '...')}
     ${row('Cloud Backup',      'dxCloud',   '...')}
     ${row('AI Endpoint',       'dxAi',      '...')}
+    ${row('Notifications',     'dxNotif',   '...')}
+    ${row('Push Subscription', 'dxPush',    '...')}
     <button class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
 
   openModal('Diagnostics', body);
@@ -11473,6 +11551,21 @@ async function openDiagnosticsPanel(){
       else if (token)    set('dxCloud', 'Token set, no passphrase', null);
       else               set('dxCloud', 'Not configured', null);
     } catch(e){ set('dxCloud', 'Error', false); }
+
+    // Notification permission
+    const notifPerm = ('Notification' in window) ? Notification.permission : 'unsupported';
+    set('dxNotif', notifPerm === 'granted' ? 'Granted' : notifPerm === 'denied' ? 'Denied' : notifPerm === 'default' ? 'Not requested' : 'Unsupported', notifPerm === 'granted');
+
+    // Push subscription
+    if ('PushManager' in window && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        set('dxPush', sub ? 'Subscribed (' + new URL(sub.endpoint).hostname + ')' : 'Not subscribed', sub ? true : null);
+      } catch(e) { set('dxPush', 'Error: ' + (e?.message||e), false); }
+    } else {
+      set('dxPush', 'Not supported', false);
+    }
 
     // AI endpoint ping
     set('dxAi', 'Testing…', null);
@@ -14942,6 +15035,13 @@ function _doStartTracking() {
     { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
   );
   _activeTracking.watcherId = watcher;
+  // Wake Lock — keep screen on while tracking (released in stopTripTracking)
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(lock => {
+      if (_activeTracking) _activeTracking._wakeLock = lock;
+      else lock.release().catch(() => {});
+    }).catch(() => {});
+  }
   if (_trackingIntervalId) clearInterval(_trackingIntervalId);
   _trackingIntervalId = setInterval(() => {
     if (!_activeTracking) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; return; }
@@ -14974,7 +15074,8 @@ function _persistTrackingState() {
 
 async function stopTripTracking() {
   if (!_activeTracking) return;
-  if (_activeTracking) _activeTracking._f24Shown = false; // F24: reset stationary flag
+  _activeTracking._f24Shown = false;
+  if (_activeTracking._wakeLock) { _activeTracking._wakeLock.release().catch(() => {}); _activeTracking._wakeLock = null; }
   if (_activeTracking.watcherId !== null) navigator.geolocation.clearWatch(_activeTracking.watcherId);
   if (_trackingIntervalId) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; }
   const t = _activeTracking;
@@ -16424,6 +16525,16 @@ if (typeof window !== 'undefined'){
     console.error('[FL] Startup error:', err); toast('App startup failed. Try refreshing.', true);
   }
 })();
+
+// Re-acquire wake lock when page becomes visible again (browsers auto-release on hide)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _activeTracking && 'wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(lock => {
+      if (_activeTracking) _activeTracking._wakeLock = lock;
+      else lock.release().catch(() => {});
+    }).catch(() => {});
+  }
+});
 
 // ── Tab swipe navigation (mobile) ────────────────────────────────────────
 const _NAV_TAB_ORDER = ['home', 'trips', 'omega', 'intel', 'more'];
