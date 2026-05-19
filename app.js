@@ -237,7 +237,8 @@ async function checkStorageQuota(){
       const usedMB = Math.round((est.usage || 0) / 1024 / 1024);
       const quotaMB = Math.round((est.quota || 0) / 1024 / 1024);
       const pctUsed = quotaMB > 0 ? Math.round((est.usage / est.quota) * 100) : 0;
-      if (pctUsed > 80){
+      const _quotaWarnPct = (isSafari() || isIOS()) ? 60 : 80;
+      if (pctUsed > _quotaWarnPct){
         toast(`⚠️ Storage ${pctUsed}% full (${usedMB}/${quotaMB} MB). Export a backup now!`, true);
       }
       return { usedMB, quotaMB, pctUsed };
@@ -339,6 +340,41 @@ function showBackupNudge(msg){
 /** Mark backup timestamp whenever JSON export happens */
 async function markBackupDone(){
   await setSetting('lastBackupDate', Date.now());
+}
+
+// ── Cloud backup retry queue (offline resilience) ──────────────────────────
+// When a backup push fails due to network, it's queued in IDB settings.
+// On next successful connection test, the queue is drained automatically.
+async function _queueFailedBackup(payload){
+  try {
+    const existing = await getSetting('_pendingBackup', null);
+    if (existing) return; // only keep the most recent pending backup
+    await setSetting('_pendingBackup', { payload, queuedAt: Date.now() });
+  } catch {}
+}
+
+async function _drainBackupQueue(){
+  try {
+    const pending = await getSetting('_pendingBackup', null);
+    if (!pending) return;
+    const { payload, queuedAt } = pending;
+    if ((Date.now() - queuedAt) > 7 * 86400000) { // expire after 7 days
+      await setSetting('_pendingBackup', null);
+      return;
+    }
+    const config = await _getCloudConfig();
+    if (!config) return;
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token },
+      body: payload,
+    }, 20000).catch(() => null);
+    if (res && res.ok) {
+      await setSetting('_pendingBackup', null);
+      await markBackupDone();
+      toast('Queued backup synced to cloud.');
+    }
+  } catch {}
 }
 
 /** Quarterly CPA export reminder — nudge user at end of each quarter */
@@ -484,13 +520,22 @@ function numVal(id, def=0){
 
 function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch(e){ /* vibrate unsupported */ } }
 
-function toast(msg, isErr=false){
+const _toastQueue = [];
+let _toastActive = false;
+function _processToastQueue(){
+  if (!_toastQueue.length){ _toastActive = false; return; }
+  _toastActive = true;
+  const { msg, isErr } = _toastQueue.shift();
   const t = $('#toast');
   t.textContent = msg;
   t.className = 'toast ' + (isErr ? 'err ' : '') + 'show';
   haptic(isErr ? 30 : 10);
   clearTimeout(toast._tm);
-  toast._tm = setTimeout(()=>{ t.className = 'toast hide'; }, 2400);
+  toast._tm = setTimeout(()=>{ t.className = 'toast hide'; setTimeout(_processToastQueue, 300); }, 2400);
+}
+function toast(msg, isErr=false){
+  _toastQueue.push({ msg, isErr });
+  if (!_toastActive) _processToastQueue();
 }
 
 // ── Undo Toast: immediate UI deletion + 5s window to undo before IDB commit ──
@@ -542,6 +587,7 @@ function openModal(title, bodyEl){
   $('#modalTitle').textContent = title;
   const mb = $('#modalBody');
   mb.innerHTML = '';
+  mb.scrollTop = 0;
   mb.appendChild(bodyEl);
   const bd = $('#backdrop');
   const md = $('#modal');
@@ -882,6 +928,7 @@ function sanitizeTrip(raw){
   t.origin = clampStr(raw.origin, 60);
   t.destination = clampStr(raw.destination, 60);
   t.pay = posNum(raw.pay, 0, 1000000);
+  t.fuelSurcharge = posNum(raw.fuelSurcharge || raw.fuel_surcharge || 0, 0, 100000);
   t.loadedMiles = posNum(raw.loadedMiles, 0, 300000);
   t.emptyMiles = posNum(raw.emptyMiles, 0, 300000);
   // v14.5.0: multi-stop
@@ -914,6 +961,21 @@ async function upsertTrip(trip){
   const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.trips.get(t.orderNo)); }catch(e){ console.warn("[FL]", e); }
+
+  // Data-quality guards (non-blocking warnings)
+  if (beforeData && beforeData.pickupDate && t.pickupDate && beforeData.pickupDate !== t.pickupDate){
+    setTimeout(()=> toast(`Order #${t.orderNo} already has a different pickup date — saved as update. Verify you meant to overwrite.`, true), 100);
+  }
+  if (t.pickupDate && t.deliveryDate && t.deliveryDate < t.pickupDate){
+    setTimeout(()=> toast(`⚠️ Delivery date is before pickup date on order #${t.orderNo}. Check your dates.`, true), 200);
+  }
+  const totalMi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+  if (totalMi > 3500){
+    setTimeout(()=> toast(`⚠️ ${totalMi} total miles is unusually high for a cargo van. Verify mileage on order #${t.orderNo}.`, true), 300);
+  } else if (Number(t.loadedMiles) > 0 && Number(t.emptyMiles) > Number(t.loadedMiles) * 2.5){
+    setTimeout(()=> toast(`⚠️ Deadhead (${t.emptyMiles}mi) is over 2.5× loaded miles — verify mileage on order #${t.orderNo}.`, true), 300);
+  }
+
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
@@ -960,9 +1022,28 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaid
 }
 
 // ---- Expenses ----
+const _EXPENSE_CAT_MAP = {
+  'fuel':'Fuel','gas':'Fuel','diesel':'Fuel','gasoline':'Fuel','gas station':'Fuel',
+  'maintenance':'Maintenance','maint':'Maintenance','repair':'Maintenance','repairs':'Maintenance',
+  'oil change':'Maintenance','oil':'Maintenance','tires':'Maintenance','tire':'Maintenance',
+  'insurance':'Insurance','ins':'Insurance','commercial auto':'Insurance',
+  'meal':'Meals','meals':'Meals','food':'Meals','lunch':'Meals','dinner':'Meals','breakfast':'Meals','per diem':'Meals',
+  'toll':'Tolls','tolls':'Tolls','ezpass':'Tolls','e-zpass':'Tolls',
+  'parking':'Parking','lot':'Parking',
+  'lodging':'Lodging','hotel':'Lodging','motel':'Lodging','sleep inn':'Lodging',
+  'phone':'Phone','cell':'Phone','cellular':'Phone','mobile':'Phone',
+  'load board':'Load Boards','loadboard':'Load Boards','truckstop':'Load Boards','dat':'Load Boards',
+  'dispatch':'Dispatch','dispatcher':'Dispatch','dispatching':'Dispatch',
+  'registration':'Registration','reg':'Registration',
+};
+function _normalizeExpenseCategory(cat){
+  const raw = String(cat||'').trim();
+  const mapped = _EXPENSE_CAT_MAP[raw.toLowerCase()];
+  return clampStr(mapped || raw, 60);
+}
 function sanitizeExpense(raw){
   return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
-    amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
+    amount: posNum(raw.amount, 0, 1000000), category: _normalizeExpenseCategory(raw.category),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
     receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined };
@@ -2309,8 +2390,29 @@ function computeBrokerGrade(broker, globalAvgRpm){
   return { grade, gradeColor, score, broker };
 }
 
-function brokerGradeHTML(gradeObj){
-  return `<span class="tag" style="font-weight:800;color:${gradeObj.gradeColor};border-color:${gradeObj.gradeColor}40;background:${gradeObj.gradeColor}15;min-width:28px;text-align:center">${gradeObj.grade}</span>`;
+function computeBrokerTrend(brokerName, allTrips){
+  if (!brokerName || !allTrips) return null;
+  const bt = allTrips
+    .filter(t => (t.customer||'') === brokerName && t.pickupDate && Number(t.pay||0) > 0)
+    .sort((a,b)=> (a.pickupDate||'').localeCompare(b.pickupDate||''));
+  if (bt.length < 4) return null;
+  const half = Math.floor(bt.length / 2);
+  const avgRpm = ts => {
+    let s=0, n=0;
+    for (const t of ts){ const m=Number(t.loadedMiles||0)+Number(t.emptyMiles||0); if(m>0){ s+=Number(t.pay||0)/m; n++; } }
+    return n>0 ? s/n : 0;
+  };
+  const rOld = avgRpm(bt.slice(0, half));
+  const rNew = avgRpm(bt.slice(half));
+  if (rOld <= 0) return null;
+  const pct = ((rNew - rOld) / rOld) * 100;
+  if (pct >= 5) return { dir:'up', pct: pct.toFixed(0) };
+  if (pct <= -5) return { dir:'down', pct: Math.abs(pct).toFixed(0) };
+  return { dir:'stable', pct:0 };
+}
+function brokerGradeHTML(gradeObj, trend=null){
+  const tArrow = trend ? (trend.dir==='up' ? `<span style="color:var(--good);font-size:9px;margin-left:2px">↑${trend.pct}%</span>` : trend.dir==='down' ? `<span style="color:var(--bad);font-size:9px;margin-left:2px">↓${trend.pct}%</span>` : '') : '';
+  return `<span class="tag" style="font-weight:800;color:${gradeObj.gradeColor};border-color:${gradeObj.gradeColor}40;background:${gradeObj.gradeColor}15;min-width:28px;text-align:center">${gradeObj.grade}${tArrow}</span>`;
 }
 
 // Full broker scorecard modal
@@ -2441,7 +2543,7 @@ function brokerIntelHTML(customer, trips){
   return `<div style="padding:8px 0">
     <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:6px">BROKER INTELLIGENCE</div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      ${brokerGradeHTML(gradeObj)}
+      ${brokerGradeHTML(gradeObj, computeBrokerTrend(customer, trips))}
       <span style="font-weight:700;font-size:13px">${escapeHtml(match.name)}</span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -2512,7 +2614,7 @@ function _getScoreBaselines(allTrips, allExps){
 }
 
 function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
-  const pay = Number(trip.pay || 0);
+  const pay = Number(trip.pay || 0) + Number(trip.fuelSurcharge || 0);
   const loaded = Number(trip.loadedMiles || 0);
   const empty = Number(trip.emptyMiles || 0);
   const allMi = loaded + empty;
@@ -6986,6 +7088,9 @@ function _mwRenderDecision(out, d){
           strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
         };
 
+        const _evalCacheKey=(function(p){let s=[p.origin,p.destination,String(p.loadedMiles),String(p.deadheadMiles),String(p.revenue)].join('|');let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193);}return 'aiec_'+(h>>>0).toString(16);})(loadPayload);
+        try{const _ec=JSON.parse(sessionStorage.getItem(_evalCacheKey)||'null');if(_ec&&(Date.now()-_ec.ts)<600000){resultDiv.innerHTML=_ec.html;const note=document.createElement('div');note.style.cssText='font-size:10px;color:var(--text-tertiary);text-align:right;padding:4px 14px 0';note.textContent='↩ Cached (re-evaluates if load changes)';resultDiv.appendChild(note);aiBtn.disabled=false;aiBtn.innerHTML='🤖 Ask AI — Strategic Analysis';return;}}catch{}
+
         const res = await cloudFetch(CLOUD_WORKER_URL + '/evaluate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token },
@@ -7048,6 +7153,7 @@ function _mwRenderDecision(out, d){
 
         aiHTML += '</div>';
         resultDiv.innerHTML = aiHTML;
+        try{ sessionStorage.setItem(_evalCacheKey, JSON.stringify({html: aiHTML, ts: Date.now()})); }catch{}
       } catch(e) {
         resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">AI request failed: ' + escapeHtml(e.message || 'network error') + '</div>';
       }
@@ -7791,6 +7897,24 @@ async function renderTopLanes(){
       box.innerHTML = `<div class="muted" style="font-size:12px">Add trips with origin + destination to see lane intelligence.</div>`;
       return;
     }
+
+    // Lane heat map: best vs worst summary (needs ≥4 lanes)
+    if (lanes.length >= 4){
+      const best = lanes.slice(0, 3);
+      const worst = lanes.filter(l => l.trips >= 2).slice(-3).reverse();
+      const hm = document.createElement('div');
+      hm.style.cssText = 'margin-bottom:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border-subtle)';
+      let hmHtml = '<div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">Lane Heat Map</div>';
+      hmHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      hmHtml += '<div><div style="font-size:10px;font-weight:700;color:var(--good);margin-bottom:4px">TOP LANES</div>';
+      for (const l of best) hmHtml += `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between"><span style="color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.display)}</span><span style="color:var(--good);font-weight:700;margin-left:6px;white-space:nowrap">$${l.avgRpm}</span></div>`;
+      hmHtml += '</div><div><div style="font-size:10px;font-weight:700;color:var(--bad);margin-bottom:4px">AVOID / LOW RPM</div>';
+      for (const l of worst) hmHtml += `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between"><span style="color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.display)}</span><span style="color:var(--bad);font-weight:700;margin-left:6px;white-space:nowrap">$${l.avgRpm}</span></div>`;
+      hmHtml += '</div></div>';
+      hm.innerHTML = hmHtml;
+      box.appendChild(hm);
+    }
+
     top.forEach(lane => {
       const el = document.createElement('div'); el.className = 'item'; el.style.cursor = 'pointer';
       const trendIcon = lane.trend > 0 ? '📈' : lane.trend < 0 ? '📉' : '➡️';
@@ -11537,6 +11661,7 @@ async function cloudPushBackup(silent = true){
         return cloudPushBackup(silent);
       }
       if (!silent) toast(res.status === 413 ? 'Too large (>5MB)' : 'Backup failed (' + res.status + ')', true); cloudScheduleRetry();
+      await _queueFailedBackup(payload).catch(()=>{});
     }
   } catch(e) { if (!silent) toast('Backup failed', true); cloudScheduleRetry(); }
   finally { _cloudSyncInProgress = false; if (!silent) cloudRefreshStatusPanel(); }
@@ -12483,6 +12608,22 @@ async function openTaxSeasonExport(){
         ['29', 'Tentative net profit',                              netProfit.toFixed(2)],
         [],
         ['Schedule SE Estimate', '',                                seTax.toFixed(2)],
+        [],
+        // Quarterly gross / expense / net breakdown
+        ['QUARTERLY BREAKDOWN', '', ''],
+        ['Quarter', 'Gross Revenue', 'Expenses', 'Net'],
+        ...(() => {
+          const qDefs = [
+            { label:'Q1 (Jan–Mar)', m:[0,1,2] }, { label:'Q2 (Apr–Jun)', m:[3,4,5] },
+            { label:'Q3 (Jul–Sep)', m:[6,7,8] }, { label:'Q4 (Oct–Dec)', m:[9,10,11] },
+          ];
+          return qDefs.map(q => {
+            let qGross = 0, qExp = 0;
+            trips.forEach(t => { const m = new Date(((t.pickupDate||t.deliveryDate||'2000-01-01')+'T12:00:00')).getMonth(); if(q.m.includes(m)) qGross += posNum(t.pay); });
+            exps.forEach(e => { const m = new Date(((e.date||'2000-01-01')+'T12:00:00')).getMonth(); if(q.m.includes(m)) qExp += posNum(e.amount); });
+            return [q.label, roundCents(qGross).toFixed(2), roundCents(qExp).toFixed(2), roundCents(qGross-qExp).toFixed(2)];
+          });
+        })(),
         [],
         ['MILEAGE LOG', '', ''],
         ['Date', 'Trip #', 'From', 'To', 'Loaded Mi', 'Deadhead Mi', 'Total Mi', `Rate ($/mi)`, 'Deduction ($)'],
@@ -15472,6 +15613,23 @@ async function renderMoneyCard() {
   }
   const avgDaysToPay = daysToPayCount > 0 ? Math.round(daysToPaySum / daysToPayCount) : null;
 
+  // AR aging buckets for unpaid trips
+  const agingBuckets = { d30: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
+  const agingAmts = { d30: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
+  const nowTs = Date.now();
+  for (const t of validTrips) {
+    if (t.isPaid) continue;
+    const refDate = t.deliveryDate || t.pickupDate;
+    if (!refDate) continue;
+    const age = Math.floor((nowTs - new Date(refDate + 'T12:00:00').getTime()) / 86400000);
+    const amt = Number(t.pay || 0);
+    if (age <= 30) { agingBuckets.d30++; agingAmts.d30 += amt; }
+    else if (age <= 60) { agingBuckets.d31_60++; agingAmts.d31_60 += amt; }
+    else if (age <= 90) { agingBuckets.d61_90++; agingAmts.d61_90 += amt; }
+    else { agingBuckets.d90plus++; agingAmts.d90plus += amt; }
+  }
+  const hasAging = unpaidCount > 0;
+
   // Weekly goal
   const weeklyGoal = Number(await getSetting('weeklyGoal', 0) || 0);
   const goalPct = weeklyGoal > 0 ? Math.min(200, Math.round((wkGross / weeklyGoal) * 100)) : 0;
@@ -15576,6 +15734,30 @@ async function renderMoneyCard() {
     tb.style.display = open ? 'none' : '';
     if (arr) arr.style.transform = open ? '' : 'rotate(180deg)';
   });
+
+  // AR aging section
+  if (hasAging && unpaidCount >= 2) {
+    const agingEl = card.querySelector('#moneyAgingBuckets') || document.createElement('div');
+    agingEl.id = 'moneyAgingBuckets';
+    agingEl.style.cssText = 'margin-top:10px;padding:10px 0 0;border-top:1px solid var(--border-subtle)';
+    const cols = [
+      { label:'0–30d', count: agingBuckets.d30, amt: agingAmts.d30, color: 'var(--text-secondary)' },
+      { label:'31–60d', count: agingBuckets.d31_60, amt: agingAmts.d31_60, color: 'var(--warn)' },
+      { label:'61–90d', count: agingBuckets.d61_90, amt: agingAmts.d61_90, color: 'var(--bad)' },
+      { label:'90d+', count: agingBuckets.d90plus, amt: agingAmts.d90plus, color: 'var(--bad)' },
+    ].filter(c => c.count > 0);
+    if (cols.length) {
+      agingEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">AR Aging</div>
+        <div style="display:grid;grid-template-columns:repeat(${cols.length},1fr);gap:6px;text-align:center">
+          ${cols.map(c => `<div style="padding:6px 4px;border-radius:8px;background:var(--surface-2)">
+            <div style="font-size:12px;font-weight:700;color:${c.color}">${c.count}</div>
+            <div style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(c.label)}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--text-secondary)">${fmtMoney(c.amt)}</div>
+          </div>`).join('')}
+        </div>`;
+      if (!card.querySelector('#moneyAgingBuckets')) card.appendChild(agingEl);
+    }
+  }
 
   // F31: Earnings trends chart — appended non-blocking
   renderEarningsTrends(card, validTrips, exps).catch(()=>{});
@@ -16143,6 +16325,7 @@ if (typeof window !== 'undefined'){
       try{ await requestPersistentStorage(); }catch(e){ console.warn("[FL]", e); }
       try{ await requestNotificationPermission(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkBackupReminder(); }catch(e){ console.warn("[FL]", e); }
+      try{ await _drainBackupQueue(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkRecurringExpenses(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkQuarterlyExportReminder(); }catch(e){ console.warn("[FL]", e); }
       // v15.3.0: Check for emergency backup recovery
@@ -16182,4 +16365,41 @@ if (typeof window !== 'undefined'){
     console.error('[FL] Startup error:', err); toast('App startup failed. Try refreshing.', true);
   }
 })();
+
+// ── Keyboard shortcut overlay (desktop power users) ──────────────────────
+function openKeyboardShortcuts(){
+  const body = document.createElement('div');
+  const shortcuts = [
+    { key:'?', desc:'Show this help overlay' },
+    { key:'E', desc:'Open load evaluator (Evaluate tab)' },
+    { key:'T', desc:'Add a new trip' },
+    { key:'X', desc:'Add an expense' },
+    { key:'F', desc:'Add fuel entry' },
+    { key:'H', desc:'Go to Home' },
+    { key:'Esc', desc:'Close modal / dismiss' },
+  ];
+  body.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">Keyboard shortcuts are active when no input is focused.</div>'
+    + shortcuts.map(s => `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-subtle)">
+      <kbd style="font-family:var(--font-mono);font-size:13px;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);min-width:32px;text-align:center">${escapeHtml(s.key)}</kbd>
+      <span style="font-size:13px;color:var(--text)">${escapeHtml(s.desc)}</span>
+    </div>`).join('');
+  openModal('Keyboard Shortcuts', body);
+}
+
+document.addEventListener('keydown', (ev)=>{
+  if (ev.target.matches('input,textarea,select,[contenteditable]')) return;
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const modal = $('#modal');
+  if (modal && modal.classList.contains('open')){
+    if (ev.key === 'Escape') { ev.preventDefault(); haptic(); closeModal(); }
+    return;
+  }
+  if (ev.key === '?') { ev.preventDefault(); openKeyboardShortcuts(); }
+  else if (ev.key === 'e' || ev.key === 'E') { ev.preventDefault(); location.hash='#omega'; }
+  else if (ev.key === 't' || ev.key === 'T') { ev.preventDefault(); openQuickAddSheet(); }
+  else if (ev.key === 'x' || ev.key === 'X') { ev.preventDefault(); location.hash='#expenses'; setTimeout(()=>$('#btnAddExp2')?.click(),150); }
+  else if (ev.key === 'f' || ev.key === 'F') { ev.preventDefault(); location.hash='#fuel'; setTimeout(()=>$('#btnAddFuel2')?.click(),150); }
+  else if (ev.key === 'h' || ev.key === 'H') { ev.preventDefault(); location.hash='#home'; }
+});
+
 })();

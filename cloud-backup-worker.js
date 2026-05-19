@@ -121,6 +121,32 @@ export default {
           return json({ ok: true, revoked: delId }, 200, cors);
         }
 
+        // POST /admin/users/:id/rotate-token — issue a new token, revoke the old one
+        if (request.method === 'POST' && path.match(/^\/admin\/users\/[^/]+\/rotate-token$/)) {
+          const rotateId = path.split('/')[3];
+          if (!rotateId || !/^u_[a-f0-9-]{8,36}$/i.test(rotateId)) {
+            return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+          }
+          const userRec = await env.BACKUPS.get('user:' + rotateId);
+          if (!userRec) return json({ ok: false, error: 'Not found' }, 404, cors);
+          let rec;
+          try { rec = JSON.parse(userRec); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
+          if (!rec.active) return json({ ok: false, error: 'User is deactivated' }, 403, cors);
+
+          const newToken = 'flk_' + crypto.randomUUID().replace(/-/g, '');
+          const newHash = await hashToken(newToken);
+          const ops = [env.BACKUPS.put('tokh:' + newHash, JSON.stringify({ ...rec, tokenHash: newHash }))];
+          // Revoke old token
+          if (rec.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + rec.tokenHash));
+          if (rec.token) ops.push(env.BACKUPS.delete('token:' + rec.token));
+          // Update user record with new hash
+          rec.tokenHash = newHash;
+          delete rec.token;
+          ops.push(env.BACKUPS.put('user:' + rotateId, JSON.stringify(rec)));
+          await Promise.all(ops);
+          return json({ ok: true, userId: rotateId, token: newToken, rotatedAt: new Date().toISOString() }, 200, cors);
+        }
+
         return json({ ok: false, error: 'Not found' }, 404, cors);
       }
 
@@ -297,22 +323,32 @@ export default {
           return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
         }
 
+        // Validate and sanitize city fields — reject obvious OCR garbage
+        const safeCity = (v) => {
+          const s = String(v || '').trim().slice(0, 100);
+          // Must contain at least one letter; reject strings that are all digits/symbols
+          if (s && !/[a-zA-Z]/.test(s)) return null;
+          // Reject suspiciously long single-word fields (OCR artifact)
+          if (s && !s.includes(' ') && !s.includes(',') && s.length > 30) return null;
+          return s || null;
+        };
+
         return json({
           ok: true,
           fields: {
-            orderNo:       String(parsed.orderNo      || '').slice(0, 40),
-            customer:      String(parsed.customer     || '').slice(0, 80),
-            broker:        String(parsed.broker       || '').slice(0, 80),
-            origin:        String(parsed.origin       || '').slice(0, 100),
-            destination:   String(parsed.destination  || '').slice(0, 100),
+            orderNo:       String(parsed.orderNo      || '').slice(0, 40) || null,
+            customer:      String(parsed.customer     || '').slice(0, 80) || null,
+            broker:        String(parsed.broker       || '').slice(0, 80) || null,
+            origin:        safeCity(parsed.origin),
+            destination:   safeCity(parsed.destination),
             pay:           finitePositive(parsed.pay),
             loadedMiles:   intPositive(parsed.loadedMiles),
             deadheadMiles: intPositive(parsed.deadheadMiles),
             pickupDate:    safeDate(parsed.pickupDate),
             deliveryDate:  safeDate(parsed.deliveryDate),
             weight:        intPositive(parsed.weight),
-            commodity:     String(parsed.commodity    || '').slice(0, 80),
-            notes:         String(parsed.notes        || '').slice(0, 300),
+            commodity:     String(parsed.commodity    || '').slice(0, 80) || null,
+            notes:         String(parsed.notes        || '').slice(0, 300) || null,
           },
           model,
           user: tokenData.name
@@ -347,6 +383,14 @@ export default {
           ptr.count = ptr.keys.length;
         }
         ptrOps.push(savePtr(env, driverUserId, deviceId, 'b', ptr));
+
+        // Clear stale deltas when a full backup is pushed — they're now superseded
+        const dptr = await getPtr(env, driverUserId, deviceId, 'd').catch(() => ({ keys: [] }));
+        if (dptr.keys.length > 0) {
+          dptr.keys.forEach(k => ptrOps.push(env.BACKUPS.delete(k)));
+          ptrOps.push(savePtr(env, driverUserId, deviceId, 'd', { keys: [], count: 0 }));
+        }
+
         // Increment per-user backup count in parallel with pointer ops
         await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
@@ -410,8 +454,11 @@ export default {
 
       // GET /status — backup presence check (uses pointer key — no list() call)
       if (request.method === 'GET' && path === '/status') {
-        const ptr = await getPtr(env, driverUserId, deviceId, 'b');
-        return json({ ok: true, hasBackup: ptr.count > 0, count: ptr.count, user: tokenData.name }, 200, cors);
+        const [bptr, dptr] = await Promise.all([
+          getPtr(env, driverUserId, deviceId, 'b'),
+          getPtr(env, driverUserId, deviceId, 'd'),
+        ]);
+        return json({ ok: true, hasBackup: bptr.count > 0, count: bptr.count, deltaCount: dptr.count, user: tokenData.name }, 200, cors);
       }
 
       // DELETE /backup — remove all backups for this user+device
