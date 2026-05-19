@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.1.1 USA ENGINE
+/** FreightLogic v23.5.0 USA ENGINE
+ *  v23.5.0: Smart Insight card, improved scoring (day-of-week + stop factors),
+ *           better counter-offer targeting, tighter NEGOTIATE/PASS verdict logic,
+ *           richer positioning confidence, enhanced AI eval prompt context
  *  v23.1.1: Ω Calculator HTML cards + Net column, DZ flag, SW cache-buster fix
  *  v23.1.0: Vehicle Maintenance Tracker (F25), Stabilization
  *  v23.0.0: Proactive Positioning Engine (F24), Market Feed, Tomorrow Signal, Strategic Floor (A-E)
@@ -11,7 +14,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.1.1';
+const APP_VERSION = '23.5.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -2653,20 +2656,42 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   }
   risk.total += floorRisk;
 
+  // Factor 5: Pickup timing risk (0-10 pts)
+  // Friday/Saturday pickups lead to weekend delivery zones — boards go quiet.
+  let timingRisk = 0;
+  if (trip.pickupDate){
+    const dow = new Date(trip.pickupDate + 'T12:00:00').getDay(); // 0=Sun
+    if (dow === 5 || dow === 6){ timingRisk = 10; risk.factors.push({ name:'Weekend pickup', pts:10, max:10, detail:'Fri/Sat pickup → limited reload options on arrival' }); }
+    else if (dow === 0){ timingRisk = 7; risk.factors.push({ name:'Sunday pickup', pts:7, max:10, detail:'Sunday start — boards thin early week' }); }
+    else { risk.factors.push({ name:'Pickup timing', pts:0, max:10, detail:'Mon–Thu pickup — good reload window' }); }
+  } else {
+    risk.factors.push({ name:'Pickup timing', pts:0, max:10, detail:'No pickup date entered' });
+  }
+  risk.total += timingRisk;
+
+  // Factor 6: Stop complexity (0-10 pts)
+  // Each stop beyond 1 adds time, paperwork, and liability risk.
+  let stopRisk = 0;
+  const stopCount = Array.isArray(trip.stops) ? trip.stops.length : 0;
+  if (stopCount >= 3){ stopRisk = 10; risk.factors.push({ name:'Multi-stop', pts:10, max:10, detail:`${stopCount} stops — significant time and liability risk` }); }
+  else if (stopCount === 2){ stopRisk = 5; risk.factors.push({ name:'Multi-stop', pts:5, max:10, detail:'2 stops — verify all addresses before accepting' }); }
+  else { risk.factors.push({ name:'Stop complexity', pts:0, max:10, detail:'Single stop or no stop data' }); }
+  risk.total += stopRisk;
+
   // ── VERDICT ──
   const m = margin.total;
   const r = risk.total;
   let verdict, verdictColor;
   if (m >= 80 && r <= 25){ verdict = 'PREMIUM WIN'; verdictColor = '#6bff95'; }
   else if (m >= 55 && r <= 50){ verdict = 'ACCEPT'; verdictColor = '#6bff95'; }
-  else if (m >= 35 || r <= 65){ verdict = 'NEGOTIATE'; verdictColor = '#ffb300'; }
+  else if (m >= 35 && r <= 65){ verdict = 'NEGOTIATE'; verdictColor = '#ffb300'; }
   else { verdict = 'PASS'; verdictColor = '#ff6b6b'; }
 
   // ── COUNTER-OFFER ──
-  // Target the Ideal tier for this mileage
+  // Target the better of: ideal tier RPM or 5% above personal 90-day avg (rewards consistent operators).
   const idealRpm = tier.ideal.min;
-  const counterOffer = allMi > 0 ? Math.round(idealRpm * allMi) : 0;
-  const counterRpm = idealRpm;
+  const counterRpm = histAvgRpm > 0 ? Math.max(idealRpm, roundCents(histAvgRpm * 1.05)) : idealRpm;
+  const counterOffer = allMi > 0 ? Math.round(counterRpm * allMi) : 0;
 
   // ── FUEL COST ESTIMATE ──
   let fuelCost = null, netAfterFuel = null;
@@ -3572,6 +3597,129 @@ async function _saveSetupWizardResults(vals){
 }
 
 // ---- UI: Home ----
+// ── Smart Insight Card (F32) ─────────────────────────────────────────────────
+// Surfaces one data-driven insight per session from the driver's own numbers.
+// Non-blocking; injects into the "What's Next" card above homeActions.
+async function renderSmartTip(state){
+  try {
+    if (state.isEmpty) return;
+    const slot = $('#homeActions')?.closest('.card');
+    if (!slot) return;
+    const existing = slot.querySelector('#homeSmartInsight');
+    if (existing) existing.remove();
+
+    const { trips, exps } = await _getTripsAndExps();
+    const now = Date.now();
+    const d30 = now - 30 * 86400000;
+    const d60 = now - 60 * 86400000;
+
+    const recent30 = trips.filter(t => t.pickupDate && new Date(t.pickupDate).getTime() >= d30);
+    const recent60 = trips.filter(t => t.pickupDate && new Date(t.pickupDate).getTime() >= d60);
+
+    let tip = null;
+
+    // 1. Broker concentration risk
+    if (recent30.length >= 5 && !tip) {
+      const brokerCounts = {};
+      for (const t of recent30) {
+        const b = (t.customer || '').trim();
+        if (b) brokerCounts[b] = (brokerCounts[b] || 0) + 1;
+      }
+      const top = Object.entries(brokerCounts).sort((a, b) => b[1] - a[1])[0];
+      if (top) {
+        const pct = Math.round((top[1] / recent30.length) * 100);
+        if (pct >= 50) {
+          tip = { icon:'⚠️', text:`${pct}% of your last 30 loads are from <b>${escapeHtml(top[0])}</b>. One late payment could break your week. Add a second broker.` };
+        }
+      }
+    }
+
+    // 2. RPM trend: 30-day vs 60-day
+    if (!tip) {
+      const rpmAvg = (trpList) => {
+        let sum = 0, cnt = 0;
+        for (const t of trpList) {
+          const p = Number(t.pay || 0), l = Number(t.loadedMiles || 0), e = Number(t.emptyMiles || 0), m = l + e;
+          if (m > 0 && p > 0) { sum += p / m; cnt++; }
+        }
+        return cnt > 0 ? sum / cnt : 0;
+      };
+      const rpm30 = rpmAvg(recent30);
+      const older = recent60.filter(t => !recent30.includes(t));
+      const rpmOlder = rpmAvg(older);
+      if (rpm30 > 0 && rpmOlder > 0 && older.length >= 3) {
+        const delta = ((rpm30 - rpmOlder) / rpmOlder) * 100;
+        if (delta <= -8) {
+          tip = { icon:'📉', text:`Your true RPM dropped <b>${Math.abs(delta).toFixed(0)}%</b> this month vs last. Check if deadhead crept up or broker rates softened.` };
+        } else if (delta >= 10) {
+          tip = { icon:'📈', text:`True RPM is up <b>${delta.toFixed(0)}%</b> vs last month — strong stretch. Keep your floor at $${rpm30.toFixed(2)}.` };
+        }
+      }
+    }
+
+    // 3. Deadhead trend
+    if (!tip && recent30.length >= 4) {
+      const dhAvg = (trpList) => {
+        let sum = 0, cnt = 0;
+        for (const t of trpList) {
+          const l = Number(t.loadedMiles || 0), e = Number(t.emptyMiles || 0), m = l + e;
+          if (m > 0) { sum += (e / m) * 100; cnt++; }
+        }
+        return cnt > 0 ? sum / cnt : 0;
+      };
+      const dh30 = dhAvg(recent30);
+      const older = recent60.filter(t => !recent30.includes(t));
+      const dhOld = dhAvg(older);
+      if (dh30 > 20 && (dhOld === 0 || dh30 > dhOld + 5)) {
+        tip = { icon:'🚛', text:`Avg deadhead this month is <b>${dh30.toFixed(0)}%</b>. Every 5% of empty miles costs ~$0.07/mi true RPM. Try negotiating origin pick-up adjustments.` };
+      }
+    }
+
+    // 4. Long-outstanding AR
+    if (!tip) {
+      const overdueTrips = trips.filter(t => !t.isPaid && t.pickupDate && (now - new Date(t.pickupDate).getTime()) > 45 * 86400000);
+      if (overdueTrips.length >= 2) {
+        const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
+        tip = { icon:'💸', text:`<b>${overdueTrips.length} invoices</b> are 45+ days outstanding — ${fmtMoney(totalOwed)} at risk. Send a follow-up today.`, action:'View Unpaid →', actionFn: () => { location.hash = '#money'; } };
+      }
+    }
+
+    // 5. Positive: personal record this week
+    if (!tip && recent30.length >= 5) {
+      const weekStart = startOfWeek(new Date()).toISOString().slice(0, 10);
+      const thisWeek = trips.filter(t => t.pickupDate >= weekStart);
+      const weekGross = thisWeek.reduce((s, t) => s + Number(t.pay || 0), 0);
+      const allWeekGross = trips.filter(t => t.pickupDate).reduce((acc, t) => {
+        const wk = startOfWeek(new Date(t.pickupDate + 'T12:00:00')).toISOString().slice(0, 10);
+        acc[wk] = (acc[wk] || 0) + Number(t.pay || 0);
+        return acc;
+      }, {});
+      const prevWeeks = Object.values(allWeekGross).filter(v => v > 0);
+      if (prevWeeks.length >= 3 && weekGross > 0) {
+        const maxPrev = Math.max(...prevWeeks.filter((_, i) => i < prevWeeks.length - 1));
+        if (weekGross > maxPrev * 1.15) {
+          tip = { icon:'🏆', text:`This week you've already grossed <b>${fmtMoney(weekGross)}</b> — on track for a personal best. Protect it: don't accept under-floor loads this close to the week end.` };
+        }
+      }
+    }
+
+    if (!tip) return;
+
+    const el = document.createElement('div');
+    el.id = 'homeSmartInsight';
+    el.style.cssText = 'padding:11px 13px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border-subtle);margin-bottom:10px;display:flex;align-items:flex-start;gap:10px';
+    el.innerHTML = `<div style="font-size:18px;line-height:1.2;flex-shrink:0">${tip.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:4px">Smart Insight</div>
+        <div style="font-size:13px;line-height:1.5;color:var(--text)">${tip.text}</div>
+        ${tip.action ? `<button class="btn" style="margin-top:8px;padding:6px 12px;font-size:12px" id="smartTipAction">${escapeHtml(tip.action)}</button>` : ''}
+      </div>`;
+    if (tip.actionFn) el.querySelector('#smartTipAction')?.addEventListener('click', () => { haptic(); tip.actionFn(); });
+
+    slot.insertBefore(el, slot.querySelector('h3')?.nextSibling || slot.firstChild);
+  } catch(e){ /* non-critical */ }
+}
+
 async function renderHome(){
   refreshUnpaidBadge().catch(()=>{});
 
@@ -3675,6 +3823,8 @@ async function renderHome(){
   renderPositionContextBanner().catch(()=>{});
   // UX: Quick Evaluate button (always shown)
   renderQuickEvalCard().catch(()=>{});
+  // F32: Smart Insight card (non-blocking, data-driven daily tip)
+  renderSmartTip(state).catch(()=>{});
   // UX: Calm home — hide empty cards with zero content
   _applyCalmHomeState(state).catch(()=>{});
 }
@@ -12614,10 +12764,20 @@ async function getPositioningBrief(city) {
     }
   }
 
-  // 8. Confidence
+  // 8. Confidence — weighted by data richness and market knowledge
+  let confidencePts = 0;
+  if (reloadScore) {
+    confidencePts += reloadScore.count >= 5 ? 3 : reloadScore.count >= 2 ? 2 : 1;
+  }
+  if (outboundLanes.length >= 3) confidencePts += 3;
+  else if (outboundLanes.length >= 1) confidencePts += 1;
+  if (patterns.totalTrips >= 5) confidencePts += 2;
+  else if (patterns.totalTrips >= 2) confidencePts += 1;
+  if (market) confidencePts += (market.role === 'anchor' || market.role === 'support') ? 2 : 1;
+  if (weatherAlerts.length > 0) confidencePts = Math.max(0, confidencePts - 1); // weather uncertainty reduces confidence
   let confidence = 'LOW';
-  if (reloadScore && reloadScore.count >= 3 && outboundLanes.length >= 3) confidence = 'HIGH';
-  else if (reloadScore || outboundLanes.length >= 1) confidence = 'MEDIUM';
+  if (confidencePts >= 7) confidence = 'HIGH';
+  else if (confidencePts >= 3) confidence = 'MEDIUM';
 
   const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason, repositionTarget, confidence };
   _positioningCache = { city, brief, ts: Date.now() };
@@ -15928,6 +16088,9 @@ if (typeof window !== 'undefined'){
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (ev) => {
+        if (ev.data?.type === 'SW_ACTIVATED') toast(`FreightLogic ${ev.data.version} installed.`);
+      });
       navigator.serviceWorker.register('./service-worker.js').then(reg => {
         navigator.serviceWorker.addEventListener('controllerchange', ()=> { if (!window.__flReloading){ window.__flReloading = true; location.reload(); } });
         reg.addEventListener('updatefound', () => {
