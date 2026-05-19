@@ -86,7 +86,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.4.0';
+const APP_VERSION = '23.5.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -191,8 +191,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.4.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.4.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`.
+- `manifest.json` references `v=23.5.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.5.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`; broadcasts `SW_ACTIVATED` message to all open clients on activate.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -303,6 +303,13 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - `_buildWeeklyBuckets(trips, exps, n)` / `_buildMonthlyBuckets(trips, exps, n)` — aggregate helpers
 - Hidden at < 4 weeks of data to avoid noisy single-bar charts
 - Settings keys: `f31TrendView` (`'week'`|`'month'`, persists toggle state)
+
+### F32 — Smart Insight Card (v23.5.0)
+- `renderSmartTip(state)` — non-blocking; injects one data-driven insight into the "What's Next" card on Home
+- Checks (in priority order): broker concentration ≥50%, RPM trend decline ≥8%, deadhead trend rise ≥5pp, AR 45+ days outstanding ≥2 invoices, personal weekly gross record
+- Positive insight (record week) shown when no warnings are present
+- Dismisses silently if no insight qualifies; re-evaluated on every home render
+- No settings keys — purely reactive to live data
 
 ---
 
