@@ -482,8 +482,12 @@ export default {
         if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
           return json({ ok: false, error: 'Invalid subscription object' }, 400, cors);
         }
-        if (!/^https:\/\//.test(body.endpoint)) {
-          return json({ ok: false, error: 'Invalid endpoint' }, 400, cors);
+        // Restrict to known push service domains (SSRF mitigation)
+        const _PUSH_DOMAINS = ['fcm.googleapis.com', 'updates.push.services.mozilla.com', 'push.services.mozilla.org', 'web.push.apple.com', 'notify.windows.com'];
+        let _endpointOk = false;
+        try { const _eu = new URL(body.endpoint); _endpointOk = _eu.protocol === 'https:' && _PUSH_DOMAINS.some(d => _eu.hostname === d || _eu.hostname.endsWith('.' + d)); } catch {}
+        if (!_endpointOk) {
+          return json({ ok: false, error: 'Unsupported push service endpoint' }, 400, cors);
         }
         const subKey = 'push:' + driverUserId;
         const existing = await env.BACKUPS.get(subKey, 'json').catch(() => null);
@@ -496,6 +500,8 @@ export default {
 
       // POST /push/test — send a test push notification to the requesting user
       if (request.method === 'POST' && path === '/push/test') {
+        const rateLimited = await checkRateLimit(env, driverUserId, 10, 'pushtest');
+        if (rateLimited) return json({ ok: false, error: 'Push test limit reached (10/hr)' }, 429, cors);
         const subs = await env.BACKUPS.get('push:' + driverUserId, 'json').catch(() => null);
         if (!Array.isArray(subs) || !subs.length) {
           return json({ ok: false, error: 'No subscriptions found — enable push notifications in the app first' }, 404, cors);
@@ -821,8 +827,9 @@ async function _encryptPush(plaintext, p256dh, auth) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   // PRK = HKDF-Extract(salt, ikm_key)
   const prk = await _hkdfExtract(salt, ikmKey);
-  const cek   = await _hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\x00\x01'), 16);
-  const nonce = await _hkdfExpand(prk, enc.encode('Content-Encoding: nonce\x00\x01'), 12);
+  // _hkdfExpand appends an HKDF counter byte (0x01) automatically — do NOT include it in info
+  const cek   = await _hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\x00'), 16);
+  const nonce = await _hkdfExpand(prk, enc.encode('Content-Encoding: nonce\x00'), 12);
   const cekKey = await crypto.subtle.importKey('raw', cek, { name:'AES-GCM' }, false, ['encrypt']);
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
     { name:'AES-GCM', iv:nonce }, cekKey, _concatU8(enc.encode(plaintext), new Uint8Array([2]))

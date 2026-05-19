@@ -10729,11 +10729,12 @@ async function _sendPushSubToServer(sub){
   const config = await cloudGetConfig().catch(()=>null);
   if (!config) return;
   const subJson = JSON.parse(JSON.stringify(sub));
-  await cloudFetch(CLOUD_WORKER_URL + '/push/subscribe', {
+  const res = await cloudFetch(CLOUD_WORKER_URL + '/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token },
     body: JSON.stringify(subJson),
-  }, 8000).catch(()=>{});
+  }, 8000).catch(()=>null);
+  if (!res?.ok) console.warn('[FL-Push] Subscribe registration failed', res?.status);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -10749,7 +10750,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   const dismissed = localStorage.getItem('fl_pwa_dismiss_v1');
   if (!dismissed) {
     // Delay banner until user has logged ≥3 trips — avoids prompting empty-state users
-    countStore('trips').then(n => { if (n >= 3) showInstallBanner(); }).catch(() => showInstallBanner());
+    countStore('trips').then(n => { if (n >= 3) showInstallBanner(); }).catch(() => {});
   }
 });
 
@@ -12026,21 +12027,24 @@ window.addEventListener('beforeunload', ()=> emergencyAutoBackup());
 
 
 // ── Offline/Online indicator — subtle pill chip ──
+let _pillRemoveTimer = null;
 function _updateOnlineStatus(){
   const isOff = !navigator.onLine;
-  // Remove legacy full-width banner if present
   document.getElementById('offlineBanner')?.remove();
+  if (_pillRemoveTimer) { clearTimeout(_pillRemoveTimer); _pillRemoveTimer = null; }
   let pill = document.getElementById('fl-offline-pill');
-  if (isOff && !pill) {
-    pill = document.createElement('div');
-    pill.id = 'fl-offline-pill';
-    pill.setAttribute('aria-live', 'polite');
-    pill.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px)+54px);right:10px;z-index:9997;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:11px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:5px;pointer-events:none;animation:_vt-in .25s ease';
+  if (isOff) {
+    if (!pill) {
+      pill = document.createElement('div');
+      pill.id = 'fl-offline-pill';
+      pill.setAttribute('aria-live', 'polite');
+      pill.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px)+54px);right:10px;z-index:9997;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:11px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:5px;pointer-events:none;animation:_vt-in .25s ease';
+      document.body.appendChild(pill);
+    }
     pill.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#ff6b6b;display:inline-block;flex-shrink:0"></span> Offline';
-    document.body.appendChild(pill);
-  } else if (!isOff && pill) {
+  } else if (pill) {
     pill.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:var(--good);display:inline-block;flex-shrink:0"></span> Back online';
-    setTimeout(() => document.getElementById('fl-offline-pill')?.remove(), 2000);
+    _pillRemoveTimer = setTimeout(() => { document.getElementById('fl-offline-pill')?.remove(); _pillRemoveTimer = null; }, 2000);
   }
 }
 window.addEventListener('online', _updateOnlineStatus);
@@ -16436,7 +16440,7 @@ document.addEventListener('touchend', e => {
   // Require primarily horizontal motion and minimum distance
   if (Math.abs(dx) < 64 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
   // Don't swipe when over modals, inputs, or explicitly scrollable areas
-  if (e.target.closest('#modal.open, .modal-body, textarea, input, select')) return;
+  if (e.target.closest('#modal.open, #modalBody, textarea, input, select')) return;
   const cur = (location.hash || '#home').slice(1);
   const idx = _NAV_TAB_ORDER.indexOf(views[cur] ? cur : 'home');
   if (dx < 0 && idx < _NAV_TAB_ORDER.length - 1) { haptic(20); location.hash = '#' + _NAV_TAB_ORDER[idx + 1]; }
