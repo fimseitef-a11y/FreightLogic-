@@ -3207,16 +3207,23 @@ async function navigate(){
   }
 
   const name = views[hash] ? hash : 'home';
-  Object.entries(views).forEach(([k,el]) => {
-    if (k === name){
-      el.style.display = '';
-      el.classList.remove('entering');
-      void el.offsetWidth; // force reflow
-      el.classList.add('entering');
-    } else { el.style.display = 'none'; el.classList.remove('entering'); }
-  });
-  setActiveNav(name);
-  window.scrollTo({top:0, behavior:'instant'});
+  const _doSwitch = () => {
+    Object.entries(views).forEach(([k,el]) => {
+      if (k === name){
+        el.style.display = '';
+        el.classList.remove('entering');
+        void el.offsetWidth;
+        el.classList.add('entering');
+      } else { el.style.display = 'none'; el.classList.remove('entering'); }
+    });
+    setActiveNav(name);
+    window.scrollTo({top:0, behavior:'instant'});
+  };
+  if ('startViewTransition' in document) {
+    document.startViewTransition(_doSwitch);
+  } else {
+    _doSwitch();
+  }
   if (name === 'home') await renderHome();
   if (name === 'trips') await renderTrips(true);
   if (name === 'expenses') await renderExpenses(true);
@@ -10685,14 +10692,48 @@ async function requestNotificationPermission(){
   try{
     if (!('Notification' in window)) return;
     if (Notification.permission === 'default'){
-      // Only ask after user has added at least 1 trip
       const cnt = await countStore('trips');
       if (cnt >= 1){
         const perm = await Notification.requestPermission();
-        if (perm === 'granted') toast('Notifications enabled — we\'ll alert you about late payments');
+        if (perm === 'granted'){
+          toast('Notifications enabled');
+          initPushNotifications().catch(()=>{});
+        }
       }
+    } else if (Notification.permission === 'granted') {
+      initPushNotifications().catch(()=>{});
     }
   } catch(e){ console.warn("[FL]", e); }
+}
+
+// ── Web Push subscription ────────────────────────────────────────────────────
+async function initPushNotifications(){
+  try {
+    if (!('PushManager' in window) || !('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) { _sendPushSubToServer(existing).catch(()=>{}); return; }
+    if (Notification.permission !== 'granted') return;
+    const config = await cloudGetConfig();
+    if (!config) return;
+    const vkRes = await cloudFetch(CLOUD_WORKER_URL + '/push/vapid-key', {}, 8000).catch(()=>null);
+    if (!vkRes?.ok) return;
+    const { publicKey } = await vkRes.json().catch(()=>({}));
+    if (!publicKey) return;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
+    await _sendPushSubToServer(sub);
+  } catch(e) { console.warn('[FL-Push]', e); }
+}
+
+async function _sendPushSubToServer(sub){
+  const config = await cloudGetConfig().catch(()=>null);
+  if (!config) return;
+  const subJson = JSON.parse(JSON.stringify(sub));
+  await cloudFetch(CLOUD_WORKER_URL + '/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token },
+    body: JSON.stringify(subJson),
+  }, 8000).catch(()=>{});
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -10705,9 +10746,11 @@ let _deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   _deferredInstallPrompt = e;
-  // Show custom banner (only if not dismissed before)
   const dismissed = localStorage.getItem('fl_pwa_dismiss_v1');
-  if (!dismissed) showInstallBanner();
+  if (!dismissed) {
+    // Delay banner until user has logged ≥3 trips — avoids prompting empty-state users
+    countStore('trips').then(n => { if (n >= 3) showInstallBanner(); }).catch(() => showInstallBanner());
+  }
 });
 
 function showInstallBanner(){
@@ -11982,18 +12025,22 @@ document.addEventListener('visibilitychange', ()=>{
 window.addEventListener('beforeunload', ()=> emergencyAutoBackup());
 
 
-// ── v15.3.0: Offline/Online indicator ──
+// ── Offline/Online indicator — subtle pill chip ──
 function _updateOnlineStatus(){
   const isOff = !navigator.onLine;
-  let banner = document.getElementById('offlineBanner');
-  if (isOff && !banner){
-    banner = document.createElement('div');
-    banner.id = 'offlineBanner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;padding:6px 16px;background:#ff6b6b;color:#fff;font-size:12px;font-weight:600;text-align:center;letter-spacing:.5px';
-    banner.textContent = 'OFFLINE — Data is saved locally. Some features require connection.';
-    document.body.appendChild(banner);
-  } else if (!isOff && banner){
-    banner.remove();
+  // Remove legacy full-width banner if present
+  document.getElementById('offlineBanner')?.remove();
+  let pill = document.getElementById('fl-offline-pill');
+  if (isOff && !pill) {
+    pill = document.createElement('div');
+    pill.id = 'fl-offline-pill';
+    pill.setAttribute('aria-live', 'polite');
+    pill.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px)+54px);right:10px;z-index:9997;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;font-size:11px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:5px;pointer-events:none;animation:_vt-in .25s ease';
+    pill.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#ff6b6b;display:inline-block;flex-shrink:0"></span> Offline';
+    document.body.appendChild(pill);
+  } else if (!isOff && pill) {
+    pill.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:var(--good);display:inline-block;flex-shrink:0"></span> Back online';
+    setTimeout(() => document.getElementById('fl-offline-pill')?.remove(), 2000);
   }
 }
 window.addEventListener('online', _updateOnlineStatus);
@@ -15603,6 +15650,14 @@ async function renderMoneyCard() {
   }
   const collectedPct = totalEver > 0 ? Math.round((totalPaid / totalEver) * 100) : 0;
 
+  // Badge API — show unpaid count on app icon
+  try {
+    if ('setAppBadge' in navigator) {
+      if (unpaidCount > 0) navigator.setAppBadge(unpaidCount);
+      else navigator.clearAppBadge();
+    }
+  } catch {}
+
   // Average days to pay
   let daysToPaySum = 0, daysToPayCount = 0;
   for (const t of validTrips) {
@@ -16365,6 +16420,28 @@ if (typeof window !== 'undefined'){
     console.error('[FL] Startup error:', err); toast('App startup failed. Try refreshing.', true);
   }
 })();
+
+// ── Tab swipe navigation (mobile) ────────────────────────────────────────
+const _NAV_TAB_ORDER = ['home', 'trips', 'omega', 'intel', 'more'];
+let _swipeX = null, _swipeY = null;
+document.addEventListener('touchstart', e => {
+  _swipeX = e.touches[0].clientX;
+  _swipeY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (_swipeX === null) return;
+  const dx = e.changedTouches[0].clientX - _swipeX;
+  const dy = e.changedTouches[0].clientY - _swipeY;
+  _swipeX = null; _swipeY = null;
+  // Require primarily horizontal motion and minimum distance
+  if (Math.abs(dx) < 64 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+  // Don't swipe when over modals, inputs, or explicitly scrollable areas
+  if (e.target.closest('#modal.open, .modal-body, textarea, input, select')) return;
+  const cur = (location.hash || '#home').slice(1);
+  const idx = _NAV_TAB_ORDER.indexOf(views[cur] ? cur : 'home');
+  if (dx < 0 && idx < _NAV_TAB_ORDER.length - 1) { haptic(20); location.hash = '#' + _NAV_TAB_ORDER[idx + 1]; }
+  else if (dx > 0 && idx > 0) { haptic(20); location.hash = '#' + _NAV_TAB_ORDER[idx - 1]; }
+}, { passive: true });
 
 // ── Keyboard shortcut overlay (desktop power users) ──────────────────────
 function openKeyboardShortcuts(){

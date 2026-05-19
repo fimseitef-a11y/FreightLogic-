@@ -470,6 +470,45 @@ export default {
         return json({ ok: true, deleted: ptr.keys.length }, 200, cors);
       }
 
+      // GET /push/vapid-key — return public VAPID key for PushManager.subscribe()
+      if (request.method === 'GET' && path === '/push/vapid-key') {
+        const keys = await getOrCreateVapidKeys(env);
+        return json({ ok: true, publicKey: keys.pub }, 200, cors);
+      }
+
+      // POST /push/subscribe — store push subscription for this user
+      if (request.method === 'POST' && path === '/push/subscribe') {
+        const body = await request.json().catch(() => null);
+        if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
+          return json({ ok: false, error: 'Invalid subscription object' }, 400, cors);
+        }
+        if (!/^https:\/\//.test(body.endpoint)) {
+          return json({ ok: false, error: 'Invalid endpoint' }, 400, cors);
+        }
+        const subKey = 'push:' + driverUserId;
+        const existing = await env.BACKUPS.get(subKey, 'json').catch(() => null);
+        const subs = Array.isArray(existing) ? existing : [];
+        const filtered = subs.filter(s => s.endpoint !== body.endpoint);
+        filtered.push({ endpoint: body.endpoint, keys: { p256dh: body.keys.p256dh, auth: body.keys.auth }, addedAt: new Date().toISOString() });
+        await env.BACKUPS.put(subKey, JSON.stringify(filtered.slice(-5)));
+        return json({ ok: true }, 200, cors);
+      }
+
+      // POST /push/test — send a test push notification to the requesting user
+      if (request.method === 'POST' && path === '/push/test') {
+        const subs = await env.BACKUPS.get('push:' + driverUserId, 'json').catch(() => null);
+        if (!Array.isArray(subs) || !subs.length) {
+          return json({ ok: false, error: 'No subscriptions found — enable push notifications in the app first' }, 404, cors);
+        }
+        const vapidKeys = await getOrCreateVapidKeys(env);
+        const payload = JSON.stringify({ title: 'Freight Logic', body: 'Push notifications are working! 🚚', url: './#home' });
+        let sent = 0;
+        for (const sub of subs) {
+          try { const r = await sendWebPush(sub, payload, vapidKeys); if (r.ok) sent++; } catch {}
+        }
+        return json({ ok: sent > 0, sent }, sent > 0 ? 200 : 500, cors);
+      }
+
       return json({ ok: false, error: 'Not found' }, 404, cors);
     } catch (err) {
       console.error('[FL] Worker error:', err);
@@ -708,6 +747,106 @@ function safeDate(v) {
     if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2035) return s;
   }
   return null;
+}
+
+// ─── Web Push / VAPID (RFC 8291 + RFC 7515) ───────────────────────────────────
+
+function _concatU8(...arrs) {
+  const total = arrs.reduce((n, a) => n + a.length, 0);
+  const out = new Uint8Array(total); let off = 0;
+  for (const a of arrs) { out.set(a, off); off += a.length; }
+  return out;
+}
+
+function _b64uEnc(buf) {
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let s = ''; for (const b of u8) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function _b64uDec(str) {
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  while (str.length % 4) str += '=';
+  const raw = atob(str);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+async function getOrCreateVapidKeys(env) {
+  const stored = await env.BACKUPS.get('__vapid_v1__', 'json').catch(() => null);
+  if (stored?.pub && stored?.priv) return stored;
+  const pair = await crypto.subtle.generateKey({ name:'ECDSA', namedCurve:'P-256' }, true, ['sign','verify']);
+  const pub  = _b64uEnc(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)));
+  const priv = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey));
+  const keys = { pub, priv };
+  await env.BACKUPS.put('__vapid_v1__', JSON.stringify(keys)).catch(() => {});
+  return keys;
+}
+
+async function _vapidJwt(audience, vapidKeys) {
+  const enc = new TextEncoder();
+  const hdr = _b64uEnc(enc.encode(JSON.stringify({ typ:'JWT', alg:'ES256' })));
+  const pld = _b64uEnc(enc.encode(JSON.stringify({ aud: audience, exp: Math.floor(Date.now()/1000)+43200, sub:'mailto:noreply@freightlogic.app' })));
+  const privKey = await crypto.subtle.importKey('jwk', JSON.parse(vapidKeys.priv), { name:'ECDSA', namedCurve:'P-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign({ name:'ECDSA', hash:'SHA-256' }, privKey, enc.encode(`${hdr}.${pld}`));
+  return `${hdr}.${pld}.${_b64uEnc(new Uint8Array(sig))}`;
+}
+
+async function _hkdfExtract(salt, ikm) {
+  const key = await crypto.subtle.importKey('raw', salt, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, ikm));
+}
+
+async function _hkdfExpand(prk, info, len) {
+  const key = await crypto.subtle.importKey('raw', prk, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  const out = new Uint8Array(len); let prev = new Uint8Array(0), off = 0, ctr = 1;
+  while (off < len) {
+    const block = new Uint8Array(await crypto.subtle.sign('HMAC', key, _concatU8(prev, info, new Uint8Array([ctr++]))));
+    const n = Math.min(block.length, len - off); out.set(block.slice(0, n), off); off += n; prev = block;
+  }
+  return out;
+}
+
+async function _encryptPush(plaintext, p256dh, auth) {
+  const enc = new TextEncoder();
+  const rcvPub = _b64uDec(p256dh);
+  const authSec = _b64uDec(auth);
+  const rcvKey = await crypto.subtle.importKey('raw', rcvPub, { name:'ECDH', namedCurve:'P-256' }, false, []);
+  const sndPair = await crypto.subtle.generateKey({ name:'ECDH', namedCurve:'P-256' }, true, ['deriveBits']);
+  const sndPub = new Uint8Array(await crypto.subtle.exportKey('raw', sndPair.publicKey));
+  const ikm = new Uint8Array(await crypto.subtle.deriveBits({ name:'ECDH', public:rcvKey }, sndPair.privateKey, 256));
+  // PRK_key = HKDF-Extract(auth_secret, ikm)
+  const prkKey = await _hkdfExtract(authSec, ikm);
+  // IKM_key = HKDF-Expand(prk_key, "WebPush: info\x00" || rcvPub || sndPub, 32)
+  const ikmKey = await _hkdfExpand(prkKey, _concatU8(enc.encode('WebPush: info\x00'), rcvPub, sndPub), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  // PRK = HKDF-Extract(salt, ikm_key)
+  const prk = await _hkdfExtract(salt, ikmKey);
+  const cek   = await _hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\x00\x01'), 16);
+  const nonce = await _hkdfExpand(prk, enc.encode('Content-Encoding: nonce\x00\x01'), 12);
+  const cekKey = await crypto.subtle.importKey('raw', cek, { name:'AES-GCM' }, false, ['encrypt']);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name:'AES-GCM', iv:nonce }, cekKey, _concatU8(enc.encode(plaintext), new Uint8Array([2]))
+  ));
+  // aes128gcm record header: salt (16) | rs (4 BE) | keyid_len (1) | keyid = sndPub (65)
+  const rs = new DataView(new ArrayBuffer(4)); rs.setUint32(0, 4096, false);
+  return _concatU8(salt, new Uint8Array(rs.buffer), new Uint8Array([sndPub.length]), sndPub, ciphertext);
+}
+
+async function sendWebPush(subscription, payload, vapidKeys) {
+  const audience = new URL(subscription.endpoint).origin;
+  const jwt = await _vapidJwt(audience, vapidKeys);
+  const body = await _encryptPush(payload, subscription.keys.p256dh, subscription.keys.auth);
+  const res = await fetch(subscription.endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `vapid t=${jwt},k=${vapidKeys.pub}`,
+      'Content-Type': 'application/octet-stream',
+      'Content-Encoding': 'aes128gcm',
+      'TTL': '86400',
+    },
+    body,
+  });
+  return { ok: res.ok, status: res.status };
 }
 
 // ─── Response helper ──────────────────────────────────────────────────────────

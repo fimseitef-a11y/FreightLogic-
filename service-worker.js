@@ -73,6 +73,45 @@ self.addEventListener('message', (event) => {
   if (msg.type === 'SKIP_WAITING' && event.source) self.skipWaiting();
 });
 
+self.addEventListener('push', (event) => {
+  let data = { title: 'Freight Logic', body: 'New notification', url: './' };
+  try {
+    if (event.data) {
+      const parsed = JSON.parse(event.data.text());
+      if (parsed.title) data.title = String(parsed.title).slice(0, 80);
+      if (parsed.body) data.body = String(parsed.body).slice(0, 200);
+      if (parsed.url && /^[./#]/.test(parsed.url)) data.url = parsed.url;
+    }
+  } catch {}
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: './icon192.png',
+      badge: './icon64.png',
+      tag: 'fl-push',
+      renotify: true,
+      data: { url: data.url },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || './';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      for (const c of clients) {
+        if (new URL(c.url).origin === self.location.origin) {
+          c.focus();
+          if (target !== './') c.navigate(target).catch(() => {});
+          return;
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);

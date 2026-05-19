@@ -560,6 +560,14 @@
     }
     @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important } }
 
+    /* ── View Transitions (Chrome 111+) ─────────────────────────── */
+    @media (prefers-reduced-motion: no-preference) {
+      ::view-transition-old(root) { animation: 110ms ease-out both _vt-out }
+      ::view-transition-new(root) { animation: 150ms ease-in  both _vt-in  }
+    }
+    @keyframes _vt-out { to   { opacity:0; transform:translateY(-4px) } }
+    @keyframes _vt-in  { from { opacity:0; transform:translateY( 4px) } }
+
     /* ── Theme toggle ──────────────────────────────────────────── */
     .theme-btn { background:none; border:1px solid var(--border); border-radius:var(--r-pill); padding:10px 12px; font-size:16px; cursor:pointer; line-height:1; transition:all .2s; color:var(--text); min-width:44px; min-height:44px; display:inline-flex; align-items:center; justify-content:center }
     .theme-btn:active { transform:scale(.9) }
