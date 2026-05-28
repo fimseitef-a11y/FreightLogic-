@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "FreightLogic broker memory schema",
+  "purpose": "Track broker pricing behavior, callbacks, reliability, and lane patterns so future bid guidance uses observed outcomes instead of generic assumptions.",
+  "fields": {
+    "brokerName": { "type": "string" },
+    "boardSource": { "type": "string" },
+    "firstSeenAtLocal": { "type": "string" },
+    "lane": { "type": "string" },
+    "origin": { "type": "string" },
+    "destination": { "type": "string" },
+    "postedRate": { "type": "number" },
+    "targetRate": { "type": "number" },
+    "userBid": { "type": "number" },
+    "brokerCounter": { "type": "number" },
+    "acceptedRate": { "type": "number" },
+    "loadedMiles": { "type": "number" },
+    "deadheadMiles": { "type": "number" },
+    "trueRpmAtAcceptedRate": { "type": "number" },
+    "callbackSpeed": { "type": "string", "enum": ["none", "fast", "normal", "slow", "unknown"] },
+    "outcome": { "type": "string", "enum": ["accepted", "lost", "covered", "expired", "pass", "unknown"] },
+    "reliabilityFlags": { "type": "array", "items": "string" },
+    "notes": { "type": "string" }
+  },
+  "rules": {
+    "doNotOverfitOneCall": true,
+    "preferRepeatedObservedPattern": true,
+    "storeLostBids": true,
+    "storeNoCallbackBids": true,
+    "normalizeBrokerNames": true
+  }
+}
