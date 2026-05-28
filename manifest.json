@@ -1,7 +1,7 @@
 {
-  "name": "FreightLogic v23.5.0",
+  "name": "FreightLogic v23.5.1",
   "short_name": "FreightLogic",
-  "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, bid recommendations, trap detection, and market positioning.",
+  "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, realistic bid recommendations, trap detection, and Midwest Stack v2 market positioning.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -40,7 +40,7 @@
     {
       "name":"Evaluate Load",
       "short_name":"Evaluate",
-      "description":"Open the freight evaluator",
+      "description":"Open the freight evaluator with Midwest Stack v2 guidance",
       "url":"./#midwest",
       "icons":[{"src":"icon192.png","sizes":"192x192"}]
     }
