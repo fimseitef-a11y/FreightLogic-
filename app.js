@@ -2466,7 +2466,7 @@ function brokerIntelHTML(customer, trips){
 //  Verdicts:
 //    PREMIUM WIN  — Margin ≥80, Risk ≤25
 //    ACCEPT       — Margin ≥55, Risk ≤50
-//    NEGOTIATE    — Margin 35-54 OR Risk 51-65
+//    NEGOTIATE    — Margin ≥35 AND Risk ≤65
 //    PASS         — Margin <35 OR Risk >65
 //
 // ====================================================================
@@ -3613,8 +3613,9 @@ async function renderSmartTip(state){
     const d30 = now - 30 * 86400000;
     const d60 = now - 60 * 86400000;
 
-    const recent30 = trips.filter(t => t.pickupDate && new Date(t.pickupDate).getTime() >= d30);
-    const recent60 = trips.filter(t => t.pickupDate && new Date(t.pickupDate).getTime() >= d60);
+    // Append T12:00:00 so bare YYYY-MM-DD strings are parsed as local noon, not UTC midnight
+    const recent30 = trips.filter(t => t.pickupDate && new Date(t.pickupDate + 'T12:00:00').getTime() >= d30);
+    const recent60 = trips.filter(t => t.pickupDate && new Date(t.pickupDate + 'T12:00:00').getTime() >= d60);
 
     let tip = null;
 
@@ -3677,7 +3678,10 @@ async function renderSmartTip(state){
 
     // 4. Long-outstanding AR
     if (!tip) {
-      const overdueTrips = trips.filter(t => !t.isPaid && t.pickupDate && (now - new Date(t.pickupDate).getTime()) > 45 * 86400000);
+      const overdueTrips = trips.filter(t => {
+        const refDate = t.deliveryDate || t.pickupDate;
+        return !t.isPaid && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
+      });
       if (overdueTrips.length >= 2) {
         const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
         tip = { icon:'💸', text:`<b>${overdueTrips.length} invoices</b> are 45+ days outstanding — ${fmtMoney(totalOwed)} at risk. Send a follow-up today.`, action:'View Unpaid →', actionFn: () => { location.hash = '#money'; } };
@@ -3694,9 +3698,12 @@ async function renderSmartTip(state){
         acc[wk] = (acc[wk] || 0) + Number(t.pay || 0);
         return acc;
       }, {});
-      const prevWeeks = Object.values(allWeekGross).filter(v => v > 0);
-      if (prevWeeks.length >= 3 && weekGross > 0) {
-        const maxPrev = Math.max(...prevWeeks.filter((_, i) => i < prevWeeks.length - 1));
+      // Exclude current week by key rather than by array position; insertion order is not guaranteed
+      const prevWeekValues = Object.entries(allWeekGross)
+        .filter(([k, v]) => k !== weekStart && v > 0)
+        .map(([, v]) => v);
+      if (prevWeekValues.length >= 2 && weekGross > 0) {
+        const maxPrev = Math.max(...prevWeekValues);
         if (weekGross > maxPrev * 1.15) {
           tip = { icon:'🏆', text:`This week you've already grossed <b>${fmtMoney(weekGross)}</b> — on track for a personal best. Protect it: don't accept under-floor loads this close to the week end.` };
         }
@@ -16092,7 +16099,7 @@ if (typeof window !== 'undefined'){
         if (ev.data?.type === 'SW_ACTIVATED') toast(`FreightLogic ${ev.data.version} installed.`);
       });
       navigator.serviceWorker.register('./service-worker.js').then(reg => {
-        navigator.serviceWorker.addEventListener('controllerchange', ()=> { if (!window.__flReloading){ window.__flReloading = true; location.reload(); } });
+        // sw-bridge.js owns the controllerchange reload — no duplicate handler here
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing;
           if (!nw) return;

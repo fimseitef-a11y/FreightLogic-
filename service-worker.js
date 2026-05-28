@@ -33,7 +33,9 @@ async function injectEnhancementScripts(res) {
     let text = await res.text();
     if (!text.includes('admin-driver-ui.js?v=')) text = injectBeforeBodyClose(text, ADMIN_UI_TAG);
     if (!text.includes('midwest-stack-authority.js?v=')) text = injectBeforeBodyClose(text, MIDWEST_STACK_TAG);
-    return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
+    const h = new Headers(res.headers);
+    h.delete('Content-Length');
+    return new Response(text, { status: res.status, statusText: res.statusText, headers: h });
   } catch (err) {
     console.warn('[FL-SW] Enhancement script injection failed:', err);
     return res;
