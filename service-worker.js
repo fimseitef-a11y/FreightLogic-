@@ -1,37 +1,41 @@
-/* FreightLogic v23.5.0 — Browser Hardened Service Worker */
-const SW_VERSION = '23.5.0';
+/* FreightLogic v23.5.1 — Browser Hardened Service Worker */
+const SW_VERSION = '23.5.1';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
 const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.5.0"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=23.5.1"></script>';
 const CORE = [
   './', APP_SHELL,
   './app.js?v=23.5.0',
   './voice-load.js?v=23.5.0',
   './admin-driver-ui.js?v=23.5.0',
+  './midwest-stack-authority.js?v=23.5.1',
   './manifest.json?v=23.5.0',
+  './midwest-stack-config.json',
+  './rate-overrides-2026-05.json',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
   './sw-bridge.js?v=23.5.0'
 ];
 
-async function injectAdminUi(res) {
+function injectBeforeBodyClose(html, tag) {
+  if (html.includes(tag) || html.includes(tag.replace(/\?v=[^"']+/, '?v='))) return html;
+  return html.includes('</body>') ? html.replace('</body>', `  ${tag}\n</body>`) : `${html}\n${tag}`;
+}
+
+async function injectEnhancementScripts(res) {
   try {
     if (!res || !res.ok) return res;
     const type = (res.headers.get('content-type') || '').toLowerCase();
     if (!type.includes('text/html')) return res;
-    const text = await res.text();
-    // Check for the specific script src tag to avoid double-injection
-    if (text.includes('admin-driver-ui.js?v=')) {
-      return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
-    }
-    const patched = text.includes('</body>')
-      ? text.replace('</body>', `  ${ADMIN_UI_TAG}\n</body>`)
-      : `${text}\n${ADMIN_UI_TAG}`;
-    return new Response(patched, { status: res.status, statusText: res.statusText, headers: res.headers });
+    let text = await res.text();
+    if (!text.includes('admin-driver-ui.js?v=')) text = injectBeforeBodyClose(text, ADMIN_UI_TAG);
+    if (!text.includes('midwest-stack-authority.js?v=')) text = injectBeforeBodyClose(text, MIDWEST_STACK_TAG);
+    return new Response(text, { status: res.status, statusText: res.statusText, headers: res.headers });
   } catch (err) {
-    console.warn('[FL-SW] Admin UI injection failed:', err);
+    console.warn('[FL-SW] Enhancement script injection failed:', err);
     return res;
   }
 }
@@ -57,7 +61,6 @@ self.addEventListener('activate', (event) => {
       }
     } catch {}
     await self.clients.claim();
-    // Notify all open tabs that a new version is now active
     const clients = await self.clients.matchAll({ type: 'window' });
     for (const client of clients) {
       try { client.postMessage({ type: 'SW_ACTIVATED', version: SW_VERSION }); } catch {}
@@ -112,13 +115,13 @@ self.addEventListener('fetch', (event) => {
     if (isAppLogic) {
       try {
         const res = await fetch(req);
-        const out = (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(res.clone()) : res;
+        const out = (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectEnhancementScripts(res.clone()) : res;
         if (res && res.ok) cache.put(req, out.clone()).catch(e => console.warn('[FL-SW] Cache put failed:', e));
         return out;
       } catch {
         const cached = (await cache.match(req)) || (await cache.match(APP_SHELL));
         if (!cached) return new Response('Offline — no cached page available', { status: 503, headers: { 'Content-Type': 'text/plain' } });
-        return (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectAdminUi(cached) : cached;
+        return (req.mode === 'navigate' || url.pathname.endsWith('.html')) ? await injectEnhancementScripts(cached) : cached;
       }
     }
     if (isStatic) {
