@@ -45,7 +45,7 @@
         id: 'DEAD_ZONE',
         label: 'Dead Zone Exit',
         description: 'Survival gate only. Requires 1000+ miles from home, no reloads above $1.25 nearby, and meaningful move toward density.',
-        floor: 0.90,
+        floor: 0.91,
         preferred: 1.00,
         target: 1.10
       }
@@ -71,18 +71,9 @@
       southeast: { multiplier: 0.90, note: 'Southeast support market; avoid rural/deeper South cheap long-locks.' },
       coreMidwest: { multiplier: 1.00, note: 'Core Midwest density; protect floor unless flow pressure is active.' }
     },
-    penalties: {
-      trapDestination: 0.25,
-      feederDestination: 0.10,
-      highDeadhead: 0.10,
-      veryHighDeadhead: 0.20,
-      weekendOrHolidayLock: 0.10,
-      multiStop: 0.08,
-      heavyTransit: 0.08,
-      hazmatCheck: 0.05
-    },
     premiums: {
       trapDestination: 0.25,
+      feederDestination: 0.10,
       highDeadhead: 0.10,
       veryHighDeadhead: 0.20,
       overnightDirect: 0.10,
@@ -148,19 +139,36 @@
     return item.grade;
   }
 
+  const MODE_LABEL_MAP = {
+    'realistic win': 'REALISTIC_WIN',
+    'protect floor': 'PROTECT_FLOOR',
+    'escape recovery': 'ESCAPE_RECOVERY',
+    'escape / recovery': 'ESCAPE_RECOVERY',
+    'dead zone exit': 'DEAD_ZONE',
+    'dead zone': 'DEAD_ZONE',
+  };
+
   function modeDefaults(modeId){
-    const key = cleanText(modeId || '').replace(/\s+/g, '_').toUpperCase();
+    const cleaned = cleanText(modeId || '');
+    const key = MODE_LABEL_MAP[cleaned] || cleaned.replace(/\s+/g, '_').toUpperCase();
     return CONFIG.modes[key] || CONFIG.modes.REALISTIC_WIN;
   }
 
   function bandForMiles(totalMiles){
     const bands = RATE_OVERRIDE_2026_05.compressedBands;
-    return Object.values(bands).find(b => totalMiles >= b.totalMiles[0] && totalMiles <= b.totalMiles[1]) || bands.mediumFeeder;
+    const list = Object.values(bands);
+    // Use exclusive upper bound to prevent boundary overlap between adjacent bands
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      if (totalMiles >= b.totalMiles[0] && (i === list.length - 1 || totalMiles < b.totalMiles[1])) return b;
+    }
+    return bands.mediumFeeder;
   }
 
   function hasWeekendLock(pickupDate, deliveryDate){
     const dates = [pickupDate, deliveryDate].filter(Boolean).map(d => new Date(d)).filter(d => !isNaN(d.getTime()));
-    return dates.some(d => d.getDay() === 0 || d.getDay() === 6);
+    // Use getUTCDay() — bare YYYY-MM-DD strings parse as UTC midnight; getDay() would return the prior day in US timezones
+    return dates.some(d => d.getUTCDay() === 0 || d.getUTCDay() === 6);
   }
 
   function assessLoad(input){
@@ -186,7 +194,7 @@
     const flags = [];
 
     if (destRole.role === 'trap') { premium += CONFIG.premiums.trapDestination; flags.push('Trap/weak destination requires premium or pass.'); }
-    if (destRole.role === 'feeder') { premium += CONFIG.penalties.feederDestination; flags.push('Feeder destination: have reload/exit plan.'); }
+    if (destRole.role === 'feeder') { premium += CONFIG.premiums.feederDestination; flags.push('Feeder destination: have reload/exit plan.'); }
     if (deadheadMiles >= CONFIG.hardStops.deadheadPremiumMiles) { premium += CONFIG.premiums.veryHighDeadhead; risk += 0.18; flags.push('200+ deadhead: needs premium or strategic position benefit.'); }
     else if (deadheadMiles >= CONFIG.hardStops.deadheadWarningMiles) { premium += CONFIG.premiums.highDeadhead; risk += 0.10; flags.push('150+ deadhead warning.'); }
     if (stops > 1 || /multi|2 stop|two stop|multiple/i.test(notes)) { premium += CONFIG.premiums.multiStop; risk += 0.08; flags.push('Multi-stop complexity.'); }
@@ -213,7 +221,7 @@
       askRpm = Math.max(askRpm, 1.35 + premium);
     }
     if (mode.id === 'DEAD_ZONE') {
-      floorRpm = 0.90;
+      floorRpm = 0.91;
       winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
       askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
       flags.push('Dead-zone mode must be manually validated before acceptance.');
@@ -225,7 +233,7 @@
 
     let verdict = 'NEGOTIATE';
     if (!totalMiles || !loadedMiles) verdict = 'NEEDS_DATA';
-    else if (trueRpm && trueRpm < CONFIG.hardStops.absoluteTrueRpmReject) verdict = 'PASS';
+    else if (trueRpm && trueRpm <= CONFIG.hardStops.absoluteTrueRpmReject) verdict = 'PASS';
     else if (destRole.role === 'trap' && trueRpm < 1.55 && mode.id !== 'DEAD_ZONE') verdict = 'PASS_PREMIUM_ONLY';
     else if (trueRpm >= floorRpm && (destRole.role === 'tier1' || destRole.role === 'tier2')) verdict = 'TAKE_IF_LIVE';
     else if (trueRpm >= winRpm && risk < 0.55) verdict = 'TAKE_IF_LIVE';

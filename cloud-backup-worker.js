@@ -8,7 +8,9 @@ async function timingSafeEqual(a, b) {
   const enc = new TextEncoder();
   const aBytes = enc.encode(a);
   const bBytes = enc.encode(b);
-  const key = await crypto.subtle.importKey('raw', aBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  // Use a random key per call so the attacker cannot influence the HMAC signing key
+  const rawKey = crypto.getRandomValues(new Uint8Array(32));
+  const key = await crypto.subtle.importKey('raw', rawKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const [sigA, sigB] = await Promise.all([
     crypto.subtle.sign('HMAC', key, aBytes),
     crypto.subtle.sign('HMAC', key, bBytes),
@@ -175,7 +177,8 @@ export default {
         // Rate limit: 100 requests per hour per user (hourly window = far fewer KV writes than per-minute)
         const rateLimited = await checkRateLimit(env, driverUserId, 100, 'eval');
         if (rateLimited) {
-          const resetMins = 60 - (new Date().getMinutes());
+          const _mins = new Date().getMinutes();
+          const resetMins = _mins === 0 ? '<1' : String(60 - _mins);
           return json({ ok: false, error: `AI evaluation limit reached (100/hr). Resets in ~${resetMins} min. Your local score is still accurate.` }, 429, cors);
         }
 
@@ -246,7 +249,8 @@ export default {
         // Rate limit: 50 requests per hour per user
         const rateLimited = await checkRateLimit(env, driverUserId, 50, 'extract');
         if (rateLimited) {
-          const resetMins = 60 - (new Date().getMinutes());
+          const _mins = new Date().getMinutes();
+          const resetMins = _mins === 0 ? '<1' : String(60 - _mins);
           return json({ ok: false, error: `AI extraction limit reached (50/hr). Resets in ~${resetMins} min. Use manual entry for now.` }, 429, cors);
         }
 
@@ -479,10 +483,11 @@ async function incrementUserBackupCount(env, userId) {
 
 // ─── Rate limiter (sliding hour window via KV) ────────────────────────────────
 //
-// Per-hour windows instead of per-minute drastically reduce KV write churn:
-// one rate-limit key is created per user per endpoint per hour rather than
-// one per minute. The higher per-hour ceiling (100 eval / 50 extract) is still
-// well above legitimate single-driver usage while blocking API abuse.
+// Per-hour windows instead of per-minute drastically reduce KV write churn.
+// Note: KV has no atomic compare-and-swap, so this is a soft limit — two truly
+// concurrent requests in the same window can both pass by reading the same count.
+// The burst headroom (100 eval / 50 extract per hour) is generous enough that
+// this race does not meaningfully undermine the abuse-prevention intent.
 
 async function checkRateLimit(env, userId, limit, ns = 'eval') {
   const hour = Math.floor(Date.now() / 3600000);

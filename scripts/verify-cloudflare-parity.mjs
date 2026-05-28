@@ -60,7 +60,7 @@ async function main() {
   assert(checks, 'Worker reports v10', health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
 
   const adminReject = await fetchJson(`${workerOrigin}/admin/users`);
-  assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401 || adminReject.status === 429, `${adminReject.status}`);
+  assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401, `${adminReject.status} (expected 401; got 429 means IP is rate-limited — run from a fresh IP or reset the rl: KV keys)`);
 
   const failed = checks.filter(c => !c.pass);
   for (const c of checks) {
