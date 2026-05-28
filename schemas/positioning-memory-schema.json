@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "FreightLogic positioning memory schema",
+  "purpose": "Record city and lane observations so future bid guidance can use repeated local evidence.",
+  "fields": {
+    "locationKey": { "type": "string" },
+    "city": { "type": "string" },
+    "state": { "type": "string" },
+    "region": { "type": "string" },
+    "role": { "type": "string", "enum": ["tier1", "tier2", "feeder", "premium_only", "neutral", "unknown"] },
+    "observedAtLocal": { "type": "string" },
+    "dayOfWeek": { "type": "string" },
+    "timeWindow": { "type": "string" },
+    "visibleCargoVanLoads": { "type": "number" },
+    "averageVisibleTrueRpm": { "type": "number" },
+    "observedWinningTrueRpm": { "type": "number" },
+    "compressionScore": { "type": "number", "minimum": 0, "maximum": 100 },
+    "reloadProbability": { "type": "number", "minimum": 0, "maximum": 100 },
+    "emptyMileRisk": { "type": "number", "minimum": 0, "maximum": 100 },
+    "dominantOutboundDirections": { "type": "array", "items": "string" },
+    "weakLanePatterns": { "type": "array", "items": "string" },
+    "bestRecoveryAnchors": { "type": "array", "items": "string" },
+    "notes": { "type": "string" }
+  },
+  "rules": {
+    "sourcePriority": ["user screenshots", "accepted and lost bid outcomes", "board target rates", "broker calls", "public market data"],
+    "freshnessRule": "Fresh same-day screenshot data outranks older positioning memory.",
+    "positionRule": "A lower rate may be acceptable when it improves access to stronger freight density."
+  }
+}
