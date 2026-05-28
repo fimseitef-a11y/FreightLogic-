@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0.0",
+  "effectiveDate": "2026-05-25",
+  "status": "active",
+  "name": "May 2026 cargo-van compression override",
+  "purpose": "Override static healthy-business thresholds when the user asks for realistic winning bids or live DispatchLand/Sylectus/RPP board behavior is visibly compressed.",
+  "authorityRule": "True RPM remains the calculation authority, but realistic bid recommendations must account for actual posted targets, broker ceilings, stale/covered board behavior, lane direction, destination quality, and cargo-van-specific clearing evidence.",
+  "normalBusinessFloors": {
+    "normalFloorTrueRpm": 1.4,
+    "preferredTrueRpm": 1.5,
+    "strongTargetTrueRpm": "1.60-1.75",
+    "premiumAskTrueRpm": "1.80-2.25+"
+  },
+  "realisticCompressedBands": {
+    "shortLocalOrReposition": {
+      "totalMiles": "0-200",
+      "realisticTrueRpm": "1.60-2.10",
+      "note": "Short local/reposition lanes can still show high True RPM but disappear quickly. Bid/call fast."
+    },
+    "mediumFeeder": {
+      "totalMiles": "200-600",
+      "realisticTrueRpm": "1.10-1.40",
+      "note": "Feeder-market cargo-van freight often clears below the old normal floor. Take only if timing and position make sense."
+    },
+    "midLengthRecovery": {
+      "totalMiles": "600-1000",
+      "realisticTrueRpm": "1.20-1.45",
+      "note": "Workable only when destination improves access to Tier 1/Tier 2 density or home corridor."
+    },
+    "longDisplacement": {
+      "totalMiles": "1000-1800",
+      "realisticTrueRpm": "1.20-1.35 visible in weak markets, but not automatically acceptable",
+      "note": "Reject cheap long-locks into weak destinations unless the move is intentionally strategic or pays premium."
+    },
+    "extremeLongLock": {
+      "totalMiles": "1800+",
+      "realisticTrueRpm": "1.35-1.75+ depending destination risk",
+      "note": "Westbound, border, rural, multi-day, or poor reload markets require premium."
+    }
+  },
+  "regionalOverlays": {
+    "MinnesotaTwinCities": {
+      "status": "compressed",
+      "rule": "Bid to actual target bands when escaping toward Chicago/Indiana/Ohio/Midwest density; avoid cheap south/west displacement."
+    },
+    "KansasCity": {
+      "status": "transitional feeder",
+      "rule": "Prioritize north/east reloads toward STL/Chicago/Indiana/Ohio. Avoid cheap OK/TX southbound gravity."
+    },
+    "Northeast": {
+      "status": "cargo-van clearing can be lower than generic market data",
+      "rule": "Use visible board target rates and callback behavior. Do not translate dry-van spot averages directly to cargo-van bids."
+    },
+    "MilwaukeeChicagoOhioCorridor": {
+      "status": "core density",
+      "rule": "Protect floor when possible. Accept strategic discounts only when the load preserves flow or heads home."
+    }
+  },
+  "hardRejects": [
+    "Any load under 0.90 True RPM unless data is wrong",
+    "Trap destination without premium or clear exit plan",
+    "Heavy cargo-van freight without payload verification",
+    "Hazmat-like commodity without broker confirmation",
+    "Stale pickup/delivery timing unless broker confirms corrected live appointment"
+  ]
+}
