@@ -12,7 +12,7 @@ const CORE = [
   './voice-load.js?v=23.5.0',
   './admin-driver-ui.js?v=23.5.0',
   './midwest-stack-authority.js?v=23.5.1',
-  './manifest.json?v=23.5.0',
+  './manifest.json?v=23.5.1',
   './midwest-stack-config.json',
   './rate-overrides-2026-05.json',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
