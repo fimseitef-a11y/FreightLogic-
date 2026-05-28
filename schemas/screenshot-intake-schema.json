@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0.0",
+  "name": "FreightLogic screenshot/load-board intake schema",
+  "purpose": "Normalize user-uploaded DispatchLand/Sylectus/load-board screenshots into reusable freight intelligence and future app training data.",
+  "requiredFields": [
+    "capturedAtLocal",
+    "sourceBoard",
+    "origin",
+    "destination",
+    "loadedMiles",
+    "deadheadMiles",
+    "weightLbs",
+    "pickupWindow",
+    "deliveryWindow",
+    "rateVisible",
+    "status"
+  ],
+  "fields": {
+    "capturedAtLocal": { "type": "string", "format": "date-time-local", "description": "Approximate local time screenshot was posted or evaluated." },
+    "sourceBoard": { "type": "string", "examples": ["DispatchLand", "Sylectus", "RPP", "Other"] },
+    "loadId": { "type": "string" },
+    "broker": { "type": "string" },
+    "origin": { "type": "string" },
+    "destination": { "type": "string" },
+    "loadedMiles": { "type": "number", "minimum": 0 },
+    "deadheadMiles": { "type": "number", "minimum": 0 },
+    "totalMiles": { "type": "number", "minimum": 0, "formula": "loadedMiles + deadheadMiles" },
+    "offeredRate": { "type": "number", "minimum": 0 },
+    "targetRate": { "type": "number", "minimum": 0 },
+    "calculatedTrueRpm": { "type": "number", "formula": "rate / totalMiles" },
+    "weightLbs": { "type": "number", "minimum": 0 },
+    "pieces": { "type": "number", "minimum": 0 },
+    "dimensions": { "type": "string" },
+    "commodity": { "type": "string" },
+    "pickupWindow": { "type": "string" },
+    "deliveryWindow": { "type": "string" },
+    "timingFeasibility": { "type": "string", "enum": ["live", "tight", "stale", "contradictory", "unknown"] },
+    "destinationRole": { "type": "string", "enum": ["tier1", "tier2", "feeder", "trap", "neutral", "unknown"] },
+    "bidPlaced": { "type": "number" },
+    "brokerResponse": { "type": "string", "enum": ["none", "callback", "covered", "countered", "accepted", "rejected", "unknown"] },
+    "finalOutcome": { "type": "string", "enum": ["posted_only", "bid_lost", "bid_won", "passed", "covered_before_bid", "expired", "unknown"] },
+    "notes": { "type": "string" }
+  },
+  "memoryRules": {
+    "alwaysCalculateTrueRpm": true,
+    "alwaysRecordDeadhead": true,
+    "preferScreenshotTruthOverGenericMarketData": true,
+    "storeExpiredAndLostLoads": true,
+    "markStaleTimingExplicitly": true
+  }
+}
