@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0.0",
+  "appTarget": "FreightLogic v23.5.x",
+  "authorityName": "Midwest Stack v2 - Operator System",
+  "effectiveDate": "2026-05-27",
+  "operatorProfile": {
+    "vehicle": "2016 Ford Transit T250 / cargo van class",
+    "homeBase": "Oak Creek, WI",
+    "homeAnchor": "Milwaukee-Chicago corridor",
+    "primaryMetric": "True RPM",
+    "trueRpmFormula": "revenue / (loadedMiles + deadheadMiles)",
+    "loadedRpmRule": "display only; never controls decision"
+  },
+  "corePriorities": [
+    "position",
+    "direction",
+    "freight flow",
+    "True RPM",
+    "deadhead risk",
+    "weekly pace",
+    "broker reliability",
+    "fatigue",
+    "timing feasibility"
+  ],
+  "marketTiers": {
+    "tier1DensityAnchors": ["Chicago/Gary", "Indianapolis", "Cleveland", "Columbus", "Detroit"],
+    "tier2SupportAnchors": ["Nashville", "Louisville", "St. Louis", "Toledo", "Fort Wayne", "Grand Rapids", "Cincinnati", "Dayton", "Milwaukee"],
+    "transitionalFeederMarkets": ["Kansas City", "Des Moines", "Memphis", "Atlanta", "Dallas", "Houston", "Pittsburgh", "Oklahoma City", "Minneapolis/St. Paul", "Charlotte", "Omaha", "Fargo"],
+    "premiumOnlyTrapZones": ["Laredo", "South Texas", "West Texas", "New Mexico", "rural Southeast", "low-density Arkansas", "border markets", "Pacific Northwest displacement", "long-lock West freight"]
+  },
+  "modeRules": {
+    "PROTECT_FLOOR": {
+      "description": "Normal business-health mode when the board is not forcing compression.",
+      "normalFloorTrueRpm": 1.4,
+      "preferredTrueRpm": 1.5,
+      "targetTrueRpm": 1.65
+    },
+    "REALISTIC_WIN": {
+      "description": "Use when screenshots/target rates prove compressed cargo-van clearing.",
+      "floorTrueRpm": 1.15,
+      "preferredTrueRpm": 1.25,
+      "targetTrueRpm": 1.35,
+      "rule": "Prioritize live board targets, actual call-backs, stale/covered behavior, and observed broker ceilings over generic dry-van data."
+    },
+    "ESCAPE_RECOVERY": {
+      "description": "Use when the destination moves the operator clearly toward stronger density.",
+      "floorTrueRpm": 1.1,
+      "preferredTrueRpm": 1.25,
+      "targetTrueRpm": 1.4,
+      "requiredCondition": "Position must improve toward Tier 1/Tier 2 density or home corridor."
+    },
+    "DEAD_ZONE": {
+      "description": "Manual F20-style dead-zone exit gate only.",
+      "hardFloorTrueRpm": 0.9,
+      "requiredConditions": [
+        "1000+ miles from Oak Creek/home base",
+        "No viable reloads above 1.25 True RPM within 120 miles",
+        "Destination moves meaningfully closer to stronger freight structure",
+        "Manual operator confirmation"
+      ]
+    }
+  },
+  "memoryWriteRequirements": {
+    "loadScreenshots": ["origin", "destination", "loadedMiles", "deadheadMiles", "offeredRate", "targetRate", "broker", "pickupWindow", "deliveryWindow", "weight", "pieces", "commodity", "outcome"],
+    "marketMemory": ["city", "dayOfWeek", "timeOfDay", "visibleLoadCount", "clearingBehavior", "compressionScore", "reloadProbability", "deadheadRisk"],
+    "brokerMemory": ["brokerName", "postedRate", "acceptedRate", "counterOffer", "callbackSpeed", "reliabilityFlags", "lanePattern"]
+  }
+}
