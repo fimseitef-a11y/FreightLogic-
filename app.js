@@ -2843,6 +2843,7 @@ function openScoreBreakdown(trip, score){
   const header = document.createElement('div');
   header.style.cssText = 'text-align:center;padding:16px 0 12px';
   header.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.08em;margin-bottom:4px">Ω OMEGA SCORE</div>
     <div style="font-size:48px;font-weight:900;color:${score.verdictColor};line-height:1">${score.verdict}</div>
     <div style="display:flex;justify-content:center;gap:20px;margin-top:12px">
       <div><div class="muted" style="font-size:11px">MARGIN</div><div style="font-size:28px;font-weight:800;color:${score.marginScore>=55?'var(--good)':'var(--warn)'}">${score.marginScore}</div></div>
@@ -2945,7 +2946,7 @@ function showScoreFlash(trip, score){
   const body = document.createElement('div');
   body.style.cssText = 'text-align:center;padding:8px 0';
   body.innerHTML = `
-    <div style="font-size:14px;font-weight:700;color:var(--muted);margin-bottom:6px">LOAD DECISION SCORE</div>
+    <div style="font-size:14px;font-weight:700;color:var(--muted);margin-bottom:6px">Ω OMEGA SCORE</div>
     <div style="font-size:52px;font-weight:900;color:${score.verdictColor};line-height:1.1">${score.verdict}</div>
     <div style="display:flex;justify-content:center;gap:24px;margin:14px 0">
       <div><div class="muted" style="font-size:11px">MARGIN</div><div style="font-size:32px;font-weight:800;color:${score.marginScore>=55?'var(--good)':'var(--warn)'}">${score.marginScore}</div></div>

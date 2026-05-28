@@ -104,6 +104,61 @@
     }
   });
 
+  // Mutable live vars populated by _loadJsonAuthority(); null = not yet loaded, fall back to frozen constants.
+  let _liveModes = null;
+  let _liveBands = null;
+
+  async function _loadJsonAuthority() {
+    try {
+      const [ratesRes, configRes] = await Promise.all([
+        fetch('./rate-overrides-2026-05.json'),
+        fetch('./midwest-stack-config.json')
+      ]);
+
+      if (ratesRes.ok) {
+        const data = await ratesRes.json();
+        const BAND_MAP = {
+          shortLocalOrReposition: 'shortLocal',
+          mediumFeeder: 'mediumFeeder',
+          midLengthRecovery: 'longRecovery',
+          longDisplacement: 'longDisplacement',
+          extremeLongLock: 'extremeLongLock'
+        };
+        const parsed = {};
+        for (const [k, v] of Object.entries(data.realisticCompressedBands || {})) {
+          const jsKey = BAND_MAP[k] || k;
+          const milesStr = String(v.totalMiles || '');
+          const rpmStr = String(v.realisticTrueRpm || '');
+          const miles = milesStr.includes('+')
+            ? [parseFloat(milesStr), 9999]
+            : milesStr.split('-').slice(0, 2).map(parseFloat);
+          const rpm = rpmStr.split('-').slice(0, 2).map(parseFloat);
+          if (miles.length === 2 && rpm.length === 2 && miles.every(Number.isFinite) && rpm.every(Number.isFinite)) {
+            parsed[jsKey] = { totalMiles: miles, realisticWin: rpm, note: v.note || '' };
+          }
+        }
+        if (Object.keys(parsed).length >= 3) _liveBands = parsed;
+      }
+
+      if (configRes.ok) {
+        const data = await configRes.json();
+        const parsedModes = {};
+        for (const [id, v] of Object.entries(data.modeRules || {})) {
+          const base = CONFIG.modes[id];
+          if (!base) continue;
+          const rawFloor = v.normalFloorTrueRpm !== undefined ? v.normalFloorTrueRpm
+            : v.floorTrueRpm !== undefined ? v.floorTrueRpm
+            : v.hardFloorTrueRpm;
+          const floor = Number.isFinite(Number(rawFloor)) ? Number(rawFloor) : base.floor;
+          const preferred = Number.isFinite(Number(v.preferredTrueRpm)) ? Number(v.preferredTrueRpm) : base.preferred;
+          const target = Number.isFinite(Number(v.targetTrueRpm)) ? Number(v.targetTrueRpm) : base.target;
+          parsedModes[id] = { id: base.id, label: base.label, description: v.description || base.description, floor, preferred, target };
+        }
+        if (Object.keys(parsedModes).length >= 2) _liveModes = parsedModes;
+      }
+    } catch (_) { /* fall through to frozen constants on any error */ }
+  }
+
   function cleanText(value){ return String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function finite(value, fallback){ const n = Number(value); return Number.isFinite(n) ? n : (fallback || 0); }
   function roundMoney(value){ return Math.round(finite(value) / 5) * 5; }
@@ -151,18 +206,19 @@
   function modeDefaults(modeId){
     const cleaned = cleanText(modeId || '');
     const key = MODE_LABEL_MAP[cleaned] || cleaned.replace(/\s+/g, '_').toUpperCase();
-    return CONFIG.modes[key] || CONFIG.modes.REALISTIC_WIN;
+    const modes = _liveModes || CONFIG.modes;
+    return modes[key] || CONFIG.modes.REALISTIC_WIN;
   }
 
   function bandForMiles(totalMiles){
-    const bands = RATE_OVERRIDE_2026_05.compressedBands;
+    const bands = _liveBands || RATE_OVERRIDE_2026_05.compressedBands;
     const list = Object.values(bands);
     // Use exclusive upper bound to prevent boundary overlap between adjacent bands
     for (let i = 0; i < list.length; i++) {
       const b = list[i];
       if (totalMiles >= b.totalMiles[0] && (i === list.length - 1 || totalMiles < b.totalMiles[1])) return b;
     }
-    return bands.mediumFeeder;
+    return bands.mediumFeeder || list[1] || list[0];
   }
 
   function hasWeekendLock(pickupDate, deliveryDate){
@@ -221,7 +277,7 @@
       askRpm = Math.max(askRpm, 1.35 + premium);
     }
     if (mode.id === 'DEAD_ZONE') {
-      floorRpm = 0.91;
+      floorRpm = finite(mode.floor, 0.91);
       winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
       askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
       flags.push('Dead-zone mode must be manually validated before acceptance.');
@@ -290,6 +346,7 @@
       if (el) el.addEventListener('input', renderUi, { passive: true });
       if (el) el.addEventListener('change', renderUi, { passive: true });
     });
+    _loadJsonAuthority(); // non-blocking; live data used on next user input after load
     renderUi();
   }
 
@@ -316,7 +373,8 @@
       '<div class="pill"><span>Realistic win</span><b>' + money(result.recommendation.winBid) + '</b></div>' +
       '<div class="pill"><span>Ask</span><b>' + money(result.recommendation.askBid) + '</b></div>' +
       '</div>' +
-      '<div style="margin-top:10px;font-weight:800">' + escapeHtml(result.recommendation.verdict) + '</div>' +
+      '<div style="margin-top:10px;font-size:10px;font-weight:600;color:var(--muted,#888);letter-spacing:.05em;text-transform:uppercase">MW Stack v2</div>' +
+      '<div style="margin-top:2px;font-weight:800">' + escapeHtml(result.recommendation.verdict) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:4px">' + escapeHtml(result.recommendation.action) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:8px">Destination: ' + escapeHtml(result.market.destination.label) + ' · Region: ' + escapeHtml(result.market.region) + '</div>' +
       '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0">' + flags + '</ul>';
