@@ -11749,7 +11749,7 @@ async function cloudAdminCreateUser(){
         if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
       }
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
-      sessionStorage.setItem('fl_admin_token', adminToken);
+      localStorage.setItem('fl_admin_tok', adminToken);
       cloudAdminLoadUsers();
     } else { const e = await res.json().catch(()=>({})); if (result) result.innerHTML = '<div style="color:var(--bad)">' + escapeHtml(e.error || 'Failed') + '</div>'; }
   } catch(e) { if (result) result.innerHTML = '<div style="color:var(--bad)">Network error</div>'; }
@@ -11761,7 +11761,7 @@ function cloudAdminShare(text){
 }
 
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_token') || '').trim();
+  const adminToken = ($('#adminToken')?.value || localStorage.getItem('fl_admin_tok') || '').trim();
   const list = $('#adminUserList'); if (!adminToken || !list) return;
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
@@ -11784,7 +11784,7 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_token'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = localStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
   $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
