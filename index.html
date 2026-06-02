@@ -7,15 +7,18 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.5.1">
+  <link rel="manifest" href="manifest.json?v=23.6.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
   <link rel="apple-touch-icon" sizes="120x120" href="./icon120.png">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="./favicon16.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap">
   <style>
     /* ═══════════════════════════════════════════════════════════════
        FREIGHT LOGIC v23.2.0 — DESIGN SYSTEM "Operator"
@@ -24,34 +27,34 @@
 
     /* ── Design tokens ─────────────────────────────────────────── */
     :root {
-      --bg:            #070710;
-      --bg-grid:       radial-gradient(rgba(255,255,255,0.024) 1px, transparent 1px);
-      --surface-0:     #0d0d1c;
-      --surface-1:     #141424;
-      --surface-2:     #1c1c2e;
-      --surface-3:     #252540;
+      --bg:            #080810;
+      --bg-grid:       radial-gradient(rgba(255,255,255,0.018) 1px, transparent 1px);
+      --surface-0:     #0e0e1a;
+      --surface-1:     #13131f;
+      --surface-2:     #1a1a28;
+      --surface-3:     #222232;
 
       --border:        rgba(255,255,255,0.07);
       --border-subtle: rgba(255,255,255,0.04);
-      --border-focus:  rgba(255,255,255,0.16);
+      --border-focus:  rgba(255,255,255,0.15);
 
       --text:           #eeeef8;
-      --text-secondary: #8080a8;
-      --text-tertiary:  #4e4e6a;
+      --text-secondary: #9090b0;
+      --text-tertiary:  #606078;
 
       --accent:        #f0a800;
-      --accent-dark:   #d09200;
-      --accent-muted:  rgba(240,168,0,0.09);
-      --accent-border: rgba(240,168,0,0.26);
-      --accent-text:   #ffc940;
+      --accent-dark:   #e09200;
+      --accent-muted:  rgba(240,168,0,0.10);
+      --accent-border: rgba(240,168,0,0.22);
+      --accent-text:   #f0a800;
       --accent-glow:   rgba(240,168,0,0.14);
 
       --good:        #22d68a;
       --good-muted:  rgba(34,214,138,0.08);
-      --good-border: rgba(34,214,138,0.24);
+      --good-border: rgba(34,214,138,0.20);
       --bad:         #f05555;
       --bad-muted:   rgba(240,85,85,0.08);
-      --bad-border:  rgba(240,85,85,0.24);
+      --bad-border:  rgba(240,85,85,0.20);
       --warn:        #f5a623;
       --warn-muted:  rgba(245,166,35,0.10);
       --warn-border: rgba(245,166,35,0.24);
@@ -66,8 +69,8 @@
       --shadow:    0 4px 28px rgba(0,0,0,.50);
       --shadow-lg: 0 20px 64px rgba(0,0,0,.65);
 
-      --font:      -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', system-ui, sans-serif;
-      --font-mono: 'SF Mono', 'Cascadia Code', 'Menlo', ui-monospace, monospace;
+      --font:      'Syne', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', system-ui, sans-serif;
+      --font-mono: 'DM Mono', 'SF Mono', 'Cascadia Code', 'Menlo', ui-monospace, monospace;
     }
 
     [data-theme="light"] {
@@ -178,27 +181,27 @@
     @media(max-width:640px) { .grid2 { grid-template-columns: 1fr } }
 
     /* ── KPI Hero ────────────────────────────────────────────────── */
-    .kpi-hero { text-align: center; padding: 10px 0 6px }
+    .kpi-hero { text-align: center; padding: 8px 0 18px }
     .kpi-hero-value {
-      font-family: var(--font-mono); font-size: 54px; font-weight: 600;
+      font-family: var(--font-mono); font-size: 54px; font-weight: 500;
       letter-spacing: -3px; line-height: 1;
-      background: linear-gradient(135deg, var(--text) 30%, var(--accent-text) 100%);
+      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
     }
     .kpi-hero-label {
       font-size: 11px; color: var(--text-tertiary); font-weight: 700;
-      margin-top: 10px; text-transform: uppercase; letter-spacing: .9px;
+      margin-top: 8px; text-transform: uppercase; letter-spacing: .9px;
     }
     .kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px }
     .kpi-cell {
-      background: var(--surface-0); border: 1px solid var(--border-subtle);
-      border-radius: var(--r-sm); padding: 14px; text-align: center;
+      background: var(--surface-0); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 12px 10px; text-align: center;
       transition: border-color .2s;
     }
     .kpi-cell:hover { border-color: var(--border-focus) }
     .kpi-cell-value {
-      font-family: var(--font-mono); font-size: 20px; font-weight: 600;
+      font-family: var(--font-mono); font-size: 16px; font-weight: 600;
       letter-spacing: -.5px; color: var(--text);
     }
     .kpi-cell-label { font-size: 10px; color: var(--text-tertiary); margin-top: 4px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase }
@@ -399,10 +402,19 @@
     }
     .nav a .ni svg { width: 22px; height: 22px }
     .nav a .nl { font-size: 10px; font-weight: 700; letter-spacing: .2px }
-    .nav a.active { color: var(--accent-text) }
-    .nav a.active .ni { background: var(--accent-muted) }
+    .nav a.active { color: var(--accent) }
+    .nav a.active .ni { background: transparent }
     .nav a.active .ni svg { stroke-width: 2.5 }
     .nav a:active .ni { transform: scale(.86) }
+    .nav a::before {
+      content: ''; position: absolute; top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 22px; height: 2.5px; border-radius: 2px;
+      background: var(--accent); opacity: 0;
+      transition: opacity .18s;
+    }
+    .nav a.active::before { opacity: 1 }
+    .nav a.nav-eval-center::before { display: none }
 
     /* Center Evaluate tab */
     .nav a.nav-eval-center { flex: 0 0 68px; padding: 4px 2px }
@@ -625,6 +637,149 @@
       .menu-tile:hover { border-color: var(--border-focus); background: var(--surface-2) }
       .intel-row:hover { border-color: var(--border-focus); background: var(--surface-2) }
     }
+
+    /* ═══════════════════════════════════════════════════════════════
+       DESIGN SYSTEM v4.0 "Command" — Component extensions
+       ═══════════════════════════════════════════════════════════════ */
+
+    /* ── Grade chip ───────────────────────────────────────────────── */
+    .fl-grade-chip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+      font-family: var(--font-mono); font-size: 15px; font-weight: 700;
+      border: 1.5px solid transparent;
+    }
+    .fl-grade-chip.a { background: rgba(34,214,138,0.12); border-color: rgba(34,214,138,0.32); color: var(--good) }
+    .fl-grade-chip.b { background: rgba(240,168,0,0.10); border-color: rgba(240,168,0,0.30); color: var(--accent) }
+    .fl-grade-chip.c { background: rgba(245,166,35,0.10); border-color: rgba(245,166,35,0.30); color: var(--warn) }
+    .fl-grade-chip.d { background: rgba(240,85,85,0.10); border-color: rgba(240,85,85,0.28); color: var(--bad) }
+    .fl-grade-chip.e { background: rgba(240,85,85,0.12); border-color: rgba(240,85,85,0.35); color: var(--bad) }
+
+    /* ── Compact trip row ─────────────────────────────────────────── */
+    .item.fl-tc {
+      display: flex; align-items: center; gap: 12px;
+      border-left: none; border-radius: var(--r-sm); padding: 12px 14px; cursor: pointer;
+    }
+    .fl-tc .fl-tc-body { flex: 1; min-width: 0 }
+    .fl-tc .fl-tc-route {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .fl-tc .fl-tc-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px }
+    .fl-tc .fl-tc-right { text-align: right; flex-shrink: 0 }
+    .fl-tc .fl-tc-pay { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--text) }
+    .fl-tc .fl-tc-rpm { font-size: 11px; margin-top: 2px; font-weight: 700 }
+
+    /* ── Alert row ────────────────────────────────────────────────── */
+    .fl-alert {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 11px 13px; border-radius: 13px; margin-bottom: 8px;
+      border: 1px solid var(--border); background: var(--surface-2);
+    }
+    .fl-alert:last-child { margin-bottom: 0 }
+    .fl-alert.green { background: var(--good-muted);   border-color: var(--good-border) }
+    .fl-alert.amber { background: var(--accent-muted); border-color: var(--accent-border) }
+    .fl-alert.warn  { background: var(--warn-muted);   border-color: var(--warn-border) }
+    .fl-alert.red   { background: var(--bad-muted);    border-color: var(--bad-border) }
+    .fl-alert-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; line-height: 1.4 }
+    .fl-alert-body { flex: 1; min-width: 0 }
+    .fl-alert-title { font-size: 12px; font-weight: 700; margin-bottom: 2px; color: var(--text) }
+    .fl-alert-text  { font-size: 13px; color: var(--text-secondary); line-height: 1.45 }
+    .fl-alert-cta   { margin-left: auto; flex-shrink: 0; align-self: center }
+
+    /* ── 3-column KPI grid ────────────────────────────────────────── */
+    .fl-kpi-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px }
+
+    /* ── Next Move coaching box ───────────────────────────────────── */
+    .fl-next-move {
+      margin-top: 14px; padding: 12px 14px; border-radius: 14px;
+      background: linear-gradient(135deg, rgba(240,168,0,.07), rgba(240,168,0,.03));
+      border: 1px solid var(--accent-border);
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .fl-nm-icon  { font-size: 18px; flex-shrink: 0; line-height: 1.25 }
+    .fl-nm-body  { min-width: 0 }
+    .fl-nm-label { font-size: 10px; font-weight: 700; color: var(--accent); margin-bottom: 3px; letter-spacing: .5px; text-transform: uppercase }
+    .fl-nm-text  { font-size: 13px; color: var(--text-secondary); line-height: 1.45 }
+
+    /* ── Card header with action link ────────────────────────────── */
+    .fl-card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px }
+    .fl-card-hdr h3 { margin: 0 }
+    .fl-see-all { font-size: 12px; color: var(--accent); font-weight: 700; text-decoration: none; flex-shrink: 0 }
+    .fl-see-all:hover { text-decoration: underline }
+
+    /* ── Goal progress badge ──────────────────────────────────────── */
+    .fl-goal-badge {
+      display: inline-flex; padding: 3px 10px; border-radius: var(--r-pill);
+      font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid transparent;
+    }
+    .fl-goal-badge.good  { background: var(--good-muted);   border-color: var(--good-border);   color: var(--good) }
+    .fl-goal-badge.amber { background: var(--accent-muted); border-color: var(--accent-border);  color: var(--accent) }
+
+    /* ── Quick action grid ────────────────────────────────────────── */
+    .fl-quick-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px }
+    .fl-quick-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 14px 8px; border-radius: 16px; border: 1px solid var(--border);
+      background: var(--surface-2); color: var(--text);
+      font-size: 13px; font-weight: 700; font-family: var(--font); cursor: pointer;
+      transition: transform .1s var(--spring), background .15s, border-color .15s;
+      -webkit-user-select: none; user-select: none; min-height: 68px;
+    }
+    .fl-quick-btn:active { transform: scale(.94) }
+    .fl-quick-btn:hover  { background: var(--surface-3); border-color: var(--border-focus) }
+    .fl-quick-btn.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      border-color: var(--accent); color: #07070f;
+      box-shadow: 0 3px 16px rgba(240,168,0,.22), 0 0 0 1px rgba(240,168,0,.12) inset;
+    }
+    .fl-quick-btn.primary:hover { box-shadow: 0 5px 24px rgba(240,168,0,.34) }
+    .fl-quick-btn .fl-qb-icon { font-size: 20px; line-height: 1 }
+
+    /* ── Intel section tabs ───────────────────────────────────────── */
+    .fl-intel-tabs {
+      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .fl-intel-tabs::-webkit-scrollbar { display: none }
+    .fl-intel-tab {
+      flex-shrink: 0; padding: 7px 16px; border-radius: var(--r-pill);
+      border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--text-secondary); font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap; font-family: var(--font);
+      transition: background .12s, color .12s, border-color .12s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .fl-intel-tab:active { transform: scale(.94) }
+    .fl-intel-tab.active { background: var(--accent); color: #07070f; border-color: var(--accent) }
+
+    /* ── Evaluate result card enhancements ───────────────────────── */
+    .fl-eval-grade {
+      font-family: var(--font-mono); font-size: 72px; font-weight: 500;
+      line-height: 1; text-align: center; margin: 4px 0 6px;
+    }
+    .fl-eval-verdict {
+      display: inline-flex; padding: 5px 18px; border-radius: var(--r-pill);
+      font-size: 13px; font-weight: 800; letter-spacing: .5px;
+      border: 1px solid transparent;
+    }
+    .fl-eval-verdict.accept   { background: var(--good-muted);   border-color: var(--good-border);   color: var(--good) }
+    .fl-eval-verdict.strategic{ background: var(--warn-muted);   border-color: var(--warn-border);   color: var(--warn) }
+    .fl-eval-verdict.pass     { background: var(--bad-muted);    border-color: var(--bad-border);    color: var(--bad) }
+
+    /* ── Trip list full-row redesign (trips page) ─────────────────── */
+    .item.fl-trip-full {
+      display: flex; align-items: center; gap: 12px;
+      border-left: none; padding: 14px;
+    }
+    .fl-trip-full .fl-tf-body { flex: 1; min-width: 0 }
+    .fl-trip-full .fl-tf-origin { font-size: 14px; font-weight: 700; color: var(--text) }
+    .fl-trip-full .fl-tf-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px }
+    .fl-trip-full .fl-tf-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px }
+    .fl-trip-full .fl-tf-right { text-align: right; flex-shrink: 0; min-width: 80px }
+    .fl-trip-full .fl-tf-pay { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text) }
+    .fl-trip-full .fl-tf-rpm { font-size: 11px; font-weight: 700; margin-top: 2px }
+    .fl-trip-full .fl-tf-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; justify-content: flex-end }
   </style>
 </head>
 <body>
@@ -653,13 +808,13 @@
   </datalist>
   <main class="app">
     <section id="view-home" class="view">
-      <!-- F26: Driver Command Strip — always-visible primary actions -->
-      <div id="driverCommandStrip" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-        <button class="btn primary" id="dcEvaluate" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">⚡ Evaluate Load</button>
-        <button class="btn primary" id="dcAddTrip" style="font-size:15px;font-weight:700;padding:14px 10px;border-radius:14px;gap:6px">＋ Add Trip</button>
-        <button class="btn" id="dcAddExpense" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">📋 Add Expense</button>
-        <button class="btn" id="dcMoney" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px">💵 Today's Money</button>
-        <button class="btn" id="dcBestMove" style="font-size:13px;font-weight:600;padding:12px 10px;border-radius:14px;gap:6px;grid-column:1/-1">📍 Best Move Now</button>
+      <!-- F26: Driver Command Strip — IDs kept for JS binding, visually replaced below -->
+      <div id="driverCommandStrip" style="display:none" aria-hidden="true">
+        <button id="dcEvaluate"></button>
+        <button id="dcAddTrip"></button>
+        <button id="dcAddExpense"></button>
+        <button id="dcMoney"></button>
+        <button id="dcBestMove"></button>
       </div>
 
       <!-- Card 1: Welcome (new users only) -->
@@ -679,31 +834,36 @@
 
       <!-- Card 1 (active users): This Week Command Center -->
       <div class="card card-hero" style="margin-top:10px" id="homeKPICard">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
           <h3 style="margin:0">This Week</h3>
-          <div id="homeWeekBadge" style="font-size:11px;font-weight:700;color:var(--text-tertiary)"></div>
-        </div>
-        <div class="kpi-progress-bar-wrap">
-          <div class="kpi-progress-bar" id="pcProgressBar" style="width:0%"></div>
+          <div id="homeWeekBadge" class="fl-goal-badge amber"></div>
         </div>
         <div class="kpi-hero">
           <div class="kpi-hero-value" id="kpiTodayNet">—</div>
           <div class="kpi-hero-label">net income</div>
         </div>
-        <div class="kpi-row">
+        <div class="kpi-progress-bar-wrap" style="margin-bottom:0">
+          <div class="kpi-progress-bar" id="pcProgressBar" style="width:0%"></div>
+        </div>
+        <div class="fl-kpi-3col">
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross</div></div>
           <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Expenses</div></div>
           <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM</div></div>
-          <div class="kpi-cell"><div class="kpi-cell-value" id="pcEfficiency">—</div><div class="kpi-cell-label">Avg DH</div></div>
         </div>
-        <!-- v21 T1D: Daily Breakeven -->
-        <div class="pill" id="kpiDailyBurn" style="margin-top:8px;width:100%;justify-content:center;font-size:12px"></div>
-        <div id="pcCoaching" style="margin-top:10px"></div>
+        <!-- Next Move coaching (populated by renderCommandCenter) -->
+        <div id="homeNextMoveBox"></div>
         <div id="pcDZBadge" style="display:none;margin-top:6px"></div>
-        <div class="quick-actions" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
-          <button class="btn primary" id="btnQuickTrip" style="gap:4px">＋ Trip</button>
-          <button class="btn" id="btnQuickExpense">＋ Expense</button>
-          <button class="btn" id="btnQuickFuel">＋ Fuel</button>
+        <!-- Hidden slots: values still computed, shown via homeNextMoveBox or other cards -->
+        <div style="display:none">
+          <div id="pcEfficiency"></div>
+          <div id="kpiDailyBurn"></div>
+          <div id="pcCoaching"></div>
+        </div>
+        <!-- Quick actions -->
+        <div class="fl-quick-grid">
+          <button class="fl-quick-btn primary" id="btnQuickTrip"><span class="fl-qb-icon">＋</span>Trip</button>
+          <button class="fl-quick-btn" id="btnQuickFuel"><span class="fl-qb-icon">⛽</span>Fuel</button>
+          <button class="fl-quick-btn" id="btnQuickExpense"><span class="fl-qb-icon">💸</span>Expense</button>
         </div>
       </div>
 
@@ -715,9 +875,9 @@
 
       <!-- Card 2: Alerts & Actions -->
       <div class="card" style="margin-top:12px">
-        <h3>What's Next</h3>
-        <div class="list" id="trendAlerts"></div>
-        <div class="list" id="homeActions"></div>
+        <h3>Alerts &amp; Actions</h3>
+        <div id="trendAlerts"></div>
+        <div id="homeActions"></div>
         <!-- Preserved slots for dynamic content (hidden by default) -->
         <div id="homeStrategyBadge" style="display:none"></div>
         <div id="homeWeeklyReport" style="display:none"></div>
@@ -728,9 +888,9 @@
 
       <!-- Card 3: Recent Trips -->
       <div class="card" style="margin-top:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <h3 style="margin:0">Recent Trips</h3>
-          <a href="#trips" style="font-size:12px;color:var(--accent-text);font-weight:600;text-decoration:none">See all →</a>
+        <div class="fl-card-hdr">
+          <h3>Recent Trips</h3>
+          <a href="#trips" class="fl-see-all">See all →</a>
         </div>
         <div class="list" id="homeRecentTrips"></div>
       </div>
@@ -751,13 +911,12 @@
     </section>
     <section id="view-trips" class="view" style="display:none">
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <h3 style="margin:0">Trips</h3>
-          <button class="btn primary" id="btnTripAdd" style="padding:8px 14px">＋ Trip</button>
+        <div class="fl-card-hdr" style="margin-bottom:12px">
+          <h3>Trips</h3>
+          <button class="btn primary" id="btnTripAdd" style="padding:8px 16px;border-radius:12px">＋ Trip</button>
         </div>
         <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
-        <!-- v20: Filter chips -->
-        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+        <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scrollbar-width:none">
           <button class="chip active" data-chip="all">All</button>
           <button class="chip" data-chip="unpaid">Unpaid</button>
           <button class="chip" data-chip="week">This Week</button>
@@ -1122,8 +1281,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.5.1"></script>
-  <script src="voice-load.js?v=23.5.1"></script>
-  <script src="sw-bridge.js?v=23.5.1"></script>
+  <script src="app.js?v=23.6.0"></script>
+  <script src="voice-load.js?v=23.6.0"></script>
+  <script src="sw-bridge.js?v=23.6.0"></script>
 </body>
 </html>
