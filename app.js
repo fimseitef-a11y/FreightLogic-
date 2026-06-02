@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.5.0 USA ENGINE
+/** FreightLogic v23.5.2 USA ENGINE
+ *  v23.5.2: Design System "Operator" UI overhaul — card-hero KPI, intel-row list,
+ *           animated progress bar, settings-section-head components, async Intel
+ *           live card with week stats and top-lane breakdown
  *  v23.5.0: Smart Insight card, improved scoring (day-of-week + stop factors),
  *           better counter-offer targeting, tighter NEGOTIATE/PASS verdict logic,
  *           richer positioning confidence, enhanced AI eval prompt context
@@ -14,7 +17,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.5.0';
+const APP_VERSION = '23.5.2';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 

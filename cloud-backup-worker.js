@@ -1,4 +1,4 @@
-// FreightLogic Cloud Backup Worker v10 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v11 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
 // Optimized for Cloudflare free tier: pointer keys replace list() calls; hourly rate-limit windows.
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
@@ -128,7 +128,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '10', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '11', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
