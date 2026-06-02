@@ -4824,52 +4824,134 @@ const MORE_TILES = [
 
 // ── Intel Page Renderer ──
 let _intelBound = false;
-function renderIntel(){
+async function renderIntel(){
   const grid = $('#intelMenu');
   if (!grid || _intelBound) return;
   _intelBound = true;
+
+  // ── Live summary (async, non-blocking) ──────────────────────────
+  const liveSection = $('#intelLiveSection');
+  if (liveSection){
+    liveSection.innerHTML = `<div class="card"><div class="skel" style="height:90px;margin-bottom:0"></div></div>`;
+    (async () => {
+      try {
+        const { trips } = await _getTripsAndExps();
+        // Current week stats
+        const now = new Date();
+        const dow = now.getDay();
+        const wk0 = new Date(now);
+        wk0.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+        wk0.setHours(0,0,0,0);
+        const wkTrips = trips.filter(t => t.date && new Date(t.date) >= wk0 && !t.isDZExit);
+        const wkGross = wkTrips.reduce((s,t) => s + (t.revenue||0), 0);
+        const wkMiles = wkTrips.reduce((s,t) => s + (t.loadedMi||0) + (t.deadMi||0), 0);
+        const wkRpm = wkMiles > 0 ? '$' + (wkGross / wkMiles).toFixed(2) : '—';
+        // Top 2 lanes
+        const lanes = computeLaneStats(trips).slice(0,2);
+        const laneColor = (rpm) => rpm >= 1.60 ? 'var(--good)' : rpm >= 1.40 ? 'var(--accent)' : 'var(--warn)';
+        const laneBg   = (rpm) => rpm >= 1.60 ? 'var(--good-muted)' : rpm >= 1.40 ? 'var(--accent-muted)' : 'var(--warn-muted)';
+        const laneBdr  = (rpm) => rpm >= 1.60 ? 'var(--good-border)' : rpm >= 1.40 ? 'var(--accent-border)' : 'var(--warn-border)';
+        const laneGrade= (rpm) => rpm >= 1.60 ? 'A' : rpm >= 1.40 ? 'B' : 'C';
+        const lanesHtml = lanes.length ? `
+          <div style="border-top:1px solid var(--border-subtle);margin:14px 0 12px"></div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">Top Lanes</div>
+          ${lanes.map(l => `
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface-0);border:1px solid var(--border);border-radius:14px;margin-bottom:6px;cursor:pointer" data-lane-idx="${lanes.indexOf(l)}">
+              <div style="width:34px;height:34px;border-radius:10px;background:${laneBg(l.avgRpm)};border:1.5px solid ${laneBdr(l.avgRpm)};display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:15px;font-weight:700;color:${laneColor(l.avgRpm)};flex-shrink:0">${laneGrade(l.avgRpm)}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(l.display)}</div>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.trips} run${l.trips>1?'s':''} &middot; $${l.avgRpm} avg/mi</div>
+              </div>
+              <div style="font-size:13px;font-weight:700;color:${l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)'}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'}</div>
+            </div>
+          `).join('')}` : '';
+        liveSection.innerHTML = `
+          <div class="card card-hero">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:12px">This Week</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
+                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--accent)">${fmtMoney(wkGross)}</div>
+                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Gross</div>
+              </div>
+              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
+                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--text)">${wkRpm}</div>
+                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">RPM</div>
+              </div>
+              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
+                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--text)">${wkTrips.length}</div>
+                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Trips</div>
+              </div>
+            </div>
+            ${lanesHtml}
+          </div>`;
+        // Wire lane click handlers
+        if (lanes.length){
+          liveSection.querySelectorAll('[data-lane-idx]').forEach(el => {
+            const idx = Number(el.getAttribute('data-lane-idx'));
+            el.addEventListener('click', () => { haptic(10); openLaneBreakdown(lanes[idx], trips); });
+          });
+        }
+      } catch(e){
+        if (liveSection) liveSection.innerHTML = '';
+      }
+    })();
+  }
+
+  // ── Section label ────────────────────────────────────────────────
+  const headEl = document.createElement('div');
+  headEl.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin:14px 0 8px 2px';
+  headEl.textContent = 'Tools & Analysis';
+  grid.parentElement.insertBefore(headEl, grid);
+
+  // ── List rows (replaces icon tiles) ─────────────────────────────
+  grid.className = 'intel-list card';
+  grid.style.cssText = 'padding:8px';
   grid.innerHTML = '';
-  for (const tile of INTEL_TILES){
+
+  INTEL_TILES.forEach((tile, idx) => {
     const el = document.createElement('div');
-    el.className = 'menu-tile';
+    el.className = 'intel-row';
     el.setAttribute('role', 'button');
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', tile.title);
-    el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
-    const tileAction = async ()=>{
+    if (idx > 0){
+      const div = document.createElement('div');
+      div.style.cssText = 'height:1px;background:var(--border-subtle);margin:0 -4px';
+      grid.appendChild(div);
+    }
+    el.innerHTML = `
+      <div class="intel-row-icon">${escapeHtml(tile.icon)}</div>
+      <div class="intel-row-body">
+        <div class="intel-row-title">${escapeHtml(tile.title)}</div>
+        <div class="intel-row-sub">${escapeHtml(tile.sub)}</div>
+      </div>
+      <svg class="intel-row-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const tileAction = async () => {
       try {
-      haptic(15);
-      if (tile.act === 'weeklyReports') await openWeeklyReports();
-      else if (tile.act === 'rateTrends') await openRateTrends();
-      else if (tile.act === 'reloadScoring') await openReloadScoring();
-      else if (tile.act === 'chainAnalysis') await openChainAnalysis();
-      else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
-      else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
-      else if (tile.act === 'costPerDay') await openCostPerDay();
-      else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
-      else if (tile.act === 'omegaTiers'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'marketBoard'){
-        location.hash = '#omega';
-        setTimeout(()=>{
-          const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
-          if (btn) btn.click();
-          window.scrollTo({top:0,behavior:'instant'});
-        }, 100);
-      }
-      else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        haptic(15);
+        if (tile.act === 'weeklyReports') await openWeeklyReports();
+        else if (tile.act === 'rateTrends') await openRateTrends();
+        else if (tile.act === 'reloadScoring') await openReloadScoring();
+        else if (tile.act === 'chainAnalysis') await openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
+        else if (tile.act === 'costPerDay') await openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
+        else if (tile.act === 'omegaTiers'){
+          location.hash = '#omega';
+          setTimeout(()=>{ const btn = document.querySelector('#mwTabs [data-mwtab="omega"]'); if (btn) btn.click(); window.scrollTo({top:0,behavior:'instant'}); }, 100);
+        }
+        else if (tile.act === 'marketBoard'){
+          location.hash = '#omega';
+          setTimeout(()=>{ const btn = document.querySelector('#mwTabs [data-mwtab="board"]'); if (btn) btn.click(); window.scrollTo({top:0,behavior:'instant'}); }, 100);
+        }
+        else if (tile.act === 'maintenance') await openMaintenanceTracker();
       } catch(e){ console.warn('[FL] Intel tile error:', e); }
     };
     el.addEventListener('click', tileAction);
-    el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
     grid.appendChild(el);
-  }
+  });
 }
 
 let _moreBound = false;
