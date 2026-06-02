@@ -273,7 +273,7 @@
     panel.id = 'mwStackAuthorityPanel';
     panel.className = 'card';
     panel.style.marginTop = '12px';
-    panel.innerHTML = '<h3>Midwest Stack v2 Authority</h3>' +
+    panel.innerHTML = '<h3>Bid Strategy</h3>' +
       '<label for="mwBidMode">Bid mode</label>' +
       '<select id="mwBidMode" aria-label="Midwest Stack bid mode">' +
       '<option value="REALISTIC_WIN" selected>Realistic Win — compressed board</option>' +
@@ -309,17 +309,17 @@
       box.innerHTML = '<div class="muted" style="font-size:12px">Enter revenue and miles to get realistic bid guidance.</div>';
       return;
     }
-    const flags = result.risk.flags.length ? result.risk.flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') : '<li>No major overlay flags yet.</li>';
-    box.innerHTML = '<div class="grid2">' +
-      '<div class="pill"><span>Posted True RPM</span><b>$' + result.posted.trueRpm.toFixed(2) + '</b></div>' +
-      '<div class="pill"><span>Grade</span><b>' + result.posted.grade + '</b></div>' +
-      '<div class="pill"><span>Realistic win</span><b>' + money(result.recommendation.winBid) + '</b></div>' +
-      '<div class="pill"><span>Ask</span><b>' + money(result.recommendation.askBid) + '</b></div>' +
+    const flags = result.risk.flags.length ? result.risk.flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') : '';
+    const verdictColor = result.recommendation.verdict === 'TAKE_IF_LIVE' ? 'var(--good)' : (result.recommendation.verdict === 'PASS' || result.recommendation.verdict === 'PASS_PREMIUM_ONLY') ? 'var(--bad)' : 'var(--warn)';
+    box.innerHTML = '<div class="row">' +
+      '<div class="pill"><span class="muted">Floor</span><b>' + money(result.recommendation.floorBid) + '</b></div>' +
+      '<div class="pill"><span class="muted">Win</span><b>' + money(result.recommendation.winBid) + '</b></div>' +
+      '<div class="pill"><span class="muted">Ask</span><b>' + money(result.recommendation.askBid) + '</b></div>' +
       '</div>' +
-      '<div style="margin-top:10px;font-weight:800">' + escapeHtml(result.recommendation.verdict) + '</div>' +
+      '<div style="margin-top:10px;font-weight:800;color:' + verdictColor + '">' + escapeHtml(result.recommendation.verdict) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:4px">' + escapeHtml(result.recommendation.action) + '</div>' +
-      '<div class="muted" style="font-size:12px;margin-top:8px">Destination: ' + escapeHtml(result.market.destination.label) + ' · Region: ' + escapeHtml(result.market.region) + '</div>' +
-      '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0">' + flags + '</ul>';
+      '<div class="muted" style="font-size:12px;margin-top:8px">→ ' + escapeHtml(result.market.destination.label) + ' · ' + escapeHtml(result.market.region) + ' region</div>' +
+      (flags ? '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0;color:var(--warn)">' + flags + '</ul>' : '');
   }
 
   function escapeHtml(s){

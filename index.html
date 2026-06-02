@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.5.0">
+  <link rel="manifest" href="manifest.json?v=23.5.1">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -974,11 +974,11 @@
         </div>
 
         <!-- ── Voice status ── -->
-        <div id="mwVoiceStatus" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-top:8px;color:var(--accent)"></div>
+        <div id="mwVoiceStatus" aria-live="polite" aria-atomic="true" style="display:none;padding:8px 12px;border-radius:8px;background:var(--surface-0);border:1px solid var(--accent-border);font-size:12px;margin-top:8px;color:var(--accent)"></div>
       </div>
 
       <!-- ── v20: Inline Decision Output ── -->
-      <div id="mwEvalOutput" style="min-height:80px">
+      <div id="mwEvalOutput" aria-live="polite" style="min-height:80px">
         <div class="card" style="text-align:center;padding:28px 16px;border-style:dashed">
           <div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div>
           <div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div>
@@ -1122,8 +1122,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.5.0"></script>
-  <script src="voice-load.js?v=23.5.0"></script>
-  <script src="sw-bridge.js?v=23.5.0"></script>
+  <script src="app.js?v=23.5.1"></script>
+  <script src="voice-load.js?v=23.5.1"></script>
+  <script src="sw-bridge.js?v=23.5.1"></script>
 </body>
 </html>
