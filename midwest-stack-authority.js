@@ -133,7 +133,9 @@
             ? [parseFloat(milesStr), 9999]
             : milesStr.split('-').slice(0, 2).map(parseFloat);
           const rpm = rpmStr.split('-').slice(0, 2).map(parseFloat);
-          if (miles.length === 2 && rpm.length === 2 && miles.every(Number.isFinite) && rpm.every(Number.isFinite)) {
+          // Reject bands with implausible RPM values (outside $0.50–$3.00) — guards against tampered JSON
+          const rpmValid = rpm.length === 2 && rpm.every(n => Number.isFinite(n) && n >= 0.50 && n <= 3.00);
+          if (miles.length === 2 && miles.every(Number.isFinite) && rpmValid) {
             parsed[jsKey] = { totalMiles: miles, realisticWin: rpm, note: v.note || '' };
           }
         }
@@ -143,19 +145,23 @@
       if (configRes.ok) {
         const data = await configRes.json();
         const parsedModes = {};
+        // clampRpm: reject implausible values (outside $0.50–$3.00/mi) to prevent tampered JSON from approving anything
+        const clampRpm = (n, fallback) => (Number.isFinite(n) && n >= 0.50 && n <= 3.00) ? n : fallback;
         for (const [id, v] of Object.entries(data.modeRules || {})) {
           const base = CONFIG.modes[id];
           if (!base) continue;
           const rawFloor = v.normalFloorTrueRpm !== undefined ? v.normalFloorTrueRpm
             : v.floorTrueRpm !== undefined ? v.floorTrueRpm
             : v.hardFloorTrueRpm;
-          const floor = Number.isFinite(Number(rawFloor)) ? Number(rawFloor) : base.floor;
-          const preferred = Number.isFinite(Number(v.preferredTrueRpm)) ? Number(v.preferredTrueRpm) : base.preferred;
-          const target = Number.isFinite(Number(v.targetTrueRpm)) ? Number(v.targetTrueRpm) : base.target;
+          const floor = clampRpm(Number(rawFloor), base.floor);
+          const preferred = clampRpm(Number(v.preferredTrueRpm), base.preferred);
+          const target = clampRpm(Number(v.targetTrueRpm), base.target);
           parsedModes[id] = { id: base.id, label: base.label, description: v.description || base.description, floor, preferred, target };
         }
         if (Object.keys(parsedModes).length >= 2) _liveModes = parsedModes;
       }
+      // Re-render so the first displayed result uses live authority data, not frozen constants
+      renderUi();
     } catch (_) { /* fall through to frozen constants on any error */ }
   }
 
@@ -277,7 +283,9 @@
       askRpm = Math.max(askRpm, 1.35 + premium);
     }
     if (mode.id === 'DEAD_ZONE') {
-      floorRpm = finite(mode.floor, 0.91);
+      // Always enforce minimum of 0.91 (one cent above the 0.90 hard reject) regardless of JSON authority.
+      // The previous audit fix deliberately set this boundary; the JSON's hardFloorTrueRpm: 0.9 must not lower it.
+      floorRpm = Math.max(CONFIG.hardStops.absoluteTrueRpmReject + 0.01, finite(mode.floor, 0.91));
       winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
       askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
       flags.push('Dead-zone mode must be manually validated before acceptance.');
