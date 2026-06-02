@@ -14,7 +14,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.5.1';
+const APP_VERSION = '23.6.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3955,14 +3955,16 @@ async function renderCommandCenter(){
       else if (targetPct >= 70) bar.style.background = 'var(--accent)';
       else bar.style.background = 'var(--warn)';
     }
-    // v20: homeWeekBadge shows progress %
+    // v20 / v4 "Command": homeWeekBadge shows progress % with fl-goal-badge styling
     if (badgeEl){
       if (weeklyTarget > 0){
         const pct = Math.min(200, Math.round(targetPct));
-        badgeEl.textContent = `${pct}% of goal`;
-        if (pct >= 100) badgeEl.style.color = 'var(--good)';
-        else if (pct >= 70) badgeEl.style.color = 'var(--accent-text)';
-        else badgeEl.style.color = '';
+        badgeEl.textContent = `${pct}% to goal`;
+        badgeEl.className = pct >= 100 ? 'fl-goal-badge good' : 'fl-goal-badge amber';
+        badgeEl.style.color = '';
+      } else {
+        badgeEl.textContent = '';
+        badgeEl.className = 'fl-goal-badge amber';
       }
     }
     const label = $('#pcProgressLabel');
@@ -3970,9 +3972,10 @@ async function renderCommandCenter(){
       ? `${fmtMoney(wkGross)} of ${fmtMoney(weeklyTarget)}${userGoal > 0 ? ' goal' : ' target'} (${targetPct.toFixed(0)}%)`
       : 'Set a weekly goal in Settings \u2192 Insights';
 
-    // Goal coaching
+    // Goal coaching \u2192 Next Move box (v4 "Command")
     const coachEl = $('#pcCoaching');
-    if (coachEl && weeklyTarget > 0){
+    const nmBox   = $('#homeNextMoveBox');
+    if (weeklyTarget > 0){
       const remaining = Math.max(0, weeklyTarget - wkGross);
       const dayOfWeek = now.getDay();
       const daysLeft = dayOfWeek === 0 ? 1 : 7 - dayOfWeek;
@@ -3989,16 +3992,19 @@ async function renderCommandCenter(){
       if (loadCount30 >= 3) avgMiPerLoad = Math.round(totalMi30 / loadCount30);
 
       if (remaining <= 0){
-        coachEl.innerHTML = `<div style="padding:8px 12px;border-radius:10px;background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.2);font-size:12px;color:var(--good);font-weight:700">Target hit! ${fmtMoney(wkGross - weeklyTarget)} above goal</div>`;
+        const over = fmtMoney(wkGross - weeklyTarget);
+        if (nmBox) nmBox.innerHTML = `<div class="fl-next-move"><div class="fl-nm-icon">\ud83c\udfc6</div><div class="fl-nm-body"><div class="fl-nm-label">Goal Crushed</div><div class="fl-nm-text">${over} above target \u2014 protect your margin. Don't take under-floor loads.</div></div></div>`;
+        if (coachEl) coachEl.innerHTML = '';
       } else {
         const minRpm = avgMiPerLoad > 0 ? (remaining / avgMiPerLoad) : 0;
         const loadsNeeded = trips30 > 0 ? Math.ceil(remaining / (gross30 / trips30 || remaining)) : '?';
-        coachEl.innerHTML = `<div style="padding:8px 12px;border-radius:10px;background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);font-size:12px">
-          <span style="font-weight:700;color:var(--accent)">${fmtMoney(remaining)} to go</span>
-          <span class="muted"> \u2022 ${daysLeft}d left \u2022 ~${loadsNeeded} load${loadsNeeded!==1?'s':''} at avg \u2022 Min RPM for ${fmtNum(avgMiPerLoad)}mi: <b>$${minRpm.toFixed(2)}</b></span>
-        </div>`;
+        if (nmBox) nmBox.innerHTML = `<div class="fl-next-move"><div class="fl-nm-icon">\u26a1</div><div class="fl-nm-body"><div class="fl-nm-label">Next Move</div><div class="fl-nm-text">${fmtMoney(remaining)} to goal &mdash; ~${loadsNeeded} load${loadsNeeded!==1?'s':''} at avg. Min RPM for ${fmtNum(avgMiPerLoad)}&thinsp;mi: <b style="color:var(--accent)">$${minRpm.toFixed(2)}</b></div></div></div>`;
+        if (coachEl) coachEl.innerHTML = `<div style="padding:8px 12px;border-radius:10px;background:rgba(255,179,0,.06);border:1px solid rgba(255,179,0,.2);font-size:12px"><span style="font-weight:700;color:var(--accent)">${fmtMoney(remaining)} to go</span><span class="muted"> &bull; ${daysLeft}d left &bull; ~${loadsNeeded} load${loadsNeeded!==1?'s':''} at avg &bull; Min RPM for ${fmtNum(avgMiPerLoad)}mi: <b>$${minRpm.toFixed(2)}</b></span></div>`;
       }
-    } else if (coachEl){ coachEl.innerHTML = ''; }
+    } else {
+      if (nmBox)   nmBox.innerHTML = '';
+      if (coachEl) coachEl.innerHTML = '';
+    }
 
     // v20: pcEfficiency shows Avg DH miles (more actionable than loaded efficiency %)
     const effEl = $('#pcEfficiency');
@@ -4285,8 +4291,8 @@ function alertCard(alert){
 }
 
 function actionCard(title, cta, onClick){
-  const d = document.createElement('div'); d.className = 'item';
-  d.innerHTML = `<div class="left"><div class="v">${escapeHtml(title)}</div><div class="sub">Tap once — no clutter</div></div><div class="right"><button class="btn">${escapeHtml(cta)}</button></div>`;
+  const d = document.createElement('div'); d.className = 'fl-alert amber';
+  d.innerHTML = `<div class="fl-alert-icon">⚡</div><div class="fl-alert-body"><div class="fl-alert-text">${escapeHtml(title)}</div></div><div class="fl-alert-cta"><button class="btn sm">${escapeHtml(cta)}</button></div>`;
   $('button', d).addEventListener('click', onClick);
   return d;
 }
@@ -4393,19 +4399,55 @@ function addSwipeActions(el, { onLeft, onRight, labelLeft='Delete 🗑️', labe
   return wrap;
 }
 
+// RPM → letter grade used by grade chips
+function _rpmGrade(rpm){
+  if (rpm >= 1.75) return 'A';
+  if (rpm >= 1.60) return 'B';
+  if (rpm >= 1.40) return 'C';
+  if (rpm >= 1.25) return 'D';
+  return 'E';
+}
+
 // P2-2: trip row shows RPM, route, paid tag, LOAD SCORE
 function tripRow(t, {compact=false}={}){
-  const d = document.createElement('div'); d.className = 'item';
+  const d = document.createElement('div');
   const pay = fmtMoney(t.pay||0);
   const miles = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
   const rpm = miles>0 ? (Number(t.pay||0)/miles) : 0;
+
+  // ── Compact mode: grade chip + route + pay (home screen recent trips) ──
+  if (compact){
+    const grade = rpm > 0 ? _rpmGrade(rpm) : '—';
+    const gradeClass = grade !== '—' ? grade.toLowerCase() : 'c';
+    const origin = t.origin ? escapeHtml(t.origin) : '';
+    const dest = t.destination ? escapeHtml(t.destination) : '';
+    const route = origin && dest ? `${origin} → ${dest}` : escapeHtml(t.orderNo || t.customer || 'Unnamed trip');
+    const rpmColor = rpm >= 1.75 ? 'var(--good)' : rpm >= 1.60 ? 'var(--accent)' : rpm >= 1.40 ? 'var(--warn)' : rpm > 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+    const dateLabel = t.pickupDate || t.deliveryDate || '';
+    d.className = 'item fl-tc';
+    d.innerHTML = `
+      <div class="fl-grade-chip ${gradeClass}">${grade !== '—' ? grade : '?'}</div>
+      <div class="fl-tc-body">
+        <div class="fl-tc-route">${route}</div>
+        <div class="fl-tc-meta">${rpm > 0 ? `$${rpm.toFixed(2)}/mi` : '—'}&nbsp;·&nbsp;${escapeHtml(dateLabel)}</div>
+      </div>
+      <div class="fl-tc-right">
+        <div class="fl-tc-pay">${pay}</div>
+        <div class="fl-tc-rpm" style="color:${rpmColor}">${rpm > 0 ? `$${rpm.toFixed(2)}` : '—'}</div>
+      </div>`;
+    d.addEventListener('click', () => openTripWizard(t));
+    return d;
+  }
+
+  // ── Full mode: grade chip + all details + action buttons (trips page) ──
+  d.className = 'item fl-trip-full';
+  const grade = rpm > 0 ? _rpmGrade(rpm) : '?';
+  const gradeClass = grade !== '?' ? grade.toLowerCase() : 'c';
   const tag = t.isPaid ? `<span class="tag good">PAID</span>` : `<span class="tag bad">UNPAID</span>`;
   const reviewTag = t.needsReview ? `<span class="tag" style="background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35);color:var(--warn);font-size:10px" title="${escapeHtml((t.reviewReasons||[]).join('; '))}">REVIEW</span>` : '';
   const runTag = t.wouldRunAgain ? `<span class="tag" style="background:rgba(88,166,255,.1);border-color:rgba(88,166,255,.3);color:#58a6ff;font-size:10px">↻ REPEAT</span>` : '';
-  const route = (t.origin && t.destination) ? `${t.origin} → ${t.destination} • ` : '';
   const stopCount = Array.isArray(t.stops) ? t.stops.length : 0;
   const stopsTag = stopCount > 0 ? `<span class="tag" style="background:rgba(139,92,246,.1);border-color:rgba(139,92,246,.3);color:#a78bfa;font-size:10px">${stopCount} stop${stopCount>1?'s':''}</span>` : '';
-  // Compute load score for badge (uses cached KPI data)
   let scoreBadge = '';
   if (miles > 0 && _kpiCache.trips){
     try {
@@ -4419,18 +4461,22 @@ function tripRow(t, {compact=false}={}){
   const _mapsHtml = _destRaw
     ? `<a href="https://www.google.com/maps/dir/?api=1&${_origRaw ? 'origin=' + encodeURIComponent(_origRaw) + '&' : ''}destination=${encodeURIComponent(_destRaw)}&travelmode=driving" target="_blank" rel="noopener noreferrer" class="btn sm" style="text-decoration:none">Maps</a>`
     : '';
+  const rpmColor = rpm >= 1.75 ? 'var(--good)' : rpm >= 1.60 ? 'var(--accent)' : rpm >= 1.40 ? 'var(--warn)' : rpm > 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+  const destLine = _origRaw && _destRaw ? `→ ${escapeHtml(_destRaw)} · ` : '';
   d.innerHTML = `
-    <div class="left">
-      <div class="split"><div class="v">${escapeHtml(t.orderNo||'')}</div>${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
-      <div class="sub">${escapeHtml(t.customer || '')}${t.customer ? ' • ' : ''}${escapeHtml(route)}${escapeHtml(t.pickupDate||'')}</div>
-      ${compact ? '' : `<div class="k">${fmtNum(miles)} mi • <b>$${rpm.toFixed(2)} RPM</b></div>`}
+    <div class="fl-grade-chip ${gradeClass}">${grade}</div>
+    <div class="fl-tf-body">
+      <div class="fl-tf-origin">${escapeHtml(t.orderNo||'')} ${escapeHtml(t.customer ? '· ' + t.customer : '')}</div>
+      <div class="fl-tf-sub">${escapeHtml(_origRaw ? _origRaw + ' ' : '')}${destLine}${escapeHtml(t.pickupDate||'')}</div>
+      <div class="fl-tf-tags">${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
     </div>
-    <div class="right">
-      <div class="v">${pay}</div>
-      <div class="split">
+    <div class="fl-tf-right">
+      <div class="fl-tf-pay">${pay}</div>
+      <div class="fl-tf-rpm" style="color:${rpmColor}">${miles > 0 ? `$${rpm.toFixed(2)}/mi` : '—'}</div>
+      <div class="fl-tf-actions">
         <button class="btn sm" data-act="edit">Edit</button>
         <button class="btn sm" data-act="receipts">Receipts</button>
-        <button class="btn sm" data-act="docs">📎 Docs</button>
+        <button class="btn sm" data-act="docs">📎</button>
         ${_mapsHtml}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
       </div>
@@ -4829,102 +4875,120 @@ async function renderIntel(){
   if (!grid || _intelBound) return;
   _intelBound = true;
 
-  // ── Live summary (async, non-blocking) ──────────────────────────
+  const container = grid.parentElement;
+
+  // ── Tab bar ──────────────────────────────────────────────────────
+  const tabs = ['Overview','Lanes','Reloads','Brokers','Tools'];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'fl-intel-tabs';
+  tabs.forEach((name, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'fl-intel-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = name;
+    btn.dataset.intelTab = name.toLowerCase();
+    tabBar.appendChild(btn);
+  });
   const liveSection = $('#intelLiveSection');
+  if (liveSection) container.insertBefore(tabBar, liveSection);
+  else container.insertBefore(tabBar, grid);
+
+  // ── Panels (one div per tab) ──────────────────────────────────────
+  const panelOverview  = document.createElement('div'); panelOverview.dataset.intelPanel  = 'overview';
+  const panelLanes     = document.createElement('div'); panelLanes.dataset.intelPanel     = 'lanes';     panelLanes.style.display     = 'none';
+  const panelReloads   = document.createElement('div'); panelReloads.dataset.intelPanel   = 'reloads';   panelReloads.style.display   = 'none';
+  const panelBrokers   = document.createElement('div'); panelBrokers.dataset.intelPanel   = 'brokers';   panelBrokers.style.display   = 'none';
+  const panelTools     = document.createElement('div'); panelTools.dataset.intelPanel     = 'tools';     panelTools.style.display     = 'none';
+  [panelOverview, panelLanes, panelReloads, panelBrokers, panelTools].forEach(p => container.insertBefore(p, grid));
+  grid.style.display = 'none'; // tools panel replaces grid
+
+  // ── Tab switcher ─────────────────────────────────────────────────
+  let _lanesLoaded = false, _reloadsLoaded = false, _brokersLoaded = false;
+  function switchIntelTab(name){
+    tabBar.querySelectorAll('.fl-intel-tab').forEach(b => b.classList.toggle('active', b.dataset.intelTab === name));
+    [panelOverview, panelLanes, panelReloads, panelBrokers, panelTools].forEach(p => {
+      p.style.display = p.dataset.intelPanel === name ? '' : 'none';
+    });
+    if (name === 'lanes'   && !_lanesLoaded)   { _lanesLoaded   = true; _renderIntelLanes(panelLanes); }
+    if (name === 'reloads' && !_reloadsLoaded) { _reloadsLoaded = true; _renderIntelReloads(panelReloads); }
+    if (name === 'brokers' && !_brokersLoaded) { _brokersLoaded = true; _renderIntelBrokers(panelBrokers); }
+    haptic(8);
+  }
+  tabBar.addEventListener('click', e => {
+    const btn = e.target.closest('.fl-intel-tab');
+    if (btn) switchIntelTab(btn.dataset.intelTab);
+  });
+
+  // ── Overview panel: live week stats + top lanes ───────────────────
   if (liveSection){
+    panelOverview.appendChild(liveSection);
+    liveSection.style.display = '';
     liveSection.innerHTML = `<div class="card"><div class="skel" style="height:90px;margin-bottom:0"></div></div>`;
     (async () => {
       try {
         const { trips } = await _getTripsAndExps();
-        // Current week stats
         const now = new Date();
         const dow = now.getDay();
         const wk0 = new Date(now);
         wk0.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
         wk0.setHours(0,0,0,0);
-        const wkTrips = trips.filter(t => t.date && new Date(t.date) >= wk0 && !t.isDZExit);
-        const wkGross = wkTrips.reduce((s,t) => s + (t.revenue||0), 0);
-        const wkMiles = wkTrips.reduce((s,t) => s + (t.loadedMi||0) + (t.deadMi||0), 0);
-        const wkRpm = wkMiles > 0 ? '$' + (wkGross / wkMiles).toFixed(2) : '—';
-        // Top 2 lanes
-        const lanes = computeLaneStats(trips).slice(0,2);
-        const laneColor = (rpm) => rpm >= 1.60 ? 'var(--good)' : rpm >= 1.40 ? 'var(--accent)' : 'var(--warn)';
-        const laneBg   = (rpm) => rpm >= 1.60 ? 'var(--good-muted)' : rpm >= 1.40 ? 'var(--accent-muted)' : 'var(--warn-muted)';
-        const laneBdr  = (rpm) => rpm >= 1.60 ? 'var(--good-border)' : rpm >= 1.40 ? 'var(--accent-border)' : 'var(--warn-border)';
-        const laneGrade= (rpm) => rpm >= 1.60 ? 'A' : rpm >= 1.40 ? 'B' : 'C';
+        const wkTrips = trips.filter(t => {
+          const dt = t.pickupDate || t.deliveryDate;
+          return dt && new Date(dt) >= wk0 && !t.isDZExit;
+        });
+        const wkGross = wkTrips.reduce((s,t) => s + Number(t.pay||t.revenue||0), 0);
+        const wkMiAll = wkTrips.reduce((s,t) => s + Number(t.loadedMiles||t.loadedMi||0) + Number(t.emptyMiles||t.deadMi||0), 0);
+        const wkRpm = wkMiAll > 0 ? '$' + (wkGross / wkMiAll).toFixed(2) : '—';
+        const lanes = computeLaneStats(trips).slice(0,3);
+        const _lGrade = (r) => r >= 1.60 ? 'A' : r >= 1.40 ? 'B' : 'C';
         const lanesHtml = lanes.length ? `
           <div style="border-top:1px solid var(--border-subtle);margin:14px 0 12px"></div>
           <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">Top Lanes</div>
-          ${lanes.map(l => `
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface-0);border:1px solid var(--border);border-radius:14px;margin-bottom:6px;cursor:pointer" data-lane-idx="${lanes.indexOf(l)}">
-              <div style="width:34px;height:34px;border-radius:10px;background:${laneBg(l.avgRpm)};border:1.5px solid ${laneBdr(l.avgRpm)};display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:15px;font-weight:700;color:${laneColor(l.avgRpm)};flex-shrink:0">${laneGrade(l.avgRpm)}</div>
+          ${lanes.map((l,i) => {
+            const g = _lGrade(l.avgRpm);
+            const trendColor = l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+            return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface-0);border:1px solid var(--border);border-radius:14px;margin-bottom:6px;cursor:pointer" data-lane-idx="${i}">
+              <div class="fl-grade-chip ${g.toLowerCase()}">${g}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(l.display)}</div>
                 <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.trips} run${l.trips>1?'s':''} &middot; $${l.avgRpm} avg/mi</div>
               </div>
-              <div style="font-size:13px;font-weight:700;color:${l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)'}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'}</div>
-            </div>
-          `).join('')}` : '';
+              <div style="font-size:12px;font-weight:700;color:${trendColor}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'}</div>
+            </div>`;
+          }).join('')}` : '';
         liveSection.innerHTML = `
           <div class="card card-hero">
-            <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:12px">This Week</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
-                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--accent)">${fmtMoney(wkGross)}</div>
-                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Gross</div>
-              </div>
-              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
-                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--text)">${wkRpm}</div>
-                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">RPM</div>
-              </div>
-              <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:14px;padding:12px 10px;text-align:center">
-                <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--text)">${wkTrips.length}</div>
-                <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Trips</div>
-              </div>
+            <h3>This Week</h3>
+            <div class="fl-kpi-3col">
+              <div class="kpi-cell"><div class="kpi-cell-value" style="color:var(--accent)">${fmtMoney(wkGross)}</div><div class="kpi-cell-label">Gross</div></div>
+              <div class="kpi-cell"><div class="kpi-cell-value">${wkRpm}</div><div class="kpi-cell-label">True RPM</div></div>
+              <div class="kpi-cell"><div class="kpi-cell-value">${wkTrips.length}</div><div class="kpi-cell-label">Trips</div></div>
             </div>
             ${lanesHtml}
           </div>`;
-        // Wire lane click handlers
         if (lanes.length){
           liveSection.querySelectorAll('[data-lane-idx]').forEach(el => {
             const idx = Number(el.getAttribute('data-lane-idx'));
             el.addEventListener('click', () => { haptic(10); openLaneBreakdown(lanes[idx], trips); });
           });
         }
-      } catch(e){
-        if (liveSection) liveSection.innerHTML = '';
-      }
+      } catch(e){ if (liveSection) liveSection.innerHTML = ''; }
     })();
   }
 
-  // ── Section label ────────────────────────────────────────────────
-  const headEl = document.createElement('div');
-  headEl.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin:14px 0 8px 2px';
-  headEl.textContent = 'Tools & Analysis';
-  grid.parentElement.insertBefore(headEl, grid);
-
-  // ── List rows (replaces icon tiles) ─────────────────────────────
-  grid.className = 'intel-list card';
-  grid.style.cssText = 'padding:8px';
-  grid.innerHTML = '';
+  // ── Tools panel ───────────────────────────────────────────────────
+  const toolsCard = document.createElement('div');
+  toolsCard.className = 'intel-list card';
+  toolsCard.style.cssText = 'padding:8px';
+  panelTools.appendChild(toolsCard);
 
   INTEL_TILES.forEach((tile, idx) => {
     const el = document.createElement('div');
     el.className = 'intel-row';
-    el.setAttribute('role', 'button');
-    el.setAttribute('tabindex', '0');
-    el.setAttribute('aria-label', tile.title);
-    if (idx > 0){
-      const div = document.createElement('div');
-      div.style.cssText = 'height:1px;background:var(--border-subtle);margin:0 -4px';
-      grid.appendChild(div);
-    }
+    el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); el.setAttribute('aria-label', tile.title);
+    if (idx > 0){ const sep = document.createElement('div'); sep.style.cssText = 'height:1px;background:var(--border-subtle);margin:0 -4px'; toolsCard.appendChild(sep); }
     el.innerHTML = `
       <div class="intel-row-icon">${escapeHtml(tile.icon)}</div>
-      <div class="intel-row-body">
-        <div class="intel-row-title">${escapeHtml(tile.title)}</div>
-        <div class="intel-row-sub">${escapeHtml(tile.sub)}</div>
-      </div>
+      <div class="intel-row-body"><div class="intel-row-title">${escapeHtml(tile.title)}</div><div class="intel-row-sub">${escapeHtml(tile.sub)}</div></div>
       <svg class="intel-row-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const tileAction = async () => {
       try {
@@ -4937,21 +5001,95 @@ async function renderIntel(){
         else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
         else if (tile.act === 'costPerDay') await openCostPerDay();
         else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
-        else if (tile.act === 'omegaTiers'){
-          location.hash = '#omega';
-          setTimeout(()=>{ const btn = document.querySelector('#mwTabs [data-mwtab="omega"]'); if (btn) btn.click(); window.scrollTo({top:0,behavior:'instant'}); }, 100);
-        }
-        else if (tile.act === 'marketBoard'){
-          location.hash = '#omega';
-          setTimeout(()=>{ const btn = document.querySelector('#mwTabs [data-mwtab="board"]'); if (btn) btn.click(); window.scrollTo({top:0,behavior:'instant'}); }, 100);
-        }
+        else if (tile.act === 'omegaTiers'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="omega"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
+        else if (tile.act === 'marketBoard'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="board"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
         else if (tile.act === 'maintenance') await openMaintenanceTracker();
       } catch(e){ console.warn('[FL] Intel tile error:', e); }
     };
     el.addEventListener('click', tileAction);
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
-    grid.appendChild(el);
+    el.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' '){ e.preventDefault(); tileAction(); } });
+    toolsCard.appendChild(el);
   });
+}
+
+// ── Intel lazy tab renderers ──────────────────────────────────────────────────
+async function _renderIntelLanes(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:80px"></div><div class="skel" style="height:80px"></div><div class="skel" style="height:80px"></div></div>`;
+  try {
+    const { trips } = await _getTripsAndExps();
+    const lanes = computeLaneStats(trips);
+    if (!lanes.length){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px;padding:10px 0">No lane history yet. Complete trips to build lane data.</div></div>`; return; }
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<h3>Your Lane History</h3>`;
+    lanes.forEach((l, i) => {
+      const g = l.avgRpm >= 1.60 ? 'A' : l.avgRpm >= 1.40 ? 'B' : l.avgRpm >= 1.25 ? 'C' : 'D';
+      const trendColor = l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+      const bar = Math.min(100, Math.round((l.avgRpm / 2.0) * 100));
+      const barColor = g === 'A' ? 'var(--good)' : g === 'B' ? 'var(--accent)' : 'var(--warn)';
+      if (i > 0){ const sep = document.createElement('div'); sep.style.cssText='height:1px;background:var(--border-subtle);margin:12px 0'; card.appendChild(sep); }
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;cursor:pointer';
+      row.innerHTML = `
+        <div class="fl-grade-chip ${g.toLowerCase()}">${g}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700">${escapeHtml(l.display)}</div>
+          <div style="display:flex;gap:10px;margin-top:4px;font-size:11px;color:var(--text-tertiary)">
+            <span>${l.trips} run${l.trips>1?'s':''}</span>
+            <span style="font-family:var(--font-mono);color:var(--accent)">$${l.avgRpm}/mi avg</span>
+          </div>
+          <div style="margin-top:8px;height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden">
+            <div style="height:100%;border-radius:2px;width:${bar}%;background:${barColor}"></div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:${trendColor}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'} $${Math.abs(l.trend).toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">30d trend</div>
+        </div>`;
+      row.addEventListener('click', () => { haptic(10); openLaneBreakdown(l, trips); });
+      card.appendChild(row);
+    });
+    container.innerHTML = ''; container.appendChild(card);
+  } catch(e){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px">Could not load lane data.</div></div>`; }
+}
+
+async function _renderIntelReloads(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:60px"></div><div class="skel" style="height:60px"></div><div class="skel" style="height:60px"></div></div>`;
+  try { haptic(8); await openReloadScoring(); container.innerHTML = ''; } catch(e){ container.innerHTML = ''; }
+}
+
+async function _renderIntelBrokers(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:70px"></div><div class="skel" style="height:70px"></div></div>`;
+  try {
+    const { trips } = await _getTripsAndExps();
+    const today = isoDate();
+    const brokerDays = Number(await getSetting('brokerWindow', 90) || 90);
+    const brokers = computeBrokerStats(trips, today, brokerDays);
+    if (!brokers.length){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px;padding:10px 0">No broker data yet. Tag brokers on your trips to build history.</div></div>`; return; }
+    const globalMiles = brokers.reduce((s,b) => s+b.miles, 0);
+    const globalPay   = brokers.reduce((s,b) => s+b.pay, 0);
+    const globalAvgRpm = globalMiles > 0 ? globalPay / globalMiles : 0;
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<div class="fl-card-hdr"><h3>Broker Performance</h3><span style="font-size:11px;color:var(--text-tertiary)">${brokerDays > 0 ? `last ${brokerDays}d` : 'all time'}</span></div>`;
+    brokers.slice(0,8).forEach((b, i) => {
+      const gradeObj = computeBrokerGrade(b, globalAvgRpm);
+      const g = gradeObj?.letter || '?';
+      const gClass = g.toLowerCase() !== '?' ? g.toLowerCase() : 'c';
+      if (i > 0){ const sep = document.createElement('div'); sep.style.cssText='height:1px;background:var(--border-subtle);margin:12px 0'; card.appendChild(sep); }
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:12px';
+      row.innerHTML = `
+        <div class="fl-grade-chip ${gClass}">${g}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">${escapeHtml(b.name||'Unknown')}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${b.count} load${b.count>1?'s':''} &middot; ${fmtMoney(b.miles>0?b.pay/b.count:0)} avg</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--accent)">${b.miles>0?'$'+(b.pay/b.miles).toFixed(2)+'/mi':'—'}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${b.avgDtp!==null?Math.round(b.avgDtp)+'d pay':'—'}</div>
+        </div>`;
+      card.appendChild(row);
+    });
+    container.innerHTML = ''; container.appendChild(card);
+  } catch(e){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px">Could not load broker data.</div></div>`; }
 }
 
 let _moreBound = false;
@@ -6534,9 +6672,12 @@ function _mwRenderDecision(out, d){
 
   // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
   const _heroColor = isDZActive ? '#f0a500' : dispGradeColor;
+  const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
+  const _verdictBadgeLabel = isDZActive ? 'DZ EXIT' : verdictLabels[verdict] || verdict;
   let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
     <div style="font-size:13px;font-weight:700;color:${_heroColor};letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
-    <div style="font-size:56px;font-weight:900;color:${_heroColor};font-family:var(--font-mono);line-height:1;margin-bottom:8px">${dispGrade}${isDZActive ? '<span style="font-size:18px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
+    <div class="fl-eval-grade" style="color:${_heroColor}">${dispGrade}${isDZActive ? '<span style="font-size:20px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
+    <div style="margin-bottom:10px"><span class="fl-eval-verdict ${_verdictClass}">${escapeHtml(_verdictBadgeLabel)}</span></div>
     <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:12px;line-height:1.4">${escapeHtml(_verdictSentence)}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
       <div style="padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border-subtle)">
@@ -6576,7 +6717,7 @@ function _mwRenderDecision(out, d){
 
   html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${dispGradeColor}40;margin-bottom:14px">
     <div style="font-size:14px;font-weight:600;color:${dispGradeColor};letter-spacing:1px;text-transform:uppercase">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
-    <div style="font-size:48px;font-weight:800;color:${dispGradeColor};font-family:var(--font-mono);line-height:1.1;margin:4px 0">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
+    <div class="fl-eval-grade" style="font-size:52px;color:${dispGradeColor}">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
     <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : tier.color}">$${trueRPM.toFixed(2)}</b> • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
