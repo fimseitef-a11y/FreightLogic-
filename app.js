@@ -14,7 +14,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.6.0';
+const APP_VERSION = '23.7.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -1758,10 +1758,9 @@ async function importTXTFile(file){
   }catch(err){ console.error('[FL] TXT import error:', err); toast('Text import failed. Check file format.', true); }
 }
 
-// ---- PDF Import (routes to Snap Load OCR) ----
+// ---- PDF Import ----
 async function importPDFFile(file){
-  toast('PDF detected — opening Snap Load OCR to extract data...');
-  setTimeout(()=> openSnapLoad(file), 300);
+  toast('PDF import is not supported — paste the load text instead', true);
 }
 
 // ---- Universal Import Modal ----
@@ -3029,26 +3028,14 @@ async function handleShareTarget(){
         const body = document.createElement('div');
         body.innerHTML = `<div class="muted" style="font-size:13px;margin-bottom:14px">What would you like to do with this image?</div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <button class="btn primary" id="shareOptScan" style="padding:16px;font-size:15px;text-align:left">⚡ Scan for Load Details<br><span class="muted" style="font-size:12px">OCR the screenshot and send to the Load Evaluator</span></button>
             <button class="btn" id="shareOptReceipt" style="padding:16px;font-size:15px;text-align:left">🧾 Save as Receipt<br><span class="muted" style="font-size:12px">Attach to an existing or new trip</span></button>
-            <button class="btn" id="shareOptSnap" style="padding:16px;font-size:15px;text-align:left">📸 Snap Load OCR<br><span class="muted" style="font-size:12px">Run full OCR and auto-create a trip</span></button>
           </div>`;
         openModal('Shared Image', body);
         // Wire up buttons
-        $('#shareOptScan')?.addEventListener('click', ()=>{
-          closeModal();
-          // Navigate to Stack evaluator with the image for OCR
-          location.hash = '#omega';
-          setTimeout(()=> openSnapLoad(imageFile), 400);
-        });
         $('#shareOptReceipt')?.addEventListener('click', ()=>{
           closeModal();
           // Open trip wizard to attach receipt
           setTimeout(()=> openTripWizard(), 300);
-        });
-        $('#shareOptSnap')?.addEventListener('click', ()=>{
-          closeModal();
-          setTimeout(()=> openSnapLoad(imageFile), 300);
         });
       } else {
         // PDF receipt — prompt to attach to a trip
@@ -3787,7 +3774,6 @@ async function renderHome(){
 
   if (state.isEmpty){
     actions.appendChild(actionCard('Ready to roll?', 'Add First Trip', ()=> openQuickAddSheet()));
-    actions.appendChild(actionCard('Got a rate confirmation?', 'Snap Load (OCR)', ()=> openSnapLoad()));
   } else {
     const unpaidList = await listUnpaidTrips(6);
     if (unpaidList.length) actions.appendChild(actionCard(`${unpaidList.length} unpaid trip${unpaidList.length > 1 ? 's' : ''} pending`, 'Mark Paid →', ()=> location.hash = '#money'));
@@ -5284,7 +5270,7 @@ function renderWelcomeCard(){
       </div>
     </div>
     <button class="btn primary" id="welcomeAddTrip" style="font-size:15px;padding:12px 32px">＋ Add Your First Trip</button>
-    <div class="muted" style="font-size:11px;margin-top:14px">Or tap 📸 Snap Load to scan a rate confirmation photo</div>
+    <div class="muted" style="font-size:11px;margin-top:14px">Or paste a load in the Evaluator to grade it instantly</div>
   </div>`;
 }
 
@@ -8090,13 +8076,11 @@ function openQuickAddSheet(){
   $('#fab')?.classList.add('open');
   const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.cssText='border:0;box-shadow:none;background:transparent';
   wrap.innerHTML = `<div class="btn-row"><button class="btn primary" id="qaTrip">＋ Trip</button><button class="btn" id="qaExpense">＋ Expense</button><button class="btn" id="qaFuel">＋ Fuel</button><button class="btn" id="qaCompare">⚖️ Compare</button></div>
-    <div style="margin-top:10px"><button class="btn primary" id="qaSnapLoad" style="width:100%;background:var(--accent2,#e67e22)">📸 Snap Load — OCR from Photo</button></div>
     <div class="muted" style="font-size:12px;margin-top:10px">Trip is Order # + Pay + Miles. Everything else is optional.</div>`;
   $('#qaTrip', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openTripWizard(); });
   $('#qaExpense', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openExpenseForm(); });
   $('#qaFuel', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openFuelForm(); });
   $('#qaCompare', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openLoadCompare(); });
-  $('#qaSnapLoad', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openSnapLoad(); });
   const origClose = closeModal;
   const _close = closeModal;
   openModal('Quick Add', wrap);
@@ -8364,43 +8348,6 @@ async function buildCategorySuggestionMap(){
   } catch(e){ console.warn('[FL] buildCategorySuggestionMap', e); return new Map(); }
 }
 
-async function buildOcrVariants(file){
-  const variants = [{ label: 'original', source: file }];
-  if (!file || !file.type || !file.type.startsWith('image/')) return variants;
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = reject;
-      el.src = objectUrl;
-    });
-    const maxDim = 2200;
-    const scaleBase = Math.min(1, maxDim / Math.max(img.naturalWidth || img.width || 1, img.naturalHeight || img.height || 1));
-    const baseW = Math.max(1, Math.round((img.naturalWidth || img.width || 1) * scaleBase));
-    const baseH = Math.max(1, Math.round((img.naturalHeight || img.height || 1) * scaleBase));
-    const makeBlob = async ({ scale = 1, grayscale = false, contrast = 1, brightness = 1 }) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(baseW * scale));
-      canvas.height = Math.max(1, Math.round(baseH * scale));
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return null;
-      ctx.filter = `${grayscale ? 'grayscale(1) ' : ''}contrast(${contrast}) brightness(${brightness})`;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 1));
-    };
-    const enhanced = await makeBlob({ scale: 1.5, grayscale: true, contrast: 1.35, brightness: 1.05 });
-    const sharp = await makeBlob({ scale: 2, grayscale: true, contrast: 1.65, brightness: 1.08 });
-    if (enhanced) variants.push({ label: 'enhanced', source: enhanced });
-    if (sharp) variants.push({ label: 'upscaled', source: sharp });
-  } catch (e) {
-    console.warn('[FL] OCR preprocess skipped:', e && e.message ? e.message : e);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-  return variants;
-}
-
 function parseLoadText(text){
   // T5-FIX: Cap OCR text length to prevent regex DoS on adversarial images
   const safeText = String(text || '').slice(0, 10000);
@@ -8532,474 +8479,16 @@ function parseLoadText(text){
 }
 
 
-/** Parse multiple load cards from OCR or pasted text (best-effort).
- *  Supports Trucker Path Truckloads-style listings with Deadhead / Distance / Price.
- */
-function parseLoadListFromText(text){
-  const safeText = String(text || '').slice(0, 15000);
-  const full = safeText.replace(/\s+/g,' ').trim();
-  const loads = [];
-  // Pattern: ORIGIN (City, ST) DEST (City, ST) ... Deadhead X mi ... Distance Y mi ... Price $Z
-  const reCard = /([A-Z][a-zA-Z\.\s]{1,25}),\s*([A-Z]{2})\s+([A-Z][a-zA-Z\.\s]{1,25}),\s*([A-Z]{2})[\s\S]{0,220}?(?:deadhead\s*:?\s*(\d[\d,]{0,6})\s*(?:mi|miles))[\s\S]{0,220}?(?:distance\s*:?\s*(\d[\d,]{0,6})\s*(?:mi|miles))[\s\S]{0,220}?(?:price\s*:?\s*\$?\s*(\d[\d,]{0,8}))?/gi;
-  let m;
-  while ((m = reCard.exec(safeText)) !== null){
-    const origin = `${m[1].trim()}, ${m[2].toUpperCase()}`;
-    const destination = `${m[3].trim()}, ${m[4].toUpperCase()}`;
-    const deadheadMiles = parseInt(String(m[5]||'0').replace(/,/g,''),10)||0;
-    const loadedMiles = parseInt(String(m[6]||'0').replace(/,/g,''),10)||0;
-    const pay = m[7] ? (parseInt(String(m[7]).replace(/,/g,''),10)||0) : 0;
-    if (!origin || !destination || loadedMiles<=0) continue;
-    loads.push({ origin, destination, deadheadMiles, loadedMiles, pay });
-  }
-
-  if (!loads.length){
-    const lineLoads = [];
-    const arrowLines = safeText.split(/\n+/).map(l => l.trim()).filter(Boolean);
-    for (const line of arrowLines){
-      const lane = parseArrowLaneLine(line);
-      if (!lane) continue;
-      const deadheadMiles = parseInt(((line.match(/(?:deadhead|dh)\s*:?\s*(\d[\d,]{0,6})\s*(?:mi|miles)?/i) || [,'0'])[1]).replace(/,/g,''),10) || 0;
-      const loadedMiles = parseInt(((line.match(/(?:distance|loaded|miles?)\s*:?\s*(\d[\d,]{0,6})\s*(?:mi|miles)?/i) || [,'0'])[1]).replace(/,/g,''),10) || 0;
-      const pay = parseFloat((((line.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/i) || line.match(/(?:rate|price|all\s*-?in)\s*:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/i) || [,'0'])[1])+'').replace(/,/g,'')) || 0;
-      if (!lane.origin || !lane.destination) continue;
-      if (loadedMiles <= 0 && pay <= 0) continue;
-      lineLoads.push({ origin: lane.origin, destination: lane.destination, deadheadMiles, loadedMiles, pay });
-    }
-    loads.push(...lineLoads);
-  }
-
-  // De-dup similar cards
-  const uniq = [];
-  const seen = new Set();
-  for (const l of loads){
-    const k = `${l.origin}|${l.destination}|${l.loadedMiles}|${l.deadheadMiles}|${l.pay}`;
-    if (seen.has(k)) continue;
-    seen.add(k); uniq.push(l);
-  }
-  return uniq;
-}
-
-function openSnapLoad(preFile){
-  const body = document.createElement('div');
-  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
-    <div class="muted" style="font-size:12px;margin-bottom:10px">Take a photo or select a screenshot of a rate confirmation, load board posting, or dispatch sheet. OCR will extract the details.</div>
-    <div class="btn-row" style="margin-bottom:12px">
-      <button class="btn primary" id="snapCamera">📷 Camera</button>
-      <button class="btn" id="snapFile">📁 Choose File</button>
-    </div>
-    <div style="margin:10px 0 6px;font-size:12px" class="muted">Or paste a load listing / dispatch text (or import a CSV of loads):</div>
-    <textarea id="snapPaste" placeholder="Paste load text here (example: Origin Pryor, OK Destination Tolleson, AZ Deadhead 36 mi Distance 1161 mi Price $2400)" style="width:100%;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:var(--text);font-size:12px;line-height:1.35;margin-bottom:8px"></textarea>
-    <div class="btn-row" style="margin-bottom:12px">
-      <button class="btn" id="snapParsePaste">🧠 Analyze Paste</button>
-      <button class="btn" id="snapAiExtract">✨ AI Extract</button>
-      <button class="btn" id="snapCsvBtn">📄 Import CSV</button>
-    </div>
-    <input type="file" id="snapCsvInput" accept=".csv,text/csv" style="display:none" />
-</div>
-    <input type="file" id="snapInput" accept="image/*" style="display:none" />
-    <input type="file" id="snapCameraInput" accept="image/*" capture="environment" style="display:none" />
-    <div id="snapPreview" style="display:none;margin-bottom:12px">
-      <img id="snapImg" style="max-width:100%;max-height:300px;border-radius:8px;border:1px solid rgba(255,255,255,0.1)" />
-    </div>
-    <div id="snapStatus" style="display:none;font-size:12px" class="muted"></div>
-    <div id="snapResults" style="display:none">
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px">📋 Extracted Data</div>
-      <div id="snapParsed" style="font-size:12px;padding:10px;border-radius:6px;background:rgba(255,255,255,0.04);margin-bottom:8px"></div>
-      <div id="snapLoadList" style="display:none;margin-top:10px"></div>
-      <div class="muted" style="font-size:11px;margin-bottom:12px">You can edit everything in the trip form. OCR isn't perfect — always verify.</div>
-      <div class="btn-row">
-        <button class="btn primary" id="snapAccept">✓ Send to Load Evaluator</button>
-        <button class="btn" id="snapRetry">↻ Try Another</button>
-      </div>
-      <details style="margin-top:12px"><summary class="muted" style="font-size:11px;cursor:pointer">Raw OCR text</summary>
-        <pre id="snapRawText" style="font-size:10px;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-top:6px"></pre>
-      </details>
-    </div>
-  </div>`;
-
-  let _parsedData = null;
-
-  function renderSingleParsed(p){
-    const parsed = $('#snapParsed', body);
-    const fields = [];
-    if (p.orderNo) fields.push(`<b>Order #:</b> ${escapeHtml(p.orderNo)}`);
-    if (p.customer) fields.push(`<b>Customer:</b> ${escapeHtml(p.customer)}`);
-    if (p.origin) fields.push(`<b>Origin:</b> ${escapeHtml(p.origin)}`);
-    if (p.destination) fields.push(`<b>Destination:</b> ${escapeHtml(p.destination)}`);
-    if (p.pay) fields.push(`<b>Pay:</b> $${Number(p.pay||0).toLocaleString()}`);
-    if (p.loadedMiles) fields.push(`<b>Distance:</b> ${Number(p.loadedMiles||0).toLocaleString()} mi`);
-    if (p.deadheadMiles) fields.push(`<b>Deadhead:</b> ${Number(p.deadheadMiles||0).toLocaleString()} mi`);
-    if (p.pickupDate) fields.push(`<b>Pickup:</b> ${escapeHtml(p.pickupDate)}`);
-    if (p.deliveryDate) fields.push(`<b>Delivery:</b> ${escapeHtml(p.deliveryDate)}`);
-    parsed.innerHTML = fields.length ? fields.join('<br>') : '<span class="muted">No structured fields detected.</span>';
-    const listEl = $('#snapLoadList', body); if (listEl) listEl.style.display = 'none';
-  }
-
-  function renderLoadList(loads){
-    // Rank by True RPM (pay / total miles)
-    const ranked = loads.map(l => {
-      const total = Math.max(1, (l.loadedMiles||0) + (l.deadheadMiles||0));
-      const rpm = (l.pay||0) / total;
-      const tier = mwClassifyRPM(rpm);
-      return { ...l, totalMiles: total, trueRPM: rpm, tier };
-    }).sort((a,b)=> (b.trueRPM - a.trueRPM));
-
-    // Summary
-    const parsed = $('#snapParsed', body);
-    parsed.innerHTML = `<b>Found:</b> ${ranked.length} loads<br><b>Top True RPM:</b> ${ranked[0] ? ranked[0].trueRPM.toFixed(2) : '—'}`;
-
-    const listEl = $('#snapLoadList', body);
-    if (!listEl) return;
-    listEl.style.display = 'block';
-
-    const rows = ranked.slice(0, 12).map((l,i)=> {
-      const grade = l.trueRPM >= 1.75 ? 'A' : (l.trueRPM >= 1.60 ? 'B' : (l.trueRPM >= 1.50 ? 'C' : (l.trueRPM >= 1.35 ? 'D' : (l.trueRPM >= 1.25 ? 'E' : 'F'))));
-      const verdict = l.tier?.verdict || '';
-      return `<div style="display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:12px;margin-top:8px;background:rgba(255,255,255,0.02)">
-        <div style="min-width:34px;text-align:center;font-weight:800">${i+1}</div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:13px">${escapeHtml(l.origin)} → ${escapeHtml(l.destination)}</div>
-          <div class="muted" style="font-size:11px;margin-top:2px">
-            ${l.loadedMiles||0} mi + ${l.deadheadMiles||0} dh • ${fmtMoney(l.pay||0)} • True RPM ${l.trueRPM.toFixed(2)} • Grade ${grade} (${escapeHtml(verdict)})
-          </div>
-        </div>
-        <button class="btn primary" data-sendload="${i}">Use</button>
-      </div>`;
-    }).join('');
-
-    listEl.innerHTML = `<div style="font-size:13px;font-weight:700;margin-top:6px">🏁 Ranked Loads (Top 12)</div>${rows}<div class="muted" style="font-size:11px;margin-top:8px">Tap “Use” to send the selected load into the Evaluator.</div>`;
-
-    // Wire "Use" buttons via event delegation
-    listEl.querySelectorAll('[data-sendload]').forEach(btn => {
-      btn.addEventListener('click', ()=> {
-        const idx = Number(btn.getAttribute('data-sendload'));
-        const chosen = ranked[idx];
-        if (!chosen) return;
-        _parsedData = { ...chosen };
-        haptic(15);
-        closeModal();
-        location.hash = '#omega';
-        setTimeout(() => {
-          const _o = $('#mwOrigin'); const _d = $('#mwDest');
-          const _lm = $('#mwLoadedMi'); const _dm = $('#mwDeadMi'); const _rev = $('#mwRevenue');
-          if (_o) _o.value = chosen.origin || '';
-          if (_d) _d.value = chosen.destination || '';
-          if (_lm) _lm.value = String(chosen.loadedMiles || 0);
-          if (_dm) _dm.value = String(chosen.deadheadMiles || 0);
-          if (_rev) _rev.value = String(chosen.pay || 0);
-          try { mwEvaluateLoad(); } catch(e) {}
-          toast('Loaded into Evaluator ⚡');
-        }, 60);
-      });
-    });
-  }
-
-  function parseLoadsCSV(csvText){
-    const text = String(csvText||'').slice(0, 2_000_000);
-    const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
-    if (!lines.length) return [];
-    const split = (line) => {
-      // naive CSV split supporting quoted fields
-      const out=[]; let cur=''; let q=false;
-      for (let i=0;i<line.length;i++){
-        const ch=line[i];
-        if (ch==='"'){ q=!q; continue; }
-        if (ch===',' && !q){ out.push(cur.trim()); cur=''; continue; }
-        cur+=ch;
-      }
-      out.push(cur.trim());
-      return out;
-    };
-    const header = split(lines[0]).map(h=>h.toLowerCase());
-    const idx = (k)=> header.indexOf(k);
-    const iOrigin = idx('origin'); const iDest = idx('destination'); 
-    const iDead = idx('deadhead'); const iDist = idx('distance'); const iPay = idx('price')>=0?idx('price'):idx('pay');
-    const loads=[];
-    for (let r=1;r<lines.length;r++){
-      const cols = split(lines[r]);
-      const origin = cols[iOrigin] || '';
-      const destination = cols[iDest] || '';
-      const deadheadMiles = parseInt((cols[iDead]||'0').replace(/[^\d]/g,''),10)||0;
-      const loadedMiles = parseInt((cols[iDist]||'0').replace(/[^\d]/g,''),10)||0;
-      const pay = parseFloat((cols[iPay]||'0').replace(/[^\d.]/g,''))||0;
-      if (!origin || !destination || loadedMiles<=0) continue;
-      loads.push({ origin, destination, deadheadMiles, loadedMiles, pay });
-    }
-    return loads;
-  }
-
-  const csvInput = $('#snapCsvInput', body);
-  csvInput?.addEventListener('change', async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    try{
-      const txt = await file.text();
-      const loads = parseLoadsCSV(txt);
-      if (!loads.length){ toast('No loads found in CSV', true); return; }
-      _parsedData = { _loads: loads, _confidence: 0 };
-      $('#snapResults', body).style.display = 'block';
-      $('#snapStatus', body).style.display = 'none';
-      renderLoadList(loads);
-      toast(`Imported ${loads.length} loads`);
-    }catch(err){ console.error('[FL] CSV import error:', err); toast('CSV import failed. Check file format.', true); }
-    e.target.value = '';
-  });
-
-  const fileInput = $('#snapInput', body);
-  const cameraInput = $('#snapCameraInput', body);
-
-  async function processImage(file){
-    if (!file || !file.type.startsWith('image/')){ toast('Please select an image file', true); return; }
-    if (file.size > 10 * 1024 * 1024){ toast('Image too large (max 10MB)', true); return; }
-
-    // Show preview
-    const url = URL.createObjectURL(file);
-    const img = $('#snapImg', body);
-    img.src = url;
-    $('#snapPreview', body).style.display = 'block';
-    $('#snapResults', body).style.display = 'none';
-
-    const status = $('#snapStatus', body);
-    status.style.display = 'block';
-    status.innerHTML = '<div style="font-size:13px">⏳ Loading OCR engine...</div><div class="muted" style="font-size:11px">First time may take a moment to download (~11MB)</div>';
-
-    try {
-      const worker = await loadTesseract();
-      status.innerHTML = '<div style="font-size:13px">🔍 Scanning image...</div><div class="muted" style="font-size:11px">Running multi-pass OCR for better screenshot accuracy</div>';
-
-      const variants = await buildOcrVariants(file);
-      let best = { text:'', confidence:0, label:'original' };
-      for (let i = 0; i < variants.length; i++){
-        const variant = variants[i];
-        status.innerHTML = `<div style="font-size:13px">🔍 Scanning image...</div><div class="muted" style="font-size:11px">Pass ${i+1}/${variants.length}: ${escapeHtml(variant.label)}</div>`;
-        const { data } = await worker.recognize(variant.source);
-        const candidateText = data.text || '';
-        const candidateConfidence = data.confidence || 0;
-        const parsedCandidate = parseLoadListFromText(candidateText);
-        const parsedSingle = parsedCandidate.length ? null : parseLoadText(candidateText);
-        const structureBonus = parsedCandidate.length ? 12 : ((parsedSingle?.origin || parsedSingle?.destination || parsedSingle?.pay || parsedSingle?.loadedMiles) ? 6 : 0);
-        const weighted = candidateConfidence + structureBonus;
-        if ((candidateText || '').trim() && weighted >= (best.confidence + (best.structureBonus || 0))){
-          best = { text: candidateText, confidence: candidateConfidence, label: variant.label, structureBonus };
-        }
-      }
-      const text = best.text || '';
-      const confidence = best.confidence || 0;
-
-      if (!text.trim()){
-        status.innerHTML = '<div style="font-size:13px;color:var(--danger)">No text detected. Try a clearer photo with better lighting.</div>';
-        return;
-      }
-
-      const list = parseLoadListFromText(text);
-      _parsedData = list.length ? { _loads: list } : parseLoadTextEnhanced(text);
-      _parsedData._confidence = confidence;
-      if (list.length) { renderLoadList(list); } else { renderSingleParsed(_parsedData); }
-
-      // v20: Auto-jump to evaluator when all 3 required fields detected (single load)
-      if (!list.length && _parsedData.pay > 0 && _parsedData.loadedMiles > 0){
-        status.style.display = 'none';
-        // Show brief "Jumping to evaluator…" message then auto-navigate
-        status.innerHTML = '<div style="font-size:13px;color:var(--good)">✓ Load detected — opening evaluator…</div>';
-        status.style.display = 'block';
-        haptic(15);
-        setTimeout(() => {
-          closeModal();
-          location.hash = '#omega';
-          setTimeout(() => {
-            const o = $('#mwOrigin'); const d = $('#mwDest');
-            const lm = $('#mwLoadedMi'); const dm = $('#mwDeadMi'); const rev = $('#mwRevenue');
-            if (o) o.value = _parsedData.origin || '';
-            if (d) d.value = _parsedData.destination || '';
-            if (lm) lm.value = String(_parsedData.loadedMiles || 0);
-            if (dm) dm.value = String(_parsedData.deadheadMiles || 0);
-            if (rev) rev.value = String(_parsedData.pay || 0);
-            try { mwEvaluateLoad(); } catch(e) {}
-          }, 60);
-        }, 900);
-        return;
-      }
-
-      status.style.display = 'none';
-      $('#snapResults', body).style.display = 'block';
-
-      // Build parsed results display (single-load only)
-      if (!(_parsedData && _parsedData._loads && _parsedData._loads.length)){
-      const parsed = $('#snapParsed', body);
-      const fields = [];
-      if (_parsedData.orderNo) fields.push(`<b>Order #:</b> ${escapeHtml(_parsedData.orderNo)}`);
-      if (_parsedData.customer) fields.push(`<b>Customer:</b> ${escapeHtml(_parsedData.customer)}`);
-      if (_parsedData.origin) fields.push(`<b>Origin:</b> ${escapeHtml(_parsedData.origin)}`);
-      if (_parsedData.destination) fields.push(`<b>Destination:</b> ${escapeHtml(_parsedData.destination)}`);
-      if (_parsedData.pay) fields.push(`<b>Pay:</b> $${_parsedData.pay.toLocaleString()}`);
-      if (_parsedData.loadedMiles) fields.push(`<b>Miles:</b> ${_parsedData.loadedMiles.toLocaleString()}`);
-      if (_parsedData.weight) fields.push(`<b>Weight:</b> ${_parsedData.weight.toLocaleString()} lbs`);
-      if (_parsedData.pickupDate) fields.push(`<b>Pickup:</b> ${escapeHtml(String(_parsedData.pickupDate))}`);
-      if (_parsedData.deliveryDate) fields.push(`<b>Delivery:</b> ${escapeHtml(String(_parsedData.deliveryDate))}`);
-      fields.push(`<span class="muted">Confidence: ${Math.round(confidence)}% • OCR pass: ${escapeHtml(best.label || 'original')}</span>`);
-
-      if (fields.length <= 1){
-        parsed.innerHTML = '<div style="color:var(--warn)">Could not extract structured data. The image may not contain a load posting, or try a clearer photo.</div>';
-      } else {
-        parsed.innerHTML = fields.join('<br>');
-      }
-
-      // Raw text
-            }
-
-$('#snapRawText', body).textContent = text.slice(0, 3000);
-
-    } catch(err){
-      status.innerHTML = `<div style="color:var(--danger)">OCR failed: ${escapeHtml(String(err.message || err))}</div><div class="muted" style="font-size:11px;margin-top:4px">Make sure you're online for the first OCR scan (engine download). After that it works offline.</div>`;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  $('#snapCamera', body).addEventListener('click', ()=> { haptic(); cameraInput.click(); });
-  $('#snapFile', body).addEventListener('click', ()=> { haptic(); fileInput.click(); });
-  fileInput.addEventListener('change', (e)=> { if (e.target.files[0]) processImage(e.target.files[0]); });
-  cameraInput.addEventListener('change', (e)=> { if (e.target.files[0]) processImage(e.target.files[0]); });
-
-  // If opened with a pre-selected file (e.g. PDF import), process immediately
-  if (preFile && preFile.type === 'application/pdf'){
-    // For PDFs, try to render first page as image, or just show message
-    const status = $('#snapStatus', body);
-    status.style.display = 'block';
-    status.innerHTML = '<div style="font-size:13px">📄 PDF detected — extracting text via OCR...</div><div class="muted" style="font-size:11px">For best results, take a screenshot of the PDF and try Camera/File instead.</div>';
-  } else if (preFile){
-    processImage(preFile);
-  }
-
-  // Delegate — wait for buttons to exist in DOM before binding
-  body.addEventListener('click', async (e) => {
-    if (e.target.id === 'snapAccept' && _parsedData){
-      haptic();
-      closeModal();
-
-      // Prefer multi-load list if available (from paste/OCR)
-      const loads = (_parsedData._loads && Array.isArray(_parsedData._loads) && _parsedData._loads.length) ? _parsedData._loads : null;
-      const l0 = loads ? loads[0] : _parsedData;
-
-      // Send to Midwest Stack Evaluator (Omega)
-      location.hash = '#omega';
-      setTimeout(() => {
-        const o = $('#mwOrigin'); const d = $('#mwDest');
-        const lm = $('#mwLoadedMi'); const dm = $('#mwDeadMi'); const rev = $('#mwRevenue');
-        if (o) o.value = l0.origin || '';
-        if (d) d.value = l0.destination || '';
-        if (lm) lm.value = String(l0.loadedMiles || 0);
-        if (dm) dm.value = String(l0.deadheadMiles || 0);
-        if (rev) rev.value = String(l0.pay || 0);
-        try { mwEvaluateLoad(); } catch(e) {}
-        toast('Loaded into Evaluator ⚡');
-      }, 60);
-    }
-    
-    if (e.target.id === 'snapParsePaste'){
-      haptic(15);
-      const t = ($('#snapPaste', body)?.value || '').trim();
-      if (!t){ toast('Paste some load text first', true); return; }
-      const list = parseLoadListFromText(t);
-      if (list.length){
-        _parsedData = { _loads: list, _confidence: 0, origin:'', destination:'', pay:0, loadedMiles:0, deadheadMiles:0 };
-        renderLoadList(list);
-        $('#snapResults', body).style.display = 'block';
-        $('#snapStatus', body).style.display = 'none';
-        toast(`Parsed ${list.length} loads`);
-      } else {
-        // Fallback to single-load parser
-        _parsedData = parseLoadText(t);
-        // v20: auto-jump if all 3 fields present
-        if (_parsedData.pay > 0 && _parsedData.loadedMiles > 0){
-          haptic(15);
-          closeModal();
-          location.hash = '#omega';
-          setTimeout(() => {
-            if ($('#mwOrigin')) $('#mwOrigin').value = _parsedData.origin || '';
-            if ($('#mwDest')) $('#mwDest').value = _parsedData.destination || '';
-            if ($('#mwLoadedMi')) $('#mwLoadedMi').value = String(_parsedData.loadedMiles || 0);
-            if ($('#mwDeadMi')) $('#mwDeadMi').value = String(_parsedData.deadheadMiles || 0);
-            if ($('#mwRevenue')) $('#mwRevenue').value = String(_parsedData.pay || 0);
-            try { mwEvaluateLoad(); } catch(e) {}
-          }, 60);
-          return;
-        }
-        renderSingleParsed(_parsedData);
-        $('#snapResults', body).style.display = 'block';
-        $('#snapStatus', body).style.display = 'none';
-        toast('Parsed 1 load — verify fields below');
-      }
-    }
-    if (e.target.id === 'snapAiExtract'){
-      haptic(15);
-      const t = ($('#snapPaste', body)?.value || '').trim();
-      if (!t){ toast('Paste some load text first', true); return; }
-      const btn = e.target;
-      btn.disabled = true; btn.textContent = '⏳ Extracting…';
-      try {
-        const fields = await cloudExtractLoad(t);
-        _parsedData = {
-          orderNo:       fields.orderNo       || '',
-          customer:      fields.customer      || '',
-          origin:        fields.origin        || '',
-          destination:   fields.destination   || '',
-          pay:           fields.pay           || 0,
-          loadedMiles:   fields.loadedMiles   || 0,
-          deadheadMiles: fields.deadheadMiles || 0,
-          pickupDate:    fields.pickupDate    || '',
-          deliveryDate:  fields.deliveryDate  || '',
-          weight:        fields.weight        || 0,
-          commodity:     fields.commodity     || '',
-          notes:         fields.notes         || '',
-          _rawText:      t.slice(0, 2000),
-          _confidence:   100,
-        };
-        renderSingleParsed(_parsedData);
-        $('#snapResults', body).style.display = 'block';
-        $('#snapStatus', body).style.display = 'none';
-        toast('AI extraction complete');
-      } catch(err){
-        toast(err.message || 'AI extraction failed', true);
-      } finally {
-        btn.disabled = false; btn.textContent = '✨ AI Extract';
-      }
-    }
-    if (e.target.id === 'snapCsvBtn'){
-      haptic(10);
-      const inp = $('#snapCsvInput', body);
-      if (inp) inp.click();
-    }
-if (e.target.id === 'snapRetry'){
-      haptic();
-      _parsedData = null;
-      $('#snapPreview', body).style.display = 'none';
-      $('#snapResults', body).style.display = 'none';
-      $('#snapStatus', body).style.display = 'none';
-    }
-  });
-
-  openModal('📸 Snap Load', body);
-}
-
 function openTripWizard(existing=null){
-  // Snap Load: if _snapPrefill flag is set, treat as new trip with pre-filled data
-  const isSnapPrefill = existing && existing._snapPrefill;
   const isEvalPrefill = existing && existing._evalPrefill;
-  const mode = (existing && !isSnapPrefill && !isEvalPrefill) ? 'edit' : 'add';
+  const mode = (existing && !isEvalPrefill) ? 'edit' : 'add';
   const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
-  if (isSnapPrefill) delete trip._snapPrefill;
   if (isEvalPrefill) delete trip._evalPrefill;
   const body = document.createElement('div');
   const step1 = document.createElement('div');
   const step2 = document.createElement('div');
 
-  if (isSnapPrefill){
-    const banner = document.createElement('div');
-    banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(230,126,34,0.15);border:1px solid rgba(230,126,34,0.3);margin-bottom:12px;font-size:12px';
-    banner.innerHTML = '📸 <b>Snap Load</b> — Pre-filled from OCR. <span class="muted">Verify all fields before saving.</span>';
-    body.appendChild(banner);
-  } else if (isEvalPrefill){
+  if (isEvalPrefill){
     const banner = document.createElement('div');
     banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);margin-bottom:12px;font-size:12px';
     banner.innerHTML = '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
@@ -9077,16 +8566,6 @@ function openTripWizard(existing=null){
     $('#f_due', body).value = trip.dueDate || '';
     $('#f_notes', body).value = trip.notes || '';
     $('#f_runAgain', body).checked = !!trip.wouldRunAgain;
-  } else if (isSnapPrefill){
-    // Snap Load OCR pre-fill — populate all fields but keep add mode
-    $('#f_customer', body).value = trip.customer || '';
-    $('#f_origin', body).value = trip.origin || '';
-    $('#f_dest', body).value = trip.destination || '';
-    $('#f_delivery', body).value = trip.deliveryDate || trip.pickupDate || isoDate();
-    $('#f_paid', body).value = 'false';
-    $('#f_invoice', body).value = trip.invoiceDate || trip.deliveryDate || trip.pickupDate || isoDate();
-    $('#f_due', body).value = trip.dueDate || '';
-    $('#f_notes', body).value = trip.notes || '';
   } else if (isEvalPrefill){
     // Evaluator pre-fill — origin/dest from evaluator if available
     $('#f_origin', body).value = trip.origin || '';
