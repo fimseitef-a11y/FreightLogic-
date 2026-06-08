@@ -45,7 +45,14 @@ async function injectEnhancementScripts(res) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE);
+    // Critical shell — one failure here is acceptable to abort install
+    const critical = ['./', APP_SHELL, './app.js?v=23.7.0', './voice-load.js?v=23.7.0', './sw-bridge.js?v=23.7.0', './manifest.json?v=23.7.0'];
+    await cache.addAll(critical);
+    // Optional assets — failure does not abort install
+    const optional = CORE.filter(u => !critical.includes(u));
+    await Promise.allSettled(optional.map(url =>
+      cache.add(url).catch(e => console.warn('[FL-SW] Optional asset skipped:', url, e))
+    ));
   })());
 });
 

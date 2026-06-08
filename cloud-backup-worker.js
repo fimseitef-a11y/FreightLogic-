@@ -44,9 +44,13 @@ export default {
     }
     const cors = {
       'Access-Control-Allow-Origin': allowedOrigin,
+      'Vary': 'Origin',
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Device-Id, X-Backup-Token, X-Admin-Token',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store, no-cache',
+      'Referrer-Policy': 'no-referrer',
     };
 
     if (request.method === 'OPTIONS') {
@@ -73,7 +77,7 @@ export default {
         if (request.method === 'POST' && path === '/admin/users') {
           const body = await request.json().catch(() => ({}));
           const name = (body.name || 'Driver').slice(0, 50);
-          const userId = 'u_' + crypto.randomUUID().slice(0, 12);
+          const userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
           const tokenHash = await hashToken(token);
           // Store token hash rather than plaintext — hash is the KV key; record omits raw token
@@ -186,6 +190,10 @@ export default {
           return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
         }
 
+        const clEval = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clEval > 64 * 1024) {
+          return json({ ok: false, error: 'Request too large' }, 413, cors);
+        }
         const payload = await request.json().catch(() => null);
         if (!payload) {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
@@ -214,7 +222,7 @@ export default {
 
         if (!aiRes.ok) {
           const errText = await aiRes.text().catch(() => '');
-          console.error('[FL] OpenAI error:', aiRes.status, errText);
+          console.error('[FL] OpenAI error:', aiRes.status, errText.slice(0, 200));
           return json({ ok: false, error: 'AI service error. Local evaluation is still valid.' }, 502, cors);
         }
 
@@ -258,6 +266,10 @@ export default {
           return json({ ok: false, error: 'AI extraction not configured on server.' }, 500, cors);
         }
 
+        const clExtract = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clExtract > 64 * 1024) {
+          return json({ ok: false, error: 'Request too large' }, 413, cors);
+        }
         const payload = await request.json().catch(() => null);
         if (!payload || !payload.text) {
           return json({ ok: false, error: 'Missing required field: text' }, 400, cors);
@@ -289,7 +301,7 @@ export default {
 
         if (!aiRes.ok) {
           const errText = await aiRes.text().catch(() => '');
-          console.error('[FL] OpenAI extract error:', aiRes.status, errText);
+          console.error('[FL] OpenAI extract error:', aiRes.status, errText.slice(0, 200));
           return json({ ok: false, error: 'AI service error.' }, 502, cors);
         }
 
@@ -325,6 +337,12 @@ export default {
 
       // POST /backup — save encrypted data
       if (request.method === 'POST' && path === '/backup') {
+        const backupRateLimited = await checkRateLimit(env, driverUserId, 60, 'backup');
+        if (backupRateLimited) return json({ ok: false, error: 'Backup rate limit exceeded (60/hr). Try again later.' }, 429, cors);
+        const clBackup = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clBackup > 5 * 1024 * 1024) {
+          return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
+        }
         const payload = await request.text();
         if (!payload || payload.length < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
@@ -359,6 +377,12 @@ export default {
 
       // POST /backup/delta — store delta (partial sync payload)
       if (request.method === 'POST' && path === '/backup/delta') {
+        const deltaRateLimited = await checkRateLimit(env, driverUserId, 120, 'delta');
+        if (deltaRateLimited) return json({ ok: false, error: 'Delta rate limit exceeded (120/hr).' }, 429, cors);
+        const clDelta = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clDelta > 2 * 1024 * 1024) {
+          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
+        }
         const payload = await request.text();
         if (!payload || payload.length < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
@@ -493,7 +517,7 @@ async function checkRateLimit(env, userId, limit, ns = 'eval') {
   const hour = Math.floor(Date.now() / 3600000);
   const key = 'rl:' + ns + ':' + userId + ':' + hour;
   const raw = await env.BACKUPS.get(key);
-  const count = raw ? parseInt(raw, 10) : 0;
+  const count = raw ? (parseInt(raw, 10) || 0) : 0;
   if (count >= limit) return true;
   // TTL 7200s (2 hours) — key auto-cleans after two windows
   await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 7200 });
@@ -546,7 +570,7 @@ Respond with a single JSON object matching this exact structure:
 
 // Sanitize a string field before embedding in an OpenAI prompt to prevent injection
 function promptField(v, maxLen = 120) {
-  return String(v || '').replace(/[\r\n\t]/g, ' ').slice(0, maxLen);
+  return String(v || '').replace(/[\r\n\t<>]/g, ' ').slice(0, maxLen);
 }
 function promptNum(v) {
   const n = parseFloat(v);
@@ -616,7 +640,7 @@ function validateGrade(g) {
 
 function sanitizeList(arr) {
   if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 6).map(s => String(s).slice(0, 150));
+  return arr.slice(0, 6).map(s => String(s).replace(/[<>&"']/g, '').slice(0, 150));
 }
 
 // ─── Extract system prompt ────────────────────────────────────────────────────
