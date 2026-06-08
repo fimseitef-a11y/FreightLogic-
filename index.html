@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#070710" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -270,12 +270,13 @@
     .btn.danger:active { transform: scale(.94) }
     .btn.sm { min-height: 36px; padding: 6px 14px; font-size: 12px; border-radius: var(--r-sm) }
     .btn-row { display: flex; gap: 8px; flex-wrap: wrap }
-    .theme-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 4px; line-height: 1 }
+    .theme-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 4px; line-height: 1; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .pass-wrap { position: relative }
     .pass-wrap input { padding-right: 44px }
     .pass-toggle {
       position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
       background: none; border: none; cursor: pointer; font-size: 16px; color: var(--text-tertiary);
+      min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
       line-height: 1; padding: 4px;
     }
     .pass-strength { height: 3px; border-radius: 2px; margin-top: 6px; background: var(--surface-3); overflow: hidden }
@@ -551,7 +552,7 @@
     .modal header { position: sticky; top: 0; padding: 8px 0 12px; background: var(--surface-0); border: 0; z-index: 5 }
     .modal .mhead { display: flex; align-items: center; justify-content: space-between; gap: 10px }
     .modal .mhead h2 { margin: 0; font-size: 16px; font-weight: 800 }
-    .x { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); display: grid; place-items: center; cursor: pointer; font-size: 13px; transition: transform .12s var(--spring), background .15s }
+    .x { width: 44px; height: 44px; min-width: 44px; min-height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); display: grid; place-items: center; cursor: pointer; font-size: 13px; transition: transform .12s var(--spring), background .15s }
     .x:active { transform: scale(.85) }
 
     /* ── Toast ───────────────────────────────────────────────────── */
@@ -780,6 +781,31 @@
     .fl-trip-full .fl-tf-pay { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text) }
     .fl-trip-full .fl-tf-rpm { font-size: 11px; font-weight: 700; margin-top: 2px }
     .fl-trip-full .fl-tf-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; justify-content: flex-end }
+
+    /* ── Screen-reader only ──────────────────────────────────────── */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0 }
+
+    /* ── Focus-visible styles ────────────────────────────────────── */
+    .chip:focus-visible,
+    .menu-tile:focus-visible,
+    .intel-row:focus-visible,
+    .fl-quick-btn:focus-visible,
+    .fl-intel-tab:focus-visible,
+    .x:focus-visible,
+    .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    /* ── Reduced motion ──────────────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .kpi-progress-bar { transition: none !important; }
+      .fab { animation: none !important; }
+      .cloud-sync-spinner { animation: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -807,7 +833,7 @@
     <option value="Registration"><option value="Roadside Assistance"><option value="Other">
   </datalist>
   <main class="app">
-    <section id="view-home" class="view">
+    <section id="view-home" class="view" aria-label="Home">
       <!-- F26: Driver Command Strip — IDs kept for JS binding, visually replaced below -->
       <div id="driverCommandStrip" style="display:none" aria-hidden="true">
         <button id="dcEvaluate"></button>
@@ -909,12 +935,13 @@
         <button id="btnQuickEval"></button>
       </div>
     </section>
-    <section id="view-trips" class="view" style="display:none">
+    <section id="view-trips" class="view" style="display:none" aria-label="Trips">
       <div class="card">
         <div class="fl-card-hdr" style="margin-bottom:12px">
           <h3>Trips</h3>
           <button class="btn primary" id="btnTripAdd" style="padding:8px 16px;border-radius:12px">＋ Trip</button>
         </div>
+        <label for="tripSearch" class="sr-only">Search trips by order number or customer</label>
         <input id="tripSearch" placeholder="Search order # or customer…" style="margin-bottom:10px" />
         <div id="tripChips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scrollbar-width:none">
           <button class="chip active" data-chip="all">All</button>
@@ -935,6 +962,7 @@
     <section id="view-expenses" class="view" style="display:none">
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Expenses</h3><button class="btn primary" id="btnAddExp2" style="padding:8px 14px">＋ Add</button></div>
+        <label for="expSearch" class="sr-only">Search expenses by category or notes</label>
         <input id="expSearch" placeholder="Search category or notes…" />
       </div>
       <div class="spacer"></div><div class="ptr-zone" id="expPTR"></div><div class="list" id="expenseList"></div><div class="spacer"></div>
@@ -1036,7 +1064,7 @@
       <div class="card"><h3>Export to Accountant</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Quarterly P&amp;L, expenses, IFTA fuel, per diem — for your CPA.</div><div class="ptabs" id="acctPeriodTabs"><button class="btn sm" data-acct="q1">Q1</button><button class="btn sm" data-acct="q2">Q2</button><button class="btn sm" data-acct="q3">Q3</button><button class="btn sm" data-acct="q4">Q4</button><button class="btn sm act" data-acct="ytd">YTD</button></div><button class="btn primary" id="btnAccountantExport" style="margin-top:10px">Generate Package</button></div>
       <div class="spacer"></div>
     </section>
-    <section id="view-intel" class="view" style="display:none">
+    <section id="view-intel" class="view" style="display:none" aria-label="Intelligence">
       <div id="intelLiveSection" style="margin-top:10px"></div>
       <div id="intelMenu" style="margin-top:10px"></div>
     </section>
@@ -1229,7 +1257,7 @@
         <button class="btn sm" data-mwtab="board">Market Board</button>
       </div>
     </section>
-    <section id="view-more" class="view" style="display:none">
+    <section id="view-more" class="view" style="display:none" aria-label="More options">
       <div class="menu-grid" id="moreMenu"></div>
       <!-- Hidden: preserved IDs for Quick Settings sync (JS references these) -->
       <div style="display:none"><input id="moreWeeklyGoal" /><input id="moreVehicleMpg" /><input id="moreFuelPrice" /><input id="morePerDiem" /><button id="moreSaveSettings"></button></div>
@@ -1245,10 +1273,10 @@
   </main>
   <div class="modal-backdrop" id="backdrop"></div>
   <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1"><div class="modal-handle"></div><header><div class="mhead"><h2 id="modalTitle">Add</h2><button class="x" id="modalClose" aria-label="Close modal">✕</button></div></header><div id="modalBody"></div></div>
-  <div class="toast" id="toast" role="alert" aria-live="polite"></div>
-  <div id="undoToast" role="status" aria-live="assertive"></div>
+  <div class="toast" id="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <div id="undoToast" role="status" aria-live="polite" aria-atomic="true"></div>
   <div class="bottom"><nav class="nav" role="navigation" aria-label="Main navigation">
-    <a href="#home" data-nav="home" class="active" aria-label="Home">
+    <a href="#home" data-nav="home" class="active" aria-label="Home" aria-current="page">
       <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
       <div class="nl">Home</div>
     </a>

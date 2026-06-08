@@ -1101,7 +1101,7 @@ async function putReceipts(orderNo, filesArr){
 }
 async function getAllReceipts(){ const {stores} = tx('receipts'); return (await idbReq(stores.receipts.getAll())) || []; }
 
-const RECEIPT_CACHE = 'freightlogic-receipts-v1';
+const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 /** P0-3: Sanitize receipt IDs for CacheStorage URL safety — prevent path traversal */
 function sanitizeReceiptId(id){
   return String(id || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 60) || 'unknown';
@@ -1148,14 +1148,18 @@ async function makeThumbDataUrl(file){
     const type = (file?.type || '').toLowerCase();
     if (type.startsWith('image/')){
       const bmp = await createImageBitmap(file);
-      const maxDim = LIMITS.THUMB_MAX_DIM;
-      const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
-      const w = Math.max(1, Math.round(bmp.width * scale));
-      const h = Math.max(1, Math.round(bmp.height * scale));
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d', { alpha: false }).drawImage(bmp, 0, 0, w, h);
-      return c.toDataURL('image/jpeg', LIMITS.THUMB_JPEG_QUALITY);
+      try {
+        const maxDim = LIMITS.THUMB_MAX_DIM;
+        const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+        const w = Math.max(1, Math.round(bmp.width * scale));
+        const h = Math.max(1, Math.round(bmp.height * scale));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d', { alpha: false }).drawImage(bmp, 0, 0, w, h);
+        return c.toDataURL('image/jpeg', LIMITS.THUMB_JPEG_QUALITY);
+      } finally {
+        bmp.close();
+      }
     }
     const name = clampStr(file?.name || 'Receipt', 18);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="220"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B1220"/><stop offset="1" stop-color="#111827"/></linearGradient></defs><rect width="100%" height="100%" rx="18" fill="url(#g)"/><rect x="20" y="20" width="280" height="180" rx="14" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.14)"/><text x="40" y="92" font-size="22" fill="rgba(255,255,255,0.9)" font-family="system-ui">PDF</text><text x="40" y="128" font-size="14" fill="rgba(255,255,255,0.7)" font-family="system-ui">${escapeHtml(name)}</text></svg>`;
@@ -1288,7 +1292,7 @@ async function exportJSON(){
     expenses,
     fuel,
     receipts: await dumpStore('receipts'),
-    settings: await dumpStore('settings'),
+    settings: (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey'),
     auditLog: await dumpStore('auditLog'),
     laneHistory: await dumpStore('laneHistory'),
     weeklyReports: await dumpStore('weeklyReports'),
@@ -1404,7 +1408,12 @@ async function importJSON(file, opts={}){
       'cvsaAlertsEnabled','opportunityCostEnabled','auctionUndercut',
       'emptyDayThresholdHours','lastWinningBidStats']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
-    const isAllowedSettingsKey = k => ALLOWED_SETTINGS_KEYS.has(k) || k.startsWith('broker_note_') || k.startsWith('laneReviewDone_');
+    const isAllowedSettingsKey = k => {
+      if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
+      if (k.startsWith('broker_note_') && k.length <= 80) return true;
+      if (k.startsWith('laneReviewDone_') && k.length <= 80) return true;
+      return false;
+    };
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && isAllowedSettingsKey(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
     }));
@@ -1479,6 +1488,7 @@ async function importJSON(file, opts={}){
     putAll(stores.documents, safeDocumentsArr);
     putAll(stores.gpsLogs, safeGpsLogsArr);
     await waitTxn(txn);
+    SETTINGS_CACHE.clear();
     toast('Import complete');
   }catch(err){ toast('Import failed (invalid JSON or corrupted export).', true); }
 }
@@ -2061,7 +2071,7 @@ async function computeTaxView(trips, exps){
     if (ts >= minTs) exp += Number(e.amount||0);
   }
   const net = roundCents(gross - exp);
-  const perDiemRate = Number(await getSetting('perDiemRate', 0) || 0);
+  const perDiemRate = Number(await getSetting('perDiemRate', IRS.PER_DIEM_CONUS) || IRS.PER_DIEM_CONUS);
   const perDiemFull = perDiemRate > 0 ? (perDiemRate * days.size) : 0;
   // IRS Sec 274(n): DOT-regulated drivers (CDL/HOS) get 80%; non-DOT (cargo van <10,001 GVWR) get 50%
   const vehicleClass = await getSetting('vehicleClass', 'cargo_van');
@@ -3062,7 +3072,8 @@ function setActiveNav(name){
   $$('[data-nav]').forEach(a => {
     const isActive = a.dataset.nav === navName;
     a.classList.toggle('active', isActive);
-    if (isActive) haptic(5);
+    if (isActive) { haptic(5); a.setAttribute('aria-current', 'page'); }
+    else a.removeAttribute('aria-current');
   });
 }
 
@@ -3794,7 +3805,6 @@ async function renderHome(){
   }
   staggerItems(actions);
 
-  invalidateKPICache();
   await computeKPIs();
   if (!state.isEmpty) await Promise.all([
     renderCommandCenter(),
@@ -4556,7 +4566,7 @@ async function openReceiptManager(orderNo){
     if (f.cached){
       viewBtn.addEventListener('click', async ()=>{
         try{ const data = await cacheGetReceipt(f.id); if (!data){ toast('Receipt not in cache', true); return; }
-          const url = URL.createObjectURL(data.blob); window.open(url, '_blank', 'noopener,noreferrer'); setTimeout(()=> URL.revokeObjectURL(url), 30000);
+          const url = URL.createObjectURL(data.blob); window.open(url, '_blank', 'noopener,noreferrer'); setTimeout(()=> URL.revokeObjectURL(url), 3000);
         }catch{ toast('Failed to open receipt', true); }
       });
     } else viewBtn.disabled = true;
@@ -9519,6 +9529,7 @@ async function generateWeeklyReport(){
       document.body.appendChild(a); a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      canvas.width = 0; canvas.height = 0;
       haptic(25);
       toast('Weekly report saved!');
     }, 'image/png');
@@ -10215,7 +10226,7 @@ async function renderWeeklyChart(){
 
 async function checkOverduePayments(){
   try{
-    const trips = await dumpStore('trips');
+    const { trips } = await _getTripsAndExps();
     const today = new Date();
     const overdueTrips = [];
     for (const t of trips){
@@ -11451,7 +11462,7 @@ async function cloudAdminCreateUser(){
         if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
       }
       if ($('#adminDriverName')) $('#adminDriverName').value = '';
-      localStorage.setItem('fl_admin_tok', adminToken);
+      sessionStorage.setItem('fl_admin_tok', adminToken);
       cloudAdminLoadUsers();
     } else { const e = await res.json().catch(()=>({})); if (result) result.innerHTML = '<div style="color:var(--bad)">' + escapeHtml(e.error || 'Failed') + '</div>'; }
   } catch(e) { if (result) result.innerHTML = '<div style="color:var(--bad)">Network error</div>'; }
@@ -11463,7 +11474,7 @@ function cloudAdminShare(text){
 }
 
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || localStorage.getItem('fl_admin_tok') || '').trim();
+  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_tok') || '').trim();
   const list = $('#adminUserList'); if (!adminToken || !list) return;
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
@@ -11486,7 +11497,7 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = localStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
+  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
   $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
@@ -11563,7 +11574,8 @@ document.addEventListener('visibilitychange', ()=>{
     cloudRefreshStatusPanel();
   }
 });
-window.addEventListener('beforeunload', ()=> emergencyAutoBackup());
+// emergencyAutoBackup is async — not viable in beforeunload (browser won't wait).
+// The visibilitychange handler above (document hidden) is the reliable path.
 
 
 // ── v15.3.0: Offline/Online indicator ──
@@ -12082,7 +12094,7 @@ async function openTaxSeasonExport(){
 
     // Mileage
     const totalLoadedMi  = trips.reduce((s, t) => s + posNum(t.loadedMiles || t.miles), 0);
-    const totalDeadMi    = trips.reduce((s, t) => s + posNum(t.deadMiles || t.deadheadMiles), 0);
+    const totalDeadMi    = trips.reduce((s, t) => s + posNum(t.emptyMiles), 0);
     const totalBizMi     = totalLoadedMi + totalDeadMi;
     const mileageDeduction = roundCents(totalBizMi * mileageRate);
 
@@ -12096,7 +12108,7 @@ async function openTaxSeasonExport(){
       const cat = (e.category || 'Other').trim();
       expByCategory[cat] = (expByCategory[cat] || 0) + posNum(e.amount);
     }
-    const fuelTotal = fuel.reduce((s, f) => s + posNum(f.totalCost || f.cost), 0);
+    const fuelTotal = fuel.reduce((s, f) => s + posNum(f.amount), 0);
     if (fuelTotal > 0) expByCategory['Fuel'] = (expByCategory['Fuel'] || 0) + fuelTotal;
 
     // Map to Schedule C buckets
@@ -12200,7 +12212,7 @@ async function openTaxSeasonExport(){
           .sort((a, b) => (a.pickupDate || a.deliveryDate || '').localeCompare(b.pickupDate || b.deliveryDate || ''))
           .map(t => {
             const loaded = posNum(t.loadedMiles || t.miles);
-            const dead   = posNum(t.deadMiles || t.deadheadMiles);
+            const dead   = posNum(t.emptyMiles);
             const total  = loaded + dead;
             return [
               t.pickupDate || t.deliveryDate || '',
@@ -12549,7 +12561,7 @@ async function generateWeeklyPnL(weekId){
     const fuelPricePerGal = Number(getCachedSetting('fuelPrice',3.50)||3.50);
     const fuelEstimate = roundCents(((totalLoadedMi+totalDeadMi) / mpg) * fuelPricePerGal);
     const netIncome = roundCents(grossRev - totalExpenses);
-    const avgRPM = rpmCount > 0 ? roundCents(totalRPMSum / rpmCount) : 0;
+    const avgRPM = (totalLoadedMi + totalDeadMi) > 0 ? roundCents(grossRev / (totalLoadedMi + totalDeadMi)) : 0;
     const deadheadPct = (totalLoadedMi+totalDeadMi) > 0 ? roundCents((totalDeadMi/(totalLoadedMi+totalDeadMi))*100) : 0;
 
     const report = { weekId, weekStart: wkStartISO, weekEnd: wkEndISO, grossRev, totalExpenses, netIncome, avgRPM, totalLoadedMi, totalDeadMi, deadheadPct, fuelEstimate, loadsCount: weekTrips.length, daysWorked: workDays.size, expByCategory, bestLane: bestTrip ? `${bestTrip.origin||'?'} → ${bestTrip.destination||'?'}` : null, bestRPM: bestTrip?._rpm||0, worstLane: worstTrip ? `${worstTrip.origin||'?'} → ${worstTrip.destination||'?'}` : null, worstRPM: worstTrip?._rpm||0, generatedAt: Date.now() };
@@ -12653,7 +12665,7 @@ async function openWeeklyReports(){
     list.innerHTML = allReports.map(r => `
       <div class="card" style="margin-bottom:10px;cursor:pointer" data-wkid="${escapeHtml(r.weekId)}">
         <div style="display:flex;justify-content:space-between">
-          <div style="font-weight:700">${escapeHtml(r.weekId)} <span class="muted" style="font-size:11px">${r.weekStart} – ${r.weekEnd}</span></div>
+          <div style="font-weight:700">${escapeHtml(r.weekId)} <span class="muted" style="font-size:11px">${escapeHtml(r.weekStart||'')} – ${escapeHtml(r.weekEnd||'')}</span></div>
           <div style="font-family:var(--font-mono);color:${(r.netIncome||0)>=0?'var(--good)':'var(--bad)'};">${fmtMoney(r.netIncome||0)}</div>
         </div>
         <div class="muted" style="font-size:12px;margin-top:4px">${r.loadsCount||0} loads · $${(r.avgRPM||0).toFixed(2)} RPM · ${fmtMoney(r.grossRev||0)} gross</div>
@@ -13052,7 +13064,7 @@ async function openDocumentVault(filterTripOrderNo=null){
         if (!doc || !doc.blob) return toast('Document data not found', true);
         const url = URL.createObjectURL(new Blob([doc.blob], {type: doc.mimeType || 'application/octet-stream'}));
         window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
       });
     });
     list.querySelectorAll('[data-dvdel]').forEach(btn2 => {
@@ -14137,7 +14149,7 @@ async function fetchEIADieselPrice(){
   const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
   if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) return null; // Skip if fetched recently
   try {
-    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duession][]=NUS&sort[0][column]=period&sort[0][direction]=desc&length=1';
+    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duoarea][]=NUS&sort[0][column]=period&sort[0][direction]=desc&length=1';
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
     if (!res.ok) return null;
     const json = await res.json();
@@ -14151,7 +14163,7 @@ async function fetchEIADieselPrice(){
     await setSetting('eiaLastFetchTs', Date.now());
     // Show hint in settings if visible
     const hintEl = $('#eiaHint');
-    if (hintEl) hintEl.innerHTML = `EIA avg: <b>$${price.toFixed(2)}/gal</b> (${period}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+    if (hintEl) hintEl.innerHTML = `EIA avg: <b>$${price.toFixed(2)}/gal</b> (${escapeHtml(period)}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
     document.addEventListener('click', async (ev)=>{
       if (ev.target?.id === 'eiaApplyBtn'){
         ev.preventDefault();
@@ -14160,7 +14172,7 @@ async function fetchEIADieselPrice(){
         if (fpEl) fpEl.value = price.toFixed(2);
         toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA)`);
       }
-    }, { once: false });
+    }, { once: true });
     return { price, period };
   } catch(e){ console.warn('[FL] EIA fetch', e); return null; }
 }
@@ -15839,7 +15851,7 @@ if (typeof window !== 'undefined'){
 
     await navigate();
     _updateOnlineStatus();
-    setInterval(()=> computeQuickKPIs().catch(()=>{}), 60_000);
+    setInterval(()=>{ if (document.visibilityState === 'visible') computeQuickKPIs().catch(()=>{}); }, 60_000);
 
     // v20: FAB removed — onboarding handled via Home welcome card
     await getOnboardState();
