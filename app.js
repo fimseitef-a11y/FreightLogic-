@@ -1,11 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.5.0 USA ENGINE
- *  v23.5.0: Smart Insight card, improved scoring (day-of-week + stop factors),
- *           better counter-offer targeting, tighter NEGOTIATE/PASS verdict logic,
- *           richer positioning confidence, enhanced AI eval prompt context
- *  v23.1.1: Ω Calculator HTML cards + Net column, DZ flag, SW cache-buster fix
+/** FreightLogic v23.7.0 USA ENGINE
+ *  v23.7.0: Smart Insight card (F32), improved scoring, counter-offer targeting,
+ *           tighter NEGOTIATE/PASS verdict logic, enhanced AI eval prompt context
+ *  v23.4.0: Setup Wizard (F26), Unified Load Intake (F27), Diagnostics (F28),
+ *           Post-Trip Review (F29), Tax Season Export (F30), Earnings Trends (F31)
  *  v23.1.0: Vehicle Maintenance Tracker (F25), Stabilization
  *  v23.0.0: Proactive Positioning Engine (F24), Market Feed, Tomorrow Signal, Strategic Floor (A-E)
  *  v22: GPS Trip Tracking (F21), Money Dashboard (F22), Smart Load Inbox (F23)
@@ -1102,6 +1102,7 @@ async function putReceipts(orderNo, filesArr){
 async function getAllReceipts(){ const {stores} = tx('receipts'); return (await idbReq(stores.receipts.getAll())) || []; }
 
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
+const SHARE_CACHE_NAME = 'freightlogic-share-v2';
 /** P0-3: Sanitize receipt IDs for CacheStorage URL safety — prevent path traversal */
 function sanitizeReceiptId(id){
   return String(id || '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 60) || 'unknown';
@@ -1250,32 +1251,26 @@ async function dumpStore(name){
     req.onsuccess = (e)=>{ const cur = e.target.result; if (!cur){ resolve(out); return; } out.push(cur.value); cur.continue(); };
   });
 }
-/** P1-5: SHA-256 checksum for export integrity — covers trips/expenses/fuel (legacy field)
- *  checksumFull additionally covers settings to detect credential tampering */
-async function computeExportChecksum(trips, expenses, fuel){
-  const raw = JSON.stringify({ trips, expenses, fuel });
+/** SHA-256 (with FNV-1a fallback) over an arbitrary JSON-serialisable object. */
+async function _computeChecksum(data){
+  const raw = JSON.stringify(data);
   const buf = new TextEncoder().encode(raw);
   try {
     const hash = await crypto.subtle.digest('SHA-256', buf);
     return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
   } catch {
-    // Fallback: simple FNV-1a 32-bit hash for environments without SubtleCrypto
     let h = 0x811c9dc5;
     for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
   }
 }
+/** P1-5: SHA-256 checksum for export integrity — covers trips/expenses/fuel (legacy field). */
+async function computeExportChecksum(trips, expenses, fuel){
+  return _computeChecksum({ trips, expenses, fuel });
+}
+/** checksumFull additionally covers settings to detect credential tampering. */
 async function computeExportChecksumFull(trips, expenses, fuel, settings){
-  const raw = JSON.stringify({ trips, expenses, fuel, settings });
-  const buf = new TextEncoder().encode(raw);
-  try {
-    const hash = await crypto.subtle.digest('SHA-256', buf);
-    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
-  } catch {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-    return 'fnv1a-' + (h >>> 0).toString(16).padStart(8, '0');
-  }
+  return _computeChecksum({ trips, expenses, fuel, settings });
 }
 
 async function exportJSON(){
@@ -1527,25 +1522,9 @@ async function parseCSVTextAsync(text){
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (!lines.length) return [];
   const result = [];
-  let n = 0;
-  for (const line of lines){
-    const row = []; let cell = ''; let inQuote = false;
-    for (let i = 0; i < line.length; i++){
-      const ch = line[i];
-      if (inQuote){
-        if (ch === '"' && line[i+1] === '"'){ cell += '"'; i++; }
-        else if (ch === '"') inQuote = false;
-        else cell += ch;
-      } else {
-        if (ch === '"') inQuote = true;
-        else if (ch === ','){ row.push(cell.trim()); cell = ''; }
-        else cell += ch;
-      }
-    }
-    row.push(cell.trim());
-    result.push(row);
-    n++;
-    if ((n % 750) === 0) await new Promise(r => setTimeout(r, 0));
+  for (let i = 0; i < lines.length; i += 750){
+    result.push(...parseCSVLines(lines.slice(i, i + 750)));
+    if (i + 750 < lines.length) await new Promise(r => setTimeout(r, 0));
   }
   return result;
 }
@@ -3006,14 +2985,14 @@ function renderLiveScore(container, tripData, allTrips, allExps){
 async function handleShareTarget(){
   try {
     if (!hasCacheStorage()) { toast('Sharing not supported in this browser', true); return; }
-    const shareCache = await caches.open('freightlogic-share-v1');
+    const shareCache = await caches.open(SHARE_CACHE_NAME);
     const metaRes = await shareCache.match('/shared-meta');
     if (!metaRes) { toast('No shared files found'); return; }
     const meta = await metaRes.json();
     if (!meta.count || meta.count < 1) { toast('No shared files found'); return; }
     // Reject stale shares (>5 minutes old)
     if (Date.now() - (meta.ts || 0) > 300000) {
-      await caches.delete('freightlogic-share-v1');
+      await caches.delete(SHARE_CACHE_NAME);
       toast('Shared files expired. Please share again.', true);
       return;
     }
@@ -3027,7 +3006,7 @@ async function handleShareTarget(){
       }
     }
     // Clean up share cache
-    await caches.delete('freightlogic-share-v1');
+    await caches.delete(SHARE_CACHE_NAME);
     if (!files.length) { toast('Could not read shared files', true); return; }
     // Check if files are receipts (images/PDFs)
     const receiptFiles = files.filter(f => ALLOWED_RECEIPT_TYPES.has(f.type));
@@ -3058,7 +3037,7 @@ async function handleShareTarget(){
   } catch(e) {
     console.error('[FL] Share target error:', e);
     toast('Failed to process shared files', true);
-    try { await caches.delete('freightlogic-share-v1'); } catch(ex) { /* ignore */ }
+    try { await caches.delete(SHARE_CACHE_NAME); } catch(ex) { /* ignore */ }
   }
 }
 
