@@ -3312,10 +3312,10 @@ function openQuickEvalModal(){
     }
   }
 
-  $('#qeSubmitText', body).addEventListener('click', ()=>{
+  $('#qeSubmitText', body).addEventListener('click', async ()=>{
     haptic(15);
     const txt = $('#qeText', body)?.value || '';
-    _runQuickEval(txt);
+    await _runQuickEval(txt);
   });
   $('#qeSubmitPhoto', body).addEventListener('click', async ()=>{
     haptic(15);
@@ -3326,7 +3326,7 @@ function openQuickEvalModal(){
     try {
       const text = await runOCR(file);
       if (!text){ resultSlot.innerHTML = ''; inputSlot.style.display = ''; toast('Could not read text from image', true); return; }
-      _runQuickEval(text);
+      await _runQuickEval(text);
     } catch(e){
       resultSlot.innerHTML = ''; inputSlot.style.display = '';
       toast('OCR failed — try pasting text instead', true);
