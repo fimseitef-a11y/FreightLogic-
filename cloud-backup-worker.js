@@ -76,7 +76,7 @@ export default {
 
         if (request.method === 'POST' && path === '/admin/users') {
           const body = await request.json().catch(() => ({}));
-          const name = (body.name || 'Driver').slice(0, 50);
+          const name = String(body.name || 'Driver').slice(0, 50);
           const userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
           const tokenHash = await hashToken(token);
@@ -372,7 +372,7 @@ export default {
         // Increment per-user backup count in parallel with pointer ops
         await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
-        return json({ ok: true, key, size: payload.length }, 200, cors);
+        return json({ ok: true, size: payload.length }, 200, cors);
       }
 
       // POST /backup/delta — store delta (partial sync payload)
@@ -412,7 +412,7 @@ export default {
           await savePtr(env, driverUserId, deviceId, 'd', ptr);
         }
 
-        return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
+        return json({ ok: true, size: payload.length, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest

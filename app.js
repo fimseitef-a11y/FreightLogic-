@@ -14172,7 +14172,7 @@ async function checkRouteWeather(originCoords, destCoords){
     if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+      const res = await fetch(url, { headers: { 'User-Agent': `FreightLogicApp/${APP_VERSION}` }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
       if (!res.ok){ continue; }
       const json = await res.json();
       const ptAlerts = (json.features || []).map(f => ({
