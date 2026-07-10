@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.7.0">
+  <link rel="manifest" href="manifest.json?v=23.8.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap">
   <style>
     /* ═══════════════════════════════════════════════════════════════
-       FREIGHT LOGIC v23.7.0 — DESIGN SYSTEM v3.0 "Command"
+       FREIGHT LOGIC v23.8.0 — DESIGN SYSTEM v3.0 "Command"
        Dark-first. Precision-built for cargo van operators.
        ═══════════════════════════════════════════════════════════════ */
 
@@ -1043,6 +1043,7 @@
 <label>DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
 <div id="datApiFields" style="display:none"><label>DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
 <label>FMCSA API Key (broker verification)</label><input id="fmcsaApiKey" type="password" placeholder="Get free key at ai.fmcsa.dot.gov" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables broker authority status lookup in evaluator</div>
+<label>EIA API Key (free — eia.gov/opendata)</label><input id="eiaApiKey" type="password" placeholder="Get free key at eia.gov/opendata" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables live Midwest gas price lookup for fuel cost estimates</div>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" style="color:var(--warn)"><span class="settings-section-icon" style="background:var(--warn-muted);border-color:var(--warn-border)">🟠</span>Dead Zone Exit</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Survival-tier scoring ($0.90–$1.24 RPM) unlocked only when stranded 1,500+ miles from home with no viable reloads above the normal floor. Keeps below-floor loads from polluting your RPM history.</div>
@@ -1309,8 +1310,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.7.0"></script>
-  <script src="voice-load.js?v=23.7.0"></script>
-  <script src="sw-bridge.js?v=23.7.0"></script>
+  <script src="app.js?v=23.8.0"></script>
+  <script src="voice-load.js?v=23.8.0"></script>
+  <script src="sw-bridge.js?v=23.8.0"></script>
 </body>
 </html>
