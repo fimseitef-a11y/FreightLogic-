@@ -1,7 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.7.0 USA ENGINE
+/** FreightLogic v23.8.0 USA ENGINE
+ *  v23.8.0: Live-data corrections — EIA feed fixed (key + Midwest gas), July 2026
+ *           market override, fuel baseline refresh, authority version align
  *  v23.7.0: Smart Insight card (F32), improved scoring, counter-offer targeting,
  *           tighter NEGOTIATE/PASS verdict logic, enhanced AI eval prompt context
  *  v23.4.0: Setup Wizard (F26), Unified Load Intake (F27), Diagnostics (F28),
@@ -14,7 +16,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.7.0';
+const APP_VERSION = '23.8.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -1287,7 +1289,7 @@ async function exportJSON(){
     expenses,
     fuel,
     receipts: await dumpStore('receipts'),
-    settings: (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey'),
+    settings: (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey'),
     auditLog: await dumpStore('auditLog'),
     laneHistory: await dumpStore('laneHistory'),
     weeklyReports: await dumpStore('weeklyReports'),
@@ -1387,7 +1389,7 @@ async function importJSON(file, opts={}){
     }));
     const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
       // v21 new settings keys
-      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','localUserId',
+      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','eiaApiKey','localUserId',
       // v22 F21/F22/F23 onboarding flags
       'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
       // v23 F24 positioning engine flags
@@ -4788,11 +4790,14 @@ async function renderInsights(){
   if (eiaHintEl){
     const eiaPx = await getSetting('eiaLastPrice', 0);
     const eiaDate = await getSetting('eiaLastDate', '');
-    if (eiaPx) eiaHintEl.innerHTML = `EIA avg: <b>$${Number(eiaPx).toFixed(2)}/gal</b>${eiaDate ? ' ('+escapeHtml(eiaDate)+')' : ''} — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+    if (eiaPx) eiaHintEl.innerHTML = `EIA MW gas: <b>$${Number(eiaPx).toFixed(2)}/gal</b>${eiaDate ? ' ('+escapeHtml(eiaDate)+')' : ''} — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
   }
   // v21 T4C: FMCSA API key
   const fmcsaEl = $('#fmcsaApiKey');
   if (fmcsaEl) fmcsaEl.value = await getSetting('fmcsaApiKey', '') || '';
+  // v23.8: EIA API key
+  const eiaKeyEl = $('#eiaApiKey');
+  if (eiaKeyEl) eiaKeyEl.value = await getSetting('eiaApiKey', '') || '';
 
   // Cloud Backup settings
   const cbPass = $('#cloudBackupPass');
@@ -5899,7 +5904,7 @@ function usaScoreLoad(opts){
 
 const MW = {
   mpg: 16.5,           // Field-confirmed 2016 Transit T250 (gas)
-  fuelBaseline: 4.28,  // Midwest gas spot ~May 2026; user override via settings
+  fuelBaseline: 3.55,  // Midwest regular gas, EIA wk of Jul 6 2026; user override via settings
   weekTarget: { low: 3800, high: 4200, stretch: 5000 },
   monWed: { low: 2200, high: 2600 },
   thuFri: { low: 1200, high: 1600 },
@@ -9285,6 +9290,9 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   // v21 T4C: FMCSA key
   const fmcsaKey = ($('#fmcsaApiKey')?.value || '').trim();
   if (fmcsaKey) await setSetting('fmcsaApiKey', clampStr(fmcsaKey, 80));
+  // v23.8: EIA key
+  const eiaKey = ($('#eiaApiKey')?.value || '').trim();
+  if (eiaKey) await setSetting('eiaApiKey', clampStr(eiaKey, 80));
   toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
 });
 addManagedListener($('#btnHardReset'), 'click', async ()=>{
@@ -14120,20 +14128,29 @@ async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickup
 }
 
 // ════════════════════════════════════════════════════════════════
-// v21 T4A: EIA Diesel Price Feed (no API key required)
+// v23.8: EIA Midwest regular gasoline feed (requires free EIA key in settings)
 // ════════════════════════════════════════════════════════════════
-async function fetchEIADieselPrice(){
+async function fetchEIAGasPrice(){
   if (!navigator.onLine) return null;
   const lastFetch = Number(await getSetting('eiaLastFetchTs', 0) || 0);
   const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
   if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) return null; // Skip if fetched recently
+  const eiaKey = (await getSetting('eiaApiKey', '') || '').trim();
+  if (!eiaKey) return null;
   try {
-    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duoarea][]=NUS&sort[0][column]=period&sort[0][direction]=desc&length=1';
+    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPMR&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
     if (!res.ok) return null;
     const json = await res.json();
-    const record = json?.response?.data?.[0];
-    if (!record || !record.value) return null;
+    let record = json?.response?.data?.[0];
+    if (!record || !record.value) {
+      const fallbackUrl = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPM0&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
+      const fallbackRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+      if (!fallbackRes.ok) return null;
+      const fallbackJson = await fallbackRes.json();
+      record = fallbackJson?.response?.data?.[0];
+      if (!record || !record.value) return null;
+    }
     const price = parseFloat(record.value);
     if (!(price > 0)) return null;
     const period = record.period || '';
@@ -14142,14 +14159,14 @@ async function fetchEIADieselPrice(){
     await setSetting('eiaLastFetchTs', Date.now());
     // Show hint in settings if visible
     const hintEl = $('#eiaHint');
-    if (hintEl) hintEl.innerHTML = `EIA avg: <b>$${price.toFixed(2)}/gal</b> (${escapeHtml(period)}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+    if (hintEl) hintEl.innerHTML = `EIA MW gas: <b>$${price.toFixed(2)}/gal</b> (${escapeHtml(period)}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
     document.addEventListener('click', async (ev)=>{
       if (ev.target?.id === 'eiaApplyBtn'){
         ev.preventDefault();
         await setSetting('fuelPrice', price);
         const fpEl = $('#fuelPrice');
         if (fpEl) fpEl.value = price.toFixed(2);
-        toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA)`);
+        toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA Midwest gas)`);
       }
     }, { once: true });
     return { price, period };
@@ -15875,7 +15892,7 @@ if (typeof window !== 'undefined'){
       // v21 T3C: Document expiry alerts
       try{ await checkDocumentExpiry(); }catch(e){ console.warn("[FL]", e); }
       // v21 T4A: EIA diesel price fetch (background, non-blocking)
-      try{ await fetchEIADieselPrice(); }catch(e){ console.warn("[FL]", e); }
+      try{ await fetchEIAGasPrice(); }catch(e){ console.warn("[FL]", e); }
     }, 2000);
   }catch(err){
     console.error(err);
