@@ -5,10 +5,23 @@ const H=()=>{try{window.haptic&&window.haptic(10)}catch(_){}};
 const X=s=>String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const S=s=>{let p=String(s||'Driver').split(' | ');return{n:(p[0]||'Driver').trim()||'Driver'}};
 
-// Admin token stored in localStorage — persists across sessions so admin never has to re-enter it.
-const LOC_KEY='fl_admin_tok';
-function saveTok(v){try{if(v){localStorage.setItem(LOC_KEY,v);sessionStorage.setItem(LOC_KEY,v)}else{localStorage.removeItem(LOC_KEY);sessionStorage.removeItem(LOC_KEY)}}catch(_){}}
-function loadTok(){try{return localStorage.getItem(LOC_KEY)||sessionStorage.getItem(LOC_KEY)||''}catch(_){return''}}
+// Admin token is session-scoped ONLY — it grants create/list/revoke over every driver
+// account, so it must never be written to disk. Cleared on tab/browser close.
+// See CLAUDE.md "Credential Storage Rules" before changing this.
+const TOK_KEY='fl_admin_tok';
+// Earlier builds persisted this token to localStorage. Migrate any surviving value into
+// the current session, then delete the on-disk copy so it stops outliving the session.
+function purgeLegacyTok(){
+  try{
+    const legacy=localStorage.getItem(TOK_KEY);
+    if(legacy){
+      if(!sessionStorage.getItem(TOK_KEY))sessionStorage.setItem(TOK_KEY,legacy);
+      localStorage.removeItem(TOK_KEY);
+    }
+  }catch(_){}
+}
+function saveTok(v){try{purgeLegacyTok();if(v)sessionStorage.setItem(TOK_KEY,v);else sessionStorage.removeItem(TOK_KEY)}catch(_){}}
+function loadTok(){try{purgeLegacyTok();return sessionStorage.getItem(TOK_KEY)||''}catch(_){return''}}
 function getTok(){return(($('adminToken')||{}).value||'').trim()||loadTok()}
 const G=()=>({'Content-Type':'application/json','X-Admin-Token':getTok()});
 const Q=async(u,o)=>{let r=await fetch(API+u,o||{}),j=await r.json().catch(()=>null);if(!r.ok||!j||j.ok===false)throw Error(j&&j.error||`HTTP ${r.status}`);return j};
