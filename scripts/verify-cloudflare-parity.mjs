@@ -45,7 +45,7 @@ async function main() {
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
   assert(checks, 'Service worker version 23.5.1', sw.text.includes("SW_VERSION = '23.5.1'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
-  assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json') && sw.text.includes('rate-overrides-2026-05.json'));
+  assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json') && sw.text.includes('rate-overrides-2026-07.json'));
 
   const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=23.5.1`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);

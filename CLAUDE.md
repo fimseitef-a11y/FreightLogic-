@@ -26,7 +26,7 @@ service-worker.js          — PWA offline caching; injects admin-driver-ui.js a
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json              — PWA manifest
 midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
-rate-overrides-2026-05.json — Dated lane/rate override table (precached)
+rate-overrides-2026-07.json — Dated lane/rate override table (precached)
 _headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
 wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
 favicon*.png / icon*.png   — App icons
@@ -357,7 +357,7 @@ Not a new feature tier; a correctness pass over the live-data inputs that feed s
 - Settings keys: `eiaApiKey`, `eiaLastPrice`, `eiaLastDate`, `eiaLastFetchTs`
 
 ### Other v23.8.0 changes
-- July 2026 market override and refreshed fuel baseline in `rate-overrides-2026-05.json`.
+- July 2026 market override and refreshed fuel baseline in `rate-overrides-2026-07.json` (renamed from `rate-overrides-2026-05.json` — filename now matches content).
 - `midwest-stack-authority.js` version aligned to the app version (`VERSION` const + header).
 
 ---
