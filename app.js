@@ -1403,7 +1403,9 @@ async function importJSON(file, opts={}){
       'f30LastExportYear','f31TrendView',
       // v23.5 time-windows / blitz / auction / bid-log
       'cvsaAlertsEnabled','opportunityCostEnabled','auctionUndercut',
-      'emptyDayThresholdHours','lastWinningBidStats']);
+      'emptyDayThresholdHours','lastWinningBidStats',
+      // v23.8 F33/TASK4/5 — self-serve invites, settings restructure state
+      'friendInvites','settingsAdvancedOpen']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     const isAllowedSettingsKey = k => {
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
@@ -3075,6 +3077,31 @@ async function refreshUnpaidBadge(){
 
 async function navigate(){
   const hash = (location.hash || '#home').slice(1);
+
+  // F33/TASK4: #admin — debug/recovery route. The admin panel is retired from
+  // normal Settings flow (self-serve invites replace it day to day) but the
+  // panel markup and worker /admin/* endpoints stay fully functional here.
+  if (hash === 'admin') {
+    const name = 'insights'; // Settings cards live inside the Insights view
+    Object.entries(views).forEach(([k,el]) => {
+      if (k === name){ el.style.display = ''; el.classList.remove('entering'); void el.offsetWidth; el.classList.add('entering'); }
+      else { el.style.display = 'none'; el.classList.remove('entering'); }
+    });
+    setActiveNav(name);
+    window.scrollTo({top:0, behavior:'instant'});
+    await renderInsights();
+    const adminBtn = $('#btnAdminToggle');
+    if (adminBtn){
+      adminBtn.style.display = '';
+      const panel = $('#adminPanel');
+      if (panel) panel.style.display = '';
+      const savedTok = sessionStorage.getItem('fl_admin_tok');
+      if (savedTok){ const el = $('#adminToken'); if (el && !el.value) el.value = savedTok; }
+      cloudAdminLoadUsers();
+      setTimeout(()=> adminBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+    }
+    return;
+  }
 
   // ── Handle share target: process shared files, then redirect to home ──
   if (hash === 'share') {
@@ -4806,6 +4833,7 @@ async function renderInsights(){
   if (cbToken) cbToken.value = await getSetting('cloudBackupToken', '') || '';
   _lastCloudSync = Number(await getSetting('lastCloudSync', 0) || 0);
   cloudInitUI();
+  inviteInitUI();
   initCollapsibleSettings();
   invalidateKPICache();
   await computeKPIs();
@@ -11419,7 +11447,7 @@ async function cloudRefreshButtons(){
   if (pb) pb.disabled = !enabled; if (pl) pl.disabled = !enabled;
 }
 
-function cloudCheckSetupLink(){
+async function cloudCheckSetupLink(){
   try {
     // Check fragment first (new format — token never sent to servers)
     const frag = window.location.hash.slice(1);
@@ -11431,7 +11459,21 @@ function cloudCheckSetupLink(){
       const p = new URLSearchParams(window.location.search);
       t = p.get('token');
     }
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
+    if (t && t.startsWith('flk_')){
+      const el = $('#cloudBackupToken'); if (el) el.value = t;
+      // Clear the token out of the URL immediately — before any later view
+      // routing can overwrite location.hash and lose it.
+      history.replaceState(null, '', window.location.pathname);
+      toast('You’re invited! Pick a passphrase to protect your backup.');
+      // TASK4/4c: a first-time invited user has no data yet — checkFirstRunSetup()
+      // (boot sequence, runs independently of this) already routes empty accounts
+      // into the F26 Setup Wizard instead of the empty, confusing Insights screen.
+      // Only a returning user with existing data gets sent straight to Settings.
+      const state = await getOnboardState().catch(()=>({ isEmpty: true }));
+      if (!state.isEmpty){
+        setTimeout(()=>{ location.hash = '#insights'; }, 500);
+      }
+    }
   } catch(e) {}
 }
 
@@ -11464,6 +11506,98 @@ async function cloudAdminCreateUser(){
 function cloudAdminShare(text){
   if (navigator.share) navigator.share({ text }).catch(()=>{});
   else navigator.clipboard.writeText(text).then(()=> toast('Copied')).catch(()=> toast('Copy failed', true));
+}
+
+// ════════════════════════════════════════════════════════════════
+// TASK4: Self-serve Friend Invite — no admin token ever touches the device.
+// Reuses the driver's own cloudBackupToken to call POST /invite; the worker
+// creates a fully independent user (own userId, own token, own namespace) —
+// never a sub-account of the inviter, never a path to the inviter's data.
+// ════════════════════════════════════════════════════════════════
+
+/** Calls POST /invite using this device's own backup token. Returns { token, name }
+ *  on success, or throws with a user-facing message. The token never touches
+ *  console/log output — callers must not persist it beyond building the link. */
+async function cloudInviteFriend(name){
+  const myToken = await getSetting('cloudBackupToken', '');
+  if (!myToken) throw new Error('Set up your own cloud backup first — then you can invite friends.');
+  const res = await cloudFetch(CLOUD_WORKER_URL + '/invite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': myToken },
+    body: JSON.stringify({ name: clampStr(name, 50) }),
+  }, 15000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not send invite. Try again.');
+  return { token: data.token, name: data.name };
+}
+
+async function _renderInviteList(){
+  const listEl = $('#inviteFriendList');
+  if (!listEl) return;
+  // Local-only convenience log — never uploaded, never synced beyond the
+  // name already passed to /invite.
+  const invites = await getSetting('friendInvites', []) || [];
+  if (!invites.length){ listEl.innerHTML = ''; return; }
+  const recent = invites.slice(-5).reverse();
+  listEl.innerHTML = `<div class="muted" style="font-size:11px;margin-top:6px">Invited: ${invites.length}</div>`
+    + recent.map(i => `<div class="row" style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--border-subtle)"><span>${escapeHtml(i.name)}${i.contact ? ' · ' + escapeHtml(i.contact) : ''}</span><span class="muted">${escapeHtml((i.ts || '').slice(0, 10))}</span></div>`).join('');
+}
+
+function inviteInitUI(){
+  _renderInviteList().catch(()=>{});
+  const btn = $('#btnSendInvite');
+  if (!btn || btn.dataset.flBound) return;
+  btn.dataset.flBound = '1';
+  btn.addEventListener('click', async ()=>{
+    haptic(15);
+    const nameEl = $('#inviteFriendName');
+    const contactEl = $('#inviteFriendContact');
+    const resultEl = $('#inviteFriendResult');
+    const name = clampStr(nameEl?.value || '', 50);
+    const contact = clampStr(contactEl?.value || '', 80);
+    if (!name){ toast('Enter your friend’s name', true); nameEl?.focus(); return; }
+
+    const myToken = await getSetting('cloudBackupToken', '');
+    if (!myToken){
+      if (resultEl){
+        resultEl.innerHTML = 'Set up your own cloud backup first — then you can invite friends. <a href="#" id="inviteGoToBackup" style="color:var(--accent)">Set up now</a>';
+        $('#inviteGoToBackup')?.addEventListener('click', (e)=>{ e.preventDefault(); $('#cloudBackupCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+      }
+      return;
+    }
+
+    btn.disabled = true; const origLabel = btn.textContent; btn.textContent = 'Sending…';
+    if (resultEl) resultEl.textContent = '';
+    try {
+      const { token } = await cloudInviteFriend(name);
+      const appUrl = window.location.origin + window.location.pathname;
+      const inviteLink = appUrl + '#token=' + encodeURIComponent(token);
+      const shareText = `${name} — here's FreightLogic. Open this link on your phone, pick a passphrase, and you're set. Your data stays private to you.\n\n${inviteLink}`;
+
+      let shared = false;
+      try {
+        if (navigator.share && navigator.canShare && navigator.canShare({ text: shareText })){
+          await navigator.share({ title: 'FreightLogic Invite', text: shareText });
+          shared = true;
+        }
+      } catch(e){ /* share sheet dismissed — fall back to copy below */ }
+      if (!shared){ await copyTextToClipboard(shareText); toast('Invite link copied — paste it to your friend'); }
+      else toast('Invite sent!');
+      // `token` and `shareText` go out of scope here — never stored, never logged.
+
+      const invites = await getSetting('friendInvites', []) || [];
+      invites.push({ name, contact, ts: new Date().toISOString() });
+      await setSetting('friendInvites', invites.slice(-50));
+      await _renderInviteList();
+      if (resultEl) resultEl.innerHTML = `<span style="color:var(--good)">✓ Invited ${escapeHtml(name)}</span>`;
+      if (nameEl) nameEl.value = '';
+      if (contactEl) contactEl.value = '';
+    } catch(e){
+      if (resultEl) resultEl.innerHTML = `<span style="color:var(--bad)">${escapeHtml(e.message || 'Could not send invite.')}</span>`;
+    } finally {
+      btn.disabled = false; btn.textContent = origLabel;
+    }
+  });
 }
 
 async function cloudAdminLoadUsers(){
@@ -16110,6 +16244,11 @@ if (typeof window !== 'undefined'){
 
     // F21: Restore GPS trip tracking from previous session before first render
     await resumeTrackingIfActive().catch(()=>{});
+
+    // TASK4/4c: capture an invite token from the URL before initial view routing —
+    // navigate() falls back to Home for a hash it doesn't recognize (like
+    // #token=...), so this must run independently of which view happens to render.
+    await cloudCheckSetupLink().catch(()=>{});
 
     await navigate();
     _updateOnlineStatus();

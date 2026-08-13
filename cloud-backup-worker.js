@@ -176,6 +176,49 @@ export default {
       const driverUserId = tokenData.userId;
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
 
+      // POST /invite — self-serve friend invite. Authenticated by the inviter's
+      // OWN driver token (already validated above, same path as /admin/users
+      // uses for the admin token). Creates a fully independent user — new
+      // userId, new token, own namespace — never a sub-account of the inviter.
+      // invitedBy/invitedAt are recorded for abuse tracing only and never grant
+      // either side access to the other's data.
+      if (request.method === 'POST' && path === '/invite') {
+        // 5 invites/hour per inviter
+        const inviteRateLimited = await checkRateLimit(env, driverUserId, 5, 'invite');
+        if (inviteRateLimited) {
+          return json({ ok: false, error: 'Too many invites sent this hour. Try again in a bit.' }, 429, cors);
+        }
+        // Lifetime cap: 25 invites per inviter, ever
+        const lifetimeKey = 'invc:' + driverUserId;
+        const lifetimeRaw = await env.BACKUPS.get(lifetimeKey);
+        const lifetimeCount = lifetimeRaw ? (parseInt(lifetimeRaw, 10) || 0) : 0;
+        if (lifetimeCount >= 25) {
+          return json({ ok: false, error: 'Invite limit reached (25 total).' }, 429, cors);
+        }
+
+        const clInvite = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clInvite > 4 * 1024) {
+          return json({ ok: false, error: 'Request too large' }, 413, cors);
+        }
+        const inviteBody = await request.json().catch(() => ({}));
+        const inviteName = (String(inviteBody.name || 'Driver').trim() || 'Driver').slice(0, 50);
+
+        const newUserId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+        const newToken = 'flk_' + crypto.randomUUID().replace(/-/g, '');
+        const newTokenHash = await hashToken(newToken);
+        const newRec = {
+          userId: newUserId, name: inviteName, tokenHash: newTokenHash,
+          createdAt: new Date().toISOString(), active: true, backupCount: 0,
+          invitedBy: driverUserId, invitedAt: new Date().toISOString(),
+        };
+        await Promise.all([
+          env.BACKUPS.put('tokh:' + newTokenHash, JSON.stringify(newRec)),
+          env.BACKUPS.put('user:' + newUserId, JSON.stringify(newRec)),
+          env.BACKUPS.put(lifetimeKey, String(lifetimeCount + 1)),
+        ]);
+        return json({ ok: true, token: newToken, name: inviteName }, 201, cors);
+      }
+
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
         // Rate limit: 100 requests per hour per user (hourly window = far fewer KV writes than per-minute)
