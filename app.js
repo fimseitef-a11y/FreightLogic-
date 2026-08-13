@@ -10540,11 +10540,18 @@ function initCollapsibleSettings(){
   const arrow = $('#advSettingsArrow');
   if (!toggle || !body) return;
   _settingsBound = true;
+  // TASK5: Advanced now also holds Storage & Recovery + Hard Reset. Default
+  // collapsed; open/collapsed state persists across sessions via setSetting.
+  getSetting('settingsAdvancedOpen', false).then(open => {
+    body.style.display = open ? '' : 'none';
+    if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+  }).catch(()=>{});
   toggle.addEventListener('click', ()=>{
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : '';
-    if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+    const nextOpen = body.style.display === 'none';
+    body.style.display = nextOpen ? '' : 'none';
+    if (arrow) arrow.style.transform = nextOpen ? 'rotate(90deg)' : '';
     haptic(10);
+    setSetting('settingsAdvancedOpen', nextOpen).catch(()=>{});
   });
 }
 
@@ -11422,10 +11429,21 @@ function cloudSetSyncStatus(type, msg){
 async function cloudRefreshStatusPanel(){
   const panel = $('#cloudStatusPanel'); const indicator = $('#cloudIndicator');
   const setupSection = $('#cloudSetupSection');
+  const setupPrompt = $('#cloudSetupPrompt');
   const enabled = await cloudIsEnabled();
   if (!panel) return;
-  if (!enabled){ panel.style.display = 'none'; if (setupSection) setupSection.style.display = ''; cloudSetSyncStatus('off', 'Not connected'); if (indicator) indicator.style.display = 'none'; return; }
-  panel.style.display = ''; if (setupSection) setupSection.style.display = 'none';
+  if (!enabled){
+    panel.style.display = 'none';
+    cloudSetSyncStatus('off', 'Not connected');
+    if (indicator) indicator.style.display = 'none';
+    // TASK5: detailed setup fields stay collapsed behind "Set up" until tapped,
+    // or once the user has already opened them this session.
+    const userOpened = setupSection?.dataset.userOpened === '1';
+    if (setupSection) setupSection.style.display = userOpened ? '' : 'none';
+    if (setupPrompt) setupPrompt.style.display = userOpened ? 'none' : '';
+    return;
+  }
+  panel.style.display = ''; if (setupSection) setupSection.style.display = 'none'; if (setupPrompt) setupPrompt.style.display = 'none';
   const tsEl = $('#cloudStatusTime'); const dotEl = $('#cloudStatusDot'); const ts = _lastCloudSync;
   if (ts > 0){
     const ago = Math.floor((Date.now() - ts) / 60000);
@@ -11461,6 +11479,11 @@ async function cloudCheckSetupLink(){
     }
     if (t && t.startsWith('flk_')){
       const el = $('#cloudBackupToken'); if (el) el.value = t;
+      // TASK5: setup fields are collapsed behind "Set up" by default — force
+      // them open since we just pre-filled the token the user needs to see.
+      const setupSection = $('#cloudSetupSection'); const setupPrompt = $('#cloudSetupPrompt');
+      if (setupSection){ setupSection.style.display = ''; setupSection.dataset.userOpened = '1'; }
+      if (setupPrompt) setupPrompt.style.display = 'none';
       // Clear the token out of the URL immediately — before any later view
       // routing can overwrite location.hash and lose it.
       history.replaceState(null, '', window.location.pathname);
@@ -11620,6 +11643,12 @@ function cloudInitUI(){
   makeToggle('#btnTokenToggle', '#cloudBackupToken');
   makeToggle('#btnAdminTokenToggle', '#adminToken');
   $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
+  $('#btnCloudSetupToggle')?.addEventListener('click', ()=>{
+    haptic(10);
+    const setupSection = $('#cloudSetupSection'); const setupPrompt = $('#cloudSetupPrompt');
+    if (setupSection) { setupSection.style.display = ''; setupSection.dataset.userOpened = '1'; }
+    if (setupPrompt) setupPrompt.style.display = 'none';
+  });
   $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
