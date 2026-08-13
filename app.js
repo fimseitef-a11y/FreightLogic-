@@ -7084,16 +7084,19 @@ function _mwRenderDecision(out, d){
     $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(mwBroker));
   }
 
-  // v21 T4B: NWS Weather Alerts — async inject after render
-  if (navigator.onLine && (d.origin || d.dest)){
+  // v21 T4B / F33: NWS Weather + state DOT hazards — async inject after render.
+  // checkRouteConditions() handles the offline case itself (shows "not checked
+  // — offline" instead of silently rendering nothing).
+  if (d.origin || d.dest){
     const origCoords = d.origin ? getMarketCoords(d.origin) : null;
     const destCoords = d.dest ? getMarketCoords(d.dest) : null;
-    checkRouteWeather(origCoords, destCoords).then(alerts => {
-      const weatherSlot = $('#mwWeatherAlertSlot', out);
-      if (!weatherSlot || !alerts.length) return;
-      const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(clampStr(a.event,80))} at ${escapeHtml(clampStr(a.label,80))} (NWS)</span></div>`).join('');
-      weatherSlot.innerHTML = `<div style="padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);margin-top:4px">${lines}</div>`;
-    }).catch(()=>{});
+    const weatherSlot = $('#mwWeatherAlertSlot', out);
+    if (weatherSlot){
+      checkRouteConditions(origCoords, destCoords).then(conditions => {
+        const slot = $('#mwWeatherAlertSlot', out);
+        if (slot) slot.innerHTML = _renderConditionsHtml(conditions);
+      }).catch(()=>{});
+    }
   }
 
   // v21 T4D: Border wait time — inject if cross-border load detected
@@ -9020,6 +9023,9 @@ function openFuelForm(existing=null){
       state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200) };
     try{
       if (mode==='add') await addFuel(obj); else await updateFuel(obj);
+      // F33: trigger (c) — a logged fuel stop is a waypoint; best-effort conditions
+      // check if GPS tracking is active. No-op silently otherwise.
+      if (mode==='add') _checkConditionsOnWaypoint(_activeTracking?.lastPos).catch(()=>{});
       toast('Fuel saved'); closeModal();
       if (views.fuel.style.display !== 'none') await renderFuel(true);
       invalidateKPICache(); await computeKPIs();
@@ -12272,7 +12278,7 @@ async function openTaxSeasonExport(){
 let _positioningCache = null; // { city, brief, ts }
 
 async function getPositioningBrief(city) {
-  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
+  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], roadHazards: [], conditionsCheckedAt: null, patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
 
   // Return cached result if same city within 5 min
   if (_positioningCache && _positioningCache.city === city && (Date.now() - _positioningCache.ts) < 300000) {
@@ -12380,10 +12386,20 @@ async function getPositioningBrief(city) {
     nearbyMarkets = nearbyMarkets.slice(0, 8);
   }
 
-  // 5. Weather alerts (non-blocking)
+  // 5. Weather + road-hazard conditions (non-blocking, event-driven — fired once
+  // per brief generation). Only one coordinate is known here (the driver's
+  // current position), so it's checked once and labeled accurately — not
+  // duplicated as a fake "origin/destination" pair.
   let weatherAlerts = [];
+  let roadHazards = [];
+  let conditionsCheckedAt = null;
   if (coords) {
-    try { weatherAlerts = await checkRouteWeather(coords, coords); } catch(e) { weatherAlerts = []; }
+    try {
+      const conditions = await checkRouteConditions(coords, null, 'current position');
+      weatherAlerts = conditions.weatherAlerts;
+      roadHazards = conditions.roadHazards;
+      conditionsCheckedAt = conditions.checkedAt;
+    } catch(e) { weatherAlerts = []; roadHazards = []; }
   }
 
   // 6. Patterns
@@ -12487,7 +12503,7 @@ async function getPositioningBrief(city) {
   if (confidencePts >= 7) confidence = 'HIGH';
   else if (confidencePts >= 3) confidence = 'MEDIUM';
 
-  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason, repositionTarget, confidence };
+  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, roadHazards, conditionsCheckedAt, patterns, command, commandReason, repositionTarget, confidence };
   _positioningCache = { city, brief, ts: Date.now() };
   return brief;
 }
@@ -14177,32 +14193,264 @@ async function fetchEIAGasPrice(){
 // v21 T4B: NWS Weather Alerts for Route
 // ════════════════════════════════════════════════════════════════
 const _nwsCache = new Map();
-async function checkRouteWeather(originCoords, destCoords){
-  if (!navigator.onLine) return [];
+
+// F33: great-circle interpolation — returns the point `f` (0..1) of the way
+// from (lat1,lon1) to (lat2,lon2) along the great-circle line between them.
+function _gcInterpolate(lat1, lon1, lat2, lon2, f){
+  const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+  const phi1 = toRad(lat1), lam1 = toRad(lon1), phi2 = toRad(lat2), lam2 = toRad(lon2);
+  const dPhi = phi2 - phi1, dLam = lam2 - lam1;
+  const a = Math.sin(dPhi/2)**2 + Math.cos(phi1)*Math.cos(phi2)*Math.sin(dLam/2)**2;
+  const delta = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  if (!delta) return { lat: lat1, lng: lon1 };
+  const A = Math.sin((1-f)*delta) / Math.sin(delta);
+  const B = Math.sin(f*delta) / Math.sin(delta);
+  const x = A*Math.cos(phi1)*Math.cos(lam1) + B*Math.cos(phi2)*Math.cos(lam2);
+  const y = A*Math.cos(phi1)*Math.sin(lam1) + B*Math.cos(phi2)*Math.sin(lam2);
+  const z = A*Math.sin(phi1) + B*Math.sin(phi2);
+  const phi3 = Math.atan2(z, Math.sqrt(x*x + y*y));
+  const lam3 = Math.atan2(y, x);
+  return { lat: toDeg(phi3), lng: toDeg(lam3) };
+}
+
+// F33: builds the point list for a conditions check. Both coords known + distinct
+// → samples the corridor (origin, 0-3 great-circle midpoints, destination). Only
+// one coord known → a single point. Identical coords (the old F24 bug: the same
+// point passed as both "origin" and "destination") collapse to one point instead
+// of being checked twice. Hard-capped at 5 points per check.
+function _buildRoutePoints(originCoords, destCoords){
+  const same = !!(originCoords && destCoords &&
+    Math.abs(originCoords.lat - destCoords.lat) < 0.01 &&
+    Math.abs(originCoords.lng - destCoords.lng) < 0.01);
   const points = [];
-  if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
-  if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  if (originCoords && destCoords && !same){
+    points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
+    const dist = haversineDistanceMi(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng);
+    const midCount = dist > 400 ? 3 : dist > 100 ? 2 : 0;
+    for (let i = 1; i <= midCount; i++){
+      const f = i / (midCount + 1);
+      const mid = _gcInterpolate(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng, f);
+      points.push({ label: `en route (${Math.round(f * 100)}%)`, lat: mid.lat, lng: mid.lng });
+    }
+    points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  } else if (originCoords){
+    points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
+  } else if (destCoords){
+    points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  }
+  return points.slice(0, 5);
+}
+
+async function checkRouteWeather(originCoords, destCoords, singleLabel){
+  if (!navigator.onLine) return [];
+  const points = _buildRoutePoints(originCoords, destCoords);
+  if (points.length === 1 && singleLabel) points[0].label = singleLabel;
   const alerts = [];
   for (const pt of points){
     const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
     const cached = _nwsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){
+      alerts.push(...cached.alerts.map(a => ({ ...a, label: pt.label, fetchedAt: cached.ts })));
+      continue;
+    }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
       const res = await fetch(url, { headers: { 'User-Agent': `FreightLogicApp/${APP_VERSION}` }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
       if (!res.ok){ continue; }
       const json = await res.json();
+      const fetchedAt = Date.now();
       const ptAlerts = (json.features || []).map(f => ({
         label: pt.label,
         event: f.properties?.event || 'Weather Alert',
         severity: f.properties?.severity || 'Unknown',
         headline: f.properties?.headline || '',
+        fetchedAt,
       })).filter(a => a.event);
-      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: Date.now() });
+      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: fetchedAt });
       alerts.push(...ptAlerts);
     } catch(e){ /* graceful fallback */ }
   }
   return alerts;
+}
+
+// ════════════════════════════════════════════════════════════════
+// F33: State DOT Lane-Closure Adapter Layer
+// ════════════════════════════════════════════════════════════════
+// Isolated per-state feed config — adding a state is a config entry below, not a
+// code change. Only free/public government feeds. Any feed needing a key reads it
+// via getSetting() (same pattern as fmcsaApiKey) and no-ops cleanly when absent.
+// Reference implementation: Maryland SHA/CHART publishes its road-closure dataset
+// as a public ArcGIS Hub GeoJSON export — documented open data, no API key.
+const STATE_DOT_FEEDS = {
+  MD: {
+    name: 'Maryland SHA / CHART',
+    url: 'https://data-maryland.opendata.arcgis.com/datasets/mdot-sha-chart-road-closures.geojson',
+    keySetting: null,
+    radiusMi: 60,
+  },
+  // Add more states here as feeds are identified, e.g.:
+  // OH: { name: 'ODOT', url: '<feed url>', keySetting: 'odotApiKey', radiusMi: 60 },
+};
+
+// Coarse bounding boxes — good enough to pick a feed, not for precise geocoding.
+const _STATE_BOUNDING_BOXES = {
+  MD: { minLat: 37.9, maxLat: 39.8, minLng: -79.5, maxLng: -75.0 },
+};
+
+function _stateFromCoords(lat, lng){
+  for (const [code, b] of Object.entries(_STATE_BOUNDING_BOXES)){
+    if (lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng) return code;
+  }
+  return null;
+}
+
+function _normalizeStateDotFeature(f, cfg, fetchedAt){
+  const p = f.properties || {};
+  let flat = null, flng = null;
+  const geom = f.geometry;
+  if (geom && geom.type === 'Point' && Array.isArray(geom.coordinates)){
+    flng = geom.coordinates[0]; flat = geom.coordinates[1];
+  } else if (geom && (geom.type === 'LineString' || geom.type === 'MultiPoint') && Array.isArray(geom.coordinates) && geom.coordinates.length){
+    const mid = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+    if (Array.isArray(mid)){ flng = mid[0]; flat = mid[1]; }
+  }
+  const description = p.DESCRIPTION || p.Description || p.description || p.REASON || p.EVENT_DESCRIPTION || p.CLOSURE_REASON || 'Road closure reported';
+  const location = p.LOCATION || p.ROUTE_NAME || p.ROUTENAME || p.ROAD_NAME || p.ROUTE || p.LOCATION_DESC || '';
+  if (!description && !location) return null;
+  return {
+    type: 'road_closure',
+    description: clampStr(String(description), 160),
+    location: clampStr(String(location), 120),
+    source: cfg.name,
+    fetchedAt,
+    _lat: flat, _lng: flng,
+  };
+}
+
+function _filterHazardsNear(items, lat, lng, radiusMi){
+  return items
+    .filter(h => h._lat == null || h._lng == null || haversineDistanceMi(lat, lng, h._lat, h._lng) <= (radiusMi || 60))
+    .map(({ _lat, _lng, ...h }) => h);
+}
+
+const _dotHazardCache = new Map(); // stateCode -> { items, ts }
+
+// Takes coordinates, returns normalized { type, description, location, source, fetchedAt }[].
+// No configured feed for the state → [] silently. Any failure → [] silently. Never warns.
+async function checkStateDotHazards(lat, lng){
+  if (!navigator.onLine || lat == null || lng == null) return [];
+  const state = _stateFromCoords(lat, lng);
+  if (!state || !STATE_DOT_FEEDS[state]) return [];
+  const cfg = STATE_DOT_FEEDS[state];
+  try {
+    if (cfg.keySetting){
+      const key = await getSetting(cfg.keySetting, '') || '';
+      if (!key) return [];
+    }
+    const cached = _dotHazardCache.get(state);
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){
+      return _filterHazardsNear(cached.items, lat, lng, cfg.radiusMi);
+    }
+    const res = await fetch(cfg.url, { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const fetchedAt = Date.now();
+    const items = (json.features || []).map(f => _normalizeStateDotFeature(f, cfg, fetchedAt)).filter(Boolean);
+    _dotHazardCache.set(state, { items, ts: fetchedAt });
+    return _filterHazardsNear(items, lat, lng, cfg.radiusMi);
+  } catch(e){ return []; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// F33: Unified route conditions — weather + state DOT hazards
+// ════════════════════════════════════════════════════════════════
+// Event-driven only: called from positioning-brief generation, an explicit
+// "Check conditions now" tap, or a logged fuel stop / waypoint. No timers, no
+// polling. One fetch pass, then sleep. All failures degrade to zero alerts.
+async function checkRouteConditions(originCoords, destCoords, singleLabel){
+  if (!navigator.onLine){
+    return { weatherAlerts: [], roadHazards: [], checkedAt: null, offline: true };
+  }
+  const checkedAt = Date.now();
+  let weatherAlerts = [];
+  try { weatherAlerts = await checkRouteWeather(originCoords, destCoords, singleLabel); } catch(e){ weatherAlerts = []; }
+
+  let roadHazards = [];
+  try {
+    const points = _buildRoutePoints(originCoords, destCoords);
+    // Hazards are checked at the route endpoints only (state-level feeds don't
+    // need dense midpoint sampling); states are deduped so a same-state route
+    // triggers one fetch.
+    const endpoints = points.length > 1 ? [points[0], points[points.length - 1]] : points;
+    const seenStates = new Set();
+    for (const pt of endpoints){
+      const state = _stateFromCoords(pt.lat, pt.lng);
+      if (!state || seenStates.has(state)) continue;
+      seenStates.add(state);
+      const hz = await checkStateDotHazards(pt.lat, pt.lng);
+      roadHazards.push(...hz);
+    }
+  } catch(e){ roadHazards = []; }
+
+  return { weatherAlerts, roadHazards, checkedAt, offline: false };
+}
+
+// F33: staleness formatting — fresh (<60min) gets a relative age, stale
+// (60min-6h) gets an explicit clock time + STALE flag, expired (>6h) signals
+// the caller to stop rendering the item at all.
+function _formatAlertAge(fetchedAt){
+  if (!fetchedAt) return { text: '', stale: false, expired: true };
+  const ageMs = Date.now() - fetchedAt;
+  if (ageMs > 6 * 3600000) return { text: '', stale: true, expired: true };
+  if (ageMs > 60 * 60000){
+    const d = new Date(fetchedAt);
+    return { text: `STALE — as of ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`, stale: true, expired: false };
+  }
+  const mins = Math.floor(ageMs / 60000);
+  return { text: mins < 1 ? 'just now' : `${mins} min ago`, stale: false, expired: false };
+}
+
+// F33: shared render helper for both the positioning card and the evaluator slot.
+// Never renders an empty "all clear" state — distinguishes "checked, nothing
+// found" from "not checked" / "offline" / "everything expired".
+function _renderConditionsHtml(conditions){
+  if (!conditions || (conditions.offline && !conditions.checkedAt)){
+    return `<div class="muted" style="font-size:11px;padding:2px 0">📶 Conditions not checked — offline</div>`;
+  }
+  const { weatherAlerts = [], roadHazards = [] } = conditions;
+  const all = [
+    ...weatherAlerts.map(a => ({ text: `⚠️ ${a.event || 'Weather Alert'} — ${a.label || ''}`, fetchedAt: a.fetchedAt })),
+    ...roadHazards.map(h => ({ text: `🚧 ${h.description}${h.location ? ' — ' + h.location : ''} (${h.source})`, fetchedAt: h.fetchedAt })),
+  ];
+  const freshest = all.reduce((m, a) => Math.max(m, a.fetchedAt || 0), 0);
+  const visible = all.filter(a => !_formatAlertAge(a.fetchedAt).expired);
+  if (!visible.length){
+    if (freshest){
+      const hrs = Math.max(1, Math.round((Date.now() - freshest) / 3600000));
+      return `<div class="muted" style="font-size:11px;padding:2px 0">Conditions unavailable — last checked ${hrs}h ago</div>`;
+    }
+    return `<div class="muted" style="font-size:11px;padding:2px 0">No active alerts — checked just now</div>`;
+  }
+  const lines = visible.map(a => {
+    const age = _formatAlertAge(a.fetchedAt);
+    return `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px;${age.stale ? 'opacity:.55' : ''}">
+      <span style="flex:1">${escapeHtml(a.text)}</span>
+      <span style="color:var(--text-tertiary);font-size:10px;white-space:nowrap;margin-left:6px">${escapeHtml(age.text)}</span>
+    </div>`;
+  }).join('');
+  return `<div style="padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3)">${lines}</div>`;
+}
+
+// F33: event-driven trigger (c) — fires a best-effort conditions check when the
+// user logs a fuel stop / waypoint, using the current GPS position if tracking
+// is active. Silent no-op otherwise (no timers, no retries).
+async function _checkConditionsOnWaypoint(gpsPos){
+  if (!navigator.onLine || !gpsPos) return;
+  try {
+    const conditions = await checkRouteConditions({ lat: gpsPos.lat, lng: gpsPos.lng }, null, 'fuel stop');
+    const count = conditions.weatherAlerts.length + conditions.roadHazards.length;
+    if (count > 0) toast(`⚠️ ${count} active alert${count > 1 ? 's' : ''} near your fuel stop — see Positioning brief.`);
+  } catch(e) { /* best-effort, silent */ }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -14677,7 +14925,7 @@ async function renderPositioningCard(overrideCity, isExploring) {
     }
   }
 
-  const { market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
+  const { market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, roadHazards, conditionsCheckedAt, patterns, command, commandReason } = brief;
 
   // Command badge styles
   const cmdStyles = {
@@ -14719,12 +14967,11 @@ async function renderPositioningCard(overrideCity, isExploring) {
     }
   }
 
-  // Weather HTML
-  let weatherHtml = '';
-  if (weatherAlerts && weatherAlerts.length) {
-    const alertText = weatherAlerts.map(a => escapeHtml(a.event || a.label || String(a))).join('; ');
-    weatherHtml = `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:12px;color:var(--warn)">\u26A0\uFE0F ${alertText} (NWS)</div>`;
-  }
+  // F33: Weather + road-hazard conditions HTML \u2014 always renders a state (never
+  // an empty "all clear" by omission) plus an explicit recheck control.
+  const _coordsForCheck = getMarketCoords(city);
+  const weatherHtml = `<div id="f24WeatherSlot" style="margin-top:10px">${_renderConditionsHtml({ weatherAlerts, roadHazards, checkedAt: conditionsCheckedAt, offline: !navigator.onLine && !conditionsCheckedAt })}</div>`
+    + (_coordsForCheck ? `<button class="btn f24-recheck-btn" style="margin-top:6px;font-size:10px;padding:4px 8px;min-height:28px;color:var(--text-tertiary);background:none;border:1px solid var(--border-subtle)">\uD83D\uDD04 Check conditions now</button>` : '');
 
   // Nearby markets HTML (collapsed, only if not isExploring)
   let nearbyHtml = '';
@@ -14831,6 +15078,25 @@ async function renderPositioningCard(overrideCity, isExploring) {
     openReloadScoring();
     setTimeout(() => { const inp = document.querySelector('#rsCity'); if (inp) inp.value = city; }, 150);
   });
+
+  // F33: explicit "Check conditions now" control (trigger b) — refreshes just
+  // the weather/hazard slot in place, no full card re-render, no polling.
+  const recheckBtn = card.querySelector('.f24-recheck-btn');
+  if (recheckBtn){
+    recheckBtn.addEventListener('click', async () => {
+      haptic(10);
+      recheckBtn.disabled = true;
+      const origLabel = recheckBtn.textContent;
+      recheckBtn.textContent = 'Checking…';
+      try {
+        const conditions = await checkRouteConditions(_coordsForCheck, null, 'current position');
+        const slot = card.querySelector('#f24WeatherSlot');
+        if (slot) slot.innerHTML = _renderConditionsHtml(conditions);
+        _positioningCache = null; // next brief fetch picks up fresh conditions
+      } catch(e) { /* slot keeps its last known state */ }
+      finally { recheckBtn.disabled = false; recheckBtn.textContent = origLabel; }
+    });
+  }
 }
 
 async function _triggerPostDeliveryBrief(city) {
