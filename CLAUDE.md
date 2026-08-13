@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.7.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.8.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -13,16 +13,27 @@
 ## File Structure
 
 ```
-index.html              — Single-page app shell + all CSS (Design System v3.0 "Command")
-app.js                  — Core application (~460KB, all logic in one IIFE)
-voice-load.js           — Voice input enhancement module (spoken numbers, interim results)
-admin-driver-ui.js      — Admin driver management UI (injected via service worker)
-sw-bridge.js            — Service worker auto-update bridge (SKIP_WAITING + reload)
-service-worker.js       — PWA offline caching; injects admin-driver-ui.js into HTML responses
-cloud-backup-worker.js  — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
-manifest.json           — PWA manifest
-favicon*.png / icon*.png — App icons
-README.txt              — Notes on optional offline vendor files
+index.html                 — Single-page app shell + all CSS (Design System v3.0 "Command",
+                             with v4.0 "Command" component extensions)
+app.js                     — Core application (~830KB, all logic in one IIFE)
+voice-load.js              — Voice input enhancement module (spoken numbers, interim results)
+admin-driver-ui.js         — Admin driver management UI (injected via service worker)
+midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
+                             (injected via service worker, not referenced from index.html)
+sw-bridge.js               — Service worker auto-update bridge (SKIP_WAITING + reload)
+service-worker.js          — PWA offline caching; injects admin-driver-ui.js and
+                             midwest-stack-authority.js into HTML responses
+cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
+manifest.json              — PWA manifest
+midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
+rate-overrides-2026-05.json — Dated lane/rate override table (precached)
+_headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
+wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
+favicon*.png / icon*.png   — App icons
+README.txt                 — Notes on optional offline vendor files
+docs/                      — Deployment parity checklist, source authority, release notes
+schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
+scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker
 ```
 
 ### Optional offline vendor files (drop in root to avoid CDN):
@@ -86,7 +97,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.7.0';
+const APP_VERSION = '23.8.0';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -191,8 +202,9 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.7.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.7.0`; caches `sw-bridge.js`; injects `admin-driver-ui.js` script tag into HTML responses via `injectAdminUi()`; broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.8.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.8.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
 - `enforceReceiptCacheLimit()` keeps cache bounded (max `LIMITS.MAX_RECEIPT_CACHE = 40`).
@@ -204,18 +216,30 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - **No build step** — edit files directly and reload in browser.
 - **Test locally** with any static file server (e.g., `python3 -m http.server 8080`).
 - **IndexedDB migrations** — increment `DB_VERSION` and add `if (old < N)` block in `initDB()`.
-- **Version bumps** — keep these six in sync every release:
-  1. `APP_VERSION` in `app.js`
-  2. `SW_VERSION` in `service-worker.js`
-  3. `manifest.json` `name` field
-  4. `?v=` query on `<link rel="manifest">` in `index.html`
-  5. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
-  6. Version reference in `CLAUDE.md` Project Overview
-- **Master source asset** — `MIDWEST_STACK_FREIGHTLOGIC_MASTER_APP_SOURCE_v5.md` is referenced by `openMasterSourceCenter()` but not included in repo.
+- **Version bumps** — every release must update all of these. Items 3 and 8 are the ones
+  that have silently drifted before, so verify them explicitly:
+  1. `APP_VERSION` in `app.js` (plus the header comment block at the top)
+  2. `SW_VERSION` in `service-worker.js` (plus its header comment)
+  3. `?v=` cache-busters in `service-worker.js` — `ADMIN_UI_TAG`, `MIDWEST_STACK_TAG`, and
+     every entry in the `CORE` array. These are easy to miss and stale values ship stale assets.
+  4. `manifest.json` `name` field
+  5. `?v=` query on `<link rel="manifest">` in `index.html`
+  6. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
+  7. Design-system header comment near the top of `index.html`
+  8. `VERSION` const and header comment in `midwest-stack-authority.js`
+  9. Header comments in `voice-load.js` and `sw-bridge.js`
+  10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
+
+  Quick audit — every shipped file should report the new version:
+  ```bash
+  grep -rno "2[0-9]\.[0-9]\+\.[0-9]\+" app.js index.html manifest.json service-worker.js \
+    midwest-stack-authority.js sw-bridge.js voice-load.js | awk -F: '{print $1" -> "$3}' | sort -u
+  ```
+  Historical changelog comments in `app.js` legitimately name older versions — leave those alone.
 
 ---
 
-## v22–v23.3 Features (F21–F31)
+## v22–v23.8 Features (F21–F32)
 
 ### F21 — GPS Trip Tracking
 - `renderTripTrackingUI()` — populates `#homeTripTrackCard` on Home with Start/Stop button
@@ -310,6 +334,24 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - Positive insight (record week) shown when no warnings are present
 - Dismisses silently if no insight qualifies; re-evaluated on every home render
 - No settings keys — purely reactive to live data
+
+---
+
+## v23.8.0 — Live-Data Corrections
+
+Not a new feature tier; a correctness pass over the live-data inputs that feed scoring.
+
+### EIA fuel price feed
+- Requires a user-supplied EIA API key stored in `settings['eiaApiKey']` — the feed is inert without one and returns `null` early.
+- Queries the EIA v2 weekly series `petroleum/pri/gnd`, faceted to Midwest PADD 2 (`duoarea=R20`), product `EPMR` (regular gasoline).
+- Falls back to product `EPM0` (all grades) when the primary series returns no usable record; returns `null` if both miss.
+- Throttled to one fetch per 3 days via `settings['eiaLastFetchTs']`; 8s request timeout.
+- On success writes `eiaLastPrice`, `eiaLastDate`, `eiaLastFetchTs` and surfaces an "Apply" link in Settings that writes the price into `fuelPrice`.
+- Settings keys: `eiaApiKey`, `eiaLastPrice`, `eiaLastDate`, `eiaLastFetchTs`
+
+### Other v23.8.0 changes
+- July 2026 market override and refreshed fuel baseline in `rate-overrides-2026-05.json`.
+- `midwest-stack-authority.js` version aligned to the app version (`VERSION` const + header).
 
 ---
 
