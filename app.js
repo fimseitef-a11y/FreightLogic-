@@ -46,7 +46,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.4.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.8.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -14189,7 +14189,7 @@ async function checkRouteWeather(originCoords, destCoords){
     if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+      const res = await fetch(url, { headers: { 'User-Agent': `FreightLogicApp/${APP_VERSION}` }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
       if (!res.ok){ continue; }
       const json = await res.json();
       const ptAlerts = (json.features || []).map(f => ({

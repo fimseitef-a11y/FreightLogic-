@@ -1,3 +1,5 @@
+> **Note:** The current shipping version is 23.8.0. This document describes 23.5.1 and is preserved as historical record.
+
 # FreightLogic v23.5.1 Release Notes
 
 Date: 2026-05-27  

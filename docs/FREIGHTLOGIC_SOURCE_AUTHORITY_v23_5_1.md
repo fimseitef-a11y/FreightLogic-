@@ -1,3 +1,5 @@
+> **Note:** The current shipping version is 23.8.0. This document describes 23.5.1 and is preserved as historical record.
+
 # FreightLogic Source Authority v23.5.1
 
 Date: 2026-05-27  
