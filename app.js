@@ -12241,21 +12241,21 @@ async function openTaxSeasonExport(){
         ['28','Total deductions', totalDeductions],
         ['29','Tentative net profit', netProfit],
       ].filter(r => r[2] !== 0);
-      win.document.write(`<!doctype html><html><head><title>FreightLogic Tax Export ${year}</title>
+      win.document.write(`<!doctype html><html><head><title>FreightLogic Tax Export ${escapeHtml(year)}</title>
         <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;color:#111;font-size:14px}
         h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;margin:24px 0 8px;border-bottom:2px solid #ccc;padding-bottom:4px}
         table{width:100%;border-collapse:collapse}td{padding:6px 8px;border-bottom:1px solid #eee}
         .num{text-align:right}.bold{font-weight:700}.neg{color:#c00}.pos{color:#080}
         .note{font-size:11px;color:#666;margin-top:24px}@media print{.note{font-size:10px}}</style></head><body>
         <h1>FreightLogic — Schedule C Summary</h1>
-        <p style="margin:0;color:#666;font-size:13px">Tax Year ${year} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
+        <p style="margin:0;color:#666;font-size:13px">Tax Year ${escapeHtml(year)} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
         <h2>Income & Deductions</h2>
-        <table>${rows2.map(r=>`<tr><td style="width:48px;color:#888;font-size:12px">Ln ${r[0]}</td><td>${r[1]}</td><td class="num${r[0]==='29'?r[2]<0?' neg':' pos':''}">${r[0]==='29'?'<b>':''}$${Math.abs(r[2]).toLocaleString('en-US',{minimumFractionDigits:2})}${r[0]==='29'?'</b>':''}</td></tr>`).join('')}</table>
+        <table>${rows2.map(r=>`<tr><td style="width:48px;color:#888;font-size:12px">Ln ${r[0]}</td><td>${escapeHtml(r[1])}</td><td class="num${r[0]==='29'?r[2]<0?' neg':' pos':''}">${r[0]==='29'?'<b>':''}$${Math.abs(r[2]).toLocaleString('en-US',{minimumFractionDigits:2})}${r[0]==='29'?'</b>':''}</td></tr>`).join('')}</table>
         <h2>Schedule SE Estimate</h2>
         <p>Self-employment tax estimate: <strong>$${seTax.toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
         (net × 92.35% × 15.3%)</p>
-        <p class="note">This is an estimate only and not tax advice. Mileage deduction uses the IRS standard rate of $${mileageRate}/mile.
-        Per diem uses $${pdRate}/day at ${Math.round(pdPct*100)}% deductibility.
+        <p class="note">This is an estimate only and not tax advice. Mileage deduction uses the IRS standard rate of $${escapeHtml(mileageRate)}/mile.
+        Per diem uses $${escapeHtml(pdRate)}/day at ${Math.round(pdPct*100)}% deductibility.
         Consult your CPA for final tax filings.</p>
         <script>window.print();window.onafterprint=()=>window.close();<\/script></body></html>`);
       win.document.close();
