@@ -1,7 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.0 USA ENGINE
+/** FreightLogic v23.8.1 USA ENGINE
+ *  v23.8.1: Route-aware weather + state DOT hazard layer, self-serve friend
+ *           invites, Settings decluttered into essential/advanced, audit pass
  *  v23.8.0: Live-data corrections — EIA feed fixed (key + Midwest gas), July 2026
  *           market override, fuel baseline refresh, authority version align
  *  v23.7.0: Smart Insight card (F32), improved scoring, counter-offer targeting,
@@ -16,7 +18,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.0';
+const APP_VERSION = '23.8.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -46,7 +48,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.8.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
