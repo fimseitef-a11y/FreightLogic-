@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.1 USA ENGINE
+/** FreightLogic v23.8.2 USA ENGINE
+ *  v23.8.2: Broker Identity Chain — bidHistory now records real broker/lane keys
+ *           (Broker Notes rekeyed off #mwBroker, omegaSaveToBidHistory writer fixed,
+ *           logBid() wired to a Won/Lost/Expired outcome control), DB v12→v13 migration
  *  v23.8.1: Audit cleanup — admin token sessionStorage-only confirmed, rate-override
  *           filename finalized, version-string parity restored across all shipped files
  *  v23.8.0: Live-data corrections — EIA feed fixed (key + Midwest gas), July 2026
@@ -18,7 +21,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.1';
+const APP_VERSION = '23.8.2';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -48,7 +51,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.8.2 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -58,7 +61,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -142,6 +145,11 @@ const fmtNum = (n) => {
 };
 const isoDate = (d=new Date()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 function clampStr(s, max=120){ return String(s||'').trim().slice(0,max); }
+
+/** v23.8.2: Broker Identity Chain — single normalization helper for broker keys.
+ *  Used by bidHistory writers, Broker Notes rekeying, and logBid() call sites so
+ *  the same broker always resolves to the same identity regardless of casing/spacing. */
+function normBroker(s){ return (s||'').trim().toLowerCase().replace(/\s+/g,' '); }
 
 /** Validate ISO date string YYYY-MM-DD — prevents garbage dates entering IDB */
 function isValidISODate(s){
@@ -717,6 +725,25 @@ async function initDB(){
       if (old < 11) { /* no schema changes — settings store already holds the key */ }
       // v12: Ensure gpsLogs store exists for users upgrading from any version prior to v22
       if (old < 12) { ensureStore('gpsLogs', { keyPath: 'id', autoIncrement: true }); }
+      // v13: Broker Identity Chain — flag legacy bidHistory rows that predate real
+      // broker/lane capture (the old hardcoded-empty-broker writer) so bid-to-book
+      // aggregates can exclude them without deleting any data.
+      if (old < 13) {
+        if (d.objectStoreNames.contains('bidHistory')) {
+          const bhStore = e.target.transaction.objectStore('bidHistory');
+          const cursorReq = bhStore.openCursor();
+          cursorReq.onsuccess = (ev) => {
+            const cursor = ev.target.result;
+            if (!cursor) return;
+            const rec = cursor.value;
+            if (!rec.broker || !String(rec.broker).trim()) {
+              rec.legacyUnkeyed = true;
+              cursor.update(rec);
+            }
+            cursor.continue();
+          };
+        }
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -7032,6 +7059,16 @@ function _mwRenderDecision(out, d){
     html += bidRangeHTML(bidRange);
   }
 
+  // ── v23.8.2: Bid Outcome Log — Won/Lost/Expired, wired to logBid() ──
+  if (bidRange){
+    html += `<div id="mwBidOutcomeSlot" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="muted" style="font-size:11px">Bid outcome:</span>
+      <button class="pill" data-outcome="won" id="mwOutcomeWon">✅ Won</button>
+      <button class="pill" data-outcome="rejected" id="mwOutcomeLost">❌ Lost</button>
+      <button class="pill" data-outcome="expired" id="mwOutcomeExpired">⏱️ Expired</button>
+    </div>`;
+  }
+
   // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
   html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
 
@@ -7123,12 +7160,57 @@ function _mwRenderDecision(out, d){
     });
   }
 
-  // v21 T3D: Broker Notes button — show if customer/broker field has value
+  // v21 T3D / v23.8.2: Broker Notes button — keyed off #mwBroker only (normalized
+  // via normBroker()), no fallback to destination/origin. Hidden when empty.
   const brokerNotesSlot = $('#mwBrokerNotesSlot', out);
-  const mwBroker = ($('#mwDest')?.value || '').trim() || origin;
-  if (brokerNotesSlot && mwBroker){
-    brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
-    $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(mwBroker));
+  const brokerNotesField = $('#mwBroker');
+  function _renderBrokerNotesBtn(){
+    if (!brokerNotesSlot) return;
+    const bk = normBroker(brokerNotesField?.value);
+    if (bk){
+      brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
+      $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes((brokerNotesField.value||'').trim()));
+    } else {
+      brokerNotesSlot.innerHTML = '';
+    }
+  }
+  _renderBrokerNotesBtn();
+  if (brokerNotesField){
+    // Re-bind on every render so the listener always targets the current
+    // (freshly re-created) #mwBrokerNotesSlot node rather than a detached one.
+    if (brokerNotesField.__brokerNotesHandler) brokerNotesField.removeEventListener('input', brokerNotesField.__brokerNotesHandler);
+    brokerNotesField.__brokerNotesHandler = _renderBrokerNotesBtn;
+    brokerNotesField.addEventListener('input', _renderBrokerNotesBtn);
+  }
+
+  // v23.8.2: Bid Outcome Log — Won/Lost/Expired → logBid()
+  const outcomeSlot = $('#mwBidOutcomeSlot', out);
+  if (outcomeSlot){
+    const outcomeBtns = Array.from(outcomeSlot.querySelectorAll('[data-outcome]'));
+    outcomeBtns.forEach(btn => {
+      btn.addEventListener('click', async ()=>{
+        haptic(10);
+        const outcome = btn.dataset.outcome; // 'won' | 'rejected' | 'expired' — matches logBid()'s accepted set
+        const brokerVal = normBroker($('#mwBroker')?.value);
+        const bidVals = bidRange ? Object.values(bidRange).map(b => b.amount).filter(v => v > 0) : [];
+        const bidAmt = bidVals.length ? Math.max(...bidVals) : revenue;
+        try {
+          await logBid({
+            loadId: '', broker: brokerVal, origin, destination: dest,
+            miles: totalMi, postedTarget: revenue, bidAmount: bidAmt, outcome
+          });
+          outcomeBtns.forEach(b => { b.disabled = true; b.style.opacity = '.5'; b.style.borderColor = 'transparent'; });
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.borderColor = 'var(--accent)';
+          btn.style.background = 'rgba(var(--accent-rgb),.15)';
+          toast('Bid outcome logged');
+        } catch(e){
+          console.warn('[FL] logBid', e);
+          toast('Could not log outcome', true);
+        }
+      });
+    });
   }
 
   // v21 T4B: NWS Weather Alerts — async inject after render
@@ -7544,6 +7626,29 @@ async function mwRenderBoardLog(){
 }
 
 let mwBound = false;
+
+/** v23.8.2: Broker Identity Chain — fills #mwBrokerList with distinct broker
+ *  names seen in bidHistory (and laneHistory, if it ever carries a broker field)
+ *  so #mwBroker autocompletes from real history instead of starting blank. */
+async function populateBrokerList(){
+  try {
+    const list = $('#mwBrokerList');
+    if (!list) return;
+    const names = new Set();
+    const bidRows = await dumpStore('bidHistory').catch(()=>[]);
+    for (const r of (bidRows||[])){
+      const disp = clampStr(r?.brokerDisplay || r?.broker || '', 80);
+      if (disp) names.add(disp);
+    }
+    const laneRows = await dumpStore('laneHistory').catch(()=>[]);
+    for (const r of (laneRows||[])){
+      const disp = clampStr(r?.broker || '', 80);
+      if (disp) names.add(disp);
+    }
+    const sorted = Array.from(names).sort((a,b)=> a.localeCompare(b));
+    list.innerHTML = sorted.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  } catch(e){ console.warn('[FL] populateBrokerList', e); }
+}
 
 function mwBindTabs(){
   const tabs = document.querySelectorAll('#mwTabs .btn');
@@ -7961,10 +8066,18 @@ async function omegaSaveToBidHistory(){
   try {
     const { t: txn, stores } = tx('bidHistory', 'readwrite');
     const id = 'omega_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    // v23.8.2: Broker Identity Chain — pull broker/origin/dest from the shared
+    // evaluator fields (#mwBroker/#mwOrigin/#mwDest live in the eval tab's DOM,
+    // which stays mounted even while the Omega tab is active).
+    const brokerRaw = (document.getElementById('mwBroker')?.value || '').trim();
+    const originRaw = (document.getElementById('mwOrigin')?.value || '').trim();
+    const destRaw = (document.getElementById('mwDest')?.value || '').trim();
     const record = {
       id,
-      broker: '',
-      lane: '',
+      broker: normBroker(brokerRaw),
+      brokerDisplay: brokerRaw,
+      // Same lane format as Lane Memory / laneHistory (normalizeLane()).
+      lane: (originRaw && destRaw) ? normalizeLane(originRaw, destRaw) : '',
       date: new Date().toISOString().slice(0, 10),
       created: Date.now(),
       updatedAt: Date.now(),
@@ -7998,6 +8111,9 @@ async function renderOmega(){
   }
   // F23: Smart Load Inbox — renders once, guards against re-init
   renderLoadInbox().catch(()=>{});
+  // v23.8.2: Broker Identity Chain — refresh broker autocomplete each time the
+  // evaluator view is shown so newly-logged brokers appear.
+  populateBrokerList().catch(()=>{});
   await mwInit();
   if (!omegaBound){
     omegaBound = true;
@@ -11884,7 +12000,9 @@ async function getBrokerIntel(broker){
   try {
     const {stores} = tx('bidHistory');
     const idx = stores.bidHistory.index('broker');
-    const recs = await idbReq(idx.getAll(bk));
+    // v23.8.2: exclude legacy pre-broker-chain rows (the old hardcoded-empty-broker
+    // writer, flagged legacyUnkeyed by the v13 migration) so they don't pollute per-broker stats.
+    const recs = (await idbReq(idx.getAll(bk))).filter(r => !r.legacyUnkeyed);
     if (!recs || !recs.length) return null;
 
     const paySpeedRecs = recs.filter(r => r.paySpeed);
@@ -13776,7 +13894,9 @@ async function openCounterOfferMemory(){
     const el = $('#comHistory', body);
     el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:10px">Loading…</div>';
     try {
-      const all = await dumpStore('bidHistory');
+      // v23.8.2: exclude legacy pre-broker-chain rows so old blank-broker
+      // entries don't show up as "Unknown" and dilute per-broker win rates.
+      const all = (await dumpStore('bidHistory')).filter(r => !r.legacyUnkeyed);
       all.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       if (!all.length){
         el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:16px">No attempts logged yet.</div>';
@@ -14152,7 +14272,9 @@ async function checkDocumentExpiry(){
 // ════════════════════════════════════════════════════════════════
 // v21 T3D: Broker Notes Log
 // ════════════════════════════════════════════════════════════════
-function normalizeBrokerKey(name){ return 'brokerNotes_' + (name||'').toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,40); }
+// v23.8.2: key now routes through the shared normBroker() helper so Broker
+// Notes, bidHistory, and logBid() all resolve the same broker to the same identity.
+function normalizeBrokerKey(name){ return 'brokerNotes_' + normBroker(name).replace(/[^a-z0-9]/g,'_').slice(0,40); }
 
 async function openBrokerNotes(brokerName){
   if (!brokerName){ toast('Enter a broker name first', true); return; }
