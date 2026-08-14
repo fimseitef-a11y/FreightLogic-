@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.8.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -97,7 +97,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.0';
+const APP_VERSION = '23.8.1';
 const DB_VERSION = 12;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -209,8 +209,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.8.1` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.8.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -359,6 +359,24 @@ Not a new feature tier; a correctness pass over the live-data inputs that feed s
 ### Other v23.8.0 changes
 - July 2026 market override and refreshed fuel baseline in `rate-overrides-2026-07.json` (renamed from `rate-overrides-2026-05.json` — filename now matches content).
 - `midwest-stack-authority.js` version aligned to the app version (`VERSION` const + header).
+
+---
+
+## v23.8.1 — Audit Cleanup
+
+Not a feature release; a verify-then-fix pass over items that had drifted or were
+left unmerged from prior audits.
+
+- Confirmed the admin token (`fl_admin_tok`) is sessionStorage-only in both `app.js`
+  and `admin-driver-ui.js`, with `purgeLegacyTok()` migrating any stale on-disk copy
+  at boot (this had shipped in PR #65 ahead of this pass — verified, not re-applied).
+- Confirmed `rate-overrides-2026-07.json` is the correctly named file and that no
+  active code, docs, or checklist reference the pre-rename filename (historical
+  dated docs under `docs/` intentionally still name the file as it was at the time,
+  same convention as `app.js` changelog comments — left alone).
+- Resolved comment-header version drift in `voice-load.js`, `sw-bridge.js`, and the
+  `VERSION` constant in `midwest-stack-authority.js`.
+- Full version-string bump to 23.8.1 across all ten checklist locations.
 
 ---
 
