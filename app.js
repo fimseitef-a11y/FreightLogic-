@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.0 USA ENGINE
+/** FreightLogic v23.9.0 USA ENGINE
+ *  v23.9.0: Broker identity chain restored — omega calc bids now save real
+ *           broker/lane instead of '' /''; logBid() wired to a Won/Lost/Expired
+ *           control; bidHistory legacy-unkeyed rows flagged and excluded from
+ *           aggregates (DB v13); broker-notes no longer falls back to dest/origin
  *  v23.8.0: Live-data corrections — EIA feed fixed (key + Midwest gas), July 2026
  *           market override, fuel baseline refresh, authority version align
  *  v23.7.0: Smart Insight card (F32), improved scoring, counter-offer targeting,
@@ -16,7 +20,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.0';
+const APP_VERSION = '23.9.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -46,7 +50,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.9.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -56,7 +60,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -715,6 +719,26 @@ async function initDB(){
       if (old < 11) { /* no schema changes — settings store already holds the key */ }
       // v12: Ensure gpsLogs store exists for users upgrading from any version prior to v22
       if (old < 12) { ensureStore('gpsLogs', { keyPath: 'id', autoIncrement: true }); }
+      // v13 (v24.0.0): bidHistory rows written before the broker identity fix
+      // (omega_calc records) always had broker:''. That empty string is
+      // indistinguishable from a real broker in an index.getAll(broker) exact
+      // match, so flag them legacyUnkeyed instead — getBrokerBidIntel and
+      // getBidWinRateStats both skip flagged rows. Preserved, not deleted.
+      if (old < 13) {
+        if (d.objectStoreNames.contains('bidHistory')) {
+          const bhStore = e.target.transaction.objectStore('bidHistory');
+          const cursorReq = bhStore.openCursor();
+          cursorReq.onsuccess = (ce) => {
+            const cursor = ce.target.result;
+            if (!cursor) return;
+            const rec = cursor.value;
+            if (!rec.broker && !rec.legacyUnkeyed) {
+              cursor.update({ ...rec, legacyUnkeyed: true });
+            }
+            cursor.continue();
+          };
+        }
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -6495,7 +6519,7 @@ async function mwEvaluateLoad(){
     getLaneIntel(origin, dest),
     getCityReloadScore(dest),
     getCityReloadScore(origin),
-    getBrokerIntel(broker),
+    getBrokerBidIntel(broker),
   ]);
 
   // ── USA Engine integration ──
@@ -7083,6 +7107,7 @@ function _mwRenderDecision(out, d){
       <button class="btn" id="mwShareBid" style="border-color:var(--border)">📤 Share Bid</button>
     </div>
     <div id="mwBrokerNotesSlot"></div>
+    <div id="mwBidOutcomeSlot" style="margin-top:8px"></div>
     <div id="mwWeatherAlertSlot" style="margin-top:8px"></div>
     <div id="mwAIResult" style="margin-top:10px"></div>
   </div>`;
@@ -7121,12 +7146,48 @@ function _mwRenderDecision(out, d){
     });
   }
 
-  // v21 T3D: Broker Notes button — show if customer/broker field has value
+  // v21 T3D / v24.0.0: Broker Notes button — only when a real broker was
+  // entered. Previously fell back to dest||origin when the evaluator had no
+  // broker field, which filed notes under a city key indistinguishable from
+  // a real broker record. #mwBroker now exists — no fallback, no button
+  // without an actual broker name.
   const brokerNotesSlot = $('#mwBrokerNotesSlot', out);
-  const mwBroker = ($('#mwDest')?.value || '').trim() || origin;
-  if (brokerNotesSlot && mwBroker){
-    brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
-    $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(mwBroker));
+  if (brokerNotesSlot){
+    if (broker){
+      brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
+      $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes(broker));
+    } else {
+      brokerNotesSlot.innerHTML = '';
+    }
+  }
+
+  // v24.0.0: Bid outcome log — logBid() was fully written and had zero call
+  // sites. Minimal Won/Lost/Expired control so real broker win-rate data
+  // actually accumulates in bidHistory; postedTarget = the rate evaluated,
+  // bidAmount = the app's Professional-tier suggested ask.
+  const bidOutcomeSlot = $('#mwBidOutcomeSlot', out);
+  if (bidOutcomeSlot && revenue > 0 && totalMi > 0){
+    bidOutcomeSlot.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">Log bid outcome:</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" data-outcome="won" style="flex:1;font-size:11px;border-color:var(--good-border)">✅ Won</button>
+        <button class="btn sm" data-outcome="rejected" style="flex:1;font-size:11px;border-color:var(--bad-border)">❌ Lost</button>
+        <button class="btn sm" data-outcome="expired" style="flex:1;font-size:11px;border-color:var(--border)">🚫 Expired</button>
+      </div>`;
+    bidOutcomeSlot.querySelectorAll('[data-outcome]').forEach(btn => {
+      btn.addEventListener('click', async ()=>{
+        haptic(15);
+        try {
+          await logBid({
+            broker, origin, destination: dest, miles: totalMi,
+            postedTarget: revenue,
+            bidAmount: bidRange?.professional?.amount || revenue,
+            outcome: btn.dataset.outcome,
+          });
+          bidOutcomeSlot.innerHTML = '<div class="muted" style="font-size:11px">✓ Bid outcome logged</div>';
+          toast('Bid outcome logged');
+        } catch(e){ console.warn('[FL] logBid:', e); toast('Failed to log bid outcome', true); }
+      });
+    });
   }
 
   // v21 T4B: NWS Weather Alerts — async inject after render
@@ -7569,6 +7630,7 @@ function _saveEvalDraft(){
       dm: $('#mwDeadMi')?.value || '',
       origin: $('#mwOrigin')?.value || '',
       dest: $('#mwDest')?.value || '',
+      broker: $('#mwBroker')?.value || '',
       ts: Date.now()
     };
     sessionStorage.setItem('fl_eval_draft', JSON.stringify(draft));
@@ -7703,6 +7765,7 @@ async function mwInit(){
     if (draft.dm) { const el=$('#mwDeadMi'); if(el) el.value=draft.dm; }
     if (draft.origin) { const el=$('#mwOrigin'); if(el) el.value=draft.origin; }
     if (draft.dest) { const el=$('#mwDest'); if(el) el.value=draft.dest; }
+    if (draft.broker) { const el=$('#mwBroker'); if(el) el.value=draft.broker; }
   } else if (last && typeof last === 'object'){
     if (last.origin) { const el=$('#mwOrigin'); if(el) el.value=last.origin; }
     if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
@@ -7959,10 +8022,22 @@ async function omegaSaveToBidHistory(){
   try {
     const { t: txn, stores } = tx('bidHistory', 'readwrite');
     const id = 'omega_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    // v24.0.0: pull broker/lane from the main evaluator fields sharing this
+    // tab, instead of always writing broker:''/lane:''. Same trim-only
+    // convention as the F29 and Counter-Offer Memory writers (no case
+    // folding) so bidHistory.index('broker') exact-match lookups in
+    // getBrokerBidIntel actually line up across all three writers.
+    const omBroker = clampStr(($('#mwBroker')?.value || '').trim(), 80);
+    const omOrigin = ($('#mwOrigin')?.value || '').trim();
+    const omDest = ($('#mwDest')?.value || '').trim();
+    const omLane = (omOrigin && omDest) ? `${omOrigin} → ${omDest}` : '';
     const record = {
       id,
-      broker: '',
-      lane: '',
+      // Explicitly null (not '') when no broker was entered, so this record
+      // is excluded from broker aggregates instead of silently matching
+      // nothing via an empty-string index lookup.
+      broker: omBroker || null,
+      lane: omLane,
       date: new Date().toISOString().slice(0, 10),
       created: Date.now(),
       updatedAt: Date.now(),
@@ -7996,6 +8071,7 @@ async function renderOmega(){
   }
   // F23: Smart Load Inbox — renders once, guards against re-init
   renderLoadInbox().catch(()=>{});
+  _populateBrokerDatalist().catch(()=>{});
   await mwInit();
   if (!omegaBound){
     omegaBound = true;
@@ -11872,17 +11948,20 @@ function renderLaneIntelHTML(intel){
   </div>`;
 }
 
-// v24.0.0: Broker intelligence — unifies the three bidHistory record flavors
+// v24.0.0: Broker BID intelligence — unifies the three bidHistory record flavors
 // (F29 post-trip broker-pay reviews, Counter-Offer Memory, and the bid win/loss
 // log) into one per-broker signal so it can feed usaScoreLoad's scoring instead
 // of sitting display-only in the Counter-Offer Memory and trip-detail panels.
-async function getBrokerIntel(broker){
+// NOTE: named distinctly from the pre-existing F3 getBrokerIntel(company) above
+// (trips-store-based pay/RPM alert on the trip-entry form) — same name would
+// silently clobber it, since the later top-level function declaration wins.
+async function getBrokerBidIntel(broker){
   const bk = (broker || '').trim();
   if (!bk) return null;
   try {
     const {stores} = tx('bidHistory');
     const idx = stores.bidHistory.index('broker');
-    const recs = await idbReq(idx.getAll(bk));
+    const recs = (await idbReq(idx.getAll(bk))).filter(r => !r.legacyUnkeyed);
     if (!recs || !recs.length) return null;
 
     const paySpeedRecs = recs.filter(r => r.paySpeed);
@@ -11911,9 +11990,26 @@ async function getBrokerIntel(broker){
   } catch(e){ console.warn('[FL] getBrokerIntel:', e); return null; }
 }
 
+// Populates the #mwBrokerList <datalist> from distinct trip.customer values
+// already on file, so past brokers autocomplete on #mwBroker instead of
+// being retyped (and fragmented under slightly different spellings).
+let _brokerDatalistPopulated = false;
+async function _populateBrokerDatalist(){
+  if (_brokerDatalistPopulated) return;
+  const dl = $('#mwBrokerList');
+  if (!dl) return;
+  try {
+    const trips = await dumpStore('trips');
+    const names = [...new Set(trips.map(t => (t.customer||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    _brokerDatalistPopulated = true;
+  } catch(e){ console.warn('[FL] _populateBrokerDatalist:', e); }
+}
+
 // Hook lane recording into trip saves — call after saveTrip
 async function _postTripSaveLaneHook(trip){
   try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+  _brokerDatalistPopulated = false; // invalidate so a new/edited broker name shows up next evaluator visit
   // F29: Post-trip review prompt when trip has a delivery date
   if (trip && trip.deliveryDate && trip.origin && trip.destination){
     const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
@@ -12079,7 +12175,7 @@ async function getBidWinRateStats(daysBack = 30) {
   const cutoff = Date.now() - daysBack * 86400000;
   const { stores } = tx('bidHistory');
   const all = await idbReq(stores.bidHistory.getAll());
-  const recent = all.filter(b => b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
+  const recent = all.filter(b => !b.legacyUnkeyed && b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
   const won = recent.filter(b => b.outcome === 'won');
   const winningSpreads = won.map(b => b.spread / b.postedTarget);
   const avgWinningDiscount = winningSpreads.length > 0

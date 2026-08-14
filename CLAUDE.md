@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.9.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -67,7 +67,7 @@ scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity chec
 20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
 21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
 
-### IndexedDB schema (`DB_VERSION = 12`, `DB_NAME = 'FreightLogic_v18'`)
+### IndexedDB schema (`DB_VERSION = 13`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
 - `expenses` — keyPath: `id`
 - `fuel` — keyPath: `id`
@@ -97,8 +97,8 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.0';
-const DB_VERSION = 12;
+const APP_VERSION = '23.9.0';
+const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
@@ -209,8 +209,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.9.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.9.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -362,44 +362,70 @@ Not a new feature tier; a correctness pass over the live-data inputs that feed s
 
 ---
 
-## v24.0.0 — Intelligence Bridge (in progress)
+## v23.9.0 — Intelligence Bridge + Broker Identity Chain
 
-Not shipped as a version bump yet — first slice only. Historically `laneHistory`,
-`bidHistory`, and `reloadOutcomes` were recorded (F29 reviews, Counter-Offer
-Memory, bid win/loss log) and *displayed* (Lane Intel panel, USA Engine panel,
-counter-offer negotiation intel) but never touched the evaluator's ACCEPT /
-REJECT / STRATEGIC verdict — a driver could see "Trap lane, 4 Dead Zone exits"
-right next to a green ACCEPT banner with no reconciliation between the two.
+`laneHistory`, `bidHistory`, and `reloadOutcomes` were recorded (F29 reviews,
+Counter-Offer Memory, bid win/loss log) and *displayed* (Lane Intel panel, USA
+Engine panel, counter-offer negotiation intel) but never touched the
+evaluator's ACCEPT/REJECT/STRATEGIC verdict, and `bidHistory` had no working
+broker-identity writer at all. Fixed across two passes in the same release:
 
-- `usaScoreLoad(opts)` now separates `personalScore` / `personalBullets` out of
+**Scoring bridge:**
+- `usaScoreLoad(opts)` separates `personalScore` / `personalBullets` out of
   its blended `score` — the portion of the USA Engine score driven specifically
   by *your* trip history (lane RPM-vs-average, DZ trap pattern, destination
   reload difficulty, broker pay speed, broker counter-offer/win acceptance),
   as opposed to market-structure factors (corridor, zone, economics) that are
   already covered by the evaluator's own Geography/RPM steps.
-- `getBrokerIntel(broker)` — new aggregator; unifies the three `bidHistory`
+- `getBrokerBidIntel(broker)` — aggregator; unifies the three `bidHistory`
   record shapes (F29 `brev_` broker-pay reviews, Counter-Offer Memory `outcome`
   records, bid win/loss log `outcome`) into one per-broker signal:
   `fastPayPct` / `slowPayPct` (from reviews) and `acceptedPct` (accepted +
-  partial + won, pooled across both outcome-logging flows).
+  partial + won, pooled across both outcome-logging flows). Named distinctly
+  from the pre-existing F3 `getBrokerIntel(company)` (trips-store pay/RPM
+  alert on the trip-entry form) — an earlier pass in this same release briefly
+  gave both functions the same name, which silently broke F3 since the later
+  top-level declaration wins; caught and fixed before merge.
 - `mwEvaluateLoad()` STEP 7 "Personal Intelligence" — reads
   `usaResult.personalScore/personalBullets` and can downgrade an already-ACCEPT
   verdict to STRATEGIC when history disagrees strongly (`personalScore <= -6`);
   informational-only otherwise. **Downgrade-only**: never touches REJECT or
   DZ-EXIT — those stay pure hard-floor / survival-mode outcomes so personal
   history can never soften a rate-floor or profit-margin rejection.
-- New optional evaluator field `#mwBroker` (Broker / Customer), persisted in
-  `settings['mwLastInputs']`. Auto-filled from `parsed.customer` at all four
-  load-intake entry points (Smart Load Inbox modal + Home card, F27 Load
-  Intake, OCR quick-scan) when the parser found a broker/company name.
-- Known gap, not addressed here: `openBrokerNotes` (the "🗒️ Broker Notes"
-  button in the evaluator output) still keys off `dest || origin` as a
-  broker-notes stand-in — pre-existing, since no broker field existed until
-  now. Worth pointing it at `#mwBroker` in a follow-up, not done in this pass
-  to keep this change scoped to the scoring bridge.
-- Not yet done: `reloadOutcomes` city-level reload scoring (`getCityReloadScore`)
-  was already wired into `usaScoreLoad` pre-existing and is now correctly
-  included in `personalScore` — no new work needed there.
+
+**Broker identity chain:**
+- Evaluator field `#mwBroker` (Broker / Customer), with a `<datalist>`
+  autocomplete populated from distinct `trip.customer` values already on file.
+  Persisted in `settings['mwLastInputs']` and the `fl_eval_draft` sessionStorage
+  draft; cleared by the evaluator's Clear button. Auto-filled from
+  `parsed.customer` at all four load-intake entry points (Smart Load Inbox
+  modal + Home card, F27 Load Intake, OCR quick-scan) when the parser found a
+  broker/company name.
+- `openBrokerNotes` no longer falls back to `dest || origin` when no broker
+  was entered — the Broker Notes button simply doesn't render without a real
+  `#mwBroker` value, instead of filing notes under a city key indistinguishable
+  from a real broker record.
+- `omegaSaveToBidHistory()` previously always wrote `broker: ''` / `lane: ''`.
+  Now pulls broker/lane from the evaluator fields sharing the tab; explicit
+  `broker: null` (not `''`) when none was entered, so the record is excluded
+  from broker aggregates rather than silently never matching.
+- `logBid()` was fully written with zero call sites. Wired to a minimal
+  Won / Lost / Expired control on the evaluator result card
+  (`#mwBidOutcomeSlot`) — the only new UI this pass added.
+- `DB_VERSION` 12 → 13: legacy `bidHistory` rows written before this fix
+  (`broker: ''`) are flagged `legacyUnkeyed: true` during upgrade — preserved,
+  not deleted, and excluded from `getBrokerBidIntel` and `getBidWinRateStats`.
+
+**Deliberately not touched:** `MW.normalFloorRPM` / `MW.hardRejectRPM` (a
+live-money decision, not a data-integrity fix) and the scoring/threshold logic
+in `usaScoreLoad`'s personal-intelligence block. Also not addressed: none of
+`rate-overrides-2026-07.json`, `midwest-stack-config.json`, or the three
+`schemas/*.json` files are read at runtime anywhere in `app.js` or
+`midwest-stack-authority.js` — they're precached by the service worker
+(schemas aren't even precached) and otherwise inert. `MW.normalFloorRPM =
+1.35` runs live while the July override's stated floor is `1.40`. That's a
+separate decision — whether to wire the override file in at all — not made
+in this pass.
 
 ---
 
