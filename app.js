@@ -3265,6 +3265,7 @@ function openQuickEvalModal(){
       const dm = Number(parsed.deadheadMiles) || 0;
       const origin = parsed.origin || '';
       const dest = parsed.destination || '';
+      const broker = parsed.customer || '';
       if (!rev || !lm){
         resultSlot.innerHTML = '';
         inputSlot.style.display = '';
@@ -3272,13 +3273,14 @@ function openQuickEvalModal(){
         return;
       }
       // Fill evaluator DOM fields so mwEvaluateLoad works
-      ['mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest'].forEach(id => {
+      ['mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest','mwBroker'].forEach(id => {
         const el = $('#'+id); if (!el) return;
         if (id==='mwRevenue') el.value = String(rev);
         else if (id==='mwLoadedMi') el.value = String(lm);
         else if (id==='mwDeadMi') el.value = String(dm);
         else if (id==='mwOrigin') el.value = origin;
         else if (id==='mwDest') el.value = dest;
+        else if (id==='mwBroker' && broker) el.value = broker;
       });
       await mwEvaluateLoad();
       // Show simplified result in modal
@@ -5855,23 +5857,35 @@ function usaScoreLoad(opts){
   }
 
   // ── Personal Intelligence Adjustments ──
+  // v24.0.0: tracked separately from market-structure score (econ/dh/role/corridor)
+  // so callers can react to "your own trip history disagrees" distinctly from
+  // "this lane/corridor is generally weak". See personalScore/personalBullets below.
+  let personalScore = 0;
+  const personalBullets = [];
   if (opts.laneIntel && opts.laneIntel.count >= 3) {
     const li = opts.laneIntel;
     if (li.avgRPM > 0) {
       const rpmRatio = effectiveRPM / li.avgRPM;
-      if (rpmRatio >= 1.10) { score += 6; bullets.push({ icon:'✓', text:`Paying ${((rpmRatio-1)*100).toFixed(0)}% above your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }); }
-      else if (rpmRatio < 0.85) { score -= 6; bullets.push({ icon:'✕', text:`${((1-rpmRatio)*100).toFixed(0)}% below your avg $${li.avgRPM.toFixed(2)} on this lane — hold for better` }); }
-      else { bullets.push({ icon:'–', text:`In line with your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }); }
+      if (rpmRatio >= 1.10) { const d = 6; score += d; personalScore += d; const b = { icon:'✓', text:`Paying ${((rpmRatio-1)*100).toFixed(0)}% above your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }; bullets.push(b); personalBullets.push(b); }
+      else if (rpmRatio < 0.85) { const d = -6; score += d; personalScore += d; const b = { icon:'✕', text:`${((1-rpmRatio)*100).toFixed(0)}% below your avg $${li.avgRPM.toFixed(2)} on this lane — hold for better` }; bullets.push(b); personalBullets.push(b); }
+      else { const b = { icon:'–', text:`In line with your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }; bullets.push(b); personalBullets.push(b); }
     }
-    if (li.dzExitCount >= 3) { score -= 8; bullets.push({ icon:'✕', text:`⚠ Trap lane: ${li.dzExitCount} Dead Zone exits from origin — market repeatedly strands you` }); }
+    if (li.dzExitCount >= 3) { const d = -8; score += d; personalScore += d; const b = { icon:'✕', text:`⚠ Trap lane: ${li.dzExitCount} Dead Zone exits from origin — market repeatedly strands you` }; bullets.push(b); personalBullets.push(b); }
   }
 
   if (opts.destReloadScore) {
     const rs = opts.destReloadScore;
-    if (rs.grade === 'A') { score += 5; bullets.push({ icon:'✓', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload (${rs.count} records)` }); }
-    else if (rs.grade === 'D') { score -= 8; bullets.push({ icon:'✕', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload. Demand premium or avoid.` }); }
-    else if (rs.grade === 'C') { score -= 3; bullets.push({ icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }); }
-    else { bullets.push({ icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }); }
+    if (rs.grade === 'A') { const d = 5; score += d; personalScore += d; const b = { icon:'✓', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+    else if (rs.grade === 'D') { const d = -8; score += d; personalScore += d; const b = { icon:'✕', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload. Demand premium or avoid.` }; bullets.push(b); personalBullets.push(b); }
+    else if (rs.grade === 'C') { const d = -3; score += d; personalScore += d; const b = { icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+    else { const b = { icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+  }
+
+  if (opts.brokerIntel && opts.brokerIntel.sampleSize >= 2) {
+    const bi = opts.brokerIntel;
+    if (bi.slowPayPct >= 60) { const d = -6; score += d; personalScore += d; const b = { icon:'✕', text:`Broker pay history: ${bi.slowPayPct}% rated slow-to-pay by you (${bi.paySpeedSamples} reviews)` }; bullets.push(b); personalBullets.push(b); }
+    else if (bi.fastPayPct >= 60) { const b = { icon:'✓', text:`Broker pay history: ${bi.fastPayPct}% rated fast-to-pay by you (${bi.paySpeedSamples} reviews)` }; bullets.push(b); personalBullets.push(b); }
+    if (bi.acceptedPct !== null && bi.acceptedPct <= 20) { const d = -4; score += d; personalScore += d; const b = { icon:'✕', text:`Counter-offer history with this broker: only ${bi.acceptedPct}% accepted (${bi.outcomeSamples} bids) — expect a hard line` }; bullets.push(b); personalBullets.push(b); }
   }
 
   // Clamp
@@ -5891,6 +5905,7 @@ function usaScoreLoad(opts){
     corridor, mode: mode || 'HARVEST', profileId: profileId || 'MIDWEST_STACK',
     modeConf, profile,
     econScore, dhScore, roleScore, corrScore,
+    personalScore, personalBullets,
     bullets, crossBorder,
   };
 }
@@ -6259,6 +6274,7 @@ async function mwIsGoingHome(dest) {
 async function mwEvaluateLoad(){
   const origin = ($('#mwOrigin')?.value || '').trim();
   const dest = ($('#mwDest')?.value || '').trim();
+  const broker = ($('#mwBroker')?.value || '').trim();
   const loadedMi = Math.max(0, numVal('mwLoadedMi', 0));
   const deadMi = Math.max(0, numVal('mwDeadMi', 0));
   const revenue = Math.max(0, numVal('mwRevenue', 0));
@@ -6282,7 +6298,7 @@ async function mwEvaluateLoad(){
   }
 
   // Save inputs
-  setSetting('mwLastInputs', { origin, dest, loadedMi, deadMi, revenue, dayOfWeek, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
+  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
 
   // ── Auto-detect "going home" and suggest strategic mode ──
   const goingHome = dest ? await mwIsGoingHome(dest) : false;
@@ -6475,10 +6491,11 @@ async function mwEvaluateLoad(){
   const verdictLabels = { ACCEPT: 'ACCEPT', REJECT: 'PASS', STRATEGIC: 'STRATEGIC ONLY', 'DZ-EXIT': 'DZ EXIT — SURVIVAL' };
 
   // Pre-fetch intelligence for scoring
-  const [laneIntel, destReloadScore, origReloadScore] = await Promise.all([
+  const [laneIntel, destReloadScore, origReloadScore, brokerIntel] = await Promise.all([
     getLaneIntel(origin, dest),
     getCityReloadScore(dest),
     getCityReloadScore(origin),
+    getBrokerIntel(broker),
   ]);
 
   // ── USA Engine integration ──
@@ -6490,7 +6507,35 @@ async function mwEvaluateLoad(){
     laneIntel,
     destReloadScore,
     origReloadScore,
+    brokerIntel,
   });
+
+  // ════════════════════════════════════════════════════
+  // STEP 7 (v24.0.0): Personal Intelligence bridge
+  // laneHistory (F29 reviews + DZ-exit tracking), reloadOutcomes, and
+  // bidHistory (broker pay speed + counter-offer/win acceptance) are already
+  // aggregated above into usaResult.personalScore/personalBullets. Until now
+  // that number was display-only in the USA Engine panel and never touched
+  // `verdict`. It's advisory and downgrade-only: it can push an ACCEPT that
+  // already cleared every hard floor (RPM, margin, deadhead, fatigue) down to
+  // STRATEGIC when your own trip history disagrees with it, but it never
+  // touches REJECT or DZ-EXIT — those are safety-floor / survival outcomes,
+  // not places for a soft personal-history signal to intervene.
+  if (usaResult && (verdict === 'ACCEPT' || verdict === 'STRATEGIC') && usaResult.personalBullets.length){
+    const { personalScore, personalBullets } = usaResult;
+    const negatives = personalBullets.filter(b => b.icon === '✕').map(b => b.text);
+    if (personalScore <= -6){
+      steps.push({ pass: false, label: 'Personal Intelligence', detail: negatives.join(' • ') });
+      if (verdict === 'ACCEPT'){
+        verdict = 'STRATEGIC';
+        verdictReason = `Downgraded from ACCEPT — your own history disagrees: ${negatives[0]}`;
+      }
+    } else if (personalScore >= 6){
+      steps.push({ pass: true, label: 'Personal Intelligence', detail: personalBullets.filter(b => b.icon === '✓').map(b => b.text).join(' • ') });
+    } else {
+      steps.push({ pass: null, label: 'Personal Intelligence', detail: 'Your history on this lane/broker is roughly neutral' });
+    }
+  }
 
   // ── Collect decision data for render ──
   // Generate bid range
@@ -7632,7 +7677,7 @@ async function mwInit(){
 
   // v20: Clear button — reset 3 primary fields + output, focus revenue
   $('#mwEvalReset')?.addEventListener('click', () => {
-    ['mwOrigin','mwDest','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
+    ['mwOrigin','mwDest','mwBroker','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
     const dow = $('#mwDayOfWeek');
     if (dow){ const dm = ['sun','mon','tue','wed','thu','fri','sat']; dow.value = dm[new Date().getDay()]; }
     const cur = $('#mwCurrency'); if (cur) cur.value='USD';
@@ -7661,6 +7706,7 @@ async function mwInit(){
   } else if (last && typeof last === 'object'){
     if (last.origin) { const el=$('#mwOrigin'); if(el) el.value=last.origin; }
     if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
+    if (last.broker) { const el=$('#mwBroker'); if(el) el.value=last.broker; }
     if (last.loadedMi) { const el=$('#mwLoadedMi'); if(el) el.value=last.loadedMi; }
     if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
     if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
@@ -10876,12 +10922,13 @@ function openLoadIntake(){
     const f = readDraftFields();
     // Fill evaluator fields
     const rev = $('#mwRevenue'), mi = $('#mwLoadedMi'), dead = $('#mwDeadMi');
-    const orig = $('#mwOrigin'), dest = $('#mwDest');
+    const orig = $('#mwOrigin'), dest = $('#mwDest'), brk = $('#mwBroker');
     if (rev && f.pay)          { rev.value  = f.pay;          rev.dispatchEvent(new Event('input')); }
     if (mi  && f.loadedMiles)  { mi.value   = f.loadedMiles;  mi.dispatchEvent(new Event('input')); }
     if (dead && f.deadheadMiles){ dead.value = f.deadheadMiles; dead.dispatchEvent(new Event('input')); }
     if (orig && f.origin)      { orig.value = f.origin;       orig.dispatchEvent(new Event('input')); }
     if (dest && f.destination) { dest.value = f.destination;  dest.dispatchEvent(new Event('input')); }
+    if (brk && f.broker)       { brk.value  = f.broker;       brk.dispatchEvent(new Event('input')); }
     closeModal();
     location.hash = '#omega';
     setTimeout(()=> window.scrollTo({top:0,behavior:'instant'}), 100);
@@ -11635,6 +11682,7 @@ function openQuickEvalFlow(){
         if (parsed.loadedMiles) { const el = $('#mwLoadedMi'); if (el) el.value = parsed.loadedMiles; }
         if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
         if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
+        if (parsed.customer) { const el = $('#mwBroker'); if (el) el.value = parsed.customer; }
         if (hasData){
           try { mwEvaluateLoad(); } catch(e){ console.warn('[FL] auto-evaluate after scan failed:', e); }
           toast('✓ Load scanned — verify fields and hit Evaluate');
@@ -11822,6 +11870,45 @@ function renderLaneIntelHTML(intel){
     </div>
     ${dzHtml}
   </div>`;
+}
+
+// v24.0.0: Broker intelligence — unifies the three bidHistory record flavors
+// (F29 post-trip broker-pay reviews, Counter-Offer Memory, and the bid win/loss
+// log) into one per-broker signal so it can feed usaScoreLoad's scoring instead
+// of sitting display-only in the Counter-Offer Memory and trip-detail panels.
+async function getBrokerIntel(broker){
+  const bk = (broker || '').trim();
+  if (!bk) return null;
+  try {
+    const {stores} = tx('bidHistory');
+    const idx = stores.bidHistory.index('broker');
+    const recs = await idbReq(idx.getAll(bk));
+    if (!recs || !recs.length) return null;
+
+    const paySpeedRecs = recs.filter(r => r.paySpeed);
+    const paySpeedSamples = paySpeedRecs.length;
+    const fastCount = paySpeedRecs.filter(r => r.paySpeed === 'fast').length;
+    const slowCount = paySpeedRecs.filter(r => r.paySpeed === 'slow' || r.paySpeed === 'dispute').length;
+
+    // 'won' (bid win/loss log) and 'accepted'/'partial' (Counter-Offer Memory)
+    // both mean the broker landed at your number — treat them the same for a
+    // single acceptance-rate signal regardless of which tool logged it.
+    const outcomeRecs = recs.filter(r => r.outcome);
+    const outcomeSamples = outcomeRecs.length;
+    const acceptedLike = outcomeRecs.filter(r => ['accepted','partial','won'].includes(r.outcome)).length;
+
+    if (!paySpeedSamples && !outcomeSamples) return null;
+
+    return {
+      broker: bk,
+      sampleSize: recs.length,
+      paySpeedSamples,
+      fastPayPct: paySpeedSamples ? Math.round((fastCount / paySpeedSamples) * 100) : null,
+      slowPayPct: paySpeedSamples ? Math.round((slowCount / paySpeedSamples) * 100) : null,
+      outcomeSamples,
+      acceptedPct: outcomeSamples ? Math.round((acceptedLike / outcomeSamples) * 100) : null,
+    };
+  } catch(e){ console.warn('[FL] getBrokerIntel:', e); return null; }
 }
 
 // Hook lane recording into trip saves — call after saveTrip
@@ -15687,6 +15774,7 @@ function _renderInboxParsed(parsed, card) {
     const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh    || '';
     const origEl = $('#mwOrigin');    if (origEl) origEl.value = origin || '';
     const destEl = $('#mwDest');      if (destEl) destEl.value = dest   || '';
+    const brkEl  = $('#mwBroker');    if (brkEl && parsed.customer) brkEl.value = parsed.customer;
 
     // Trigger live evaluation
     if (revEl) revEl.dispatchEvent(new Event('input', { bubbles: true }));

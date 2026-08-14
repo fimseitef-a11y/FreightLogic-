@@ -14,7 +14,7 @@ const CORE = [
   './midwest-stack-authority.js?v=23.8.0',
   './manifest.json?v=23.8.0',
   './midwest-stack-config.json',
-  './rate-overrides-2026-05.json',
+  './rate-overrides-2026-07.json',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
   './sw-bridge.js?v=23.8.0'
