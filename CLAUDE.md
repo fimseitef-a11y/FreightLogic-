@@ -362,6 +362,47 @@ Not a new feature tier; a correctness pass over the live-data inputs that feed s
 
 ---
 
+## v24.0.0 — Intelligence Bridge (in progress)
+
+Not shipped as a version bump yet — first slice only. Historically `laneHistory`,
+`bidHistory`, and `reloadOutcomes` were recorded (F29 reviews, Counter-Offer
+Memory, bid win/loss log) and *displayed* (Lane Intel panel, USA Engine panel,
+counter-offer negotiation intel) but never touched the evaluator's ACCEPT /
+REJECT / STRATEGIC verdict — a driver could see "Trap lane, 4 Dead Zone exits"
+right next to a green ACCEPT banner with no reconciliation between the two.
+
+- `usaScoreLoad(opts)` now separates `personalScore` / `personalBullets` out of
+  its blended `score` — the portion of the USA Engine score driven specifically
+  by *your* trip history (lane RPM-vs-average, DZ trap pattern, destination
+  reload difficulty, broker pay speed, broker counter-offer/win acceptance),
+  as opposed to market-structure factors (corridor, zone, economics) that are
+  already covered by the evaluator's own Geography/RPM steps.
+- `getBrokerIntel(broker)` — new aggregator; unifies the three `bidHistory`
+  record shapes (F29 `brev_` broker-pay reviews, Counter-Offer Memory `outcome`
+  records, bid win/loss log `outcome`) into one per-broker signal:
+  `fastPayPct` / `slowPayPct` (from reviews) and `acceptedPct` (accepted +
+  partial + won, pooled across both outcome-logging flows).
+- `mwEvaluateLoad()` STEP 7 "Personal Intelligence" — reads
+  `usaResult.personalScore/personalBullets` and can downgrade an already-ACCEPT
+  verdict to STRATEGIC when history disagrees strongly (`personalScore <= -6`);
+  informational-only otherwise. **Downgrade-only**: never touches REJECT or
+  DZ-EXIT — those stay pure hard-floor / survival-mode outcomes so personal
+  history can never soften a rate-floor or profit-margin rejection.
+- New optional evaluator field `#mwBroker` (Broker / Customer), persisted in
+  `settings['mwLastInputs']`. Auto-filled from `parsed.customer` at all four
+  load-intake entry points (Smart Load Inbox modal + Home card, F27 Load
+  Intake, OCR quick-scan) when the parser found a broker/company name.
+- Known gap, not addressed here: `openBrokerNotes` (the "🗒️ Broker Notes"
+  button in the evaluator output) still keys off `dest || origin` as a
+  broker-notes stand-in — pre-existing, since no broker field existed until
+  now. Worth pointing it at `#mwBroker` in a follow-up, not done in this pass
+  to keep this change scoped to the scoring bridge.
+- Not yet done: `reloadOutcomes` city-level reload scoring (`getCityReloadScore`)
+  was already wired into `usaScoreLoad` pre-existing and is now correctly
+  included in `personalScore` — no new work needed there.
+
+---
+
 ## Dispatch Layer (Planned)
 
 A Dispatch upgrade is planned for a future release. Driver-only features are the current development focus. No dispatch UI, multi-driver management, or load assignment logic should be added until that phase begins.
