@@ -1,23 +1,23 @@
-/* FreightLogic v23.8.1 — Browser Hardened Service Worker */
-const SW_VERSION = '23.8.1';
+/* FreightLogic v23.8.2 — Browser Hardened Service Worker */
+const SW_VERSION = '23.8.2';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.8.1"></script>';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=23.8.1"></script>';
+const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.8.2"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=23.8.2"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=23.8.1',
-  './voice-load.js?v=23.8.1',
-  './admin-driver-ui.js?v=23.8.1',
-  './midwest-stack-authority.js?v=23.8.1',
-  './manifest.json?v=23.8.1',
+  './app.js?v=23.8.2',
+  './voice-load.js?v=23.8.2',
+  './admin-driver-ui.js?v=23.8.2',
+  './midwest-stack-authority.js?v=23.8.2',
+  './manifest.json?v=23.8.2',
   './midwest-stack-config.json',
   './rate-overrides-2026-07.json',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=23.8.1'
+  './sw-bridge.js?v=23.8.2'
 ];
 
 function injectBeforeBodyClose(html, tag) {
@@ -46,7 +46,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     // Critical shell — one failure here is acceptable to abort install
-    const critical = ['./', APP_SHELL, './app.js?v=23.8.1', './voice-load.js?v=23.8.1', './sw-bridge.js?v=23.8.1', './manifest.json?v=23.8.1'];
+    const critical = ['./', APP_SHELL, './app.js?v=23.8.2', './voice-load.js?v=23.8.2', './sw-bridge.js?v=23.8.2', './manifest.json?v=23.8.2'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
