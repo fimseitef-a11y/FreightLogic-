@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.2** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.8.3** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -26,7 +26,6 @@ service-worker.js          — PWA offline caching; injects admin-driver-ui.js a
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json              — PWA manifest
 midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
-rate-overrides-2026-07.json — Dated lane/rate override table (precached)
 _headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
 wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
 favicon*.png / icon*.png   — App icons
@@ -97,7 +96,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.2';
+const APP_VERSION = '23.8.3';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -209,8 +208,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.2` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.2`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.8.3` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.8.3`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -236,6 +235,10 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   8. `VERSION` const and header comment in `midwest-stack-authority.js`
   9. Header comments in `voice-load.js` and `sw-bridge.js`
   10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
+  11. `EXPECTED` block in `scripts/verify-cloudflare-parity.mjs` (`serviceWorkerVersion`,
+      `manifestName`, `overlayScript`) plus the inline `?v=` / version strings in its
+      assertions. Added to this list in v23.8.3 — it was an 11th location that the
+      "ten locations" audit never covered, and it fails the deploy check when stale.
 
   Quick audit — every shipped file should report the new version:
   ```bash
@@ -357,7 +360,12 @@ Not a new feature tier; a correctness pass over the live-data inputs that feed s
 - Settings keys: `eiaApiKey`, `eiaLastPrice`, `eiaLastDate`, `eiaLastFetchTs`
 
 ### Other v23.8.0 changes
-- July 2026 market override and refreshed fuel baseline in `rate-overrides-2026-07.json` (renamed from `rate-overrides-2026-05.json` — filename now matches content).
+- July 2026 market override table added as `rate-overrides-2026-07.json` (renamed from
+  `rate-overrides-2026-05.json` — filename now matches content). **Superseded in
+  v23.8.3:** that JSON was never read by any code path, so its bands never took
+  effect; they now live in `midwest-stack-authority.js` and the file is deleted.
+- Refreshed fuel baseline — this lives in `MW.fuelBaseline` (`app.js:5961`,
+  currently `3.55`), *not* in the rate-overrides JSON, which has no fuel field.
 - `midwest-stack-authority.js` version aligned to the app version (`VERSION` const + header).
 
 ---
@@ -373,7 +381,9 @@ left unmerged from prior audits.
 - Confirmed `rate-overrides-2026-07.json` is the correctly named file and that no
   active code, docs, or checklist reference the pre-rename filename (historical
   dated docs under `docs/` intentionally still name the file as it was at the time,
-  same convention as `app.js` changelog comments — left alone).
+  same convention as `app.js` changelog comments — left alone). *(This audit checked
+  the filename but not whether anything read the file — v23.8.3 found nothing did,
+  and deleted it.)*
 - Resolved comment-header version drift in `voice-load.js`, `sw-bridge.js`, and the
   `VERSION` constant in `midwest-stack-authority.js`.
 - Full version-string bump to 23.8.1 across all ten checklist locations.
@@ -412,13 +422,9 @@ identity chain end-to-end so `bidHistory` finally records real broker/lane keys.
   `broker` as `legacyUnkeyed: true` (nothing is deleted). `getBrokerIntel()` (the
   bidHistory-backed per-broker aggregator) and Counter-Offer Memory's history view
   now exclude `legacyUnkeyed` rows so old blank-broker rows don't pollute stats.
-- Known gap, not addressed here: `getBrokerIntel()`'s index query (used by
-  `mwEvaluateLoad`'s Personal Intelligence step) still looks up `bidHistory`'s
-  `broker` index using the raw, un-normalized `#mwBroker` value, so newly-normalized
-  rows written via the Omega writer and `logBid()` won't case-match until the read
-  side is normalized too. Left alone to keep this PR scoped to *recording* real
-  data — aligning the scoring-consumption read path is the natural next step,
-  same as the intelligence-bridge work already flagged below.
+- ~~Known gap: `getBrokerIntel()`'s index query still reads the raw,
+  un-normalized `#mwBroker` value.~~ **Closed in the v23.8.3 correctness pass** —
+  see below; both sides of the `bidHistory` broker index now agree.
 
 ---
 
@@ -452,14 +458,81 @@ right next to a green ACCEPT banner with no reconciliation between the two.
   `settings['mwLastInputs']`. Auto-filled from `parsed.customer` at all four
   load-intake entry points (Smart Load Inbox modal + Home card, F27 Load
   Intake, OCR quick-scan) when the parser found a broker/company name.
-- Known gap, not addressed here: `openBrokerNotes` (the "🗒️ Broker Notes"
-  button in the evaluator output) still keys off `dest || origin` as a
-  broker-notes stand-in — pre-existing, since no broker field existed until
-  now. Worth pointing it at `#mwBroker` in a follow-up, not done in this pass
-  to keep this change scoped to the scoring bridge.
+- ~~Known gap: `openBrokerNotes` still keys off `dest || origin`.~~ **Stale — this
+  bullet was already untrue when written.** v23.8.2 rekeyed Broker Notes off
+  `#mwBroker` via `normBroker()` with no destination/origin fallback
+  (`app.js:7169-7191`, `normalizeBrokerKey` at `app.js:14303`). Verified in the
+  v23.8.3 correctness pass; the v23.8.2 section above is the accurate one.
 - Not yet done: `reloadOutcomes` city-level reload scoring (`getCityReloadScore`)
   was already wired into `usaScoreLoad` pre-existing and is now correctly
   included in `personalScore` — no new work needed there.
+
+---
+
+## v23.8.3 — Correctness Pass
+
+Scoped correctness pass. No new features. Closes the broker-identity read/write
+mismatch left open by v23.8.2, fixes a function-shadowing bug found while
+auditing the call sites, and puts the July 2026 rate bands into actual effect.
+
+**`bidHistory` broker index — both sides now use `normBroker()`:**
+
+| Direction | Site | File:line | Before |
+|---|---|---|---|
+| Read | `getBrokerIntel()` | `app.js:12013` | `(broker||'').trim()` — raw case |
+| Read | Trip-detail counter intel | `app.js:2904` | `getAll(trip.customer)` — raw case |
+| Write | F29 `_savePostTripReview` | `app.js:12182` | `clampStr(trip.customer,60)` — raw case |
+| Write | Counter-Offer Memory `comSave` | `app.js:13993` | `clampStr(broker,80)` — raw case |
+| Write | Import sanitizer | `app.js:1476` | `clampStr(r.broker,80)` — raw case |
+| Write | `logBid()` | `app.js:12199` | caller-normalized only; now also normalizes internally |
+
+Already correct and unchanged: `omegaSaveToBidHistory` (`app.js:8083`).
+
+- Every writer now also stores `brokerDisplay` (trimmed original) so UI keeps
+  real casing while the index key stays normalized. `populateBrokerList()` and
+  Counter-Offer Memory's broker cards read `brokerDisplay || broker`.
+- Counter-Offer Memory's aggregation groups on `normBroker(r.broker)` via an
+  `Object.create(null)` map, so pre- and post-normalization rows collapse into one
+  card and a literal `__proto__` broker name cannot drop a bucket.
+- No existing rows migrated or rewritten. `legacyUnkeyed` handling is unchanged;
+  the trip-detail counter-intel reader now also filters `legacyUnkeyed` rows, matching
+  `getBrokerIntel()` and Counter-Offer Memory.
+
+**Function-shadowing bug (pre-existing, unrelated to the key mismatch):**
+Two top-level `getBrokerIntel()` declarations lived in the same IIFE scope —
+the F3 trips-based one and the v24.0.0 bidHistory aggregator declared ~174 lines
+later. Hoisting meant the v24 one won at *every* call site, so F3's
+`attachBrokerIntelToField` → `renderBrokerAlert` received the bidHistory record
+shape and threw on `avgRPM.toFixed(2)`, killing the broker alert under the trip
+form's Customer field. The F3 function is renamed `getBrokerTripIntel()`
+(`app.js:11834`, caller at `app.js:11895`); the bidHistory aggregator keeps the
+original name. Confirmed no other duplicate top-level function declarations in `app.js`.
+
+**Rate bands — July 2026 override put into effect:**
+`midwest-stack-authority.js` hardcoded `RATE_OVERRIDE_2026_05` (effectiveDate
+`2026-05-25`), and `rate-overrides-2026-07.json` — precached in the service-worker
+`CORE` array — was never read by any code path. The May *compression* bands had
+therefore stayed in force through a market that inverted to *tightening* in July,
+bidding roughly $0.15–0.25/mi low across the middle bands.
+
+- Const renamed `RATE_OVERRIDE_2026_07`, `effectiveDate` → `2026-07-09`, band values
+  transcribed verbatim from the July JSON. All three consumers updated
+  (`bandForMiles`, the `override` block in `assessLoad`, and the
+  `window.FreightLogicMidwestStack` export).
+- All five bands had a one-to-one July counterpart on matching mile ranges
+  (`longRecovery` ↔ `midLengthRecovery`); no May value was carried forward.
+- `extremeLongLock` source reads `1800+` / `1.50-1.90+`; the numeric array shape
+  cannot carry an open upper bound, so `9999` keeps the existing sentinel and `1.90`
+  is recorded as the stated premium floor, not a cap.
+- Inner keys (`compressedBands`, `realisticWin`, band names) intentionally unchanged
+  — renaming them touches `assessLoad` for no behavioural gain.
+- `rate-overrides-2026-07.json` **deleted**, removed from service-worker `CORE`, and
+  the `scripts/verify-cloudflare-parity.mjs` assertion that required it inverted to
+  assert it stays gone. Historical `docs/` references left alone per existing convention.
+- Evaluator scoring logic, hard floor, and DZ unlock floor untouched — bands only.
+
+**Also fixed:** `app.js:12780` fell back to a hardcoded `3.50` fuel price that had
+drifted from `MW.fuelBaseline` (`3.55`); it now reads the const.
 
 ---
 
