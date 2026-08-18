@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v23.8.2
+/* FreightLogic Midwest Stack v2 Authority Overlay v23.8.3
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '23.8.2';
+  const VERSION = '23.8.3';
   const UPDATED_AT = '2026-07-09';
 
   const CONFIG = Object.freeze({
@@ -91,16 +91,27 @@
     }
   });
 
-  const RATE_OVERRIDE_2026_05 = Object.freeze({
-    effectiveDate: '2026-05-25',
-    source: 'User-observed DispatchLand/Sylectus/RPP cargo-van clearing behavior and project screenshots',
-    rule: 'When user asks realistic or says forget thresholds, prioritize live board targets and observed clearing behavior over healthy-business thresholds.',
+  // v23.8.3: bands replaced with the July 2026 tightening-market override, which
+  // superseded the May compression table. Values are transcribed verbatim from the
+  // (now-deleted) rate-overrides-2026-07.json — that file was precached but never
+  // read by any code path, so the May numbers below had stayed in force since May.
+  // Inner key names (compressedBands / realisticWin / band keys) are deliberately
+  // left as-is — they are consumed by bandForMiles() and assessLoad(), and renaming
+  // them is structural churn with no behavioural gain.
+  const RATE_OVERRIDE_2026_07 = Object.freeze({
+    effectiveDate: '2026-07-09',
+    supersedes: 'May 2026 cargo-van compression override',
+    source: 'July 2026 tightening-market override — dry van spot at record highs, spot above contract (first since Feb 2022), linehaul +39% YoY, capacity contracting',
+    rule: 'True RPM remains the calculation authority. Do not import national dry-van gains 1:1 into cargo-van bids; Midwest-to-Midwest lanes lag national (+10-15% YoY). Broker urgency and repost behavior justify firmer counters than in H1.',
     compressedBands: {
-      shortLocal: { totalMiles: [0, 200], realisticWin: [1.60, 2.10], note: 'Short local/reposition loads can still show high True RPM but disappear fast.' },
-      mediumFeeder: { totalMiles: [200, 600], realisticWin: [1.10, 1.40], note: 'Feeder markets often clear below normal business floor.' },
-      longRecovery: { totalMiles: [600, 1000], realisticWin: [1.20, 1.45], note: 'Accept only when direction improves toward Tier 1 / Tier 2 density.' },
-      longDisplacement: { totalMiles: [1000, 1800], realisticWin: [1.20, 1.35], note: 'Reject if destination is trap/weak unless premium or recovery logic is clear.' },
-      extremeLongLock: { totalMiles: [1800, 9999], realisticWin: [1.35, 1.75], note: 'Premium-only when westbound, border, rural, or multi-day lock.' }
+      shortLocal: { totalMiles: [0, 200], realisticWin: [1.80, 2.40], note: 'Urgency premiums rising; bid/call fast, counter high first.' },
+      mediumFeeder: { totalMiles: [200, 600], realisticWin: [1.35, 1.65], note: 'Sub-1.40 acceptance is now positional-only, no longer a market default. Counter toward floor before conceding.' },
+      longRecovery: { totalMiles: [600, 1000], realisticWin: [1.40, 1.70], note: 'Tier 1/Tier 2 destination still required for the low end.' },
+      longDisplacement: { totalMiles: [1000, 1800], realisticWin: [1.35, 1.55], note: 'Weak-destination long-locks require premium; capacity scarcity is negotiating leverage.' },
+      // Source reads "1800+" and "1.50-1.90+"; the numeric shape has no way to carry
+      // the open upper bound, so 9999 keeps the existing sentinel and 1.90 is the
+      // stated premium floor, not a cap.
+      extremeLongLock: { totalMiles: [1800, 9999], realisticWin: [1.50, 1.90], note: 'Westbound/border/rural must clear premium; do not discount into displacement.' }
     }
   });
 
@@ -155,7 +166,7 @@
   }
 
   function bandForMiles(totalMiles){
-    const bands = RATE_OVERRIDE_2026_05.compressedBands;
+    const bands = RATE_OVERRIDE_2026_07.compressedBands;
     const list = Object.values(bands);
     // Use exclusive upper bound to prevent boundary overlap between adjacent bands
     for (let i = 0; i < list.length; i++) {
@@ -258,7 +269,7 @@
         verdict, action
       },
       risk: { score: Math.min(100, Math.round(risk * 100)), flags },
-      override: { effectiveDate: RATE_OVERRIDE_2026_05.effectiveDate, bandNote: band.note }
+      override: { effectiveDate: RATE_OVERRIDE_2026_07.effectiveDate, bandNote: band.note }
     };
   }
 
@@ -330,7 +341,7 @@
     version: VERSION,
     updatedAt: UPDATED_AT,
     config: CONFIG,
-    rateOverride: RATE_OVERRIDE_2026_05,
+    rateOverride: RATE_OVERRIDE_2026_07,
     assessLoad,
     classifyMarket
   });

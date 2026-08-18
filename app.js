@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.2 USA ENGINE
+/** FreightLogic v23.8.3 USA ENGINE
+ *  v23.8.3: Correctness pass — bidHistory broker index normalized on both read and
+ *           write paths, duplicate getBrokerIntel() shadowing resolved, July 2026
+ *           rate bands moved into the authority overlay (inert JSON deleted),
+ *           fuel-baseline fallback pointed at MW.fuelBaseline
  *  v23.8.2: Broker Identity Chain — bidHistory now records real broker/lane keys
  *           (Broker Notes rekeyed off #mwBroker, omegaSaveToBidHistory writer fixed,
  *           logBid() wired to a Won/Lost/Expired outcome control), DB v12→v13 migration
@@ -21,7 +25,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.2';
+const APP_VERSION = '23.8.3';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -51,7 +55,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.2 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.8.3 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -12772,7 +12776,8 @@ async function generateWeeklyPnL(weekId){
       expByCategory[cat] = (expByCategory[cat]||0) + amt;
     }
     const mpg = Number(getCachedSetting('vehicleMpg',6.5)||6.5);
-    const fuelPricePerGal = Number(getCachedSetting('fuelPrice',3.50)||3.50);
+    // v23.8.3: was a hardcoded 3.50 that drifted from MW.fuelBaseline; use the const.
+    const fuelPricePerGal = Number(getCachedSetting('fuelPrice',MW.fuelBaseline)||MW.fuelBaseline);
     const fuelEstimate = roundCents(((totalLoadedMi+totalDeadMi) / mpg) * fuelPricePerGal);
     const netIncome = roundCents(grossRev - totalExpenses);
     const avgRPM = (totalLoadedMi + totalDeadMi) > 0 ? roundCents(grossRev / (totalLoadedMi + totalDeadMi)) : 0;
