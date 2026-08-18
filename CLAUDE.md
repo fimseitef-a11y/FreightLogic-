@@ -412,13 +412,9 @@ identity chain end-to-end so `bidHistory` finally records real broker/lane keys.
   `broker` as `legacyUnkeyed: true` (nothing is deleted). `getBrokerIntel()` (the
   bidHistory-backed per-broker aggregator) and Counter-Offer Memory's history view
   now exclude `legacyUnkeyed` rows so old blank-broker rows don't pollute stats.
-- Known gap, not addressed here: `getBrokerIntel()`'s index query (used by
-  `mwEvaluateLoad`'s Personal Intelligence step) still looks up `bidHistory`'s
-  `broker` index using the raw, un-normalized `#mwBroker` value, so newly-normalized
-  rows written via the Omega writer and `logBid()` won't case-match until the read
-  side is normalized too. Left alone to keep this PR scoped to *recording* real
-  data — aligning the scoring-consumption read path is the natural next step,
-  same as the intelligence-bridge work already flagged below.
+- ~~Known gap: `getBrokerIntel()`'s index query still reads the raw,
+  un-normalized `#mwBroker` value.~~ **Closed in the v23.8.3 correctness pass** —
+  see below; both sides of the `bidHistory` broker index now agree.
 
 ---
 
@@ -452,14 +448,55 @@ right next to a green ACCEPT banner with no reconciliation between the two.
   `settings['mwLastInputs']`. Auto-filled from `parsed.customer` at all four
   load-intake entry points (Smart Load Inbox modal + Home card, F27 Load
   Intake, OCR quick-scan) when the parser found a broker/company name.
-- Known gap, not addressed here: `openBrokerNotes` (the "🗒️ Broker Notes"
-  button in the evaluator output) still keys off `dest || origin` as a
-  broker-notes stand-in — pre-existing, since no broker field existed until
-  now. Worth pointing it at `#mwBroker` in a follow-up, not done in this pass
-  to keep this change scoped to the scoring bridge.
+- ~~Known gap: `openBrokerNotes` still keys off `dest || origin`.~~ **Stale — this
+  bullet was already untrue when written.** v23.8.2 rekeyed Broker Notes off
+  `#mwBroker` via `normBroker()` with no destination/origin fallback
+  (`app.js:7169-7191`, `normalizeBrokerKey` at `app.js:14303`). Verified in the
+  v23.8.3 correctness pass; the v23.8.2 section above is the accurate one.
 - Not yet done: `reloadOutcomes` city-level reload scoring (`getCityReloadScore`)
   was already wired into `usaScoreLoad` pre-existing and is now correctly
   included in `personalScore` — no new work needed there.
+
+---
+
+## v23.8.3 — Broker Index Correctness Pass (unreleased — version NOT yet bumped)
+
+Scoped correctness pass. No new features. Closes the broker-identity read/write
+mismatch left open by v23.8.2 and fixes a function-shadowing bug found while
+auditing the call sites.
+
+**`bidHistory` broker index — both sides now use `normBroker()`:**
+
+| Direction | Site | File:line | Before |
+|---|---|---|---|
+| Read | `getBrokerIntel()` | `app.js:12013` | `(broker||'').trim()` — raw case |
+| Read | Trip-detail counter intel | `app.js:2904` | `getAll(trip.customer)` — raw case |
+| Write | F29 `_savePostTripReview` | `app.js:12182` | `clampStr(trip.customer,60)` — raw case |
+| Write | Counter-Offer Memory `comSave` | `app.js:13993` | `clampStr(broker,80)` — raw case |
+| Write | Import sanitizer | `app.js:1476` | `clampStr(r.broker,80)` — raw case |
+| Write | `logBid()` | `app.js:12199` | caller-normalized only; now also normalizes internally |
+
+Already correct and unchanged: `omegaSaveToBidHistory` (`app.js:8083`).
+
+- Every writer now also stores `brokerDisplay` (trimmed original) so UI keeps
+  real casing while the index key stays normalized. `populateBrokerList()` and
+  Counter-Offer Memory's broker cards read `brokerDisplay || broker`.
+- Counter-Offer Memory's aggregation groups on `normBroker(r.broker)` via an
+  `Object.create(null)` map, so pre- and post-normalization rows collapse into one
+  card and a literal `__proto__` broker name cannot drop a bucket.
+- No existing rows migrated or rewritten. `legacyUnkeyed` handling is unchanged;
+  the trip-detail counter-intel reader now also filters `legacyUnkeyed` rows, matching
+  `getBrokerIntel()` and Counter-Offer Memory.
+
+**Function-shadowing bug (pre-existing, unrelated to the key mismatch):**
+Two top-level `getBrokerIntel()` declarations lived in the same IIFE scope —
+the F3 trips-based one and the v24.0.0 bidHistory aggregator declared ~174 lines
+later. Hoisting meant the v24 one won at *every* call site, so F3's
+`attachBrokerIntelToField` → `renderBrokerAlert` received the bidHistory record
+shape and threw on `avgRPM.toFixed(2)`, killing the broker alert under the trip
+form's Customer field. The F3 function is renamed `getBrokerTripIntel()`
+(`app.js:11834`, caller at `app.js:11895`); the bidHistory aggregator keeps the
+original name. Confirmed no other duplicate top-level function declarations in `app.js`.
 
 ---
 

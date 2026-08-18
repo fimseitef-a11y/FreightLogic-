@@ -1470,7 +1470,11 @@ async function importJSON(file, opts={}){
     }));
     const safeBidHistoryArr = arr(data.bidHistory).filter(r => r && typeof r === 'object').map(r => ({
       ...deepCleanObj(r),
-      broker: clampStr(r.broker || '', 80),
+      // Import is a write into the broker index, so it normalizes like every other
+      // writer — otherwise restoring a pre-normalization backup reintroduces the
+      // raw-case keys that never index-match. Original text kept in brokerDisplay.
+      broker: normBroker(clampStr(r.broker || '', 80)),
+      brokerDisplay: clampStr(r.brokerDisplay || r.broker || '', 80),
       lane: clampStr(r.lane || '', 120),
     }));
     const safeDocumentsArr = arr(data.documents).filter(r => r && typeof r === 'object').map(r => ({
@@ -2896,7 +2900,9 @@ function openScoreBreakdown(trip, score){
       (async () => {
         try {
           const {stores} = tx('bidHistory');
-          const allBids = await idbReq(stores.bidHistory.index('broker').getAll(trip.customer));
+          // Same normalized identity as every bidHistory writer/reader.
+          const allBids = (await idbReq(stores.bidHistory.index('broker').getAll(normBroker(trip.customer))))
+            .filter(b => !b.legacyUnkeyed);
           if (allBids && allBids.length >= 2) {
             const accepted = allBids.filter(b => b.outcome === 'accepted' || b.outcome === 'partial');
             const pct = Math.round((accepted.length / allBids.length) * 100);
@@ -11820,7 +11826,12 @@ function openQuickEvalFlow(){
 }
 
 // ── F3: Broker Intelligence Alerts ──────────────────────────────────────
-async function getBrokerIntel(company){
+// NOTE: renamed from getBrokerIntel() — a second, unrelated top-level
+// getBrokerIntel() (the v24.0.0 bidHistory aggregator) was declared later in this
+// same IIFE scope and silently shadowed this one at every call site via hoisting,
+// so renderBrokerAlert() received the bidHistory record shape and threw on
+// `avgRPM.toFixed()`. This one reads `trips`; the bidHistory one keeps the old name.
+async function getBrokerTripIntel(company){
   if (!company || company.length < 2) return null;
   const norm = company.trim().toLowerCase();
   try {
@@ -11881,7 +11892,7 @@ function attachBrokerIntelToField(inputEl, containerEl){
     _timer = setTimeout(async ()=>{
       const val = (inputEl.value||'').trim();
       if (val.length < 2){ const ex = containerEl.querySelector('.broker-intel-alert'); if (ex) ex.remove(); return; }
-      const intel = await getBrokerIntel(val);
+      const intel = await getBrokerTripIntel(val);
       renderBrokerAlert(containerEl, intel, val);
     }, 350);
   });
@@ -11995,7 +12006,11 @@ function renderLaneIntelHTML(intel){
 // log) into one per-broker signal so it can feed usaScoreLoad's scoring instead
 // of sitting display-only in the Counter-Offer Memory and trip-detail panels.
 async function getBrokerIntel(broker){
-  const bk = (broker || '').trim();
+  // Read path must use the same identity function as every bidHistory writer
+  // (omegaSaveToBidHistory, logBid, F29 reviews, Counter-Offer Memory), otherwise
+  // "Acme Logistics" typed into #mwBroker never index-matches the stored
+  // "acme logistics" and the whole personal-intelligence signal reads as no-data.
+  const bk = normBroker(broker);
   if (!bk) return null;
   try {
     const {stores} = tx('bidHistory');
@@ -12160,9 +12175,11 @@ async function _savePostTripReview(trip, answers){
 
     // Also store broker feedback in bidHistory for broker grading
     if (answers.brokerPay && trip.customer){
-      const bk = clampStr(trip.customer, 60);
+      // Normalized key for the broker index; raw text kept in brokerDisplay for UI.
+      const bkRaw = clampStr(trip.customer, 60);
+      const bk = normBroker(bkRaw);
       const {t, stores: ws} = tx('bidHistory','readwrite');
-      ws.bidHistory.put({ id: 'brev_' + now, broker: bk, paySpeed: answers.brokerPay, lane, orderNo: trip.orderNo||'', created: now });
+      ws.bidHistory.put({ id: 'brev_' + now, broker: bk, brokerDisplay: bkRaw, paySpeed: answers.brokerPay, lane, orderNo: trip.orderNo||'', created: now });
       await waitTxn(t);
     }
   } catch(e){ console.warn('[FL] _savePostTripReview:', e); }
@@ -12177,7 +12194,10 @@ async function logBid({ loadId, broker, origin, destination, miles, postedTarget
   const record = {
     id,
     loadId: clampStr(loadId || '', 60),
-    broker: clampStr(broker || '', 80),
+    // Normalize here too, not just at the call site, so any future caller
+    // passing raw text still lands on the same broker index key.
+    broker: normBroker(clampStr(broker || '', 80)),
+    brokerDisplay: clampStr(broker || '', 80),
     origin: clampStr(origin || '', 80),
     destination: clampStr(destination || '', 80),
     miles: posNum(miles),
@@ -13904,10 +13924,14 @@ async function openCounterOfferMemory(){
       }
 
       // Aggregate by broker
-      const brokerMap = {};
+      // Group on the normalized broker key so rows written before/after key
+      // normalization collapse into one card; show the raw text when we have it.
+      // Object.create(null) — broker text is user input, so a literal "__proto__"
+      // must not land on Object.prototype or silently drop the bucket.
+      const brokerMap = Object.create(null);
       for (const r of all){
-        const b = r.broker || 'Unknown';
-        if (!brokerMap[b]) brokerMap[b] = { broker: b, records: [], wins: 0 };
+        const b = normBroker(r.broker) || 'unknown';
+        if (!brokerMap[b]) brokerMap[b] = { broker: r.brokerDisplay || r.broker || 'Unknown', records: [], wins: 0 };
         brokerMap[b].records.push(r);
         if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
       }
@@ -13965,7 +13989,9 @@ async function openCounterOfferMemory(){
     try {
       const rec = {
         id:        Date.now() + Math.random(),
-        broker:    clampStr(broker, 80),
+        // Normalized key for the broker index; raw text kept in brokerDisplay for UI.
+        broker:        normBroker(clampStr(broker, 80)),
+        brokerDisplay: clampStr(broker, 80),
         lane:      clampStr(lane, 80),
         offerAmt:  offer,
         counterAmt:counter,
