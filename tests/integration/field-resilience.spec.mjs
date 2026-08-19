@@ -161,28 +161,32 @@ test('[FINDING PHASE-4 / offline-reconnect] reconnecting does not duplicate, los
 });
 
 // ============================================================
-// NEW FINDING F-8 (Critical) — discovered while building the offline
-// expense-entry scenario above. NOT offline-specific: reproduces online too
-// (verified below). Add Expense and Add Fuel are both completely broken for
-// every brand-new record.
+// FINDING F-8 (Critical) — FIXED. Discovered while building the offline
+// expense-entry scenario above; was never offline-specific (reproduced online
+// too). Add Expense and Add Fuel were both completely broken for every
+// brand-new record.
 // ============================================================
-// sanitizeExpense() (app.js:1044) and sanitizeFuel() (app.js:1120) both do:
+// sanitizeExpense() (app.js:1044) and sanitizeFuel() (app.js:1120) both did:
 //   id: raw.id ? intNum(raw.id, 0, 1e12) : undefined
-// For a new record raw.id is absent, so this puts an EXPLICIT `id: undefined`
+// For a new record raw.id is absent, so this put an EXPLICIT `id: undefined`
 // property on the object handed to store.add(). Per the IndexedDB spec, an
 // object store with keyPath 'id' + autoIncrement:true only lets
 // auto-increment fill in the key when the keyPath property is ABSENT — an
 // explicitly-present `id: undefined` is evaluated as a real (invalid) key
-// and add() throws synchronously: "Failed to execute 'add' on
+// and add() threw synchronously: "Failed to execute 'add' on
 // 'IDBObjectStore': Evaluating the object store's key path yielded a value
-// that is not a valid key." Neither addExpense() nor addFuel() wraps the
-// call in try/catch, so this is an uncaught exception — no toast, no error
-// shown, the Save button just does nothing and the modal never closes. The
-// record is never written. Confirmed the exact same shape via a raw
-// (app-bypassing) IndexedDB call: `{ id: undefined, ... }` throws on this
-// store; the identical object with the `id` key simply omitted succeeds
-// with an auto-generated key.
-test('[FINDING F-8 / NEW, Critical] Add Expense is completely broken for every new expense — uncaught IndexedDB key-path error, no error shown, nothing saved', async () => {
+// that is not a valid key." addExpense()'s caller had no try/catch, so it was
+// an uncaught exception — no toast, no error shown, the Save button just did
+// nothing and the modal never closed.
+//
+// The fix omits the key entirely for a new record:
+//   ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {})
+// The edit path is unchanged (raw.id truthy -> the key is set as before). The
+// expense save handler (app.js:9268) also gained the try/catch the fuel
+// handler already had, so a future storage error surfaces instead of being
+// swallowed. See tests/unit/pure-functions.spec.mjs for the sanitizer-level
+// assertions; these two drive the real UI end to end.
+test('[FINDING F-8 / FIXED] Add Expense writes the record, closes the modal, and throws nothing', async () => {
   const pageErrors = [];
   app.page.on('pageerror', (e) => pageErrors.push(e.message));
 
@@ -195,15 +199,29 @@ test('[FINDING F-8 / NEW, Critical] Add Expense is completely broken for every n
 
   const modalStillOpen = await app.page.evaluate(() => !!document.getElementById('f_amt'));
   const countAfter = await getStoreCount(app.page, 'expenses');
-  console.log(`    [evidence] page error thrown by the click: ${JSON.stringify(pageErrors.find(m => m.includes('IDBObjectStore')) || pageErrors[0] || '(none captured)')}`);
+  console.log(`    [evidence] page errors thrown by the click: ${JSON.stringify(pageErrors)}`);
   console.log(`    [evidence] expenses count before=${countBefore}, after=${countAfter}; modal still open=${modalStillOpen}`);
 
-  ok(pageErrors.some(m => /IDBObjectStore.*key path.*not a valid key/i.test(m)),
-    `expected the uncaught DataError from addExpense() (app.js:1065, store.expenses.add(e) with an explicit id:undefined) — page errors seen: ${JSON.stringify(pageErrors)}`);
-  eq(countAfter, countBefore, 'CONFIRMED BUG: the expense is never written — Save silently does nothing (no toast, no validation hint, modal stays open) because the exception is uncaught');
+  ok(!pageErrors.some(m => /IDBObjectStore.*key path.*not a valid key/i.test(m)),
+    `addExpense() (app.js:1065) must no longer throw the key-path DataError — page errors seen: ${JSON.stringify(pageErrors)}`);
+  eq(countAfter, countBefore + 1, 'the expense must actually be written to the expenses store');
+  eq(modalStillOpen, false, 'the modal must close on a successful save (it stayed open when the exception was uncaught)');
+
+  // The auto-generated key is what the bug prevented — assert it landed.
+  const savedId = await app.page.evaluate(() => new Promise((resolve) => {
+    const req = indexedDB.open('FreightLogic_v18');
+    req.onsuccess = () => {
+      const db = req.result;
+      const r = db.transaction('expenses').objectStore('expenses').getAll();
+      r.onsuccess = () => { const rows = r.result || []; db.close(); resolve(rows.length ? rows[rows.length - 1].id : null); };
+      r.onerror = () => { db.close(); resolve(null); };
+    };
+  }));
+  console.log(`    [evidence] auto-generated id on the saved expense: ${JSON.stringify(savedId)}`);
+  ok(typeof savedId === 'number' && savedId > 0, `the stored expense must carry a real auto-increment key — got ${JSON.stringify(savedId)}`);
 });
 
-test('[FINDING F-8 / NEW, Critical] confirmed NOT offline-specific — the identical crash happens fully online, and Add Fuel has the same bug pattern', async () => {
+test('[FINDING F-8 / FIXED] Add Fuel writes the record too — and the raw IndexedDB semantics behind the bug are unchanged', async () => {
   await app.context.setOffline(false);
   await app.page.reload();
   await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
@@ -211,37 +229,59 @@ test('[FINDING F-8 / NEW, Critical] confirmed NOT offline-specific — the ident
   const pageErrors = [];
   app.page.on('pageerror', (e) => pageErrors.push(e.message));
 
-  // Add Expense, fully online this time.
-  await openAddExpense(app.page);
-  await app.page.fill('#f_amt', '12.34');
+  // Add Fuel through the real UI. sanitizeFuel() (app.js:1120) had the
+  // byte-for-byte identical id pattern feeding addFuel()'s store.fuel.add(x)
+  // (app.js:1129), against a fuel store that is also
+  // { keyPath:'id', autoIncrement:true }.
+  const fuelBefore = await getStoreCount(app.page, 'fuel');
+  await app.page.evaluate(() => { location.hash = '#fuel'; });
+  await app.page.waitForSelector('#btnAddFuel2', { timeout: 5000 });
+  await app.page.click('#btnAddFuel2');
+  await app.page.waitForSelector('#f_gal', { timeout: 5000 });
+  await app.page.fill('#f_gal', '18.2');
+  await app.page.fill('#f_amt', '64.70');
+  await app.page.fill('#f_state', 'IL');
   await app.page.click('#f_save');
-  await app.page.waitForTimeout(600);
-  const expenseCrashedOnline = pageErrors.some(m => /IDBObjectStore.*key path/i.test(m));
-  console.log(`    [evidence] online Add Expense also throws: ${expenseCrashedOnline}`);
-  ok(expenseCrashedOnline, 'expected the identical crash with no network involved at all — this rules out anything offline-specific; it is a pure sanitizeExpense()/addExpense() bug');
+  await app.page.waitForTimeout(800);
+  const fuelAfter = await getStoreCount(app.page, 'fuel');
+  const fuelModalOpen = await app.page.evaluate(() => !!document.getElementById('f_gal'));
+  console.log(`    [evidence] fuel count before=${fuelBefore}, after=${fuelAfter}; modal still open=${fuelModalOpen}`);
+  console.log(`    [evidence] page errors during Add Fuel: ${JSON.stringify(pageErrors)}`);
+  eq(fuelAfter, fuelBefore + 1, 'the fuel record must actually be written (this was broken identically to the expense case)');
+  eq(fuelModalOpen, false, 'the fuel modal must close on a successful save');
 
-  // Add Fuel — sanitizeFuel() (app.js:1120) has the byte-for-byte identical
-  // `id: raw.id ? intNum(...) : undefined` pattern feeding addFuel()'s
-  // store.fuel.add(x) (app.js:1129), against a fuel store that is also
-  // { keyPath:'id', autoIncrement:true }. Confirmed via a raw IndexedDB call
-  // matching sanitizeFuel()'s exact output shape (not exercised through the
-  // Fuel UI here to keep this test focused, since the failure mechanism —
-  // and the fix — are identical to the expense case above).
-  const fuelResult = await app.page.evaluate(() => new Promise((resolve) => {
+  // Regression guard on the underlying platform behavior the fix depends on:
+  // an explicit `id: undefined` is still rejected by IndexedDB, while the same
+  // object with the key OMITTED still succeeds. If this ever flips, the reason
+  // the fix works has changed and the sanitizers deserve a fresh look.
+  const rawShapes = await app.page.evaluate(() => new Promise((resolve) => {
+    const base = { date: '2026-08-19', gallons: 10, amount: 40, state: 'IL', notes: '', created: Date.now(), updated: Date.now(), updatedAt: Date.now() };
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => {
       const db = req.result;
+      const out = {};
       const txn = db.transaction('fuel', 'readwrite');
+      const store = txn.objectStore('fuel');
       try {
-        const r = txn.objectStore('fuel').add({ id: undefined, date: '2026-08-19', gallons: 10, amount: 40, state: 'IL', notes: '', created: Date.now(), updated: Date.now(), updatedAt: Date.now() });
-        r.onsuccess = () => resolve({ ok: true });
-        r.onerror = () => resolve({ ok: false, err: r.error?.message });
-      } catch (e) { resolve({ ok: false, thrown: e.message }); }
+        const r = store.add({ id: undefined, ...base });
+        r.onsuccess = () => { out.withUndefinedId = { ok: true }; };
+        r.onerror = () => { out.withUndefinedId = { ok: false, err: r.error?.message }; };
+      } catch (e) { out.withUndefinedId = { ok: false, thrown: e.message }; }
+      try {
+        const r2 = store.add({ ...base });
+        r2.onsuccess = () => { out.withKeyOmitted = { ok: true, key: r2.result }; };
+        r2.onerror = () => { out.withKeyOmitted = { ok: false, err: r2.error?.message }; };
+      } catch (e) { out.withKeyOmitted = { ok: false, thrown: e.message }; }
+      txn.oncomplete = () => { db.close(); resolve(out); };
+      txn.onerror = () => { db.close(); resolve(out); };
     };
   }));
-  console.log(`    [evidence] raw IndexedDB add() against the 'fuel' store with sanitizeFuel()'s exact output shape: ${JSON.stringify(fuelResult)}`);
-  ok(!fuelResult.ok && /key path/i.test(fuelResult.thrown || fuelResult.err || ''),
-    `expected addFuel() to have the identical bug via sanitizeFuel()'s identical id:undefined pattern — got ${JSON.stringify(fuelResult)}`);
+  console.log(`    [evidence] raw add() with an explicit id:undefined (the old shape): ${JSON.stringify(rawShapes.withUndefinedId)}`);
+  console.log(`    [evidence] raw add() with the id key omitted (the fixed shape): ${JSON.stringify(rawShapes.withKeyOmitted)}`);
+  ok(rawShapes.withUndefinedId && !rawShapes.withUndefinedId.ok && /key path/i.test(rawShapes.withUndefinedId.thrown || rawShapes.withUndefinedId.err || ''),
+    `an explicit id:undefined must still be rejected — got ${JSON.stringify(rawShapes.withUndefinedId)}`);
+  ok(rawShapes.withKeyOmitted && rawShapes.withKeyOmitted.ok && typeof rawShapes.withKeyOmitted.key === 'number',
+    `omitting the id key must still auto-generate one — got ${JSON.stringify(rawShapes.withKeyOmitted)}`);
 });
 
 // ============================================================
@@ -384,90 +424,132 @@ async function launchGpsApp() {
   return gpsApp;
 }
 
-test('[FINDING F-7 / NEW, High] a single transient GPS error kills the live tab\'s tracking UI; recovery only exists via an undocumented reload, and the visible "Start Trip" affordance instead creates a fresh session that abandons the old miles', async () => {
+// F-7 was fixed by making a GPS error never end the session. The old error
+// handler (app.js:14871-14880) treated every PositionError code identically:
+// toast, `_activeTracking = null`, re-render idle. It never cleared
+// sessionStorage['fl_active_tracking'] (only stopTripTracking() does), so the
+// trip LOOKED lost but wasn't — and the only visible affordance left,
+// "Start Trip", minted a fresh trackingId and orphaned the old session's miles
+// for good. The session now stays alive in a degraded state (Stop & Save keeps
+// working, which is what salvages the miles), and any record left behind by an
+// unclean teardown is offered for resume instead of silently discarded.
+test('[FINDING F-7 / FIXED] sustained GPS signal loss keeps the session alive and degrades the UI honestly, instead of tearing the trip down', async () => {
   const gpsApp = await launchGpsApp();
   try {
     await gpsApp.page.click('#f21StartBtn');
     await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
-    const activeText = await gpsApp.page.textContent('#f21TrackArea');
-    ok(activeText.includes('Trip in progress'), `tracking should be active after Start — got ${JSON.stringify(activeText)}`);
-
     const trackingIdBefore = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
     ok(trackingIdBefore, 'sanity: an active session should be persisted to sessionStorage');
 
-    // Any ordinary position update (the driver's GPS coordinate simply
-    // changing, which happens continuously while driving) is what triggers
-    // this in Chromium's geolocation provider — a ONE-EVENT transient
-    // PositionError (code 2, POSITION_UNAVAILABLE) fires immediately before
-    // the updated fix is delivered. This mirrors a real, ordinary driving
-    // scenario: a tunnel, a parking garage, an urban canyon, or a brief
-    // GPS/cell handoff can all produce exactly this kind of single transient
-    // "position unavailable" blink without any real loss of GPS signal.
-    await gpsApp.context.setGeolocation({ latitude: 41.8790, longitude: -87.6300, accuracy: 10 });
+    // Sustained POSITION_UNAVAILABLE. CDP's Emulation.setGeolocationOverride
+    // with no parameters emulates "position unavailable" for as long as it is
+    // set — unlike context.setGeolocation(), which in Chromium emits only a
+    // one-event transient error before delivering the new fix. This models the
+    // real scenario: a tunnel, a parking garage, an urban canyon.
+    const cdp = await gpsApp.context.newCDPSession(gpsApp.page);
+    await cdp.send('Emulation.setGeolocationOverride', {});
     await gpsApp.page.waitForTimeout(1500);
 
-    const idleText = await gpsApp.page.textContent('#f21TrackArea');
+    const lostText = await gpsApp.page.textContent('#f21TrackArea');
     const toastTxt = await gpsApp.page.textContent('#toast').catch(() => '');
-    // app.js:14871-14880's error handler nulls _activeTracking and re-renders
-    // idle, but never calls sessionStorage.removeItem('fl_active_tracking')
-    // (only stopTripTracking() does that) — so the stale resume record is
-    // still sitting there, unbeknownst to the live tab's own UI.
-    const staleRecord = await gpsApp.page.evaluate(() => sessionStorage.getItem('fl_active_tracking'));
-    console.log(`    [evidence] track area after ONE transient GPS error: ${JSON.stringify(idleText)}`);
+    const recordDuringLoss = await gpsApp.page.evaluate(() => sessionStorage.getItem('fl_active_tracking'));
+    const stopBtnPresent = await gpsApp.page.evaluate(() => !!document.getElementById('f21StopBtn'));
+    console.log(`    [evidence] track area during sustained signal loss: ${JSON.stringify(lostText)}`);
     console.log(`    [evidence] toast shown: ${JSON.stringify(toastTxt)}`);
-    console.log(`    [evidence] sessionStorage record survives the crash (app.js's error handler never clears it): ${JSON.stringify(staleRecord)}`);
+    console.log(`    [evidence] Stop & Save still reachable during the outage: ${stopBtnPresent}`);
 
-    ok(idleText.includes('Start Trip'),
-      'CONFIRMED BUG: a single transient location error tears down the LIVE tab\'s tracking UI back to idle "Start Trip" — ' +
-      `no in-tab retry or grace window before abandoning an in-progress trip. Got: ${JSON.stringify(idleText)}`);
-    ok(/couldn.?t get your location|location.*denied|location timed out/i.test(toastTxt),
-      `a toast IS shown — got ${JSON.stringify(toastTxt)}`);
+    ok(lostText.includes('Trip in progress'),
+      `the session must survive a GPS outage — the card should still read "Trip in progress", got ${JSON.stringify(lostText)}`);
+    ok(/GPS signal lost/i.test(lostText),
+      `the outage must be surfaced honestly rather than showing a stale accuracy chip — got ${JSON.stringify(lostText)}`);
+    ok(stopBtnPresent, 'Stop & Save must stay reachable during an outage — that button is what salvages the accumulated miles');
+    ok(/still tracking/i.test(toastTxt), `the toast must reassure that tracking continues — got ${JSON.stringify(toastTxt)}`);
 
-    // Reload IS a working recovery path (resumeTrackingIfActive(), app.js:15007,
-    // reads the still-present sessionStorage record on boot and re-arms
-    // watchPosition with the old trackingId + accumulated totalMiles intact).
-    await gpsApp.page.reload();
-    await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
-    await gpsApp.page.waitForTimeout(500);
-    const afterReloadText = await gpsApp.page.textContent('#f21TrackArea');
-    const resumeToast = await gpsApp.page.textContent('#toast').catch(() => '');
-    console.log(`    [evidence] track area after reloading the tab: ${JSON.stringify(afterReloadText)}`);
-    console.log(`    [evidence] toast on reload: ${JSON.stringify(resumeToast)}`);
-    ok(afterReloadText.includes('Trip in progress'),
-      `a page reload DOES recover the session via resumeTrackingIfActive() — got ${JSON.stringify(afterReloadText)}. ` +
-      'This is the actual bug: recovery exists, but nothing in the crashed tab\'s own UI tells the driver reloading would help.');
-    eq(resumeToast, 'Trip tracking resumed.', 'expected the resumeTrackingIfActive() toast confirming the SAME session (same trackingId/miles) came back');
+    const trackingIdDuringLoss = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
+    eq(trackingIdDuringLoss, trackingIdBefore, 'the outage must not roll the session over to a new trackingId');
+    ok(recordDuringLoss, 'the persisted resume record must still be present');
+
+    // Signal returns: the degraded indicator must clear on the next good fix.
+    await cdp.send('Emulation.setGeolocationOverride', { latitude: 41.8790, longitude: -87.6300, accuracy: 10 });
+    await gpsApp.page.waitForTimeout(1500);
+    const recoveredText = await gpsApp.page.textContent('#f21TrackArea');
+    console.log(`    [evidence] track area after the signal returns: ${JSON.stringify(recoveredText)}`);
+    ok(!/GPS signal lost/i.test(recoveredText),
+      `the signal-lost indicator must clear once a fix returns — got ${JSON.stringify(recoveredText)}`);
+    ok(recoveredText.includes('Trip in progress'), `still the same live session after recovery — got ${JSON.stringify(recoveredText)}`);
   } finally {
     await gpsApp.close();
   }
 });
 
-test('[FINDING F-7 / NEW, High] the ONLY visible affordance after the crash ("Start Trip") does not use the reload recovery path — it silently starts a brand-new session, abandoning the old one\'s accumulated miles for good', async () => {
+test('[FINDING F-7 / FIXED] a tracking record left behind by an unclean teardown is offered for resume — tapping "Start Trip" no longer silently abandons it', async () => {
   const gpsApp = await launchGpsApp();
   try {
     await gpsApp.page.click('#f21StartBtn');
     await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
-    const trackingIdBefore = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
+    await gpsApp.page.waitForTimeout(500);
+    const savedRecord = await gpsApp.page.evaluate(() => sessionStorage.getItem('fl_active_tracking'));
+    const trackingIdBefore = JSON.parse(savedRecord).trackingId;
 
-    await gpsApp.context.setGeolocation({ latitude: 41.8790, longitude: -87.6300, accuracy: 10 });
-    await gpsApp.page.waitForTimeout(1500);
-    await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 }); // back to idle
+    // Reproduce the state an unclean teardown leaves behind: the persisted
+    // record survives, but the in-memory session is gone. Boot with the record
+    // absent (so resumeTrackingIfActive() doesn't auto-resume it), then put it
+    // back — that is exactly the situation the old error handler created, and
+    // the one where "Start Trip" used to destroy the trip.
+    await gpsApp.page.evaluate(() => sessionStorage.removeItem('fl_active_tracking'));
+    await gpsApp.page.reload();
+    await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 });
+    await gpsApp.page.evaluate((rec) => sessionStorage.setItem('fl_active_tracking', rec), savedRecord);
 
-    // The natural driver action: the UI says "Start Trip", so tap it again.
+    // The natural driver action: the UI says "Start Trip", so tap it.
     await gpsApp.page.click('#f21StartBtn');
+    await gpsApp.page.waitForSelector('#trkResume', { timeout: 5000 });
+    const modalText = await gpsApp.page.textContent('#modalBody').catch(async () => await gpsApp.page.textContent('body'));
+    console.log(`    [evidence] tapping "Start Trip" with a session record present now opens the resume prompt: ${JSON.stringify((modalText || '').slice(0, 160))}`);
+    ok(/trip already in progress/i.test(modalText), `the resume prompt must explain there is a trip in progress — got ${JSON.stringify(modalText)}`);
+
+    await gpsApp.page.click('#trkResume');
     await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
     const trackingIdAfter = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
-
-    console.log(`    [evidence] trackingId before crash: ${trackingIdBefore}, trackingId after tapping "Start Trip" again: ${trackingIdAfter}`);
-    ok(trackingIdBefore && trackingIdAfter && trackingIdBefore !== trackingIdAfter,
-      'CONFIRMED: tapping the visible "Start Trip" button after a crash creates a BRAND NEW trackingId/session (startTripTracking() only checks `if (_activeTracking) return`, which is false since the crash nulled it) — ' +
-      'the old session\'s gpsLogs/accumulated miles are orphaned, not resumed. The only way to actually get them back is the undiscoverable "reload the page" path proven in the previous test.');
+    console.log(`    [evidence] trackingId before: ${trackingIdBefore}, after choosing Resume: ${trackingIdAfter}`);
+    eq(trackingIdAfter, trackingIdBefore,
+      'Resume must continue the SAME session (same trackingId, so the accumulated miles and gpsLogs are kept) rather than minting a new one');
   } finally {
     await gpsApp.close();
   }
 });
 
-test('[FINDING F-7 / NEW] permission revoked mid-trip hits the identical no-tolerance teardown path as a transient GPS blip', async () => {
+test('[FINDING F-7 / FIXED] discarding a recovered session is still possible, but only as an explicit labelled choice', async () => {
+  const gpsApp = await launchGpsApp();
+  try {
+    await gpsApp.page.click('#f21StartBtn');
+    await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
+    await gpsApp.page.waitForTimeout(500);
+    const savedRecord = await gpsApp.page.evaluate(() => sessionStorage.getItem('fl_active_tracking'));
+    const trackingIdBefore = JSON.parse(savedRecord).trackingId;
+
+    await gpsApp.page.evaluate(() => sessionStorage.removeItem('fl_active_tracking'));
+    await gpsApp.page.reload();
+    await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 });
+    await gpsApp.page.evaluate((rec) => sessionStorage.setItem('fl_active_tracking', rec), savedRecord);
+
+    await gpsApp.page.click('#f21StartBtn');
+    await gpsApp.page.waitForSelector('#trkNew', { timeout: 5000 });
+    await gpsApp.page.click('#trkNew');
+    await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
+    const trackingIdAfter = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
+
+    console.log(`    [evidence] trackingId before: ${trackingIdBefore}, after choosing "Discard & Start New": ${trackingIdAfter}`);
+    ok(trackingIdBefore && trackingIdAfter && trackingIdBefore !== trackingIdAfter,
+      'the explicit "Discard & Start New" choice must still start a fresh session — the finding was that this happened SILENTLY, not that it should be impossible');
+  } finally {
+    await gpsApp.close();
+  }
+});
+
+test('[FINDING F-7 / FIXED] permission revoked mid-trip pauses the session instead of destroying it — the miles stay salvageable', async () => {
   const gpsApp = await launchGpsApp();
   try {
     await gpsApp.page.click('#f21StartBtn');
@@ -476,14 +558,28 @@ test('[FINDING F-7 / NEW] permission revoked mid-trip hits the identical no-tole
     await gpsApp.context.clearPermissions();
     await gpsApp.page.waitForTimeout(1500);
 
-    const idleText = await gpsApp.page.textContent('#f21TrackArea');
+    const pausedText = await gpsApp.page.textContent('#f21TrackArea');
     const toastTxt = await gpsApp.page.textContent('#toast').catch(() => '');
-    console.log(`    [evidence] track area after permission revoked mid-trip: ${JSON.stringify(idleText)}`);
+    console.log(`    [evidence] track area after permission revoked mid-trip: ${JSON.stringify(pausedText)}`);
     console.log(`    [evidence] toast shown: ${JSON.stringify(toastTxt)}`);
 
-    ok(idleText.includes('Start Trip'), `permission revocation should also tear the session down (same err handler, code 1) — got ${JSON.stringify(idleText)}`);
+    ok(pausedText.includes('Trip in progress'),
+      `revocation must not destroy the trip — the card should still read "Trip in progress", got ${JSON.stringify(pausedText)}`);
+    ok(/Tracking paused/i.test(pausedText),
+      `code 1 gets its own paused state, distinct from a transient signal outage — got ${JSON.stringify(pausedText)}`);
     ok(/denied/i.test(toastTxt), `expected the permission-denied message — got ${JSON.stringify(toastTxt)}`);
-    console.log('    [evidence] same root cause as the transient-blip case above: app.js:14871-14880 treats every PositionError code (1/2/3) identically — one event, total session loss, no distinction between "user revoked forever" and "signal blipped for a second"');
+
+    // The point of keeping the session alive: the driver can still bank the trip.
+    const tripsBefore = await getStoreCount(gpsApp.page, 'trips');
+    await gpsApp.page.click('#f21StopBtn');
+    await gpsApp.page.waitForSelector('#trkSave', { timeout: 5000 });
+    await gpsApp.page.fill('#trkPay', '250');
+    await gpsApp.page.click('#trkSave');
+    await gpsApp.page.waitForTimeout(900);
+    const tripsAfter = await getStoreCount(gpsApp.page, 'trips');
+    console.log(`    [evidence] trips before Stop & Save: ${tripsBefore}, after: ${tripsAfter}`);
+    eq(tripsAfter, tripsBefore + 1,
+      'Stop & Save must still write the trip after a permission revocation — that is what makes "pause instead of destroy" worth doing');
   } finally {
     await gpsApp.close();
   }

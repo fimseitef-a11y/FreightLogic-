@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.3** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.8.4** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -33,6 +33,10 @@ README.txt                 — Notes on optional offline vendor files
 docs/                      — Deployment parity checklist, source authority, release notes
 schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
 scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker
+tests/                     — Playwright suite (real headless Chromium, real IndexedDB).
+                             `run-all.mjs` runs everything; see `tests/README.md`
+AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 with reproductions
+FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 ```
 
 ### Optional offline vendor files (drop in root to avoid CDN):
@@ -96,7 +100,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.3';
+const APP_VERSION = '23.8.4';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -208,8 +212,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.3` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.3`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.8.4` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.8.4`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -260,6 +264,17 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - `_cleanGpsLogs(trackingId)` — removes `gpsLogs` IDB entries after save or discard
 - Settings keys: `f21OnboardingSeen` (bool), `f21PermissionSeen` (bool)
 - sessionStorage key: `fl_active_tracking` (JSON: trackingId, startTime, startPos, totalMiles)
+- **Error resilience (v23.8.4, F-7):** a `GeolocationPositionError` never ends the session.
+  `_activeTracking.gpsErrorSince` / `.gpsErrorCode` track the current error streak (cleared by
+  any fix, including a low-accuracy one); `_renderTrackingActive` degrades to "GPS signal lost —
+  searching (Nm)" for codes 2/3 or "Tracking paused — location access is off" for code 1, always
+  keeping Stop & Save reachable. The error toast fires once per streak, not once per callback.
+- `_readSavedTracking()` / `_restoreTrackingFromSaved(saved)` — shared by `resumeTrackingIfActive()`
+  and `_showResumeTrackingModal()`. `_readSavedTracking` applies no age policy; each caller
+  decides (boot auto-stops a >24 h record, the resume prompt ignores one).
+- `_showResumeTrackingModal(saved)` — `startTripTracking()` opens this instead of minting a new
+  `trackingId` when a session record ≤24 h old is still present. Resume keeps the original
+  session; "Discard & Start New" cleans the old `gpsLogs` and starts fresh.
 
 ### F22 — Money Dashboard
 - `renderMoneyCard()` — populates `#homeMoneyCard` after `renderHome()` computes KPIs
@@ -533,6 +548,80 @@ bidding roughly $0.15–0.25/mi low across the middle bands.
 
 **Also fixed:** `app.js:12780` fell back to a hardcoded `3.50` fuel price that had
 drifted from `MW.fuelBaseline` (`3.55`); it now reads the const.
+
+---
+
+## Adversarial Audit (shipped inside v23.8.3)
+
+A full adversarial audit ran against the app with a Playwright harness driving real
+headless Chromium (real IndexedDB, Cache Storage, `crypto.subtle`). It produced
+`AUDIT_REPORT.md`, the `tests/` suite, and `FIELD_TEST_CHECKLIST.md`.
+
+Six findings were fixed in that pass. **These shipped without a version bump** — the
+audit's fixes went out still labelled `23.8.3`, which is exactly the drift the release
+checklist above exists to prevent. Backfilled here in v23.8.4 for the record:
+
+| Finding | Severity | Fix |
+|---|---|---|
+| F-1 | High | F20 Dead Zone Exit grade cap was dead code — the cap never applied to the displayed grade |
+| F-2 | Medium | `sanitizeTrip` did not validate `paidDate` like its sibling date fields; **F-2b** — `sanitizeStop.date` had the same gap |
+| F-3 | Medium | Tax Season Export (Schedule C) did not quote CSV fields — a comma in any value shifted every downstream column |
+| F-4 | Medium | App Lock had no brute-force lockout on the PIN |
+| F-5 | Medium | `window.__FL_TESTS` was assigned unconditionally on every load, exposing 32 internals (including `hashPin`) to any same-origin script; now gated behind `window.__FL_TESTS_ENABLED` |
+| F-6 | Medium | Trip saves were TOCTOU-vulnerable — two tabs editing one trip silently lost the first write; now optimistic-concurrency checked |
+
+Two further findings (F-7, F-8) surfaced during the audit's Phase 4 and were logged
+rather than fixed, pending the owner's decision. Both are fixed in v23.8.4 below.
+
+---
+
+## v23.8.4 — Field Resilience (F-7, F-8)
+
+Closes the two findings `AUDIT_REPORT.md` logged but left unfixed. No new features.
+
+**F-8 (Critical) — new expense and fuel records could never be saved.**
+`sanitizeExpense()` (`app.js:1047`) and `sanitizeFuel()` (`app.js:1123`) both built the
+key as `id: raw.id ? intNum(raw.id, 0, 1e12) : undefined`. For a brand-new record
+`raw.id` is absent, so that placed an **explicit** `id: undefined` on the object handed
+to `store.add()`. IndexedDB auto-increment only fills the key when the key-path property
+is *absent* — an explicitly-present `undefined` counts as a real (invalid) key, and
+`add()` throws `DataError` synchronously. The expense save handler had no `try/catch`, so
+it was an uncaught exception: no toast, no hint, the modal simply never closed and nothing
+was written. Add Expense and Add Fuel were broken for **every** new record.
+
+- Both sanitizers now omit the key entirely for new records:
+  `...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {})`. The edit path is untouched —
+  `updateExpense`/`updateFuel` still throw `Missing id` correctly when the key is absent.
+- The expense save handler (`app.js:9272`) gained the same `try/catch` the fuel handler
+  (`app.js:9370`) already had, so any future storage error surfaces instead of vanishing.
+
+**F-7 (High) — a GPS error destroyed the in-progress trip.**
+`_doStartTracking()`'s error callback treated every `GeolocationPositionError` code
+identically: toast, `_activeTracking = null`, re-render idle. It never cleared
+`sessionStorage['fl_active_tracking']` (only `stopTripTracking()` does), so the trip
+*looked* lost but wasn't — a reload fully recovered it. The only visible affordance left,
+"Start Trip", took the `_initTrackingObject()` path and minted a fresh `trackingId`,
+orphaning the old session's miles and `gpsLogs` for good.
+
+- **A GPS error never ends the session now** — transient (codes 2/3) *or* permission-denied
+  (code 1). The session degrades in place and Stop & Save keeps working, which is what
+  actually salvages the miles. This goes further than the audit's suggested grace window,
+  which would still have destroyed the trip once it expired.
+- The error callback gained the `trackingId` guard its success counterpart already had, and
+  toasts once per error streak rather than once per callback (`watchPosition` re-fires the
+  error callback every `timeout`, 15 s).
+- `_doStartTracking()` now clears any prior `watcherId` before re-arming, so a repeat call
+  cannot leave two live watchers burning GPS.
+- `startTripTracking()` offers `_showResumeTrackingModal()` when a session record ≤24 h old
+  is present. Discarding is still possible — but as an explicit labelled choice, which was
+  the actual finding.
+- See the F21 section above for the helper-level detail.
+
+**Tests.** The F-7/F-8 tests in `tests/integration/field-resilience.spec.mjs` previously
+asserted the *buggy* behavior (suite convention: a green `[FINDING F-n / NEW]` test means
+the evidence was captured, not that the bug is fixed). They are retagged `/ FIXED` and now
+assert correct behavior, plus new sanitizer-level tests in
+`tests/unit/pure-functions.spec.mjs`. Full suite: **55 passed, 0 failed** across 7 specs.
 
 ---
 

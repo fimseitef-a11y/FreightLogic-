@@ -9,10 +9,10 @@ const pagesOrigin = (process.argv[2] || 'https://freightlogic.pages.dev').replac
 const workerOrigin = (process.argv[3] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "23.8.3",
-  manifestName: "FreightLogic v23.8.3",
+  serviceWorkerVersion: "23.8.4",
+  manifestName: "FreightLogic v23.8.4",
   workerVersion: "10",
-  overlayScript: "midwest-stack-authority.js?v=23.8.3"
+  overlayScript: "midwest-stack-authority.js?v=23.8.4"
 };
 
 async function fetchText(url) {
@@ -37,26 +37,26 @@ async function main() {
 
   const index = await fetchText(`${pagesOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
-  assert(checks, 'Index references app.js v23.8.3', index.text.includes('app.js?v=23.8.3'));
-  assert(checks, 'Index references voice-load.js v23.8.3', index.text.includes('voice-load.js?v=23.8.3'));
-  assert(checks, 'Index references sw-bridge.js v23.8.3', index.text.includes('sw-bridge.js?v=23.8.3'));
+  assert(checks, 'Index references app.js v23.8.4', index.text.includes('app.js?v=23.8.4'));
+  assert(checks, 'Index references voice-load.js v23.8.4', index.text.includes('voice-load.js?v=23.8.4'));
+  assert(checks, 'Index references sw-bridge.js v23.8.4', index.text.includes('sw-bridge.js?v=23.8.4'));
 
   const sw = await fetchText(`${pagesOrigin}/service-worker.js?verify=${Date.now()}`);
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
-  assert(checks, 'Service worker version 23.8.3', sw.text.includes("SW_VERSION = '23.8.3'"));
+  assert(checks, 'Service worker version 23.8.4', sw.text.includes("SW_VERSION = '23.8.4'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
   // v23.8.3: rate-overrides-*.json was deleted — never read by any code path; the
   // July bands now live in midwest-stack-authority.js. Assert it stays gone.
   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
 
-  const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=23.8.3`);
+  const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=23.8.4`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
 
-  const manifest = await fetchJson(`${pagesOrigin}/manifest.json?v=23.8.3`);
+  const manifest = await fetchJson(`${pagesOrigin}/manifest.json?v=23.8.4`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
-  assert(checks, 'Manifest name v23.8.3', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+  assert(checks, 'Manifest name v23.8.4', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);

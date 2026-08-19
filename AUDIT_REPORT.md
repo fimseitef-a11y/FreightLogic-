@@ -1,16 +1,19 @@
-# FreightLogic v23.8.3 — Adversarial Audit Report
+# FreightLogic — Adversarial Audit Report
+
+Audited against v23.8.3. F-1…F-6 were fixed within that version; F-7 and F-8 were fixed in
+v23.8.4.
 
 Audit date: 2026-08-19, updated through phase 7 (fixes) and the automatable subset of phase 4
 (field resilience). Scope: `app.js` (16,145 lines), `index.html`, `service-worker.js`,
 `voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, `cloud-backup-worker.js`.
 Method: static reading + a real Playwright/Chromium harness against the live app (real
 IndexedDB, real Cache Storage, real `crypto.subtle`) — no mocks, no reimplementation of app
-logic. Test suite lives in `tests/` and is committed. **All 6 original findings are FIXED** —
+logic. Test suite lives in `tests/` and is committed. **All 8 findings are now FIXED** —
 see the Findings table's Status column and each finding's own section for the fix, the commit,
-and the post-fix reproduction. **Two new findings (F-7, F-8) surfaced during phase 4 and are
-LOGGED, not fixed** — see "New findings from Phase 4" below; F-8 is Critical severity and
-worth prompt attention. Phases 5–6 (full E2E journeys, one-handed usability) are still
-outstanding.
+and the post-fix reproduction. F-7 and F-8 surfaced during phase 4, were logged rather than
+fixed pending the owner's decision, and were **fixed in v23.8.4** once that decision came —
+see "New findings from Phase 4" below. Phases 5–6 (full E2E journeys, one-handed usability)
+are still outstanding.
 
 ## Executive Summary
 
@@ -32,12 +35,14 @@ consistency, tier-boundary exhaustiveness, prototype-pollution guarding, CSV-for
 neutralization, and the cloud-backup crypto all held up under fuzzing and are documented
 clean below. Phase 4 (field resilience)'s automatable subset has now been run against the real
 app — storage quota, offline-then-reconnect, DST/clock-skew, and GPS resilience — and surfaced
-two more real findings: Add Expense and Add Fuel are completely broken for every new record
+two more real findings: Add Expense and Add Fuel were completely broken for every new record
 (F-8, Critical — an uncaught IndexedDB error with no error shown to the driver), and a single
-transient GPS blip mid-trip kills tracking with only an undocumented reload as a recovery path
-(F-7, High). Neither is offline-specific; F-8 in particular reproduces on every attempt,
-online or off. Phases 5–6 (full E2E journeys, one-handed usability) were **not executed
-dynamically** — see "What could NOT be tested" — this report does not claim coverage there.
+transient GPS blip mid-trip killed tracking with only an undocumented reload as a recovery path
+(F-7, High). Neither was offline-specific; F-8 in particular reproduced on every attempt,
+online or off. Both were logged rather than fixed on the spot, and both were **fixed in
+v23.8.4** after the owner approved. Phases 5–6 (full E2E journeys, one-handed usability) were
+**not executed dynamically** — see "What could NOT be tested" — this report does not claim
+coverage there.
 
 ## Findings
 
@@ -49,14 +54,15 @@ dynamically** — see "What could NOT be tested" — this report does not claim 
 | F-6 | **High** | Trip storage (TOCTOU) | **FIXED** | Two tabs/devices editing the same trip: last save silently reverted the other tab's unrelated field changes (full-object overwrite, no version check) |
 | F-2 | **Medium** | AR / trip storage | **FIXED** (+F-2b: `sanitizeStop.date` had the same gap) | `trip.paidDate` bypassed `isValidISODate()` (unlike every sibling date field); downstream consumers applied inconsistent bounds-checking |
 | F-5 | **Low / Info** | Attack surface | **FIXED** | `window.__FL_TESTS` was unconditionally exposed in production; its own comment claimed a gate (`__FL_TESTS_ENABLED`) that didn't exist in code |
-| F-8 | **Critical** | Expense/Fuel storage | **LOGGED, not fixed** | Add Expense and Add Fuel are completely broken for every new record — an uncaught IndexedDB `DataError` on save, no toast, no data written. Found during Phase 4 |
-| F-7 | **High** | F21 GPS Trip Tracking | **LOGGED, not fixed** | A single transient GPS error (or permission revocation) mid-trip kills the live tab's tracking session; the only visible recovery action ("Start Trip") abandons the accumulated miles instead of resuming them. Found during Phase 4 |
+| F-8 | **Critical** | Expense/Fuel storage | **FIXED in v23.8.4** | Add Expense and Add Fuel were completely broken for every new record — an uncaught IndexedDB `DataError` on save, no toast, no data written. Found during Phase 4 |
+| F-7 | **High** | F21 GPS Trip Tracking | **FIXED in v23.8.4** | A single transient GPS error (or permission revocation) mid-trip killed the live tab's tracking session; the only visible recovery action ("Start Trip") abandoned the accumulated miles instead of resuming them. Found during Phase 4 |
 
 \* commit hash recorded at the time this table entry was last updated; see the finding's own
 section below for the authoritative hash if this table is stale relative to it. F-7 and F-8
 were discovered during Phase 4 (field resilience), outside the originally-approved Step 1 fix
-list — logged with full reproduction, not fixed without the owner's go-ahead, per this audit's
-own established discipline for findings surfaced mid-testing (see F-2's date-field audit).
+list — logged with full reproduction rather than fixed unilaterally, per this audit's own
+established discipline for findings surfaced mid-testing (see F-2's date-field audit). The
+owner subsequently approved both, and they shipped in v23.8.4.
 
 ---
 
@@ -463,18 +469,20 @@ contradiction between the code's stated intent and its actual behavior. Fixed.
 
 Two new findings surfaced while building the automatable subset of Phase 4 (storage quota,
 offline-then-reconnect, DST/clock-skew, GPS resilience — see
-`tests/integration/field-resilience.spec.mjs`). Both are logged with full reproduction and
-NOT fixed — they fall outside the six findings the owner explicitly ordered fixed in Step 1,
-and this audit's own precedent (F-2's sibling-field audit) is to log new findings discovered
-during a testing phase rather than silently expand the fix list. F-8 in particular is severe
-enough that it should be triaged promptly — flagging that explicitly rather than assuming a
-fix decision on the owner's behalf.
+`tests/integration/field-resilience.spec.mjs`). Both were logged with full reproduction and
+NOT fixed at the time — they fell outside the six findings the owner explicitly ordered fixed
+in Step 1, and this audit's own precedent (F-2's sibling-field audit) is to log new findings
+discovered during a testing phase rather than silently expand the fix list.
 
-### F-8 — Add Expense and Add Fuel are completely broken for every new record — NOT FIXED
+**Both were subsequently approved by the owner and fixed in v23.8.4.** The sections below keep
+the original reproductions intact (that is the evidence the fixes were built against) and
+record what shipped under each finding's "Fix" heading.
 
-**Status: LOGGED, not fixed.** Discovered incidentally while building the offline field-test
-scenario (`tests/integration/field-resilience.spec.mjs`, `[FINDING F-8 / NEW, Critical]`
-tests) — not offline-specific, confirmed to reproduce fully online too.
+### F-8 — Add Expense and Add Fuel were completely broken for every new record — FIXED
+
+**Status: FIXED in v23.8.4.** Discovered incidentally while building the offline field-test
+scenario (`tests/integration/field-resilience.spec.mjs`) — not offline-specific, confirmed to
+reproduce fully online too.
 
 **Where:** `sanitizeExpense()` (`app.js:1044`) and `sanitizeFuel()` (`app.js:1120`), feeding
 `addExpense()` (`app.js:1065`, `stores.expenses.add(e)`) and `addFuel()` (`app.js:1129`,
@@ -525,23 +533,41 @@ would read to a driver as "the app is frozen" or "my tap didn't register," not a
 Anyone testing this against a running instance of the app hits it on the very first attempt to
 add an expense or a fuel entry.
 
-**Suggested fix** (not applied — flagging for the owner's decision, per the "don't expand the
-approved fix list unilaterally" discipline above): only set the `id` key when there's a real
-value to set, e.g. spread it in conditionally instead of assigning `undefined`:
+**Fix (shipped in v23.8.4).** Only set the `id` key when there's a real value to set — spread
+it in conditionally instead of assigning `undefined`:
 ```js
 ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}),
 ```
-This is a one-line change in two functions, doesn't touch any other field, and directly
-targets the root cause (an explicitly-present `undefined` key-path property) with no behavior
-change for the edit path. Low risk relative to the bug it closes — flagging as an easy win if
-the owner wants it fixed now rather than queued.
+A one-line change in each of the two sanitizers, touching no other field, targeting the root
+cause (an explicitly-present `undefined` key-path property) with no behavior change on the edit
+path — `updateExpense`/`updateFuel` still throw `Missing id` correctly when the key is absent.
+
+Additionally, the expense save handler (`app.js:9272`) gained the `try/catch` the fuel handler
+(`app.js:9370`) already had. That asymmetry is the entire reason this failure was *silent* on
+the expense side; now any future storage error reaches the driver as a toast.
+
+**Post-fix reproduction:**
+```
+[evidence] page errors thrown by the click: []
+[evidence] expenses count before=0, after=1; modal still open=false
+[evidence] auto-generated id on the saved expense: 1
+[evidence] fuel count before=0, after=1; modal still open=false
+[evidence] raw add() with an explicit id:undefined (the old shape): {"ok":false,"thrown":"Failed to
+  execute 'add' on 'IDBObjectStore': Evaluating the object store's key path yielded a value that
+  is not a valid key."}
+[evidence] raw add() with the id key omitted (the fixed shape): {"ok":true,"key":2}
+```
+Tests: `[FINDING F-8 / FIXED]` in `tests/integration/field-resilience.spec.mjs` (drives the real
+Add Expense and Add Fuel UI end to end, and keeps a regression guard on the underlying
+IndexedDB semantics the fix depends on) and three sanitizer-level tests in
+`tests/unit/pure-functions.spec.mjs`.
 
 ---
 
-### F-7 — A single transient GPS error mid-trip kills tracking; the visible recovery action discards the trip instead — NOT FIXED
+### F-7 — A single transient GPS error mid-trip killed tracking; the visible recovery action discarded the trip instead — FIXED
 
-**Status: LOGGED, not fixed.** `tests/integration/field-resilience.spec.mjs`,
-`[FINDING F-7 / NEW]` tests (4 tests, all passing/documenting the bug).
+**Status: FIXED in v23.8.4.** `tests/integration/field-resilience.spec.mjs`,
+`[FINDING F-7 / FIXED]` tests.
 
 **Where:** `_doStartTracking()`'s `watchPosition` error handler, `app.js:14871-14880`.
 
@@ -594,12 +620,48 @@ worse* by tapping the button it's showing them. The data isn't unrecoverable in 
 sessionStorage record and old `gpsLogs` entries survive), but nothing in the product surfaces
 that to the driver.
 
-**Suggested fix directions** (not applied — flagging for the owner; more design-judgment
-involved here than F-8's one-liner, so no single "obvious" fix is proposed): (a) tolerate N
-consecutive transient errors (codes 2/3 specifically, not 1) with a short grace window before
-tearing down the session, since a real signal blip self-resolves in seconds; and/or (b) when
-`startTripTracking()` is invoked and a stale `sessionStorage['fl_active_tracking']` record
-exists from an unclean prior teardown, offer to resume it instead of silently starting fresh.
+**Fix (shipped in v23.8.4).** The owner chose to go further than the grace-window direction
+originally sketched here, on the reasoning that a grace window still destroys the trip once it
+expires — an hour parked at a dock inside a garage would hit exactly that. The shipped fix:
+
+1. **A GPS error never ends the session**, for any error code. `_activeTracking.gpsErrorSince` /
+   `.gpsErrorCode` record the current error streak (cleared by any fix, including a low-accuracy
+   one, so the reset had to land before the `accuracy > 100` early-return).
+   `_renderTrackingActive` degrades honestly — "GPS signal lost — searching (Nm)" for codes 2/3,
+   "Tracking paused — location access is off" for code 1 — while always keeping Stop & Save
+   reachable, since that button is what actually banks the accumulated miles.
+2. **Permission-denied (code 1) stays alive too**, rather than tearing down as originally
+   suggested. Tearing down on code 1 would have produced a resume → denied → teardown loop
+   against the new resume prompt, and destroying data is not the right answer to a condition the
+   driver can reverse in Settings.
+3. **The error callback gained the `trackingId` guard** its success counterpart already had (a
+   stale watcher could otherwise clobber a newer session), and now **toasts once per streak**
+   rather than once per callback — `watchPosition` re-fires the error callback every `timeout`
+   (15 s), so per-callback toasting would have buried the driver.
+4. **`_doStartTracking()` clears any prior `watcherId`** before re-arming, closing a watcher leak
+   the old teardown path left behind.
+5. **`startTripTracking()` offers `_showResumeTrackingModal()`** when a session record ≤24 h old
+   is present, instead of silently minting a new `trackingId`. Resume continues the original
+   session; "Discard & Start New" cleans the old `gpsLogs` and starts fresh. Discarding is still
+   possible — but as an explicit labelled choice, which was the actual finding. The restore
+   logic is shared with `resumeTrackingIfActive()` via `_readSavedTracking()` /
+   `_restoreTrackingFromSaved()` rather than duplicated.
+
+**Post-fix reproduction** (sustained `POSITION_UNAVAILABLE` via CDP
+`Emulation.setGeolocationOverride` with no parameters — `context.setGeolocation()` only emits a
+one-event transient error in Chromium, so it cannot hold the degraded state open):
+```
+[evidence] track area during sustained signal loss: "Trip in progress0m  •  0 miles  •
+  📡 GPS signal lost — searching (0m)Stop & Save Trip"
+[evidence] Stop & Save still reachable during the outage: true
+[evidence] track area after the signal returns: "Trip in progress0m  •  0.1 miles  •  📍 Good…"
+[evidence] trackingId before: a4ccaede-…, after choosing Resume: a4ccaede-…
+[evidence] track area after permission revoked mid-trip: "Trip in progress0m  •  0 miles  •
+  ⏸ Tracking paused — location access is offStop & Save Trip"
+[evidence] trips before Stop & Save: 0, after: 1
+```
+The last line is the point of the whole change: after a mid-trip permission revocation the
+driver can still bank the trip.
 
 ---
 
@@ -723,9 +785,11 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run: **51 passed, 0 failed** across 7 spec files. All 6 originally-approved findings
-(F-1 through F-6, plus F-2b) are FIXED and their tests assert correct behavior. F-7 and F-8
-(new, found during Phase 4) are LOGGED with passing tests that document the bug directly — per
-this suite's convention, a green checkmark on an "F-n / NEW" test means the evidence was
-captured correctly, not that the underlying bug is fixed; read the finding's own section above
-for status.
+Last run: **55 passed, 0 failed** across 7 spec files. All 8 findings (F-1 through F-8, plus
+F-2b) are FIXED and every test now asserts correct behavior.
+
+Note on the retagged tests: while F-7 and F-8 were logged-but-unfixed, their tests deliberately
+asserted the *buggy* behavior — per this suite's convention, a green checkmark on an
+"F-n / NEW" test meant the evidence was captured correctly, not that the bug was fixed. When
+the fixes shipped in v23.8.4 those tests went red, which is exactly what should happen, and
+they were rewritten and retagged `[FINDING F-n / FIXED]`. No `/ NEW` tags remain in the suite.
