@@ -1,16 +1,18 @@
 # FreightLogic v23.8.3 — Adversarial Audit Report
 
-Audit date: 2026-08-19, updated through phase 7 (fixes), the automatable subset of phase 4
-(field resilience), and phase 5 (end-to-end journeys). Scope: `app.js` (16,145 lines),
-`index.html`, `service-worker.js`, `voice-load.js`, `admin-driver-ui.js`,
-`midwest-stack-authority.js`, `cloud-backup-worker.js`. Method: static reading + a real
-Playwright/Chromium harness against the live app (real IndexedDB, real Cache Storage, real
-`crypto.subtle`) — no mocks, no reimplementation of app logic. Test suite lives in `tests/` and
-is committed. **All 6 original findings are FIXED** — see the Findings table's Status column
-and each finding's own section for the fix, the commit, and the post-fix reproduction. **Three
-new findings (F-7, F-8, F-9) surfaced during phases 4-5 and are LOGGED, not fixed** — see "New
-findings from Phase 4" and "New finding from Phase 5" below; F-8 and F-9 are both Critical
-severity and worth prompt attention. Phase 6 (one-handed usability) is still outstanding.
+Audit date: 2026-08-19. This report now covers all phases: phase 7 (fixes), the automatable
+subset of phase 4 (field resilience), phase 5 (end-to-end journeys), and phase 6 (usability
+measurement). Scope: `app.js` (16,145 lines), `index.html`, `service-worker.js`,
+`voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, `cloud-backup-worker.js`.
+Method: static reading + a real Playwright/Chromium harness against the live app (real
+IndexedDB, real Cache Storage, real `crypto.subtle`) — no mocks, no reimplementation of app
+logic. Test suite lives in `tests/` and is committed. **All 6 original findings are FIXED** —
+see the Findings table's Status column and each finding's own section for the fix, the commit,
+and the post-fix reproduction. **Three new findings (F-7, F-8, F-9) surfaced during phases 4-5
+and are LOGGED, not fixed** — see "New findings from Phase 4" and "New finding from Phase 5"
+below; F-8 and F-9 are both Critical severity and worth prompt attention. Phase 6 found real,
+measured usability issues (touch targets, contrast, Settings clutter, Intelligence-screen number
+density) and proposes fixes without implementing any UI change, per the audit plan.
 
 ## Executive Summary
 
@@ -721,6 +723,86 @@ UUID-keyed stores should keep their current `put()` merge behavior unchanged.
   allowlisted MIME set. No cross-origin cache-poisoning path found (non-GET and cross-origin
   requests fall through to default browser handling, not `respondWith`). Not dynamically
   tested (see below).
+
+## Phase 6 — Usability under load (one-handed / gloved / sunlight / moving vehicle)
+
+Measurement only, per the audit plan — **no UI changes made**. Static reading of `index.html`'s
+CSS custom properties and component rules, cross-checked against CLAUDE.md's own stated
+standard ("Touch targets minimum 44×44px (WCAG 2.1 AA)"). Contrast ratios computed via the
+standard WCAG relative-luminance formula against the actual `:root` hex values, not eyeballed.
+
+**Touch targets — one real violation of the app's own standard.** Primary buttons and form
+inputs consistently hit 44-52px (`.btn` in a form context, most modal buttons carry explicit
+`min-height:48px` inline, `#btnSaveSettings` is 52px) — good, and matches CLAUDE.md's stated
+minimum. But `.btn.sm` (`index.html:271`) is `min-height: 36px` — **8px under the 44px floor**.
+This class is used throughout Settings for exactly the kind of controls a driver would tap
+one-handed without looking closely: the Tax Quick View period tabs (Week/Month/Quarter/YTD),
+the Accountant Export quarter tabs (Q1-Q4/YTD), "Clear" on the evaluator, the admin
+add-driver-account toggle, "Refresh driver list," and "Disconnect Cloud Backup." None of these
+are decorative — several (Disconnect Cloud Backup, the admin panel) are consequential actions
+sized like incidental ones.
+
+**Contrast — `--text-tertiary` fails WCAG AA for the sizes it's actually used at.**
+`--text-tertiary` (`#606078`) against the app's own surface backgrounds measures:
+- on `--surface-0` (`#0e0e1a`): **3.14:1**
+- on `--surface-1` (`#13131f`): **3.02:1**
+
+WCAG AA requires 4.5:1 for normal text, or 3:1 only for large text (≥24px, or ≥18.66px bold).
+`--text-tertiary` is used almost exclusively at 10-11px (nav labels, timestamps, hint text,
+sparkline month labels at 8px) — nowhere near the "large text" threshold that would excuse a
+3:1 ratio. This is a real, measured AA failure at the sizes it ships at, not a borderline
+judgment call, and it's the exact failure mode "sunlight readability" complaints usually are:
+low-contrast gray text that's merely readable indoors goes illegible under glare. `--bad` (red,
+used for error states) measures 5.83:1 on `--bg` — technically AA-compliant, but worth a manual
+device check in bright sun regardless, since saturated red is known to wash out on OLED panels
+at max brightness independent of the computed ratio.
+`--text-secondary` (used for most body/secondary copy) is fine at 5.96-6.46:1.
+
+**Settings — genuinely cluttered, confirmed by control count, not just impression.** One
+continuous scroll on `#insights` mixes: 4 routine vehicle/rate settings, 4 monthly fixed-cost
+fields, "Save Settings," "Hard Reset All Data" (destructive, no visual separation from the save
+button above it beyond a blank div), then a Cloud Backup card containing token entry, passphrase
+entry with a strength meter, Test/Connect, Backup Now/Restore, and — nested *inside* that same
+card — a full driver-management admin panel (admin token, new-driver name, create button,
+result panel, driver list, refresh) that is a completely different concern (fleet-owner admin,
+not individual driver settings) sharing no visual boundary stronger than a `border-top`. A
+driver looking for "Hard Reset" or trying to avoid tapping "Disconnect Cloud Backup" by accident
+has to visually parse roughly 20+ controls in one flow with no grouping beyond `<h3>` card
+headers separating *sections*, not *stakes*.
+
+**Intelligence screen — several panels require parsing more than one number before a
+decision.** Rate Trends (`app.js:13272-13288`, `renderRateTrendHTML` at `13236-13250`) is the
+clearest example: each lane card's own sub-line packs three numbers (run count, current $/mi,
+percent change vs. prior month) before the arrow/color coding even registers, and the expanded
+trend block below it repeats two more RPM values plus the percent change *again*, then adds a
+6-month sparkline with 8px month labels — upwards of 10 distinct numeric data points for a
+single lane. The color-coded arrow does carry the headline signal (rate rising/falling) at a
+glance, which mitigates this somewhat, but the exact magnitude — the number a driver would
+actually want before deciding whether to keep running a lane — is buried third in a dense
+line, not the primary visual element.
+
+**Proposed fixes — not implemented, listed for review:**
+1. Raise `.btn.sm`'s `min-height` from 36px to 44px. Low risk, one CSS rule; may need to check
+   it doesn't visually crowd the period-tab rows that currently rely on the smaller size to fit
+   4-5 tabs per row on a narrow screen.
+2. Either raise `--text-tertiary` to a color that clears 4.5:1 against both surface tones, or
+   stop using it below ~18px (use `--text-secondary` at small sizes instead). The former is a
+   single token change with wide blast radius (every element on `--text-tertiary` shifts);
+   the latter is more surgical but touches many individual call sites.
+2b. `--bad` (red errors) is AA-compliant here, but pair it with a shape/icon cue (not relying on
+    hue alone) is worth revisiting given OLED glare, since HTML has been consistently using
+    `haptic(30)` on errors, which reads as light not sunlight.
+3. Settings: split the admin driver-management panel out of the Cloud Backup card into its own
+   clearly-labeled section (or hide it behind a distinct "Fleet Admin" entry point rather than
+   a toggle nested inside a driver-facing card); visually separate "Hard Reset All Data" and
+   "Disconnect Cloud Backup" from routine controls (e.g. a bordered danger-zone block), matching
+   the seriousness of a destructive action to its visual weight.
+4. Rate Trends: lead each card with just the arrow + percent change at a larger size; move the
+   run count, absolute RPM values, and sparkline into a secondary/expandable row for drivers who
+   want the detail, rather than presenting all of it at equal visual weight up front.
+
+None of the above were applied — this section is measurement and recommendation only, per the
+audit's explicit instruction not to make UI changes in this phase.
 
 ## What could NOT be tested, and why
 
