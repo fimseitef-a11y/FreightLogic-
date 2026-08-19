@@ -202,6 +202,48 @@ test('hashPin produces a fresh random salt every call (no salt reuse)', async ()
   ok(a !== b, 'two hashPin() calls for the same pin produced the identical hash string');
 });
 
+// F-8 (Critical): sanitizeExpense()/sanitizeFuel() used to build a new record's
+// key as `id: raw.id ? intNum(raw.id, 0, 1e12) : undefined`. For a brand-new
+// record raw.id is absent, so that put an EXPLICIT `id: undefined` property on
+// the object handed to store.add(). IndexedDB auto-increment only fills the key
+// when the keyPath property is ABSENT — an explicitly-present `id: undefined`
+// counts as a real (invalid) key and add() throws DataError synchronously. The
+// fix omits the key entirely for new records. These assert the sanitizer output
+// shape directly; the end-to-end UI behavior is covered in
+// tests/integration/field-resilience.spec.mjs.
+test('[FINDING F-8 / FIXED] sanitizeExpense omits the id key entirely for a new record (auto-increment cannot fire otherwise)', async () => {
+  const r = await app.page.evaluate(() => {
+    const out = window.__FL_TESTS.sanitizeExpense({ amount: 45.5, category: 'Fuel' });
+    return { hasIdKey: Object.prototype.hasOwnProperty.call(out, 'id'), keys: Object.keys(out) };
+  });
+  ok(!r.hasIdKey,
+    `a new expense must not carry an 'id' key at all (an explicit id:undefined makes store.add() throw DataError) — keys present: ${JSON.stringify(r.keys)}`);
+});
+
+test('[FINDING F-8 / FIXED] sanitizeExpense still sets id on the edit path', async () => {
+  const r = await app.page.evaluate(() => {
+    const out = window.__FL_TESTS.sanitizeExpense({ id: 7, amount: 45.5, category: 'Fuel' });
+    return { hasIdKey: Object.prototype.hasOwnProperty.call(out, 'id'), id: out.id };
+  });
+  ok(r.hasIdKey, 'an existing expense must keep its id key — updateExpense() throws "Missing id" without it');
+  eq(r.id, 7, 'the existing id must be preserved unchanged by the fix');
+});
+
+test('[FINDING F-8 / FIXED] sanitizeFuel omits the id key for a new record and keeps it on the edit path', async () => {
+  const r = await app.page.evaluate(() => {
+    const created = window.__FL_TESTS.sanitizeFuel({ gallons: 18.2, amount: 64.7, state: 'IL' });
+    const edited = window.__FL_TESTS.sanitizeFuel({ id: 42, gallons: 18.2, amount: 64.7, state: 'IL' });
+    return {
+      newHasIdKey: Object.prototype.hasOwnProperty.call(created, 'id'),
+      editHasIdKey: Object.prototype.hasOwnProperty.call(edited, 'id'),
+      editId: edited.id,
+    };
+  });
+  ok(!r.newHasIdKey, 'a new fuel record must not carry an id key — sanitizeFuel had the byte-for-byte identical bug');
+  ok(r.editHasIdKey, 'an existing fuel record must keep its id key');
+  eq(r.editId, 42, 'the existing fuel id must be preserved unchanged');
+});
+
 export async function runSpec() {
   app = await launchApp();
   try {

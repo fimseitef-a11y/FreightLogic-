@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.3 USA ENGINE
+/** FreightLogic v23.8.4 USA ENGINE
+ *  v23.8.4: Field-resilience fixes — new expense/fuel records no longer carry an
+ *           explicit id:undefined that made every IndexedDB add() throw (F-8), and a
+ *           GPS error no longer tears down an in-progress trip: the session degrades
+ *           in place and an orphaned session is offered for resume (F-7)
  *  v23.8.3: Correctness pass — bidHistory broker index normalized on both read and
  *           write paths, duplicate getBrokerIntel() shadowing resolved, July 2026
  *           rate bands moved into the authority overlay (inert JSON deleted),
@@ -25,7 +29,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.3';
+const APP_VERSION = '23.8.4';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -55,7 +59,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.3 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.8.4 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1041,7 +1045,7 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaid
 
 // ---- Expenses ----
 function sanitizeExpense(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
+  return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
@@ -1117,7 +1121,7 @@ async function listExpenses({cursor=null, search=''}={}){
 
 // ---- Fuel (P1-3: full CRUD + list) ----
 function sanitizeFuel(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
+  return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
     created: finiteNum(raw.created, Date.now()), updated: Date.now(), updatedAt: Date.now() };
@@ -9269,9 +9273,11 @@ function openExpenseForm(existing=null){
     if (!validate()){ toast('Fix required fields', true); return; }
     const obj = { id: e.id, date: $('#f_date', body).value || isoDate(), amount: Number($('#f_amt', body).value||0),
       category: clampStr($('#f_cat', body).value, 60), notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created };
-    if (mode==='add') await addExpense(obj); else await updateExpense(obj);
-    invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
-    closeModal(); await renderExpenses(true); await renderHome();
+    try{
+      if (mode==='add') await addExpense(obj); else await updateExpense(obj);
+      invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
+      closeModal(); await renderExpenses(true); await renderHome();
+    }catch(err){ console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true); }
   });
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
@@ -14779,12 +14785,19 @@ function _renderTrackingActive(container) {
   const elapsed = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
   const miles = Math.round((t.totalMiles || 0) * 10) / 10;
   const acc = t.lastAccuracy || 999;
-  const gpsQ = acc < 50 ? '<span style="color:var(--good)">\u{1F4CD} Good</span>'
-              : acc < 100 ? '<span style="color:var(--warn)">\u{1F4CD} Fair</span>'
-              : '<span style="color:var(--bad)">\u{1F4CD} Weak</span>';
+  // F-7: while a GPS error streak is open the session stays alive — report the
+  // degraded state honestly instead of the stale accuracy from the last fix.
+  const lostMins = t.gpsErrorSince ? Math.floor((Date.now() - t.gpsErrorSince) / 60000) : 0;
+  const gpsQ = t.gpsErrorSince
+    ? (t.gpsErrorCode === 1
+        ? '<span style="color:var(--warn)">\u{23F8} Tracking paused &mdash; location access is off</span>'
+        : `<span style="color:var(--warn)">\u{1F4E1} GPS signal lost &mdash; searching (${escapeHtml(String(lostMins))}m)</span>`)
+    : acc < 50 ? '<span style="color:var(--good)">\u{1F4CD} Good</span>'
+    : acc < 100 ? '<span style="color:var(--warn)">\u{1F4CD} Fair</span>'
+    : '<span style="color:var(--bad)">\u{1F4CD} Weak</span>';
   container.innerHTML = '<div style="background:rgba(255,60,60,0.08);border:1px solid rgba(255,60,60,0.3);border-radius:12px;padding:14px 16px">'
     + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-    + '<span class="f21-pulse-dot"></span>'
+    + `<span class="f21-pulse-dot${t.gpsErrorSince ? ' paused' : ''}"></span>`
     + '<strong style="font-size:14px">Trip in progress</strong></div>'
     + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(elapsed)} &nbsp;&bull;&nbsp; ${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${gpsQ}</div>`
     + '<button class="btn danger" id="f21StopBtn" style="width:100%;min-height:48px;font-weight:700">Stop &amp; Save Trip</button>'
@@ -14807,6 +14820,36 @@ function _initTrackingObject() {
     totalMiles: 0,
     waypoints: 0,
     watcherId: null,
+    // F-7: current GPS error streak. gpsErrorSince is the timestamp of the first
+    // error since the last good fix (null while healthy); gpsErrorCode is that
+    // error's GeolocationPositionError code. A GPS error never ends the session.
+    gpsErrorSince: null,
+    gpsErrorCode: 0,
+  };
+}
+
+// F-7: read the persisted tracking record without applying any age policy —
+// callers decide, because resumeTrackingIfActive() treats a >24h record
+// differently (restore, then stop-and-review) than startTripTracking() does.
+function _readSavedTracking() {
+  try {
+    const raw = sessionStorage.getItem('fl_active_tracking');
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.trackingId || !saved.startTime) return null;
+    return saved;
+  } catch(e) { return null; }
+}
+
+// F-7: rebuild the in-memory session from a persisted record. Shared by
+// resumeTrackingIfActive() (boot) and the resume prompt (same-tab recovery).
+function _restoreTrackingFromSaved(saved) {
+  _activeTracking = {
+    trackingId: saved.trackingId, startTime: saved.startTime,
+    startPos: saved.startPos || null, lastPos: null,
+    lastAccuracy: 999, totalMiles: saved.totalMiles || 0,
+    waypoints: 0, watcherId: null,
+    gpsErrorSince: null, gpsErrorCode: 0,
   };
 }
 
@@ -14815,8 +14858,40 @@ async function startTripTracking() {
   if (!navigator.geolocation) { toast('GPS is not available in this browser.', true); return; }
   const permSeen = await getSetting('f21PermissionSeen', false);
   if (!permSeen) { _showLocationPermissionModal(); return; }
+  // F-7: an unclean teardown can leave a live session record behind. Offer to
+  // resume it rather than silently minting a new trackingId and abandoning the
+  // miles already tracked — that silent discard was the finding.
+  const saved = _readSavedTracking();
+  if (saved && (Date.now() - saved.startTime) <= 86400000) { _showResumeTrackingModal(saved); return; }
   _initTrackingObject();
   _doStartTracking();
+}
+
+// F-7: recovery prompt for a tracking session that outlived its tab state.
+function _showResumeTrackingModal(saved) {
+  const miles = Math.round((saved.totalMiles || 0) * 10) / 10;
+  const elapsedMins = Math.floor((Date.now() - saved.startTime) / 60000);
+  const hrs = Math.floor(elapsedMins / 60), mins = elapsedMins % 60;
+  const elapsed = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const startedAt = new Date(saved.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const body = document.createElement('div');
+  body.innerHTML = '<p style="font-size:14px;line-height:1.6;margin:0 0 12px;color:var(--text)">You have a trip already in progress.</p>'
+    + '<div style="background:var(--surface-0);border-radius:10px;padding:14px;margin-bottom:14px">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${escapeHtml(elapsed)}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary)">Started at ${escapeHtml(startedAt)}</div></div>`
+    + '<div style="display:flex;flex-direction:column;gap:10px">'
+    + '<button class="btn primary" id="trkResume" style="min-height:48px;font-weight:700">Resume Trip</button>'
+    + '<button class="btn" id="trkNew" style="min-height:48px">Discard &amp; Start New</button></div>';
+  body.querySelector('#trkResume')?.addEventListener('click', () => {
+    closeModal(); _restoreTrackingFromSaved(saved); _doStartTracking();
+  });
+  body.querySelector('#trkNew')?.addEventListener('click', () => {
+    closeModal();
+    _cleanGpsLogs(saved.trackingId);
+    try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+    _initTrackingObject(); _doStartTracking();
+  });
+  openModal('Trip In Progress', body);
 }
 
 function _showLocationPermissionModal() {
@@ -14839,10 +14914,21 @@ function _showLocationPermissionModal() {
 
 function _doStartTracking() {
   if (!_activeTracking) return;
+  // Never leave a previous watcher running — a second live watcher would keep
+  // burning GPS with no way to clear it.
+  if (_activeTracking.watcherId !== null && _activeTracking.watcherId !== undefined) {
+    try { navigator.geolocation.clearWatch(_activeTracking.watcherId); } catch(e) { /* ok */ }
+    _activeTracking.watcherId = null;
+  }
   const trackingId = _activeTracking.trackingId;
   const watcher = navigator.geolocation.watchPosition(
     (pos) => {
       if (!_activeTracking || _activeTracking.trackingId !== trackingId) return;
+      // F-7: any fix ends the error streak — including a low-accuracy one, so
+      // this must come before the accuracy early-return below.
+      if (_activeTracking.gpsErrorSince) {
+        _activeTracking.gpsErrorSince = null; _activeTracking.gpsErrorCode = 0;
+      }
       const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
       if (accuracy > 100) { _activeTracking.lastAccuracy = accuracy; return; }
       if (speed !== null && speed > 53.6) return; // >120 mph = GPS glitch
@@ -14869,13 +14955,27 @@ function _doStartTracking() {
       _persistTrackingState();
     },
     (err) => {
-      let msg = "Couldn't get your location. Make sure Location Services is on.";
-      if (err.code === 1) msg = 'Location access was denied. To enable it, go to your device Settings and allow Location Services for this browser.';
-      else if (err.code === 2) msg = "Couldn't get your location right now. Try moving to an open area.";
-      else if (err.code === 3) msg = 'Location timed out. Move to an open area and try again.';
-      toast(msg, true);
-      _activeTracking = null;
-      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+      // F-7: a GPS error NEVER ends the session. Tearing down here used to
+      // discard the live tab's trip on one ordinary signal blip (a tunnel, a
+      // parking garage) while leaving the sessionStorage record behind — so the
+      // trip looked lost but wasn't, and the only visible button ("Start Trip")
+      // then destroyed it for real. The session now stays alive in a degraded
+      // state; Stop & Save keeps working, which is what salvages the miles.
+      if (!_activeTracking || _activeTracking.trackingId !== trackingId) return;
+      const firstOfStreak = !_activeTracking.gpsErrorSince;
+      if (firstOfStreak) _activeTracking.gpsErrorSince = Date.now();
+      _activeTracking.gpsErrorCode = err.code;
+      // Toast once per streak: watchPosition re-fires this callback every
+      // `timeout` ms (15s), so toasting each one would bury the driver.
+      if (firstOfStreak) {
+        let msg = "Couldn't get your location. Make sure Location Services is on. Your trip is still being tracked.";
+        if (err.code === 1) msg = 'Location access was denied — tracking is paused. Your trip is still open; you can stop and save it anytime.';
+        else if (err.code === 2) msg = "Lost the GPS signal — still tracking. Miles will resume when the signal comes back.";
+        else if (err.code === 3) msg = 'Location timed out — still tracking. Miles will resume when the signal comes back.';
+        toast(msg, true);
+      }
+      _updateTrackingUI();
+      _persistTrackingState();
     },
     { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
   );
@@ -15006,17 +15106,10 @@ function _cleanGpsLogs(trackingId) {
 
 async function resumeTrackingIfActive() {
   try {
-    const raw = sessionStorage.getItem('fl_active_tracking');
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (!saved || !saved.trackingId || !saved.startTime) return;
+    const saved = _readSavedTracking();
+    if (!saved) return;
     const ageMs = Date.now() - saved.startTime;
-    _activeTracking = {
-      trackingId: saved.trackingId, startTime: saved.startTime,
-      startPos: saved.startPos || null, lastPos: null,
-      lastAccuracy: 999, totalMiles: saved.totalMiles || 0,
-      waypoints: 0, watcherId: null,
-    };
+    _restoreTrackingFromSaved(saved);
     if (ageMs > 86400000) {
       // Over 24h old — auto-stop and show review
       try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
