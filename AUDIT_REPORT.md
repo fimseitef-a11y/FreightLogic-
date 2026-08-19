@@ -35,7 +35,7 @@ coverage there.
 | F-1 | **Critical** | F20 Dead Zone Exit | **FIXED** | Grade cap "at C" was dead code — DZ-active loads always showed raw grade F; eval-history strip disagreed with the main card for the identical evaluation |
 | F-3 | **Critical** | Tax export (F30) | **FIXED** | Schedule C mileage-log CSV had no field quoting — any comma in trip origin/destination corrupted column alignment |
 | F-4 | **High** | App Lock / auth | pending — policy proposal awaiting approval | PIN unlock has no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
-| F-6 | **High** | Trip storage (TOCTOU) | pending | Two tabs/devices editing the same trip: last save silently reverts the other tab's unrelated field changes (full-object overwrite, no version check) |
+| F-6 | **High** | Trip storage (TOCTOU) | **FIXED** | Two tabs/devices editing the same trip: last save silently reverted the other tab's unrelated field changes (full-object overwrite, no version check) |
 | F-2 | **Medium** | AR / trip storage | pending | `trip.paidDate` bypasses `isValidISODate()` (unlike every sibling date field); downstream consumers apply inconsistent bounds-checking |
 | F-5 | **Low / Info** | Attack surface | pending | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
 
@@ -269,48 +269,77 @@ acknowledgment) or the lockout becomes a self-inflicted denial-of-service for th
 
 ---
 
-### F-6 — Concurrent trip edits from two tabs silently lose data (High)
+### F-6 — Concurrent trip edits from two tabs silently lost data — FIXED
 
-**Where:** `app.js:943-955` (`upsertTrip`), `app.js:8650-8653` (`openTripWizard` snapshot),
-`app.js:8809-8852` (`collectTrip`/`save`).
+**Status: FIXED** (see the "fix F-6: optimistic concurrency" commit in `git log`).
+
+**Where:** `app.js:952-986` (`upsertTrip`), `app.js:8693-8696` (`openTripWizard` snapshot),
+`app.js:8893-8908` (`save()`'s `upsertTrip()` call site + `FL_CONFLICT` handler),
+`app.js:908-945` (`sanitizeTrip`).
 
 **The bug:** `upsertTrip()`'s "TOCTOU-safe: read + write in single readwrite transaction"
-comment is accurate only for the **audit-log snapshot** written inside that same call — it
-says nothing about the trip record itself, because the read that actually seeds the edit form
+comment was accurate only for the **audit-log snapshot** written inside that same call — it
+said nothing about the trip record itself, because the read that actually seeds the edit form
 happens much earlier (`openTripWizard(existing)`, a separate IDB transaction at modal-open
-time). `save()`/`collectTrip()` then always writes the **entire** in-memory `trip` object with
+time). `save()`/`collectTrip()` then always wrote the **entire** in-memory `trip` object with
 `stores.trips.put(t)` — a full overwrite, not a field-level patch — with no `updatedAt` /
-version precondition check before the put. Two tabs (or two devices sharing local storage,
-or simply two browser windows on one device) open on the same trip race: whichever calls
-`upsertTrip()` last wins completely, silently reverting every field the losing-order tab
-changed, even fields the winning tab never touched (because its in-memory copy still holds
-the old value for those fields too).
+version precondition check before the put. Two tabs (or two devices sharing local storage, or
+simply two browser windows on one device) open on the same trip raced: whichever called
+`upsertTrip()` last won completely, silently reverting every field the losing-order tab
+changed, even fields the winning tab never touched.
 
-**Reproduction:** `tests/integration/toctou-concurrent-edit.spec.mjs`. Seeds one trip, opens
-its real Edit view in two independent Playwright pages sharing one browser context (same as
-two tabs on one device), changes `pay` 1000→1500 in Tab A and saves, then — using Tab B's
-form which still holds the pre-Tab-A value because it loaded first — changes an unrelated
-field (`loadedMiles`) in Tab B and saves.
+**Fix:** `upsertTrip()` now captures the caller's in-memory `updatedAt` (the value preserved
+untouched through the whole edit session, from `openTripWizard(existing)` through
+`collectTrip()`) and, inside the same read-then-write transaction, compares it against the
+*currently stored* `updatedAt`. A mismatch aborts the transaction and throws `FL_CONFLICT`
+instead of overwriting — undefined for a brand-new trip, so new-trip saves are never blocked.
+This is a **compare-and-abort inside one transaction, not a lock**: nothing waits on anything,
+and per the IndexedDB spec a transaction that hasn't committed when its connection tears down
+(a tab dying mid-save) is auto-aborted, not partially applied — so a dead tab can't strand a
+lock for other tabs to wait on. `save()`'s click handler catches `FL_CONFLICT`, tells the
+driver ("this trip changed elsewhere — showing the latest version"), and reopens the wizard on
+the fresh server record so they can redo their edit — one tap, no merge UI.
+
+**Residual gap found and closed while implementing this:** the precondition only works if
+`updatedAt` survives round-trips. `sanitizeTrip()` — the function CSV import and JSON
+backup-restore both funnel every trip through, *bypassing* `upsertTrip()` with a direct
+`stores.trips.put()` — was not copying `raw.updatedAt` onto its output at all, so every
+CSV-imported or JSON-restored trip would have silently lost its `updatedAt` and skipped the
+conflict check on its first post-import edit (JSON restore, in particular, is the *primary*
+"move to a new phone" backup path, not a rare edge case). Fixed by having `sanitizeTrip()`
+preserve `raw.updatedAt` when present and numeric, leaving it `undefined` for genuinely new
+trips (the correct "no conflict check yet" state) — `upsertTrip()` still always sets the real
+value after the check, unaffected.
+
+**Reproduction (post-fix):** `tests/integration/toctou-concurrent-edit.spec.mjs`, 3 tests.
+Seeds one trip *the way `upsertTrip()` actually would* (with a real `updatedAt` stamp — an
+earlier version of this test seeded without one and got a false pass, silently bypassing the
+whole fix; fixed before this was reported as passing), opens it in two Playwright pages
+sharing one browser context:
 
 ```
-[evidence] Tab B's form still showed pay=1000 when it saved (stale)
-[evidence] final stored trip: pay=1000, loadedMiles=450
+[evidence] Tab B's form still showed pay=1000 when it saved (stale — Tab A had already changed it to 1500 in storage)
+[evidence] final stored trip: pay=1500, loadedMiles=400
+[evidence] Tab B post-conflict form pay field: "1500"
 ```
 
-Tab A's `pay` change is gone. No error, no conflict warning, no merge — just silent loss.
+Tab A's `pay=1500` survives; Tab B's `loadedMiles=450` edit — which used to silently ride
+along with the lost-update overwrite — is correctly rejected entirely (final `loadedMiles` is
+still `400`, Tab A's last-known-good value, not Tab B's `450`); Tab B's form is refreshed to
+show the current server value instead of silently sitting on stale data. A third,
+**best-effort** test fires a save from a third tab and closes that tab immediately without
+awaiting completion, 5 times, checking the stored record stays structurally well-formed and
+matches one of the two known-good snapshots (pre- or fully-post-write) every time — this
+confirms IndexedDB's own transaction atomicity holds in this code path empirically, but (noted
+in the test itself) can't pin a `page.close()` to an exact instruction inside an in-flight
+transaction from outside the page, so it's evidence across repeated attempts, not a single
+deterministically-timed interruption proof.
 
 **Impact:** Any workflow with two open tabs (common — "let me check something in a new tab
 while this form is open") or, per CLAUDE.md's Dispatch Layer note, any future multi-device
-sync work built on the current storage model inherits this. Financial fields (`pay`,
-`isPaid`, `paidDate`) are exactly what's at risk.
-
-**Proposed fix (tradeoff noted):** Store `updatedAt` (already present) as an optimistic lock:
-before `put`, re-read the current record inside the same transaction and reject/merge if its
-`updatedAt` doesn't match what the form started from, surfacing a "this trip changed since you
-opened it — reload?" prompt. Tradeoff: added complexity in every edit path and a new failure
-mode (conflict prompt) the driver has to resolve one-handed; a cheaper partial mitigation is
-to warn the driver in-app when a second tab of FreightLogic is detected open (`BroadcastChannel`
-or `storage` event), which doesn't fix the race but makes it visible.
+sync work built on the current storage model would have inherited this. Financial fields
+(`pay`, `isPaid`, `paidDate`) were exactly what was at risk. Fixed, including the import-path
+gap that would have silently reopened it for any trip touched by CSV import or JSON restore.
 
 ---
 
@@ -503,7 +532,6 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run (after this commit, F-1 and F-3 fixed): **26 passed, 4 failed** across 6 spec files.
-F-3's 4 tests and F-1's 7 tests (expanded post-fix with a structural fuzz + 3-sub-tier sweep +
-negative control) all pass. F-2, F-4, F-5, F-6 remain red pending their own commits — each
-failure is a read-out of real, still-present app behavior, not a broken test.
+Last run (after this commit, F-1/F-3/F-6 fixed): **28 passed, 3 failed** across 6 spec files.
+F-1 (7), F-3 (4), and F-6 (3) all green. F-2, F-4, F-5 remain red pending their own commits —
+each failure is a read-out of real, still-present app behavior, not a broken test.

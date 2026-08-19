@@ -927,6 +927,15 @@ function sanitizeTrip(raw){
   t.wouldRunAgain = raw.wouldRunAgain === true ? true : raw.wouldRunAgain === false ? false : null;
   t.created = finiteNum(raw.created, Date.now());
   t.updated = Date.now();
+  // F-6 fix: preserve raw.updatedAt (the optimistic-concurrency stamp
+  // upsertTrip() sets on every save) when present. sanitizeTrip() is also
+  // the path CSV/JSON import goes through with raw.updatedAt already set
+  // (a prior export's dumpStore('trips') includes it) — without this, every
+  // re-imported/restored trip would silently lose its updatedAt and skip
+  // the F-6 conflict check on its first post-import edit. Left undefined
+  // for a genuinely new trip, which is the correct "no conflict check yet"
+  // state — upsertTrip() itself always sets the real value after this.
+  t.updatedAt = Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined;
   // F20: Dead Zone Exit fields
   t.isDZExit = !!raw.isDZExit;
   t.dzDistanceFromHome = Number.isFinite(Number(raw.dzDistanceFromHome)) && Number(raw.dzDistanceFromHome) > 0 ? Math.round(Number(raw.dzDistanceFromHome)) : null;
@@ -941,14 +950,39 @@ async function tripExists(orderNo){
   return !!(await idbReq(stores.trips.get(orderNo)));
 }
 async function upsertTrip(trip){
+  // F-6 fix: optimistic concurrency. `trip.updatedAt` (on the RAW argument,
+  // before sanitizeTrip builds a fresh object) is whatever this caller's
+  // in-memory copy was loaded with — e.g. openTripWizard(existing) preserves
+  // it untouched through the whole edit session. Undefined for a brand-new
+  // trip (newTripTemplate() has no updatedAt), so new-trip saves are never
+  // blocked by this check.
+  const expectedUpdatedAt = trip?.updatedAt ?? null;
   const t = sanitizeTrip(trip);
   if (!t.orderNo) throw new Error('Order # required');
-  t.updatedAt = Date.now();
   validateRecordSize(t, 'Trip');
-  // TOCTOU-safe: read + write in single readwrite transaction
+  // TOCTOU-safe: read + write in single readwrite transaction. This was
+  // previously true only for the audit-log snapshot (beforeData was read
+  // fresh, but nothing compared it against what the CALLER started editing
+  // from) — two tabs could each read-then-edit-then-put the full trip
+  // object, and the later put silently discarded the earlier tab's change
+  // even in fields it never touched (F-6). The compare-and-abort below
+  // closes that: if the stored record has moved on since this caller's
+  // copy was loaded, abort instead of overwriting. This is a single
+  // synchronous check inside one transaction, not a lock — nothing waits
+  // on anything, and a tab that dies mid-transaction just leaves an
+  // uncommitted (auto-aborted) transaction per the IndexedDB spec, so it
+  // can't strand a lock for other tabs to wait on.
   const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.trips.get(t.orderNo)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(e){ console.warn("[FL]", e); }
+    const err = new Error('This trip was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  t.updatedAt = Date.now();
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
@@ -8858,7 +8892,24 @@ function openTripWizard(existing=null){
         if (estMiles > 0){ trip.loadedMiles = estMiles; trip.milesEstimated = true; toast(`Estimated ${estMiles} loaded miles — edit if needed`); }
       }
     }
-    const saved = await upsertTrip(trip);
+    let saved;
+    try{
+      saved = await upsertTrip(trip);
+    }catch(e){
+      if (e?.code === 'FL_CONFLICT'){
+        // F-6 fix: another tab/device saved this trip since this form was
+        // opened. Don't silently pick a winner — surface it and reopen the
+        // wizard on the current server copy so the driver can redo their
+        // edit against up-to-date data, one tap, no merge UI to puzzle out
+        // one-handed.
+        haptic(35);
+        toast('This trip changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openTripWizard(e.serverRecord), 200);
+        return;
+      }
+      throw e;
+    }
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     _positioningCache = null; // F24: clear positioning cache on trip save
     if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
