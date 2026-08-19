@@ -94,6 +94,31 @@ export async function launchApp({ headless = true, geolocation = null, permissio
   };
 }
 
+/**
+ * Suppress the F26 First-Time Setup Wizard, which auto-opens ~800ms after
+ * boot on an empty DB (app.js:3390-3397, checkFirstRunSetup) and steals
+ * pointer events as a full-screen modal. Call this immediately after
+ * launchApp() — before any waitForTimeout()/multi-step UI interaction —
+ * in any spec that doesn't itself seed a trip in its first action (seeding
+ * a trip also suppresses it, via the same isEmpty check, but not every
+ * spec wants to do that as its first step).
+ */
+export async function skipFirstRunWizard(page) {
+  await page.evaluate(async () => {
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('FreightLogic_v18');
+      req.onsuccess = () => {
+        const db = req.result;
+        const txn = db.transaction('settings', 'readwrite');
+        txn.objectStore('settings').put({ key: 'f26SetupComplete', value: true });
+        txn.oncomplete = () => { db.close(); resolve(); };
+        txn.onerror = () => reject(txn.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
 export function ok(cond, msg) {
   if (!cond) throw new Error('ASSERTION FAILED: ' + msg);
 }

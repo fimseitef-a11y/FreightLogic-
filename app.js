@@ -6519,8 +6519,13 @@ async function mwEvaluateLoad(){
   else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
-  // F20: DZ grade capping — A/B loads display as C DZ-EXIT in dead zone
-  const dzDisplayGrade = isDZActive ? (['A','B'].includes(grade) ? 'C' : grade) : grade;
+  // F20: DZ grade capping — DZ-Exit loads always display as C (hard cap).
+  // Was `(['A','B'].includes(grade) ? 'C' : grade)`: isDZActive can only be
+  // true when trueRPM < MW.hardRejectRPM (1.25, see dzClassifySubTier above),
+  // which is exactly the domain where the raw grade above is always 'F' —
+  // so that remap could never fire and DZ-Exit loads showed a raw "F"
+  // instead of the documented "capped at C" (app.js:6793/7107).
+  const dzDisplayGrade = isDZActive ? 'C' : grade;
   const dzDisplayGradeLabel = isDZActive ? (dzSubTier || 'DZ-EXIT') : gradeLabel;
   const dzDisplayGradeColor = isDZActive ? '#f0a500' : gradeColor;
   const dzDisplayGradeEmoji = isDZActive ? '🟠' : gradeEmoji;
@@ -6677,7 +6682,11 @@ async function mwEvaluateLoad(){
   try {
     const histEntry = {
       ts: Date.now(),
-      grade, gradeLabel, gradeColor, gradeEmoji,
+      // Use the DZ-adjusted display values (not the raw grade/label/color) so
+      // the Recent Evaluations strip agrees with what the main card just
+      // showed for this exact evaluation — previously stored the raw
+      // pre-DZ-cap grade, showing "F"/"REJECT"/red for a DZ-EXIT evaluation.
+      grade: dzDisplayGrade, gradeLabel: dzDisplayGradeLabel, gradeColor: dzDisplayGradeColor, gradeEmoji: dzDisplayGradeEmoji,
       trueRPM: +trueRPM.toFixed(2),
       origin: origin || '', dest: dest || '',
       revenue: +revenue, loadedMi: +loadedMi,
@@ -16027,7 +16036,7 @@ if (typeof window !== 'undefined'){
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
-    mwClassifyRPM, MW,
+    mwClassifyRPM, MW, dzClassifySubTier,
     normOrderNo, sanitizeReceiptId, clampStr,
     parseCSVLines, isValidISODate, hashPin,
     isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),

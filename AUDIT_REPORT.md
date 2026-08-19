@@ -32,7 +32,7 @@ coverage there.
 
 | ID | Severity | Area | Status | Description |
 |----|----------|------|--------|-------------|
-| F-1 | **Critical** | F20 Dead Zone Exit | pending (fix written, commit next) | Grade cap "at C" is dead code — DZ-active loads always show raw grade F; eval-history strip disagrees with the main card for the identical evaluation |
+| F-1 | **Critical** | F20 Dead Zone Exit | **FIXED** | Grade cap "at C" was dead code — DZ-active loads always showed raw grade F; eval-history strip disagreed with the main card for the identical evaluation |
 | F-3 | **Critical** | Tax export (F30) | **FIXED** | Schedule C mileage-log CSV had no field quoting — any comma in trip origin/destination corrupted column alignment |
 | F-4 | **High** | App Lock / auth | pending — policy proposal awaiting approval | PIN unlock has no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
 | F-6 | **High** | Trip storage (TOCTOU) | pending | Two tabs/devices editing the same trip: last save silently reverts the other tab's unrelated field changes (full-object overwrite, no version check) |
@@ -58,58 +58,107 @@ bug reproduces — see the harness/test diffs in commit `df69fb8`. Post-correcti
 showed 7 failing assertions across all 6 findings (F-1 contributed two: the main grade-cap
 check and the eval-history-agreement check).
 
+**Second-order correction, found while fixing F-1:** the DZ-exit test's dynamic "evidence"
+in the *original* report was not actually valid proof, for an unrelated reason. The evaluator's
+DZ no-reload confirmation checkbox lives inside a collapsed native `<details>` element the
+original test never expanded, and its `page.check(...)` call was wrapped in `.catch(()=>{})`
+that silently swallowed the resulting timeout — so DZ mode was never actually activated in that
+test run. The "grade F" it captured was simply the correct, ordinary grade for a genuinely
+low-RPM load, misread as proof of the cap bug. The underlying finding was still real: re-running
+a corrected version of the same test (details expanded, checkbox failures no longer swallowed,
+and gated on the DZ-only "Active: ... — Grade capped at C" string rather than the looser
+"Dead Zone" text that also appears in the merely-*eligible* state) against the **pre-fix** code
+reproduced the bug exactly as described (`grade: "F", gradeLabel: "REJECT"`); against the
+**post-fix** code it shows the documented `"C"` in all three DZ sub-tiers. See
+`tests/integration/dz-exit-grade-cap.spec.mjs` and the F-1 section below for the full
+before/after evidence.
+
 ---
 
-### F-1 — Dead Zone Exit "capped at C" never actually happens (Critical)
+### F-1 — Dead Zone Exit "capped at C" never actually happened — FIXED
 
-**Where:** `app.js:6296-6303` (`dzClassifySubTier`), `app.js:6515-6526` (grade computation +
-display cap), `app.js:6679-6690` (session eval-history write), `app.js:7415-7433`
+**Status: FIXED** (see the "fix F-1: DZ grade cap" commit in `git log`).
+
+**Where:** `app.js:6296-6303` (`dzClassifySubTier`), `app.js:6515-6528` (grade computation +
+display cap), `app.js:6685-6692` (session eval-history write), `app.js:7415-7433`
 (`_renderEvalHistory`), documented behavior at `app.js:6793` and `app.js:7107`
 ("... — capped at C").
 
 **The bug:** `dzClassifySubTier()` only returns a non-null sub-tier (activating DZ mode) when
 `dzFloor (0.90) <= trueRPM < MW.hardRejectRPM (1.25)`. The raw letter-grade thresholds
 (`app.js:6515-6520`) put *any* `trueRPM < 1.25` at grade **F** — there is no RPM value for
-which DZ mode is active and the raw grade is A or B. But the display-cap logic is:
+which DZ mode is active and the raw grade is A or B. But the display-cap logic was:
 
 ```js
 const dzDisplayGrade = isDZActive ? (['A','B'].includes(grade) ? 'C' : grade) : grade;
 ```
 
 Since `grade` can only ever be `'F'` while `isDZActive` is true, the `'A'/'B' → 'C'` remap
-can never fire, and `dzDisplayGrade` just equals the raw `'F'`. The hero card
-(`app.js:6743`, `6784`) renders `${dispGrade}` — a big **F**, colored orange via
-`dzDisplayGradeColor`, not the "C" the Settings panel and in-card copy explicitly promise
+could never fire, and `dzDisplayGrade` just equalled the raw `'F'`. The hero card rendered a
+big **F**, colored orange, not the "C" the Settings panel and in-card copy explicitly promise
 (`app.js:6793`: *"DZ-FLOOR $0.90 • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C"*).
+Separately, `histEntry` stored the **raw, uncapped** `grade`/`gradeColor`/`gradeLabel`, so the
+"Recent Evaluations" strip showed **red "F" / "REJECT"** for the exact same evaluation the main
+card just labeled an orange DZ-EXIT "survival" load.
 
-Separately, `histEntry` (`app.js:6679-6690`, written to `sessionStorage['fl_eval_hist']`)
-stores the **raw, uncapped** `grade`/`gradeColor`/`gradeLabel` — not the DZ-adjusted display
-values — and `_renderEvalHistory()` renders that raw entry verbatim. So the "Recent
-Evaluations" strip shows **red "F" / "REJECT"** for the exact same evaluation the main card
-just labeled an orange DZ-EXIT "survival" load.
+**Fix:** `dzDisplayGrade = isDZActive ? 'C' : grade` — an unconditional cap. This is safe (not
+just "usually correct") because `isDZActive` can only be true when `trueRPM < MW.hardRejectRPM`
+(1.25), which is exactly the domain where the raw grade computation always yields `'F'` — so
+the fix doesn't depend on that constant relationship holding by luck; the new structural fuzz
+test below re-verifies it on every run instead of assuming it. `histEntry` now stores
+`dzDisplayGrade`/`dzDisplayGradeLabel`/`dzDisplayGradeColor`/`dzDisplayGradeEmoji` instead of
+the raw values, so the history strip agrees with the main card. Option (a) from the original
+proposed-fix section below — the language honesty option (b) was not pursued.
 
-**Reproduction:** `tests/integration/dz-exit-grade-cap.spec.mjs`. Fills the real evaluator UI
-with Portland, OR → Chicago, IL, 1900 loaded miles, $2000 revenue (trueRPM ≈ $1.05, DZ-eligible
-from the default home base at ~1500+ mi, >200mi saved toward home), confirms the DZ-EXIT
-banner fires, then reads the DOM and `sessionStorage` the app itself produced.
+**⚠️ Methodology correction:** the dynamic "evidence" in the *original* version of this report
+was not valid proof, for a reason unrelated to the bug itself. The DZ no-reload confirmation
+checkbox (`#mwDZNoReloadToggle`) lives inside a collapsed native `<details id="mwEvalDetails">`
+the original test never expanded, and its `page.check(...)` call was wrapped in a
+`.catch(()=>{})` that silently swallowed the resulting timeout — so DZ mode was **never
+actually activated** in that test run. The "F" grade captured was simply the ordinary, correct
+grade for a genuinely low-RPM load; the "DZ text present" check was also a false positive,
+matching the merely-*eligible* banner text ("DEAD ZONE EXIT MODE") that renders before
+confirmation, not the activation-only "Active: ... — Grade capped at C" string. The underlying
+finding was still real — re-running a corrected methodology (details expanded, checkbox
+failures no longer swallowed, gated on the activation-only string) against the pre-fix code
+reproduces it exactly:
 
 ```
-[evidence] hero grade element text during DZ-Exit: "F"
-[evidence] fl_eval_hist[0] = {"grade":"F","gradeLabel":"REJECT","gradeColor":"var(--bad)"}
+[evidence, pre-fix, corrected methodology] hero grade element text during a genuinely
+  active DZ-Exit: "F DZ"
+[evidence, pre-fix] fl_eval_hist[0] = {"grade":"F","gradeLabel":"REJECT","gradeColor":"var(--bad)"}
 ```
 
-**Impact:** No dollar loss by itself, but this is exactly the kind of trust-eroding
+**Reproduction (post-fix, current suite):** `tests/integration/dz-exit-grade-cap.spec.mjs`.
+Drives the real evaluator UI (Portland, OR → Chicago, IL, 1900 loaded miles) across all three
+documented DZ sub-tiers (revenue swept so trueRPM lands in DZ-FLOOR ~$0.95, DZ-ACCEPTABLE
+~$1.05, DZ-STANDARD ~$1.20), explicitly expanding `#mwEvalDetails` and checking
+`#mwDZNoReloadToggle` for real (no swallowed failures), gating activation on the
+`"Active: ... capped at C"` string:
+
+```
+[evidence] DZ-FLOOR ($0.90-$0.99, needs 500mi+ saved): isReallyActive=true heroGrade="C DZ"
+[evidence] DZ-ACCEPTABLE ($1.00-$1.09): isReallyActive=true heroGrade="C DZ"
+[evidence] DZ-STANDARD ($1.10-$1.24): isReallyActive=true heroGrade="C DZ"
+[evidence] fl_eval_hist[0] = {"grade":"C","gradeLabel":"DZ-ACCEPTABLE","gradeColor":"#f0a500"}
+```
+
+Plus two regression guards: a structural fuzz (`dzClassifySubTier` swept across 6,300
+`dzFloor x trueRPM x distanceSaved` combinations, confirming activation never occurs outside
+`[dzFloor, MW.hardRejectRPM)` — the invariant the fix's safety depends on) and a negative
+control (a non-DZ, grade-A load 90mi from home is confirmed NOT force-capped to "C"). All 7
+tests in the file pass. `tests/unit/pure-functions.spec.mjs`'s Omega-tier-exhaustiveness and
+`OMEGA_TIERS` band-overlap tests were re-run and are unaffected (this fix never touches
+`omegaTierForMiles`/`OMEGA_TIERS`/`mwClassifyRPM`) — still 12/13 passing (only F-2 red, as
+expected, unrelated to this fix).
+
+**Impact:** No dollar loss by itself, but this was exactly the kind of trust-eroding
 inconsistency the spec calls out — a driver skimming the eval-history strip later would
-reasonably read a past DZ-Exit as a rejected/bad load, undermining the feature's whole
-purpose (giving confidence to take a legitimate survival-mode load).
+reasonably have read a past DZ-Exit as a rejected/bad load, undermining the feature's whole
+purpose (giving confidence to take a legitimate survival-mode load). Fixed.
 
-**Proposed fix (tradeoff noted):** Either (a) make the cap real — force `dzDisplayGrade = 'C'`
-whenever `isDZActive` regardless of the raw letter, and persist `dzDisplayGrade`/
-`dzDisplayGradeColor`/`dzDisplayGradeLabel` into `histEntry` instead of the raw values; or
-(b) drop the "capped at C" language entirely and lean fully on the `DZ-FLOOR`/`DZ-ACCEPTABLE`/
-`DZ-STANDARD` sub-tier labels, which are already accurate. (a) matches the documented design
-intent with a small diff; (b) is more honest about what the number actually measures but
-requires updating two in-app copy strings and any driver training material.
+---
+
 
 ---
 
@@ -454,6 +503,7 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run (after this commit, F-3 fixed): **20 passed, 6 failed** across 6 spec files. F-3's 4
-tests now pass (fix verified). F-1 (x2), F-2, F-4, F-5, F-6 remain red pending their own
-commits — each failure is a read-out of real, still-present app behavior, not a broken test.
+Last run (after this commit, F-1 and F-3 fixed): **26 passed, 4 failed** across 6 spec files.
+F-3's 4 tests and F-1's 7 tests (expanded post-fix with a structural fuzz + 3-sub-tier sweep +
+negative control) all pass. F-2, F-4, F-5, F-6 remain red pending their own commits — each
+failure is a read-out of real, still-present app behavior, not a broken test.
