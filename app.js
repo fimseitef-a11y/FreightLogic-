@@ -16192,7 +16192,12 @@ function _startInboxVoice(textarea, card) {
 // TEST EXPORTS — pure functions exposed for test harness
 // Only active when window.__FL_TESTS_ENABLED is set before load
 // ════════════════════════════════════════════════════════════════
-if (typeof window !== 'undefined'){
+// F-5 fix: the gate described above didn't actually exist in code — this
+// object was assigned unconditionally on every load, exposing 32 internal
+// functions/constants (including hashPin) to any same-origin script. The
+// test harness (tests/lib/harness.mjs) sets window.__FL_TESTS_ENABLED via
+// context.addInitScript() before navigation when it wants this.
+if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   window.__FL_TESTS = {
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,

@@ -1,10 +1,14 @@
 # FreightLogic v23.8.3 — Adversarial Audit Report
 
-Audit date: 2026-08-19. Scope: `app.js` (16,145 lines), `index.html`, `service-worker.js`,
-`voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, `cloud-backup-worker.js`.
-Method: static reading + a real Playwright/Chromium harness against the live app (real
-IndexedDB, real Cache Storage, real `crypto.subtle`) — no mocks, no reimplementation of app
-logic. Test suite lives in `tests/` and is committed; no fixes are included in this branch.
+Audit date: 2026-08-19, updated during phase 7 (fixes). Scope: `app.js` (16,145 lines),
+`index.html`, `service-worker.js`, `voice-load.js`, `admin-driver-ui.js`,
+`midwest-stack-authority.js`, `cloud-backup-worker.js`. Method: static reading + a real
+Playwright/Chromium harness against the live app (real IndexedDB, real Cache Storage, real
+`crypto.subtle`) — no mocks, no reimplementation of app logic. Test suite lives in `tests/` and
+is committed. **All 6 original findings are now FIXED** — see the Findings table's Status
+column and each finding's own section for the fix, the commit, and the post-fix reproduction.
+(This paragraph and the executive summary below describe the original audit; a fuller pass
+summary follows once phases 4-6 are complete.)
 
 ## Executive Summary
 
@@ -37,7 +41,7 @@ coverage there.
 | F-4 | **High** | App Lock / auth | **FIXED** (policy approved by owner before implementation) | PIN unlock had no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
 | F-6 | **High** | Trip storage (TOCTOU) | **FIXED** | Two tabs/devices editing the same trip: last save silently reverted the other tab's unrelated field changes (full-object overwrite, no version check) |
 | F-2 | **Medium** | AR / trip storage | **FIXED** (+F-2b: `sanitizeStop.date` had the same gap) | `trip.paidDate` bypassed `isValidISODate()` (unlike every sibling date field); downstream consumers applied inconsistent bounds-checking |
-| F-5 | **Low / Info** | Attack surface | pending | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
+| F-5 | **Low / Info** | Attack surface | **FIXED** | `window.__FL_TESTS` was unconditionally exposed in production; its own comment claimed a gate (`__FL_TESTS_ENABLED`) that didn't exist in code |
 
 \* commit hash recorded at the time this table entry was last updated; see the finding's own
 section below for the authoritative hash if this table is stale relative to it.
@@ -409,39 +413,37 @@ signal in a feature (Broker Intel) explicitly meant to steer bid decisions. Fixe
 
 ---
 
-### F-5 — `window.__FL_TESTS` is unconditionally live in production (Low / Informational)
+### F-5 — `window.__FL_TESTS` was unconditionally live in production — FIXED
 
-**Where:** `app.js:16021-16038`.
+**Status: FIXED** (see the "fix F-5: gate window.__FL_TESTS" commit in `git log`).
 
-**The bug:** The comment says *"Only active when `window.__FL_TESTS_ENABLED` is set before
-load"*. No code anywhere in `app.js` (or any other shipped file) reads
-`window.__FL_TESTS_ENABLED`. The assignment is unconditional:
-```js
-if (typeof window !== 'undefined'){
-  window.__FL_TESTS = { escapeHtml, csvSafeCell, ..., hashPin, sanitizeTrip, ... };
-}
+**Where:** `app.js:16192-16199` (the gate), `tests/lib/harness.mjs` (the harness-side opt-in
+this fix depends on, added in commit `df69fb8`, Step 0).
+
+**The bug:** The comment said *"Only active when `window.__FL_TESTS_ENABLED` is set before
+load"*, but no code anywhere in `app.js` read that flag — the assignment was unconditional,
+exposing 31 (later 32) internal functions/constants, including `hashPin`, every sanitizer, and
+the full pricing tables, to any script executing in the page context on every production load.
+
+**Fix:** `if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){` — the gate
+the comment already documented, now actually implemented. This audit's own test harness
+(`tests/lib/harness.mjs`, updated in Step 0 before any fix landed) sets
+`window.__FL_TESTS_ENABLED = true` via `context.addInitScript()` before navigation whenever a
+spec needs `__FL_TESTS`, which is how the rest of this suite keeps working unmodified — no
+other spec file needed a single line changed for this fix.
+
+**Reproduction (post-fix):** `tests/integration/fl-tests-exposure.spec.mjs`, 2 tests: a genuine
+production load (no `__FL_TESTS_ENABLED` set) now correctly shows `window.__FL_TESTS` as
+`undefined`; the harness's explicit opt-in still correctly exposes it. Both pass.
+
 ```
-Every production page load exposes 31 internal functions/constants — including `hashPin`,
-every sanitizer, and the full pricing tables — to any script executing in the page context: a
-same-origin XSS payload, a malicious browser extension, or anything pasted into DevTools.
+[evidence] window.__FL_TESTS present=false (0 keys) with __FL_TESTS_ENABLED never set
+```
 
-**Reproduction:** `tests/integration/fl-tests-exposure.spec.mjs`. Loads the app with *no* init
-script at all (the opposite of what the comment says is required) and confirms
-`window.__FL_TESTS` and `window.__FL_TESTS.hashPin` are present anyway.
-
-**Impact:** Low on its own — these are pure functions operating on caller-supplied data, not
-secrets or live DB handles — but it's unintended attack-surface widening (a reconnaissance aid
-for an attacker who already has *some* script execution) and a straightforward contradiction
-between the code's stated intent and its actual behavior, exactly the kind of drift this audit
-was asked to catch.
-
-**Proposed fix (tradeoff noted):** Either gate the assignment on `window.__FL_TESTS_ENABLED`
-as documented (breaks this test suite's current approach of testing the production bundle
-directly — the harness would need to set the flag before navigation, which is a one-line
-change in `tests/lib/harness.mjs`), or drop the comment's claim and accept the exposure as
-intentional. Given this audit's own harness leans on `__FL_TESTS` for fast, accurate coverage
-of pure functions, the honest fix is probably to gate it AND update the harness to set the
-flag — not to remove the export entirely.
+**Impact:** Low on its own — these were pure functions operating on caller-supplied data, not
+secrets or live DB handles — but it was unintended attack-surface widening (a reconnaissance
+aid for an attacker who already had *some* script execution) and a straightforward
+contradiction between the code's stated intent and its actual behavior. Fixed.
 
 ---
 

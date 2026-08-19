@@ -22,7 +22,7 @@ import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
 const { test, run } = createSuite('integration/fl-tests-exposure.spec.mjs');
 let app;
 
-test('[FINDING F-5] window.__FL_TESTS must be ABSENT in a production load (no __FL_TESTS_ENABLED set)', async () => {
+test('[FINDING F-5 / FIXED] window.__FL_TESTS is ABSENT in a production load (no __FL_TESTS_ENABLED set)', async () => {
   const flagWasSet = await app.page.evaluate(() => window.__FL_TESTS_ENABLED);
   eq(flagWasSet, undefined, 'test setup sanity: __FL_TESTS_ENABLED must NOT have been set for this to be a valid proof');
 
