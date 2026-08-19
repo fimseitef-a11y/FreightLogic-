@@ -68,17 +68,26 @@ export async function stopServer() {
  * for app boot (window.__FL_TESTS present + #appMeta populated).
  * Returns { browser, context, page, baseUrl, close() }.
  */
-export async function launchApp({ headless = true, geolocation = null, permissions = [] } = {}) {
+export async function launchApp({ headless = true, geolocation = null, permissions = [], enableTestExports = true } = {}) {
   const { port } = await ensureServer();
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({
     geolocation: geolocation || undefined,
     permissions: geolocation ? ['geolocation', ...permissions] : permissions,
   });
+  // Opt-in to window.__FL_TESTS (app.js:16021-16038, gated on __FL_TESTS_ENABLED as of
+  // the F-5 fix). Defaults to true because most of this suite drives pure functions
+  // through __FL_TESTS; pass enableTestExports:false to test a genuine production load
+  // (this is how tests/integration/fl-tests-exposure.spec.mjs proves/regresses F-5).
+  if (enableTestExports) {
+    await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
+  }
   const page = await context.newPage();
   const baseUrl = `http://localhost:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!(window.__FL_TESTS && document.getElementById('appMeta')?.textContent), { timeout: 15000 });
+  // Boot-ready signal must NOT depend on __FL_TESTS — that would hang forever on a
+  // genuine (enableTestExports:false) production load once F-5 gates the export.
+  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
   return {
     browser, context, page, baseUrl,
     close: async () => { await browser.close(); },

@@ -22,23 +22,43 @@ import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
 const { test, run } = createSuite('integration/fl-tests-exposure.spec.mjs');
 let app;
 
-test('[FINDING F-5] window.__FL_TESTS is present without window.__FL_TESTS_ENABLED ever being set', async () => {
+test('[FINDING F-5] window.__FL_TESTS must be ABSENT in a production load (no __FL_TESTS_ENABLED set)', async () => {
   const flagWasSet = await app.page.evaluate(() => window.__FL_TESTS_ENABLED);
   eq(flagWasSet, undefined, 'test setup sanity: __FL_TESTS_ENABLED must NOT have been set for this to be a valid proof');
 
   const state = await app.page.evaluate(() => ({
     present: typeof window.__FL_TESTS === 'object' && window.__FL_TESTS !== null,
-    hasHashPin: typeof window.__FL_TESTS?.hashPin === 'function',
     keyCount: Object.keys(window.__FL_TESTS || {}).length,
   }));
+  console.log(`    [evidence] window.__FL_TESTS present=${state.present} (${state.keyCount} keys) with __FL_TESTS_ENABLED never set`);
 
-  ok(state.present, 'BUG (app.js:16021-16038): __FL_TESTS is exposed even though window.__FL_TESTS_ENABLED was never set — the documented gate does not exist in code.');
-  ok(state.hasHashPin, 'the internal PIN-hashing primitive is reachable from any page-context script via window.__FL_TESTS.hashPin');
-  console.log(`    [evidence] window.__FL_TESTS exposes ${state.keyCount} internal functions/constants unconditionally in production`);
+  // Correct behavior per the code's own comment (app.js:16021-16024): __FL_TESTS should
+  // only exist when __FL_TESTS_ENABLED is set before load. This is the intended-behavior
+  // assertion — expected to fail until F-5 is fixed (no such gate exists in code today).
+  ok(!state.present,
+    `EXPECTED window.__FL_TESTS to be undefined in a plain production load (per app.js:16021-16024's documented gate), ` +
+    `but it is unconditionally present with ${state.keyCount} internal functions/constants (including hashPin) reachable ` +
+    `from any page-context script — the __FL_TESTS_ENABLED gate the comment describes does not exist anywhere in code.`);
+});
+
+test('[FINDING F-5b] window.__FL_TESTS IS present when the harness opts in via __FL_TESTS_ENABLED', async () => {
+  // Once F-5 is fixed, the test harness itself needs a supported way to opt in —
+  // this documents/enforces that contract so the fix doesn't just delete the export.
+  await app.close();
+  app = await launchApp({ enableTestExports: true });
+  const state = await app.page.evaluate(() => ({
+    flagSet: window.__FL_TESTS_ENABLED === true,
+    present: typeof window.__FL_TESTS === 'object' && window.__FL_TESTS !== null,
+    hasHashPin: typeof window.__FL_TESTS?.hashPin === 'function',
+  }));
+  ok(state.flagSet, 'harness did not actually set __FL_TESTS_ENABLED before navigation — check launchApp({enableTestExports:true})');
+  ok(state.present, 'with __FL_TESTS_ENABLED set, window.__FL_TESTS should be present (this is how the rest of this suite exercises pure functions)');
+  ok(state.hasHashPin, 'window.__FL_TESTS.hashPin should be reachable when explicitly enabled');
 });
 
 export async function runSpec() {
-  app = await launchApp();
+  // Genuine production load: do NOT opt in to __FL_TESTS_ENABLED.
+  app = await launchApp({ enableTestExports: false });
   try {
     return await run();
   } finally {

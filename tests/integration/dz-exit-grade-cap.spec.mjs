@@ -54,7 +54,7 @@ test('DZ-eligible load: dzCheckEligibility + dzClassifySubTier fire (sanity prec
   ok(check, 'precondition harness sanity check');
 });
 
-test('[FINDING F-1] Main result card shows grade "F" during an active DZ-Exit, not the documented "C"', async () => {
+test('[FINDING F-1] Main result card must show the documented capped grade "C" during an active DZ-Exit', async () => {
   await fillEvaluator(app.page, { origin: 'Portland, OR', dest: 'Chicago, IL', loadedMi: 1900, revenue: 2000 });
   await app.page.evaluate(() => window.mwEvaluateLoad ? window.mwEvaluateLoad() : null);
   // mwEvaluateLoad is not on window directly (top-level IIFE) — trigger via the real input listener instead.
@@ -79,26 +79,26 @@ test('[FINDING F-1] Main result card shows grade "F" during an active DZ-Exit, n
 
   ok(state.hasDZBadge, 'test setup did not actually trigger DZ-Exit mode — cannot evaluate the cap; got: ' + (state.html || '').slice(0, 500));
   ok(state.heroGradeEl, 'no .fl-eval-grade element found in output');
-  // The settings panel (app.js:6793/7107) explicitly documents DZ-Exit as "capped at C".
-  ok(!/\bC\b/.test(state.heroGradeEl) , 'informational: hero currently does NOT show C either way — see raw value below');
   console.log('    [evidence] hero grade element text during DZ-Exit: ' + JSON.stringify(state.heroGradeEl));
-  ok(/F/.test(state.heroGradeEl),
-    `BUG (app.js:6515-6526): expected the documented capped grade "C" during DZ-Exit, but the hero card shows ${JSON.stringify(state.heroGradeEl)} ` +
-    `— proving the A/B->C remap is dead code (DZ's RPM domain [0.90,1.25) can only ever produce raw grade 'F', which the remap never touches).`);
+  // The settings panel (app.js:6793/7107) explicitly documents DZ-Exit as "capped at C" —
+  // this is the correct-behavior assertion, expected to fail until F-1 is fixed.
+  ok(/^C(\s|$|<)/.test(state.heroGradeEl) || state.heroGradeEl.trim().startsWith('C'),
+    `EXPECTED "C" (per app.js:6793/7107's documented "capped at C"), GOT ${JSON.stringify(state.heroGradeEl)} ` +
+    `— the A/B->C remap at app.js:6523 is dead code (DZ's RPM domain [0.90,1.25) can only ever produce raw grade 'F', which the remap never touches).`);
 });
 
-test('[FINDING F-1b] Recent-Evaluations history strip disagrees with the main card for the same DZ-Exit evaluation', async () => {
+test('[FINDING F-1b] Recent-Evaluations history strip must agree with the main card for the same DZ-Exit evaluation', async () => {
   const hist = await app.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'));
   ok(hist.length > 0, 'no eval history recorded — cannot compare');
   const latest = hist[0];
   console.log('    [evidence] fl_eval_hist[0] =', JSON.stringify({ grade: latest.grade, gradeLabel: latest.gradeLabel, gradeColor: latest.gradeColor }));
   // The main card's verdict for this same evaluation was DZ-EXIT (orange, "survival" language).
-  // The stored history entry uses the UNCAPPED grade/label, which for grade 'F' renders
-  // gradeLabel 'REJECT' in gradeColor 'var(--bad)' (red) — directly contradicting the
-  // DZ-EXIT/"survival" framing the driver just saw on the same screen.
-  eq(latest.gradeLabel, 'REJECT',
-    'expected this to demonstrate the mismatch: history entry stores the raw pre-DZ gradeLabel ("REJECT") ' +
-    'for an evaluation the main card just labeled a Dead Zone Exit — got ' + JSON.stringify(latest.gradeLabel) + ' instead (re-check fixture)');
+  // Correct behavior: the history entry must NOT contradict that with the raw pre-DZ
+  // "REJECT" label in the "bad" (red) color — expected to fail until F-1 is fixed.
+  ok(latest.gradeLabel !== 'REJECT' && latest.gradeColor !== 'var(--bad)',
+    `EXPECTED the history entry to reflect the DZ-EXIT verdict the main card showed, GOT gradeLabel=${JSON.stringify(latest.gradeLabel)} ` +
+    `gradeColor=${JSON.stringify(latest.gradeColor)} — histEntry (app.js:6679-6690) stores the raw uncapped grade/label/color instead of the ` +
+    `dz-adjusted display values, so the history strip contradicts the main card's DZ-EXIT framing for the identical evaluation.`);
 });
 
 export async function runSpec() {
