@@ -886,7 +886,12 @@ function sanitizeStop(raw){
   if (!raw || typeof raw !== 'object') return null;
   return {
     city: clampStr(raw.city, 60),
-    date: raw.date || '',
+    // F-2b fix: found while auditing F-2 for the same bypass pattern
+    // elsewhere — was a raw passthrough like paidDate used to be. Lower
+    // severity than F-2 itself (nothing in app.js currently reads
+    // stop.date for date-math), fixed for consistency before anything
+    // starts consuming it.
+    date: isValidISODate(raw.date) ? raw.date : '',
     type: ['stop','pickup','delivery'].includes(raw.type) ? raw.type : 'stop',
     notes: clampStr(raw.notes, 200),
   };
@@ -923,7 +928,13 @@ function sanitizeTrip(raw){
   t.stops = Array.isArray(raw.stops) ? raw.stops.slice(0, 10).map(sanitizeStop).filter(Boolean) : [];
   t.notes = clampStr(raw.notes, 500);
   t.isPaid = !!raw.isPaid;
-  t.paidDate = raw.paidDate || (t.isPaid ? isoDate() : null);
+  // F-2 fix: paidDate now goes through isValidISODate() like every sibling
+  // date field above — was stored verbatim, letting a malformed CSV
+  // import's PaidDate column (app.js:~1662) reach day-count arithmetic
+  // (computeBrokerStats) unvalidated. Garbage is treated the same as an
+  // absent value (falls back to today if isPaid, else null) — same
+  // fallback semantics as before, just gated on actually being a date.
+  t.paidDate = isValidISODate(raw.paidDate) ? raw.paidDate : (t.isPaid ? isoDate() : null);
   t.wouldRunAgain = raw.wouldRunAgain === true ? true : raw.wouldRunAgain === false ? false : null;
   t.created = finiteNum(raw.created, Date.now());
   t.updated = Date.now();
@@ -2185,7 +2196,13 @@ function computeBrokerStats(trips, todayIso, windowDays=90){
     if (!t.isPaid) rec.unpaid += pay;
     if (t.isPaid && t.paidDate){
       const d = daysBetweenISO(t.invoiceDate || dt, t.paidDate);
-      if (d !== null){ rec.paidTrips += 1; rec.daysToPaySum += d; }
+      // F-2 fix: same d>=0/d<365 sanity bound renderMoneyCard already
+      // applies to its equivalent calculation (app.js:~15429) — this one
+      // didn't have it, so an outlier (pre-invoice paidDate, or a garbage-
+      // but-Date-parseable value that survives sanitizeTrip's now-added
+      // isValidISODate check) could skew a broker's avg-days-to-pay with
+      // an unbounded value.
+      if (d !== null && d >= 0 && d < 365){ rec.paidTrips += 1; rec.daysToPaySum += d; }
     }
   }
   return Array.from(map.values()).map(r => ({

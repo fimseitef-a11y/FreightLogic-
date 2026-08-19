@@ -36,7 +36,7 @@ coverage there.
 | F-3 | **Critical** | Tax export (F30) | **FIXED** | Schedule C mileage-log CSV had no field quoting — any comma in trip origin/destination corrupted column alignment |
 | F-4 | **High** | App Lock / auth | **FIXED** (policy approved by owner before implementation) | PIN unlock had no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
 | F-6 | **High** | Trip storage (TOCTOU) | **FIXED** | Two tabs/devices editing the same trip: last save silently reverted the other tab's unrelated field changes (full-object overwrite, no version check) |
-| F-2 | **Medium** | AR / trip storage | pending | `trip.paidDate` bypasses `isValidISODate()` (unlike every sibling date field); downstream consumers apply inconsistent bounds-checking |
+| F-2 | **Medium** | AR / trip storage | **FIXED** (+F-2b: `sanitizeStop.date` had the same gap) | `trip.paidDate` bypassed `isValidISODate()` (unlike every sibling date field); downstream consumers applied inconsistent bounds-checking |
 | F-5 | **Low / Info** | Attack surface | pending | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
 
 \* commit hash recorded at the time this table entry was last updated; see the finding's own
@@ -356,41 +356,56 @@ gap that would have silently reopened it for any trip touched by CSV import or J
 
 ---
 
-### F-2 — `trip.paidDate` bypasses date validation applied to every sibling field (Medium)
+### F-2 — `trip.paidDate` bypassed date validation applied to every sibling field — FIXED
 
-**Where:** `app.js:926` (the bug), contrast with `app.js:913-916` (`pickupDate`,
+**Status: FIXED** (see the "fix F-2: paidDate validation" commit in `git log`).
+
+**Where:** `app.js:~926` (the bug), contrast with `app.js:913-916` (`pickupDate`,
 `deliveryDate`, `invoiceDate`, `dueDate` — all `isValidISODate`-checked in the same function),
-`app.js:1637` (CSV import writes `paidDate` from a raw cell with no validation before it
-reaches `sanitizeTrip`), `app.js:2152-2155` (`computeBrokerStats` — no sanity bound on the
-resulting day-count), `app.js:15427-15429` (`renderMoneyCard` — the same kind of calculation,
+`app.js:~1662` (CSV import writes `paidDate` from a raw cell with no validation before it
+reaches `sanitizeTrip`), `app.js:2170-2200` (`computeBrokerStats` — no sanity bound on the
+resulting day-count), `app.js:~15427` (`renderMoneyCard` — the same kind of calculation,
 *with* a `d>=0 && d<365` bound).
 
-**The bug:** Every date field on a trip goes through `isValidISODate()` in `sanitizeTrip()`
+**The bug:** Every date field on a trip went through `isValidISODate()` in `sanitizeTrip()`
 except `paidDate`:
 ```js
-t.paidDate = raw.paidDate || (t.isPaid ? isoDate() : null); // app.js:926 — no validation
+t.paidDate = raw.paidDate || (t.isPaid ? isoDate() : null); // no validation
 ```
-`daysBetweenISO()` (`app.js:2111-2116`) does return `null` for genuinely unparseable strings,
-so garbage that `new Date()` can't parse at all is filtered out downstream. But a
-CSV-imported `PaidDate` column (`app.js:1637`) reaches this field completely unvalidated, and
-any string `new Date()` *can* parse — including nonsensical-but-valid values like a
-pre-invoice date or a far-future date — flows straight into day-count math. `renderMoneyCard`
-bounds its result (`d>=0 && d<365`); `computeBrokerStats`, which drives per-broker "average
-days to pay" analytics, does not.
+A CSV-imported `PaidDate` column reached this field completely unvalidated, and any string
+`new Date()` *can* parse — including nonsensical-but-valid values like a pre-invoice date or a
+far-future date — flowed straight into day-count math. `renderMoneyCard` bounded its result
+(`d>=0 && d<365`); `computeBrokerStats`, which drives per-broker "average days to pay"
+analytics, did not.
 
-**Reproduction:** `tests/unit/pure-functions.spec.mjs` — calls the real, exported
-`sanitizeTrip()` with garbage in every date field. `pickupDate`/`deliveryDate`/`invoiceDate`
-all fall back to a valid ISO date as designed; `paidDate` is stored verbatim.
+**Fix:** `t.paidDate = isValidISODate(raw.paidDate) ? raw.paidDate : (t.isPaid ? isoDate() : null);`
+— same pattern, same fallback semantics as every sibling field (garbage is treated as absent).
+Added the same `d >= 0 && d < 365` bound to `computeBrokerStats` that `renderMoneyCard` already
+had.
+
+**Audit of other date fields (requested re-check):** scoped to the sanitizer functions
+(`sanitizeTrip`, `sanitizeStop`, `sanitizeExpense`, `sanitizeFuel` — the data-validation layer
+every IDB write for these record types goes through), since that's the exact bypass pattern
+F-2 is about. `sanitizeExpense.date` and `sanitizeFuel.date` were already correctly validated.
+One more instance found: **`sanitizeStop.date`** (a trip's multi-stop entries) had the identical
+bypass (`raw.date || ''`, no `isValidISODate`). Logged as **F-2b** and fixed in this same
+commit — lower severity than F-2 itself, since grepping `app.js` finds no computation anywhere
+that reads `stop.date` for date-math (unlike `paidDate`, which fed `computeBrokerStats`'s
+day-count arithmetic); it's stored/displayed raw only, today. Fixed for consistency before
+anything starts consuming it, not because it's currently causing a wrong number anywhere.
+Document expiry dates and other date fields outside this sanitizer family were not in scope for
+this pass.
+
+**Reproduction (post-fix):** `tests/unit/pure-functions.spec.mjs`, 4 tests (up from 1): garbage
+paidDate on a paid trip now falls back to today's ISO date, matching every sibling field; a
+genuinely valid paidDate round-trips exactly; an *unpaid* trip with garbage paidDate gets `null`
+(not a fabricated date); F-2b confirms `sanitizeStop.date` rejects garbage the same way. All
+pass.
 
 **Impact:** Corrupted or adversarial CSV import data (a driver's own bad export from another
-tool, or a shared/imported file) can skew per-broker pay-speed analytics with unbounded values,
-with no user-visible sign anything is wrong — a wrong-but-confident-looking signal in a
-feature (Broker Intel) explicitly meant to steer bid decisions.
-
-**Proposed fix (tradeoff noted):** Add `isValidISODate(raw.paidDate) ? raw.paidDate : null` at
-`app.js:926`, matching every sibling field, and add the same `d>=0 && d<365` bound to
-`computeBrokerStats` that `renderMoneyCard` already has. No real tradeoff — this brings
-`paidDate` in line with the pattern the rest of the function already uses.
+tool, or a shared/imported file) could have skewed per-broker pay-speed analytics with
+unbounded values, with no user-visible sign anything was wrong — a wrong-but-confident-looking
+signal in a feature (Broker Intel) explicitly meant to steer bid decisions. Fixed.
 
 ---
 
@@ -545,7 +560,6 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run (after this commit, F-1/F-3/F-4/F-6 fixed): **34 passed, 2 failed** across 6 spec
-files. F-1 (7), F-3 (4), F-4 (7), and F-6 (3) all green. F-2 and F-5 remain red pending their
-own commits — each failure is a read-out of real, still-present app behavior, not a broken
-test.
+Last run (after this commit, F-1/F-2/F-3/F-4/F-6 fixed): **38 passed, 1 failed** across 6
+spec files. Only F-5 remains red, pending its own commit — that failure is a read-out of real,
+still-present app behavior, not a broken test.

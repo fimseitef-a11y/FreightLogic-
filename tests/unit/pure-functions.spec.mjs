@@ -72,7 +72,7 @@ test('roundCents avoids classic IEEE-754 drift (0.1+0.2 style cases)', async () 
   eq(r[2], 20, 'accumulated float drift must round to 20');
 });
 
-test('[FINDING F-2 / KNOWN FAILING] sanitizeTrip must validate paidDate like every sibling date field', async () => {
+test('[FINDING F-2 / FIXED] sanitizeTrip validates paidDate like every sibling date field', async () => {
   const r = await app.page.evaluate(() => {
     const t = window.__FL_TESTS.sanitizeTrip({
       orderNo: 'T1', pay: 1000, loadedMiles: 500,
@@ -85,12 +85,49 @@ test('[FINDING F-2 / KNOWN FAILING] sanitizeTrip must validate paidDate like eve
   ok(/^\d{4}-\d{2}-\d{2}$/.test(r.pickupDate), 'pickupDate must fall back to valid ISO: ' + r.pickupDate);
   ok(/^\d{4}-\d{2}-\d{2}$/.test(r.deliveryDate), 'deliveryDate must fall back to valid ISO: ' + r.deliveryDate);
   ok(/^\d{4}-\d{2}-\d{2}$/.test(r.invoiceDate), 'invoiceDate must fall back to valid ISO: ' + r.invoiceDate);
-  // ...paidDate must too (app.js:926 currently stores it verbatim with no isValidISODate() check).
-  ok(/^\d{4}-\d{2}-\d{2}$/.test(r.paidDate) || r.paidDate === null,
-    `BUG (app.js:926): paidDate bypasses isValidISODate() unlike pickupDate/deliveryDate/invoiceDate/dueDate. ` +
-    `Got raw passthrough: ${JSON.stringify(r.paidDate)}. A CSV import's PaidDate column (app.js:1637) flows here unvalidated ` +
-    `and reaches computeBrokerStats() (app.js:2152-2155) which has no d>=0/d<365 sanity bound, unlike renderMoneyCard's ` +
-    `equivalent calculation (app.js:15427-15429) which does.`);
+  // ...paidDate now does too (app.js:926): garbage is treated as "no date given",
+  // which for isPaid:true falls back to today's date (matching the pre-existing
+  // "auto-stamp today when marking paid" behavior for a genuinely absent paidDate),
+  // not stored verbatim.
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(r.paidDate),
+    `EXPECTED paidDate to validate like its siblings (garbage -> fallback ISO date since isPaid:true), GOT ${JSON.stringify(r.paidDate)}`);
+});
+
+test('[FINDING F-2] valid paidDate values pass through unchanged', async () => {
+  const r = await app.page.evaluate(() => {
+    const t = window.__FL_TESTS.sanitizeTrip({
+      orderNo: 'T2', pay: 1000, loadedMiles: 500, isPaid: true, paidDate: '2026-02-14',
+    });
+    return t.paidDate;
+  });
+  eq(r, '2026-02-14', 'a genuinely valid ISO paidDate must round-trip exactly');
+});
+
+test('[FINDING F-2] an unpaid trip with garbage paidDate gets null, not a fabricated date', async () => {
+  const r = await app.page.evaluate(() => {
+    const t = window.__FL_TESTS.sanitizeTrip({
+      orderNo: 'T3', pay: 1000, loadedMiles: 500, isPaid: false, paidDate: 'garbage',
+    });
+    return t.paidDate;
+  });
+  eq(r, null, 'an unpaid trip must not get a fabricated paidDate just because garbage was supplied');
+});
+
+test('[FINDING F-2b] sanitizeStop.date has the same validation gap as trip.paidDate did — found while auditing F-2', async () => {
+  // Lower severity than F-2 itself: grepping app.js finds no computation
+  // anywhere that reads stop.date for date-math (unlike paidDate, which fed
+  // computeBrokerStats' day-count arithmetic) — it's stored and displayed
+  // raw only, today. Still the same bypass pattern, fixed for consistency
+  // and to close the gap before anything starts consuming it.
+  const r = await app.page.evaluate(() => {
+    const t = window.__FL_TESTS.sanitizeTrip({
+      orderNo: 'T4', pay: 1000, loadedMiles: 500,
+      stops: [{ city: 'Chicago, IL', date: 'not-a-date-either', type: 'stop' }],
+    });
+    return t.stops[0]?.date;
+  });
+  ok(r === '' || /^\d{4}-\d{2}-\d{2}$/.test(r),
+    `EXPECTED sanitizeStop to reject/blank garbage dates like every other date field, GOT ${JSON.stringify(r)}`);
 });
 
 test('omegaTierForMiles is exhaustive and mutually exclusive across a dense fuzz sweep', async () => {
