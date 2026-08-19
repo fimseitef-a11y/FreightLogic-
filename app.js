@@ -12443,13 +12443,11 @@ async function openTaxSeasonExport(){
             ];
           }),
       ];
-      const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n');
-      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `FreightLogic_TaxExport_${year}.csv`;
-      document.body.appendChild(a); a.click();
-      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      // F-3 fix: reuse the shared, correctly-quoted CSV writer (app.js:1347)
+      // instead of hand-joining cells with no field quoting — an unquoted
+      // comma in trip.origin/trip.destination ("Springfield, IL") used to
+      // shift every column after it in the mileage log.
+      downloadCSV(rows, `FreightLogic_TaxExport_${year}.csv`);
       toast('Tax CSV downloaded.');
     });
 

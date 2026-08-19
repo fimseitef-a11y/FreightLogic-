@@ -30,14 +30,33 @@ coverage there.
 
 ## Findings
 
-| ID | Severity | Area | Description |
-|----|----------|------|-------------|
-| F-1 | **Critical** | F20 Dead Zone Exit | Grade cap "at C" is dead code — DZ-active loads always show raw grade F; eval-history strip disagrees with the main card for the identical evaluation |
-| F-3 | **Critical** | Tax export (F30) | Schedule C mileage-log CSV has no field quoting — any comma in trip origin/destination corrupts column alignment |
-| F-4 | **High** | App Lock / auth | PIN unlock has no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
-| F-6 | **High** | Trip storage (TOCTOU) | Two tabs/devices editing the same trip: last save silently reverts the other tab's unrelated field changes (full-object overwrite, no version check) |
-| F-2 | **Medium** | AR / trip storage | `trip.paidDate` bypasses `isValidISODate()` (unlike every sibling date field); downstream consumers apply inconsistent bounds-checking |
-| F-5 | **Low / Info** | Attack surface | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
+| ID | Severity | Area | Status | Description |
+|----|----------|------|--------|-------------|
+| F-1 | **Critical** | F20 Dead Zone Exit | pending (fix written, commit next) | Grade cap "at C" is dead code — DZ-active loads always show raw grade F; eval-history strip disagrees with the main card for the identical evaluation |
+| F-3 | **Critical** | Tax export (F30) | **FIXED** | Schedule C mileage-log CSV had no field quoting — any comma in trip origin/destination corrupted column alignment |
+| F-4 | **High** | App Lock / auth | pending — policy proposal awaiting approval | PIN unlock has no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
+| F-6 | **High** | Trip storage (TOCTOU) | pending | Two tabs/devices editing the same trip: last save silently reverts the other tab's unrelated field changes (full-object overwrite, no version check) |
+| F-2 | **Medium** | AR / trip storage | pending | `trip.paidDate` bypasses `isValidISODate()` (unlike every sibling date field); downstream consumers apply inconsistent bounds-checking |
+| F-5 | **Low / Info** | Attack surface | pending | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
+
+\* commit hash recorded at the time this table entry was last updated; see the finding's own
+section below for the authoritative hash if this table is stale relative to it.
+
+---
+
+## Correctness pass on this report itself (phase 7, step 0)
+
+Before any fix, the audit brief asked me to close an evidence gap: **not every finding
+actually had a failing assertion**, contradicting the original report's closing line ("F-1/F-5
+are proven via passing assertions... F-2/F-3/F-4/F-6 are proven via a failing assertion each").
+That line was accurate — the gap is real — but note the brief's own guess at which two findings
+lacked one ("I believe F-2 and F-5") was itself wrong: **F-2 already had a failing assertion**
+(`tests/unit/pure-functions.spec.mjs`, verified in the very next test run below). The two
+findings that actually had no red assertion were **F-1 and F-5**. Both were rewritten to assert
+the documented-correct behavior (and fail against the pre-fix code) rather than assert that the
+bug reproduces — see the harness/test diffs in commit `df69fb8`. Post-correction, a full run
+showed 7 failing assertions across all 6 findings (F-1 contributed two: the main grade-cap
+check and the eval-history-agreement check).
 
 ---
 
@@ -94,49 +113,70 @@ requires updating two in-app copy strings and any driver training material.
 
 ---
 
-### F-3 — Schedule C tax-export CSV has no field quoting (Critical)
+### F-3 — Schedule C tax-export CSV had no field quoting — FIXED
 
-**Where:** `app.js:12446` (the export line), `app.js:12438-12439` (unquoted free-text fields
-fed into it), contrast with the correctly-quoted general export at `app.js:1349`.
+**Status: FIXED** (see the "fix F-3: quote CSV fields..." commit in `git log`).
 
-**The bug:** The general trip/expense/fuel CSV export quotes every cell:
+**Where:** `app.js:12446` (the export line, now removed), `app.js:12438-12439` (unquoted
+free-text fields fed into it), contrast with the correctly-quoted general export at
+`app.js:1349` and the shared `downloadCSV()` helper at `app.js:1347-1356`.
+
+**The bug:** The general trip/expense/fuel CSV export quotes every cell via `downloadCSV()`:
 ```js
-const csv = bom + rows.map(r => r.map(c => `"${csvSafeCell(c).replace(/"/g, '""')}"`).join(',')).join('\n'); // app.js:1349
+function downloadCSV(rows, filename){
+  const bom = '﻿';
+  const csv = bom + rows.map(r => r.map(c => `"${csvSafeCell(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  ...
+}
 ```
-The Tax Season Export (F30) mileage log does not:
+The Tax Season Export (F30) mileage log hand-rolled its own CSV join instead of calling that
+helper, and didn't quote:
 ```js
-const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n'); // app.js:12446
+const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n'); // old app.js:12446
 ```
 `csvSafeCell` only guards against **formula injection** (leading `=+-@|%!`); it does nothing
-about commas, and the row builder never wraps fields in quotes. The mileage-log rows embed
-`trip.origin`/`trip.destination` (`app.js:12438-12439`) — free text the app itself
-autofills/suggests in "City, ST" form throughout the UI. Any trip with a comma in either field
-silently shifts every subsequent column (Loaded Mi, Deadhead Mi, Total Mi, Rate, Deduction)
-for that row when opened in Excel, Numbers, or accounting software.
+about commas. The mileage-log rows embed `trip.origin`/`trip.destination` — free text the app
+itself autofills/suggests in "City, ST" form throughout the UI. Any trip with a comma in either
+field silently shifted every subsequent column (Loaded Mi, Deadhead Mi, Total Mi, Rate,
+Deduction) for that row when opened in Excel, Numbers, or accounting software.
 
-**Reproduction:** `tests/integration/tax-export-csv-corruption.spec.mjs`. Seeds one trip via
-the real `sanitizeTrip()` shape with `destination: 'Springfield, IL'`, opens Tax Season Export
-through the real More → Tax Season Export UI flow, intercepts the CSV Blob the app itself
-builds (no hand-crafted CSV), and counts columns against the row's own header.
+**Fix:** Deleted the F30 export's hand-rolled CSV join/Blob/anchor-click code and replaced it
+with a call to the existing, already-correct `downloadCSV(rows, filename)` helper — the same
+one the general export already used. This is reuse, not a parallel fix: there is now exactly
+one CSV-writing code path with field quoting in the app, so this exact bug class can't reopen
+in a third export later without also being caught by the same helper's tests.
+
+**Reproduction (post-fix):** `tests/integration/tax-export-csv-corruption.spec.mjs`, 4 tests:
+1. Seeds a trip with `destination: 'Springfield, IL'`, exports, and — using the app's own
+   quote-aware CSV parser (`parseCSVLines`, not a naive `split(',')` that would still
+   misreport a properly-quoted comma as 2 cells) — confirms the row parses to exactly as many
+   columns as the header, with `"To"` round-tripping to `"Springfield, IL"` exactly and the
+   deduction figure landing in the correct column.
+2. **Three-way reconciliation** (the audit's re-verification requirement): seeds two trips
+   with known pay/mileage, and confirms the per-trip sum computed in the test, the *rendered*
+   Schedule C summary card's numbers, and the numbers inside the *exported CSV*'s summary
+   section all agree to the cent.
+3. **Year-boundary bucketing**: seeds one trip dated 2025-12-31 and one dated 2026-01-01,
+   confirms the 2025 export includes only the former and the 2026 export includes only the
+   latter.
+4. (Covered in test 1) Standard-mileage deduction figure unaffected by the fix.
 
 ```
-[evidence] header: Date,Trip #,From,To,Loaded Mi,Deadhead Mi,Total Mi,Rate ($/mi),Deduction ($)
-[evidence] data row: 2026-03-01,AUDIT-CSV-1,Chicago, IL,Springfield, IL,200,0,200,0.725,145.00
-[evidence] expected 9 columns, row has 11 (unquoted "Springfield, IL" splits into 2 fields)
+[evidence] data row (parsed): ["2026-03-01","AUDIT-CSV-1","Chicago, IL","Springfield, IL","200","0","200","0.725","145.00"]
+[evidence] rendered card: gross=$1,700.00 mileage=$253.75   (matches per-trip sum and CSV summary exactly)
 ```
 
-**Impact:** This is the file a CPA is handed. A shifted row silently reassigns the mileage
-deduction figure to the wrong column (or drops it off the end), which either understates or
-overstates a Schedule C mileage deduction with no error, warning, or visual cue in the CSV
-itself — tax-filing risk, not just a display bug. Nearly guaranteed to trigger given the app's
-own "City, ST" convention for city fields throughout the evaluator and trip form.
+All 4 pass. **Scope note** on the audit's "standard-mileage vs actual-expense split"
+re-verification ask: FreightLogic's Tax Season Export only ever implements the standard-mileage
+deduction (`IRS.MILEAGE_RATE_2026/2025 x business miles`) — a repo-wide grep finds no "actual
+expense method" toggle anywhere in `app.js`, so there is no such split to verify; this is a
+scope fact about the app, not a gap in this fix.
 
-**Proposed fix (tradeoff noted):** Reuse the exact quoting pattern already correct at
-`app.js:1349` (`"${csvSafeCell(v).replace(/"/g,'""')}"` per cell) in the F30 export at
-`app.js:12446`. No behavioral tradeoff — this is a straight bug fix; the only reason to
-hesitate is that it changes the byte-for-byte output of a file users may already have on disk
-from prior exports (immaterial for correctness, but worth a changelog note since some
-drivers may diff exports year-over-year).
+**Impact:** This is the file a CPA is handed. A shifted row silently reassigned the mileage
+deduction figure to the wrong column (or dropped it off the end), which either understated or
+overstated a Schedule C mileage deduction with no error, warning, or visual cue in the CSV
+itself — tax-filing risk, not just a display bug. Fixed; three-way reconciliation and
+year-boundary bucketing both re-verified clean post-fix.
 
 ---
 
@@ -414,6 +454,6 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run: **19 passed, 4 failed** across 6 spec files (F-1/F-5 are proven via passing
-assertions plus logged evidence; F-2/F-3/F-4/F-6 are proven via a failing assertion each — the
-failures are the point, they are read-outs of real app behavior, not broken tests).
+Last run (after this commit, F-3 fixed): **20 passed, 6 failed** across 6 spec files. F-3's 4
+tests now pass (fix verified). F-1 (x2), F-2, F-4, F-5, F-6 remain red pending their own
+commits — each failure is a read-out of real, still-present app behavior, not a broken test.
