@@ -161,88 +161,18 @@ test('[FINDING PHASE-4 / offline-reconnect] reconnecting does not duplicate, los
 });
 
 // ============================================================
-// NEW FINDING F-8 (Critical) — discovered while building the offline
-// expense-entry scenario above. NOT offline-specific: reproduces online too
-// (verified below). Add Expense and Add Fuel are both completely broken for
-// every brand-new record.
+// F-8 (Critical) was discovered here — while building the offline
+// expense-entry scenario above — and is now FIXED. Its regression coverage
+// lives in tests/integration/expense-fuel-write.spec.mjs, which asserts the
+// corrected behavior directly (new expense and fuel records save through the
+// real UI, add() and put() both accept a sanitized new record, and recurring
+// string ids survive). The two tests that used to sit here documented the
+// broken behavior instead, so they were removed rather than left asserting a
+// bug that no longer exists.
+//
+// What remains verified HERE is the offline half that F-8 was found inside:
+// the offline trip write above, and the reconnect check that follows it.
 // ============================================================
-// sanitizeExpense() (app.js:1044) and sanitizeFuel() (app.js:1120) both do:
-//   id: raw.id ? intNum(raw.id, 0, 1e12) : undefined
-// For a new record raw.id is absent, so this puts an EXPLICIT `id: undefined`
-// property on the object handed to store.add(). Per the IndexedDB spec, an
-// object store with keyPath 'id' + autoIncrement:true only lets
-// auto-increment fill in the key when the keyPath property is ABSENT — an
-// explicitly-present `id: undefined` is evaluated as a real (invalid) key
-// and add() throws synchronously: "Failed to execute 'add' on
-// 'IDBObjectStore': Evaluating the object store's key path yielded a value
-// that is not a valid key." Neither addExpense() nor addFuel() wraps the
-// call in try/catch, so this is an uncaught exception — no toast, no error
-// shown, the Save button just does nothing and the modal never closes. The
-// record is never written. Confirmed the exact same shape via a raw
-// (app-bypassing) IndexedDB call: `{ id: undefined, ... }` throws on this
-// store; the identical object with the `id` key simply omitted succeeds
-// with an auto-generated key.
-test('[FINDING F-8 / NEW, Critical] Add Expense is completely broken for every new expense — uncaught IndexedDB key-path error, no error shown, nothing saved', async () => {
-  const pageErrors = [];
-  app.page.on('pageerror', (e) => pageErrors.push(e.message));
-
-  await openAddExpense(app.page);
-  await app.page.fill('#f_amt', '45.50');
-  await app.page.fill('#f_cat', 'Fuel');
-  const countBefore = await getStoreCount(app.page, 'expenses');
-  await app.page.click('#f_save');
-  await app.page.waitForTimeout(800);
-
-  const modalStillOpen = await app.page.evaluate(() => !!document.getElementById('f_amt'));
-  const countAfter = await getStoreCount(app.page, 'expenses');
-  console.log(`    [evidence] page error thrown by the click: ${JSON.stringify(pageErrors.find(m => m.includes('IDBObjectStore')) || pageErrors[0] || '(none captured)')}`);
-  console.log(`    [evidence] expenses count before=${countBefore}, after=${countAfter}; modal still open=${modalStillOpen}`);
-
-  ok(pageErrors.some(m => /IDBObjectStore.*key path.*not a valid key/i.test(m)),
-    `expected the uncaught DataError from addExpense() (app.js:1065, store.expenses.add(e) with an explicit id:undefined) — page errors seen: ${JSON.stringify(pageErrors)}`);
-  eq(countAfter, countBefore, 'CONFIRMED BUG: the expense is never written — Save silently does nothing (no toast, no validation hint, modal stays open) because the exception is uncaught');
-});
-
-test('[FINDING F-8 / NEW, Critical] confirmed NOT offline-specific — the identical crash happens fully online, and Add Fuel has the same bug pattern', async () => {
-  await app.context.setOffline(false);
-  await app.page.reload();
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
-
-  const pageErrors = [];
-  app.page.on('pageerror', (e) => pageErrors.push(e.message));
-
-  // Add Expense, fully online this time.
-  await openAddExpense(app.page);
-  await app.page.fill('#f_amt', '12.34');
-  await app.page.click('#f_save');
-  await app.page.waitForTimeout(600);
-  const expenseCrashedOnline = pageErrors.some(m => /IDBObjectStore.*key path/i.test(m));
-  console.log(`    [evidence] online Add Expense also throws: ${expenseCrashedOnline}`);
-  ok(expenseCrashedOnline, 'expected the identical crash with no network involved at all — this rules out anything offline-specific; it is a pure sanitizeExpense()/addExpense() bug');
-
-  // Add Fuel — sanitizeFuel() (app.js:1120) has the byte-for-byte identical
-  // `id: raw.id ? intNum(...) : undefined` pattern feeding addFuel()'s
-  // store.fuel.add(x) (app.js:1129), against a fuel store that is also
-  // { keyPath:'id', autoIncrement:true }. Confirmed via a raw IndexedDB call
-  // matching sanitizeFuel()'s exact output shape (not exercised through the
-  // Fuel UI here to keep this test focused, since the failure mechanism —
-  // and the fix — are identical to the expense case above).
-  const fuelResult = await app.page.evaluate(() => new Promise((resolve) => {
-    const req = indexedDB.open('FreightLogic_v18');
-    req.onsuccess = () => {
-      const db = req.result;
-      const txn = db.transaction('fuel', 'readwrite');
-      try {
-        const r = txn.objectStore('fuel').add({ id: undefined, date: '2026-08-19', gallons: 10, amount: 40, state: 'IL', notes: '', created: Date.now(), updated: Date.now(), updatedAt: Date.now() });
-        r.onsuccess = () => resolve({ ok: true });
-        r.onerror = () => resolve({ ok: false, err: r.error?.message });
-      } catch (e) { resolve({ ok: false, thrown: e.message }); }
-    };
-  }));
-  console.log(`    [evidence] raw IndexedDB add() against the 'fuel' store with sanitizeFuel()'s exact output shape: ${JSON.stringify(fuelResult)}`);
-  ok(!fuelResult.ok && /key path/i.test(fuelResult.thrown || fuelResult.err || ''),
-    `expected addFuel() to have the identical bug via sanitizeFuel()'s identical id:undefined pattern — got ${JSON.stringify(fuelResult)}`);
-});
 
 // ============================================================
 // 3. CLOCK SKEW / DST TRANSITIONS

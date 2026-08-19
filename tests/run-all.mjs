@@ -11,6 +11,7 @@ import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corrup
 import { runSpec as pinLockout } from './integration/pin-lockout.spec.mjs';
 import { runSpec as flTestsExposure } from './integration/fl-tests-exposure.spec.mjs';
 import { runSpec as toctouEdit } from './integration/toctou-concurrent-edit.spec.mjs';
+import { runSpec as expenseFuelWrite } from './integration/expense-fuel-write.spec.mjs';
 import { runSpec as fieldResilience } from './integration/field-resilience.spec.mjs';
 import { runSpec as journeys } from './e2e/journeys.spec.mjs';
 
@@ -21,6 +22,7 @@ const specs = [
   pinLockout,
   flTestsExposure,
   toctouEdit,
+  expenseFuelWrite,
   fieldResilience,
   journeys,
 ];

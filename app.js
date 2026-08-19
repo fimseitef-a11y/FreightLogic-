@@ -1040,8 +1040,25 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaid
 }
 
 // ---- Expenses ----
+// F-8 fix: build the `id` property for an auto-increment-keyed record.
+// Returns an object to spread — `{}` when there is no id, so the key is
+// ABSENT rather than present-and-undefined. IndexedDB only lets its key
+// generator assign a key when the key-path property is absent; an explicit
+// `id: undefined` is evaluated as a real (invalid) key and rejects the write
+// with a DataError. That killed every new expense and fuel record on both
+// add() AND put() (verified against a real store), taking the Add Expense /
+// Add Fill-up buttons, CSV/XLSX import, and JSON backup import with it.
+// String ids are preserved verbatim: upsertExpense() documents them for
+// recurring monthly expenses ('rec_2026-08_ins'), and routing those through
+// intNum() collapsed every one to 0, so each month's recurring expenses all
+// overwrote each other on key 0.
+function sanitizeAutoId(raw){
+  if (raw.id === undefined || raw.id === null || raw.id === '') return {};
+  if (typeof raw.id === 'string' && !/^\d+$/.test(raw.id)) return { id: clampStr(raw.id, 80) };
+  return { id: intNum(raw.id, 0, 1e12) };
+}
 function sanitizeExpense(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
+  return { ...sanitizeAutoId(raw), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
@@ -1117,7 +1134,7 @@ async function listExpenses({cursor=null, search=''}={}){
 
 // ---- Fuel (P1-3: full CRUD + list) ----
 function sanitizeFuel(raw){
-  return { id: raw.id ? intNum(raw.id, 0, 1e12) : undefined, date: isValidISODate(raw.date) ? raw.date : isoDate(),
+  return { ...sanitizeAutoId(raw), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
     created: finiteNum(raw.created, Date.now()), updated: Date.now(), updatedAt: Date.now() };

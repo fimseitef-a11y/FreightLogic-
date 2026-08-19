@@ -3,8 +3,8 @@
 // Full multi-step flows driven purely through the real UI, with tap counts
 // and elapsed time reported per journey (per the audit's "anything over 3
 // taps to log fuel or evaluate a load is a finding" instruction). Journey 2
-// hits F-8 (Add Fuel is broken) live — that's expected and documented
-// inline, not a new bug; Journey 5 surfaces a NEW finding (F-9).
+// carries the F-8 regression check (logging fuel through the real UI must
+// persist a record); Journey 5 surfaces F-9.
 //
 // OCR: journey 2 would normally include a photo-of-a-rate-confirmation path
 // (F27 Unified Load Intake's camera mode), but Tesseract.js cannot run in
@@ -157,14 +157,17 @@ test('[JOURNEY 2] load intake through AR cleared', async () => {
   ok(bookedTrip && bookedTrip.pay === 1200, `trip should be booked with the evaluator's numbers — got ${JSON.stringify(bookedTrip)}`);
   await dismissFollowUpModals(app.page, tc);
 
-  // Log fuel — this is where F-8 lives. Documented, not re-litigated: this
-  // journey step is expected to demonstrate the SAME uncaught crash, in the
-  // context of an ordinary driver flow rather than an isolated unit probe.
+  // Log fuel. This step used to reproduce F-8 (uncaught IndexedDB key-path
+  // error, nothing saved) and needed a direct-write workaround to let the
+  // journey continue. F-8 is fixed, so the journey now asserts the real
+  // thing: logging fuel through the UI actually persists a record, and the
+  // tap cost of doing it is measured against the audit's 3-tap bar.
   await forceCloseAnyModal(app.page); // safety net — see JOURNEY 3/4's own use of this
   const fuelCountBefore = await app.page.evaluate(() => new Promise((resolve) => {
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => { const c = req.result.transaction('fuel', 'readonly').objectStore('fuel').count(); c.onsuccess = () => resolve(c.result); };
   }));
+  const tapsBeforeFuel = tc.count();
   await app.page.evaluate(() => { location.hash = '#fuel'; });
   await app.page.waitForSelector('#btnAddFuel2', { timeout: 10000 });
   const fuelPageErrors = [];
@@ -174,37 +177,18 @@ test('[JOURNEY 2] load intake through AR cleared', async () => {
   await tc.fill('#f_gal', '25');
   await tc.fill('#f_amt', '95');
   await tc.click('#f_save');
-  await app.page.waitForTimeout(600);
-  const fuelCountAfterUiAttempt = await app.page.evaluate(() => new Promise((resolve) => {
+  await app.page.waitForTimeout(800);
+  const fuelCount = await app.page.evaluate(() => new Promise((resolve) => {
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => { const c = req.result.transaction('fuel', 'readonly').objectStore('fuel').count(); c.onsuccess = () => resolve(c.result); };
   }));
-  const fuelCrashed = fuelPageErrors.some(m => /IDBObjectStore.*key path/i.test(m)) || fuelCountAfterUiAttempt === fuelCountBefore;
-  console.log(`    [evidence] logging fuel in this journey ${fuelCrashed ? 'reproduces F-8 (uncaught crash / nothing saved)' : 'succeeded'} — fuel count ${fuelCountBefore} -> ${fuelCountAfterUiAttempt}, taps spent: ${tc.count() - intakeTaps - 2 /* order#+save already counted */}`);
-  if (fuelCrashed) {
-    // Work around it here (direct write) so the rest of the journey — the
-    // part this test is actually about — isn't blocked by a bug that's
-    // already fully documented under its own finding.
-    await app.page.evaluate(() => new Promise((resolve, reject) => {
-      const req = indexedDB.open('FreightLogic_v18');
-      req.onsuccess = () => {
-        const db = req.result;
-        const txn = db.transaction('fuel', 'readwrite');
-        txn.objectStore('fuel').add({ date: '2026-08-19', gallons: 25, amount: 95, state: 'IL', notes: '(added around F-8 for journey continuity)', created: Date.now(), updated: Date.now(), updatedAt: Date.now() });
-        txn.oncomplete = () => { db.close(); resolve(); };
-        txn.onerror = () => reject(txn.error);
-      };
-    }));
-  }
-  const fuelCount = await app.page.evaluate(() => new Promise((resolve) => {
-    const req = indexedDB.open('FreightLogic_v18');
-    req.onsuccess = () => {
-      const db = req.result;
-      const c = db.transaction('fuel', 'readonly').objectStore('fuel').count();
-      c.onsuccess = () => resolve(c.result);
-    };
-  }));
-  ok(fuelCount >= 1, 'expected at least one fuel record to exist by this point (via UI or the documented F-8 workaround)');
+  const fuelTaps = tc.count() - tapsBeforeFuel;
+  const keyPathErrs = fuelPageErrors.filter(m => /IDBObjectStore.*key path/i.test(m));
+  console.log(`    [evidence] logging fuel: count ${fuelCountBefore} -> ${fuelCount}, ${fuelTaps} taps, key-path errors: ${keyPathErrs.length}`);
+  eq(keyPathErrs.length, 0, `[F-8 regression] logging fuel must not throw an IndexedDB key-path error — got ${JSON.stringify(keyPathErrs)}`);
+  eq(fuelCount, fuelCountBefore + 1, '[F-8 regression] logging fuel through the real UI must actually persist a record');
+  // The audit's bar: "anything over 3 taps to log fuel is a finding."
+  console.log(`    [PHASE 5 finding] logging fuel took ${fuelTaps} taps (open Add Fill-up -> gallons -> total $ -> Save)${fuelTaps > 3 ? ' — over the audit\'s 3-tap bar' : ' — within the audit\'s 3-tap bar'}.`);
 
   // Delivery + invoice: edit the trip.
   await app.page.evaluate(() => { location.hash = '#trips'; });
@@ -431,9 +415,10 @@ test('[JOURNEY 5 / FINDING F-9 / NEW, Critical] importing a friend\'s backup sil
   await deviceA.page.fill('#f_pay', '777');
   await deviceA.page.click('#saveTrip');
   await deviceA.page.waitForTimeout(400);
-  // Seed A's expense directly (F-8 blocks the real UI path for this — see
-  // that finding; not re-demonstrated here since the point of this journey
-  // is what happens on IMPORT, not on entry).
+  // Seed A's expense directly. The UI path works now that F-8 is fixed, but
+  // this journey is about what happens on IMPORT, not on entry — seeding
+  // keeps it focused and fast. Entry via the real UI is covered by
+  // tests/integration/expense-fuel-write.spec.mjs.
   await deviceA.page.evaluate(() => new Promise((resolve, reject) => {
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => {
