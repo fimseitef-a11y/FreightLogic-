@@ -5282,6 +5282,26 @@ function openSecurityLockModal(){
   });
 }
 
+// F-4 fix: App Lock brute-force throttle. Policy (approved by the app
+// owner — a driver who fat-fingers their OWN pin one-handed in a moving
+// vehicle must never be stranded, so this never wipes data and never
+// locks out permanently; it only makes each additional wrong guess after
+// the free allowance progressively slower to attempt):
+//   attempts 1-5:   free, no delay (normal fat-finger tolerance)
+//   attempts 6-10:  10s delay before the NEXT attempt is even accepted
+//   attempts 11-15: 60s delay
+//   attempts 16+:   5min delay — the cap; never grows further
+// State (appLockFailCount / appLockLockedUntil) persists in settings so a
+// reload doesn't reset the counter, and resets to 0 on any successful
+// unlock. Deliberately NOT added to ALLOWED_SETTINGS_KEYS (app.js:1457) —
+// a restored backup should never re-import a stale lockout from another
+// device/session.
+function _appLockDelayForAttempt(failCount){
+  if (failCount <= 5) return 0;
+  if (failCount <= 10) return 10_000;
+  if (failCount <= 15) return 60_000;
+  return 300_000; // cap — never grows past 5 minutes
+}
 async function requireAppUnlock(){
   const enabled = !!(await getSetting('appLockEnabled', false));
   const pin = String(await getSetting('appLockPin', '') || '');
@@ -5293,20 +5313,96 @@ async function requireAppUnlock(){
       <label>PIN</label><input id="unlockPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" />
       <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="unlockNow">Unlock</button></div>
       <div id="unlockHint" class="muted" style="font-size:12px;margin-top:10px"></div>
+      <div style="margin-top:14px;text-align:center"><a href="#" id="unlockForgotPin" style="font-size:12px;color:var(--text-tertiary)">Forgot PIN?</a></div>
     </div>`;
     openModal('Unlock Freight Logic', body);
+    let countdownTimer = null;
+    const unlockBtn = () => document.getElementById('unlockNow');
+    const pinInput = () => document.getElementById('unlockPin');
+    const hintEl = () => document.getElementById('unlockHint');
+    const setLockedUI = (msUntilFree) => {
+      const secs = Math.ceil(msUntilFree / 1000);
+      if (unlockBtn()) unlockBtn().disabled = true;
+      if (pinInput()) pinInput().disabled = true;
+      if (hintEl()) hintEl().textContent = `Too many attempts. Try again in ${secs}s.`;
+    };
+    const clearLockedUI = () => {
+      if (unlockBtn()) unlockBtn().disabled = false;
+      if (pinInput()) pinInput().disabled = false;
+      if (hintEl()) hintEl().textContent = '';
+    };
+    const armCountdown = (lockedUntil) => {
+      if (countdownTimer) clearInterval(countdownTimer);
+      const tick = () => {
+        const remaining = lockedUntil - Date.now();
+        if (remaining <= 0){ clearInterval(countdownTimer); countdownTimer = null; clearLockedUI(); return; }
+        setLockedUI(remaining);
+      };
+      tick();
+      countdownTimer = setInterval(tick, 1000);
+    };
+    (async () => {
+      const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+      if (lockedUntil > Date.now()) armCountdown(lockedUntil);
+    })();
+    let unlockInFlight = false;
     const tryUnlock = async ()=>{
-      const val = String(document.getElementById('unlockPin')?.value || '');
-      const match = await verifyPin(pin, val);
-      // Migrate legacy hash formats to PBKDF2 on successful unlock
-      if (match && !pin.startsWith('pbkdf2v1:')){
-        setSetting('appLockPin', await hashPin(val)).catch(()=>{});
-      }
-      if (match){ closeModal(); resolve(true); }
-      else { const h = document.getElementById('unlockHint'); if (h) h.textContent = 'Incorrect PIN'; haptic(35); }
+      // Reentrancy guard: without this, rapid concurrent calls (button-mash,
+      // or a scripted loop calling .click() faster than one verifyPin+
+      // setSetting round-trip) could each read the same pre-increment
+      // failCount before any of them writes the incremented value back,
+      // silently undercounting attempts and diluting the whole throttle.
+      if (unlockInFlight) return;
+      unlockInFlight = true;
+      try{
+        const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+        if (lockedUntil > Date.now()){ armCountdown(lockedUntil); return; } // still locked — ignore the click
+        const val = String(document.getElementById('unlockPin')?.value || '');
+        const match = await verifyPin(pin, val);
+        // Migrate legacy hash formats to PBKDF2 on successful unlock
+        if (match && !pin.startsWith('pbkdf2v1:')){
+          setSetting('appLockPin', await hashPin(val)).catch(()=>{});
+        }
+        if (match){
+          if (countdownTimer) clearInterval(countdownTimer);
+          setSetting('appLockFailCount', 0).catch(()=>{});
+          setSetting('appLockLockedUntil', 0).catch(()=>{});
+          closeModal(); resolve(true);
+        } else {
+          const failCount = Number(await getSetting('appLockFailCount', 0) || 0) + 1;
+          await setSetting('appLockFailCount', failCount).catch(()=>{});
+          const delay = _appLockDelayForAttempt(failCount);
+          if (delay > 0){
+            const until = Date.now() + delay;
+            await setSetting('appLockLockedUntil', until).catch(()=>{});
+            armCountdown(until);
+          } else if (hintEl()) hintEl().textContent = 'Incorrect PIN';
+          haptic(35);
+        }
+      }finally{ unlockInFlight = false; }
     };
     document.getElementById('unlockNow')?.addEventListener('click', ()=>{ tryUnlock().catch(()=>{}); });
     document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock().catch(()=>{}); });
+    document.getElementById('unlockForgotPin')?.addEventListener('click', (e)=>{
+      e.preventDefault();
+      // Local-only PIN, not a data encryption key (CLAUDE.md credential
+      // table — it gates app UI access, not disk encryption) and the
+      // driver must never be permanently stranded out of their own trip
+      // data. Resetting removes the lock; it does NOT touch trip/expense
+      // data. A technical user could already achieve the same result by
+      // clearing site data, so this doesn't weaken the PIN against a
+      // sophisticated attacker — it just gives the legitimate owner an
+      // honest, immediate way back in instead of waiting out a timer.
+      const ok = confirm('Reset your App Lock PIN?\n\nThis removes the lock screen — it does NOT delete any trips, expenses, or fuel records. You can set a new PIN afterward in Settings.');
+      if (!ok) return;
+      if (countdownTimer) clearInterval(countdownTimer);
+      Promise.all([
+        setSetting('appLockEnabled', false),
+        setSetting('appLockPin', ''),
+        setSetting('appLockFailCount', 0),
+        setSetting('appLockLockedUntil', 0),
+      ]).catch(()=>{}).finally(()=>{ closeModal(); resolve(true); });
+    });
   });
 }
 

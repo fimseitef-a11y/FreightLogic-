@@ -34,7 +34,7 @@ coverage there.
 |----|----------|------|--------|-------------|
 | F-1 | **Critical** | F20 Dead Zone Exit | **FIXED** | Grade cap "at C" was dead code — DZ-active loads always showed raw grade F; eval-history strip disagreed with the main card for the identical evaluation |
 | F-3 | **Critical** | Tax export (F30) | **FIXED** | Schedule C mileage-log CSV had no field quoting — any comma in trip origin/destination corrupted column alignment |
-| F-4 | **High** | App Lock / auth | pending — policy proposal awaiting approval | PIN unlock has no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
+| F-4 | **High** | App Lock / auth | **FIXED** (policy approved by owner before implementation) | PIN unlock had no brute-force lockout, backoff, or attempt cap — bounded only by PBKDF2 cost (~115ms/attempt measured) |
 | F-6 | **High** | Trip storage (TOCTOU) | **FIXED** | Two tabs/devices editing the same trip: last save silently reverted the other tab's unrelated field changes (full-object overwrite, no version check) |
 | F-2 | **Medium** | AR / trip storage | pending | `trip.paidDate` bypasses `isValidISODate()` (unlike every sibling date field); downstream consumers apply inconsistent bounds-checking |
 | F-5 | **Low / Info** | Attack surface | pending | `window.__FL_TESTS` is unconditionally exposed in production; its own comment claims a gate (`__FL_TESTS_ENABLED`) that does not exist anywhere in code |
@@ -229,43 +229,56 @@ year-boundary bucketing both re-verified clean post-fix.
 
 ---
 
-### F-4 — App Lock PIN has no brute-force lockout (High)
+### F-4 — App Lock PIN had no brute-force lockout — FIXED
 
-**Where:** `app.js:5251-5277` (`requireAppUnlock`), `app.js:177-207` (`verifyPin`).
+**Status: FIXED** (see the "fix F-4: App Lock brute-force lockout" commit in `git log`). Policy
+and recovery approach were proposed to and approved by the app owner *before* implementation,
+per the standing instruction not to ship a lockout that could strand a driver using this
+one-handed in a moving vehicle.
 
-**The bug:** `requireAppUnlock()` renders a PIN input and an Unlock button; every click (or
-Enter) calls `verifyPin()` fresh with zero shared state — no attempt counter, no exponential
-backoff, no lockout window, no CAPTCHA-equivalent. PBKDF2 (310k iterations, SHA-256,
-`app.js:167-174`/`app.js:185-186`) is the *only* cost per guess. `verifyPin`'s final
-comparison for the modern hash format is also a plain JS `===` on the derived hash string
-(`app.js:188`) — not inherently constant-time, though this is a secondary concern relative to
-the missing lockout.
+**Where:** `app.js:5285-...` (`requireAppUnlock`), `app.js:177-207` (`verifyPin`, unchanged).
 
-**Reproduction:** `tests/integration/pin-lockout.spec.mjs`. Sets a real 4-digit PIN through
-the app's own `hashPin()` + settings store, reloads to trigger the real unlock modal, and
-scripts 15 consecutive wrong guesses through the actual `#unlockPin` input and `#unlockNow`
-button — exactly what a DevTools console loop would do.
+**The bug:** `requireAppUnlock()` rendered a PIN input and an Unlock button; every click (or
+Enter) called `verifyPin()` fresh with zero shared state — no attempt counter, no exponential
+backoff, no lockout window. PBKDF2 (310k iterations, SHA-256) was the *only* cost per guess —
+at ~115ms/attempt, all 10,000 combinations of a 4-digit PIN were exhaustible in under 20
+minutes from a single unattended browser tab.
 
-```
-[evidence] 15/15 attempts: hint stayed "Incorrect PIN" every time, input never disabled,
-           per-attempt latency ~97–122ms flat (no growing backoff)
-```
+**Fix (approved policy):**
+- Attempts 1-5: free, no delay (normal fat-finger tolerance).
+- Attempts 6-10: 10s delay before the *next* attempt is even accepted.
+- Attempts 11-15: 60s delay.
+- Attempts 16+: 5-minute delay — the cap, never grows further, **never permanent**.
+- State (`appLockFailCount`/`appLockLockedUntil`) persists in `settings` so a reload can't
+  reset the counter, and is deliberately *not* added to `ALLOWED_SETTINGS_KEYS` so a restored
+  backup never re-imports a stale lockout from another device/session. Resets to 0 on any
+  successful unlock.
+- A **"Forgot PIN?"** link on the unlock screen (confirmation-gated) clears `appLockEnabled`/
+  `appLockPin`/the lockout counters — removing the lock, never touching trip/expense data —
+  available even mid-lockout, so the driver is never truly stuck. Per CLAUDE.md's credential
+  table the PIN gates app UI access, not disk encryption, and a technical user could already
+  achieve the same removal by clearing site data — this doesn't weaken the PIN against a
+  sophisticated attacker, it just gives the legitimate owner an honest, immediate way back in
+  instead of waiting out a timer.
+- **Reentrancy guard added while implementing this:** without it, rapid concurrent calls to
+  `tryUnlock()` (button-mash, or a scripted `.click()` loop faster than one
+  verifyPin+setSetting round-trip) could each read the same pre-increment `appLockFailCount`
+  before any of them wrote the incremented value back, silently undercounting attempts and
+  diluting the whole throttle — found via a real test flake while writing the reproduction
+  below, not purely theoretical.
 
-At ~115ms/attempt, all 10,000 combinations of a 4-digit PIN are exhaustible in under 20
-minutes from a single unattended browser tab; a 6-digit PIN in under 32 hours (or minutes,
-parallelized across multiple tabs — nothing here serializes attempts either).
+**Reproduction (post-fix):** `tests/integration/pin-lockout.spec.mjs`, 7 tests: first 5 wrong
+guesses stay exactly as before (plain "Incorrect PIN", no delay); the 6th triggers a
+countdown-locked state (input+button disabled, persisted `appLockLockedUntil`); the lockout
+survives a page reload (checked via the persisted DB value, not just UI state, since this
+app's own boot sequence can itself take real time); once the delay elapses the input
+re-enables itself with no user action; the correct PIN unlocks and resets the counter to zero;
+"Forgot PIN" removes the lock even while still mid-lockout. All 7 pass.
 
 **Impact:** App Lock's threat model is "someone else with the unlocked-or-briefly-accessible
-device" (per CLAUDE.md's credential table, the PIN gates *app* access, not disk encryption).
-Under that model, an unattended device (glovebox, truck stop, borrowed phone) is fully
-exposed to trip/expense/fuel financial data within the time it takes to eat lunch.
-
-**Proposed fix (tradeoff noted):** Add a persisted failed-attempt counter (in `settings`,
-alongside `appLockPin`) with escalating delay (e.g. 5 free attempts, then 30s/2min/10min
-lockout windows) and a hard reset only via full app data wipe or a recovery flow. Tradeoff:
-this is a local-only PIN with no server backing, so a "forgot PIN" story needs a
-deliberately painful reset (e.g., requires the JSON export passphrase or a full data-clear
-acknowledgment) or the lockout becomes a self-inflicted denial-of-service for the driver.
+device" (glovebox, truck stop, borrowed phone). Fixed: brute-forcing now costs real, escalating
+wall-clock time (minutes-to-hours instead of ~20 minutes flat) while the legitimate owner is
+guaranteed a way back in within 5 minutes worst-case, or immediately via Forgot PIN.
 
 ---
 
@@ -532,6 +545,7 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run (after this commit, F-1/F-3/F-6 fixed): **28 passed, 3 failed** across 6 spec files.
-F-1 (7), F-3 (4), and F-6 (3) all green. F-2, F-4, F-5 remain red pending their own commits —
-each failure is a read-out of real, still-present app behavior, not a broken test.
+Last run (after this commit, F-1/F-3/F-4/F-6 fixed): **34 passed, 2 failed** across 6 spec
+files. F-1 (7), F-3 (4), F-4 (7), and F-6 (3) all green. F-2 and F-5 remain red pending their
+own commits — each failure is a read-out of real, still-present app behavior, not a broken
+test.
