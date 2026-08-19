@@ -886,7 +886,12 @@ function sanitizeStop(raw){
   if (!raw || typeof raw !== 'object') return null;
   return {
     city: clampStr(raw.city, 60),
-    date: raw.date || '',
+    // F-2b fix: found while auditing F-2 for the same bypass pattern
+    // elsewhere — was a raw passthrough like paidDate used to be. Lower
+    // severity than F-2 itself (nothing in app.js currently reads
+    // stop.date for date-math), fixed for consistency before anything
+    // starts consuming it.
+    date: isValidISODate(raw.date) ? raw.date : '',
     type: ['stop','pickup','delivery'].includes(raw.type) ? raw.type : 'stop',
     notes: clampStr(raw.notes, 200),
   };
@@ -923,10 +928,25 @@ function sanitizeTrip(raw){
   t.stops = Array.isArray(raw.stops) ? raw.stops.slice(0, 10).map(sanitizeStop).filter(Boolean) : [];
   t.notes = clampStr(raw.notes, 500);
   t.isPaid = !!raw.isPaid;
-  t.paidDate = raw.paidDate || (t.isPaid ? isoDate() : null);
+  // F-2 fix: paidDate now goes through isValidISODate() like every sibling
+  // date field above — was stored verbatim, letting a malformed CSV
+  // import's PaidDate column (app.js:~1662) reach day-count arithmetic
+  // (computeBrokerStats) unvalidated. Garbage is treated the same as an
+  // absent value (falls back to today if isPaid, else null) — same
+  // fallback semantics as before, just gated on actually being a date.
+  t.paidDate = isValidISODate(raw.paidDate) ? raw.paidDate : (t.isPaid ? isoDate() : null);
   t.wouldRunAgain = raw.wouldRunAgain === true ? true : raw.wouldRunAgain === false ? false : null;
   t.created = finiteNum(raw.created, Date.now());
   t.updated = Date.now();
+  // F-6 fix: preserve raw.updatedAt (the optimistic-concurrency stamp
+  // upsertTrip() sets on every save) when present. sanitizeTrip() is also
+  // the path CSV/JSON import goes through with raw.updatedAt already set
+  // (a prior export's dumpStore('trips') includes it) — without this, every
+  // re-imported/restored trip would silently lose its updatedAt and skip
+  // the F-6 conflict check on its first post-import edit. Left undefined
+  // for a genuinely new trip, which is the correct "no conflict check yet"
+  // state — upsertTrip() itself always sets the real value after this.
+  t.updatedAt = Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined;
   // F20: Dead Zone Exit fields
   t.isDZExit = !!raw.isDZExit;
   t.dzDistanceFromHome = Number.isFinite(Number(raw.dzDistanceFromHome)) && Number(raw.dzDistanceFromHome) > 0 ? Math.round(Number(raw.dzDistanceFromHome)) : null;
@@ -941,14 +961,39 @@ async function tripExists(orderNo){
   return !!(await idbReq(stores.trips.get(orderNo)));
 }
 async function upsertTrip(trip){
+  // F-6 fix: optimistic concurrency. `trip.updatedAt` (on the RAW argument,
+  // before sanitizeTrip builds a fresh object) is whatever this caller's
+  // in-memory copy was loaded with — e.g. openTripWizard(existing) preserves
+  // it untouched through the whole edit session. Undefined for a brand-new
+  // trip (newTripTemplate() has no updatedAt), so new-trip saves are never
+  // blocked by this check.
+  const expectedUpdatedAt = trip?.updatedAt ?? null;
   const t = sanitizeTrip(trip);
   if (!t.orderNo) throw new Error('Order # required');
-  t.updatedAt = Date.now();
   validateRecordSize(t, 'Trip');
-  // TOCTOU-safe: read + write in single readwrite transaction
+  // TOCTOU-safe: read + write in single readwrite transaction. This was
+  // previously true only for the audit-log snapshot (beforeData was read
+  // fresh, but nothing compared it against what the CALLER started editing
+  // from) — two tabs could each read-then-edit-then-put the full trip
+  // object, and the later put silently discarded the earlier tab's change
+  // even in fields it never touched (F-6). The compare-and-abort below
+  // closes that: if the stored record has moved on since this caller's
+  // copy was loaded, abort instead of overwriting. This is a single
+  // synchronous check inside one transaction, not a lock — nothing waits
+  // on anything, and a tab that dies mid-transaction just leaves an
+  // uncommitted (auto-aborted) transaction per the IndexedDB spec, so it
+  // can't strand a lock for other tabs to wait on.
   const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.trips.get(t.orderNo)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(e){ console.warn("[FL]", e); }
+    const err = new Error('This trip was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  t.updatedAt = Date.now();
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
@@ -2151,7 +2196,13 @@ function computeBrokerStats(trips, todayIso, windowDays=90){
     if (!t.isPaid) rec.unpaid += pay;
     if (t.isPaid && t.paidDate){
       const d = daysBetweenISO(t.invoiceDate || dt, t.paidDate);
-      if (d !== null){ rec.paidTrips += 1; rec.daysToPaySum += d; }
+      // F-2 fix: same d>=0/d<365 sanity bound renderMoneyCard already
+      // applies to its equivalent calculation (app.js:~15429) — this one
+      // didn't have it, so an outlier (pre-invoice paidDate, or a garbage-
+      // but-Date-parseable value that survives sanitizeTrip's now-added
+      // isValidISODate check) could skew a broker's avg-days-to-pay with
+      // an unbounded value.
+      if (d !== null && d >= 0 && d < 365){ rec.paidTrips += 1; rec.daysToPaySum += d; }
     }
   }
   return Array.from(map.values()).map(r => ({
@@ -5248,6 +5299,26 @@ function openSecurityLockModal(){
   });
 }
 
+// F-4 fix: App Lock brute-force throttle. Policy (approved by the app
+// owner — a driver who fat-fingers their OWN pin one-handed in a moving
+// vehicle must never be stranded, so this never wipes data and never
+// locks out permanently; it only makes each additional wrong guess after
+// the free allowance progressively slower to attempt):
+//   attempts 1-5:   free, no delay (normal fat-finger tolerance)
+//   attempts 6-10:  10s delay before the NEXT attempt is even accepted
+//   attempts 11-15: 60s delay
+//   attempts 16+:   5min delay — the cap; never grows further
+// State (appLockFailCount / appLockLockedUntil) persists in settings so a
+// reload doesn't reset the counter, and resets to 0 on any successful
+// unlock. Deliberately NOT added to ALLOWED_SETTINGS_KEYS (app.js:1457) —
+// a restored backup should never re-import a stale lockout from another
+// device/session.
+function _appLockDelayForAttempt(failCount){
+  if (failCount <= 5) return 0;
+  if (failCount <= 10) return 10_000;
+  if (failCount <= 15) return 60_000;
+  return 300_000; // cap — never grows past 5 minutes
+}
 async function requireAppUnlock(){
   const enabled = !!(await getSetting('appLockEnabled', false));
   const pin = String(await getSetting('appLockPin', '') || '');
@@ -5259,20 +5330,96 @@ async function requireAppUnlock(){
       <label>PIN</label><input id="unlockPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" />
       <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="unlockNow">Unlock</button></div>
       <div id="unlockHint" class="muted" style="font-size:12px;margin-top:10px"></div>
+      <div style="margin-top:14px;text-align:center"><a href="#" id="unlockForgotPin" style="font-size:12px;color:var(--text-tertiary)">Forgot PIN?</a></div>
     </div>`;
     openModal('Unlock Freight Logic', body);
+    let countdownTimer = null;
+    const unlockBtn = () => document.getElementById('unlockNow');
+    const pinInput = () => document.getElementById('unlockPin');
+    const hintEl = () => document.getElementById('unlockHint');
+    const setLockedUI = (msUntilFree) => {
+      const secs = Math.ceil(msUntilFree / 1000);
+      if (unlockBtn()) unlockBtn().disabled = true;
+      if (pinInput()) pinInput().disabled = true;
+      if (hintEl()) hintEl().textContent = `Too many attempts. Try again in ${secs}s.`;
+    };
+    const clearLockedUI = () => {
+      if (unlockBtn()) unlockBtn().disabled = false;
+      if (pinInput()) pinInput().disabled = false;
+      if (hintEl()) hintEl().textContent = '';
+    };
+    const armCountdown = (lockedUntil) => {
+      if (countdownTimer) clearInterval(countdownTimer);
+      const tick = () => {
+        const remaining = lockedUntil - Date.now();
+        if (remaining <= 0){ clearInterval(countdownTimer); countdownTimer = null; clearLockedUI(); return; }
+        setLockedUI(remaining);
+      };
+      tick();
+      countdownTimer = setInterval(tick, 1000);
+    };
+    (async () => {
+      const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+      if (lockedUntil > Date.now()) armCountdown(lockedUntil);
+    })();
+    let unlockInFlight = false;
     const tryUnlock = async ()=>{
-      const val = String(document.getElementById('unlockPin')?.value || '');
-      const match = await verifyPin(pin, val);
-      // Migrate legacy hash formats to PBKDF2 on successful unlock
-      if (match && !pin.startsWith('pbkdf2v1:')){
-        setSetting('appLockPin', await hashPin(val)).catch(()=>{});
-      }
-      if (match){ closeModal(); resolve(true); }
-      else { const h = document.getElementById('unlockHint'); if (h) h.textContent = 'Incorrect PIN'; haptic(35); }
+      // Reentrancy guard: without this, rapid concurrent calls (button-mash,
+      // or a scripted loop calling .click() faster than one verifyPin+
+      // setSetting round-trip) could each read the same pre-increment
+      // failCount before any of them writes the incremented value back,
+      // silently undercounting attempts and diluting the whole throttle.
+      if (unlockInFlight) return;
+      unlockInFlight = true;
+      try{
+        const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+        if (lockedUntil > Date.now()){ armCountdown(lockedUntil); return; } // still locked — ignore the click
+        const val = String(document.getElementById('unlockPin')?.value || '');
+        const match = await verifyPin(pin, val);
+        // Migrate legacy hash formats to PBKDF2 on successful unlock
+        if (match && !pin.startsWith('pbkdf2v1:')){
+          setSetting('appLockPin', await hashPin(val)).catch(()=>{});
+        }
+        if (match){
+          if (countdownTimer) clearInterval(countdownTimer);
+          setSetting('appLockFailCount', 0).catch(()=>{});
+          setSetting('appLockLockedUntil', 0).catch(()=>{});
+          closeModal(); resolve(true);
+        } else {
+          const failCount = Number(await getSetting('appLockFailCount', 0) || 0) + 1;
+          await setSetting('appLockFailCount', failCount).catch(()=>{});
+          const delay = _appLockDelayForAttempt(failCount);
+          if (delay > 0){
+            const until = Date.now() + delay;
+            await setSetting('appLockLockedUntil', until).catch(()=>{});
+            armCountdown(until);
+          } else if (hintEl()) hintEl().textContent = 'Incorrect PIN';
+          haptic(35);
+        }
+      }finally{ unlockInFlight = false; }
     };
     document.getElementById('unlockNow')?.addEventListener('click', ()=>{ tryUnlock().catch(()=>{}); });
     document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock().catch(()=>{}); });
+    document.getElementById('unlockForgotPin')?.addEventListener('click', (e)=>{
+      e.preventDefault();
+      // Local-only PIN, not a data encryption key (CLAUDE.md credential
+      // table — it gates app UI access, not disk encryption) and the
+      // driver must never be permanently stranded out of their own trip
+      // data. Resetting removes the lock; it does NOT touch trip/expense
+      // data. A technical user could already achieve the same result by
+      // clearing site data, so this doesn't weaken the PIN against a
+      // sophisticated attacker — it just gives the legitimate owner an
+      // honest, immediate way back in instead of waiting out a timer.
+      const ok = confirm('Reset your App Lock PIN?\n\nThis removes the lock screen — it does NOT delete any trips, expenses, or fuel records. You can set a new PIN afterward in Settings.');
+      if (!ok) return;
+      if (countdownTimer) clearInterval(countdownTimer);
+      Promise.all([
+        setSetting('appLockEnabled', false),
+        setSetting('appLockPin', ''),
+        setSetting('appLockFailCount', 0),
+        setSetting('appLockLockedUntil', 0),
+      ]).catch(()=>{}).finally(()=>{ closeModal(); resolve(true); });
+    });
   });
 }
 
@@ -6519,8 +6666,13 @@ async function mwEvaluateLoad(){
   else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
   else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
 
-  // F20: DZ grade capping — A/B loads display as C DZ-EXIT in dead zone
-  const dzDisplayGrade = isDZActive ? (['A','B'].includes(grade) ? 'C' : grade) : grade;
+  // F20: DZ grade capping — DZ-Exit loads always display as C (hard cap).
+  // Was `(['A','B'].includes(grade) ? 'C' : grade)`: isDZActive can only be
+  // true when trueRPM < MW.hardRejectRPM (1.25, see dzClassifySubTier above),
+  // which is exactly the domain where the raw grade above is always 'F' —
+  // so that remap could never fire and DZ-Exit loads showed a raw "F"
+  // instead of the documented "capped at C" (app.js:6793/7107).
+  const dzDisplayGrade = isDZActive ? 'C' : grade;
   const dzDisplayGradeLabel = isDZActive ? (dzSubTier || 'DZ-EXIT') : gradeLabel;
   const dzDisplayGradeColor = isDZActive ? '#f0a500' : gradeColor;
   const dzDisplayGradeEmoji = isDZActive ? '🟠' : gradeEmoji;
@@ -6677,7 +6829,11 @@ async function mwEvaluateLoad(){
   try {
     const histEntry = {
       ts: Date.now(),
-      grade, gradeLabel, gradeColor, gradeEmoji,
+      // Use the DZ-adjusted display values (not the raw grade/label/color) so
+      // the Recent Evaluations strip agrees with what the main card just
+      // showed for this exact evaluation — previously stored the raw
+      // pre-DZ-cap grade, showing "F"/"REJECT"/red for a DZ-EXIT evaluation.
+      grade: dzDisplayGrade, gradeLabel: dzDisplayGradeLabel, gradeColor: dzDisplayGradeColor, gradeEmoji: dzDisplayGradeEmoji,
       trueRPM: +trueRPM.toFixed(2),
       origin: origin || '', dest: dest || '',
       revenue: +revenue, loadedMi: +loadedMi,
@@ -8849,7 +9005,24 @@ function openTripWizard(existing=null){
         if (estMiles > 0){ trip.loadedMiles = estMiles; trip.milesEstimated = true; toast(`Estimated ${estMiles} loaded miles — edit if needed`); }
       }
     }
-    const saved = await upsertTrip(trip);
+    let saved;
+    try{
+      saved = await upsertTrip(trip);
+    }catch(e){
+      if (e?.code === 'FL_CONFLICT'){
+        // F-6 fix: another tab/device saved this trip since this form was
+        // opened. Don't silently pick a winner — surface it and reopen the
+        // wizard on the current server copy so the driver can redo their
+        // edit against up-to-date data, one tap, no merge UI to puzzle out
+        // one-handed.
+        haptic(35);
+        toast('This trip changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openTripWizard(e.serverRecord), 200);
+        return;
+      }
+      throw e;
+    }
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     _positioningCache = null; // F24: clear positioning cache on trip save
     if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
@@ -12443,13 +12616,11 @@ async function openTaxSeasonExport(){
             ];
           }),
       ];
-      const csv = rows.map(r => r.map(v => csvSafeCell(v)).join(',')).join('\r\n');
-      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `FreightLogic_TaxExport_${year}.csv`;
-      document.body.appendChild(a); a.click();
-      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      // F-3 fix: reuse the shared, correctly-quoted CSV writer (app.js:1347)
+      // instead of hand-joining cells with no field quoting — an unquoted
+      // comma in trip.origin/trip.destination ("Springfield, IL") used to
+      // shift every column after it in the mileage log.
+      downloadCSV(rows, `FreightLogic_TaxExport_${year}.csv`);
       toast('Tax CSV downloaded.');
     });
 
@@ -16021,7 +16192,12 @@ function _startInboxVoice(textarea, card) {
 // TEST EXPORTS — pure functions exposed for test harness
 // Only active when window.__FL_TESTS_ENABLED is set before load
 // ════════════════════════════════════════════════════════════════
-if (typeof window !== 'undefined'){
+// F-5 fix: the gate described above didn't actually exist in code — this
+// object was assigned unconditionally on every load, exposing 32 internal
+// functions/constants (including hashPin) to any same-origin script. The
+// test harness (tests/lib/harness.mjs) sets window.__FL_TESTS_ENABLED via
+// context.addInitScript() before navigation when it wants this.
+if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   window.__FL_TESTS = {
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
@@ -16029,7 +16205,7 @@ if (typeof window !== 'undefined'){
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
-    mwClassifyRPM, MW,
+    mwClassifyRPM, MW, dzClassifySubTier,
     normOrderNo, sanitizeReceiptId, clampStr,
     parseCSVLines, isValidISODate, hashPin,
     isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),

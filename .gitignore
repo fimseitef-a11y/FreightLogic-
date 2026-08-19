@@ -4,3 +4,7 @@
 !.dev.vars.example
 .env*
 !.env.example
+
+# test harness deps (symlinked to the environment's global Playwright install)
+node_modules/
+tests/results/
