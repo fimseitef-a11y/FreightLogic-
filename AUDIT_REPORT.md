@@ -1,16 +1,16 @@
 # FreightLogic v23.8.3 — Adversarial Audit Report
 
-Audit date: 2026-08-19, updated through phase 7 (fixes) and the automatable subset of phase 4
-(field resilience). Scope: `app.js` (16,145 lines), `index.html`, `service-worker.js`,
-`voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, `cloud-backup-worker.js`.
-Method: static reading + a real Playwright/Chromium harness against the live app (real
-IndexedDB, real Cache Storage, real `crypto.subtle`) — no mocks, no reimplementation of app
-logic. Test suite lives in `tests/` and is committed. **All 6 original findings are FIXED** —
-see the Findings table's Status column and each finding's own section for the fix, the commit,
-and the post-fix reproduction. **Two new findings (F-7, F-8) surfaced during phase 4 and are
-LOGGED, not fixed** — see "New findings from Phase 4" below; F-8 is Critical severity and
-worth prompt attention. Phases 5–6 (full E2E journeys, one-handed usability) are still
-outstanding.
+Audit date: 2026-08-19, updated through phase 7 (fixes), the automatable subset of phase 4
+(field resilience), and phase 5 (end-to-end journeys). Scope: `app.js` (16,145 lines),
+`index.html`, `service-worker.js`, `voice-load.js`, `admin-driver-ui.js`,
+`midwest-stack-authority.js`, `cloud-backup-worker.js`. Method: static reading + a real
+Playwright/Chromium harness against the live app (real IndexedDB, real Cache Storage, real
+`crypto.subtle`) — no mocks, no reimplementation of app logic. Test suite lives in `tests/` and
+is committed. **All 6 original findings are FIXED** — see the Findings table's Status column
+and each finding's own section for the fix, the commit, and the post-fix reproduction. **Three
+new findings (F-7, F-8, F-9) surfaced during phases 4-5 and are LOGGED, not fixed** — see "New
+findings from Phase 4" and "New finding from Phase 5" below; F-8 and F-9 are both Critical
+severity and worth prompt attention. Phase 6 (one-handed usability) is still outstanding.
 
 ## Executive Summary
 
@@ -36,8 +36,14 @@ two more real findings: Add Expense and Add Fuel are completely broken for every
 (F-8, Critical — an uncaught IndexedDB error with no error shown to the driver), and a single
 transient GPS blip mid-trip kills tracking with only an undocumented reload as a recovery path
 (F-7, High). Neither is offline-specific; F-8 in particular reproduces on every attempt,
-online or off. Phases 5–6 (full E2E journeys, one-handed usability) were **not executed
-dynamically** — see "What could NOT be tested" — this report does not claim coverage there.
+online or off. Phase 5 (five full end-to-end journeys, real UI, tap counts and elapsed time)
+found the six approved fixes hold up in realistic multi-step flows — F-1 and F-3 both pass
+their journey-level regression checks — and surfaced one more Critical finding: importing a
+friend's or another device's JSON backup silently overwrites and destroys the receiving
+device's own expense/fuel records whenever their auto-increment ids collide, which is the
+normal case for any two real devices, not an edge case (F-9). Phase 6 (one-handed usability)
+was **not executed dynamically** — see "What could NOT be tested" — this report does not claim
+coverage there.
 
 ## Findings
 
@@ -50,12 +56,14 @@ dynamically** — see "What could NOT be tested" — this report does not claim 
 | F-2 | **Medium** | AR / trip storage | **FIXED** (+F-2b: `sanitizeStop.date` had the same gap) | `trip.paidDate` bypassed `isValidISODate()` (unlike every sibling date field); downstream consumers applied inconsistent bounds-checking |
 | F-5 | **Low / Info** | Attack surface | **FIXED** | `window.__FL_TESTS` was unconditionally exposed in production; its own comment claimed a gate (`__FL_TESTS_ENABLED`) that didn't exist in code |
 | F-8 | **Critical** | Expense/Fuel storage | **LOGGED, not fixed** | Add Expense and Add Fuel are completely broken for every new record — an uncaught IndexedDB `DataError` on save, no toast, no data written. Found during Phase 4 |
+| F-9 | **Critical** | Import/multi-device | **LOGGED, not fixed** | Importing a friend's/another device's JSON backup silently overwrites and destroys the receiving device's own expense/fuel records on auto-increment id collision — real data loss, no warning. Found during Phase 5 |
 | F-7 | **High** | F21 GPS Trip Tracking | **LOGGED, not fixed** | A single transient GPS error (or permission revocation) mid-trip kills the live tab's tracking session; the only visible recovery action ("Start Trip") abandons the accumulated miles instead of resuming them. Found during Phase 4 |
 
 \* commit hash recorded at the time this table entry was last updated; see the finding's own
-section below for the authoritative hash if this table is stale relative to it. F-7 and F-8
-were discovered during Phase 4 (field resilience), outside the originally-approved Step 1 fix
-list — logged with full reproduction, not fixed without the owner's go-ahead, per this audit's
+section below for the authoritative hash if this table is stale relative to it. F-7, F-8, and
+F-9 were discovered during Phase 4/5 (field resilience / E2E journeys), outside the
+originally-approved Step 1 fix list — logged with full reproduction, not fixed without the
+owner's go-ahead, per this audit's
 own established discipline for findings surfaced mid-testing (see F-2's date-field audit).
 
 ---
@@ -603,6 +611,69 @@ exists from an unclean prior teardown, offer to resume it instead of silently st
 
 ---
 
+## New finding from Phase 5 (end-to-end journeys)
+
+### F-9 — Importing a friend's backup silently destroys the receiving device's own expense/fuel records on ID collision — NOT FIXED
+
+**Status: LOGGED, not fixed.** Discovered building Journey 5 ("invite a friend → passphrase →
+prove zero data mixing"), `tests/e2e/journeys.spec.mjs`,
+`[JOURNEY 5 / FINDING F-9 / NEW, Critical]`. The live Cloudflare Worker's invite-link/token
+issuance is a real production service and wasn't exercised (no new network dependency); what
+"invite a friend" reduces to for two independent devices is one exporting a JSON backup and the
+other importing it — fully local, real app code (`exportJSON`/`importJSON`), driven through two
+separate real browser contexts (two genuine "devices," separate IndexedDB, separate everything)
+end to end via the real Export/Import UI buttons and file chooser.
+
+**Where:** `importJSON()` (`app.js:1429`), default `mode = 'merge'`, `putAll()` helper
+(`app.js:1551`): `store.put(x)` for every imported record.
+
+**The bug:** `expenses`, `fuel`, and `gpsLogs` are all `{ keyPath: 'id', autoIncrement: true }`
+(`app.js:648`) — their real keys are small, per-device sequential integers (1, 2, 3, ...),
+*not* globally unique. Merge-mode import writes every imported record with `store.put()`, which
+is an unconditional upsert keyed on `id`. Two independent devices' early expense/fuel records
+predictably share `id` values (both devices' first-ever expense is `id: 1`, by construction of
+autoIncrement starting fresh per device) — so importing a friend's backup silently **overwrites
+and destroys** the receiving device's own expense/fuel records wherever the id ranges overlap,
+which is the normal case for any two real devices, not an edge case. `trips` (keyed by the
+real-world `orderNo`) and the UUID-keyed stores (`auditLog`, `laneHistory`, `reloadOutcomes`,
+`bidHistory`, `documents`) are not subject to this — their keys are unique by construction, not
+sequential per-device integers.
+
+As a related consequence, `localUserId` — the app's own device-identity setting
+(`ensureLocalUserId()`, in `ALLOWED_SETTINGS_KEYS`) — is imported the same way (`settings.put()`
+keyed by `key`), so importing a friend's backup also silently reassigns the receiving device's
+own identity to the sender's.
+
+**Reproduction** (Device A = "the friend," Device B = "me," two independent browser contexts,
+real UI export/import via a real file download + file chooser):
+```
+[evidence] Device B expenses BEFORE import:
+  [{"category":"DeviceB-OWN-Insurance-Payment","amount":222,"id":1,...}]
+[evidence] Device B expenses AFTER importing Device A's backup:
+  [{"category":"DeviceA-Fuel-Receipt","amount":111,"id":1,...}]
+[evidence] Device A's localUserId: usr_...; Device B's localUserId after import: usr_... (identical)
+```
+Device B's own $222 expense record is simply gone — not merged, not flagged as a conflict, no
+confirmation prompt asked. Device A's trip (`DEVICE-A-TRIP-1`) came across correctly and Device
+B's own trip (different `orderNo`) was correctly unaffected, confirming the collision is
+specific to the auto-increment-keyed stores, not a general import failure.
+
+**Impact:** Critical. This is real financial-record destruction, silent, on the single most
+plausible multi-device scenario the app explicitly supports (backup/restore and "invite a
+friend" both funnel through this same `importJSON()` merge path). Unlike F-8 (nothing gets
+saved), this is actively destructive — an existing, previously-saved, real expense or fuel
+record disappears with no warning and no built-in recovery beyond restoring an older backup
+the user happened to keep.
+
+**Suggested fix direction** (not applied — flagging for the owner; more involved than F-8's
+one-liner): for merge-mode import specifically, remap auto-increment-keyed records
+(`expenses`, `fuel`, `gpsLogs`) to fresh local ids on write instead of reusing the source
+device's ids — e.g. `store.add()` (which lets autoIncrement assign a new key) instead of
+`store.put()` for just these three stores in merge mode. `trips` (natural key) and the
+UUID-keyed stores should keep their current `put()` merge behavior unchanged.
+
+---
+
 ## What was tested and found clean
 
 - **RPM formula consistency (Phase 2 ask).** `computeLoadScore`'s `trueRpm = pay/(loaded+empty)`
@@ -716,6 +787,8 @@ Committed under `tests/`:
 - `tests/integration/fl-tests-exposure.spec.mjs` — F-5.
 - `tests/integration/field-resilience.spec.mjs` — Phase 4 field resilience (storage quota,
   offline/reconnect, DST/clock-skew, GPS resilience); surfaced F-7 and F-8.
+- `tests/e2e/journeys.spec.mjs` — Phase 5, five full end-to-end journeys with tap counts and
+  elapsed time; regression-tests F-1 and F-3 in realistic multi-step flows; surfaced F-9.
 - `tests/run-all.mjs` — runs every spec and prints an aggregate summary.
 
 **Run it:**
@@ -723,9 +796,9 @@ Committed under `tests/`:
 ln -sfn "$(npm root -g)/playwright" node_modules/playwright   # one-time, see tests/README.md
 node tests/run-all.mjs
 ```
-Last run: **51 passed, 0 failed** across 7 spec files. All 6 originally-approved findings
-(F-1 through F-6, plus F-2b) are FIXED and their tests assert correct behavior. F-7 and F-8
-(new, found during Phase 4) are LOGGED with passing tests that document the bug directly — per
-this suite's convention, a green checkmark on an "F-n / NEW" test means the evidence was
+Last run: **56 passed, 0 failed** across 8 spec files. All 6 originally-approved findings
+(F-1 through F-6, plus F-2b) are FIXED and their tests assert correct behavior. F-7, F-8, and
+F-9 (new, found during Phases 4-5) are LOGGED with passing tests that document the bug directly
+— per this suite's convention, a green checkmark on an "F-n / NEW" test means the evidence was
 captured correctly, not that the underlying bug is fixed; read the finding's own section above
 for status.

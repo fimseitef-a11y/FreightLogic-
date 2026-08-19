@@ -49,13 +49,22 @@ still reproducing.
 - `integration/` — drives the real UI (filling forms, clicking tiles,
   opening modals) and/or seeds IndexedDB directly through the same document
   shape `sanitizeTrip()` produces, then reads back what the app itself
-  wrote to the DOM/sessionStorage/IndexedDB/exported Blob.
+  wrote to the DOM/sessionStorage/IndexedDB/exported Blob. Includes
+  `field-resilience.spec.mjs` (Phase 4: storage quota, offline/reconnect,
+  DST/clock-skew, GPS resilience).
+- `e2e/` — full multi-step user journeys (Phase 5), driven purely through
+  the real UI end to end, with tap counts and elapsed time reported per
+  journey rather than isolated assertions.
 
 ## What this suite does NOT cover
 
-See "What could NOT be tested, and why" in `AUDIT_REPORT.md` — field
-resilience (quota exhaustion, mid-write kill, iOS Safari eviction, GPS
-fault conditions), full timed E2E journeys, OCR-specific flows, the live
-Cloudflare Worker (rate limiting, AI endpoints, invite-link token handling),
-and visual/accessibility usability checks are all out of scope for this
-pass and were not executed.
+See "What could NOT be tested, and why" in `AUDIT_REPORT.md`. Real iOS
+Safari eviction, week-long cold start, and real device backgrounding are
+device-only (see `FIELD_TEST_CHECKLIST.md`, not faked here). OCR-specific
+flows are stubbed where Tesseract can't run headless (noted inline in the
+`e2e/` spec that hits them). The live Cloudflare Worker (rate limiting, AI
+endpoints, real invite-link token handling against production) is not
+exercised — the multi-user isolation journey tests the client-side
+namespacing/encryption logic locally instead of hitting production.
+Visual/accessibility usability checks are measured, not automated as
+pass/fail (Phase 6 — see AUDIT_REPORT.md).

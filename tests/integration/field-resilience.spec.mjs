@@ -450,12 +450,26 @@ test('[FINDING F-7 / NEW, High] the ONLY visible affordance after the crash ("St
     const trackingIdBefore = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
 
     await gpsApp.context.setGeolocation({ latitude: 41.8790, longitude: -87.6300, accuracy: 10 });
-    await gpsApp.page.waitForTimeout(1500);
+    await gpsApp.page.waitForTimeout(2500);
     await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 }); // back to idle
+    // Confirm the crash genuinely settled (not a transient mid-flicker read)
+    // before treating the next tap as "the driver's post-crash action" —
+    // this specific event's timing can otherwise land right on the
+    // ERR-then-OK boundary and read a stale DOM snapshot.
+    const idleTextConfirm = await gpsApp.page.textContent('#f21TrackArea');
+    ok(idleTextConfirm.includes('Start Trip'), `expected idle state to have settled before proceeding — got ${JSON.stringify(idleTextConfirm)}`);
 
     // The natural driver action: the UI says "Start Trip", so tap it again.
     await gpsApp.page.click('#f21StartBtn');
     await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
+    // _persistTrackingState() (which overwrites sessionStorage with the NEW
+    // trackingId) only runs from inside a watchPosition success callback or
+    // the 30s interval tick — NOT synchronously when Start Trip is tapped —
+    // so sessionStorage can still read the OLD (crashed) trackingId for a
+    // moment even though _activeTracking in memory is already a fresh
+    // object. Give a real position event time to land and persist before
+    // reading it, or this assertion racy-false-passes on a stale value.
+    await gpsApp.page.waitForTimeout(1500);
     const trackingIdAfter = await gpsApp.page.evaluate(() => JSON.parse(sessionStorage.getItem('fl_active_tracking') || '{}').trackingId);
 
     console.log(`    [evidence] trackingId before crash: ${trackingIdBefore}, trackingId after tapping "Start Trip" again: ${trackingIdAfter}`);
