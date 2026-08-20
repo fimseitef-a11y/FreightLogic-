@@ -90,14 +90,26 @@ This field travels with its parent `expenses` record, so it is already covered b
 existing `expenses` push/restore path (both Yes above) — no separate contract entry
 needed beyond documenting its shape here.
 
-## Fields to be added in Phase 7
+## Fields added in Phase 7
 
-Updated in the same commit each Phase 7 sub-phase lands, per Amendment 2. Placeholder
-until then:
+Updated in the same commit each Phase 7 sub-phase lands, per Amendment 2.
+
+### 7D — van profile (`settings['vanProfile']`)
+
+| Key | Shape | Purpose |
+|---|---|---|
+| `vanProfile` | `{ cargoLengthIn, cargoWidthIn, cargoHeightIn, doorWidthIn, doorHeightIn, payloadLbs }` (all numbers) | Configurable van dimensions/payload for the pre-economics fit check (`checkVanFit()`). Defaults to published 2016 Ford Transit T250 148" figures (`VAN_PROFILE_DEFAULT` in `app.js`) until the driver edits Settings → Van Profile. |
+
+Lives in the existing `settings` store — no new IDB object store, no `DB_VERSION` bump.
+Already covered by the existing push/restore path with no additional code: `cloudPushBackup()`'s
+`settings` dump is a full-store dump (secrets excepted, see above) so `vanProfile` is
+included automatically, and X-07's add-only settings merge in `mergeRestoreData()` handles
+any settings key generically — no per-key special-casing was needed for this field.
 
 - **7A** (concept tags: OPERATIONAL vs. TAX) — pending inventory approval (Amendment 5)
   before implementation; fields TBD.
-- **7D** (van dimensional/payload profile) — pending Phase 7 implementation; fields TBD.
+- **7B** (recovery verification) — TBD, this phase not yet implemented.
+- **7C** (health/release badge) — TBD, this phase not yet implemented.
 
 ## Verification
 

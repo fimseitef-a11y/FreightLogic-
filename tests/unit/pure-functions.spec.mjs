@@ -340,6 +340,45 @@ test('[X-03] sanitizeExpense derives/preserves insuranceBucket only for A/B/C va
   eq(r[2], undefined, 'an invalid insuranceBucket value must be dropped, not passed through');
 });
 
+// ── v23.9 Phase 7D: dimensional/payload pre-check ──────────────────────────
+test('[7D] checkVanFit passes a load with no dimensions entered (most postings have none)', async () => {
+  const r = await app.page.evaluate(() => window.__FL_TESTS.checkVanFit({}, window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, true, 'a load with zero dimension fields entered must not be blocked');
+  eq(r.violations.length, 0, 'no violations when nothing was entered');
+});
+
+test('[7D] checkVanFit blocks a load that exceeds cargo length', async () => {
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ lengthIn: profile.cargoLengthIn + 20 }, profile), await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, false, 'a load 20in over cargo length must be blocked');
+  eq(r.violations[0].field, 'length', 'the violation must be reported on the length field');
+});
+
+test('[7D] checkVanFit blocks a load that exceeds payload even with no other dimensions given', async () => {
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ weightLbs: profile.payloadLbs + 500 }, profile), await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, false, 'a load 500lbs over payload must be blocked');
+  eq(r.violations[0].field, 'weight', 'the violation must be reported on the weight field');
+});
+
+test('[7D] checkVanFit blocks a load that fits the cargo box but not the door opening', async () => {
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  // Width between the door opening and the (wider) cargo box interior.
+  const midWidth = (profile.doorWidthIn + profile.cargoWidthIn) / 2;
+  ok(midWidth <= profile.cargoWidthIn && midWidth > profile.doorWidthIn, 'test fixture assumption: door opening must be narrower than the cargo box for this profile');
+  const r = await app.page.evaluate(({ profile, midWidth }) => window.__FL_TESTS.checkVanFit({ widthIn: midWidth }, profile), { profile, midWidth });
+  eq(r.fits, false, 'a load that fits the cargo box but not the door opening must still be blocked — it cannot physically be loaded');
+  eq(r.violations[0].field, 'width', 'the violation must be reported on the width field');
+  ok(r.violations[0].limitLabel.includes('door'), 'the violation reason must name the door opening, not the cargo box, as the binding constraint: ' + r.violations[0].limitLabel);
+});
+
+test('[7D] checkVanFit passes a load comfortably within every dimension and payload', async () => {
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({
+    lengthIn: profile.cargoLengthIn - 10, widthIn: profile.doorWidthIn - 10,
+    heightIn: profile.doorHeightIn - 10, weightLbs: profile.payloadLbs - 500,
+  }, profile), profile);
+  eq(r.fits, true, 'a load well within every limit must not be blocked: ' + JSON.stringify(r.violations));
+});
+
 export async function runSpec() {
   app = await launchApp();
   try {

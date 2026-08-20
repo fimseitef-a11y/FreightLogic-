@@ -919,6 +919,50 @@ works with all external network blocked). Full suite: 82 passed, 0 failed across
 files. (One F-7 GPS test flaked once mid-phase on an unrelated CDP-geolocation timing
 issue — re-run confirmed 13/13 clean; no code change was needed or made for it.)
 
+## v23.9 Phase 7 — additions
+
+All 12 X-01…X-12 findings are fixed as of Phase 6. Phase 7 adds four things the release
+brief specified beyond the audit findings themselves. 7B/7C/7D are self-contained;
+**7A requires a printed inventory + explicit approval before any editing begins**
+(Amendment 5) — tracked separately below once that inventory is presented.
+
+### 7D — Dimensional/payload pre-check
+
+Configurable van profile (Settings → Van Profile, `settings['vanProfile']`, defaults to
+published 2016 Ford Transit T250 148" cargo-van figures — `VAN_PROFILE_DEFAULT` in
+`app.js`, explicitly labeled as needing verification against the driver's own spec
+sheet/door sticker, not treated as ground truth). New optional evaluator fields
+(`#mwLoadLengthIn`/`#mwLoadWidthIn`/`#mwLoadHeightIn`/`#mwLoadWeightLbs`, "More
+Details") feed `checkVanFit()`, called at the very start of `mwEvaluateLoad()` — before
+any RPM/scoring/verdict computation. A load exceeding any configured limit renders
+"CAN'T TAKE — dimensional/payload conflict" in place of the normal result card and
+returns immediately; economics are never computed for it.
+
+Since Smart Load Inbox (F23), F27 Load Intake, and OCR quick-scan all funnel their
+parsed values into these same evaluator fields before scoring, gating inside
+`mwEvaluateLoad()` itself covers every intake path (including manual entry) from one
+place — no per-path duplication. A load with no dimension data entered at all (the
+common case — most postings don't include cargo dimensions) is not blocked; this is a
+safety net for when dimensions ARE known, not a requirement that every load specify
+them. Width/height are checked against both the cargo box and the (typically narrower/
+shorter) rear door opening — a load can fit inside the box but be too tall or wide to
+physically load through the door, and the violation message names whichever constraint
+actually binds.
+
+New `settings['vanProfile']` field: documented in `docs/BACKUP_CONTRACT.md` per
+Amendment 2. No additional push/restore code was needed — `cloudPushBackup()`'s
+`settings` dump and X-07's add-only settings merge in `mergeRestoreData()` both handle
+any settings key generically.
+
+Files touched: `app.js`, `index.html` (new evaluator fields + Settings → Van Profile
+section), `docs/BACKUP_CONTRACT.md`. New tests:
+`tests/unit/pure-functions.spec.mjs` (5 `checkVanFit()` cases — no dims entered, over
+length, over payload alone, fits-the-box-but-not-the-door, comfortably within every
+limit) and `tests/integration/van-fit-precheck.spec.mjs` (drives the real evaluator UI —
+over-payload blocks and shows no grade at all, clearing the field un-blocks it, and a
+custom tighter profile is actually respected, not just the defaults). Full suite: 91
+passed, 0 failed across 15 spec files.
+
 ---
 
 ## Dispatch Layer (Planned)

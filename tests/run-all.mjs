@@ -19,6 +19,7 @@ import { runSpec as exportChecksumIntegrity } from './integration/export-checksu
 import { runSpec as backupRestoreParity } from './integration/backup-restore-parity.spec.mjs';
 import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
 import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
+import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -35,6 +36,7 @@ const specs = [
   backupRestoreParity,
   dzGateParity,
   xlsxBundledVendor,
+  vanFitPrecheck,
 ];
 
 const results = [];

@@ -1036,6 +1036,22 @@
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<div class="settings-section-head"><span class="settings-section-icon">📐</span>Van Profile <span class="muted" style="font-size:10px;font-weight:400">(7D — dimensional/payload pre-check)</span></div>
+<div class="muted" style="font-size:11px;margin-bottom:8px">A load exceeding these blocks scoring with "CAN'T TAKE" before any economics are shown. Defaults are published 2016 Ford Transit T250 148" cargo-van figures — verify against your own van's spec sheet or door sticker before relying on this.</div>
+<div class="grid2" style="gap:10px">
+<div><label>Cargo length (in)</label><input id="vanCargoLengthIn" type="number" step="0.5" placeholder="130" /></div>
+<div><label>Cargo width (in)</label><input id="vanCargoWidthIn" type="number" step="0.5" placeholder="65" /></div>
+</div>
+<div class="grid2" style="gap:10px">
+<div><label>Cargo height (in)</label><input id="vanCargoHeightIn" type="number" step="0.5" placeholder="56" /></div>
+<div><label>Payload (lbs)</label><input id="vanPayloadLbs" type="number" step="10" placeholder="3800" /></div>
+</div>
+<div class="grid2" style="gap:10px">
+<div><label>Door opening width (in)</label><input id="vanDoorWidthIn" type="number" step="0.5" placeholder="60" /></div>
+<div><label>Door opening height (in)</label><input id="vanDoorHeightIn" type="number" step="0.5" placeholder="52" /></div>
+</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
 <div class="grid2" style="gap:10px">
@@ -1158,6 +1174,17 @@
           <div class="grid2" style="gap:10px">
             <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
             <div class="field"><label>Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+          </div>
+          <!-- 7D: dimensional/payload pre-check (v23.9) — optional; only checked
+               against the configured van profile (Settings → Vehicle) when a
+               value is actually entered. See checkVanFit() in app.js. -->
+          <div class="field"><label>Dimensions &amp; weight <span class="muted" style="font-size:10px;font-weight:400">(optional — checks against your van profile in Settings)</span></label>
+            <div class="grid4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+              <input id="mwLoadLengthIn" inputmode="numeric" placeholder="L in" aria-label="Load length (inches)" />
+              <input id="mwLoadWidthIn" inputmode="numeric" placeholder="W in" aria-label="Load width (inches)" />
+              <input id="mwLoadHeightIn" inputmode="numeric" placeholder="H in" aria-label="Load height (inches)" />
+              <input id="mwLoadWeightLbs" inputmode="numeric" placeholder="lbs" aria-label="Load weight (lbs)" />
+            </div>
           </div>
           <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
           <div class="field">

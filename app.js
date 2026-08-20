@@ -5019,6 +5019,17 @@ async function renderInsights(){
   const mMilesEl = $('#monthlyMiles'); if (mMilesEl) mMilesEl.value = await getSetting('monthlyMiles', '') || '';
   const hlEl = $('#settingsHomeLocation');
   if (hlEl) hlEl.value = await getSetting('homeLocation', '') || '';
+  // 7D: van profile
+  {
+    const vp = await getVanProfile();
+    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+    set('#vanCargoLengthIn', vp.cargoLengthIn);
+    set('#vanCargoWidthIn', vp.cargoWidthIn);
+    set('#vanCargoHeightIn', vp.cargoHeightIn);
+    set('#vanDoorWidthIn', vp.doorWidthIn);
+    set('#vanDoorHeightIn', vp.doorHeightIn);
+    set('#vanPayloadLbs', vp.payloadLbs);
+  }
   // DAT API settings
   const datEnabled = await getSetting('datApiEnabled', 'off') || 'off';
   const datEl = $('#datApiEnabled');
@@ -6709,6 +6720,81 @@ function isDeadZoneEligible({ distanceFromHome, distanceSaved, trueRPM, noReload
 }
 if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligible;
 
+// ================================================================================
+// 7D — Dimensional/payload pre-check (v23.9.0)
+// Configurable van profile; any load exceeding it fails BEFORE economics are
+// evaluated. Runs on every intake path (Smart Load Inbox, F27 Load Intake,
+// OCR quick-scan, manual entry) because all of them funnel into the same
+// evaluator fields and mwEvaluateLoad() — see the guard at its very start.
+// ================================================================================
+
+/** Published 2016 Ford Transit T250 148" WB cargo-van figures — a reasonable
+ *  starting point, NOT a substitute for the driver's own spec sheet/door
+ *  sticker. Editable in Settings → Van Profile; never hardcoded elsewhere. */
+const VAN_PROFILE_DEFAULT = Object.freeze({
+  cargoLengthIn: 130,
+  cargoWidthIn: 65,
+  cargoHeightIn: 56,
+  doorWidthIn: 60,
+  doorHeightIn: 52,
+  payloadLbs: 3800,
+});
+
+async function getVanProfile(){
+  const stored = await getSetting('vanProfile', null);
+  return { ...VAN_PROFILE_DEFAULT, ...(stored && typeof stored === 'object' ? stored : {}) };
+}
+
+/** Pure gate: does this load's dimensions/weight fit the configured van?
+ *  Only checks dimensions the caller actually supplied — a load posting with
+ *  no dimension data at all is not blocked (most postings don't include
+ *  cargo dimensions; this is a safety net for when they do, not a
+ *  requirement that every load specify them). Weight alone (no L/W/H) is
+ *  still checked against payload. Cargo-box fit uses length/width directly;
+ *  height is checked against BOTH the cargo box height and the door opening
+ *  height (a load can fit inside the box but be too tall to load through the
+ *  door) — same logic for width vs. door width.
+ *  Returns { fits, violations: [{ field, loadValue, limit, limitLabel }] }. */
+function checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, profile){
+  const violations = [];
+  const L = finiteNum(lengthIn, null), W = finiteNum(widthIn, null), H = finiteNum(heightIn, null), WT = finiteNum(weightLbs, null);
+  if (L !== null && L > profile.cargoLengthIn){
+    violations.push({ field: 'length', loadValue: L, limit: profile.cargoLengthIn, limitLabel: `cargo length ${profile.cargoLengthIn}"` });
+  }
+  if (W !== null){
+    if (W > profile.cargoWidthIn) violations.push({ field: 'width', loadValue: W, limit: profile.cargoWidthIn, limitLabel: `cargo width ${profile.cargoWidthIn}"` });
+    else if (W > profile.doorWidthIn) violations.push({ field: 'width', loadValue: W, limit: profile.doorWidthIn, limitLabel: `door opening width ${profile.doorWidthIn}"` });
+  }
+  if (H !== null){
+    if (H > profile.cargoHeightIn) violations.push({ field: 'height', loadValue: H, limit: profile.cargoHeightIn, limitLabel: `cargo height ${profile.cargoHeightIn}"` });
+    else if (H > profile.doorHeightIn) violations.push({ field: 'height', loadValue: H, limit: profile.doorHeightIn, limitLabel: `door opening height ${profile.doorHeightIn}"` });
+  }
+  if (WT !== null && WT > profile.payloadLbs){
+    violations.push({ field: 'weight', loadValue: WT, limit: profile.payloadLbs, limitLabel: `payload ${profile.payloadLbs.toLocaleString()} lbs` });
+  }
+  return { fits: violations.length === 0, violations };
+}
+
+/** Renders the blocking "CAN'T TAKE" card in place of the normal evaluator
+ *  result — called by mwEvaluateLoad() before any economics computation
+ *  when checkVanFit() fails. */
+function _renderVanFitBlock(out, violations){
+  const rows = violations.map(v =>
+    `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border-subtle)">
+      <span style="text-transform:capitalize">${escapeHtml(v.field)}</span>
+      <span><b style="color:var(--bad)">${v.loadValue}${v.field === 'weight' ? ' lbs' : '"'}</b> exceeds ${escapeHtml(v.limitLabel)}</span>
+    </div>`
+  ).join('');
+  out.innerHTML = `
+    <div class="fl-eval-hero" style="text-align:center;padding:20px 0">
+      <div class="fl-eval-grade" style="color:var(--bad);font-size:40px;font-weight:800">✕</div>
+      <div style="font-size:18px;font-weight:800;color:var(--bad);margin-top:4px">CAN'T TAKE — dimensional/payload conflict</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">This load exceeds your configured van profile. Economics were not evaluated.</div>
+    </div>
+    <div style="margin-top:8px">${rows}</div>
+    <div class="muted" style="font-size:11px;margin-top:10px">Update your van's real dimensions any time in Settings → Van Profile.</div>`;
+}
+
 async function mwIsGoingHome(dest) {
   const home = await getSetting('homeLocation', '');
   if (!home) return false;
@@ -6741,6 +6827,25 @@ async function mwEvaluateLoad(){
   if (strategicEnabled && !strategicReason){
     toast('Select a Strategic Reason (home / slow market / replace deadhead).', true);
     return;
+  }
+
+  // 7D: dimensional/payload pre-check — runs BEFORE any economics, on every
+  // intake path (they all funnel into these same fields). Only checks
+  // dimensions actually entered; most load postings have none, and this is
+  // a safety net, not a requirement.
+  {
+    const lengthIn = numVal('mwLoadLengthIn', NaN);
+    const widthIn = numVal('mwLoadWidthIn', NaN);
+    const heightIn = numVal('mwLoadHeightIn', NaN);
+    const weightLbs = numVal('mwLoadWeightLbs', NaN);
+    if ([lengthIn, widthIn, heightIn, weightLbs].some(v => Number.isFinite(v) && v > 0)){
+      const vanProfile = await getVanProfile();
+      const fit = checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, vanProfile);
+      if (!fit.fits){
+        _renderVanFitBlock(out, fit.violations);
+        return;
+      }
+    }
   }
 
   // Save inputs
@@ -9888,6 +9993,15 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   }
   const hlInput = $('#settingsHomeLocation');
   if (hlInput) await setSetting('homeLocation', (hlInput.value || '').trim());
+  // 7D: van profile for the dimensional/payload pre-check (checkVanFit()).
+  await setSetting('vanProfile', {
+    cargoLengthIn: posNum($('#vanCargoLengthIn')?.value, VAN_PROFILE_DEFAULT.cargoLengthIn),
+    cargoWidthIn:  posNum($('#vanCargoWidthIn')?.value,  VAN_PROFILE_DEFAULT.cargoWidthIn),
+    cargoHeightIn: posNum($('#vanCargoHeightIn')?.value, VAN_PROFILE_DEFAULT.cargoHeightIn),
+    doorWidthIn:   posNum($('#vanDoorWidthIn')?.value,   VAN_PROFILE_DEFAULT.doorWidthIn),
+    doorHeightIn:  posNum($('#vanDoorHeightIn')?.value,  VAN_PROFILE_DEFAULT.doorHeightIn),
+    payloadLbs:    posNum($('#vanPayloadLbs')?.value,    VAN_PROFILE_DEFAULT.payloadLbs),
+  });
   // DAT API settings
   const datEnabled = $('#datApiEnabled')?.value || 'off';
   await setSetting('datApiEnabled', datEnabled);
@@ -16992,6 +17106,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
     // X-04 (v23.9 Phase 5)
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
+    // 7D (v23.9 Phase 7)
+    checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };
 }
 
