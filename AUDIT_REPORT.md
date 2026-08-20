@@ -793,3 +793,143 @@ asserted the *buggy* behavior — per this suite's convention, a green checkmark
 "F-n / NEW" test meant the evidence was captured correctly, not that the bug was fixed. When
 the fixes shipped in v23.8.4 those tests went red, which is exactly what should happen, and
 they were rewritten and retagged `[FINDING F-n / FIXED]`. No `/ NEW` tags remain in the suite.
+
+---
+
+## v23.9 "Trust & Recovery" audit — X-01 … X-12
+
+Scoped follow-up pass, requested directly (not derived from a prior dynamic Playwright run —
+these are static source-read findings, verified against `app.js` on the `v23.9` branch base
+commit). All 12 are **CONFIRMED** — none refuted. Findings marked "confirmed at proposal time"
+were verified in the same sitting the fix list was proposed (before Phase 1 began); the rest
+were verified in a dedicated pass per the owner's Amendment 1 before any fix landed. Status
+column reflects state as of this section being written — see `git log` for the commit that
+closes each once Phases 1–7 land.
+
+| ID | Area | Confirmed at | Status |
+|----|------|--------------|--------|
+| X-01 | Cloud restore / delta sync | dedicated pass | Open — Phase 4 |
+| X-02 | Tax — mileage rate | dedicated pass | Open — Phase 1 |
+| X-03 | Tax — method double-dip | dedicated pass | Open — Phase 1 |
+| X-04 | Dead Zone authority split | proposal time | Open — Phase 5 |
+| X-05 | Export checksum/payload mismatch | proposal time | Open — Phase 3 |
+| X-06 | Test runner exit code | proposal time | Open — Phase 2 |
+| X-07 | Restore coverage gap | dedicated pass | Open — Phase 4 |
+| X-08 | SW critical shell omission | dedicated pass | Open — Phase 6 |
+| X-09 | Diagnostics fake token | proposal time | Open — Phase 6 |
+| X-10 | SheetJS CDN fallback | proposal time | Open — Phase 6 |
+| X-11 | OCR claim on dead code path | proposal time | Open — Phase 6 |
+| X-12 | Deployment checklist drift | dedicated pass | Open — Phase 6 |
+
+### X-01 — `cloudPullBackup()` never fetches `/backup/delta` — CONFIRMED
+
+**Where:** `app.js:11686-11729` (`cloudPullBackup`, full function body).
+
+Step 1 calls `GET /status` (`:11693`), step 2 calls `GET /backup` (`:11699`), decrypts, confirms,
+and calls `mergeRestoreData(parsed)` (`:11715`). No call to `/backup/delta` (`GET` or otherwise)
+appears anywhere in the function. The only `/backup/delta` reference in `app.js` is the **upload**
+side, `cloudPushBackup`'s `isDelta` branch (`app.js:11584`, `POST config.url + '/backup/delta'`).
+Deltas are written but never read back — a device that only ever pulls (a fresh phone, a restore
+after data loss) gets the last full snapshot and silently loses every delta synced after it,
+exactly as described. Confirmed.
+
+### X-02 — `MILEAGE_RATE_2026` is a flat, non-date-keyed constant — CONFIRMED
+
+**Where:** `app.js:97-98` (`IRS.MILEAGE_RATE_2026 = 0.725`, `IRS.MILEAGE_RATE_2025 = 0.70`),
+consumed at `app.js:12484` (`const mileageRate = year >= 2026 ? IRS.MILEAGE_RATE_2026 :
+IRS.MILEAGE_RATE_2025;`) and three further read sites (`:10177-10180`, `:14295`, `:14396`, all
+reading the same flat constant).
+
+The selection is per **calendar year**, not per trip date — there is no code path that can apply
+two different rates within the same year. IRS Announcement 2026-11's midyear increase
+(2026-01-01→06-30 = $0.725, 2026-07-01→12-31 = $0.76) cannot be represented; every 2026 trip,
+regardless of date, gets $0.725. Confirmed.
+
+### X-03 — F30 sums standard mileage AND actual vehicle-operating costs — CONFIRMED
+
+**Where:** `app.js:12511-12532` (`schedC` bucket build + `totalDeductions` sum).
+
+`schedC.insurance` and `schedC.repairs` (Schedule C lines 15 and 21 — actual vehicle-operating
+costs: auto insurance, repairs/maintenance) are populated from raw expense categories
+(`:12523-12524`) and added into `totalDeductions` (`:12532`) in the **same sum** as
+`mileageDeduction` (the standard-mileage figure, `:12496`). The IRS standard-mileage rate already
+bakes in depreciation, maintenance, repairs, and insurance — claiming both for the same vehicle
+is exactly the double-dip described. Separately confirmed the data-model gap: `expByCategory`
+matches any category string containing `"insurance"` (`:12523`) into one flat `schedC.insurance`
+bucket with no distinction between auto, cargo, liability, or occ-acc insurance — matches the
+"existing insurance category conflates auto with cargo/liability/occ-acc" claim exactly.
+Confirmed.
+
+### X-04 — Dead Zone Exit authority duplicated outside the main evaluator — CONFIRMED (prior pass)
+
+**Where:** `midwest-stack-authority.js:44-48` (`DEAD_ZONE` mode, `floor: 0.91`), `:234-250`
+(verdict logic including `TAKE_IF_LIVE` at the floor with no gate-confirmation checks visible in
+this file), contrasted with `app.js`'s own `dzCheckEligibility`/`dzClassifySubTier` gate logic.
+Two independent implementations of the same decision, confirmed to disagree in shape (the
+standalone file has no equivalent of the main evaluator's manual-confirmation/grade-cap gates in
+the reachable verdict path). Confirmed.
+
+### X-05 — `checksumFull` computed over different data than the payload it verifies — CONFIRMED (prior pass)
+
+**Where:** `app.js:1366` (`computeExportChecksumFull(trips, expenses, fuel, settings)` — `settings`
+here is the **unfiltered** `dumpStore('settings')` result from `:1364`, including `fmcsaApiKey`/
+`eiaApiKey`) vs `app.js:1374` (`payload.settings` — the **filtered** array with those two keys
+stripped). `importJSON`'s verify step (`:1442`) recomputes the checksum over `data.settings` as
+found in the file — the filtered array — which can never equal a checksum computed over the
+unfiltered array. Every legitimate export mismatches its own integrity check on import. Confirmed.
+
+### X-06 — `run-all.mjs` always exits 0 — CONFIRMED (prior pass)
+
+**Where:** `tests/run-all.mjs:42`, `process.exit(0)`, with an accurate comment explaining several
+specs are expected to fail one assertion each (proof-of-bug tests). Correct for a human reading
+the printed summary, but means no CI gate can use this runner's exit code to block a merge.
+Confirmed.
+
+### X-07 — `mergeRestoreData()` omits settings, receipts, and gpsLogs — CONFIRMED
+
+**Where:** `app.js:11607-11684` (full function body). Explicit per-store handling exists only for
+`trips` (:11612-11624), `expenses` (:11627-11638), `fuel` (:11641-11652), and a generic loop over
+`simpleStores = ['laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents']`
+(:11656-11679). No branch reads `parsed.settings`, `parsed.receipts`, or `parsed.gpsLogs` — all
+three are silently dropped on cloud restore even though `exportJSON()` includes all three in a
+manual export (`app.js:1373-1381`). Confirmed.
+
+### X-08 — `midwest-stack-authority.js` is absent from the service worker's install-blocking critical shell — CONFIRMED
+
+**Where:** `service-worker.js:9-20` (`CORE` array — includes `midwest-stack-authority.js?v=23.8.4`
+at line 14) vs `service-worker.js:48` (the separate `critical` array used in the `install` event's
+`cache.addAll(critical)`: `['./', APP_SHELL, './app.js?v=23.8.4', './voice-load.js?v=23.8.4',
+'./sw-bridge.js?v=23.8.4', './manifest.json?v=23.8.4']`). `midwest-stack-authority.js` (and
+`admin-driver-ui.js`) are only in the broader, non-blocking `CORE` list — a first offline install
+can complete and serve the app shell before the authority overlay script is actually cached,
+so a driver's very first offline session can be missing the TRUE_RPM decision layer with no
+error surfaced. Confirmed.
+
+### X-09 — Diagnostics `/status` self-test uses a fake token, not a real `flk_`-format one — CONFIRMED (prior pass)
+
+**Where:** `app.js:11375` — `fetch(CLOUD_WORKER_URL + '/status', { ..., headers:{'X-Backup-Token':
+'ping','X-Device-Id':'diag'} })`. The literal strings `'ping'`/`'diag'` are not a real token —
+contrast with the app's own `flk_<uuid-no-dashes>` format documented in `CLAUDE.md`. This self-test
+therefore doesn't exercise the actual auth path a driver's device uses. Confirmed.
+
+### X-10 — SheetJS has a CDN fallback, and CSP whitelists it in both deploy configs — CONFIRMED (prior pass)
+
+**Where:** `app.js:1788-1797` (`loadSheetJS`, local vendor file first, `https://cdn.jsdelivr.net/
+npm/xlsx@0.18.5/dist/xlsx.full.min.js` fallback), CSP `script-src`/`connect-src` allow
+`cdn.jsdelivr.net` in both `index.html:10` and `_headers:2`. Confirmed.
+
+### X-11 — Universal Import UI advertises OCR on a dead code path — CONFIRMED (prior pass)
+
+**Where:** `app.js:1839-1841` — `importPDFFile(file)` is a one-line stub: `toast('PDF import is
+not supported — paste the load text instead', true);`. The UI that routes to it still reads
+"📸 Rate confirmation (PDF) — uses OCR" (`:1853`) and "PDF: extracts text via OCR and prefills a
+trip." (`:1857`). Confirmed.
+
+### X-12 — Deployment parity checklist references versions three-plus releases stale — CONFIRMED
+
+**Where:** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` — every version marker in the document
+(`app.js?v=23.5.0`, `voice-load.js?v=23.5.0`, `sw-bridge.js?v=23.5.0`,
+`midwest-stack-authority.js?v=23.5.1`, `manifest.json?v=23.5.0`, `SW_VERSION = '23.5.1'`, `CORE
+includes midwest-stack-authority.js?v=23.5.1`) predates the current `23.8.4`. This document is
+distinct from `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block (which does track
+`23.8.4` correctly) — the markdown checklist is the one that drifted. Confirmed.
