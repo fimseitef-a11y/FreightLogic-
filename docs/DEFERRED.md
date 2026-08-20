@@ -17,10 +17,25 @@ Simple/Pro modes, confidence percentages, the Next-Move Engine.
   attribution, a vehicle picker, per-vehicle maintenance schedules, etc.) is a
   meaningfully larger feature than this release's scope and is not implied by X-03 —
   deferred to whenever/if a genuine multi-vehicle need is scoped.
-- **`cloudPushBackup()` does not yet strip `fmcsaApiKey`/`eiaApiKey` before upload.**
-  Noted while writing `docs/BACKUP_CONTRACT.md` (Amendment 2): `exportJSON()` already
-  strips these two secret keys (`app.js:1374`, part of the X-05 fix in Phase 3), but
-  `cloudPushBackup()`'s `settings` dump is a full-store dump with no such filter. This
-  is **not** deferred out of the release — it's tracked here only so it isn't lost
-  before Phase 4 (X-01/X-07, the cloud restore-path work) picks it up; Phase 4 should
-  fix it in the same pass since it's touching the same push/pull code.
+- ~~`cloudPushBackup()` does not yet strip `fmcsaApiKey`/`eiaApiKey` before upload.~~
+  **Fixed in Phase 4** (same pass, since it touches the same push code X-01/X-07 were
+  already changing) — see `docs/BACKUP_CONTRACT.md`'s Credentials exception section.
+
+## Phase 4 (X-01/X-07)
+
+- **`GET /health` on `cloud-backup-worker.js` doesn't report which endpoints it
+  supports.** X-01 added `GET /backup/delta` (Worker v11) and `cloudPullBackup()`
+  treats a failed/absent fetch to it as "unverifiable" (a visible partial-restore
+  warning, not a silent success) — so an old, not-yet-redeployed Worker degrades safely
+  rather than lying about restore completeness. A nicer UX (e.g. `/health` reporting
+  supported endpoints, so the client can give a more specific message than
+  "unverifiable") is a real improvement but not required for correctness — deferred as
+  polish, not a correctness gap.
+- **Two-tab/two-device TOCTOU on the merge-restore path itself** was not investigated.
+  F-6 (pre-v23.9) fixed optimistic concurrency for `upsertTrip()`'s normal save path;
+  `mergeRestoreData()` writes directly via `store.put()` in its own transactions and
+  doesn't go through `upsertTrip()`'s conflict check. A restore running concurrently
+  with a live edit in another tab was out of scope for X-01/X-07 (which are about
+  reaching data at all, not about concurrent-restore races) — noted here in case it
+  becomes relevant once Phase 7B (recovery verification) adds more automated
+  restore-adjacent activity.

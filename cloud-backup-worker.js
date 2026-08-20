@@ -1,4 +1,10 @@
-// FreightLogic Cloud Backup Worker v10 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v11 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v11 (X-01, v23.9 Phase 4): added GET /backup/delta — deltas were POSTed and
+// stored but never readable back, so cloudPullBackup() could only ever
+// restore the last full snapshot, silently losing every delta synced after
+// it. Also added a lifetime totalCreated counter on the delta pointer so the
+// client can detect a gap in the restore chain (deltas pruned by the 20-key
+// cap or 7-day TTL) instead of reporting a silent complete restore.
 // Optimized for Cloudflare free tier: pointer keys replace list() calls; hourly rate-limit windows.
 // KV binding: BACKUPS
 // Secrets: ADMIN_TOKEN, OPENAI_API_KEY
@@ -132,7 +138,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '10', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '11', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -399,6 +405,18 @@ export default {
           getPtr(env, driverUserId, deviceId, 'd')
         ]);
 
+        // X-01: totalCreated is a lifetime counter (never decremented) so
+        // GET /backup/delta can tell the client "some deltas that used to
+        // exist are gone now" (evicted by the 20-key cap or the 7-day TTL) —
+        // that's the difference between "nothing to sync" and "a gap in the
+        // restore chain," which cloudPullBackup() needs to warn on instead
+        // of silently reporting a complete restore. Best-effort for pointers
+        // that pre-date this field: getPtr() seeds it from the current key
+        // count the first time it's read, which undercounts any pruning that
+        // already happened before this field existed — acceptable since it
+        // only affects the accuracy of the gap warning for pre-existing
+        // pointers going forward, not correctness of the restore itself.
+        ptr.totalCreated = (ptr.totalCreated || ptr.keys.length) + 1;
         ptr.keys.push(key);
         if (ptr.keys.length > 20) {
           const toDelete = ptr.keys.splice(0, ptr.keys.length - 20);
@@ -424,6 +442,25 @@ export default {
         const data = await env.BACKUPS.get(ptr.keys[ptr.keys.length - 1]);
         if (!data) return json({ ok: false, error: 'No backup found' }, 404, cors);
         return new Response(data, { status: 200, headers: cors });
+      }
+
+      // GET /backup/delta — X-01: retrieve all currently-retained delta
+      // payloads for this user+device, chronological oldest-first (the order
+      // ptr.keys is maintained in — see POST /backup/delta above), plus
+      // enough bookkeeping (retainedCount vs. totalCreated) for the client to
+      // detect a gap in the restore chain rather than silently reporting a
+      // complete restore. This endpoint didn't exist before v23.9 — deltas
+      // were written but never read back (X-01's core finding).
+      if (request.method === 'GET' && path === '/backup/delta') {
+        const ptr = await getPtr(env, driverUserId, deviceId, 'd');
+        if (!ptr.keys.length) {
+          return json({ ok: true, deltas: [], retainedCount: 0, totalCreated: ptr.totalCreated || 0 }, 200, cors);
+        }
+        const payloads = await Promise.all(ptr.keys.map(k => env.BACKUPS.get(k)));
+        const deltas = ptr.keys
+          .map((k, i) => ({ key: k, ts: deltaTsFromKey(k), payload: payloads[i] }))
+          .filter(d => d.payload !== null); // a key can outlive its value briefly around TTL expiry
+        return json({ ok: true, deltas, retainedCount: ptr.keys.length, totalCreated: ptr.totalCreated || ptr.keys.length }, 200, cors);
       }
 
       // GET /list — list backup and delta keys for this user+device
@@ -482,11 +519,25 @@ async function getPtr(env, userId, deviceId, type) {
   const list = await env.BACKUPS.list({ prefix });
   const keys = list.keys.map(k => k.name).sort();
   const ptr = { keys, count: keys.length };
+  if (type === 'd') ptr.totalCreated = keys.length; // best-effort seed — see totalCreated comment at the POST /backup/delta handler
   if (keys.length > 0) {
     // Persist pointer so all future calls skip the list
     await env.BACKUPS.put(ptrKey, JSON.stringify(ptr));
   }
   return ptr;
+}
+
+// A delta key's trailing segment is `new Date().toISOString().replace(/[:.]/g,'-')`
+// — lexically sortable in the same relative order as the original ISO
+// timestamps (the transform is injective and monotonic for same-length
+// strings), but not directly Date-parseable. Reconstruct a real ISO string
+// for the client rather than exposing the mangled form.
+function deltaTsFromKey(key) {
+  const raw = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+  // raw shape: YYYY-MM-DDTHH-MM-SS-mmmZ
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
+  if (!m) return raw; // fall back to the raw sortable string if the shape ever changes
+  return `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`;
 }
 
 async function savePtr(env, userId, deviceId, type, ptr) {

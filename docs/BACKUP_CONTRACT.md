@@ -15,20 +15,17 @@ introduces the field — not deferred to a later cleanup pass.
 
 ## Credentials exception
 
-`cloudPushBackup()`'s `settings` dump is a full-store dump — it does not allowlist
-fields the way `exportJSON()` does. Two keys are secrets, not user data, and must never
-round-trip through cloud backup at all:
+`cloudPushBackup()`'s `settings` dump does not allowlist fields the way `exportJSON()`
+does — it filters out exactly two secret keys, the same two `exportJSON()` strips
+(`app.js:1374`, X-05):
 
 - `fmcsaApiKey`
 - `eiaApiKey`
 
-**Status as of Phase 1: this exception is not yet enforced on the push side.**
-`cloudPushBackup()` currently uploads the raw `dumpStore('settings')` result verbatim,
-which includes these two keys if set — unlike `exportJSON()`, which already strips them
-(`app.js:1374`, the fix target of X-05 in Phase 3). Fixing `cloudPushBackup()` to strip
-the same two keys before upload is in scope for Phase 4 alongside the rest of the
-restore-path work, tracked here so it isn't lost. Until that lands, treat cloud backup
-as carrying these two keys the same way a pre-Phase-3 JSON export did.
+**Fixed in Phase 4.** `cloudPushBackup()` previously uploaded the raw
+`dumpStore('settings')` result verbatim, including these two keys if set. It now
+filters them the same way `exportJSON()`'s `exportableSettings` does (Phase 3, X-05) —
+one pattern, two call sites, both correct.
 
 ## Store-level contract
 
@@ -42,17 +39,38 @@ as carrying these two keys the same way a pre-Phase-3 JSON export did.
 | `reloadOutcomes` | Yes | Yes |
 | `bidHistory` | Yes | Yes |
 | `documents` | Yes | Yes |
-| `gpsLogs` | Yes | **No — X-07, fixed Phase 4** |
-| `settings` | Yes (whole store, unfiltered) | **No — X-07, fixed Phase 4** |
-| `receipts` | Yes | **No — X-07, fixed Phase 4** |
+| `gpsLogs` | Yes | **Yes — X-07, fixed Phase 4** (dedup on `tripTrackingId`+`timestamp`; incoming numeric `id` never used as a write key — see `mergeRestoreData()`) |
+| `settings` | Yes (secrets filtered — see above) | **Yes — X-07, fixed Phase 4** (add-only: a key already present locally is never overwritten, since settings carry no revision timestamp to compare against — see `mergeRestoreData()`) |
+| `receipts` | Yes | **Yes — X-07, fixed Phase 4** (file-list union by file `id`; blob bytes still not part of this contract, only the metadata pointer) |
 | `receiptBlobs` (Cache API, not IDB) | No | No — out of scope; receipts metadata round-trips, blob bytes do not |
 | `auditLog` | No | No — intentionally local-only, not part of the backup contract |
+
+## X-01: delta sync is now actually read back
+
+`cloudPushBackup()` writes a delta (`POST /backup/delta`) whenever the base full backup
+is recent and the changed-record count is small; `cloudPullBackup()` previously only
+ever fetched the last full snapshot (`GET /backup`) and never read deltas back — every
+delta synced after the last full backup was silently unreachable on restore. Fixed:
+`cloudPullBackup()` now also calls `GET /backup/delta` (new in Worker v11), applies
+every currently-retained delta **in chronological order** on top of the base snapshot
+via `mergeRestoreData()`, and distinguishes two non-silent outcomes when full coverage
+can't be proven:
+
+- **Confirmed gap** — the Worker's delta pointer tracks a lifetime `totalCreated`
+  counter alongside the currently-retained `keys`; when `totalCreated > retainedCount`,
+  some deltas were evicted (the 20-key cap or the 7-day TTL) and coverage is provably
+  incomplete.
+- **Unverifiable** — the `/backup/delta` request itself failed, or a delta payload
+  couldn't be decrypted/parsed; coverage cannot be proven either way.
+
+Both surface a visible `⚠️ Partial restore — …` toast (never a silent "Cloud backup
+restored!") — see `cloudPullBackup()`/`cloudFetchDeltas()` in `app.js`.
 
 ## Settings fields added in Phase 1 (X-02/X-03)
 
 All of the following live in the existing `settings` store (keyPath `key`) — no new IDB
-object store, no `DB_VERSION` bump. They are pushed today (full-store dump) but **not
-yet restorable** until Phase 4 fixes `mergeRestoreData()` to cover `settings` at all.
+object store, no `DB_VERSION` bump. As of Phase 4 they are both pushed and restorable
+(add-only merge — see the store-level contract above).
 
 | Key | Shape | Purpose |
 |---|---|---|
@@ -83,9 +101,16 @@ until then:
 
 ## Verification
 
-`tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4) must assert, at
-minimum: a full backup → wipe local data → restore round-trip preserves every store
-in the "Yes/Yes" rows above, **and**, once Phase 7 lands, the Phase 1 fields
-(`vehicleProfiles`, `activeVehicleId`, `insuranceBucket` on expense records) and every
-Phase 7 field added to this document. Phase 7 must not be marked closed until that
-assertion is green.
+`tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4) asserts a full
+backup → 3 delta syncs → wipe local data → restore round-trip preserves trips (base +
+all 3 deltas), settings, receipts, and gpsLogs, and separately that a confirmed delta
+gap (simulated pruning) surfaces the visible partial-restore warning instead of a
+silent success. Uses `tests/lib/mock-worker.mjs` (a local stand-in for the Worker's
+KV-backed endpoints — see that file's header comment for why: this environment has no
+live Cloudflare Worker to test against). Full run: 4/4 passing.
+
+Once Phase 7 lands, this test (or a follow-up in the same commit) must also cover the
+Phase 1 fields (`vehicleProfiles`, `activeVehicleId`, `insuranceBucket` on expense
+records — already covered structurally since `expenses`/`settings` round-trip, but
+worth a direct assertion) and every Phase 7 field added to this document. Phase 7 must
+not be marked closed until that assertion is green.

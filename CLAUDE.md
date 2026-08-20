@@ -198,6 +198,7 @@ copy. Do not remove that purge until enough releases have passed that no stale c
 - `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
+- `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
 
 Token format: `flk_<uuid-no-dashes>`
 
@@ -723,6 +724,56 @@ source of truth, computed once.
 Files touched: `app.js`, `tests/integration/export-checksum-integrity.spec.mjs` (new —
 round-trip proof: export with both secret keys present → checksum is self-consistent →
 import shows no integrity warning → both keys are genuinely absent from the export).
+
+### Phase 4 — Disaster recovery (X-01, X-07)
+
+**X-01 — delta sync is now readable.** `cloud-backup-worker.js` (bumped to v11) gained
+`GET /backup/delta`, returning every currently-retained delta payload for the user+
+device, chronological oldest-first, plus a lifetime `totalCreated` counter alongside
+the currently-retained count so the client can detect pruning (the 20-key cap or the
+7-day TTL). `cloudPullBackup()` now fetches the base snapshot AND every retained delta,
+applies them in order via `mergeRestoreData()`, and distinguishes a **confirmed gap**
+(`totalCreated > retainedCount` — provably lost data) from **unverifiable** (the
+endpoint failed or a delta couldn't be decrypted — coverage unknown). Both surface a
+visible `⚠️ Partial restore — …` toast; there is no code path left where a delta-backed
+restore can silently report "Cloud backup restored!" while actually missing data.
+
+**X-07 — `mergeRestoreData()` now covers every pushed store.** Previously only
+`trips`/`expenses`/`fuel` plus a generic `laneHistory`/`weeklyReports`/
+`reloadOutcomes`/`bidHistory`/`documents` loop were restorable; `settings`, `receipts`,
+and `gpsLogs` were pushed by `cloudPushBackup()` but silently dropped on restore. Fixed,
+with per-store merge semantics chosen for what each store actually is (see
+`docs/BACKUP_CONTRACT.md` for the full rationale):
+- `settings` — **add-only**: a key already present locally is never overwritten (no
+  revision timestamp exists to compare against), so this is safe for both the
+  disaster-recovery case (everything restores, since nothing local exists yet) and a
+  routine top-up merge (never clobbers a live local change).
+- `receipts` (keyPath `tripOrderNo`) — file-list **union by file `id`**; blob bytes
+  still aren't part of the contract, only the metadata pointer (same as manual
+  JSON export/import always worked).
+- `gpsLogs` (keyPath `id`, autoIncrement) — the incoming numeric `id` is device-local
+  and never used as a write key (it could collide with an unrelated local record);
+  dedup on `(tripTrackingId, timestamp)` instead, via `add()`.
+
+Also closed while touching this code: `cloudPushBackup()` now strips `fmcsaApiKey`/
+`eiaApiKey` from its `settings` payload (the same filter `exportJSON()`'s
+`exportableSettings` already applies, X-05) — previously only the manual JSON export
+path did this. `cloudGetConfig()` now actually reads the `cloudBackupUrl` setting
+(previously written by `cloudSaveConfig()` but never read back — every request silently
+used the hardcoded `CLOUD_WORKER_URL` regardless) — this is also what makes the E2E
+test below possible without touching the production endpoint.
+
+New `docs/BACKUP_CONTRACT.md` is the authoritative store-by-store table (which stores
+are pushed, which are restored, and why each merge strategy is what it is) — kept in
+sync in the same commit as any future field/store addition, per Amendment 2.
+
+Files touched: `app.js`, `cloud-backup-worker.js` (v10 → v11), `docs/BACKUP_CONTRACT.md`,
+`docs/DEFERRED.md`, `scripts/verify-cloudflare-parity.mjs` (`workerVersion` bumped to
+match), `tests/lib/mock-worker.mjs` (new — local stand-in for the Worker's KV-backed
+endpoints, since this environment has no live Cloudflare Worker to test against; see its
+header comment), `tests/integration/backup-restore-parity.spec.mjs` (new — E2E: full
+backup → 3 delta syncs → wipe local → restore → parity of every contracted store, plus
+a confirmed-gap warning test). Full suite: 70 passed, 0 failed across 10 spec files.
 
 ---
 

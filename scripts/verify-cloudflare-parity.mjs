@@ -11,7 +11,7 @@ const workerOrigin = (process.argv[3] || 'https://freightlogic-backup.fimseitef.
 const EXPECTED = {
   serviceWorkerVersion: "23.8.4",
   manifestName: "FreightLogic v23.8.4",
-  workerVersion: "10",
+  workerVersion: "11",
   overlayScript: "midwest-stack-authority.js?v=23.8.4"
 };
 
@@ -60,7 +60,7 @@ async function main() {
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);
-  assert(checks, 'Worker reports v10', health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
+  assert(checks, 'Worker reports v11', health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
 
   const adminReject = await fetchJson(`${workerOrigin}/admin/users`);
   assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401, `${adminReject.status} (expected 401; got 429 means IP is rate-limited — run from a fresh IP or reset the rl: KV keys)`);

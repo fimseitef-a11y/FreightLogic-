@@ -14,6 +14,7 @@ import { runSpec as toctouEdit } from './integration/toctou-concurrent-edit.spec
 import { runSpec as fieldResilience } from './integration/field-resilience.spec.mjs';
 import { runSpec as insuranceMigration } from './integration/insurance-migration.spec.mjs';
 import { runSpec as exportChecksumIntegrity } from './integration/export-checksum-integrity.spec.mjs';
+import { runSpec as backupRestoreParity } from './integration/backup-restore-parity.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -25,6 +26,7 @@ const specs = [
   fieldResilience,
   insuranceMigration,
   exportChecksumIntegrity,
+  backupRestoreParity,
 ];
 
 const results = [];

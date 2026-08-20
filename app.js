@@ -11591,7 +11591,15 @@ async function cloudGetConfig(){
   const pass = sessionStorage.getItem('fl_cloud_pass') || '';
   const token = await getSetting('cloudBackupToken', '');
   if (!pass || !token) return null;
-  return { url: CLOUD_WORKER_URL, pass, token };
+  // cloudSaveConfig() has always written 'cloudBackupUrl' to settings, but
+  // nothing read it back — every request used the hardcoded CLOUD_WORKER_URL
+  // regardless. Read it here (falling back to the constant), which is what
+  // the setting's own presence in ALLOWED_SETTINGS_KEYS already implied it
+  // should do, and is what lets the test suite point at a local mock worker
+  // for E2E restore-parity testing (tests/integration/backup-restore-parity
+  // .spec.mjs) without touching the production endpoint.
+  const url = await getSetting('cloudBackupUrl', CLOUD_WORKER_URL) || CLOUD_WORKER_URL;
+  return { url, pass, token };
 }
 
 function cloudGetDeviceId(){
@@ -11710,7 +11718,13 @@ async function cloudPushBackup(silent = true){
     // v21 T2B: Delta sync — only send records changed since last sync
     const lastSynced = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
     const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
-    const allFuel = await dumpStore('fuel'); const settings = await dumpStore('settings');
+    const allFuel = await dumpStore('fuel');
+    // Strip the same two secret keys exportJSON() does (X-05's exportableSettings
+    // pattern) — cloud backup is still a backup, not a place for API keys to
+    // leave the device. This was a gap noted in docs/DEFERRED.md while writing
+    // docs/BACKUP_CONTRACT.md in Phase 1 and closed here in the same pass as
+    // the rest of the restore-path work (X-01/X-07).
+    const settings = (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey');
     const receipts = await dumpStore('receipts');
     const laneHistory = await dumpStore('laneHistory');
     const weeklyReports = await dumpStore('weeklyReports');
@@ -11850,9 +11864,120 @@ async function mergeRestoreData(parsed){
     }
   }
 
+  // X-07: settings — add-only merge. Settings carry no revision metadata (no
+  // updatedAt), so "keep newer" isn't computable the way it is for trips/
+  // expenses/fuel. Overwriting an existing local setting with whatever a cloud
+  // snapshot happened to hold would risk clobbering something changed locally
+  // since that snapshot was taken (a live preference, a re-entered API key,
+  // etc.) — so a key already present locally is left alone; only genuinely
+  // missing keys are filled in. This is exactly right for the disaster-
+  // recovery case this fixes (wipe -> restore: every local key IS absent, so
+  // everything restores) and is the safe, non-destructive choice for a
+  // routine top-up merge too.
+  const inSettings = arr(parsed.settings);
+  stats.settings = { added: 0, skipped: 0 };
+  if (inSettings.length){
+    const {stores} = tx('settings');
+    const existingKeys = new Set((await idbReq(stores.settings.getAll())).map(s => s.key));
+    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key));
+    if (toAdd.length){
+      const {t:wt, stores:ws} = tx('settings','readwrite');
+      for (const s of toAdd) ws.settings.put(s);
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }
+    stats.settings.added = toAdd.length;
+    stats.settings.skipped = inSettings.length - toAdd.length;
+  }
+
+  // X-07: receipts (keyPath 'tripOrderNo') — no per-record timestamp, and a
+  // record is metadata for potentially many receipt files, so "keep newer"
+  // doesn't apply at the record level either. Union the file lists by file
+  // id instead: a local trip's existing receipt files are never dropped, and
+  // any file present in the backup but missing locally is added. Blob bytes
+  // themselves are not part of this contract (see docs/BACKUP_CONTRACT.md) —
+  // only the metadata pointer round-trips, same as it always has for a
+  // manual JSON export/import.
+  const inReceipts = arr(parsed.receipts);
+  stats.receipts = { added: 0, merged: 0 };
+  for (const incoming of inReceipts){
+    if (!incoming || typeof incoming.tripOrderNo !== 'string' || !Array.isArray(incoming.files)) continue;
+    try {
+      const {stores} = tx('receipts');
+      const existing = await idbReq(stores.receipts.get(incoming.tripOrderNo));
+      const {t:wt, stores:ws} = tx('receipts','readwrite');
+      if (!existing){
+        ws.receipts.put(incoming);
+        stats.receipts.added++;
+      } else {
+        const existingIds = new Set((existing.files || []).map(f => f.id));
+        const newFiles = (incoming.files || []).filter(f => f && !existingIds.has(f.id));
+        if (newFiles.length){
+          ws.receipts.put({ tripOrderNo: incoming.tripOrderNo, files: [...(existing.files || []), ...newFiles] });
+          stats.receipts.merged++;
+        }
+      }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    } catch(e){ console.warn('[FL] merge receipts', e); }
+  }
+
+  // X-07: gpsLogs (keyPath 'id', autoIncrement) — the incoming numeric id is
+  // device-local and meaningless on a different device/after a wipe (it could
+  // collide with an unrelated local record's autoincrement id), so it is
+  // never used as a write key. Dedup on (tripTrackingId, timestamp) — two
+  // pings for the same tracking session at the identical millisecond is not
+  // realistic — so re-running a restore/delta-apply doesn't duplicate points.
+  const inGpsLogs = arr(parsed.gpsLogs);
+  stats.gpsLogs = { added: 0, skipped: 0 };
+  if (inGpsLogs.length){
+    const {stores} = tx('gpsLogs');
+    const existingAll = await idbReq(stores.gpsLogs.getAll());
+    const existingKeySet = new Set(existingAll.map(g => g.tripTrackingId + '|' + g.timestamp));
+    const toAdd = inGpsLogs.filter(g => g && g.tripTrackingId && g.timestamp && !existingKeySet.has(g.tripTrackingId + '|' + g.timestamp));
+    if (toAdd.length){
+      const {t:wt, stores:ws} = tx('gpsLogs','readwrite');
+      for (const g of toAdd){ const { id, ...rest } = g; ws.gpsLogs.add(rest); }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }
+    stats.gpsLogs.added = toAdd.length;
+    stats.gpsLogs.skipped = inGpsLogs.length - toAdd.length;
+  }
+
   const totalSkipped = stats.trips.skipped + stats.expenses.skipped + stats.fuel.skipped;
-  const summary = `Restored: ${stats.trips.added+stats.trips.updated} trips, ${stats.expenses.added+stats.expenses.updated} expenses, ${stats.fuel.added+stats.fuel.updated} fuel. ${totalSkipped} unchanged (local was newer).`;
+  const summary = `Restored: ${stats.trips.added+stats.trips.updated} trips, ${stats.expenses.added+stats.expenses.updated} expenses, ${stats.fuel.added+stats.fuel.updated} fuel, ${stats.settings.added} settings, ${stats.receipts.added+stats.receipts.merged} receipts, ${stats.gpsLogs.added} gpsLogs. ${totalSkipped} record(s) unchanged (local was newer).`;
   return { stats, summary, totalSkipped };
+}
+
+/** X-01: fetches every currently-retained delta for this user+device
+ *  (GET /backup/delta), decrypts and parses each, and reports whether full
+ *  coverage since the base snapshot can be confirmed. Returns
+ *  { deltas: [{ts, parsed}] (chronological), confirmedGap, unverifiable } —
+ *  confirmedGap means the server has positive evidence deltas were pruned
+ *  (totalCreated > retainedCount); unverifiable means the endpoint could not
+ *  be reached/parsed at all, so coverage cannot be proven either way. Both
+ *  are surfaced by the caller — this fixes cloudPullBackup() silently
+ *  reporting a complete restore when it only ever read the last full
+ *  snapshot and never checked for deltas synced after it. */
+async function cloudFetchDeltas(config, hdrs){
+  let deltas = [], confirmedGap = false, unverifiable = false;
+  try {
+    const res = await cloudFetch(config.url + '/backup/delta', { headers: hdrs }, 10000);
+    if (!res.ok){ unverifiable = true; return { deltas, confirmedGap, unverifiable }; }
+    const data = await res.json();
+    if (data.ok === false){ unverifiable = true; return { deltas, confirmedGap, unverifiable }; }
+    confirmedGap = Number(data.totalCreated || 0) > Number(data.retainedCount || 0);
+    const raw = Array.isArray(data.deltas) ? data.deltas : [];
+    raw.sort((a, b) => String(a.ts).localeCompare(String(b.ts))); // chronological, oldest first — apply in order
+    for (const d of raw){
+      if (!d.payload) continue;
+      try {
+        const dObj = JSON.parse(d.payload);
+        if (!dObj.encrypted || !dObj.iv || !dObj.salt) { unverifiable = true; continue; }
+        const dPlain = await cloudDecrypt(dObj.encrypted, dObj.iv, dObj.salt, config.pass);
+        deltas.push({ ts: d.ts, parsed: JSON.parse(dPlain) });
+      } catch(e){ console.warn('[FL] delta decrypt/parse skipped', e); unverifiable = true; }
+    }
+  } catch(e){ console.warn('[FL] delta fetch failed', e); unverifiable = true; }
+  return { deltas, confirmedGap, unverifiable };
 }
 
 async function cloudPullBackup(){
@@ -11879,15 +12004,45 @@ async function cloudPullBackup(){
     let parsed;
     try { parsed = JSON.parse(plaintext); } catch { toast('Backup data corrupted — could not parse', true); cloudRefreshStatusPanel(); return; }
     if (!parsed.trips && !parsed.expenses){ toast('Backup empty', true); return; }
+
+    // X-01: Step 3 — fetch every delta synced after this base snapshot.
+    cloudSetSyncStatus('spinner', 'Checking for delta syncs...');
+    const { deltas, confirmedGap, unverifiable } = await cloudFetchDeltas(config, hdrs);
+
     const c = parsed.meta?.counts || {};
-    if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + '\n\nNewer local records will be kept.')){ cloudRefreshStatusPanel(); return; }
+    const deltaNote = deltas.length ? `\n${deltas.length} delta sync(s) will also be applied.` : '';
+    if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + deltaNote + '\n\nNewer local records will be kept.')){ cloudRefreshStatusPanel(); return; }
     if (typeof saveRollbackSnapshot === 'function') await saveRollbackSnapshot();
     cloudSetSyncStatus('spinner', 'Merging...');
-    // v21 T2C: use merge-aware restore instead of full importJSON
-    const { summary, totalSkipped } = await mergeRestoreData(parsed);
+
+    // v21 T2C: merge-aware restore instead of full importJSON. X-01: apply the
+    // base snapshot first, then every delta IN ORDER — mergeRestoreData's
+    // per-record "keep newer" comparison makes this safe even where a delta
+    // and the base (or two deltas) overlap on the same record.
+    const baseResult = await mergeRestoreData(parsed);
+    let totalSkipped = baseResult.totalSkipped;
+    let lastSummary = baseResult.summary;
+    for (const d of deltas){
+      const r = await mergeRestoreData(d.parsed);
+      totalSkipped += r.totalSkipped;
+      lastSummary = r.summary;
+    }
     invalidateKPICache(); await renderHome();
-    toast('Cloud backup restored!');
-    cloudSetSyncStatus('ok', 'Restored');
+
+    // X-01: expired/missing deltas surface a visible warning — never a
+    // silent "Cloud backup restored!" that hides a real (or unprovable) gap.
+    if (confirmedGap || unverifiable){
+      const anchor = parsed.meta?.savedAt ? new Date(parsed.meta.savedAt).toLocaleString() : 'the last full backup';
+      const msg = confirmedGap
+        ? `⚠️ Partial restore — data after ${anchor} not recovered. Some delta syncs from this device expired or were rotated out before this restore.`
+        : `⚠️ Partial restore — could not verify delta sync coverage after ${anchor}. Some recent changes may not be recovered.`;
+      cloudSetSyncStatus('warn', 'Partial restore');
+      toast(msg, true);
+    } else {
+      toast(deltas.length ? `Cloud backup restored (base + ${deltas.length} delta sync${deltas.length===1?'':'s'})!` : 'Cloud backup restored!');
+      cloudSetSyncStatus('ok', 'Restored');
+    }
+
     // v21 T2D: if local records were kept, push merged result back up
     if (totalSkipped > 0){
       setTimeout(()=>{
@@ -11896,7 +12051,7 @@ async function cloudPullBackup(){
         cloudPushBackup(true).catch(()=>{});
       }, 1500);
     }
-    console.info('[FL] Merge restore:', summary);
+    console.info('[FL] Merge restore:', lastSummary);
   } catch(e) { console.error('[CLOUD] Pull error:', e); cloudSetSyncStatus('warn', 'Restore failed'); toast('Restore failed', true); }
 }
 
@@ -16714,6 +16869,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     migrateInsuranceCategorySplit, revertInsuranceCategorySplit,
     // X-05 (v23.9 Phase 3)
     exportJSON, importJSON, getSetting, setSetting,
+    // X-01/X-07 (v23.9 Phase 4)
+    cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
+    cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
   };
 }
 
