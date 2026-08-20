@@ -828,11 +828,19 @@
   </header>
   <datalist id="catList">
     <option value="Fuel"><option value="Tolls"><option value="Repairs & Maintenance">
-    <option value="Insurance"><option value="Parking"><option value="Meals">
+    <!-- X-03: "Insurance" split into explicit sub-types so tax-method sensitivity
+         (auto = vehicle-operating, others = always deductible) is knowable at
+         entry time. Bare "Insurance" is kept only for legacy/unsure entries —
+         it lands in bucket C (ambiguous) and is flagged for reclassification. -->
+    <option value="Auto Insurance"><option value="Cargo Insurance"><option value="Liability Insurance">
+    <option value="Occupational Accident Insurance"><option value="Insurance">
+    <option value="Parking"><option value="Meals">
     <option value="Vehicle Payment"><option value="Software / Apps"><option value="Permits & Licenses">
     <option value="Supplies"><option value="Tires"><option value="Vehicle Wash">
     <option value="Phone / Data"><option value="Tools / Equipment"><option value="Oil Change">
-    <option value="Registration"><option value="Roadside Assistance"><option value="Other">
+    <option value="Registration"><option value="Roadside Assistance">
+    <option value="Lumper Fees"><option value="Scale Tickets"><option value="Load Board Subscription">
+    <option value="MC Authority Fees"><option value="Auto Loan Interest"><option value="Other">
   </datalist>
   <main class="app">
     <section id="view-home" class="view" aria-label="Home">
@@ -1013,6 +1021,12 @@
 <label>Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label>Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
 <label>Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
+<!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
+<div id="vehicleTaxMethodRow" style="margin-top:10px;display:none">
+  <button class="btn" id="btnVerifyVehicleTaxMethod" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <span>🧾 Verify vehicle tax method</span><span id="vehicleTaxMethodBadge" class="muted" style="font-size:11px"></span>
+  </button>
+</div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>

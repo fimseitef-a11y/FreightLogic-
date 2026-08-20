@@ -83,7 +83,7 @@ const LIMITS = Object.freeze({
 
 /** IRS tax data — updated for 2026 tax year.
  *  Per diem: IRS Notice 2025-54. SE tax: IRS Pub 463 / Schedule SE.
- *  Mileage: IRS Notice 2026-10 (effective Jan 1, 2026).
+ *  Mileage: date-keyed table below (X-02) — see MILEAGE_RATES.
  *  Review annually at irs.gov for updates. */
 const IRS = Object.freeze({
   PER_DIEM_CONUS: 80,       // $/day, effective Oct 1, 2024 — unchanged through Sept 30, 2026
@@ -94,9 +94,153 @@ const IRS = Object.freeze({
   SE_RATE: 0.153,           // 15.3% (12.4% SS + 2.9% Medicare)
   SE_NET_FACTOR: 0.9235,    // Only 92.35% of net is subject to SE tax
   SS_WAGE_BASE_2026: 184500, // Social Security cap for 2026
-  MILEAGE_RATE_2026: 0.725, // $0.725/mile business use, effective Jan 1, 2026
-  MILEAGE_RATE_2025: 0.70,  // $0.70/mile, effective Jan 1, 2025
 });
+
+/** X-02: date-keyed IRS standard mileage rate table — replaces the old flat
+ *  IRS.MILEAGE_RATE_2026/2025 constants, which could not represent a midyear
+ *  rate change (IRS Announcement 2026-11 raised the rate mid-2026). Adding a
+ *  future year (or a future midyear correction) is a table edit only — no
+ *  other code should change. Bands must not overlap; getMileageRate() takes
+ *  the first match, ordered oldest-first for readability only. */
+const MILEAGE_RATES = Object.freeze([
+  { effectiveFrom: '2025-01-01', effectiveTo: '2025-12-31', businessRate: 0.70 },  // IRS Notice 2025-10
+  { effectiveFrom: '2026-01-01', effectiveTo: '2026-06-30', businessRate: 0.725 }, // IRS Notice 2026-10
+  { effectiveFrom: '2026-07-01', effectiveTo: '2026-12-31', businessRate: 0.76 },  // IRS Announcement 2026-11 (midyear increase)
+]);
+/** Resolve the IRS standard business-mileage rate in effect on a given ISO date
+ *  ('YYYY-MM-DD' or a Date). Falls back to the most recent known rate for a
+ *  date past the table's coverage, and to the earliest known rate for a date
+ *  before it — never throws, never silently returns 0. */
+function getMileageRate(dateInput){
+  const d = (dateInput instanceof Date) ? isoDate(dateInput) : String(dateInput || '').slice(0, 10);
+  const hit = MILEAGE_RATES.find(r => d >= r.effectiveFrom && d <= r.effectiveTo);
+  if (hit) return hit.businessRate;
+  const past = MILEAGE_RATES.filter(r => r.effectiveFrom <= d).sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+  if (past.length) return past[0].businessRate;
+  return MILEAGE_RATES[0].businessRate;
+}
+
+/** X-03: tax-method-sensitivity map for expense categories. Standard mileage
+ *  already bakes in depreciation/repairs/insurance/fuel for the vehicle, so
+ *  bucket A must be suppressed from a Schedule C total when the elected
+ *  method is STANDARD_MILEAGE (claiming both is a double-dip the IRS
+ *  disallows). Bucket B is never method-sensitive. Insurance is NOT matched
+ *  here — see INSURANCE_BUCKET_BY_CATEGORY below, which splits auto (bucket
+ *  A) from cargo/liability/occ-acc (bucket B) instead of one flat "insurance"
+ *  match conflating both. Matching is substring/lowercase, same convention
+ *  the pre-existing schedC categorizer used. */
+const EXPENSE_TAX_BUCKET_MAP = Object.freeze({
+  // Bucket A — vehicle-operating: suppressed under STANDARD_MILEAGE
+  A: ['fuel', 'gas', 'repair', 'maint', 'depreciation', 'oil', 'tire', 'registration', 'lease'],
+  // Bucket B — always deductible regardless of method
+  B: ['parking', 'toll', 'loan interest', 'personal property tax', 'lumper', 'scale ticket',
+      'load board', 'phone', 'permit', 'mc authority'],
+});
+/** Insurance-specific split (X-03): the pre-v23.9 app had one flat "Insurance"
+ *  category conflating auto (bucket A, vehicle-operating) with cargo/
+ *  liability/occupational-accident (bucket B, always deductible). New/edited
+ *  expense records are expected to carry an explicit `insuranceBucket` field
+ *  ('A'|'B'|'C') once the category names below are used; bare/legacy
+ *  "Insurance" with no explicit sub-type stays bucket C (ambiguous — flagged
+ *  for manual review, never auto-included) until reclassified. See
+ *  migrateInsuranceCategorySplit() for the one-time migration of existing
+ *  records. */
+const INSURANCE_CATEGORY_BUCKET = Object.freeze({
+  'auto insurance': 'A',
+  'cargo insurance': 'B',
+  'liability insurance': 'B',
+  'occupational accident insurance': 'B',
+  'occ-acc insurance': 'B',
+});
+/** Bucket C is deliberately narrow: it only ever fires for an insurance-category
+ *  expense with no resolved sub-type (the exact ambiguity the task describes).
+ *  Every other category — including the explicit bucket-B list AND ordinary
+ *  non-vehicle Schedule C categories this map doesn't name at all (Meals,
+ *  Software, Supplies, ...) — defaults to bucket B (always deductible,
+ *  never suppressed). That default is intentional: a category this map has
+ *  never heard of is not vehicle-operating, so treating it as
+ *  method-sensitive or silently dropping it from totals would itself be a
+ *  new correctness bug, not a fix for X-03. */
+function classifyExpenseTaxBucket(category, insuranceBucket){
+  const c = String(category || '').trim().toLowerCase();
+  if (c.includes('insurance')){
+    if (insuranceBucket === 'A' || insuranceBucket === 'B' || insuranceBucket === 'C') return insuranceBucket;
+    const specific = INSURANCE_CATEGORY_BUCKET[c];
+    if (specific) return specific;
+    return 'C'; // bare "Insurance" or an unrecognized insurance sub-type — ambiguous, never auto-included
+  }
+  for (const kw of EXPENSE_TAX_BUCKET_MAP.A){ if (c.includes(kw)) return 'A'; }
+  return 'B';
+}
+
+/** X-02/X-03: per-vehicle tax-method election. Kept in the existing `settings`
+ *  store (keyPath 'key') rather than a new IDB object store/DB_VERSION bump —
+ *  this app has no pre-existing multi-vehicle model and a full fleet schema
+ *  is out of scope for this release (see docs/DEFERRED.md), but the election
+ *  must still be scoped per-vehicle, not a single global flag, per the
+ *  explicit requirement. `vehicleProfiles` is an array of
+ *  { id, label, vehicleTaxMethod, firstYearElection, createdAt };
+ *  `activeVehicleId` points at the one currently in use. */
+const VEHICLE_TAX_METHOD = Object.freeze({ UNSET: 'UNSET', STANDARD_MILEAGE: 'STANDARD_MILEAGE', ACTUAL_EXPENSE: 'ACTUAL_EXPENSE' });
+const FIRST_YEAR_ELECTION = Object.freeze({ UNKNOWN: 'UNKNOWN', ACTUAL_EXPENSE: 'ACTUAL_EXPENSE', STANDARD_MILEAGE: 'STANDARD_MILEAGE' });
+function _newVehicleProfile(label){
+  return { id: 'veh_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), label: label || 'My Vehicle',
+    vehicleTaxMethod: VEHICLE_TAX_METHOD.UNSET, firstYearElection: FIRST_YEAR_ELECTION.UNKNOWN, createdAt: Date.now() };
+}
+/** Ensures at least one vehicle profile + an active pointer exist; creates a
+ *  default profile (seeded from existing vehicleYear/vehicleMake settings
+ *  when present) on first call. Idempotent — safe to call every render. */
+async function ensureVehicleProfiles(){
+  let profiles = await getSetting('vehicleProfiles', null);
+  if (!Array.isArray(profiles) || !profiles.length){
+    const [yr, make] = await Promise.all([getSetting('vehicleYear', ''), getSetting('vehicleMake', '')]);
+    const label = [yr, make].filter(Boolean).join(' ') || 'My Vehicle';
+    profiles = [_newVehicleProfile(label)];
+    await setSetting('vehicleProfiles', profiles);
+    await setSetting('activeVehicleId', profiles[0].id);
+  }
+  let activeId = await getSetting('activeVehicleId', null);
+  if (!activeId || !profiles.some(p => p.id === activeId)){
+    activeId = profiles[0].id;
+    await setSetting('activeVehicleId', activeId);
+  }
+  return { profiles, activeId };
+}
+async function getActiveVehicleProfile(){
+  const { profiles, activeId } = await ensureVehicleProfiles();
+  return profiles.find(p => p.id === activeId) || profiles[0];
+}
+/** Patches the active vehicle's profile and persists it. Enforces the
+ *  first-year-election hard lock: once firstYearElection is set to
+ *  ACTUAL_EXPENSE, vehicleTaxMethod is force-locked to ACTUAL_EXPENSE and
+ *  cannot be changed back to STANDARD_MILEAGE for that vehicle. Returns
+ *  { profile, justLocked } — justLocked is true the moment the lock engages,
+ *  for the one-time explanation UI. */
+async function saveActiveVehicleProfile(patch){
+  const { profiles, activeId } = await ensureVehicleProfiles();
+  const idx = profiles.findIndex(p => p.id === activeId);
+  const before = profiles[idx];
+  let next = { ...before, ...patch };
+  let justLocked = false;
+  if (next.firstYearElection === FIRST_YEAR_ELECTION.ACTUAL_EXPENSE){
+    if (before.firstYearElection !== FIRST_YEAR_ELECTION.ACTUAL_EXPENSE || next.vehicleTaxMethod !== VEHICLE_TAX_METHOD.ACTUAL_EXPENSE) justLocked = true;
+    next.vehicleTaxMethod = VEHICLE_TAX_METHOD.ACTUAL_EXPENSE;
+  }
+  profiles[idx] = next;
+  await setSetting('vehicleProfiles', profiles);
+  return { profile: next, justLocked };
+}
+/** Adds a brand-new vehicle profile (firstYearElection always resets to
+ *  UNKNOWN for it, per spec — a new vehicle's history is unknown regardless
+ *  of any other vehicle's election) and makes it active. */
+async function addVehicleProfile(label){
+  const { profiles } = await ensureVehicleProfiles();
+  const fresh = _newVehicleProfile(label);
+  profiles.push(fresh);
+  await setSetting('vehicleProfiles', profiles);
+  await setSetting('activeVehicleId', fresh.id);
+  return fresh;
+}
 
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -1049,7 +1193,11 @@ function sanitizeExpense(raw){
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
-    receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined };
+    receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,
+    // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for
+    // insurance-category expenses — see INSURANCE_CATEGORY_BUCKET / classifyExpenseTaxBucket.
+    // Only meaningful when category contains "insurance"; undefined otherwise.
+    ...(['A','B','C'].includes(raw.insuranceBucket) ? { insuranceBucket: raw.insuranceBucket } : {}) };
 }
 
 // upsertExpense: put-or-add wrapper (id may be string for recurring, or auto-int)
@@ -4826,6 +4974,8 @@ async function renderInsights(){
   const vClass = await getSetting('vehicleClass', 'cargo_van');
   const vcEl = $('#vehicleClass');
   if (vcEl) vcEl.value = vClass;
+  await refreshVehicleTaxMethodRow().catch(()=>{});
+  if (!_vtmBound){ _vtmBound = true; $('#btnVerifyVehicleTaxMethod')?.addEventListener('click', ()=> openVehicleTaxMethodModal()); }
   $('#uiMode').value = uiMode || 'simple';
   $('#perDiemRate').value = await getSetting('perDiemRate', '') || '';
   $('#brokerWindow').value = String(await getSetting('brokerWindow', 90) || 90);
@@ -5169,6 +5319,7 @@ async function _renderIntelBrokers(container){
 }
 
 let _moreBound = false;
+let _vtmBound = false; // X-03: "Verify vehicle tax method" Settings button, bound once
 async function renderMore(){
   const grid = $('#moreMenu');
   if (!_moreBound){
@@ -9271,8 +9422,15 @@ function openExpenseForm(existing=null){
 
   $('#f_save', body).addEventListener('click', async ()=>{
     if (!validate()){ toast('Fix required fields', true); return; }
+    const catVal = clampStr($('#f_cat', body).value, 60);
+    // X-03: derive the A/B/C tax bucket from the category text at save time —
+    // the datalist's specific insurance sub-types (Auto/Cargo/Liability/
+    // Occupational Accident Insurance) resolve automatically; bare
+    // "Insurance" (or an unrecognized sub-type) resolves to bucket C.
+    const insuranceBucket = catVal.toLowerCase().includes('insurance') ? classifyExpenseTaxBucket(catVal) : undefined;
     const obj = { id: e.id, date: $('#f_date', body).value || isoDate(), amount: Number($('#f_amt', body).value||0),
-      category: clampStr($('#f_cat', body).value, 60), notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created };
+      category: catVal, notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created,
+      ...(insuranceBucket ? { insuranceBucket } : {}) };
     try{
       if (mode==='add') await addExpense(obj); else await updateExpense(obj);
       invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
@@ -10144,6 +10302,15 @@ async function generateAccountantPackage(period='ytd'){
     const avgRpm = totalAllMi > 0 ? grossRevenue / totalAllMi : 0;
     const deadhead = totalAllMi > 0 ? ((totalAllMi - totalLoadedMi) / totalAllMi * 100) : 0;
 
+    // X-02: mileage deduction computed per-trip using each trip's own date-keyed
+    // rate and summed — not one flat rate applied to the period total, which
+    // cannot represent a midyear rate change.
+    const mileageDeduction = roundCents(periodTrips.reduce((s, t) => {
+      const mi = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileageRatesUsed = [...new Set(periodTrips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
+
     const summaryRows = [
       ['PROFIT & LOSS SUMMARY', label],
       ['Period', `${startDate} to ${endDate}`],
@@ -10174,10 +10341,9 @@ async function generateAccountantPackage(period='ytd'){
       ['Per Diem Deductible (' + Math.round(acctPerDiemPct * 100) + '% IRS Sec 274n)', '$' + perDiemTotal.toFixed(2)],
       [''],
       ['MILEAGE (IRS Standard Rate Method)'],
-      ['IRS Business Mileage Rate 2026', '$' + IRS.MILEAGE_RATE_2026.toFixed(3) + '/mile'],
-      ['IRS Business Mileage Rate 2025', '$' + IRS.MILEAGE_RATE_2025.toFixed(3) + '/mile'],
+      ['IRS Business Mileage Rate(s) Applied (per trip date)', mileageRatesUsed.length ? mileageRatesUsed.map(r => '$' + r.toFixed(3) + '/mile').join(', ') : 'n/a'],
       ['Total Business Miles', String(Math.round(totalAllMi))],
-      ['Mileage Deduction (2026 rate)', '$' + (totalAllMi * IRS.MILEAGE_RATE_2026).toFixed(2)],
+      ['Mileage Deduction (per-trip date-based rate, summed)', '$' + mileageDeduction.toFixed(2)],
       ['NOTE: Choose EITHER mileage OR actual expenses — not both.'],
       [''],
       ['BOTTOM LINE'],
@@ -12431,6 +12597,163 @@ async function getBidWinRateStats(daysBack = 30) {
 }
 
 // ================================================================================
+// X-03: Insurance category split migration (schema-safety, Amendment 3)
+// ================================================================================
+
+/** Idempotent, reversible, one-time migration: existing expense records whose
+ *  category is a bare/legacy "Insurance" (no resolved sub-type) get an explicit
+ *  `insuranceBucket: 'C'` field so F30 can distinguish "known ambiguous, needs
+ *  reclassification" from "not yet examined". Nothing is deleted or reworded —
+ *  only the new field is added. Safe to call twice: the second pass finds no
+ *  record missing `insuranceBucket` and touches nothing (asserted by
+ *  tests/unit/pure-functions.spec.mjs's migration-idempotency test). */
+async function migrateInsuranceCategorySplit(){
+  const { stores } = tx('expenses');
+  const all = (await idbReq(stores.expenses.getAll())) || [];
+  const targets = all.filter(e => e && typeof e.category === 'string' && e.category.trim().toLowerCase().includes('insurance') && !['A','B','C'].includes(e.insuranceBucket));
+  if (!targets.length) return { migrated: 0, backedUp: false };
+
+  // Amendment 3: retained pre-mutation snapshot, keyed by timestamp so a prior
+  // run's backup is never overwritten — this is the "reversible" half of the
+  // requirement, independent of the idempotency check above.
+  const backupKey = 'insuranceMigrationBackup_' + Date.now();
+  await setSetting(backupKey, targets.map(e => ({ id: e.id, category: e.category, insuranceBucket: e.insuranceBucket })));
+  const backupIndex = await getSetting('insuranceMigrationBackupKeys', []);
+  await setSetting('insuranceMigrationBackupKeys', [...(Array.isArray(backupIndex) ? backupIndex : []), backupKey]);
+
+  const { t: wt, stores: ws } = tx('expenses', 'readwrite');
+  for (const e of targets){
+    const bucket = classifyExpenseTaxBucket(e.category, e.insuranceBucket);
+    ws.expenses.put({ ...e, insuranceBucket: bucket });
+  }
+  await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+  await setSetting('insuranceSplitMigrationDone', true);
+  return { migrated: targets.length, backedUp: true, backupKey };
+}
+
+/** Reverts a migration pass by restoring `insuranceBucket` to its pre-migration
+ *  value (absent, for every record this migration touched) from a retained
+ *  backup key. Does not touch category text or any other field. */
+async function revertInsuranceCategorySplit(backupKey){
+  const snapshot = await getSetting(backupKey, null);
+  if (!Array.isArray(snapshot)) return { reverted: 0 };
+  // Resolve every "current" read first, on its own transaction, fully — an
+  // IDB transaction auto-commits once it goes idle waiting on an unrelated
+  // async op, so reads and writes can't be interleaved on the same tick.
+  const { stores: rs } = tx('expenses');
+  const currents = await Promise.all(snapshot.map(row => idbReq(rs.expenses.get(row.id))));
+  const { t: wt, stores: ws } = tx('expenses', 'readwrite');
+  let reverted = 0;
+  snapshot.forEach((row, i) => {
+    const current = currents[i];
+    if (!current) return;
+    const restored = { ...current };
+    if (row.insuranceBucket === undefined) delete restored.insuranceBucket; else restored.insuranceBucket = row.insuranceBucket;
+    ws.expenses.put(restored);
+    reverted++;
+  });
+  await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+  return { reverted };
+}
+
+/** Boot-time gate (Amendment 3): shows a blocking confirmation — take a manual
+ *  JSON export first — before the migration is allowed to run. Declining
+ *  postpones (re-prompts next boot); "Export Now" runs exportJSON() inline
+ *  before re-showing the same prompt so a driver never has to remember to
+ *  come back. Runs at most once per boot; the migration itself no-ops on a
+ *  second run regardless (see migrateInsuranceCategorySplit). */
+async function checkInsuranceSplitMigration(){
+  if (await getSetting('insuranceSplitMigrationDone', false)) return;
+  const { stores } = tx('expenses');
+  const all = (await idbReq(stores.expenses.getAll())) || [];
+  const pending = all.some(e => e && typeof e.category === 'string' && e.category.trim().toLowerCase().includes('insurance') && !['A','B','C'].includes(e.insuranceBucket));
+  if (!pending){ await setSetting('insuranceSplitMigrationDone', true); return; }
+
+  const proceed = confirm(
+    '📋 One-time data update\n\n' +
+    'FreightLogic is about to tag existing "Insurance" expense entries so your tax export can tell auto insurance (vehicle-operating) apart from cargo/liability/occupational-accident insurance (always deductible).\n\n' +
+    'Nothing is deleted or renamed — this only adds a tag, and a backup copy of the affected records is kept automatically.\n\n' +
+    'Please take a manual JSON export first (Settings → Export Data) in case you want to roll back.\n\n' +
+    'Continue now?'
+  );
+  if (!proceed){ toast('Insurance tagging postponed — you\'ll be asked again next time.', true); return; }
+  try{
+    const res = await migrateInsuranceCategorySplit();
+    if (res.migrated) toast(`Tagged ${res.migrated} insurance record(s) for review — see Tax Season Export.`);
+  }catch(e){ console.warn('[FL] insurance split migration', e); }
+}
+
+/** X-02/X-03: "Verify vehicle tax method" Settings row — visible until the
+ *  active vehicle's firstYearElection is resolved. Call after any render that
+ *  populates the Settings panel (renderInsights) and after saving a change. */
+async function refreshVehicleTaxMethodRow(){
+  const row = $('#vehicleTaxMethodRow'); if (!row) return;
+  const v = await getActiveVehicleProfile();
+  const unresolved = v.firstYearElection === FIRST_YEAR_ELECTION.UNKNOWN;
+  row.style.display = unresolved ? '' : 'none';
+  const badge = $('#vehicleTaxMethodBadge');
+  if (badge) badge.textContent = v.vehicleTaxMethod === VEHICLE_TAX_METHOD.UNSET ? 'Not set' : 'Unverified';
+}
+
+/** X-03: modal to set the active vehicle's vehicleTaxMethod / firstYearElection.
+ *  Enforces the hard lock (firstYearElection=ACTUAL_EXPENSE permanently forces
+ *  vehicleTaxMethod=ACTUAL_EXPENSE for this vehicle) and shows the unverified
+ *  banner text verbatim when STANDARD_MILEAGE is picked with firstYearElection
+ *  still UNKNOWN. Reusable from Settings and from the F30 export-blocked state. */
+async function openVehicleTaxMethodModal(onSaved){
+  const v = await getActiveVehicleProfile();
+  const locked = v.firstYearElection === FIRST_YEAR_ELECTION.ACTUAL_EXPENSE;
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Vehicle: <b>${escapeHtml(v.label)}</b></div>
+    <label>First-year election</label>
+    <div class="muted" style="font-size:11px;margin-bottom:4px">Which method was elected in this vehicle's first business-use year? (Ask your bookkeeper if unsure.)</div>
+    <select id="vtmFirstYear" ${locked ? 'disabled' : ''}>
+      <option value="${FIRST_YEAR_ELECTION.UNKNOWN}"${v.firstYearElection===FIRST_YEAR_ELECTION.UNKNOWN?' selected':''}>Unknown / checking with bookkeeper</option>
+      <option value="${FIRST_YEAR_ELECTION.STANDARD_MILEAGE}"${v.firstYearElection===FIRST_YEAR_ELECTION.STANDARD_MILEAGE?' selected':''}>Standard Mileage</option>
+      <option value="${FIRST_YEAR_ELECTION.ACTUAL_EXPENSE}"${v.firstYearElection===FIRST_YEAR_ELECTION.ACTUAL_EXPENSE?' selected':''}>Actual Expense</option>
+    </select>
+    <label style="margin-top:10px">Tax method for this year</label>
+    <select id="vtmMethod" ${locked ? 'disabled' : ''}>
+      <option value="${VEHICLE_TAX_METHOD.UNSET}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.UNSET?' selected':''}>Not set yet</option>
+      <option value="${VEHICLE_TAX_METHOD.STANDARD_MILEAGE}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.STANDARD_MILEAGE?' selected':''}>Standard Mileage</option>
+      <option value="${VEHICLE_TAX_METHOD.ACTUAL_EXPENSE}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.ACTUAL_EXPENSE?' selected':''}>Actual Expense</option>
+    </select>
+    <div id="vtmWarning" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;color:var(--warn)">
+      Standard mileage requires that it was elected in this vehicle's first business-use year. Unverified — confirm with your bookkeeper before filing.
+    </div>
+    ${locked ? `<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,.05);font-size:12px" class="muted">
+      This vehicle is locked to Actual Expense because its first-year election was Actual Expense. IRS rules do not allow switching to standard mileage for a vehicle after that.
+    </div>` : ''}
+    <button class="btn primary" id="vtmSave" style="width:100%;margin-top:14px">Save</button>`;
+  function syncWarning(){
+    const method = $('#vtmMethod', body).value;
+    const fy = $('#vtmFirstYear', body).value;
+    $('#vtmWarning', body).style.display = (method === VEHICLE_TAX_METHOD.STANDARD_MILEAGE && fy === FIRST_YEAR_ELECTION.UNKNOWN) ? '' : 'none';
+  }
+  if (!locked){
+    $('#vtmMethod', body).addEventListener('change', syncWarning);
+    $('#vtmFirstYear', body).addEventListener('change', syncWarning);
+  }
+  syncWarning();
+  openModal('Vehicle Tax Method', body);
+  if (!locked){
+    $('#vtmSave', body).addEventListener('click', async ()=>{
+      haptic(15);
+      const firstYearElection = $('#vtmFirstYear', body).value;
+      const vehicleTaxMethod = $('#vtmMethod', body).value;
+      const { justLocked } = await saveActiveVehicleProfile({ firstYearElection, vehicleTaxMethod });
+      closeModal();
+      if (justLocked){
+        alert('Because Actual Expense was elected in this vehicle\'s first business-use year, this vehicle is now permanently locked to the Actual Expense method — standard mileage can never be used for it again. This is a one-time notice.');
+      }
+      await refreshVehicleTaxMethodRow().catch(()=>{});
+      if (typeof onSaved === 'function') await onSaved().catch(()=>{});
+    });
+  }
+}
+
+// ================================================================================
 // F30 — Tax Season Export (v23.4.0)
 // Annual Schedule C summary + per-trip mileage log. Year-selector covers current
 // and prior two years. Differentiated from CPA Package (quarterly/current-year)
@@ -12471,17 +12794,17 @@ async function openTaxSeasonExport(){
     const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
     const inYear = d => d && d >= yStart && d <= yEnd;
 
-    const [allTrips, allExps, allFuel, vehicleClass, perDiemRateSetting] = await Promise.all([
+    const [allTrips, allExps, allFuel, vehicleClass, perDiemRateSetting, activeVehicle] = await Promise.all([
       dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
       getSetting('vehicleClass', 'cargo_van'),
       getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+      getActiveVehicleProfile(),
     ]);
 
     const trips = allTrips.filter(t => !t.needsReview && inYear(t.pickupDate || t.deliveryDate));
     const exps  = allExps.filter(e => inYear(e.date));
     const fuel  = allFuel.filter(f => inYear(f.date));
 
-    const mileageRate = year >= 2026 ? IRS.MILEAGE_RATE_2026 : IRS.MILEAGE_RATE_2025;
     const isDOT = vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl';
     const pdPct = isDOT ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
     const pdRate = Number(perDiemRateSetting || IRS.PER_DIEM_CONUS);
@@ -12489,11 +12812,16 @@ async function openTaxSeasonExport(){
     // Gross income
     const grossIncome = trips.reduce((s, t) => s + posNum(t.pay), 0);
 
-    // Mileage
+    // Mileage — X-02: per-trip date-based rate, summed. Not one flat annual
+    // rate applied to the year total, which can't represent a midyear change.
     const totalLoadedMi  = trips.reduce((s, t) => s + posNum(t.loadedMiles || t.miles), 0);
     const totalDeadMi    = trips.reduce((s, t) => s + posNum(t.emptyMiles), 0);
     const totalBizMi     = totalLoadedMi + totalDeadMi;
-    const mileageDeduction = roundCents(totalBizMi * mileageRate);
+    const mileageDeduction = roundCents(trips.reduce((s, t) => {
+      const mi = posNum(t.loadedMiles || t.miles) + posNum(t.emptyMiles);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileageRatesUsed = [...new Set(trips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
 
     // Per diem (count unique work days)
     const workDays = new Set(trips.map(t => t.pickupDate || t.deliveryDate).filter(Boolean)).size;
@@ -12508,30 +12836,64 @@ async function openTaxSeasonExport(){
     const fuelTotal = fuel.reduce((s, f) => s + posNum(f.amount), 0);
     if (fuelTotal > 0) expByCategory['Fuel'] = (expByCategory['Fuel'] || 0) + fuelTotal;
 
-    // Map to Schedule C buckets
+    // X-03: map to Schedule C buckets with explicit method-sensitivity —
+    // bucket A (vehicle-operating: auto insurance, repairs, fuel) only counts
+    // under Actual Expense; bucket B (always deductible) counts either way;
+    // bucket C (unresolved insurance sub-type) is excluded from every total
+    // and surfaced separately for manual reclassification.
     const schedC = {
-      insurance:   0, // Line 15
-      repairs:     0, // Line 21
-      utilities:   0, // Line 25 (phone)
-      fuel:        0, // Line 27a bucket: Fuel
-      tolls:       0, // Line 27a bucket: Tolls
-      parking:     0, // Line 27a bucket: Parking
-      other:       0, // Line 27a bucket: Other
+      autoInsurance: 0, otherInsurance: 0, insuranceUnresolved: 0,
+      repairs: 0, fuel: 0, utilities: 0, tolls: 0, parking: 0, other: 0,
     };
     for (const [cat, amt] of Object.entries(expByCategory)){
       const c = cat.toLowerCase();
-      if      (c.includes('insurance'))                       schedC.insurance += amt;
+      if (c.includes('insurance')){
+        const bucket = classifyExpenseTaxBucket(cat);
+        if (bucket === 'A') schedC.autoInsurance += amt;
+        else if (bucket === 'B') schedC.otherInsurance += amt;
+        else schedC.insuranceUnresolved += amt;
+      }
       else if (c.includes('repair') || c.includes('maint'))  schedC.repairs   += amt;
-      else if (c.includes('phone') || c.includes('util'))    schedC.utilities += amt;
       else if (c.includes('fuel') || c.includes('gas'))      schedC.fuel      += amt;
+      else if (c.includes('phone') || c.includes('util'))    schedC.utilities += amt;
       else if (c.includes('toll'))                            schedC.tolls     += amt;
       else if (c.includes('park'))                            schedC.parking   += amt;
       else                                                     schedC.other    += amt;
     }
-    const other27a = schedC.fuel + schedC.tolls + schedC.parking + schedC.other;
-    const totalDeductions = schedC.insurance + schedC.repairs + schedC.utilities + other27a + perDiemDeduction + mileageDeduction;
+    const bucketATotal = schedC.autoInsurance + schedC.repairs + schedC.fuel;
+    const bucketBTotal = schedC.otherInsurance + schedC.utilities + schedC.tolls + schedC.parking + schedC.other;
+
+    const vehicleTaxMethod  = activeVehicle.vehicleTaxMethod;
+    const firstYearElection = activeVehicle.firstYearElection;
+    const methodUnset       = vehicleTaxMethod === VEHICLE_TAX_METHOD.UNSET;
+    const isStandardMileage = vehicleTaxMethod === VEHICLE_TAX_METHOD.STANDARD_MILEAGE;
+    const isActualExpense   = vehicleTaxMethod === VEHICLE_TAX_METHOD.ACTUAL_EXPENSE;
+    const isDraft            = !methodUnset && firstYearElection === FIRST_YEAR_ELECTION.UNKNOWN;
+
+    // X-03 fix: exactly one of {vehicleDeduction via mileage, via bucket A}
+    // can ever be non-zero — the old code summed both unconditionally.
+    const vehicleDeduction = isActualExpense ? bucketATotal : (isStandardMileage ? mileageDeduction : 0);
+    const totalDeductions = methodUnset ? 0 : (vehicleDeduction + bucketBTotal + perDiemDeduction);
     const netProfit = grossIncome - totalDeductions;
     const seTax = roundCents(Math.max(0, netProfit * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+
+    // X-03: export is blocked entirely while no method is set — there is no
+    // correct total to show or export until the driver picks one.
+    if (methodUnset){
+      content.innerHTML = `
+        <div style="padding:20px;text-align:center">
+          <div style="font-size:32px;margin-bottom:8px">🧾</div>
+          <div style="font-weight:700;margin-bottom:6px">Set your vehicle tax method first</div>
+          <div class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">
+            FreightLogic can't compute a Schedule C total or export until you choose Standard Mileage or
+            Actual Expense for this vehicle — claiming both is not allowed and produced wrong numbers before this was fixed (X-03).
+          </div>
+          <button class="btn primary" id="f30SetMethod" style="width:100%">Set Vehicle Tax Method</button>
+          <div class="muted" style="font-size:11px;margin-top:14px">Gross income this year so far: ${escapeHtml(fmtMoney(grossIncome))}</div>
+        </div>`;
+      content.querySelector('#f30SetMethod').addEventListener('click', ()=> openVehicleTaxMethodModal(()=> loadYear(year)));
+      return;
+    }
 
     function line(num, label, amt, isBold=false, color=''){
       const style = `font-size:13px;${isBold ? 'font-weight:700;' : ''}${color ? `color:${color};` : ''}`;
@@ -12547,24 +12909,35 @@ async function openTaxSeasonExport(){
       </div>`;
     }
 
-    const rateLabel = `@ $${mileageRate.toFixed(3)}/mi (${year})`;
+    const methodLabel = isActualExpense ? 'Actual Expense' : 'Standard Mileage';
+    const rateLabel = mileageRatesUsed.length ? mileageRatesUsed.map(r => '$' + r.toFixed(3)).join(' / ') + '/mi (per trip date)' : `(${year})`;
+    const draftBanner = isDraft ? `<div style="margin-bottom:12px;padding:10px;border-radius:8px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;color:var(--warn);font-weight:700">
+        ⚠️ DRAFT — vehicle method unverified. Not for filing.
+      </div>` : '';
 
     content.innerHTML = `
-      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+      ${draftBanner}
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
         Schedule C Summary &mdash; Tax Year ${year}
       </div>
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Vehicle method: <b>${escapeHtml(methodLabel)}</b> &middot; <a href="#" id="f30ChangeMethod" style="color:var(--accent-text)">change</a></div>
       ${line('1',  'Gross receipts / freight income', grossIncome, true)}
       <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">Deductions</div>
-      ${schedC.insurance  > 0 ? line('15', 'Insurance',         schedC.insurance)  : ''}
-      ${schedC.repairs    > 0 ? line('21', 'Repairs & maintenance', schedC.repairs) : ''}
+      ${isActualExpense && schedC.autoInsurance  > 0 ? line('15', 'Insurance — Auto (vehicle-operating)', schedC.autoInsurance) : ''}
+      ${schedC.otherInsurance > 0 ? line('15', 'Insurance — Cargo/Liability/Occ-Acc', schedC.otherInsurance) : ''}
+      ${isActualExpense && schedC.repairs > 0 ? line('21', 'Repairs & maintenance', schedC.repairs) : ''}
       ${schedC.utilities  > 0 ? line('25', 'Utilities (phone/data)', schedC.utilities) : ''}
-      ${other27a          > 0 ? line('27a','Other expenses',    other27a)           : ''}
-      ${schedC.fuel       > 0 ? subLine('Fuel & oil', schedC.fuel) : ''}
+      ${(schedC.tolls + schedC.parking + schedC.other) > 0 ? line('27a','Other expenses',    schedC.tolls + schedC.parking + schedC.other) : ''}
       ${schedC.tolls      > 0 ? subLine('Tolls', schedC.tolls) : ''}
       ${schedC.parking    > 0 ? subLine('Parking & storage', schedC.parking) : ''}
       ${schedC.other      > 0 ? subLine('Other / misc', schedC.other) : ''}
-      ${line('9',  `Vehicle mileage deduction ${rateLabel}`, mileageDeduction)}
-      ${subLine(`${totalBizMi.toLocaleString()} total business miles (${totalLoadedMi.toLocaleString()} loaded + ${totalDeadMi.toLocaleString()} DH)`, 0)}
+      ${isActualExpense && schedC.fuel > 0 ? line('27a', 'Fuel & oil', schedC.fuel) : ''}
+      ${isStandardMileage ? line('9',  `Vehicle mileage deduction ${rateLabel}`, mileageDeduction) : ''}
+      ${isStandardMileage ? subLine(`${totalBizMi.toLocaleString()} total business miles (${totalLoadedMi.toLocaleString()} loaded + ${totalDeadMi.toLocaleString()} DH)`, 0) : ''}
+      ${isActualExpense && (schedC.autoInsurance + schedC.repairs + schedC.fuel === 0) ? subLine(`Actual-expense method — no vehicle-operating expenses logged yet for ${totalBizMi.toLocaleString()} business mi`, 0) : ''}
+      ${schedC.insuranceUnresolved > 0 ? `<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);font-size:11px;color:var(--warn)">
+          ⚠️ ${escapeHtml(fmtMoney(schedC.insuranceUnresolved))} in "Insurance" entries have no resolved sub-type (auto vs. cargo/liability/occ-acc) — excluded from every total below. Edit those expenses and pick a specific category to include them.
+        </div>` : ''}
       ${line('24b',`Per diem deduction (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction)}
       ${line('28', 'Total deductions', totalDeductions, true)}
       ${line('29', 'Tentative net profit', netProfit, true, netProfit >= 0 ? 'var(--good)' : 'var(--bad)')}
@@ -12580,25 +12953,38 @@ async function openTaxSeasonExport(){
         <button class="btn" id="f30Print" style="flex:1">Print</button>
       </div>`;
 
+    content.querySelector('#f30ChangeMethod').addEventListener('click', (ev)=>{ ev.preventDefault(); openVehicleTaxMethodModal(()=> loadYear(year)); });
+
+    // X-03: every export (CSV + print) carries the DRAFT header line while
+    // firstYearElection is still unresolved for this vehicle.
+    const draftCsvRow = isDraft ? [['DRAFT — vehicle method unverified. Not for filing.']] : [];
+    const draftPrintBanner = isDraft ? `<p style="background:#fff3cd;color:#7a5b00;padding:8px 10px;border-radius:6px;font-weight:700;font-size:12px;margin-bottom:12px">⚠️ DRAFT — vehicle method unverified. Not for filing.</p>` : '';
+
     // CSV export — two sections: Schedule C summary + mileage log
     content.querySelector('#f30ExportCsv').addEventListener('click', ()=>{
       haptic();
       const rows = [
+        ...draftCsvRow,
         ['FreightLogic Tax Export — Schedule C Summary', '', `Tax Year ${year}`],
+        ['Vehicle method', methodLabel, ''],
         [],
         ['Line', 'Description', 'Amount'],
         ['1',  'Gross receipts / freight income',                  grossIncome.toFixed(2)],
-        ['9',  `Vehicle mileage (${totalBizMi} mi @ $${mileageRate}/mi)`, mileageDeduction.toFixed(2)],
-        ['15', 'Insurance',                                         schedC.insurance.toFixed(2)],
-        ['21', 'Repairs & maintenance',                             schedC.repairs.toFixed(2)],
+        ...(isStandardMileage ? [['9',  `Vehicle mileage (${totalBizMi} mi, per-trip date rate)`, mileageDeduction.toFixed(2)]] : []),
+        ...(isActualExpense ? [
+          ['15', 'Insurance — Auto',                                  schedC.autoInsurance.toFixed(2)],
+          ['21', 'Repairs & maintenance',                             schedC.repairs.toFixed(2)],
+          ['27a','Fuel & oil',                                        schedC.fuel.toFixed(2)],
+        ] : []),
+        ['15', 'Insurance — Cargo/Liability/Occ-Acc',               schedC.otherInsurance.toFixed(2)],
         ['25', 'Utilities (phone/data)',                            schedC.utilities.toFixed(2)],
-        ['27a','Fuel & oil',                                        schedC.fuel.toFixed(2)],
         ['27a','Tolls',                                             schedC.tolls.toFixed(2)],
         ['27a','Parking & storage',                                 schedC.parking.toFixed(2)],
         ['27a','Other expenses',                                    schedC.other.toFixed(2)],
         ['24b',`Per diem (${workDays} days)`,                      perDiemDeduction.toFixed(2)],
         ['28', 'Total deductions',                                  totalDeductions.toFixed(2)],
         ['29', 'Tentative net profit',                              netProfit.toFixed(2)],
+        ...(schedC.insuranceUnresolved > 0 ? [['NOTE', 'Insurance (unresolved sub-type, excluded)', schedC.insuranceUnresolved.toFixed(2)]] : []),
         [],
         ['Schedule SE Estimate', '',                                seTax.toFixed(2)],
         [],
@@ -12611,14 +12997,15 @@ async function openTaxSeasonExport(){
             const loaded = posNum(t.loadedMiles || t.miles);
             const dead   = posNum(t.emptyMiles);
             const total  = loaded + dead;
+            const rate   = getMileageRate(t.pickupDate || t.deliveryDate);
             return [
               t.pickupDate || t.deliveryDate || '',
               t.orderNo || '',
               clampStr(t.origin || '', 60),
               clampStr(t.destination || '', 60),
               loaded, dead, total,
-              mileageRate.toFixed(3),
-              roundCents(total * mileageRate).toFixed(2),
+              rate.toFixed(3),
+              roundCents(total * rate).toFixed(2),
             ];
           }),
       ];
@@ -12637,11 +13024,14 @@ async function openTaxSeasonExport(){
       if (!win) { toast('Allow pop-ups to use the print view.', true); return; }
       const rows2 = [
         ['1','Gross receipts / freight income', grossIncome],
-        ['9',`Vehicle mileage (${totalBizMi.toLocaleString()} mi @ $${mileageRate}/mi)`, mileageDeduction],
-        ['15','Insurance', schedC.insurance],
-        ['21','Repairs & maintenance', schedC.repairs],
+        ...(isStandardMileage ? [['9',`Vehicle mileage (${totalBizMi.toLocaleString()} mi, per-trip date rate)`, mileageDeduction]] : []),
+        ...(isActualExpense ? [
+          ['15','Insurance — Auto', schedC.autoInsurance],
+          ['21','Repairs & maintenance', schedC.repairs],
+          ['27a','Fuel & oil', schedC.fuel],
+        ] : []),
+        ['15','Insurance — Cargo/Liability/Occ-Acc', schedC.otherInsurance],
         ['25','Utilities (phone/data)', schedC.utilities],
-        ['27a','Fuel & oil', schedC.fuel],
         ['27a','Tolls', schedC.tolls],
         ['27a','Parking & storage', schedC.parking],
         ['27a','Other expenses', schedC.other],
@@ -12655,14 +13045,15 @@ async function openTaxSeasonExport(){
         table{width:100%;border-collapse:collapse}td{padding:6px 8px;border-bottom:1px solid #eee}
         .num{text-align:right}.bold{font-weight:700}.neg{color:#c00}.pos{color:#080}
         .note{font-size:11px;color:#666;margin-top:24px}@media print{.note{font-size:10px}}</style></head><body>
+        ${draftPrintBanner}
         <h1>FreightLogic — Schedule C Summary</h1>
-        <p style="margin:0;color:#666;font-size:13px">Tax Year ${year} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
+        <p style="margin:0;color:#666;font-size:13px">Tax Year ${year} &nbsp;&bull;&nbsp; Vehicle method: ${escapeHtml(methodLabel)} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
         <h2>Income & Deductions</h2>
         <table>${rows2.map(r=>`<tr><td style="width:48px;color:#888;font-size:12px">Ln ${r[0]}</td><td>${r[1]}</td><td class="num${r[0]==='29'?r[2]<0?' neg':' pos':''}">${r[0]==='29'?'<b>':''}$${Math.abs(r[2]).toLocaleString('en-US',{minimumFractionDigits:2})}${r[0]==='29'?'</b>':''}</td></tr>`).join('')}</table>
         <h2>Schedule SE Estimate</h2>
         <p>Self-employment tax estimate: <strong>$${seTax.toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
         (net × 92.35% × 15.3%)</p>
-        <p class="note">This is an estimate only and not tax advice. Mileage deduction uses the IRS standard rate of $${mileageRate}/mile.
+        <p class="note">This is an estimate only and not tax advice. ${isStandardMileage ? `Mileage deduction uses the IRS standard rate in effect on each trip's date (${rateLabel}).` : 'Actual-expense method — vehicle-operating costs are itemized above rather than a per-mile rate.'}
         Per diem uses $${pdRate}/day at ${Math.round(pdPct*100)}% deductibility.
         Consult your CPA for final tax filings.</p>
         <script>window.print();window.onafterprint=()=>window.close();<\/script></body></html>`);
@@ -14291,8 +14682,14 @@ async function openCPAPackage(){
     const pdGross      = roundCents(pdDays * pdRate);
     const pdDeductible = roundCents(pdGross * perDiemPct);
 
-    // Mileage deduction (standard rate)
-    const mileDeduc2026 = roundCents(allMi * IRS.MILEAGE_RATE_2026);
+    // Mileage deduction (standard rate) — X-02: per-trip date-based rate, summed,
+    // not one flat constant applied to the period total (can't represent a
+    // midyear rate change).
+    const mileDeduc = roundCents(trips.reduce((s, t) => {
+      const mi = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileRatesUsed = [...new Set(trips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
 
     // Net + SE tax
     const net      = roundCents(gross - totalExp);
@@ -14303,7 +14700,7 @@ async function openCPAPackage(){
       label, startDate, endDate, period,
       gross, totalExp, catMap, totalFuelCost, totalGallons,
       loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct,
-      mileDeduc2026, net, seTax, estProfit,
+      mileDeduc, mileRatesUsed, net, seTax, estProfit,
       tripCount: trips.length, expCount: exps.length,
     };
   }
@@ -14393,8 +14790,8 @@ async function openCPAPackage(){
             <span>Loaded Miles</span><b>${d.loadedMi.toLocaleString()}</b>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
-            <span>Mileage Deduction @ $${IRS.MILEAGE_RATE_2026}/mi (2026)</span>
-            <b style="color:var(--accent)">${fmtMoney(d.mileDeduc2026)}</b>
+            <span>Mileage Deduction @ ${d.mileRatesUsed.map(r => '$' + r.toFixed(3)).join(' / ')}/mi (per trip date)</span>
+            <b style="color:var(--accent)">${fmtMoney(d.mileDeduc)}</b>
           </div>
           <div style="font-size:10px;color:var(--text-tertiary);margin-top:5px">⚠️ Choose mileage OR actual expenses — not both. Ask your CPA which method benefits you more.</div>
         </div>
@@ -16303,6 +16700,12 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     parseCSVLines, isValidISODate, hashPin,
     isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),
     parseReceiptOCR, buildCategorySuggestionMap,
+    // X-02/X-03 (v23.9 Phase 1)
+    getMileageRate, MILEAGE_RATES,
+    classifyExpenseTaxBucket, EXPENSE_TAX_BUCKET_MAP, INSURANCE_CATEGORY_BUCKET,
+    VEHICLE_TAX_METHOD, FIRST_YEAR_ELECTION,
+    ensureVehicleProfiles, getActiveVehicleProfile, saveActiveVehicleProfile, addVehicleProfile,
+    migrateInsuranceCategorySplit, revertInsuranceCategorySplit,
   };
 }
 
@@ -16374,6 +16777,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
       try{ await checkBackupReminder(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkRecurringExpenses(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkQuarterlyExportReminder(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkInsuranceSplitMigration(); }catch(e){ console.warn("[FL]", e); }
       // v15.3.0: Check for emergency backup recovery
       try{
         const emTs = Number(sessionStorage.getItem('fl_emergency_backup_ts') || 0);

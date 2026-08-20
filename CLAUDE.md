@@ -107,7 +107,11 @@ const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
 
 // IRS tax data (2026)
-IRS.MILEAGE_RATE_2026 = 0.725   // $0.725/mile
+// X-02 (v23.9): mileage rate is date-keyed, not a flat per-year constant —
+// getMileageRate(date) reads the MILEAGE_RATES table (app.js, near the IRS
+// const). 2026 has two bands: 0.725/mi Jan 1–Jun 30, 0.76/mi Jul 1–Dec 31
+// (IRS Announcement 2026-11 midyear increase). Adding a future year, or a
+// future midyear correction, is a MILEAGE_RATES table edit only.
 IRS.PER_DIEM_CONUS = 80          // $/day
 IRS.SE_RATE = 0.153              // 15.3% self-employment tax
 
@@ -622,6 +626,76 @@ asserted the *buggy* behavior (suite convention: a green `[FINDING F-n / NEW]` t
 the evidence was captured, not that the bug is fixed). They are retagged `/ FIXED` and now
 assert correct behavior, plus new sanitizer-level tests in
 `tests/unit/pure-functions.spec.mjs`. Full suite: **55 passed, 0 failed** across 7 specs.
+
+---
+
+## v23.9 "Trust & Recovery" (in progress)
+
+Scope = 12 audit findings (X-01…X-12, documented in `AUDIT_REPORT.md`) + 4 Phase 7
+additions. Tracked here phase by phase as they land; see `AUDIT_REPORT.md` for the
+source-level evidence behind each finding and `docs/DEFERRED.md` for anything raised
+during this pass but explicitly out of scope.
+
+### Phase 1 — Tax correctness (X-02, X-03)
+
+**X-02 — date-keyed mileage rate.** `IRS.MILEAGE_RATE_2026`/`MILEAGE_RATE_2025` (flat
+per-year constants) are gone. `MILEAGE_RATES` (a table of `{ effectiveFrom, effectiveTo,
+businessRate }`) + `getMileageRate(date)` replace them everywhere in `app.js` — F30 (Tax
+Season Export), the CPA Package, and the Accountant Package export all now sum a
+per-trip, per-trip-date rate instead of applying one flat rate to a period total. 2026
+has two bands (`0.725` Jan–Jun, `0.76` Jul–Dec, per IRS Announcement 2026-11's midyear
+increase). Adding a future year, or a future midyear correction, is a table edit only.
+
+**X-03 — standard mileage vs. actual expense, no more double-dip.** F30 previously
+summed the standard-mileage deduction and actual vehicle-operating costs
+(insurance/repairs) into the same `totalDeductions` — disallowed by the IRS. Fixed via:
+- A category→method-sensitivity map (`classifyExpenseTaxBucket()`): bucket **A**
+  (vehicle-operating: fuel, repairs/maintenance, auto insurance, oil, tires,
+  registration, lease) is suppressed from Schedule C totals when the elected method is
+  Standard Mileage; bucket **B** (parking, tolls, cargo/liability/occ-acc insurance,
+  loan interest, personal property tax, lumper fees, scale tickets, load board subs,
+  phone, permits, MC authority fees, and any category this map doesn't recognize) is
+  always deductible regardless of method; bucket **C** (an insurance-category expense
+  with no resolved auto/cargo/liability/occ-acc sub-type) is excluded from every total
+  and flagged in the F30 UI for manual reclassification.
+- The old flat `"Insurance"` category is split at the data-model level: the `expenses`
+  store gained an explicit `insuranceBucket` field (`'A'|'B'|'C'|undefined`), derived
+  automatically from specific category text (`Auto Insurance`, `Cargo Insurance`,
+  `Liability Insurance`, `Occupational Accident Insurance` — added to the category
+  datalist in `index.html`) or left `'C'` for bare/legacy `"Insurance"`.
+  `migrateInsuranceCategorySplit()` is a one-time, idempotent, reversible migration
+  that tags existing bare-"Insurance" expense records `insuranceBucket: 'C'` — it
+  writes a retained pre-mutation backup (`insuranceMigrationBackup_<timestamp>` in
+  `settings`) before touching anything, and is gated behind a blocking confirm()
+  prompt (`checkInsuranceSplitMigration()`, boot-time) asking the owner to take a
+  manual JSON export first. `revertInsuranceCategorySplit(key)` undoes a pass from its
+  backup. See `tests/integration/insurance-migration.spec.mjs` for the
+  run-twice-produces-identical-state proof.
+- Per-vehicle tax-method election: `settings['vehicleProfiles']` (array of
+  `{ id, label, vehicleTaxMethod, firstYearElection, createdAt }`) +
+  `settings['activeVehicleId']` — kept in the existing `settings` store (no new IDB
+  object store, no `DB_VERSION` bump; a full multi-vehicle fleet schema is out of scope
+  for this release, see `docs/DEFERRED.md`). `vehicleTaxMethod` ∈ `UNSET |
+  STANDARD_MILEAGE | ACTUAL_EXPENSE` (default `UNSET`); `firstYearElection` ∈ `UNKNOWN |
+  ACTUAL_EXPENSE | STANDARD_MILEAGE` (default `UNKNOWN`). Setting `firstYearElection` to
+  `ACTUAL_EXPENSE` permanently hard-locks that vehicle's `vehicleTaxMethod` to
+  `ACTUAL_EXPENSE` (`saveActiveVehicleProfile()`), with a one-time explanation shown to
+  the driver.
+- F30 export is **blocked** (no CSV/print buttons, no computed totals) while
+  `vehicleTaxMethod = UNSET`. Once a method is set but `firstYearElection = UNKNOWN`,
+  export is allowed but every export (CSV, print/PDF view, and the on-screen summary)
+  carries a `DRAFT — vehicle method unverified. Not for filing.` header/banner.
+  Selecting Standard Mileage while `firstYearElection = UNKNOWN` also shows a persistent
+  inline warning in the method picker itself.
+- Settings gained a "Verify vehicle tax method" row (`#vehicleTaxMethodRow` in
+  `index.html`, wired in `renderInsights()`) that stays visible until the active
+  vehicle's `firstYearElection` is resolved.
+
+Files touched: `app.js`, `index.html`, `CLAUDE.md`, `docs/BACKUP_CONTRACT.md` (new —
+Amendment 2: every new persisted field this phase added is documented there),
+`tests/unit/pure-functions.spec.mjs`, `tests/integration/insurance-migration.spec.mjs`
+(new), `tests/integration/tax-export-csv-corruption.spec.mjs` (updated — F30 export is
+now gated on a vehicle tax method being set, which predates that spec).
 
 ---
 

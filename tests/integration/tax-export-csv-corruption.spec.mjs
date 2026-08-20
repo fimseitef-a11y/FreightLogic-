@@ -21,11 +21,17 @@
 //   3. Year-boundary date bucketing (a trip pickup at 2025-12-31 vs one at
 //      2026-01-01) still lands in the correct tax year after the fix.
 //
-// Scope note: FreightLogic's Tax Season Export only implements the
-// standard-mileage deduction (IRS.MILEAGE_RATE_2026/2025 x business miles) —
-// grep across app.js finds no "actual expense method" toggle anywhere in the
-// codebase, so there is no standard-mileage-vs-actual-expense split to
-// verify; this is a scope fact, not a gap in this fix.
+// Scope note (stale as of v23.9): this suite predates the X-02/X-03 fixes.
+// F30 now has a real Standard Mileage / Actual Expense toggle per vehicle
+// (see tests/unit/pure-functions.spec.mjs and
+// tests/integration/insurance-migration.spec.mjs for X-02/X-03 coverage) and
+// export is gated on a method being set — this suite's "setup" test below
+// sets Standard Mileage so the original F-3 assertions (unrelated to X-02/
+// X-03: CSV field quoting, three-way reconciliation, year-boundary bucketing)
+// keep working unmodified. The mileage rate used below (0.725) is still
+// correct for both fixture dates (2026-01-01 and 2026-03-01), which fall
+// before the 2026-07-01 midyear increase (X-02) — getMileageRate() returns
+// the same value a flat 2026 constant would have for these specific dates.
 
 import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
 
@@ -103,6 +109,20 @@ async function exportCsvAndCapture(page) {
   ok(csv, 'CSV export did not produce a captured Blob — cannot verify');
   return csv;
 }
+
+test('setup: set vehicle tax method to Standard Mileage (v23.9 X-03 gates F30 export on this)', async () => {
+  // X-03 blocks Schedule C export entirely while vehicleTaxMethod is UNSET — a
+  // precondition this suite predates. Resolve firstYearElection too so these
+  // captures aren't also carrying the X-03 DRAFT-unverified header.
+  const v = await app.page.evaluate(async () => {
+    await window.__FL_TESTS.saveActiveVehicleProfile({
+      vehicleTaxMethod: window.__FL_TESTS.VEHICLE_TAX_METHOD.STANDARD_MILEAGE,
+      firstYearElection: window.__FL_TESTS.FIRST_YEAR_ELECTION.STANDARD_MILEAGE,
+    });
+    return (await window.__FL_TESTS.getActiveVehicleProfile()).vehicleTaxMethod;
+  });
+  eq(v, 'STANDARD_MILEAGE', 'active vehicle profile must be set to Standard Mileage for this suite');
+});
 
 test('seed one trip with a comma in destination + one on each side of a year boundary', async () => {
   const t1 = await seedTrip(app.page, { orderNo: 'AUDIT-CSV-1', pickupDate: '2026-03-01', origin: 'Chicago, IL', destination: 'Springfield, IL', pay: 1000, loadedMiles: 200 });

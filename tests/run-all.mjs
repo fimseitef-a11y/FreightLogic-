@@ -12,6 +12,7 @@ import { runSpec as pinLockout } from './integration/pin-lockout.spec.mjs';
 import { runSpec as flTestsExposure } from './integration/fl-tests-exposure.spec.mjs';
 import { runSpec as toctouEdit } from './integration/toctou-concurrent-edit.spec.mjs';
 import { runSpec as fieldResilience } from './integration/field-resilience.spec.mjs';
+import { runSpec as insuranceMigration } from './integration/insurance-migration.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -21,6 +22,7 @@ const specs = [
   flTestsExposure,
   toctouEdit,
   fieldResilience,
+  insuranceMigration,
 ];
 
 const results = [];
