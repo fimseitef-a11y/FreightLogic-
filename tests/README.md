@@ -31,12 +31,35 @@ node tests/integration/dz-exit-grade-cap.spec.mjs
 ```
 
 Each spec file is independently runnable (`node tests/.../foo.spec.mjs`) and
-exits non-zero if any of its own assertions fail. `run-all.mjs` always exits
-0 — several specs are *expected* to fail one assertion each, because that
-failure is the proof of a specific finding in `AUDIT_REPORT.md` (read the
-assertion message, it names the finding and file:line). Look at the printed
-"Failing" list at the end of a `run-all.mjs` run to see which findings are
-still reproducing.
+exits non-zero if any of its own assertions fail.
+
+### Exit code (X-06, v23.9 Phase 2)
+
+`run-all.mjs` exits **non-zero if any assertion in any spec fails**
+(`process.exit(totalFail ? 1 : 0)`), and CI (`.github/workflows/tests.yml`)
+blocks merge to `main` on that exit code. This is a change from pre-v23.9
+behavior, worth calling out explicitly: an earlier version of this file
+always exited 0, on the reasoning that several specs were *expected* to fail
+one assertion each — each failure was the reproduction of a specific
+still-open finding in `AUDIT_REPORT.md`, and a passing exit code just meant
+"the suite ran," not "nothing is broken." That reasoning doesn't hold once a
+finding is actually fixed and its test is rewritten to assert correct
+behavior (this suite's own convention — see "Note on the retagged tests" at
+the bottom of `AUDIT_REPORT.md`): at that point a red assertion is a real
+regression, not expected evidence, and a runner that still exits 0
+unconditionally can't be used as a merge gate. Every finding this suite
+currently covers is FIXED, so there is no longer a legitimate reason for any
+spec here to fail — the exit code is real CI signal now, not just a summary.
+
+If a future finding is logged-but-not-yet-fixed (this suite's established
+pattern for a bug discovered mid-testing, e.g. F-7/F-8 originally), its test
+should either be excluded from `run-all.mjs`'s default run or clearly
+isolated so it doesn't sink an otherwise-green CI gate — do not go back to
+an unconditional `exit(0)` to work around that; that reopens X-06.
+
+Look at the printed "Failing" list at the end of a `run-all.mjs` run to see
+exactly which assertions are red (each names the finding and file:line it
+proves).
 
 ## Layout
 

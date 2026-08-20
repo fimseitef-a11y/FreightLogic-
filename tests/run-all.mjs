@@ -38,7 +38,14 @@ console.log(`TOTAL: ${totalPass} passed, ${totalFail} failed across ${results.le
 console.log('='.repeat(60));
 const failing = results.flatMap(r => r.failures.map(f => `${r.file} :: ${f.name}`));
 if (failing.length) {
-  console.log('\nFailing (each documents a specific finding in AUDIT_REPORT.md):');
+  console.log('\nFailing:');
   for (const f of failing) console.log('  - ' + f);
 }
-process.exit(0); // non-zero would be wrong here: several specs are EXPECTED to fail (they prove bugs)
+// X-06 (v23.9 Phase 2): every finding this suite covers is now FIXED (see
+// AUDIT_REPORT.md) — there is no longer a legitimate reason for a spec in
+// this suite to fail, so the aggregate exit code is a real signal CI can
+// gate on. A prior version of this file always exited 0 on the reasoning
+// that several specs were EXPECTED to fail (they proved still-open bugs);
+// that reasoning no longer holds now that this suite only ships fixes with
+// passing assertions — see tests/README.md's "Exit code" section.
+process.exit(totalFail ? 1 : 0);
