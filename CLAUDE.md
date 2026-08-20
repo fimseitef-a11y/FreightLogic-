@@ -926,6 +926,41 @@ brief specified beyond the audit findings themselves. 7B/7C/7D are self-containe
 **7A requires a printed inventory + explicit approval before any editing begins**
 (Amendment 5) — tracked separately below once that inventory is presented.
 
+### 7B — Recovery verification
+
+Replaces the old "Backup synced!" toast-and-forget pattern with an actual round-trip
+proof. `verifyRecoveryIntegrity()` runs automatically ~immediately after every
+successful `cloudPushBackup()`: it re-downloads the just-pushed full backup **and**
+every currently-retained delta from the Worker (`GET /backup` + `GET /backup/delta`,
+the same X-01 delta-fetch path `cloudPullBackup()` uses), decrypts them with the
+session passphrase, merges them exactly as a real restore would, and compares the
+merged `trips`/`expenses`/`fuel` record counts against what's actually in local
+IndexedDB right now. Only an exact match is reported `verified: true` — this is
+deliberately never "the upload HTTP call returned 200," which is all the old status line
+actually proved.
+
+Three ways it reports `verified: false`, each with a human-readable `reason`: a local
+change made after the last push (count mismatch — the core guarantee: a device that has
+unpushed local edits is never shown green), a confirmed delta gap (X-01's eviction/TTL
+detection — matches the pull-time partial-restore warning, but now also blocks the
+recovery-verified claim, not just the pull toast), or a hard failure re-downloading/
+decrypting/parsing the backup itself. Results persist to
+`settings['lastRecoveryVerifiedAt'|'lastRecoveryVerifiedCounts'|'lastRecoveryVerifiedReason']`
+(documented in `docs/BACKUP_CONTRACT.md` per Amendment 2) and render via
+`renderRecoveryStatus()` into a new `#cloudRecoveryStatus` row in the cloud status panel
+— "Recovery protected through `<time>` • N trips • N expenses • N fuel logs • restore
+chain verified" when green, "Not verified — `<reason>`" otherwise, called from
+`cloudRefreshStatusPanel()` so it refreshes with the rest of the panel.
+
+Files touched: `app.js` (`verifyRecoveryIntegrity()`, `renderRecoveryStatus()`, wired
+into `cloudPushBackup()`'s success branch and `cloudRefreshStatusPanel()`), `index.html`
+(`#cloudRecoveryRow`/`#cloudRecoveryStatus`), `docs/BACKUP_CONTRACT.md`. New tests:
+3 cases appended to `tests/integration/backup-restore-parity.spec.mjs` (verified:true
+right after a clean push; a local-only unsynced change correctly flips to
+verified:false with a mismatch reason; a confirmed delta gap fails verification too,
+not just the separate pull-side warning) — reuses the same `tests/lib/mock-worker.mjs`
+fixture as the Phase 4 X-01/X-07 tests in that file. Full spec run: 7/7 passing.
+
 ### 7D — Dimensional/payload pre-check
 
 Configurable van profile (Settings → Van Profile, `settings['vanProfile']`, defaults to

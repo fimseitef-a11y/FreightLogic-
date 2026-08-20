@@ -106,20 +106,42 @@ Already covered by the existing push/restore path with no additional code: `clou
 included automatically, and X-07's add-only settings merge in `mergeRestoreData()` handles
 any settings key generically — no per-key special-casing was needed for this field.
 
+### 7B — recovery verification (`settings['lastRecoveryVerified*']`)
+
+| Key | Shape | Purpose |
+|---|---|---|
+| `lastRecoveryVerifiedAt` | number (epoch ms) | Timestamp of the last time `verifyRecoveryIntegrity()` re-downloaded the pushed backup + all retained deltas, decrypted them, and confirmed the merged cloud record counts (`trips`/`expenses`/`fuel`) exactly match local. `0` if never verified. |
+| `lastRecoveryVerifiedCounts` | `{ trips, expenses, fuel }` (numbers) | The matching counts as of the last successful verification. Rendered in the "Recovery protected through …" status line. |
+| `lastRecoveryVerifiedReason` | string | Empty when the last check passed; otherwise the human-readable reason it failed (decrypt error, count mismatch, confirmed delta gap, etc.), shown as "Not verified — …". |
+
+Lives in the existing `settings` store — no new IDB object store, no `DB_VERSION` bump.
+Like `vanProfile` above, this is a plain settings dump/restore with no per-key special
+casing: `cloudPushBackup()`'s full `settings` dump already includes it, and X-07's
+add-only settings merge in `mergeRestoreData()` already handles it generically. The one
+caveat: these three keys describe the state of a *specific device's* verification run,
+so after a restore onto a new device they read as stale until that device runs its own
+`verifyRecoveryIntegrity()` — which happens automatically on its next successful push
+(see `cloudPushBackup()`'s success branch in `app.js`). This is intentional, not a gap:
+a restored value here would otherwise claim a device verified data it never actually
+re-downloaded and checked itself.
+
 - **7A** (concept tags: OPERATIONAL vs. TAX) — pending inventory approval (Amendment 5)
   before implementation; fields TBD.
-- **7B** (recovery verification) — TBD, this phase not yet implemented.
 - **7C** (health/release badge) — TBD, this phase not yet implemented.
 
 ## Verification
 
-`tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4) asserts a full
-backup → 3 delta syncs → wipe local data → restore round-trip preserves trips (base +
-all 3 deltas), settings, receipts, and gpsLogs, and separately that a confirmed delta
-gap (simulated pruning) surfaces the visible partial-restore warning instead of a
-silent success. Uses `tests/lib/mock-worker.mjs` (a local stand-in for the Worker's
-KV-backed endpoints — see that file's header comment for why: this environment has no
-live Cloudflare Worker to test against). Full run: 4/4 passing.
+`tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4, extended in Phase
+7B) asserts a full backup → 3 delta syncs → wipe local data → restore round-trip
+preserves trips (base + all 3 deltas), settings, receipts, and gpsLogs; that a confirmed
+delta gap (simulated pruning) surfaces the visible partial-restore warning instead of a
+silent success; and (7B) that `verifyRecoveryIntegrity()` reports `verified:true` with
+matching counts right after a clean push, correctly flips to `verified:false` the moment
+local drifts out of sync with the last push (never a false green), and also fails
+verification — not just the separate pull-time warning — on a confirmed delta gap. Uses
+`tests/lib/mock-worker.mjs` (a local stand-in for the Worker's KV-backed endpoints — see
+that file's header comment for why: this environment has no live Cloudflare Worker to
+test against). Full run: 7/7 passing.
 
 Once Phase 7 lands, this test (or a follow-up in the same commit) must also cover the
 Phase 1 fields (`vehicleProfiles`, `activeVehicleId`, `insuranceBucket` on expense

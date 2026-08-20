@@ -12007,6 +12007,11 @@ async function cloudPushBackup(silent = true){
       await setSetting('lastCloudSyncedAt', _lastCloudSync);
       if (!silent) toast(isDelta ? 'Delta sync complete' : 'Backup synced');
       cloudRefreshStatusPanel();
+      // 7B: upload success alone never earns a green "protected" status — run
+      // the real verification pass (re-download + decrypt + delta-gap check +
+      // record-count reconciliation) and refresh the panel again once it
+      // resolves. Fire-and-forget: doesn't block the push from completing.
+      verifyRecoveryIntegrity().then(() => cloudRefreshStatusPanel().catch(()=>{})).catch(()=>{});
     }
     else {
       // If delta endpoint not found (404), fall back to full backup
@@ -12212,6 +12217,88 @@ async function cloudFetchDeltas(config, hdrs){
   return { deltas, confirmedGap, unverifiable };
 }
 
+/** 7B: replaces a bare "Backup synced" claim (upload success alone) with an
+ *  actually-verified recovery status. Re-downloads the base snapshot AND
+ *  every retained delta (the same mechanism cloudPullBackup() would use),
+ *  decrypts them, confirms delta coverage has no confirmed gap (X-01), and
+ *  reconciles the RECORD COUNT reconstructable from cloud against what's
+ *  actually on this device right now — not just "did the bytes decrypt."
+ *  Never writes to local storage; this is read-only verification.
+ *  Returns { verified, verifiedAt, counts, reason } and persists the result
+ *  to settings (lastRecoveryVerifiedAt/lastRecoveryVerifiedCounts/
+ *  lastRecoveryVerifiedReason) so cloudRefreshStatusPanel() can render it
+ *  without re-running the check on every render. */
+async function verifyRecoveryIntegrity(){
+  const fail = async (reason) => {
+    await setSetting('lastRecoveryVerifiedReason', reason);
+    return { verified: false, reason };
+  };
+  const config = await cloudGetConfig();
+  if (!config) return fail('not connected');
+  try {
+    const hdrs = { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token };
+    const dataRes = await cloudFetch(config.url + '/backup', { headers: hdrs }, 10000);
+    if (!dataRes.ok) return fail('could not re-download backup (' + dataRes.status + ')');
+    const raw = await dataRes.text();
+    let encObj; try { encObj = JSON.parse(raw); } catch { return fail('backup corrupted'); }
+    if (!encObj.encrypted || !encObj.iv || !encObj.salt) return fail('invalid backup format');
+    let basePlain; try { basePlain = await cloudDecrypt(encObj.encrypted, encObj.iv, encObj.salt, config.pass); } catch { return fail('decrypt failed'); }
+    let baseParsed; try { baseParsed = JSON.parse(basePlain); } catch { return fail('backup data corrupted'); }
+
+    const { deltas, confirmedGap, unverifiable } = await cloudFetchDeltas(config, hdrs);
+    if (confirmedGap) return fail('delta chain has a confirmed gap — some synced data may not be recoverable');
+    if (unverifiable) return fail('could not verify delta coverage');
+
+    // Reconstruct the set of record keys recoverable from cloud (base + every
+    // delta, later wins — same identity keys mergeRestoreData() uses) WITHOUT
+    // writing anything to IndexedDB, then compare against live local counts.
+    const mergeKeys = (storeName, keyFn) => {
+      const map = new Map();
+      for (const r of (baseParsed[storeName] || [])) map.set(keyFn(r), r);
+      for (const d of deltas) for (const r of (d.parsed[storeName] || [])) map.set(keyFn(r), r);
+      return map.size;
+    };
+    const cloudCounts = {
+      trips: mergeKeys('trips', r => r.orderNo),
+      expenses: mergeKeys('expenses', r => r.id),
+      fuel: mergeKeys('fuel', r => r.id),
+    };
+    const [localTrips, localExpenses, localFuel] = await Promise.all([dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel')]);
+    const localCounts = { trips: localTrips.length, expenses: localExpenses.length, fuel: localFuel.length };
+    const mismatch = Object.keys(localCounts).filter(k => localCounts[k] !== cloudCounts[k]);
+    if (mismatch.length){
+      return fail(`local/cloud record count mismatch (${mismatch.map(k => `${k}: local ${localCounts[k]} vs cloud ${cloudCounts[k]}`).join(', ')})`);
+    }
+
+    const verifiedAt = Date.now();
+    await setSetting('lastRecoveryVerifiedAt', verifiedAt);
+    await setSetting('lastRecoveryVerifiedCounts', localCounts);
+    await setSetting('lastRecoveryVerifiedReason', '');
+    return { verified: true, verifiedAt, counts: localCounts };
+  } catch(e) {
+    console.warn('[FL] recovery verification failed', e);
+    return fail(e && e.message ? e.message : 'verification error');
+  }
+}
+
+/** Renders the "Recovery" row in the cloud status panel from the LAST
+ *  verifyRecoveryIntegrity() result — never claims green from upload
+ *  success alone (that's exactly the "Backup synced" claim 7B replaces). */
+async function renderRecoveryStatus(){
+  const el = $('#cloudRecoveryStatus'); if (!el) return;
+  const verifiedAt = Number(await getSetting('lastRecoveryVerifiedAt', 0) || 0);
+  const counts = await getSetting('lastRecoveryVerifiedCounts', null);
+  const reason = await getSetting('lastRecoveryVerifiedReason', '');
+  if (verifiedAt > 0 && counts && !reason){
+    const timeStr = new Date(verifiedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    el.innerHTML = `<span class="cloud-dot ok"></span> Recovery protected through ${escapeHtml(timeStr)} • ${counts.trips} trip${counts.trips===1?'':'s'} • ${counts.expenses} expense${counts.expenses===1?'':'s'} • ${counts.fuel} fuel log${counts.fuel===1?'':'s'} • restore chain verified`;
+  } else if (reason){
+    el.innerHTML = `<span class="cloud-dot warn"></span> Not verified — ${escapeHtml(reason)}`;
+  } else {
+    el.innerHTML = `<span class="cloud-dot off"></span> Not yet verified`;
+  }
+}
+
 async function cloudPullBackup(){
   const config = await cloudGetConfig(); if (!config){ toast('Connect cloud backup first', true); return; }
   cloudSetSyncStatus('spinner', 'Checking backups...');
@@ -12318,6 +12405,7 @@ async function cloudRefreshStatusPanel(){
   const userEl = $('#cloudStatusUser'); const countEl = $('#cloudStatusCount');
   if (_cloudLastStatus?.user && userEl) userEl.textContent = _cloudLastStatus.user;
   if (_cloudLastStatus && countEl) countEl.textContent = (_cloudLastStatus.count || 0) + ' stored';
+  await renderRecoveryStatus().catch(()=>{});
 }
 
 async function cloudRefreshButtons(){
@@ -17108,6 +17196,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
+    // 7B (v23.9 Phase 7)
+    verifyRecoveryIntegrity, renderRecoveryStatus,
   };
 }
 

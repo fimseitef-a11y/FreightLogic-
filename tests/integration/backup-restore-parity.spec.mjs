@@ -167,6 +167,49 @@ test('[X-01] a confirmed delta gap (pruned deltas) surfaces a visible partial-re
   console.log(`    [evidence] gap-warning toast: ${JSON.stringify(toastText)}`);
 });
 
+test('[7B] verifyRecoveryIntegrity() reports verified:true, with matching counts, right after a clean push', async () => {
+  // Push current local state fresh so cloud and local are known to agree.
+  await app.page.evaluate(async () => { await window.__FL_TESTS.cloudPushBackup(false); });
+  await app.page.waitForTimeout(300);
+
+  const result = await app.page.evaluate(async () => window.__FL_TESTS.verifyRecoveryIntegrity());
+  console.log(`    [evidence] verifyRecoveryIntegrity(): ${JSON.stringify(result)}`);
+  ok(result.verified, `expected verified:true right after a clean push, got: ${JSON.stringify(result)}`);
+  eq(result.counts.trips, 4, 'verified trip count must match local (1 base + 3 delta)');
+
+  const statusHtml = await app.page.evaluate(async () => { await window.__FL_TESTS.renderRecoveryStatus(); return document.querySelector('#cloudRecoveryStatus')?.innerHTML || ''; });
+  ok(/Recovery protected through/.test(statusHtml), `expected the "Recovery protected through..." message, got: ${statusHtml}`);
+  ok(/restore chain verified/.test(statusHtml), `expected "restore chain verified" in the status, got: ${statusHtml}`);
+  ok(/cloud-dot ok/.test(statusHtml), `expected the green ("ok") status dot, got: ${statusHtml}`);
+});
+
+test('[7B] a local change made AFTER the last push is correctly detected as unverified — never a false green', async () => {
+  // Add a new local trip WITHOUT pushing it — cloud and local now disagree.
+  const t = await app.page.evaluate(() => window.__FL_TESTS.sanitizeTrip({ orderNo: 'UNSYNCED-1', customer: 'X', pay: 100, loadedMiles: 50, pickupDate: '2026-05-03', deliveryDate: '2026-05-03' }));
+  await seedRecord(app.page, 'trips', t);
+
+  const result = await app.page.evaluate(async () => window.__FL_TESTS.verifyRecoveryIntegrity());
+  console.log(`    [evidence] verifyRecoveryIntegrity() after an unsynced local change: ${JSON.stringify(result)}`);
+  ok(!result.verified, 'a local change not yet pushed must NOT be reported as verified — this is the core 7B guarantee: never green on upload success alone (there was no upload at all here)');
+  ok(/mismatch/i.test(result.reason || ''), `expected a count-mismatch reason, got: ${JSON.stringify(result.reason)}`);
+
+  const statusHtml = await app.page.evaluate(async () => { await window.__FL_TESTS.renderRecoveryStatus(); return document.querySelector('#cloudRecoveryStatus')?.innerHTML || ''; });
+  ok(!/cloud-dot ok/.test(statusHtml), `status must not show green when unverified: ${statusHtml}`);
+  ok(!/Recovery protected through/.test(statusHtml), `status must not claim "protected" when unverified: ${statusHtml}`);
+
+  // Push the new trip so later tests in this file see consistent state again.
+  await app.page.evaluate(async () => { await window.__FL_TESTS.cloudPushBackup(false); });
+  await app.page.waitForTimeout(300);
+});
+
+test('[7B] a confirmed delta gap fails verification too, not just the pull-side warning', async () => {
+  await worker.forceGap();
+  const result = await app.page.evaluate(async () => window.__FL_TESTS.verifyRecoveryIntegrity());
+  console.log(`    [evidence] verifyRecoveryIntegrity() with a forced delta gap: ${JSON.stringify(result)}`);
+  ok(!result.verified, 'a confirmed delta gap must fail verification, not just the separate pull-time warning');
+  ok(/gap/i.test(result.reason || ''), `expected a gap-related reason, got: ${JSON.stringify(result.reason)}`);
+});
+
 // This spec does NOT use harness.mjs's launchApp()/shared http-server: it
 // needs the page and the mock Worker API on the exact same origin (see
 // tests/lib/mock-worker.mjs's top comment for why), so it launches its own
@@ -184,6 +227,7 @@ export async function runSpec() {
   try {
     return await run();
   } finally {
+    if (app) await app.close().catch(() => {});
     if (worker) await worker.close();
     await app.close();
   }
