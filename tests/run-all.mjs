@@ -13,6 +13,7 @@ import { runSpec as flTestsExposure } from './integration/fl-tests-exposure.spec
 import { runSpec as toctouEdit } from './integration/toctou-concurrent-edit.spec.mjs';
 import { runSpec as fieldResilience } from './integration/field-resilience.spec.mjs';
 import { runSpec as insuranceMigration } from './integration/insurance-migration.spec.mjs';
+import { runSpec as exportChecksumIntegrity } from './integration/export-checksum-integrity.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -23,6 +24,7 @@ const specs = [
   toctouEdit,
   fieldResilience,
   insuranceMigration,
+  exportChecksumIntegrity,
 ];
 
 const results = [];

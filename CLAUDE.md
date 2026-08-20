@@ -697,6 +697,33 @@ Amendment 2: every new persisted field this phase added is documented there),
 (new), `tests/integration/tax-export-csv-corruption.spec.mjs` (updated — F30 export is
 now gated on a vehicle tax method being set, which predates that spec).
 
+### Phase 2 — Release gate (X-06)
+
+`tests/run-all.mjs` now exits non-zero if any spec's assertions fail
+(`process.exit(totalFail ? 1 : 0)`) instead of unconditionally exiting 0. New
+`.github/workflows/tests.yml` runs the full suite on every PR to `main` — set it as a
+required status check under branch protection for it to actually block merge. See
+`tests/README.md`'s "Exit code" section for why the old unconditional-0 behavior was
+correct at the time it was written and why it no longer is.
+
+Files touched: `tests/run-all.mjs`, `tests/README.md`, `.github/workflows/tests.yml`
+(new).
+
+### Phase 3 — Export integrity (X-05)
+
+`exportJSON()`'s `checksumFull` was computed over the **unfiltered** settings dump
+(including `fmcsaApiKey`/`eiaApiKey`) but the payload's `settings` field was the
+**filtered** array with those two keys already stripped — so a genuine, untampered
+export never matched its own checksum on import, and every normal import showed a
+false "this file has been tampered with" warning. Fixed by building
+`exportableSettings` once (secret keys already stripped) and using that exact array as
+both the `checksumFull` input and the payload's `settings` field — one array, one
+source of truth, computed once.
+
+Files touched: `app.js`, `tests/integration/export-checksum-integrity.spec.mjs` (new —
+round-trip proof: export with both secret keys present → checksum is self-consistent →
+import shows no integrity warning → both keys are genuinely absent from the export).
+
 ---
 
 ## Dispatch Layer (Planned)

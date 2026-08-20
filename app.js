@@ -1509,9 +1509,15 @@ async function exportJSON(){
   const trips = await dumpStore('trips');
   const expenses = await dumpStore('expenses');
   const fuel = await dumpStore('fuel');
-  const settings = await dumpStore('settings');
+  // X-05: build the exported settings array ONCE — with secret keys already
+  // stripped — and use that exact array both as the checksumFull input and
+  // as the payload. The old code computed checksumFull over the UNFILTERED
+  // settings dump but wrote the FILTERED array into the payload, so every
+  // legitimate export mismatched its own integrity check on import (a false
+  // "tampered" warning on every normal export/import round-trip).
+  const exportableSettings = (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey');
   const checksum = await computeExportChecksum(trips, expenses, fuel);
-  const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, settings);
+  const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, exportableSettings);
   const gpsLogs = await dumpStore('gpsLogs');
   const payload = {
     meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length } },
@@ -1519,7 +1525,7 @@ async function exportJSON(){
     expenses,
     fuel,
     receipts: await dumpStore('receipts'),
-    settings: (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey'),
+    settings: exportableSettings,
     auditLog: await dumpStore('auditLog'),
     laneHistory: await dumpStore('laneHistory'),
     weeklyReports: await dumpStore('weeklyReports'),
@@ -16706,6 +16712,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     VEHICLE_TAX_METHOD, FIRST_YEAR_ELECTION,
     ensureVehicleProfiles, getActiveVehicleProfile, saveActiveVehicleProfile, addVehicleProfile,
     migrateInsuranceCategorySplit, revertInsuranceCategorySplit,
+    // X-05 (v23.9 Phase 3)
+    exportJSON, importJSON, getSetting, setSetting,
   };
 }
 
