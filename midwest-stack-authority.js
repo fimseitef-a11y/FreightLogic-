@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v23.8.4
+/* FreightLogic Midwest Stack v2 Authority Overlay v23.9.0
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '23.8.4';
+  const VERSION = '23.9.0';
   const UPDATED_AT = '2026-07-09';
 
   const CONFIG = Object.freeze({
@@ -231,11 +231,49 @@
       if (destRole.role === 'tier1' || destRole.role === 'tier2') floorRpm = Math.max(1.10, Math.min(floorRpm, 1.25));
       askRpm = Math.max(askRpm, 1.35 + premium);
     }
+    // X-04: single canonical gate (isDeadZoneEligible, defined in app.js and
+    // exposed on window since both scripts share one page/global scope — see
+    // CLAUDE.md's v23.9 Phase 5 notes) decides whether DEAD_ZONE mode may
+    // lower the floor to survival-mode levels at all. Before this fix,
+    // DEAD_ZONE mode unconditionally lowered floorRpm to 0.91 and let the
+    // normal tier1/tier2 TAKE_IF_LIVE branch below fire — with NO distance-
+    // from-home, distance-saved, or manual-confirmation check whatsoever.
+    // window.flDzGeoCheck (also app.js) supplies the distance numbers this
+    // file has no geo model of its own to compute; #mwDZNoReloadToggle is
+    // the SAME confirmation checkbox the main evaluator uses (shared DOM,
+    // not a separate control) so "manually validated" means the same thing
+    // in both panels.
+    //
+    // Deliberately surgical: when the gate fails, floorRpm/winRpm/askRpm are
+    // simply left at their pre-DEAD_ZONE (generic mode.floor-derived)
+    // values rather than forcing a verdict — so a load that's actually fine
+    // (clears the REAL floor on its own merits) still gets its honest
+    // verdict, and only the lowered-floor privilege itself is withheld.
+    let dzGateResult = null;
     if (mode.id === 'DEAD_ZONE') {
-      floorRpm = 0.91;
-      winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
-      askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
-      flags.push('Dead-zone mode must be manually validated before acceptance.');
+      if (typeof window !== 'undefined' && typeof window.isDeadZoneEligible === 'function'){
+        const geo = (typeof window.flDzGeoCheck === 'function') ? window.flDzGeoCheck(origin, destination) : { eligible: false };
+        const toggleEl = typeof document !== 'undefined' ? document.getElementById('mwDZNoReloadToggle') : null;
+        dzGateResult = window.isDeadZoneEligible({
+          distanceFromHome: geo.distanceFromHome,
+          distanceSaved: geo.distanceSaved,
+          trueRPM: trueRpm,
+          noReloadConfirmed: !!(toggleEl && toggleEl.checked),
+        });
+      } else {
+        // app.js not loaded yet / injection-order issue — fail closed rather
+        // than silently allowing an unguarded survival-mode TAKE_IF_LIVE.
+        dzGateResult = { eligible: false, gradeCap: 'C', reasons: ['DZ gate check unavailable (app.js not loaded) — treated as ineligible'] };
+      }
+      if (dzGateResult.eligible){
+        floorRpm = 0.91;
+        winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
+        askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
+        flags.push('Dead-zone mode must be manually validated before acceptance.');
+      } else {
+        flags.push(...dzGateResult.reasons.map(r => 'DZ gate: ' + r));
+        flags.push('Dead Zone Exit gate not satisfied — using the standard floor, not the survival floor.');
+      }
     }
 
     const floorBid = roundMoney(floorRpm * totalMiles);
@@ -250,6 +288,13 @@
     else if (trueRpm >= winRpm && risk < 0.55) verdict = 'TAKE_IF_LIVE';
     else if (mode.id === 'ESCAPE_RECOVERY' && trueRpm >= floorRpm && (destRole.role === 'tier1' || destRole.role === 'tier2')) verdict = 'STRATEGIC_ONLY';
 
+    // X-04 gate 5: hard grade cap at C whenever DEAD_ZONE mode actually
+    // activates (gate passed) — never show the raw grade, which is always
+    // 'F' in this RPM range by construction (same reasoning as app.js's F-1
+    // fix: dzFloor/hardRejectRPM bound this range entirely below grade E).
+    const isDzActive = mode.id === 'DEAD_ZONE' && !!(dzGateResult && dzGateResult.eligible);
+    const postedGrade = isDzActive ? (dzGateResult.gradeCap || 'C') : gradeFor(trueRpm);
+
     const action = verdict === 'PASS' || verdict === 'PASS_PREMIUM_ONLY'
       ? 'Pass unless broker pays premium and timing is live.'
       : verdict === 'TAKE_IF_LIVE'
@@ -260,7 +305,7 @@
       version: VERSION,
       updatedAt: UPDATED_AT,
       input: { revenue, loadedMiles, deadheadMiles, totalMiles, origin, destination, weight, stops },
-      posted: { trueRpm: round2(trueRpm), grade: gradeFor(trueRpm) },
+      posted: { trueRpm: round2(trueRpm), grade: postedGrade },
       mode: { id: mode.id, label: mode.label, description: mode.description },
       market: { origin: originRole, destination: destRole, region, regionNote: regionOverlay.note },
       recommendation: {

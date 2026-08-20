@@ -244,6 +244,141 @@ test('[FINDING F-8 / FIXED] sanitizeFuel omits the id key for a new record and k
   eq(r.editId, 42, 'the existing fuel id must be preserved unchanged');
 });
 
+// ── v23.9 Phase 1: X-02 (date-keyed mileage rate) ──────────────────────────
+test('[X-02] getMileageRate resolves the correct band on both sides of the July 2026 midyear increase', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.getMileageRate('2026-06-30'),
+    window.__FL_TESTS.getMileageRate('2026-07-01'),
+    window.__FL_TESTS.getMileageRate('2026-01-01'),
+    window.__FL_TESTS.getMileageRate('2026-12-31'),
+    window.__FL_TESTS.getMileageRate('2025-06-15'),
+  ]);
+  eq(r[0], 0.725, 'last day of H1 2026 must use the pre-increase rate');
+  eq(r[1], 0.76, 'first day of H2 2026 must use the post-increase rate');
+  eq(r[2], 0.725, 'Jan 1 2026 must use the pre-increase rate');
+  eq(r[3], 0.76, 'Dec 31 2026 must use the post-increase rate');
+  eq(r[4], 0.70, '2025 must still resolve to the flat 2025 rate');
+});
+
+test('[X-02] getMileageRate never throws on out-of-table dates — clamps to nearest known rate', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.getMileageRate('2020-01-01'),
+    window.__FL_TESTS.getMileageRate('2030-01-01'),
+    window.__FL_TESTS.getMileageRate(''),
+  ]);
+  eq(r[0], 0.70, 'a date before the table must clamp to the earliest known rate, not 0 or throw');
+  eq(r[1], 0.76, 'a date after the table must clamp to the most recent known rate');
+  eq(r[2], 0.70, 'an empty/invalid date must not throw — falls back to the earliest known rate');
+});
+
+// ── v23.9 Phase 1: X-03 (tax-method-sensitivity bucket map) ────────────────
+test('[X-03] classifyExpenseTaxBucket puts vehicle-operating categories in bucket A', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.classifyExpenseTaxBucket('Fuel'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Repairs & Maintenance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Oil Change'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Registration'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Auto Insurance'),
+  ]);
+  eq(r[0], 'A', 'Fuel must be bucket A (vehicle-operating)');
+  eq(r[1], 'A', 'Repairs & Maintenance must be bucket A');
+  eq(r[2], 'A', 'Oil Change must be bucket A');
+  eq(r[3], 'A', 'Registration must be bucket A');
+  eq(r[4], 'A', 'Auto Insurance must be bucket A — this is the exact double-dip category X-03 describes');
+});
+
+test('[X-03] classifyExpenseTaxBucket splits cargo/liability/occ-acc insurance into bucket B, never A', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.classifyExpenseTaxBucket('Cargo Insurance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Liability Insurance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Occupational Accident Insurance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Parking'), window.__FL_TESTS.classifyExpenseTaxBucket('Tolls'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Phone / Data'),
+  ]);
+  eq(r[0], 'B', 'Cargo Insurance must never be suppressed by vehicle method');
+  eq(r[1], 'B', 'Liability Insurance must never be suppressed by vehicle method');
+  eq(r[2], 'B', 'Occupational Accident Insurance must never be suppressed by vehicle method');
+  eq(r[3], 'B', 'Parking is always deductible');
+  eq(r[4], 'B', 'Tolls is always deductible');
+  eq(r[5], 'B', 'Phone is always deductible');
+});
+
+test('[X-03] classifyExpenseTaxBucket puts bare/unresolved "Insurance" in bucket C, and never auto-includes it', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.classifyExpenseTaxBucket('Insurance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('insurance'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Insurance (Unspecified)'),
+  ]);
+  eq(r[0], 'C', 'bare "Insurance" must be bucket C (ambiguous), not silently folded into A or B');
+  eq(r[1], 'C', 'matching must be case-insensitive');
+  eq(r[2], 'C', 'an unrecognized insurance sub-type string must also land in bucket C');
+});
+
+test('[X-03] classifyExpenseTaxBucket defaults unrelated (non-vehicle) categories to bucket B, not C', async () => {
+  // Regression guard: an earlier draft of this function bucketed EVERY
+  // unrecognized category as ambiguous/excluded, which would have silently
+  // dropped ordinary Schedule C deductions like Meals/Supplies/Software from
+  // every total — a new correctness bug, not a fix for X-03.
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.classifyExpenseTaxBucket('Meals'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Software / Apps'),
+    window.__FL_TESTS.classifyExpenseTaxBucket('Supplies'),
+  ]);
+  eq(r[0], 'B', 'Meals is not vehicle-operating — must stay always-deductible, not excluded');
+  eq(r[1], 'B', 'Software/Apps is not vehicle-operating — must stay always-deductible');
+  eq(r[2], 'B', 'Supplies is not vehicle-operating — must stay always-deductible');
+});
+
+test('[X-03] sanitizeExpense derives/preserves insuranceBucket only for A/B/C values', async () => {
+  const r = await app.page.evaluate(() => [
+    window.__FL_TESTS.sanitizeExpense({ amount: 100, category: 'Auto Insurance', insuranceBucket: 'A' }).insuranceBucket,
+    window.__FL_TESTS.sanitizeExpense({ amount: 100, category: 'Fuel' }).insuranceBucket,
+    window.__FL_TESTS.sanitizeExpense({ amount: 100, category: 'Insurance', insuranceBucket: 'not-a-bucket' }).insuranceBucket,
+  ]);
+  eq(r[0], 'A', 'a valid A/B/C insuranceBucket must round-trip through sanitizeExpense');
+  eq(r[1], undefined, 'insuranceBucket must be absent for a non-insurance category, not defaulted to some value');
+  eq(r[2], undefined, 'an invalid insuranceBucket value must be dropped, not passed through');
+});
+
+// ── v23.9 Phase 7D: dimensional/payload pre-check ──────────────────────────
+test('[7D] checkVanFit passes a load with no dimensions entered (most postings have none)', async () => {
+  const r = await app.page.evaluate(() => window.__FL_TESTS.checkVanFit({}, window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, true, 'a load with zero dimension fields entered must not be blocked');
+  eq(r.violations.length, 0, 'no violations when nothing was entered');
+});
+
+test('[7D] checkVanFit blocks a load that exceeds cargo length', async () => {
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ lengthIn: profile.cargoLengthIn + 20 }, profile), await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, false, 'a load 20in over cargo length must be blocked');
+  eq(r.violations[0].field, 'length', 'the violation must be reported on the length field');
+});
+
+test('[7D] checkVanFit blocks a load that exceeds payload even with no other dimensions given', async () => {
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ weightLbs: profile.payloadLbs + 500 }, profile), await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT));
+  eq(r.fits, false, 'a load 500lbs over payload must be blocked');
+  eq(r.violations[0].field, 'weight', 'the violation must be reported on the weight field');
+});
+
+test('[7D] checkVanFit blocks a load that fits the cargo box but not the door opening', async () => {
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  // Width between the door opening and the (wider) cargo box interior.
+  const midWidth = (profile.doorWidthIn + profile.cargoWidthIn) / 2;
+  ok(midWidth <= profile.cargoWidthIn && midWidth > profile.doorWidthIn, 'test fixture assumption: door opening must be narrower than the cargo box for this profile');
+  const r = await app.page.evaluate(({ profile, midWidth }) => window.__FL_TESTS.checkVanFit({ widthIn: midWidth }, profile), { profile, midWidth });
+  eq(r.fits, false, 'a load that fits the cargo box but not the door opening must still be blocked — it cannot physically be loaded');
+  eq(r.violations[0].field, 'width', 'the violation must be reported on the width field');
+  ok(r.violations[0].limitLabel.includes('door'), 'the violation reason must name the door opening, not the cargo box, as the binding constraint: ' + r.violations[0].limitLabel);
+});
+
+test('[7D] checkVanFit passes a load comfortably within every dimension and payload', async () => {
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({
+    lengthIn: profile.cargoLengthIn - 10, widthIn: profile.doorWidthIn - 10,
+    heightIn: profile.doorHeightIn - 10, weightLbs: profile.payloadLbs - 500,
+  }, profile), profile);
+  eq(r.fits, true, 'a load well within every limit must not be blocked: ' + JSON.stringify(r.violations));
+});
+
 export async function runSpec() {
   app = await launchApp();
   try {

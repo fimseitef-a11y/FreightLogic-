@@ -1,0 +1,42 @@
+name: Tests
+
+# X-06 (v23.9 Phase 2): run the full Playwright suite (tests/run-all.mjs) on
+# every PR targeting main and block merge on a non-zero exit. Paired with the
+# run-all.mjs fix that makes its exit code a real signal (see
+# tests/README.md's "Exit code" section) — this workflow is what actually
+# turns that signal into a merge gate; the runner exiting non-zero on its own
+# does nothing without this. Configure this as a required status check under
+# the main branch's protection rules for it to actually block merge.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  playwright-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install -g playwright@latest
+          npx playwright install --with-deps chromium
+
+      - name: Symlink playwright into node_modules
+        # This repo has no package.json/node_modules of its own (no build
+        # system, per CLAUDE.md) — Node's ESM resolver won't honor NODE_PATH,
+        # so tests/README.md's documented local setup is this symlink. Mirror
+        # it here so CI runs the exact same way a contributor would locally.
+        run: |
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
+
+      - name: Run full suite
+        run: node tests/run-all.mjs

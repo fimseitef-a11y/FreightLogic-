@@ -1,5 +1,15 @@
+# X-10 (v23.9) + Amendment 5: the Content-Security-Policy value below must
+# stay byte-identical to the <meta http-equiv="Content-Security-Policy"> in
+# index.html — scripts/verify-cloudflare-parity.mjs asserts that.
+# Fixed a pre-existing drift while adding that assertion: this header was
+# missing font-src https://fonts.gstatic.com and style-src
+# https://fonts.googleapis.com, both of which index.html's <link> tags
+# (line ~26-28) actually require — Cloudflare Pages serves THIS header as
+# the real HTTP response, so the live site had, in effect, actually been
+# blocking its own Google Fonts stylesheet, since the meta tag's copy of the
+# CSP is enforced independently of (in addition to) this header.
 /*
-  Content-Security-Policy: default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

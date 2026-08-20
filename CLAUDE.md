@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.4** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.9.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -29,19 +29,31 @@ midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-a
 _headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
 wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
 favicon*.png / icon*.png   — App icons
-README.txt                 — Notes on optional offline vendor files
-docs/                      — Deployment parity checklist, source authority, release notes
+README.txt                 — Notes on optional offline vendor files (Tesseract OCR only, v23.9)
+vendor/                    — Bundled third-party scripts committed to the repo (v23.9, X-10):
+                             `xlsx.full.min.js` (SheetJS v0.18.5) + its Apache-2.0
+                             `xlsx.full.min.js.LICENSE`. Precached by the service worker's
+                             critical shell — see PWA / Service Worker below.
+docs/                      — Deployment parity checklist, source authority, release notes,
+                             `BACKUP_CONTRACT.md`, `DEFERRED.md` (v23.9)
 schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
 scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker
 tests/                     — Playwright suite (real headless Chromium, real IndexedDB).
                              `run-all.mjs` runs everything; see `tests/README.md`
-AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 with reproductions
+AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 (v23.8.x) and X-01…X-12 (v23.9)
+                             with reproductions
 FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 ```
 
-### Optional offline vendor files (drop in root to avoid CDN):
-- `xlsx.full.min.js` — SheetJS v0.18.5 (Excel import)
-- `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js v5.1.1 (OCR receipts)
+### Bundled vs. optional offline vendor files
+- `vendor/xlsx.full.min.js` — SheetJS v0.18.5 (Excel import). **Bundled, not optional**
+  as of v23.9 (X-10) — no CDN fallback exists; `loadSheetJS()` (`app.js`) loads only this
+  file, and the service worker precaches it in the install-blocking critical shell.
+- `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js
+  v5.1.1 (OCR receipts). Still **optional** — drop these in the repo root to avoid the
+  `cdn.jsdelivr.net` fallback `loadTesseract()` (`app.js`) otherwise uses. This is why
+  `cdn.jsdelivr.net` is still in the CSP's `script-src`/`connect-src` (`index.html`,
+  `_headers`) even though SheetJS no longer needs it.
 
 ---
 
@@ -100,14 +112,18 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.4';
+const APP_VERSION = '23.9.0';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
 
 // IRS tax data (2026)
-IRS.MILEAGE_RATE_2026 = 0.725   // $0.725/mile
+// X-02 (v23.9): mileage rate is date-keyed, not a flat per-year constant —
+// getMileageRate(date) reads the MILEAGE_RATES table (app.js, near the IRS
+// const). 2026 has two bands: 0.725/mi Jan 1–Jun 30, 0.76/mi Jul 1–Dec 31
+// (IRS Announcement 2026-11 midyear increase). Adding a future year, or a
+// future midyear correction, is a MILEAGE_RATES table edit only.
 IRS.PER_DIEM_CONUS = 80          // $/day
 IRS.SE_RATE = 0.153              // 15.3% self-employment tax
 
@@ -194,6 +210,7 @@ copy. Do not remove that purge until enough releases have passed that no stale c
 - `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
+- `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
 
 Token format: `flk_<uuid-no-dashes>`
 
@@ -212,8 +229,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.4` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.4`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.9.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.9.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -243,6 +260,16 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       `manifestName`, `overlayScript`) plus the inline `?v=` / version strings in its
       assertions. Added to this list in v23.8.3 — it was an 11th location that the
       "ten locations" audit never covered, and it fails the deploy check when stale.
+  12. **Not a version string, but checked by the same script** (Amendment 5, v23.9):
+      `scripts/verify-cloudflare-parity.mjs` also asserts `index.html`'s CSP `<meta>`
+      tag and `_headers`' `Content-Security-Policy` line are byte-identical — a real
+      drift between them (missing Google Fonts origins in `_headers`) was found and
+      fixed while adding this check. If you edit the CSP, edit both files together.
+  13. Also verify `service-worker.js`'s `critical` array (the install-blocking shell,
+      distinct from the broader `CORE` list) still contains `midwest-stack-authority.js`
+      and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — a stale/reverted `critical`
+      array is a silent regression this checklist wouldn't otherwise catch, since the
+      version-string grep below doesn't inspect array contents.
 
   Quick audit — every shipped file should report the new version:
   ```bash
@@ -622,6 +649,319 @@ asserted the *buggy* behavior (suite convention: a green `[FINDING F-n / NEW]` t
 the evidence was captured, not that the bug is fixed). They are retagged `/ FIXED` and now
 assert correct behavior, plus new sanitizer-level tests in
 `tests/unit/pure-functions.spec.mjs`. Full suite: **55 passed, 0 failed** across 7 specs.
+
+---
+
+## v23.9 "Trust & Recovery" (in progress)
+
+Scope = 12 audit findings (X-01…X-12, documented in `AUDIT_REPORT.md`) + 4 Phase 7
+additions. Tracked here phase by phase as they land; see `AUDIT_REPORT.md` for the
+source-level evidence behind each finding and `docs/DEFERRED.md` for anything raised
+during this pass but explicitly out of scope.
+
+### Phase 1 — Tax correctness (X-02, X-03)
+
+**X-02 — date-keyed mileage rate.** `IRS.MILEAGE_RATE_2026`/`MILEAGE_RATE_2025` (flat
+per-year constants) are gone. `MILEAGE_RATES` (a table of `{ effectiveFrom, effectiveTo,
+businessRate }`) + `getMileageRate(date)` replace them everywhere in `app.js` — F30 (Tax
+Season Export), the CPA Package, and the Accountant Package export all now sum a
+per-trip, per-trip-date rate instead of applying one flat rate to a period total. 2026
+has two bands (`0.725` Jan–Jun, `0.76` Jul–Dec, per IRS Announcement 2026-11's midyear
+increase). Adding a future year, or a future midyear correction, is a table edit only.
+
+**X-03 — standard mileage vs. actual expense, no more double-dip.** F30 previously
+summed the standard-mileage deduction and actual vehicle-operating costs
+(insurance/repairs) into the same `totalDeductions` — disallowed by the IRS. Fixed via:
+- A category→method-sensitivity map (`classifyExpenseTaxBucket()`): bucket **A**
+  (vehicle-operating: fuel, repairs/maintenance, auto insurance, oil, tires,
+  registration, lease) is suppressed from Schedule C totals when the elected method is
+  Standard Mileage; bucket **B** (parking, tolls, cargo/liability/occ-acc insurance,
+  loan interest, personal property tax, lumper fees, scale tickets, load board subs,
+  phone, permits, MC authority fees, and any category this map doesn't recognize) is
+  always deductible regardless of method; bucket **C** (an insurance-category expense
+  with no resolved auto/cargo/liability/occ-acc sub-type) is excluded from every total
+  and flagged in the F30 UI for manual reclassification.
+- The old flat `"Insurance"` category is split at the data-model level: the `expenses`
+  store gained an explicit `insuranceBucket` field (`'A'|'B'|'C'|undefined`), derived
+  automatically from specific category text (`Auto Insurance`, `Cargo Insurance`,
+  `Liability Insurance`, `Occupational Accident Insurance` — added to the category
+  datalist in `index.html`) or left `'C'` for bare/legacy `"Insurance"`.
+  `migrateInsuranceCategorySplit()` is a one-time, idempotent, reversible migration
+  that tags existing bare-"Insurance" expense records `insuranceBucket: 'C'` — it
+  writes a retained pre-mutation backup (`insuranceMigrationBackup_<timestamp>` in
+  `settings`) before touching anything, and is gated behind a blocking confirm()
+  prompt (`checkInsuranceSplitMigration()`, boot-time) asking the owner to take a
+  manual JSON export first. `revertInsuranceCategorySplit(key)` undoes a pass from its
+  backup. See `tests/integration/insurance-migration.spec.mjs` for the
+  run-twice-produces-identical-state proof.
+- Per-vehicle tax-method election: `settings['vehicleProfiles']` (array of
+  `{ id, label, vehicleTaxMethod, firstYearElection, createdAt }`) +
+  `settings['activeVehicleId']` — kept in the existing `settings` store (no new IDB
+  object store, no `DB_VERSION` bump; a full multi-vehicle fleet schema is out of scope
+  for this release, see `docs/DEFERRED.md`). `vehicleTaxMethod` ∈ `UNSET |
+  STANDARD_MILEAGE | ACTUAL_EXPENSE` (default `UNSET`); `firstYearElection` ∈ `UNKNOWN |
+  ACTUAL_EXPENSE | STANDARD_MILEAGE` (default `UNKNOWN`). Setting `firstYearElection` to
+  `ACTUAL_EXPENSE` permanently hard-locks that vehicle's `vehicleTaxMethod` to
+  `ACTUAL_EXPENSE` (`saveActiveVehicleProfile()`), with a one-time explanation shown to
+  the driver.
+- F30 export is **blocked** (no CSV/print buttons, no computed totals) while
+  `vehicleTaxMethod = UNSET`. Once a method is set but `firstYearElection = UNKNOWN`,
+  export is allowed but every export (CSV, print/PDF view, and the on-screen summary)
+  carries a `DRAFT — vehicle method unverified. Not for filing.` header/banner.
+  Selecting Standard Mileage while `firstYearElection = UNKNOWN` also shows a persistent
+  inline warning in the method picker itself.
+- Settings gained a "Verify vehicle tax method" row (`#vehicleTaxMethodRow` in
+  `index.html`, wired in `renderInsights()`) that stays visible until the active
+  vehicle's `firstYearElection` is resolved.
+
+Files touched: `app.js`, `index.html`, `CLAUDE.md`, `docs/BACKUP_CONTRACT.md` (new —
+Amendment 2: every new persisted field this phase added is documented there),
+`tests/unit/pure-functions.spec.mjs`, `tests/integration/insurance-migration.spec.mjs`
+(new), `tests/integration/tax-export-csv-corruption.spec.mjs` (updated — F30 export is
+now gated on a vehicle tax method being set, which predates that spec).
+
+### Phase 2 — Release gate (X-06)
+
+`tests/run-all.mjs` now exits non-zero if any spec's assertions fail
+(`process.exit(totalFail ? 1 : 0)`) instead of unconditionally exiting 0. New
+`.github/workflows/tests.yml` runs the full suite on every PR to `main` — set it as a
+required status check under branch protection for it to actually block merge. See
+`tests/README.md`'s "Exit code" section for why the old unconditional-0 behavior was
+correct at the time it was written and why it no longer is.
+
+Files touched: `tests/run-all.mjs`, `tests/README.md`, `.github/workflows/tests.yml`
+(new).
+
+### Phase 3 — Export integrity (X-05)
+
+`exportJSON()`'s `checksumFull` was computed over the **unfiltered** settings dump
+(including `fmcsaApiKey`/`eiaApiKey`) but the payload's `settings` field was the
+**filtered** array with those two keys already stripped — so a genuine, untampered
+export never matched its own checksum on import, and every normal import showed a
+false "this file has been tampered with" warning. Fixed by building
+`exportableSettings` once (secret keys already stripped) and using that exact array as
+both the `checksumFull` input and the payload's `settings` field — one array, one
+source of truth, computed once.
+
+Files touched: `app.js`, `tests/integration/export-checksum-integrity.spec.mjs` (new —
+round-trip proof: export with both secret keys present → checksum is self-consistent →
+import shows no integrity warning → both keys are genuinely absent from the export).
+
+### Phase 4 — Disaster recovery (X-01, X-07)
+
+**X-01 — delta sync is now readable.** `cloud-backup-worker.js` (bumped to v11) gained
+`GET /backup/delta`, returning every currently-retained delta payload for the user+
+device, chronological oldest-first, plus a lifetime `totalCreated` counter alongside
+the currently-retained count so the client can detect pruning (the 20-key cap or the
+7-day TTL). `cloudPullBackup()` now fetches the base snapshot AND every retained delta,
+applies them in order via `mergeRestoreData()`, and distinguishes a **confirmed gap**
+(`totalCreated > retainedCount` — provably lost data) from **unverifiable** (the
+endpoint failed or a delta couldn't be decrypted — coverage unknown). Both surface a
+visible `⚠️ Partial restore — …` toast; there is no code path left where a delta-backed
+restore can silently report "Cloud backup restored!" while actually missing data.
+
+**X-07 — `mergeRestoreData()` now covers every pushed store.** Previously only
+`trips`/`expenses`/`fuel` plus a generic `laneHistory`/`weeklyReports`/
+`reloadOutcomes`/`bidHistory`/`documents` loop were restorable; `settings`, `receipts`,
+and `gpsLogs` were pushed by `cloudPushBackup()` but silently dropped on restore. Fixed,
+with per-store merge semantics chosen for what each store actually is (see
+`docs/BACKUP_CONTRACT.md` for the full rationale):
+- `settings` — **add-only**: a key already present locally is never overwritten (no
+  revision timestamp exists to compare against), so this is safe for both the
+  disaster-recovery case (everything restores, since nothing local exists yet) and a
+  routine top-up merge (never clobbers a live local change).
+- `receipts` (keyPath `tripOrderNo`) — file-list **union by file `id`**; blob bytes
+  still aren't part of the contract, only the metadata pointer (same as manual
+  JSON export/import always worked).
+- `gpsLogs` (keyPath `id`, autoIncrement) — the incoming numeric `id` is device-local
+  and never used as a write key (it could collide with an unrelated local record);
+  dedup on `(tripTrackingId, timestamp)` instead, via `add()`.
+
+Also closed while touching this code: `cloudPushBackup()` now strips `fmcsaApiKey`/
+`eiaApiKey` from its `settings` payload (the same filter `exportJSON()`'s
+`exportableSettings` already applies, X-05) — previously only the manual JSON export
+path did this. `cloudGetConfig()` now actually reads the `cloudBackupUrl` setting
+(previously written by `cloudSaveConfig()` but never read back — every request silently
+used the hardcoded `CLOUD_WORKER_URL` regardless) — this is also what makes the E2E
+test below possible without touching the production endpoint.
+
+New `docs/BACKUP_CONTRACT.md` is the authoritative store-by-store table (which stores
+are pushed, which are restored, and why each merge strategy is what it is) — kept in
+sync in the same commit as any future field/store addition, per Amendment 2.
+
+Files touched: `app.js`, `cloud-backup-worker.js` (v10 → v11), `docs/BACKUP_CONTRACT.md`,
+`docs/DEFERRED.md`, `scripts/verify-cloudflare-parity.mjs` (`workerVersion` bumped to
+match), `tests/lib/mock-worker.mjs` (new — local stand-in for the Worker's KV-backed
+endpoints, since this environment has no live Cloudflare Worker to test against; see its
+header comment), `tests/integration/backup-restore-parity.spec.mjs` (new — E2E: full
+backup → 3 delta syncs → wipe local → restore → parity of every contracted store, plus
+a confirmed-gap warning test). Full suite: 70 passed, 0 failed across 10 spec files.
+
+### Phase 5 — Decision authority (X-04)
+
+The standalone `midwest-stack-authority.js` overlay had **no gate at all** on its
+DEAD_ZONE mode: `trueRpm >= 0.91 && (destRole.role === 'tier1' || 'tier2')` alone could
+produce `TAKE_IF_LIVE` at the $0.91/mi survival floor, with none of the main
+evaluator's distance-from-home, distance-saved, or manual-confirmation checks. The
+file's own `DEAD_ZONE` mode description had always *claimed* "Requires 1000+ miles from
+home, no reloads above $1.25 nearby, and meaningful move toward density" — the code
+never actually enforced it.
+
+Fixed by extracting one canonical gate function, `isDeadZoneEligible()` (`app.js`),
+which both the main evaluator (`mwEvaluateLoad`) and the standalone overlay now call —
+exposed on `window` since both scripts run in the same page/global scope (no bundler,
+no modules; `midwest-stack-authority.js` is injected into the same document as
+`app.js`). All four gates must pass:
+1. `distanceFromHome >= MW.dzActivationDistanceMi` — **changed from 1500mi to 1000mi**
+   to match the canonical figure the standalone file's own mode description had always
+   claimed (this was the actual drift — not a new number invented for this fix).
+2. `distanceSaved >= MW.dzMinDistanceSaved` (200mi) — "meaningful movement toward
+   stronger freight."
+3. `dzFloor <= trueRPM < MW.hardRejectRPM` (1.25) — "no viable reload above the
+   standard floor nearby": a load already clearing 1.25 doesn't need survival mode.
+4. `noReloadConfirmed === true` — manual; DZ mode never self-activates.
+
+Returns `{ eligible, gradeCap: 'C', reasons }` — `gradeCap` is structural, not just
+documentation, so a caller activating DZ mode from this result carries the F-1 grade-cap
+requirement with it rather than needing to remember it separately.
+
+Two supporting pieces so the standalone file — which has no geo/settings model of its
+own — can call the gate meaningfully:
+- `window.flDzGeoCheck(origin, dest)` — a **synchronous** twin of the main evaluator's
+  `dzCheckEligibility()` (which is `async`, awaiting `getSetting()`), reading settings
+  from the synchronous `SETTINGS_CACHE` instead. Both share one pure geo-computation
+  core (`_dzGeoEligibility()`) — one distance calculation, two settings-resolution paths.
+- The standalone overlay reads the **same** `#mwDZNoReloadToggle` checkbox the main
+  evaluator renders (shared DOM, not a second control) for gate 4 — "manually
+  validated" means the same physical checkbox state in both panels.
+
+`midwest-stack-authority.js`'s fix is surgical: when the gate fails, DEAD_ZONE mode
+simply does **not** lower `floorRpm`/`winRpm`/`askRpm` to survival-mode levels — they
+keep the generic, band-derived values already computed above that block. This means a
+load that's actually fine on its own economics still gets an honest verdict; only the
+artificially-low $0.91 floor privilege is withheld. `posted.grade` is hard-capped to
+`'C'` (via `gradeCap`) whenever the gate genuinely passes, mirroring the main
+evaluator's F-1 fix.
+
+This is scoped narrowly per the release brief — one shared gate-check function, not a
+rewrite of either file's scoring/verdict logic.
+
+Files touched: `app.js` (`isDeadZoneEligible`, `_dzGeoEligibility`,
+`dzCheckEligibilitySync`, `MW.dzActivationDistanceMi` 1500→1000, new
+`MW.dzMinDistanceSaved`), `midwest-stack-authority.js`,
+`tests/integration/dz-gate-parity.spec.mjs` (new — 5 fixtures spanning all three DZ
+sub-tier RPM bands, an unconfirmed case, and an above-hard-reject case; asserts the
+main evaluator and the standalone engine agree on every one, driving the real
+unmodified standalone file via `page.addScriptTag`). Full suite: 76 passed, 0 failed
+across 11 spec files.
+
+### Phase 6 — Remaining findings (X-08 through X-12)
+
+**X-08 — service worker critical shell.** `midwest-stack-authority.js` was only in the
+broader, non-blocking `CORE` precache list; the `install` event's actual install-blocking
+`critical` array didn't include it. A first offline install could complete and serve the
+app shell before the TRUE_RPM decision layer was cached at all, with no error surfaced.
+Added it (and, from X-10, the bundled SheetJS vendor file) to `critical`.
+
+**X-09 — diagnostics self-test used a fake token.** The Diagnostics panel's Worker-
+reachability self-test sent the literal string `'ping'` as `X-Backup-Token` — not a valid
+`flk_`-format token — so the Worker's `/status` auth middleware always rejected it with
+403, and the self-test reported "HTTP 403" regardless of whether the Worker was actually
+reachable. Now uses the real configured `cloudBackupToken` when one exists, and reports
+"Not configured" (not a guaranteed-fail ping) when it doesn't.
+
+**X-10 — SheetJS is now bundled, no CDN fallback.** `vendor/xlsx.full.min.js` (SheetJS
+v0.18.5, Apache-2.0, `vendor/xlsx.full.min.js.LICENSE`) is committed to the repo —
+previously this was one of the "optional offline vendor files" a driver could choose to
+drop in themselves, with a `cdn.jsdelivr.net` fallback if they didn't. `loadSheetJS()`
+now loads only the bundled file; Excel import works fully offline from the very first
+install, with no live network dependency at all for this feature. `cdn.jsdelivr.net`
+stays whitelisted in CSP **only** for the still-optional Tesseract.js OCR fallback
+(untouched, out of scope for this pass) — see the "Bundled vs. optional offline vendor
+files" note near the top of this doc.
+
+While adding Amendment 5's index.html/`_headers` CSP-parity assertion (below), found and
+fixed a **real, pre-existing drift**: `_headers` (the actual HTTP response Cloudflare
+Pages serves) was missing the Google Fonts origins (`fonts.gstatic.com`,
+`fonts.googleapis.com`) that `index.html`'s own `<link>` tags require and that the meta
+tag's copy of the CSP already allowed — meaning the live site had, in effect, been
+blocking its own fonts stylesheet independently of what the meta tag permitted. Fixed by
+making `_headers` byte-identical to `index.html`'s CSP.
+
+**X-11 — dead OCR claim removed.** The Universal Import UI's dedicated PDF button claimed
+"uses OCR" / "extracts text via OCR and prefills a trip," but `importPDFFile()` has always
+been an unconditional stub that just toasts "PDF import is not supported." Removed the
+button and the OCR claim text; PDF is still accepted via the "Any file — auto-detect"
+catch-all, which degrades to the same honest not-supported toast rather than silently
+rejecting the file type.
+
+**X-12 — deployment checklist modernized.** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`
+referenced `v23.5.0`/`v23.5.1`/Worker `v10` — three-plus releases stale. Updated to
+`v23.9.0`/Worker `v11`, and added checklist items for the X-08 critical-shell contents,
+the X-10 bundled-vendor/offline-Excel-import check, the X-01 `GET /backup/delta`
+endpoint, the X-04 Dead Zone gate parity, and the Amendment 5 CSP-parity check.
+
+**Full v23.9.0 version-marker bump** (all 13 checklist locations, including the two new
+ones added this phase) landed in this same pass — see the "Version bumps" checklist
+above. `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block and inline assertions
+now target `23.9.0`/Worker `v11`, and it gained: a local (no-network) CSP-parity check
+(Amendment 5) and a live check that the deployed Worker's `critical` shell includes both
+X-08/X-10 files.
+
+Files touched: `app.js`, `service-worker.js`, `midwest-stack-authority.js` (version bump
+only), `index.html`, `_headers`, `manifest.json`, `sw-bridge.js`, `voice-load.js`,
+`scripts/verify-cloudflare-parity.mjs`, `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`,
+`vendor/xlsx.full.min.js` (new, bundled) + `vendor/xlsx.full.min.js.LICENSE` (new),
+`tests/unit/service-worker-shell.spec.mjs` (new — X-08/X-10 static checks),
+`tests/unit/release-hygiene.spec.mjs` (new — X-09/X-11 static checks),
+`tests/integration/xlsx-bundled-vendor.spec.mjs` (new — proves the bundled vendor file
+works with all external network blocked). Full suite: 82 passed, 0 failed across 14 spec
+files. (One F-7 GPS test flaked once mid-phase on an unrelated CDP-geolocation timing
+issue — re-run confirmed 13/13 clean; no code change was needed or made for it.)
+
+## v23.9 Phase 7 — additions
+
+All 12 X-01…X-12 findings are fixed as of Phase 6. Phase 7 adds four things the release
+brief specified beyond the audit findings themselves. 7B/7C/7D are self-contained;
+**7A requires a printed inventory + explicit approval before any editing begins**
+(Amendment 5) — tracked separately below once that inventory is presented.
+
+### 7D — Dimensional/payload pre-check
+
+Configurable van profile (Settings → Van Profile, `settings['vanProfile']`, defaults to
+published 2016 Ford Transit T250 148" cargo-van figures — `VAN_PROFILE_DEFAULT` in
+`app.js`, explicitly labeled as needing verification against the driver's own spec
+sheet/door sticker, not treated as ground truth). New optional evaluator fields
+(`#mwLoadLengthIn`/`#mwLoadWidthIn`/`#mwLoadHeightIn`/`#mwLoadWeightLbs`, "More
+Details") feed `checkVanFit()`, called at the very start of `mwEvaluateLoad()` — before
+any RPM/scoring/verdict computation. A load exceeding any configured limit renders
+"CAN'T TAKE — dimensional/payload conflict" in place of the normal result card and
+returns immediately; economics are never computed for it.
+
+Since Smart Load Inbox (F23), F27 Load Intake, and OCR quick-scan all funnel their
+parsed values into these same evaluator fields before scoring, gating inside
+`mwEvaluateLoad()` itself covers every intake path (including manual entry) from one
+place — no per-path duplication. A load with no dimension data entered at all (the
+common case — most postings don't include cargo dimensions) is not blocked; this is a
+safety net for when dimensions ARE known, not a requirement that every load specify
+them. Width/height are checked against both the cargo box and the (typically narrower/
+shorter) rear door opening — a load can fit inside the box but be too tall or wide to
+physically load through the door, and the violation message names whichever constraint
+actually binds.
+
+New `settings['vanProfile']` field: documented in `docs/BACKUP_CONTRACT.md` per
+Amendment 2. No additional push/restore code was needed — `cloudPushBackup()`'s
+`settings` dump and X-07's add-only settings merge in `mergeRestoreData()` both handle
+any settings key generically.
+
+Files touched: `app.js`, `index.html` (new evaluator fields + Settings → Van Profile
+section), `docs/BACKUP_CONTRACT.md`. New tests:
+`tests/unit/pure-functions.spec.mjs` (5 `checkVanFit()` cases — no dims entered, over
+length, over payload alone, fits-the-box-but-not-the-door, comfortably within every
+limit) and `tests/integration/van-fit-precheck.spec.mjs` (drives the real evaluator UI —
+over-payload blocks and shows no grade at all, clearing the field un-blocks it, and a
+custom tighter profile is actually respected, not just the defaults). Full suite: 91
+passed, 0 failed across 15 spec files.
 
 ---
 

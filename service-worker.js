@@ -1,22 +1,25 @@
-/* FreightLogic v23.8.4 — Browser Hardened Service Worker */
-const SW_VERSION = '23.8.4';
+/* FreightLogic v23.9.0 — Browser Hardened Service Worker */
+const SW_VERSION = '23.9.0';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.8.4"></script>';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=23.8.4"></script>';
+const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=23.9.0"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=23.9.0"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=23.8.4',
-  './voice-load.js?v=23.8.4',
-  './admin-driver-ui.js?v=23.8.4',
-  './midwest-stack-authority.js?v=23.8.4',
-  './manifest.json?v=23.8.4',
+  './app.js?v=23.9.0',
+  './voice-load.js?v=23.9.0',
+  './admin-driver-ui.js?v=23.9.0',
+  './midwest-stack-authority.js?v=23.9.0',
+  './manifest.json?v=23.9.0',
   './midwest-stack-config.json',
+  // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
+  // import works fully offline from the very first install.
+  './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=23.8.4'
+  './sw-bridge.js?v=23.9.0'
 ];
 
 function injectBeforeBodyClose(html, tag) {
@@ -44,8 +47,13 @@ async function injectEnhancementScripts(res) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // Critical shell — one failure here is acceptable to abort install
-    const critical = ['./', APP_SHELL, './app.js?v=23.8.4', './voice-load.js?v=23.8.4', './sw-bridge.js?v=23.8.4', './manifest.json?v=23.8.4'];
+    // Critical shell — one failure here is acceptable to abort install.
+    // X-08: midwest-stack-authority.js was only in the broader, non-blocking
+    // CORE list — a first offline install could complete and serve the app
+    // shell before the TRUE_RPM decision layer was actually cached, with no
+    // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
+    // for the same "must work on the very first offline install" reason.
+    const critical = ['./', APP_SHELL, './app.js?v=23.9.0', './voice-load.js?v=23.9.0', './sw-bridge.js?v=23.9.0', './manifest.json?v=23.9.0', './midwest-stack-authority.js?v=23.9.0', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));

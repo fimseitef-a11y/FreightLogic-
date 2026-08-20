@@ -7,9 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
+  <!-- X-10 (v23.9): cdn.jsdelivr.net stays whitelisted ONLY for the optional
+       Tesseract.js OCR fallback (loadTesseract() in app.js) when the local
+       vendor files aren't present — SheetJS no longer needs it. It's now
+       always bundled at ./vendor/xlsx.full.min.js (loadSheetJS() in app.js),
+       precached by the service worker's critical shell (X-08), with no CDN
+       fallback path at all. This directive must stay byte-identical to the
+       one in _headers — scripts/verify-cloudflare-parity.mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=23.8.4">
+  <link rel="manifest" href="manifest.json?v=23.9.0">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -21,7 +28,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap">
   <style>
     /* ═══════════════════════════════════════════════════════════════
-       FREIGHT LOGIC v23.8.4 — DESIGN SYSTEM v3.0 "Command"
+       FREIGHT LOGIC v23.9.0 — DESIGN SYSTEM v3.0 "Command"
        Dark-first. Precision-built for cargo van operators.
        ═══════════════════════════════════════════════════════════════ */
 
@@ -828,11 +835,19 @@
   </header>
   <datalist id="catList">
     <option value="Fuel"><option value="Tolls"><option value="Repairs & Maintenance">
-    <option value="Insurance"><option value="Parking"><option value="Meals">
+    <!-- X-03: "Insurance" split into explicit sub-types so tax-method sensitivity
+         (auto = vehicle-operating, others = always deductible) is knowable at
+         entry time. Bare "Insurance" is kept only for legacy/unsure entries —
+         it lands in bucket C (ambiguous) and is flagged for reclassification. -->
+    <option value="Auto Insurance"><option value="Cargo Insurance"><option value="Liability Insurance">
+    <option value="Occupational Accident Insurance"><option value="Insurance">
+    <option value="Parking"><option value="Meals">
     <option value="Vehicle Payment"><option value="Software / Apps"><option value="Permits & Licenses">
     <option value="Supplies"><option value="Tires"><option value="Vehicle Wash">
     <option value="Phone / Data"><option value="Tools / Equipment"><option value="Oil Change">
-    <option value="Registration"><option value="Roadside Assistance"><option value="Other">
+    <option value="Registration"><option value="Roadside Assistance">
+    <option value="Lumper Fees"><option value="Scale Tickets"><option value="Load Board Subscription">
+    <option value="MC Authority Fees"><option value="Auto Loan Interest"><option value="Other">
   </datalist>
   <main class="app">
     <section id="view-home" class="view" aria-label="Home">
@@ -1013,6 +1028,28 @@
 <label>Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label>Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
 <label>Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
+<!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
+<div id="vehicleTaxMethodRow" style="margin-top:10px;display:none">
+  <button class="btn" id="btnVerifyVehicleTaxMethod" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <span>🧾 Verify vehicle tax method</span><span id="vehicleTaxMethodBadge" class="muted" style="font-size:11px"></span>
+  </button>
+</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<div class="settings-section-head"><span class="settings-section-icon">📐</span>Van Profile <span class="muted" style="font-size:10px;font-weight:400">(7D — dimensional/payload pre-check)</span></div>
+<div class="muted" style="font-size:11px;margin-bottom:8px">A load exceeding these blocks scoring with "CAN'T TAKE" before any economics are shown. Defaults are published 2016 Ford Transit T250 148" cargo-van figures — verify against your own van's spec sheet or door sticker before relying on this.</div>
+<div class="grid2" style="gap:10px">
+<div><label>Cargo length (in)</label><input id="vanCargoLengthIn" type="number" step="0.5" placeholder="130" /></div>
+<div><label>Cargo width (in)</label><input id="vanCargoWidthIn" type="number" step="0.5" placeholder="65" /></div>
+</div>
+<div class="grid2" style="gap:10px">
+<div><label>Cargo height (in)</label><input id="vanCargoHeightIn" type="number" step="0.5" placeholder="56" /></div>
+<div><label>Payload (lbs)</label><input id="vanPayloadLbs" type="number" step="10" placeholder="3800" /></div>
+</div>
+<div class="grid2" style="gap:10px">
+<div><label>Door opening width (in)</label><input id="vanDoorWidthIn" type="number" step="0.5" placeholder="60" /></div>
+<div><label>Door opening height (in)</label><input id="vanDoorHeightIn" type="number" step="0.5" placeholder="52" /></div>
+</div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>
@@ -1137,6 +1174,17 @@
           <div class="grid2" style="gap:10px">
             <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
             <div class="field"><label>Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+          </div>
+          <!-- 7D: dimensional/payload pre-check (v23.9) — optional; only checked
+               against the configured van profile (Settings → Vehicle) when a
+               value is actually entered. See checkVanFit() in app.js. -->
+          <div class="field"><label>Dimensions &amp; weight <span class="muted" style="font-size:10px;font-weight:400">(optional — checks against your van profile in Settings)</span></label>
+            <div class="grid4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+              <input id="mwLoadLengthIn" inputmode="numeric" placeholder="L in" aria-label="Load length (inches)" />
+              <input id="mwLoadWidthIn" inputmode="numeric" placeholder="W in" aria-label="Load width (inches)" />
+              <input id="mwLoadHeightIn" inputmode="numeric" placeholder="H in" aria-label="Load height (inches)" />
+              <input id="mwLoadWeightLbs" inputmode="numeric" placeholder="lbs" aria-label="Load weight (lbs)" />
+            </div>
           </div>
           <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
           <div class="field">
@@ -1313,8 +1361,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=23.8.4"></script>
-  <script src="voice-load.js?v=23.8.4"></script>
-  <script src="sw-bridge.js?v=23.8.4"></script>
+  <script src="app.js?v=23.9.0"></script>
+  <script src="voice-load.js?v=23.9.0"></script>
+  <script src="sw-bridge.js?v=23.9.0"></script>
 </body>
 </html>
