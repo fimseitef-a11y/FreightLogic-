@@ -1,7 +1,17 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.8.4 USA ENGINE
+/** FreightLogic v23.9.0 USA ENGINE
+ *  v23.9.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
+ *          authoritative per-phase record): date-keyed IRS mileage rate
+ *          (X-02), tax-method-sensitive deductions with an auto/cargo/
+ *          liability insurance split (X-03), a real release CI gate (X-06),
+ *          export checksum/payload consistency (X-05), cloud delta-sync
+ *          restore + full mergeRestoreData coverage (X-01/X-07), a single
+ *          shared Dead Zone Exit decision gate for both the evaluator and
+ *          the standalone overlay (X-04), the overlay + bundled SheetJS
+ *          moved into the SW critical shell (X-08/X-10), a real diagnostics
+ *          token (X-09), the dead PDF-OCR import claim removed (X-11).
  *  v23.8.4: Field-resilience fixes — new expense/fuel records no longer carry an
  *           explicit id:undefined that made every IndexedDB add() throw (F-8), and a
  *           GPS error no longer tears down an in-progress trip: the session degrades
@@ -29,7 +39,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.8.4';
+const APP_VERSION = '23.9.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -59,7 +69,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.8.4 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.9.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1939,16 +1949,22 @@ async function loadScriptWithFallback(urls, validate, finalError){
   throw new Error(finalError + (lastErr ? ` (${lastErr.message})` : ''));
 }
 
+// X-10 (v23.9 Phase 6): SheetJS is now bundled at ./vendor/xlsx.full.min.js
+// (committed, precached by the service worker's critical shell — see
+// service-worker.js) instead of falling back to the jsDelivr CDN. Excel
+// import now works fully offline on first install, and the CSP no longer
+// needs to trust a third-party script origin at all (script-src 'self' —
+// see index.html/_headers). If the vendor file is ever missing or corrupted,
+// this fails loudly rather than silently reaching out to the internet.
 async function loadSheetJS(){
   if (typeof XLSX !== 'undefined') return;
   await loadScriptWithFallback([
     './vendor/xlsx.full.min.js',
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
   ], () => {
     if (typeof XLSX === 'undefined' || typeof XLSX.read !== 'function'){
-      throw new Error('SheetJS loaded but XLSX.read missing — possible CDN tampering');
+      throw new Error('SheetJS loaded but XLSX.read missing — vendor file corrupted');
     }
-  }, 'Failed to load SheetJS — local vendor file missing and CDN unavailable');
+  }, 'Failed to load SheetJS — vendor/xlsx.full.min.js is missing or failed to load');
 }
 
 async function importXLSXFile(file){
@@ -2004,11 +2020,17 @@ function openUniversalImport(){
       <button class="btn primary imp-btn" data-accept=".csv,.tsv" style="padding:16px;font-size:15px;text-align:left">📄 CSV or TSV file</button>
       <button class="btn primary imp-btn" data-accept=".xlsx,.xls" style="padding:16px;font-size:15px;text-align:left">📊 Excel spreadsheet (.xlsx)</button>
       <button class="btn primary imp-btn" data-accept=".json" style="padding:16px;font-size:15px;text-align:left">🔒 Freight Logic backup (.json)</button>
-      <button class="btn imp-btn" data-accept=".pdf,application/pdf" style="padding:16px;font-size:15px;text-align:left">📸 Rate confirmation (PDF) — uses OCR</button>
       <button class="btn imp-btn" data-accept=".txt" style="padding:16px;font-size:15px;text-align:left">📝 Plain text file (.txt)</button>
       <button class="btn primary imp-btn" data-accept="${IMPORT_ACCEPT}" style="padding:16px;font-size:15px;text-align:left;border-color:var(--accent)">📂 Any file — auto-detect type</button>
     </div>
-    <div class="muted" style="font-size:11px;margin-top:14px;line-height:1.4">CSV/Excel: auto-detects trips vs expenses vs fuel by column headers.<br>PDF: extracts text via OCR and prefills a trip.</div>
+    <!-- X-11: the dedicated PDF/rate-confirmation import button (it claimed
+         OCR text extraction) was removed — importPDFFile() has always been a
+         stub that just toasts "PDF import is not supported"; the UI claimed
+         a capability the app
+         never had. PDF is still accepted via the "Any file" catch-all above
+         (routes to the same honest not-supported toast), so a PDF selection
+         degrades gracefully instead of being silently rejected. -->
+    <div class="muted" style="font-size:11px;margin-top:14px;line-height:1.4">CSV/Excel: auto-detects trips vs expenses vs fuel by column headers.<br>PDF is not supported yet — paste the load text instead.</div>
   </div>`;
 
   body.querySelectorAll('.imp-btn').forEach(btn => {
@@ -11623,16 +11645,28 @@ async function openDiagnosticsPanel(){
       else               set('dxCloud', 'Not configured', null);
     } catch(e){ set('dxCloud', 'Error', false); }
 
-    // AI endpoint ping
-    set('dxAi', 'Testing…', null);
-    try {
-      const ctrl = new AbortController();
-      const timeout = setTimeout(()=> ctrl.abort(), 6000);
-      const r = await fetch(CLOUD_WORKER_URL + '/status', { signal: ctrl.signal, headers:{'X-Backup-Token':'ping','X-Device-Id':'diag'} });
-      clearTimeout(timeout);
-      set('dxAi', r.ok ? 'Reachable (' + r.status + ')' : 'HTTP ' + r.status, r.ok);
-    } catch(e){
-      set('dxAi', e?.name === 'AbortError' ? 'Timeout (>6s)' : 'Unreachable', false);
+    // AI/Worker endpoint ping — X-09: this used to send the literal string
+    // 'ping' as X-Backup-Token, which is not a valid flk_-format token
+    // (CLAUDE.md: 'flk_<uuid-no-dashes>'). The Worker's /status route
+    // requires a real token (tokh:<hash> KV lookup) and rejects anything
+    // else with 403 — so this self-test always reported "HTTP 403" and
+    // never actually exercised the real auth path a driver's device uses,
+    // regardless of whether the Worker was genuinely reachable. Now uses the
+    // real configured cloudBackupToken when one exists.
+    const aiToken = await getSetting('cloudBackupToken', '');
+    if (!aiToken){
+      set('dxAi', 'Not configured (no backup token)', null);
+    } else {
+      set('dxAi', 'Testing…', null);
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(()=> ctrl.abort(), 6000);
+        const r = await fetch(CLOUD_WORKER_URL + '/status', { signal: ctrl.signal, headers:{'X-Backup-Token': aiToken, 'X-Device-Id': cloudGetDeviceId()} });
+        clearTimeout(timeout);
+        set('dxAi', r.ok ? 'Reachable (' + r.status + ')' : 'HTTP ' + r.status, r.ok);
+      } catch(e){
+        set('dxAi', e?.name === 'AbortError' ? 'Timeout (>6s)' : 'Unreachable', false);
+      }
     }
   }
 

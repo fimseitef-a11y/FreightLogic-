@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.8.4** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.9.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -29,19 +29,31 @@ midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-a
 _headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
 wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
 favicon*.png / icon*.png   — App icons
-README.txt                 — Notes on optional offline vendor files
-docs/                      — Deployment parity checklist, source authority, release notes
+README.txt                 — Notes on optional offline vendor files (Tesseract OCR only, v23.9)
+vendor/                    — Bundled third-party scripts committed to the repo (v23.9, X-10):
+                             `xlsx.full.min.js` (SheetJS v0.18.5) + its Apache-2.0
+                             `xlsx.full.min.js.LICENSE`. Precached by the service worker's
+                             critical shell — see PWA / Service Worker below.
+docs/                      — Deployment parity checklist, source authority, release notes,
+                             `BACKUP_CONTRACT.md`, `DEFERRED.md` (v23.9)
 schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
 scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker
 tests/                     — Playwright suite (real headless Chromium, real IndexedDB).
                              `run-all.mjs` runs everything; see `tests/README.md`
-AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 with reproductions
+AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 (v23.8.x) and X-01…X-12 (v23.9)
+                             with reproductions
 FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 ```
 
-### Optional offline vendor files (drop in root to avoid CDN):
-- `xlsx.full.min.js` — SheetJS v0.18.5 (Excel import)
-- `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js v5.1.1 (OCR receipts)
+### Bundled vs. optional offline vendor files
+- `vendor/xlsx.full.min.js` — SheetJS v0.18.5 (Excel import). **Bundled, not optional**
+  as of v23.9 (X-10) — no CDN fallback exists; `loadSheetJS()` (`app.js`) loads only this
+  file, and the service worker precaches it in the install-blocking critical shell.
+- `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js
+  v5.1.1 (OCR receipts). Still **optional** — drop these in the repo root to avoid the
+  `cdn.jsdelivr.net` fallback `loadTesseract()` (`app.js`) otherwise uses. This is why
+  `cdn.jsdelivr.net` is still in the CSP's `script-src`/`connect-src` (`index.html`,
+  `_headers`) even though SheetJS no longer needs it.
 
 ---
 
@@ -100,7 +112,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.8.4';
+const APP_VERSION = '23.9.0';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -217,8 +229,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.8.4` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.8.4`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate.
+- `manifest.json` references `v=23.9.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.9.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -248,6 +260,16 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       `manifestName`, `overlayScript`) plus the inline `?v=` / version strings in its
       assertions. Added to this list in v23.8.3 — it was an 11th location that the
       "ten locations" audit never covered, and it fails the deploy check when stale.
+  12. **Not a version string, but checked by the same script** (Amendment 5, v23.9):
+      `scripts/verify-cloudflare-parity.mjs` also asserts `index.html`'s CSP `<meta>`
+      tag and `_headers`' `Content-Security-Policy` line are byte-identical — a real
+      drift between them (missing Google Fonts origins in `_headers`) was found and
+      fixed while adding this check. If you edit the CSP, edit both files together.
+  13. Also verify `service-worker.js`'s `critical` array (the install-blocking shell,
+      distinct from the broader `CORE` list) still contains `midwest-stack-authority.js`
+      and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — a stale/reverted `critical`
+      array is a silent regression this checklist wouldn't otherwise catch, since the
+      version-string grep below doesn't inspect array contents.
 
   Quick audit — every shipped file should report the new version:
   ```bash
@@ -832,6 +854,70 @@ sub-tier RPM bands, an unconfirmed case, and an above-hard-reject case; asserts 
 main evaluator and the standalone engine agree on every one, driving the real
 unmodified standalone file via `page.addScriptTag`). Full suite: 76 passed, 0 failed
 across 11 spec files.
+
+### Phase 6 — Remaining findings (X-08 through X-12)
+
+**X-08 — service worker critical shell.** `midwest-stack-authority.js` was only in the
+broader, non-blocking `CORE` precache list; the `install` event's actual install-blocking
+`critical` array didn't include it. A first offline install could complete and serve the
+app shell before the TRUE_RPM decision layer was cached at all, with no error surfaced.
+Added it (and, from X-10, the bundled SheetJS vendor file) to `critical`.
+
+**X-09 — diagnostics self-test used a fake token.** The Diagnostics panel's Worker-
+reachability self-test sent the literal string `'ping'` as `X-Backup-Token` — not a valid
+`flk_`-format token — so the Worker's `/status` auth middleware always rejected it with
+403, and the self-test reported "HTTP 403" regardless of whether the Worker was actually
+reachable. Now uses the real configured `cloudBackupToken` when one exists, and reports
+"Not configured" (not a guaranteed-fail ping) when it doesn't.
+
+**X-10 — SheetJS is now bundled, no CDN fallback.** `vendor/xlsx.full.min.js` (SheetJS
+v0.18.5, Apache-2.0, `vendor/xlsx.full.min.js.LICENSE`) is committed to the repo —
+previously this was one of the "optional offline vendor files" a driver could choose to
+drop in themselves, with a `cdn.jsdelivr.net` fallback if they didn't. `loadSheetJS()`
+now loads only the bundled file; Excel import works fully offline from the very first
+install, with no live network dependency at all for this feature. `cdn.jsdelivr.net`
+stays whitelisted in CSP **only** for the still-optional Tesseract.js OCR fallback
+(untouched, out of scope for this pass) — see the "Bundled vs. optional offline vendor
+files" note near the top of this doc.
+
+While adding Amendment 5's index.html/`_headers` CSP-parity assertion (below), found and
+fixed a **real, pre-existing drift**: `_headers` (the actual HTTP response Cloudflare
+Pages serves) was missing the Google Fonts origins (`fonts.gstatic.com`,
+`fonts.googleapis.com`) that `index.html`'s own `<link>` tags require and that the meta
+tag's copy of the CSP already allowed — meaning the live site had, in effect, been
+blocking its own fonts stylesheet independently of what the meta tag permitted. Fixed by
+making `_headers` byte-identical to `index.html`'s CSP.
+
+**X-11 — dead OCR claim removed.** The Universal Import UI's dedicated PDF button claimed
+"uses OCR" / "extracts text via OCR and prefills a trip," but `importPDFFile()` has always
+been an unconditional stub that just toasts "PDF import is not supported." Removed the
+button and the OCR claim text; PDF is still accepted via the "Any file — auto-detect"
+catch-all, which degrades to the same honest not-supported toast rather than silently
+rejecting the file type.
+
+**X-12 — deployment checklist modernized.** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`
+referenced `v23.5.0`/`v23.5.1`/Worker `v10` — three-plus releases stale. Updated to
+`v23.9.0`/Worker `v11`, and added checklist items for the X-08 critical-shell contents,
+the X-10 bundled-vendor/offline-Excel-import check, the X-01 `GET /backup/delta`
+endpoint, the X-04 Dead Zone gate parity, and the Amendment 5 CSP-parity check.
+
+**Full v23.9.0 version-marker bump** (all 13 checklist locations, including the two new
+ones added this phase) landed in this same pass — see the "Version bumps" checklist
+above. `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block and inline assertions
+now target `23.9.0`/Worker `v11`, and it gained: a local (no-network) CSP-parity check
+(Amendment 5) and a live check that the deployed Worker's `critical` shell includes both
+X-08/X-10 files.
+
+Files touched: `app.js`, `service-worker.js`, `midwest-stack-authority.js` (version bump
+only), `index.html`, `_headers`, `manifest.json`, `sw-bridge.js`, `voice-load.js`,
+`scripts/verify-cloudflare-parity.mjs`, `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`,
+`vendor/xlsx.full.min.js` (new, bundled) + `vendor/xlsx.full.min.js.LICENSE` (new),
+`tests/unit/service-worker-shell.spec.mjs` (new — X-08/X-10 static checks),
+`tests/unit/release-hygiene.spec.mjs` (new — X-09/X-11 static checks),
+`tests/integration/xlsx-bundled-vendor.spec.mjs` (new — proves the bundled vendor file
+works with all external network blocked). Full suite: 82 passed, 0 failed across 14 spec
+files. (One F-7 GPS test flaked once mid-phase on an unrelated CDP-geolocation timing
+issue — re-run confirmed 13/13 clean; no code change was needed or made for it.)
 
 ---
 

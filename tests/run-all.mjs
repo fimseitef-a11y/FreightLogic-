@@ -6,6 +6,8 @@
 
 import { stopServer } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
+import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
+import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
 import { runSpec as pinLockout } from './integration/pin-lockout.spec.mjs';
@@ -16,9 +18,12 @@ import { runSpec as insuranceMigration } from './integration/insurance-migration
 import { runSpec as exportChecksumIntegrity } from './integration/export-checksum-integrity.spec.mjs';
 import { runSpec as backupRestoreParity } from './integration/backup-restore-parity.spec.mjs';
 import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
+import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
 
 const specs = [
   unitPureFunctions,
+  serviceWorkerShell,
+  releaseHygiene,
   dzGradeCap,
   taxCsvCorruption,
   pinLockout,
@@ -29,6 +34,7 @@ const specs = [
   exportChecksumIntegrity,
   backupRestoreParity,
   dzGateParity,
+  xlsxBundledVendor,
 ];
 
 const results = [];

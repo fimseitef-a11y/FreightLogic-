@@ -808,18 +808,18 @@ closes each once Phases 1–7 land.
 
 | ID | Area | Confirmed at | Status |
 |----|------|--------------|--------|
-| X-01 | Cloud restore / delta sync | dedicated pass | Open — Phase 4 |
-| X-02 | Tax — mileage rate | dedicated pass | Open — Phase 1 |
-| X-03 | Tax — method double-dip | dedicated pass | Open — Phase 1 |
-| X-04 | Dead Zone authority split | proposal time | Open — Phase 5 |
-| X-05 | Export checksum/payload mismatch | proposal time | Open — Phase 3 |
-| X-06 | Test runner exit code | proposal time | Open — Phase 2 |
-| X-07 | Restore coverage gap | dedicated pass | Open — Phase 4 |
-| X-08 | SW critical shell omission | dedicated pass | Open — Phase 6 |
-| X-09 | Diagnostics fake token | proposal time | Open — Phase 6 |
-| X-10 | SheetJS CDN fallback | proposal time | Open — Phase 6 |
-| X-11 | OCR claim on dead code path | proposal time | Open — Phase 6 |
-| X-12 | Deployment checklist drift | dedicated pass | Open — Phase 6 |
+| X-01 | Cloud restore / delta sync | dedicated pass | **FIXED — Phase 4** |
+| X-02 | Tax — mileage rate | dedicated pass | **FIXED — Phase 1** |
+| X-03 | Tax — method double-dip | dedicated pass | **FIXED — Phase 1** |
+| X-04 | Dead Zone authority split | proposal time | **FIXED — Phase 5** |
+| X-05 | Export checksum/payload mismatch | proposal time | **FIXED — Phase 3** |
+| X-06 | Test runner exit code | proposal time | **FIXED — Phase 2** |
+| X-07 | Restore coverage gap | dedicated pass | **FIXED — Phase 4** |
+| X-08 | SW critical shell omission | dedicated pass | **FIXED — Phase 6** |
+| X-09 | Diagnostics fake token | proposal time | **FIXED — Phase 6** |
+| X-10 | SheetJS CDN fallback | proposal time | **FIXED — Phase 6** |
+| X-11 | OCR claim on dead code path | proposal time | **FIXED — Phase 6** |
+| X-12 | Deployment checklist drift | dedicated pass | **FIXED — Phase 6** |
 
 ### X-01 — `cloudPullBackup()` never fetches `/backup/delta` — CONFIRMED
 

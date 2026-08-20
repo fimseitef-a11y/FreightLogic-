@@ -4,27 +4,39 @@ Use this checklist after every FreightLogic repository update.
 
 ## Goal
 
-Prove that the live Cloudflare Pages site and Cloudflare Worker are running the same generation as GitHub `main`.
+Prove that the live Cloudflare Pages site and Cloudflare Worker are running the same generation as GitHub `main`. Automate as much of this as possible with `scripts/verify-cloudflare-parity.mjs` (run it first — it covers the version-marker and CSP-parity checks below without manual clicking).
 
 ## Pages / PWA checks
 
 - Open the deployed Pages URL in a private/incognito browser session.
 - Open DevTools or Safari Web Inspector if available.
 - Confirm `index.html` loads without console syntax errors.
-- Confirm `app.js?v=23.5.0` loads.
-- Confirm `voice-load.js?v=23.5.0` loads.
-- Confirm `sw-bridge.js?v=23.5.0` loads.
-- Confirm `midwest-stack-authority.js?v=23.5.1` loads after service-worker activation.
-- Confirm `manifest.json?v=23.5.0` loads.
+- Confirm `app.js?v=23.9.0` loads.
+- Confirm `voice-load.js?v=23.9.0` loads.
+- Confirm `sw-bridge.js?v=23.9.0` loads.
+- Confirm `midwest-stack-authority.js?v=23.9.0` loads after service-worker activation.
+- Confirm `manifest.json?v=23.9.0` loads, and its `name` field reads `FreightLogic v23.9.0`.
+- Confirm `vendor/xlsx.full.min.js` loads (X-10, v23.9 — bundled SheetJS, no CDN fallback).
 - Confirm icons load with 200 status.
 - Confirm `_headers` security headers are visible on the deployed site.
+- Confirm `index.html`'s CSP `<meta>` tag and the `_headers` `Content-Security-Policy` line
+  are byte-identical (Amendment 5, v23.9 — `verify-cloudflare-parity.mjs` asserts this
+  locally/statically, no network needed; a real drift here was found and fixed in v23.9 —
+  `_headers` was missing the Google Fonts origins `index.html` requires).
 
 ## Service worker checks
 
-- Confirm `service-worker.js` contains `SW_VERSION = '23.5.1'`.
-- Confirm `CORE` includes `midwest-stack-authority.js?v=23.5.1`.
+- Confirm `service-worker.js` contains `SW_VERSION = '23.9.0'`.
+- Confirm `CORE` includes `midwest-stack-authority.js?v=23.9.0` and `vendor/xlsx.full.min.js`.
+- Confirm the `install` event's **critical** (install-blocking) shell array — distinct from
+  the broader `CORE` list — also includes `midwest-stack-authority.js?v=23.9.0` and
+  `vendor/xlsx.full.min.js` (X-08/X-10, v23.9). Before v23.9, the overlay script was only in
+  `CORE`, so a first offline install could complete and serve the app shell before the
+  TRUE_RPM decision layer was actually cached, with no error surfaced.
 - Confirm old caches are deleted after activation.
 - Confirm offline reload still opens the app shell.
+- Confirm Excel import (.xlsx) works with the device offline immediately after a fresh
+  install (X-10, v23.9 — proves the bundled vendor file, not a CDN fetch, is what's loading).
 - Confirm the service worker does not cache cross-origin API responses.
 - Confirm share-target POST flow still redirects to `./index.html#share`.
 
@@ -39,14 +51,23 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
   - Protect Floor
   - Escape / Recovery
   - Dead Zone Exit
+- Confirm Dead Zone Exit mode does **not** reach a `TAKE_IF_LIVE` verdict without all four
+  canonical gates passing (X-04, v23.9 — `isDeadZoneEligible()` in `app.js`, called by both
+  this overlay and the main evaluator): 1000+ mi from home, 200+ mi "distance saved," True
+  RPM in the `[0.90, 1.25)` survival band, and the `#mwDZNoReloadToggle` confirmation
+  checkbox checked. `tests/integration/dz-gate-parity.spec.mjs` covers this automatically.
 
 ## Worker checks
 
-Expected source file: `cloud-backup-worker.js` v10.
+Expected source file: `cloud-backup-worker.js` v11.
 
-- `GET /health` should return JSON with `ok: true`, `version: '10'`, and a timestamp.
+- `GET /health` should return JSON with `ok: true`, `version: '11'`, and a timestamp.
 - Admin routes must reject without `X-Admin-Token`.
 - Driver backup/evaluate/extract routes must reject without `X-Backup-Token`.
+- `GET /backup/delta` should return `{ ok: true, deltas: [...], retainedCount, totalCreated }`
+  for an authenticated user+device (X-01, v23.9 — new in v11; a pre-v11 Worker 404s here,
+  which the app treats as "unverifiable" and shows a partial-restore warning rather than a
+  silent success — see `docs/BACKUP_CONTRACT.md`).
 - `OPTIONS` preflight should return 204.
 - CORS should allow the configured Pages origin only.
 - Worker secrets must exist:
