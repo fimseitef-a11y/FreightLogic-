@@ -775,6 +775,64 @@ header comment), `tests/integration/backup-restore-parity.spec.mjs` (new — E2E
 backup → 3 delta syncs → wipe local → restore → parity of every contracted store, plus
 a confirmed-gap warning test). Full suite: 70 passed, 0 failed across 10 spec files.
 
+### Phase 5 — Decision authority (X-04)
+
+The standalone `midwest-stack-authority.js` overlay had **no gate at all** on its
+DEAD_ZONE mode: `trueRpm >= 0.91 && (destRole.role === 'tier1' || 'tier2')` alone could
+produce `TAKE_IF_LIVE` at the $0.91/mi survival floor, with none of the main
+evaluator's distance-from-home, distance-saved, or manual-confirmation checks. The
+file's own `DEAD_ZONE` mode description had always *claimed* "Requires 1000+ miles from
+home, no reloads above $1.25 nearby, and meaningful move toward density" — the code
+never actually enforced it.
+
+Fixed by extracting one canonical gate function, `isDeadZoneEligible()` (`app.js`),
+which both the main evaluator (`mwEvaluateLoad`) and the standalone overlay now call —
+exposed on `window` since both scripts run in the same page/global scope (no bundler,
+no modules; `midwest-stack-authority.js` is injected into the same document as
+`app.js`). All four gates must pass:
+1. `distanceFromHome >= MW.dzActivationDistanceMi` — **changed from 1500mi to 1000mi**
+   to match the canonical figure the standalone file's own mode description had always
+   claimed (this was the actual drift — not a new number invented for this fix).
+2. `distanceSaved >= MW.dzMinDistanceSaved` (200mi) — "meaningful movement toward
+   stronger freight."
+3. `dzFloor <= trueRPM < MW.hardRejectRPM` (1.25) — "no viable reload above the
+   standard floor nearby": a load already clearing 1.25 doesn't need survival mode.
+4. `noReloadConfirmed === true` — manual; DZ mode never self-activates.
+
+Returns `{ eligible, gradeCap: 'C', reasons }` — `gradeCap` is structural, not just
+documentation, so a caller activating DZ mode from this result carries the F-1 grade-cap
+requirement with it rather than needing to remember it separately.
+
+Two supporting pieces so the standalone file — which has no geo/settings model of its
+own — can call the gate meaningfully:
+- `window.flDzGeoCheck(origin, dest)` — a **synchronous** twin of the main evaluator's
+  `dzCheckEligibility()` (which is `async`, awaiting `getSetting()`), reading settings
+  from the synchronous `SETTINGS_CACHE` instead. Both share one pure geo-computation
+  core (`_dzGeoEligibility()`) — one distance calculation, two settings-resolution paths.
+- The standalone overlay reads the **same** `#mwDZNoReloadToggle` checkbox the main
+  evaluator renders (shared DOM, not a second control) for gate 4 — "manually
+  validated" means the same physical checkbox state in both panels.
+
+`midwest-stack-authority.js`'s fix is surgical: when the gate fails, DEAD_ZONE mode
+simply does **not** lower `floorRpm`/`winRpm`/`askRpm` to survival-mode levels — they
+keep the generic, band-derived values already computed above that block. This means a
+load that's actually fine on its own economics still gets an honest verdict; only the
+artificially-low $0.91 floor privilege is withheld. `posted.grade` is hard-capped to
+`'C'` (via `gradeCap`) whenever the gate genuinely passes, mirroring the main
+evaluator's F-1 fix.
+
+This is scoped narrowly per the release brief — one shared gate-check function, not a
+rewrite of either file's scoring/verdict logic.
+
+Files touched: `app.js` (`isDeadZoneEligible`, `_dzGeoEligibility`,
+`dzCheckEligibilitySync`, `MW.dzActivationDistanceMi` 1500→1000, new
+`MW.dzMinDistanceSaved`), `midwest-stack-authority.js`,
+`tests/integration/dz-gate-parity.spec.mjs` (new — 5 fixtures spanning all three DZ
+sub-tier RPM bands, an unconfirmed case, and an above-hard-reject case; asserts the
+main evaluator and the standalone engine agree on every one, driving the real
+unmodified standalone file via `page.addScriptTag`). Full suite: 76 passed, 0 failed
+across 11 spec files.
+
 ---
 
 ## Dispatch Layer (Planned)

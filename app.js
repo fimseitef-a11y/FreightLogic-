@@ -6293,7 +6293,13 @@ const MW = {
   ],
   // F20: Dead Zone Exit sub-tiers (below normal $1.25 hard floor)
   dzFloorRPM: 0.90,
-  dzActivationDistanceMi: 1500,
+  // X-04: canonical gate — aligned to 1000mi (was 1500 pre-v23.9, drifted from
+  // the figure midwest-stack-authority.js's own DEAD_ZONE mode description had
+  // always claimed: "Requires 1000+ miles from home..."). isDeadZoneEligible()
+  // is the single function both this evaluator and the standalone overlay call
+  // to enforce this and the other DZ gates identically — see its doc comment.
+  dzActivationDistanceMi: 1000,
+  dzMinDistanceSaved: 200, // "meaningful movement toward stronger freight"
 };
 
 // ════════════════════════════════════════════════════
@@ -6567,13 +6573,17 @@ function dzFindNearestAnchor(lat, lng){
   return { name: nearest, distMi: nearestDist };
 }
 
-async function dzCheckEligibility(origin, dest){
-  const dzEnabled = (await getSetting('dzEnabled', true)) !== false && (await getSetting('dzEnabled', true)) !== 'false';
-  if (!dzEnabled) return { eligible: false };
-
-  const activationMi = Number(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
-  const homeCoords = await dzGetHomeCoords();
-
+/** X-04: pure geo-distance resolver shared by the async (dzCheckEligibility)
+ *  and synchronous (dzCheckEligibilitySync, exposed to midwest-stack-
+ *  authority.js) entry points — one geo computation, two settings-resolution
+ *  paths (await getSetting vs. the synchronous SETTINGS_CACHE), since the
+ *  standalone overlay can't await app.js's async settings layer from its own
+ *  synchronous render cycle. Applies the activationMi/minDistanceSaved gates
+ *  (reading from MW's canonical constants unless overridden) so both callers
+ *  return an identically-gated "eligible" flag — the actual final DZ
+ *  activation decision (which also needs trueRPM + manual confirmation)
+ *  is isDeadZoneEligible(), below. */
+function _dzGeoEligibility(origin, dest, activationMi, homeCoords, minDistanceSaved = MW.dzMinDistanceSaved){
   const origCoords = getMarketCoords(origin);
   if (!origCoords) return { eligible: false, reason: 'Origin not in market database' };
 
@@ -6589,8 +6599,8 @@ async function dzCheckEligibility(origin, dest){
   const destAnchor = dzFindNearestAnchor(destCoords.lat, destCoords.lng);
   const distanceSaved = Math.round(origAnchor.distMi - destAnchor.distMi);
 
-  if (distanceSaved < 200){
-    return { eligible: false, distanceFromHome, distanceSaved, reason: `Saves only ${distanceSaved}mi toward home corridor (200+ required)` };
+  if (distanceSaved < minDistanceSaved){
+    return { eligible: false, distanceFromHome, distanceSaved, reason: `Saves only ${distanceSaved}mi toward home corridor (${minDistanceSaved}+ required)` };
   }
 
   return {
@@ -6601,6 +6611,34 @@ async function dzCheckEligibility(origin, dest){
   };
 }
 
+async function dzCheckEligibility(origin, dest){
+  const dzEnabled = (await getSetting('dzEnabled', true)) !== false && (await getSetting('dzEnabled', true)) !== 'false';
+  if (!dzEnabled) return { eligible: false };
+  const activationMi = Number(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const homeCoords = await dzGetHomeCoords();
+  return _dzGeoEligibility(origin, dest, activationMi, homeCoords);
+}
+
+/** X-04: synchronous twin of dzCheckEligibility(), reading settings from the
+ *  synchronous SETTINGS_CACHE (getCachedSetting) instead of awaiting
+ *  getSetting(). Exposed as window.flDzGeoCheck so midwest-stack-
+ *  authority.js — a separate script with no async plumbing into app.js's
+ *  settings layer — can get the same geo-eligibility numbers on its own
+ *  synchronous input-change render cycle. Falls back to MW's defaults (the
+ *  same defaults dzCheckEligibility falls back to) if settings haven't been
+ *  cached yet.
+ */
+function dzCheckEligibilitySync(origin, dest){
+  const dzEnabledRaw = getCachedSetting('dzEnabled', true);
+  if (dzEnabledRaw === false || dzEnabledRaw === 'false') return { eligible: false };
+  const activationMi = Number(getCachedSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const lat = Number(getCachedSetting('homeBaseLat', DZ_HOME_LAT_DEFAULT) || DZ_HOME_LAT_DEFAULT);
+  const lng = Number(getCachedSetting('homeBaseLng', DZ_HOME_LNG_DEFAULT) || DZ_HOME_LNG_DEFAULT);
+  const homeCoords = { lat: Number.isFinite(lat) && lat !== 0 ? lat : DZ_HOME_LAT_DEFAULT, lng: Number.isFinite(lng) && lng !== 0 ? lng : DZ_HOME_LNG_DEFAULT };
+  return _dzGeoEligibility(origin, dest, activationMi, homeCoords);
+}
+if (typeof window !== 'undefined') window.flDzGeoCheck = dzCheckEligibilitySync;
+
 function dzClassifySubTier(trueRPM, distanceSaved, dzFloor){
   if (!Number.isFinite(trueRPM) || trueRPM >= MW.hardRejectRPM || trueRPM < dzFloor) return null;
   if (trueRPM >= 1.10) return 'DZ-STANDARD';
@@ -6609,6 +6647,45 @@ function dzClassifySubTier(trueRPM, distanceSaved, dzFloor){
   if ((distanceSaved || 0) >= 500) return 'DZ-FLOOR';
   return null;
 }
+
+/** X-04: single source of truth for whether Dead Zone Exit can legitimately
+ *  produce a TAKE_IF_LIVE/active-DZ verdict at the survival floor. Both the
+ *  main evaluator (mwEvaluateLoad) and the standalone midwest-stack-
+ *  authority.js overlay (via window.isDeadZoneEligible) call this — before
+ *  this fix the standalone engine had NO equivalent gate at all: its
+ *  `trueRpm >= floorRpm && (tier1||tier2)` check alone could produce
+ *  TAKE_IF_LIVE at $0.91/mi with no distance, reload, or confirmation check
+ *  whatsoever. All four gates below must pass for eligible:true:
+ *   1. distanceFromHome >= activationMi (MW.dzActivationDistanceMi, 1000mi)
+ *   2. distanceSaved >= minDistanceSaved (MW.dzMinDistanceSaved, 200mi) —
+ *      "meaningful movement toward stronger freight"
+ *   3. dzFloor <= trueRPM < hardRejectRpm — "no viable reload above the
+ *      standard floor ($1.25) nearby": a load already clearing hardRejectRpm
+ *      doesn't need survival mode at all
+ *   4. noReloadConfirmed === true — manual; DZ mode never self-activates
+ *  Returns { eligible, gradeCap: 'C', reasons }. gradeCap is structural, not
+ *  just documentation: any caller activating DZ mode from this result MUST
+ *  cap the displayed grade at 'C' (the F-1 fix) rather than the raw grade,
+ *  which is always 'F' in the DZ RPM range by construction.
+ *  This is deliberately narrow — the gate check only, not the full scoring/
+ *  verdict/bid-range computation either file does around it. */
+function isDeadZoneEligible({ distanceFromHome, distanceSaved, trueRPM, noReloadConfirmed, dzFloor = MW.dzFloorRPM, hardRejectRpm = MW.hardRejectRPM, activationMi = MW.dzActivationDistanceMi, minDistanceSaved = MW.dzMinDistanceSaved }){
+  const reasons = [];
+  if (!(Number.isFinite(distanceFromHome) && distanceFromHome >= activationMi)){
+    reasons.push(`${Number.isFinite(distanceFromHome) ? distanceFromHome : '?'}mi from home (${activationMi}+ required)`);
+  }
+  if (!(Number.isFinite(distanceSaved) && distanceSaved >= minDistanceSaved)){
+    reasons.push(`saves only ${Number.isFinite(distanceSaved) ? distanceSaved : '?'}mi toward stronger freight (${minDistanceSaved}+ required)`);
+  }
+  if (!(Number.isFinite(trueRPM) && trueRPM >= dzFloor && trueRPM < hardRejectRpm)){
+    reasons.push(`$${Number.isFinite(trueRPM) ? trueRPM.toFixed(2) : '?'}/mi not in the DZ survival band [$${dzFloor.toFixed(2)}, $${hardRejectRpm.toFixed(2)})`);
+  }
+  if (!noReloadConfirmed){
+    reasons.push('manual no-viable-reload confirmation not given');
+  }
+  return { eligible: reasons.length === 0, gradeCap: 'C', reasons };
+}
+if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligible;
 
 async function mwIsGoingHome(dest) {
   const home = await getSetting('homeLocation', '');
@@ -6690,7 +6767,14 @@ async function mwEvaluateLoad(){
   const dzFloor = Number(await getSetting('dzFloorRPM', MW.dzFloorRPM) || MW.dzFloorRPM);
   const dzCheck = (origin && dest) ? await dzCheckEligibility(origin, dest) : { eligible: false };
   const isDZEligible = dzCheck.eligible;
-  const dzSubTier = (isDZEligible && noReloadConfirmed) ? dzClassifySubTier(trueRPM, dzCheck.distanceSaved || 0, dzFloor) : null;
+  // X-04: final activation decision goes through the shared canonical gate —
+  // same function midwest-stack-authority.js calls via window.isDeadZoneEligible.
+  const dzGate = isDeadZoneEligible({
+    distanceFromHome: dzCheck.distanceFromHome,
+    distanceSaved: dzCheck.distanceSaved,
+    trueRPM, noReloadConfirmed, dzFloor,
+  });
+  const dzSubTier = dzGate.eligible ? dzClassifySubTier(trueRPM, dzCheck.distanceSaved || 0, dzFloor) : null;
   const isDZActive = !!(dzSubTier);
 
   // ── Operating cost (v14.5.0) ──
@@ -16872,6 +16956,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // X-01/X-07 (v23.9 Phase 4)
     cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
+    // X-04 (v23.9 Phase 5)
+    isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
   };
 }
 
