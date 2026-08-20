@@ -72,7 +72,12 @@ export function startMockWorker() {
   // confirmedGap path can be exercised deterministically.
   let forceGapOnNextDeltaFetch = false;
 
-  const API_PATHS = new Set(['/backup', '/backup/delta', '/status']);
+  // Test-control knob (7C, Phase 7): the reported /health version, mirroring
+  // cloud-backup-worker.js's own version:'11' field. Overridable so
+  // tests/integration/health-badge.spec.mjs can exercise the mismatch path.
+  let healthVersion = '11';
+
+  const API_PATHS = new Set(['/backup', '/backup/delta', '/status', '/health']);
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -110,8 +115,19 @@ export function startMockWorker() {
       res.writeHead(200, cors); res.end(JSON.stringify({ ok: true })); return;
     }
     if (p === '/__test__/reset') {
-      kv.clear(); forceGapOnNextDeltaFetch = false;
+      kv.clear(); forceGapOnNextDeltaFetch = false; healthVersion = '11';
       res.writeHead(200, cors); res.end(JSON.stringify({ ok: true })); return;
+    }
+    if (p === '/__test__/set-health-version') {
+      const body = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      try { healthVersion = JSON.parse(body).version; } catch {}
+      res.writeHead(200, cors); res.end(JSON.stringify({ ok: true, healthVersion })); return;
+    }
+
+    // GET /health — unauthenticated liveness check, mirrors the real
+    // cloud-backup-worker.js route exactly (no token/device headers required).
+    if (req.method === 'GET' && p === '/health') {
+      res.writeHead(200, cors); res.end(JSON.stringify({ ok: true, version: healthVersion, ts: new Date().toISOString() })); return;
     }
 
     const token = req.headers['x-backup-token'];
@@ -196,6 +212,7 @@ export function startMockWorker() {
         token: TOKEN,
         forceGap: async () => { await fetch(`${url}/__test__/force-gap`); },
         reset: async () => { await fetch(`${url}/__test__/reset`); },
+        setHealthVersion: async (version) => { await fetch(`${url}/__test__/set-health-version`, { method: 'POST', body: JSON.stringify({ version }) }); },
         // server.close() alone waits for all open sockets to end, which can
         // hang if the browser is holding a keep-alive connection open —
         // closeAllConnections() (Node 18.2+) forces them shut so tests never

@@ -1,0 +1,6 @@
+{
+  "_comment": "Read at runtime by openDiagnosticsPanel()'s health/release badge (v23.9 Phase 7C). This is the ONLY place gitCommit lives — it is not derivable in the browser any other way, since this project has no build step to inject it automatically. Update gitCommit and updatedAt as the LAST step of every release commit (see CLAUDE.md's 'Version bumps' checklist, item 14). Known limitation: because writing this file is itself a commit, gitCommit always trails the actual HEAD by the one commit that updates this file — documented in docs/DEFERRED.md.",
+  "appVersion": "23.9.0",
+  "gitCommit": "1b17e25",
+  "updatedAt": "2026-08-20"
+}

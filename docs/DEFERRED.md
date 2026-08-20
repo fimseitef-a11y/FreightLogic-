@@ -39,3 +39,25 @@ Simple/Pro modes, confidence percentages, the Next-Move Engine.
   reaching data at all, not about concurrent-restore races) — noted here in case it
   becomes relevant once Phase 7B (recovery verification) adds more automated
   restore-adjacent activity.
+
+## Phase 7C (health/release badge)
+
+- **`version.json`'s `gitCommit` field always trails HEAD by exactly one commit.**
+  This project has no build system (per the top of `CLAUDE.md`) — there is no CI step
+  that can inject the deploying commit's own SHA into a static file at build time the
+  way a bundler-based project would. `version.json` is a plain, git-tracked flat file
+  (same category as `manifest.json`), so writing the *current* HEAD's hash into it is
+  necessarily the second-to-last step of a release: the commit that updates the file is
+  itself a new commit, so the value it carries is always one commit behind whatever
+  actually shipped. This is a structural limitation of "no build step," not a bug — the
+  field is still useful for confirming which *release* is deployed (it changes once per
+  release, at the end of that release's work), just not for pinpointing the exact commit
+  serving traffic at this instant. A real fix would require adding CI/build tooling
+  explicitly out of scope for this project's flat-file deployment model — not pursued.
+- **`getSwLiveVersion()`/`getWorkerLiveHealth()` are not wired into any *periodic*
+  background check** — they only run when a driver opens Diagnostics. A driver who
+  never opens that panel gets no proactive alert on version drift or an unreachable
+  Worker. Diagnostics is intentionally pull-only (matches F28's existing design, and
+  the release brief asked for a *badge in Diagnostics*, not a push notification system)
+  — a background health-check ping is a reasonable future addition but is not implied
+  by 7C's scope.

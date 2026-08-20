@@ -25,6 +25,9 @@ service-worker.js          — PWA offline caching; injects admin-driver-ui.js a
                              midwest-stack-authority.js into HTML responses
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json              — PWA manifest
+version.json                — appVersion/gitCommit/updatedAt, fetched live by the
+                             Diagnostics health badge (7C, v23.9 Phase 7); see
+                             "Version bumps" item 14
 midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
 _headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
 wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
@@ -270,6 +273,14 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — a stale/reverted `critical`
       array is a silent regression this checklist wouldn't otherwise catch, since the
       version-string grep below doesn't inspect array contents.
+  14. **`version.json`'s `appVersion` and `gitCommit`** (7C, v23.9 Phase 7) — update
+      `appVersion` alongside every other location above, and set `gitCommit` to the
+      current `git rev-parse --short HEAD` as the LAST step before this release's final
+      commit (it will always trail HEAD by that one commit — see `docs/DEFERRED.md`'s
+      Phase 7C entry for why this is a structural limit of having no build step, not an
+      oversight). The Diagnostics health badge (`openDiagnosticsPanel()`) fetches this
+      file live at runtime — it is the one location this checklist doesn't have to be
+      manually cross-checked against the others, because the badge does that itself.
 
   Quick audit — every shipped file should report the new version:
   ```bash
@@ -960,6 +971,63 @@ right after a clean push; a local-only unsynced change correctly flips to
 verified:false with a mismatch reason; a confirmed delta gap fails verification too,
 not just the separate pull-side warning) — reuses the same `tests/lib/mock-worker.mjs`
 fixture as the Phase 4 X-01/X-07 tests in that file. Full spec run: 7/7 passing.
+
+### 7C — Health & Release Badge
+
+Replaces the ten-plus-location manual "Version bumps" checklist above as an
+*enforcement* mechanism (the checklist itself still exists as the human-facing
+how-to-release doc) with a badge in Diagnostics that reads every version signal LIVE at
+runtime and reports green only when they all genuinely agree — no signal is a hardcoded
+copy of a string baked into the diagnostics code itself:
+
+- **App** — the running `APP_VERSION` constant (the ground truth every other signal is
+  compared against).
+- **Service Worker** — `getSwLiveVersion()` opens a real `MessageChannel` to the
+  currently-*active* registration and asks it directly (`{type:'GET_VERSION'}`,
+  answered by the SW's own already-existing `message` handler in `service-worker.js`);
+  this proves the SW that's actually intercepting this session's fetches reports the
+  expected version, not merely that the shipped file on disk says so.
+- **Cloud Worker** — `getWorkerLiveHealth()` does a real unauthenticated `GET /health`
+  round trip (`cloud-backup-worker.js`'s existing v11 endpoint) and compares the
+  response's `version` field against `EXPECTED_WORKER_VERSION` (`'11'`) — a genuinely
+  un-redeployed Worker shows up as a real mismatch, not a guess.
+- **Database** — `getDbLiveVersion()` opens the real on-disk IndexedDB and reads its
+  actual `.version` property, compared against the `DB_VERSION` constant — this is the
+  live schema version a migration bug could desync from the constant, not the constant
+  read back at itself.
+- **Midwest Authority** — `getAuthorityLiveVersion()` reads `window.FreightLogicMidwestStack.version`,
+  which only exists once `midwest-stack-authority.js` has actually been injected and
+  executed (by the service worker, per X-08) — comparing it against `APP_VERSION`
+  proves the overlay actually running in this session matches, not just that the file on
+  disk claims to.
+- **Backup Verified** — reads 7B's `settings['lastRecoveryVerifiedAt'/'...Reason']`;
+  treated as unverified (not silently ok) once older than 48h, so a stale green can't
+  outlive its own evidence.
+- **Git Commit** — read from the new `version.json` (informational only, not part of
+  the agreement check — see below).
+
+`computeHealthBadge()` combines all five agreement checks (SW/Worker/DB/Authority/
+Backup) into one `allGreen` boolean — true only when every one of them is independently
+true. `openDiagnosticsPanel()` renders this as a colored dot + headline at the very top
+of the panel (above the existing App/Database/Features sections), auto-running
+alongside the existing self-tests both on open and on "Run Tests Again".
+
+New `version.json` (flat file, repo root, same category as `manifest.json`) carries
+`appVersion`, `gitCommit`, and `updatedAt` — fetched live via `getVersionManifest()`,
+never inlined into `app.js`. `gitCommit` is a manually-updated field (documented as
+Version-bumps checklist item 14) since this project has no build step to inject it
+automatically; the one-commit lag this implies is logged in `docs/DEFERRED.md`.
+
+Files touched: `app.js` (`EXPECTED_WORKER_VERSION`, `getSwLiveVersion`,
+`getDbLiveVersion`, `getWorkerLiveHealth`, `getAuthorityLiveVersion`,
+`getVersionManifest`, `computeHealthBadge`, wired into `openDiagnosticsPanel()`),
+`version.json` (new), `CLAUDE.md`, `docs/DEFERRED.md`. New tests:
+`tests/integration/health-badge.spec.mjs` (new — 11 cases: each live reader proven
+against real state including two genuine negative cases — `serviceWorkers:'block'` for
+a real no-SW page, and a `/health` response deliberately set to a mismatched version by
+`tests/lib/mock-worker.mjs`'s new test-control endpoint — plus a full run proving
+`allGreen` flips true only once every signal has been independently established, not
+assumed). Full suite: 105 passed, 0 failed across 16 spec files.
 
 ### 7D — Dimensional/payload pre-check
 

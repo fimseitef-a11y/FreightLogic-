@@ -20,6 +20,7 @@ import { runSpec as backupRestoreParity } from './integration/backup-restore-par
 import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
 import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
+import { runSpec as healthBadge } from './integration/health-badge.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -37,6 +38,7 @@ const specs = [
   dzGateParity,
   xlsxBundledVendor,
   vanFitPrecheck,
+  healthBadge,
 ];
 
 const results = [];

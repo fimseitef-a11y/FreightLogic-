@@ -11665,6 +11665,106 @@ function openLoadIntake(){
 // Accessible via More → Advanced → Diagnostics
 // ════════════════════════════════════════════════════════════════════════════
 
+// ==================== 7C: Health & Release Badge (v23.9 Phase 7) ==========
+// Reads every version signal LIVE at runtime instead of trusting doc
+// comments to have been kept in sync — this is the automated enforcement
+// the CLAUDE.md "Version bumps" checklist has always relied on a human to
+// do by hand for every release. Green only when every live signal agrees.
+
+const EXPECTED_WORKER_VERSION = '11'; // cloud-backup-worker.js's own /health `version` field (X-12, Phase 6)
+
+async function getSwLiveVersion(timeoutMs = 3000){
+  try{
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const sw = reg?.active;
+    if (!sw) return { ok: false, version: null, reason: 'no active service worker' };
+    const version = await new Promise((resolve, reject) => {
+      const ch = new MessageChannel();
+      const t = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+      ch.port1.onmessage = (e) => { clearTimeout(t); resolve(e.data?.version || null); };
+      sw.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+    });
+    return { ok: !!version, version };
+  } catch(e){
+    return { ok: false, version: null, reason: e?.message === 'timeout' ? 'timeout' : (e?.message || 'unavailable') };
+  }
+}
+
+async function getDbLiveVersion(){
+  return new Promise((resolve) => {
+    try{
+      const req = indexedDB.open(DB_NAME);
+      req.onsuccess = () => { const v = req.result.version; req.result.close(); resolve({ ok: true, version: v }); };
+      req.onerror = () => resolve({ ok: false, version: null, reason: 'open failed' });
+    } catch(e){ resolve({ ok: false, version: null, reason: e?.message || 'unavailable' }); }
+  });
+}
+
+async function getWorkerLiveHealth(timeoutMs = 6000){
+  try{
+    const config = await cloudGetConfig();
+    const url = (config?.url || CLOUD_WORKER_URL) + '/health';
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return { ok: false, version: null, reason: 'HTTP ' + r.status };
+    const j = await r.json();
+    return { ok: !!j.ok, version: j.version != null ? String(j.version) : null };
+  } catch(e){
+    return { ok: false, version: null, reason: e?.name === 'AbortError' ? 'timeout' : (e?.message || 'unreachable') };
+  }
+}
+
+async function getAuthorityLiveVersion(){
+  // midwest-stack-authority.js is injected into the HTML response by the
+  // service worker (not loaded via a <script> tag in index.html itself) —
+  // by the time Diagnostics is opened on a normal boot it should already be
+  // on window. A genuine absence is a real finding here, not swallowed.
+  const mw = window.FreightLogicMidwestStack;
+  return mw?.version ? { ok: true, version: mw.version } : { ok: false, version: null, reason: 'overlay not loaded' };
+}
+
+async function getVersionManifest(){
+  try{
+    const r = await fetch('./version.json', { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e){ return null; }
+}
+
+async function computeHealthBadge(){
+  const [sw, db, worker, authority, manifest] = await Promise.all([
+    getSwLiveVersion(), getDbLiveVersion(), getWorkerLiveHealth(),
+    getAuthorityLiveVersion(), getVersionManifest(),
+  ]);
+
+  const appVersion = APP_VERSION;
+  const verifiedAt = Number(await getSetting('lastRecoveryVerifiedAt', 0) || 0);
+  const verifiedReason = await getSetting('lastRecoveryVerifiedReason', '');
+  // A verification older than 48h reads the same as "not verified" here — a
+  // stale green claim would be worse than an honest "not verified" one.
+  const backupFresh = verifiedAt > 0 && (Date.now() - verifiedAt) < 48 * 3600 * 1000;
+  const backupOk = backupFresh && !verifiedReason;
+
+  const swOk = sw.ok && sw.version === appVersion;
+  const dbOk = db.ok && db.version === DB_VERSION;
+  const workerOk = worker.ok && worker.version === EXPECTED_WORKER_VERSION;
+  const authorityOk = authority.ok && authority.version === appVersion;
+
+  return {
+    allGreen: swOk && dbOk && workerOk && authorityOk && backupOk,
+    appVersion,
+    sw, swOk,
+    db, dbOk, dbExpected: DB_VERSION,
+    worker, workerOk, workerExpected: EXPECTED_WORKER_VERSION,
+    authority, authorityOk,
+    backupOk, backupFresh, verifiedAt, verifiedReason,
+    gitCommit: manifest?.gitCommit || null,
+    manifestUpdatedAt: manifest?.updatedAt || null,
+  };
+}
+
 async function openDiagnosticsPanel(){
   const body = document.createElement('div');
   body.style.cssText = 'display:flex;flex-direction:column;gap:10px';
@@ -11676,9 +11776,21 @@ async function openDiagnosticsPanel(){
     </div>`;
 
   body.innerHTML = `
+    <div id="dxHealthBadge" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface-1)">
+      <span id="dxHealthDot" style="width:12px;height:12px;border-radius:50%;background:var(--text-secondary);flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div id="dxHealthLabel" style="font-size:13px;font-weight:700">Checking release health…</div>
+        <div id="dxHealthDetail" style="font-size:11px;color:var(--text-secondary);margin-top:2px">Verifying App / SW / Worker / DB / Authority all agree, and backup is verified.</div>
+      </div>
+    </div>
     <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:4px 0 2px">App</div>
     ${row('App Version',       'dxAppVer',  APP_VERSION)}
+    ${row('Git Commit',        'dxGitCommit', '...')}
     ${row('Service Worker',    'dxSwVer',   '...')}
+    ${row('Cloud Worker',      'dxWorkerVer', '...')}
+    ${row('Database Schema',   'dxDbVer',   '...')}
+    ${row('Midwest Authority', 'dxAuthorityVer', '...')}
+    ${row('Backup Verified',   'dxBackupVer', '...')}
     ${row('Cache Status',      'dxCache',   '...')}
     <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Database</div>
     ${row('Trips',             'dxTrips',   '...')}
@@ -11784,17 +11896,70 @@ async function openDiagnosticsPanel(){
     }
   }
 
+  async function runHealthCheck(){
+    const set = (id, val, ok) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = String(val);
+      el.style.color = ok === true ? 'var(--good)' : ok === false ? 'var(--bad)' : 'var(--text-secondary)';
+    };
+    let h;
+    try{
+      h = await computeHealthBadge();
+    } catch(e){
+      const dot = document.getElementById('dxHealthDot');
+      const label = document.getElementById('dxHealthLabel');
+      const detail = document.getElementById('dxHealthDetail');
+      if (dot) dot.style.background = 'var(--bad)';
+      if (label) label.textContent = 'Health check failed';
+      if (detail) detail.textContent = e?.message || 'Unknown error';
+      return;
+    }
+
+    set('dxGitCommit', h.gitCommit ? h.gitCommit + (h.manifestUpdatedAt ? ` (${h.manifestUpdatedAt})` : '') : 'Unavailable', h.gitCommit ? null : false);
+    set('dxSwVer', h.sw.version ? `${h.sw.version}${h.swOk ? '' : ' (expected ' + h.appVersion + ')'}` : (h.sw.reason || 'Unavailable'), h.swOk);
+    set('dxWorkerVer', h.worker.version ? `v${h.worker.version}${h.workerOk ? '' : ' (expected v' + h.workerExpected + ')'}` : (h.worker.reason || 'Unavailable'), h.workerOk);
+    set('dxDbVer', h.db.version != null ? `${h.db.version}${h.dbOk ? '' : ' (expected ' + h.dbExpected + ')'}` : (h.db.reason || 'Unavailable'), h.dbOk);
+    set('dxAuthorityVer', h.authority.version ? `${h.authority.version}${h.authorityOk ? '' : ' (expected ' + h.appVersion + ')'}` : (h.authority.reason || 'Unavailable'), h.authorityOk);
+    if (h.backupOk){
+      set('dxBackupVer', 'Verified ' + new Date(h.verifiedAt).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }), true);
+    } else if (h.verifiedAt > 0 && !h.backupFresh){
+      set('dxBackupVer', 'Stale — last verified ' + new Date(h.verifiedAt).toLocaleDateString(), false);
+    } else {
+      set('dxBackupVer', h.verifiedReason || 'Not yet verified', false);
+    }
+
+    const dot = document.getElementById('dxHealthDot');
+    const label = document.getElementById('dxHealthLabel');
+    const detail = document.getElementById('dxHealthDetail');
+    if (dot) dot.style.background = h.allGreen ? 'var(--good)' : 'var(--bad)';
+    if (label) label.textContent = h.allGreen ? `✅ Release healthy — v${h.appVersion} everywhere` : '⚠️ Version drift or unverified backup detected';
+    if (detail){
+      if (h.allGreen){
+        detail.textContent = 'App, Service Worker, Cloud Worker, Database, and Midwest Authority all agree, and the last backup was verified within 48h.';
+      } else {
+        const bad = [];
+        if (!h.swOk) bad.push('Service Worker');
+        if (!h.dbOk) bad.push('Database');
+        if (!h.workerOk) bad.push('Cloud Worker');
+        if (!h.authorityOk) bad.push('Midwest Authority');
+        if (!h.backupOk) bad.push('Backup verification');
+        detail.textContent = 'Disagreement in: ' + bad.join(', ') + '.';
+      }
+    }
+  }
+
   body.querySelector('#dxRunTests').addEventListener('click', async ()=>{
     haptic();
     body.querySelector('#dxRunTests').textContent = 'Running…';
     body.querySelector('#dxRunTests').disabled = true;
-    await runTests();
+    await Promise.all([runTests(), runHealthCheck()]);
     body.querySelector('#dxRunTests').textContent = 'Run Tests Again';
     body.querySelector('#dxRunTests').disabled = false;
   });
 
   // Auto-run on open
-  setTimeout(()=> runTests(), 100);
+  setTimeout(()=> { runTests(); runHealthCheck(); }, 100);
 }
 
 // ==================== CLOUD BACKUP MODULE v3.0 (Simplified Multi-User) =========
@@ -17198,6 +17363,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
     // 7B (v23.9 Phase 7)
     verifyRecoveryIntegrity, renderRecoveryStatus,
+    // 7C (v23.9 Phase 7)
+    computeHealthBadge, getSwLiveVersion, getDbLiveVersion, getWorkerLiveHealth,
+    getAuthorityLiveVersion, getVersionManifest, EXPECTED_WORKER_VERSION,
+    APP_VERSION, DB_VERSION,
   };
 }
 
