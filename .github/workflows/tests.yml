@@ -18,15 +18,15 @@ jobs:
           ref: chatgpt/v24-unified-decision-engine
           fetch-depth: 0
 
-      - name: Apply guarded v24 unified-decision patch
+      - name: Apply guarded v24 worker authority cleanup
         shell: bash
         run: |
-          python3 scripts/v24_phase_a_patch.py
+          python3 scripts/v24_phase_a_cleanup.py
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.js midwest-stack-authority.js cloud-backup-worker.js tests/run-all.mjs tests/unit/v24-unified-decision.spec.mjs docs/V24_ROADMAP.md scripts/v24_phase_a_patch.py
-          git commit -m "feat: establish v24 unified decision authority"
+          git add -- cloud-backup-worker.js tests/unit/v24-unified-decision.spec.mjs scripts/v24_phase_a_cleanup.py
+          git commit -m "fix: remove stale AI decision authority"
           git push origin HEAD:chatgpt/v24-unified-decision-engine
 
       - uses: actions/setup-node@v6
