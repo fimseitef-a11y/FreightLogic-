@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v23.9.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v23.9.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -112,7 +112,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.9.0';
+const APP_VERSION = '23.9.1';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -229,8 +229,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.9.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.9.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=23.9.1` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `23.9.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -897,14 +897,14 @@ rejecting the file type.
 
 **X-12 — deployment checklist modernized.** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`
 referenced `v23.5.0`/`v23.5.1`/Worker `v10` — three-plus releases stale. Updated to
-`v23.9.0`/Worker `v11`, and added checklist items for the X-08 critical-shell contents,
+`v23.9.1`/Worker `v11`, and added checklist items for the X-08 critical-shell contents,
 the X-10 bundled-vendor/offline-Excel-import check, the X-01 `GET /backup/delta`
 endpoint, the X-04 Dead Zone gate parity, and the Amendment 5 CSP-parity check.
 
-**Full v23.9.0 version-marker bump** (all 13 checklist locations, including the two new
+**Full v23.9.1 version-marker bump** (all 13 checklist locations, including the two new
 ones added this phase) landed in this same pass — see the "Version bumps" checklist
 above. `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block and inline assertions
-now target `23.9.0`/Worker `v11`, and it gained: a local (no-network) CSP-parity check
+now target `23.9.1`/Worker `v11`, and it gained: a local (no-network) CSP-parity check
 (Amendment 5) and a live check that the deployed Worker's `critical` shell includes both
 X-08/X-10 files.
 
@@ -977,3 +977,13 @@ A Dispatch upgrade is planned for a future release. Driver-only features are the
 - Focus management on modal open/close (`openModal` / `closeModal`).
 - `haptic(ms)` provides tactile feedback on supported devices.
 - Dark-first design; light theme available via `[data-theme="light"]`.
+
+
+## v23.9.1 — Pre-v24 Integrity Gate
+
+- Normal/preferred True RPM floors aligned to $1.40/$1.50.
+- Static July rate bands now expire through CURRENT/AGING/STALE freshness states; stale bands cannot relax protective pricing outside the explicit Dead Zone gate.
+- EIA/NWS/FMCSA/CBP use a shared live-source health contract surfaced in Diagnostics.
+- Conservative broker-history integrity pass normalizes proven broker keys and keeps unresolved legacy rows quarantined; it never infers broker identity from ambiguous `trip.customer`.
+- CI pins Playwright 1.62.1 and uses Node24-capable GitHub Action runtimes.
+- `docs/V24_ROADMAP.md` is the authoritative v24 sequencing/authority contract.

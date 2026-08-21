@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v23.9.0
+/* FreightLogic Midwest Stack v2 Authority Overlay v23.9.1
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '23.9.0';
+  const VERSION = '23.9.1';
   const UPDATED_AT = '2026-07-09';
 
   const CONFIG = Object.freeze({
@@ -115,6 +115,19 @@
     }
   });
 
+
+
+  // Pre-v24 integrity gate: static market overrides are evidence with an age,
+  // not permanent truth. CURRENT <=14d, AGING <=30d, STALE >30d.
+  const RATE_OVERRIDE_FRESHNESS = Object.freeze({ currentDays: 14, agingDays: 30 });
+  function getRateOverrideFreshness(asOf = new Date()){
+    const effectiveMs = Date.parse(RATE_OVERRIDE_2026_07.effectiveDate + 'T00:00:00Z');
+    const asOfMs = asOf instanceof Date ? asOf.getTime() : Date.parse(String(asOf));
+    const ageDays = Number.isFinite(effectiveMs) && Number.isFinite(asOfMs) ? Math.max(0, Math.floor((asOfMs - effectiveMs) / 86400000)) : Infinity;
+    const status = ageDays <= RATE_OVERRIDE_FRESHNESS.currentDays ? 'CURRENT' : (ageDays <= RATE_OVERRIDE_FRESHNESS.agingDays ? 'AGING' : 'STALE');
+    return { status, ageDays, effectiveDate: RATE_OVERRIDE_2026_07.effectiveDate };
+  }
+
   function cleanText(value){ return String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function finite(value, fallback){ const n = Number(value); return Number.isFinite(n) ? n : (fallback || 0); }
   function roundMoney(value){ return Math.round(finite(value) / 5) * 5; }
@@ -214,13 +227,25 @@
     if (/battery|batteries|hazmat|chemical|paint|lithium/i.test(notes + ' ' + input.commodity)) { premium += CONFIG.premiums.hazmatCheck; risk += 0.05; flags.push('Commodity check: confirm non-hazmat / paperwork.'); }
     if (hasWeekendLock(input.pickupDate, input.deliveryDate) || /weekend|holiday|memorial|hold/i.test(notes)) { premium += CONFIG.premiums.weekendOrHolidayLock; risk += 0.08; flags.push('Weekend/holiday lock risk.'); }
 
+    const rateFreshness = getRateOverrideFreshness();
     const realisticBand = band.realisticWin;
+    const overrideStale = rateFreshness.status === 'STALE';
+    const staleProtectiveGuard = overrideStale && mode.id !== 'DEAD_ZONE';
     const compressedWinRpm = ((realisticBand[0] + realisticBand[1]) / 2) * regionOverlay.multiplier;
     const baseFloor = mode.floor;
     const baseTarget = mode.target;
-    let floorRpm = Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);
-    let winRpm = Math.max(mode.preferred, compressedWinRpm);
-    let askRpm = Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier) + premium;
+    const protective = CONFIG.modes.PROTECT_FLOOR;
+    let floorRpm = staleProtectiveGuard
+      ? Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, protective.floor)
+      : Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);
+    let winRpm = staleProtectiveGuard
+      ? Math.max(mode.preferred, protective.preferred)
+      : Math.max(mode.preferred, compressedWinRpm);
+    let askRpm = (staleProtectiveGuard
+      ? Math.max(baseTarget, protective.target)
+      : Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier)) + premium;
+    if (rateFreshness.status === 'STALE') flags.push(`Rate override STALE (${rateFreshness.ageDays}d old) — static July bands cannot relax protective pricing; refresh market evidence.`);
+    else if (rateFreshness.status === 'AGING') flags.push(`Rate override AGING (${rateFreshness.ageDays}d old) — use as secondary evidence and verify current market.`);
 
     if (mode.id === 'PROTECT_FLOOR') {
       floorRpm = Math.max(1.40, floorRpm);

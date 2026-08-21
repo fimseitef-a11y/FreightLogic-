@@ -1,8 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.9.0 USA ENGINE
- *  v23.9.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
+/** FreightLogic v23.9.1 USA ENGINE
+ *  v23.9.1 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
  *          authoritative per-phase record): date-keyed IRS mileage rate
  *          (X-02), tax-method-sensitive deductions with an auto/cargo/
  *          liability insurance split (X-03), a real release CI gate (X-06),
@@ -39,7 +39,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.9.0';
+const APP_VERSION = '23.9.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -69,7 +69,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.9.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v23.9.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -6305,8 +6305,9 @@ const MW = {
   thuFri: { low: 1200, high: 1600 },
   surgeFloor: 3000,
   stabilizeFloor: 2000,
-  preferredFloorRPM: 1.40,
-  normalFloorRPM: 1.35,
+  // Pre-v24 integrity gate: one protective doctrine across decision surfaces.
+  preferredFloorRPM: 1.50,
+  normalFloorRPM: 1.40,
   hardRejectRPM: 1.25,
   // Strategic floor — ONLY when replacing deadhead / going home / escaping slow market
   strategicFloorRPM: 1.25,
@@ -6721,7 +6722,7 @@ function isDeadZoneEligible({ distanceFromHome, distanceSaved, trueRPM, noReload
 if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligible;
 
 // ================================================================================
-// 7D — Dimensional/payload pre-check (v23.9.0)
+// 7D — Dimensional/payload pre-check (v23.9.1)
 // Configurable van profile; any load exceeding it fails BEFORE economics are
 // evaluated. Runs on every intake path (Smart Load Inbox, F27 Load Intake,
 // OCR quick-scan, manual entry) because all of them funnel into the same
@@ -8233,6 +8234,7 @@ function _loadEvalDraft(){
 async function mwInit(){
   if (mwBound) return;
   mwBound = true;
+  auditBrokerHistoryIntegrity().catch(e => console.warn('[FL] broker integrity boot check', e));
 
   // Tab switching (hidden tabs used by More → Tools tiles)
   mwBindTabs();
@@ -11692,6 +11694,7 @@ async function openDiagnosticsPanel(){
     ${row('File Input',        'dxFile',    '...')}
     ${row('Offline (SW)',      'dxOffline', '...')}
     ${row('Cloud Backup',      'dxCloud',   '...')}
+    ${row('Live Feed Health',  'dxFeeds',   'No calls this session')}
     ${row('AI Endpoint',       'dxAi',      '...')}
     <button class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
 
@@ -11758,6 +11761,17 @@ async function openDiagnosticsPanel(){
       else if (token)    set('dxCloud', 'Token set, no passphrase', null);
       else               set('dxCloud', 'Not configured', null);
     } catch(e){ set('dxCloud', 'Error', false); }
+
+    // Pre-v24 integrity gate: external-feed failures are no longer silent.
+    const feedHealth = Object.values(getAllLiveSourceHealth());
+    if (!feedHealth.length){
+      set('dxFeeds', 'No calls this session', null);
+    } else {
+      const hardFailures = feedHealth.filter(x => ![LIVE_SOURCE_STATUS.OK, LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const soft = feedHealth.filter(x => [LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const summary = feedHealth.map(x => `${x.source}:${x.status}`).join(' · ');
+      set('dxFeeds', summary, hardFailures.length ? false : (soft.length ? null : true));
+    }
 
     // AI/Worker endpoint ping — X-09: this used to send the literal string
     // 'ping' as X-Backup-Token, which is not a valid flk_-format token
@@ -12741,6 +12755,86 @@ function renderLaneIntelHTML(intel){
     </div>
     ${dzHtml}
   </div>`;
+}
+
+
+// v23.9.1 PRE-v24: conservative bidHistory broker-integrity gate.
+// Only explicit broker-labelled evidence may repair legacy rows. Never infer a
+// broker from trip.customer: that field can represent carrier/company identity
+// and would silently recreate the attribution bug this gate is meant to stop.
+let _brokerIntegrityGatePromise = null;
+async function auditBrokerHistoryIntegrity(){
+  if (_brokerIntegrityGatePromise) return _brokerIntegrityGatePromise;
+  _brokerIntegrityGatePromise = (async () => {
+    const [bids, trips] = await Promise.all([dumpStore('bidHistory'), dumpStore('trips')]);
+    const tripByOrder = new Map();
+    for (const trip of trips || []){
+      const k = String(trip?.orderNo || '').trim();
+      if (k) tripByOrder.set(k, trip);
+    }
+    let normalized = 0, backfilled = 0, unresolved = 0;
+    const pending = [];
+    for (const rec of bids || []){
+      if (!rec || typeof rec !== 'object') continue;
+      const next = { ...rec };
+      const rawBroker = clampStr(rec.broker || '', 80);
+      const normalizedBroker = normBroker(rawBroker);
+      const loadKey = clampStr(rec.loadId || rec.orderNo || '', 60);
+      const matchedTrip = loadKey ? tripByOrder.get(loadKey) : null;
+      const explicitDisplay = clampStr(rec.brokerDisplay || rec.brokerName || '', 80);
+      const tripBroker = clampStr(matchedTrip?.broker || '', 80);
+      const provenDisplay = explicitDisplay || tripBroker;
+      let changed = false;
+
+      if (normalizedBroker && rawBroker !== normalizedBroker){
+        next.broker = normalizedBroker;
+        if (!next.brokerDisplay) next.brokerDisplay = rawBroker;
+        normalized++;
+        changed = true;
+      }
+
+      if ((!normalizedBroker || rec.legacyUnkeyed === true) && provenDisplay){
+        const provenKey = normBroker(provenDisplay);
+        if (provenKey){
+next.broker = provenKey;
+next.brokerDisplay = provenDisplay;
+const origin = clampStr(rec.origin || matchedTrip?.origin || '', 80);
+const destination = clampStr(rec.destination || matchedTrip?.destination || '', 80);
+if (!next.lane && origin && destination) next.lane = normalizeLane(origin, destination);
+next.legacyUnkeyed = false;
+next.integrityBackfilledAt = Date.now();
+next.integrityBackfillSource = explicitDisplay ? 'explicit-broker-field' : 'matched-trip-broker-field';
+backfilled++;
+changed = true;
+        }
+      }
+
+      if (!normBroker(next.broker || '') || next.legacyUnkeyed === true){
+        unresolved++;
+        if (next.legacyUnkeyed !== true){ next.legacyUnkeyed = true; changed = true; }
+      }
+      if (changed) pending.push(next);
+    }
+
+    if (pending.length){
+      const { t, stores } = tx('bidHistory', 'readwrite');
+      for (const rec of pending) stores.bidHistory.put(rec);
+      await new Promise((resolve, reject) => {
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error || new Error('Broker integrity transaction failed'));
+        t.onabort = () => reject(t.error || new Error('Broker integrity transaction aborted'));
+      });
+    }
+    const summary = { scanned: (bids || []).length, normalized, backfilled, unresolved, updated: pending.length, ts: Date.now() };
+    try { sessionStorage.setItem('fl_broker_integrity_summary', JSON.stringify(summary)); } catch(e) {}
+    if (unresolved) console.warn(`[FL] Broker integrity: ${unresolved} legacy row(s) remain unresolved; excluded from broker intelligence.`);
+    return summary;
+  })().catch(err => {
+    _brokerIntegrityGatePromise = null;
+    console.warn('[FL] Broker integrity gate failed', err);
+    return { error: String(err?.message || err || 'unknown') };
+  });
+  return _brokerIntegrityGatePromise;
 }
 
 // v24.0.0: Broker intelligence — unifies the three bidHistory record flavors
@@ -15336,32 +15430,83 @@ async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickup
   }
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// v23.9.1 PRE-v24: Live-source health contract
+// External feeds must never fail as an unexplained `null`. Each source records
+// the last attempt/result for Diagnostics while preserving the existing return
+// shapes so this correctness pass does not become a feature rewrite.
+// ════════════════════════════════════════════════════════════════
+const LIVE_SOURCE_STATUS = Object.freeze({
+  OK: 'OK',
+  STALE: 'STALE',
+  UNCONFIGURED: 'UNCONFIGURED',
+  AUTH_ERROR: 'AUTH_ERROR',
+  HTTP_ERROR: 'HTTP_ERROR',
+  TIMEOUT: 'TIMEOUT',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  PARSE_ERROR: 'PARSE_ERROR',
+  OFFLINE: 'OFFLINE',
+});
+const LIVE_SOURCE_HEALTH = new Map();
+try {
+  const prior = JSON.parse(sessionStorage.getItem('fl_live_source_health') || '{}');
+  for (const [k,v] of Object.entries(prior || {})) if (v && typeof v === 'object') LIVE_SOURCE_HEALTH.set(k, v);
+} catch(e) {}
+function _persistLiveSourceHealth(){
+  try { sessionStorage.setItem('fl_live_source_health', JSON.stringify(Object.fromEntries(LIVE_SOURCE_HEALTH))); } catch(e) {}
+}
+function setLiveSourceHealth(source, status, detail={}){
+  const now = Date.now();
+  const prev = LIVE_SOURCE_HEALTH.get(source) || {};
+  const next = {
+    ...prev,
+    source,
+    status,
+    lastAttempt: now,
+    lastSuccess: status === LIVE_SOURCE_STATUS.OK ? (detail.lastSuccess || now) : (prev.lastSuccess || null),
+    ...detail,
+  };
+  LIVE_SOURCE_HEALTH.set(source, next);
+  _persistLiveSourceHealth();
+  if (status !== LIVE_SOURCE_STATUS.OK && status !== LIVE_SOURCE_STATUS.UNCONFIGURED && status !== LIVE_SOURCE_STATUS.OFFLINE){
+    console.warn(`[FL] ${source} source health: ${status}`, detail);
+  }
+  return next;
+}
+function getAllLiveSourceHealth(){ return Object.fromEntries(LIVE_SOURCE_HEALTH); }
+function _liveSourceFailureStatus(err){
+  const n = String(err?.name || '').toLowerCase();
+  return (n.includes('timeout') || n === 'aborterror') ? LIVE_SOURCE_STATUS.TIMEOUT : LIVE_SOURCE_STATUS.NETWORK_ERROR;
+}
+if (typeof window !== 'undefined') window.flGetLiveSourceHealth = getAllLiveSourceHealth;
+
 // ════════════════════════════════════════════════════════════════
 // v23.8: EIA Midwest regular gasoline feed (requires free EIA key in settings)
 // ════════════════════════════════════════════════════════════════
 async function fetchEIAGasPrice(){
-  if (!navigator.onLine) return null;
+  if (!navigator.onLine) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OFFLINE); return null; }
   const lastFetch = Number(await getSetting('eiaLastFetchTs', 0) || 0);
   const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) return null; // Skip if fetched recently
+  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: lastFetch }); return null; } // Skip if fetched recently
   const eiaKey = (await getSetting('eiaApiKey', '') || '').trim();
-  if (!eiaKey) return null;
+  if (!eiaKey) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }
   try {
     const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPMR&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-    if (!res.ok) return null;
+    if (!res.ok) { setLiveSourceHealth('EIA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }
     const json = await res.json();
     let record = json?.response?.data?.[0];
     if (!record || !record.value) {
       const fallbackUrl = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPM0&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
       const fallbackRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-      if (!fallbackRes.ok) return null;
+      if (!fallbackRes.ok) { setLiveSourceHealth('EIA', (fallbackRes.status === 401 || fallbackRes.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: fallbackRes.status, fallback: true }); return null; }
       const fallbackJson = await fallbackRes.json();
       record = fallbackJson?.response?.data?.[0];
-      if (!record || !record.value) return null;
+      if (!record || !record.value) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'no usable Midwest gasoline record' }); return null; }
     }
     const price = parseFloat(record.value);
-    if (!(price > 0)) return null;
+    if (!(price > 0)) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'invalid price value' }); return null; }
     const period = record.period || '';
     await setSetting('eiaLastPrice', price);
     await setSetting('eiaLastDate', period);
@@ -15378,8 +15523,9 @@ async function fetchEIAGasPrice(){
         toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA Midwest gas)`);
       }
     }, { once: true });
+    setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { sourceTimestamp: period, value: price });
     return { price, period };
-  } catch(e){ console.warn('[FL] EIA fetch', e); return null; }
+  } catch(e){ setLiveSourceHealth('EIA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] EIA fetch', e); return null; }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -15387,7 +15533,7 @@ async function fetchEIAGasPrice(){
 // ════════════════════════════════════════════════════════════════
 const _nwsCache = new Map();
 async function checkRouteWeather(originCoords, destCoords){
-  if (!navigator.onLine) return [];
+  if (!navigator.onLine) { setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE); return []; }
   const points = [];
   if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
   if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
@@ -15395,11 +15541,11 @@ async function checkRouteWeather(originCoords, destCoords){
   for (const pt of points){
     const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
     const cached = _nwsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); alerts.push(...cached.alerts); continue; }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
       const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
-      if (!res.ok){ continue; }
+      if (!res.ok){ setLiveSourceHealth('NWS', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, point: pt.label }); continue; }
       const json = await res.json();
       const ptAlerts = (json.features || []).map(f => ({
         label: pt.label,
@@ -15407,9 +15553,11 @@ async function checkRouteWeather(originCoords, destCoords){
         severity: f.properties?.severity || 'Unknown',
         headline: f.properties?.headline || '',
       })).filter(a => a.event);
-      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: Date.now() });
+      const nwsSuccessTs = Date.now();
+      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: nwsSuccessTs });
+      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { point: pt.label, alertCount: ptAlerts.length, lastSuccess: nwsSuccessTs });
       alerts.push(...ptAlerts);
-    } catch(e){ /* graceful fallback */ }
+    } catch(e){ setLiveSourceHealth('NWS', _liveSourceFailureStatus(e), { point: pt.label, message: String(e?.message || e || '') }); }
   }
   return alerts;
 }
@@ -15419,29 +15567,32 @@ async function checkRouteWeather(originCoords, destCoords){
 // ════════════════════════════════════════════════════════════════
 const _fmcsaCache = new Map();
 async function lookupFMCSA(dotNumber){
-  if (!dotNumber || !navigator.onLine) return null;
+  if (!dotNumber) return null;
+  if (!navigator.onLine) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OFFLINE); return null; }
   const dot = String(dotNumber).replace(/\D/g,'');
   if (!dot || dot.length < 5) return null;
   const cached = _fmcsaCache.get(dot);
-  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) return cached.data;
+  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }
   try {
     const apiKey = await getSetting('fmcsaApiKey', '') || '';
-    if (!apiKey) return null;
+    if (!apiKey) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }
     const url = `https://mobile.fmcsa.dot.gov/qc/services/carriers/${encodeURIComponent(dot)}?webKey=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-    if (!res.ok) return null;
+    if (!res.ok) { setLiveSourceHealth('FMCSA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }
     const json = await res.json();
     const c = json?.content?.carrier || json?.carrier || null;
-    if (!c) return null;
+    if (!c) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'carrier payload missing' }); return null; }
     const data = {
       dot, name: c.legalName || c.dbaName || '',
       status: c.allowedToOperate === 'Y' ? 'active' : 'inactive',
       safetyRating: c.safetyRating || '',
       insurance: c.bipd || '',
     };
-    _fmcsaCache.set(dot, { data, ts: Date.now() });
+    const fmcsaSuccessTs = Date.now();
+    _fmcsaCache.set(dot, { data, ts: fmcsaSuccessTs });
+    setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { dot, lastSuccess: fmcsaSuccessTs });
     return data;
-  } catch(e){ console.warn('[FL] FMCSA lookup', e); return null; }
+  } catch(e){ setLiveSourceHealth('FMCSA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] FMCSA lookup', e); return null; }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -15457,15 +15608,15 @@ const CA_BORDER_PORT_CODES = {
 };
 const _cbpCache = new Map();
 async function fetchBorderWaitTime(gatewayId){
-  if (!navigator.onLine) return null;
+  if (!navigator.onLine) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OFFLINE); return null; }
   const portCode = CA_BORDER_PORT_CODES[gatewayId];
   if (!portCode) return null;
   const cached = _cbpCache.get(String(portCode));
-  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) return cached.data;
+  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }
   try {
     const url = `https://bwt.cbp.gov/api/bwtquery?port=${portCode}`;
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
-    if (!res.ok) return null;
+    if (!res.ok) { setLiveSourceHealth('CBP', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, port: portCode }); return null; }
     const json = await res.json();
     const record = Array.isArray(json) ? json[0] : json;
     const data = {
@@ -15473,9 +15624,11 @@ async function fetchBorderWaitTime(gatewayId){
       commercialWait: record?.commercial_vehicle_lanes?.standard_lanes?.wait_time ?? record?.commercialWait ?? null,
       portName: record?.port_name || record?.portName || String(portCode),
     };
-    _cbpCache.set(String(portCode), { data, ts: Date.now() });
+    const cbpSuccessTs = Date.now();
+    _cbpCache.set(String(portCode), { data, ts: cbpSuccessTs });
+    setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { port: portCode, lastSuccess: cbpSuccessTs });
     return data;
-  } catch(e){ console.warn('[FL] CBP border wait', e); return null; }
+  } catch(e){ setLiveSourceHealth('CBP', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] CBP border wait', e); return null; }
 }
 
 // ════════════════════════════════════════════════════════════════
