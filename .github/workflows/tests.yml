@@ -18,13 +18,14 @@ jobs:
           ref: chatgpt/pre-v24-integrity-gate
           fetch-depth: 0
 
-      - name: Apply staged pre-v24 integrity patch
+      - name: Apply staged pre-v24 integrity source patch
         if: ${{ hashFiles('.github/workflows/pre-v24-integrity-patch.yml') != '' }}
         shell: bash
         run: |
-          # The staged patch is guarded against current main. Restore only this
-          # workflow file in the working tree so its CI-hygiene replacements see
-          # that exact baseline; the running job definition is already loaded.
+          # The guarded transform targets the exact current-main workflow text.
+          # Let it transform that file in the working tree, then restore every
+          # workflow path before committing. GitHub Actions tokens cannot push
+          # workflow-file mutations without the separate workflows permission.
           git show origin/main:.github/workflows/tests.yml > .github/workflows/tests.yml
           python3 - <<'PY'
           from pathlib import Path
@@ -37,11 +38,13 @@ jobs:
           script = '\n'.join(line[10:] if line.startswith('          ') else line for line in extracted)
           exec(compile(script, str(p) + ':embedded-python', 'exec'), {'__name__': '__main__'})
           PY
-          rm -f .github/workflows/pre-v24-trigger.yml
+
+          # Keep this Actions-generated commit completely outside .github/workflows/.
+          git checkout HEAD -- .github/workflows/tests.yml .github/workflows/pre-v24-integrity-patch.yml .github/workflows/pre-v24-trigger.yml
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.js midwest-stack-authority.js .github/workflows/tests.yml tests/README.md tests/run-all.mjs tests/unit/pre-v24-integrity.spec.mjs docs/V24_ROADMAP.md CLAUDE.md index.html manifest.json service-worker.js sw-bridge.js voice-load.js scripts/verify-cloudflare-parity.mjs .github/workflows/pre-v24-integrity-patch.yml .github/workflows/pre-v24-trigger.yml
+          git add -- app.js midwest-stack-authority.js tests/README.md tests/run-all.mjs tests/unit/pre-v24-integrity.spec.mjs docs/V24_ROADMAP.md CLAUDE.md index.html manifest.json service-worker.js sw-bridge.js voice-load.js scripts/verify-cloudflare-parity.mjs
           git commit -m "fix: establish pre-v24 integrity gate"
           git push origin HEAD:chatgpt/pre-v24-integrity-gate
 
