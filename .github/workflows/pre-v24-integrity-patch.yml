@@ -1,0 +1,433 @@
+name: Pre-v24 Integrity Patch
+
+on:
+  push:
+    branches: [chatgpt/pre-v24-integrity-gate]
+    paths:
+      - '.github/workflows/pre-v24-integrity-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: chatgpt/pre-v24-integrity-gate
+          fetch-depth: 0
+
+      - name: Apply guarded integrity changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          def section(text, start, end, label):
+              a = text.find(start)
+              if a < 0:
+                  raise SystemExit(f'{label}: start marker not found')
+              b = text.find(end, a + len(start))
+              if b < 0:
+                  raise SystemExit(f'{label}: end marker not found')
+              return a, b, text[a:b]
+
+          def replace_section(text, start, end, transform, label):
+              a, b, s = section(text, start, end, label)
+              ns = transform(s)
+              if ns == s:
+                  raise SystemExit(f'{label}: transform made no change')
+              return text[:a] + ns + text[b:]
+
+          # -----------------------------------------------------------------
+          # app.js — align floors, add live-source health, broker integrity gate
+          # -----------------------------------------------------------------
+          app = read('app.js')
+          app = replace_once(
+              app,
+              "  preferredFloorRPM: 1.40,\n  normalFloorRPM: 1.35,",
+              "  // Pre-v24 integrity gate: one protective doctrine across decision surfaces.\n  preferredFloorRPM: 1.50,\n  normalFloorRPM: 1.40,",
+              'app floor alignment'
+          )
+
+          live_health = r'''
+// ════════════════════════════════════════════════════════════════
+// v23.9.1 PRE-v24: Live-source health contract
+// External feeds must never fail as an unexplained `null`. Each source records
+// the last attempt/result for Diagnostics while preserving the existing return
+// shapes so this correctness pass does not become a feature rewrite.
+// ════════════════════════════════════════════════════════════════
+const LIVE_SOURCE_STATUS = Object.freeze({
+  OK: 'OK',
+  STALE: 'STALE',
+  UNCONFIGURED: 'UNCONFIGURED',
+  AUTH_ERROR: 'AUTH_ERROR',
+  HTTP_ERROR: 'HTTP_ERROR',
+  TIMEOUT: 'TIMEOUT',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  PARSE_ERROR: 'PARSE_ERROR',
+  OFFLINE: 'OFFLINE',
+});
+const LIVE_SOURCE_HEALTH = new Map();
+try {
+  const prior = JSON.parse(sessionStorage.getItem('fl_live_source_health') || '{}');
+  for (const [k,v] of Object.entries(prior || {})) if (v && typeof v === 'object') LIVE_SOURCE_HEALTH.set(k, v);
+} catch(e) {}
+function _persistLiveSourceHealth(){
+  try { sessionStorage.setItem('fl_live_source_health', JSON.stringify(Object.fromEntries(LIVE_SOURCE_HEALTH))); } catch(e) {}
+}
+function setLiveSourceHealth(source, status, detail={}){
+  const now = Date.now();
+  const prev = LIVE_SOURCE_HEALTH.get(source) || {};
+  const next = {
+    ...prev,
+    source,
+    status,
+    lastAttempt: now,
+    lastSuccess: status === LIVE_SOURCE_STATUS.OK ? (detail.lastSuccess || now) : (prev.lastSuccess || null),
+    ...detail,
+  };
+  LIVE_SOURCE_HEALTH.set(source, next);
+  _persistLiveSourceHealth();
+  if (status !== LIVE_SOURCE_STATUS.OK && status !== LIVE_SOURCE_STATUS.UNCONFIGURED && status !== LIVE_SOURCE_STATUS.OFFLINE){
+    console.warn(`[FL] ${source} source health: ${status}`, detail);
+  }
+  return next;
+}
+function getAllLiveSourceHealth(){ return Object.fromEntries(LIVE_SOURCE_HEALTH); }
+function _liveSourceFailureStatus(err){
+  const n = String(err?.name || '').toLowerCase();
+  return (n.includes('timeout') || n === 'aborterror') ? LIVE_SOURCE_STATUS.TIMEOUT : LIVE_SOURCE_STATUS.NETWORK_ERROR;
+}
+if (typeof window !== 'undefined') window.flGetLiveSourceHealth = getAllLiveSourceHealth;
+
+'''
+          eia_marker = "// ════════════════════════════════════════════════════════════════\n// v23.8: EIA Midwest regular gasoline feed (requires free EIA key in settings)"
+          if 'const LIVE_SOURCE_STATUS = Object.freeze({' in app:
+              raise SystemExit('live-source health contract already present unexpectedly')
+          app = replace_once(app, eia_marker, live_health + eia_marker, 'insert live-source health contract')
+
+          def patch_eia(s):
+              s = replace_once(s, "  if (!navigator.onLine) return null;", "  if (!navigator.onLine) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OFFLINE); return null; }", 'EIA offline')
+              s = replace_once(s, "  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) return null; // Skip if fetched recently", "  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: lastFetch }); return null; } // Skip if fetched recently", 'EIA cached')
+              s = replace_once(s, "  if (!eiaKey) return null;", "  if (!eiaKey) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }", 'EIA key')
+              s = replace_once(s, "    if (!res.ok) return null;", "    if (!res.ok) { setLiveSourceHealth('EIA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }", 'EIA primary HTTP')
+              s = replace_once(s, "      if (!fallbackRes.ok) return null;", "      if (!fallbackRes.ok) { setLiveSourceHealth('EIA', (fallbackRes.status === 401 || fallbackRes.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: fallbackRes.status, fallback: true }); return null; }", 'EIA fallback HTTP')
+              s = replace_once(s, "      if (!record || !record.value) return null;", "      if (!record || !record.value) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'no usable Midwest gasoline record' }); return null; }", 'EIA no record')
+              s = replace_once(s, "    if (!(price > 0)) return null;", "    if (!(price > 0)) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'invalid price value' }); return null; }", 'EIA bad price')
+              s = replace_once(s, "    return { price, period };", "    setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { sourceTimestamp: period, value: price });\n    return { price, period };", 'EIA success')
+              s = replace_once(s, "  } catch(e){ console.warn('[FL] EIA fetch', e); return null; }", "  } catch(e){ setLiveSourceHealth('EIA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] EIA fetch', e); return null; }", 'EIA catch')
+              return s
+          app = replace_section(app, 'async function fetchEIAGasPrice(){', '// ════════════════════════════════════════════════════════════════\n// v21 T4B: NWS Weather Alerts for Route', patch_eia, 'EIA function')
+
+          def patch_nws(s):
+              s = replace_once(s, "  if (!navigator.onLine) return [];", "  if (!navigator.onLine) { setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE); return []; }", 'NWS offline')
+              s = replace_once(s, "    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ alerts.push(...cached.alerts); continue; }", "    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); alerts.push(...cached.alerts); continue; }", 'NWS cache')
+              s = replace_once(s, "      if (!res.ok){ continue; }", "      if (!res.ok){ setLiveSourceHealth('NWS', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, point: pt.label }); continue; }", 'NWS HTTP')
+              s = replace_once(s, "      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: Date.now() });\n      alerts.push(...ptAlerts);", "      const nwsSuccessTs = Date.now();\n      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: nwsSuccessTs });\n      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { point: pt.label, alertCount: ptAlerts.length, lastSuccess: nwsSuccessTs });\n      alerts.push(...ptAlerts);", 'NWS success')
+              s = replace_once(s, "    } catch(e){ /* graceful fallback */ }", "    } catch(e){ setLiveSourceHealth('NWS', _liveSourceFailureStatus(e), { point: pt.label, message: String(e?.message || e || '') }); }", 'NWS catch')
+              return s
+          app = replace_section(app, 'async function checkRouteWeather(originCoords, destCoords){', '// ════════════════════════════════════════════════════════════════\n// v21 T4C: FMCSA Carrier/Broker Lookup', patch_nws, 'NWS function')
+
+          def patch_fmcsa(s):
+              s = replace_once(s, "  if (!dotNumber || !navigator.onLine) return null;", "  if (!dotNumber) return null;\n  if (!navigator.onLine) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OFFLINE); return null; }", 'FMCSA offline')
+              s = replace_once(s, "  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) return cached.data;", "  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }", 'FMCSA cache')
+              s = replace_once(s, "    if (!apiKey) return null;", "    if (!apiKey) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }", 'FMCSA key')
+              s = replace_once(s, "    if (!res.ok) return null;", "    if (!res.ok) { setLiveSourceHealth('FMCSA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }", 'FMCSA HTTP')
+              s = replace_once(s, "    if (!c) return null;", "    if (!c) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'carrier payload missing' }); return null; }", 'FMCSA parse')
+              s = replace_once(s, "    _fmcsaCache.set(dot, { data, ts: Date.now() });\n    return data;", "    const fmcsaSuccessTs = Date.now();\n    _fmcsaCache.set(dot, { data, ts: fmcsaSuccessTs });\n    setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { dot, lastSuccess: fmcsaSuccessTs });\n    return data;", 'FMCSA success')
+              s = replace_once(s, "  } catch(e){ console.warn('[FL] FMCSA lookup', e); return null; }", "  } catch(e){ setLiveSourceHealth('FMCSA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] FMCSA lookup', e); return null; }", 'FMCSA catch')
+              return s
+          app = replace_section(app, 'async function lookupFMCSA(dotNumber){', '// ════════════════════════════════════════════════════════════════\n// v21 T4D: Border Wait Time (CBP API)', patch_fmcsa, 'FMCSA function')
+
+          def patch_cbp(s):
+              s = replace_once(s, "  if (!navigator.onLine) return null;", "  if (!navigator.onLine) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OFFLINE); return null; }", 'CBP offline')
+              s = replace_once(s, "  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) return cached.data;", "  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }", 'CBP cache')
+              s = replace_once(s, "    if (!res.ok) return null;", "    if (!res.ok) { setLiveSourceHealth('CBP', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, port: portCode }); return null; }", 'CBP HTTP')
+              s = replace_once(s, "    _cbpCache.set(String(portCode), { data, ts: Date.now() });\n    return data;", "    const cbpSuccessTs = Date.now();\n    _cbpCache.set(String(portCode), { data, ts: cbpSuccessTs });\n    setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { port: portCode, lastSuccess: cbpSuccessTs });\n    return data;", 'CBP success')
+              s = replace_once(s, "  } catch(e){ console.warn('[FL] CBP border wait', e); return null; }", "  } catch(e){ setLiveSourceHealth('CBP', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] CBP border wait', e); return null; }", 'CBP catch')
+              return s
+          app = replace_section(app, 'async function fetchBorderWaitTime(gatewayId){', '// ════════════════════════════════════════════════════════════════', patch_cbp, 'CBP function')
+
+          # Diagnostics visibility for live source health.
+          app = replace_once(
+              app,
+              "    ${row('AI Endpoint',       'dxAi',      '...')}",
+              "    ${row('Live Feed Health',  'dxFeeds',   'No calls this session')}\n    ${row('AI Endpoint',       'dxAi',      '...')}",
+              'diagnostics live feed row'
+          )
+          live_diag = r'''    // Pre-v24 integrity gate: external-feed failures are no longer silent.
+    const feedHealth = Object.values(getAllLiveSourceHealth());
+    if (!feedHealth.length){
+      set('dxFeeds', 'No calls this session', null);
+    } else {
+      const hardFailures = feedHealth.filter(x => ![LIVE_SOURCE_STATUS.OK, LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const soft = feedHealth.filter(x => [LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const summary = feedHealth.map(x => `${x.source}:${x.status}`).join(' · ');
+      set('dxFeeds', summary, hardFailures.length ? false : (soft.length ? null : true));
+    }
+
+'''
+          app = replace_once(app, "    // AI/Worker endpoint ping — X-09:", live_diag + "    // AI/Worker endpoint ping — X-09:", 'diagnostics feed health summary')
+
+          broker_gate = r'''
+// v23.9.1 PRE-v24: conservative bidHistory broker-integrity gate.
+// Only explicit broker-labelled evidence may repair legacy rows. Never infer a
+// broker from trip.customer: that field can represent carrier/company identity
+// and would silently recreate the attribution bug this gate is meant to stop.
+let _brokerIntegrityGatePromise = null;
+async function auditBrokerHistoryIntegrity(){
+  if (_brokerIntegrityGatePromise) return _brokerIntegrityGatePromise;
+  _brokerIntegrityGatePromise = (async () => {
+    const [bids, trips] = await Promise.all([dumpStore('bidHistory'), dumpStore('trips')]);
+    const tripByOrder = new Map();
+    for (const trip of trips || []){
+      const k = String(trip?.orderNo || '').trim();
+      if (k) tripByOrder.set(k, trip);
+    }
+    let normalized = 0, backfilled = 0, unresolved = 0;
+    const pending = [];
+    for (const rec of bids || []){
+      if (!rec || typeof rec !== 'object') continue;
+      const next = { ...rec };
+      const rawBroker = clampStr(rec.broker || '', 80);
+      const normalizedBroker = normBroker(rawBroker);
+      const loadKey = clampStr(rec.loadId || rec.orderNo || '', 60);
+      const matchedTrip = loadKey ? tripByOrder.get(loadKey) : null;
+      const explicitDisplay = clampStr(rec.brokerDisplay || rec.brokerName || '', 80);
+      const tripBroker = clampStr(matchedTrip?.broker || '', 80);
+      const provenDisplay = explicitDisplay || tripBroker;
+      let changed = false;
+
+      if (normalizedBroker && rawBroker !== normalizedBroker){
+        next.broker = normalizedBroker;
+        if (!next.brokerDisplay) next.brokerDisplay = rawBroker;
+        normalized++;
+        changed = true;
+      }
+
+      if ((!normalizedBroker || rec.legacyUnkeyed === true) && provenDisplay){
+        const provenKey = normBroker(provenDisplay);
+        if (provenKey){
+          next.broker = provenKey;
+          next.brokerDisplay = provenDisplay;
+          const origin = clampStr(rec.origin || matchedTrip?.origin || '', 80);
+          const destination = clampStr(rec.destination || matchedTrip?.destination || '', 80);
+          if (!next.lane && origin && destination) next.lane = normalizeLane(origin, destination);
+          next.legacyUnkeyed = false;
+          next.integrityBackfilledAt = Date.now();
+          next.integrityBackfillSource = explicitDisplay ? 'explicit-broker-field' : 'matched-trip-broker-field';
+          backfilled++;
+          changed = true;
+        }
+      }
+
+      if (!normBroker(next.broker || '') || next.legacyUnkeyed === true){
+        unresolved++;
+        if (next.legacyUnkeyed !== true){ next.legacyUnkeyed = true; changed = true; }
+      }
+      if (changed) pending.push(next);
+    }
+
+    if (pending.length){
+      const { t, stores } = tx('bidHistory', 'readwrite');
+      for (const rec of pending) stores.bidHistory.put(rec);
+      await new Promise((resolve, reject) => {
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error || new Error('Broker integrity transaction failed'));
+        t.onabort = () => reject(t.error || new Error('Broker integrity transaction aborted'));
+      });
+    }
+    const summary = { scanned: (bids || []).length, normalized, backfilled, unresolved, updated: pending.length, ts: Date.now() };
+    try { sessionStorage.setItem('fl_broker_integrity_summary', JSON.stringify(summary)); } catch(e) {}
+    if (unresolved) console.warn(`[FL] Broker integrity: ${unresolved} legacy row(s) remain unresolved; excluded from broker intelligence.`);
+    return summary;
+  })().catch(err => {
+    _brokerIntegrityGatePromise = null;
+    console.warn('[FL] Broker integrity gate failed', err);
+    return { error: String(err?.message || err || 'unknown') };
+  });
+  return _brokerIntegrityGatePromise;
+}
+
+'''
+          broker_marker = '// v24.0.0: Broker intelligence — unifies the three bidHistory record flavors'
+          if 'async function auditBrokerHistoryIntegrity()' in app:
+              raise SystemExit('broker integrity gate already present unexpectedly')
+          app = replace_once(app, broker_marker, broker_gate + broker_marker, 'insert broker integrity gate')
+          app = replace_once(
+              app,
+              "async function mwInit(){\n  if (mwBound) return;\n  mwBound = true;",
+              "async function mwInit(){\n  if (mwBound) return;\n  mwBound = true;\n  auditBrokerHistoryIntegrity().catch(e => console.warn('[FL] broker integrity boot check', e));",
+              'invoke broker integrity gate'
+          )
+          write('app.js', app)
+
+          # -----------------------------------------------------------------
+          # Midwest authority — make July static bands self-expire.
+          # -----------------------------------------------------------------
+          auth = read('midwest-stack-authority.js')
+          freshness_helper = r'''
+
+  // Pre-v24 integrity gate: static market overrides are evidence with an age,
+  // not permanent truth. CURRENT <=14d, AGING <=30d, STALE >30d.
+  const RATE_OVERRIDE_FRESHNESS = Object.freeze({ currentDays: 14, agingDays: 30 });
+  function getRateOverrideFreshness(asOf = new Date()){
+    const effectiveMs = Date.parse(RATE_OVERRIDE_2026_07.effectiveDate + 'T00:00:00Z');
+    const asOfMs = asOf instanceof Date ? asOf.getTime() : Date.parse(String(asOf));
+    const ageDays = Number.isFinite(effectiveMs) && Number.isFinite(asOfMs) ? Math.max(0, Math.floor((asOfMs - effectiveMs) / 86400000)) : Infinity;
+    const status = ageDays <= RATE_OVERRIDE_FRESHNESS.currentDays ? 'CURRENT' : (ageDays <= RATE_OVERRIDE_FRESHNESS.agingDays ? 'AGING' : 'STALE');
+    return { status, ageDays, effectiveDate: RATE_OVERRIDE_2026_07.effectiveDate };
+  }
+'''
+          auth = replace_once(auth, "  function cleanText(value){", freshness_helper + "\n  function cleanText(value){", 'authority freshness helper')
+          old_band_block = """    const realisticBand = band.realisticWin;\n    const compressedWinRpm = ((realisticBand[0] + realisticBand[1]) / 2) * regionOverlay.multiplier;\n    const baseFloor = mode.floor;\n    const baseTarget = mode.target;\n    let floorRpm = Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);\n    let winRpm = Math.max(mode.preferred, compressedWinRpm);\n    let askRpm = Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier) + premium;"""
+          new_band_block = """    const rateFreshness = getRateOverrideFreshness();\n    const realisticBand = band.realisticWin;\n    const overrideStale = rateFreshness.status === 'STALE';\n    const staleProtectiveGuard = overrideStale && mode.id !== 'DEAD_ZONE';\n    const compressedWinRpm = ((realisticBand[0] + realisticBand[1]) / 2) * regionOverlay.multiplier;\n    const baseFloor = mode.floor;\n    const baseTarget = mode.target;\n    const protective = CONFIG.modes.PROTECT_FLOOR;\n    let floorRpm = staleProtectiveGuard\n      ? Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, protective.floor)\n      : Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);\n    let winRpm = staleProtectiveGuard\n      ? Math.max(mode.preferred, protective.preferred)\n      : Math.max(mode.preferred, compressedWinRpm);\n    let askRpm = (staleProtectiveGuard\n      ? Math.max(baseTarget, protective.target)\n      : Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier)) + premium;\n    if (rateFreshness.status === 'STALE') flags.push(`Rate override STALE (${rateFreshness.ageDays}d old) — static July bands cannot relax protective pricing; refresh market evidence.`);\n    else if (rateFreshness.status === 'AGING') flags.push(`Rate override AGING (${rateFreshness.ageDays}d old) — use as secondary evidence and verify current market.`);"""
+          auth = replace_once(auth, old_band_block, new_band_block, 'authority stale-band guard')
+          write('midwest-stack-authority.js', auth)
+
+          # -----------------------------------------------------------------
+          # Reproducible CI: pin Playwright and move Actions off Node20 runtimes.
+          # -----------------------------------------------------------------
+          wf = read('.github/workflows/tests.yml')
+          wf = replace_once(wf, 'actions/checkout@v4', 'actions/checkout@v6', 'checkout action runtime')
+          wf = replace_once(wf, 'actions/setup-node@v4', 'actions/setup-node@v6', 'setup-node action runtime')
+          wf = replace_once(wf, 'npm install -g playwright@latest', 'npm install -g playwright@1.62.1', 'pin Playwright')
+          write('.github/workflows/tests.yml', wf)
+
+          test_readme = read('tests/README.md')
+          if 'playwright@latest' in test_readme:
+              test_readme = test_readme.replace('playwright@latest', 'playwright@1.62.1')
+          write('tests/README.md', test_readme)
+
+          # -----------------------------------------------------------------
+          # New integrity tests + test runner registration.
+          # -----------------------------------------------------------------
+          integrity_spec = r'''// v23.9.1 pre-v24 integrity gate — static source contracts.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { createSuite, ok } from '../lib/harness.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '../..');
+const source = p => readFileSync(path.join(ROOT, p), 'utf8');
+const { test, run } = createSuite('unit/pre-v24-integrity.spec.mjs');
+
+test('[PRE24-01] normal/preferred RPM floors align with the protective doctrine', () => {
+  const app = source('app.js');
+  ok(/preferredFloorRPM:\s*1\.50/.test(app), 'preferred floor must be $1.50');
+  ok(/normalFloorRPM:\s*1\.40/.test(app), 'normal floor must be $1.40');
+  ok(!/normalFloorRPM:\s*1\.35/.test(app), 'the stale $1.35 normal-floor authority must be gone');
+});
+
+test('[PRE24-02] July static rate bands have an enforceable freshness guard', () => {
+  const auth = source('midwest-stack-authority.js');
+  ok(auth.includes('RATE_OVERRIDE_FRESHNESS'), 'freshness thresholds missing');
+  ok(auth.includes("rateFreshness.status === 'STALE'"), 'STALE path missing');
+  ok(auth.includes('staleProtectiveGuard'), 'stale bands must fall back to protective pricing');
+  ok(auth.includes('mode.id !== \'DEAD_ZONE\''), 'explicit DZ gate must remain a separate survival exception');
+});
+
+test('[PRE24-03] live feeds publish health instead of silently collapsing to null', () => {
+  const app = source('app.js');
+  for (const name of ['EIA','NWS','FMCSA','CBP']) ok(app.includes(`setLiveSourceHealth('${name}'`), `${name} health instrumentation missing`);
+  for (const status of ['UNCONFIGURED','AUTH_ERROR','HTTP_ERROR','TIMEOUT','PARSE_ERROR','OFFLINE']) ok(app.includes(status), `live-source status ${status} missing`);
+  ok(app.includes("row('Live Feed Health'"), 'Diagnostics must surface live-feed health');
+});
+
+test('[PRE24-04] broker backfill only uses explicit broker-labelled evidence', () => {
+  const app = source('app.js');
+  const m = app.match(/async function auditBrokerHistoryIntegrity\(\)\{[\s\S]*?\n\}\n\n\/\/ v24\.0\.0: Broker intelligence/);
+  ok(m, 'broker integrity gate not found');
+  ok(m[0].includes('brokerDisplay'), 'explicit brokerDisplay evidence should be supported');
+  ok(m[0].includes('matchedTrip?.broker'), 'explicit trip.broker evidence should be supported');
+  ok(!m[0].includes('matchedTrip?.customer'), 'trip.customer is ambiguous and must never be used to infer broker identity');
+  ok(m[0].includes('legacyUnkeyed'), 'unresolved legacy rows must remain explicitly quarantined');
+});
+
+test('[PRE24-05] CI toolchain is reproducible', () => {
+  const wf = source('.github/workflows/tests.yml');
+  ok(wf.includes('playwright@1.62.1'), 'Playwright must be pinned to the validated version');
+  ok(!wf.includes('playwright@latest'), 'CI must never float on Playwright latest');
+  ok(wf.includes('actions/checkout@v6'), 'checkout should use a Node24-capable action runtime');
+  ok(wf.includes('actions/setup-node@v6'), 'setup-node should use a Node24-capable action runtime');
+});
+
+export async function runSpec(){ return await run(); }
+if (import.meta.url === `file://${process.argv[1]}`){
+  const r = await runSpec();
+  process.exit(r.fail > 0 ? 1 : 0);
+}
+'''
+          Path('tests/unit/pre-v24-integrity.spec.mjs').write_text(integrity_spec)
+
+          runner = read('tests/run-all.mjs')
+          runner = replace_once(runner, "import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';", "import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';\nimport { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';", 'register integrity import')
+          runner = replace_once(runner, "  vanFitPrecheck,\n];", "  vanFitPrecheck,\n  preV24Integrity,\n];", 'register integrity spec')
+          write('tests/run-all.mjs', runner)
+
+          # -----------------------------------------------------------------
+          # Authoritative roadmap/constitutional rules for v24.
+          # -----------------------------------------------------------------
+          roadmap = '''# FreightLogic v24 Roadmap — Authority & Integrity Rules\n\nStatus: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.\n\n## Constitutional rules\n\n1. **Single-file application architecture remains.** Core runtime logic stays in `app.js`; no build step, bundler, transpiler, or module split is introduced. Internal organization may improve without multiplying shipped runtime files.\n2. **No new parallel intelligence systems.** New features either feed the canonical decision object or consume it.\n3. **Client decision is authoritative.** The future canonical deterministic decision function in `app.js` owns verdict/bid/economics. Worker `/evaluate` may explain, challenge, summarize, or identify risks; it must not independently recalculate the authoritative verdict.\n4. **`midwest-stack-authority.js` moves toward adapter status.** Do not add new independent decision math there while v24 is consolidating authority.\n5. **Confidence starts categorical.** HIGH/MEDIUM/LOW with provenance, sample size, and recency. Percent probabilities wait until lifecycle predicted-vs-actual data supports calibration.\n6. **Every live source has health/provenance.** External API failures may not silently collapse into a value indistinguishable from no data.\n\n## Pre-v24 integrity gate (v23.9.1)\n\n- Align Normal Floor to $1.40 True RPM and Preferred Floor to $1.50.\n- Static rate overrides carry freshness: CURRENT <=14 days, AGING 15–30 days, STALE >30 days. STALE static bands cannot relax normal protective pricing. Explicit Dead Zone Exit remains governed by its separate hard gate.\n- EIA, NWS, FMCSA, and CBP calls record source health (`OK`, `UNCONFIGURED`, `AUTH_ERROR`, `HTTP_ERROR`, `TIMEOUT`, `NETWORK_ERROR`, `PARSE_ERROR`, `OFFLINE`) and surface it in Diagnostics.\n- Broker history normalization/backfill is conservative: explicit broker-labelled evidence only. Never infer broker from ambiguous `trip.customer`. Unresolved rows remain `legacyUnkeyed` and excluded from broker intelligence.\n- CI uses a pinned Playwright version and non-deprecated GitHub Action runtimes.\n\n## Delivery sequence\n\n1. **v24.0 Unified Decision Engine** — one deterministic result object inside `app.js`.\n2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.\n3. **v24.2 Load Lifecycle** — one accumulating operational identity with additive migration and dual-write transition.\n4. **v24.3 Personal Intelligence 2.0** — recency/sample-size weighting and self-calibrating market bands.\n5. **v24.4 Next-Move Engine** — evolve F24 into time-aware commands (`STAY`, `REPOSITION NOW`, `WAIT UNTIL … THEN MOVE`, `KEEP BOARD OPEN WHILE MOVING`, `GO HOME`).\n6. **v24.5 Driver Mode + visual overhaul** — one combined pass after numbers/data contracts stabilize.\n7. **v24.6 Screenshot-first workflow** — promote existing F23/F27 intake rather than create another path.\n8. **v25 Live Market Intelligence** — add more feeds only after source-health and internal data contracts are trustworthy.\n\n## v24.2 lifecycle state model\n\nDo not force real operations into one lossy linear enum. Store related dimensions and derive a display stage.\n\n- Opportunity: `SEEN`, `QUOTED`, `BID`, `WON`, `LOST`, `EXPIRED`, `CANCELLED`\n- Execution: `NOT_STARTED`, `EN_ROUTE_PICKUP`, `PICKED_UP`, `DELIVERED`, `FELL_THROUGH`\n- Settlement: `NOT_INVOICED`, `INVOICED`, `OVERDUE`, `PAID`, `BAD_DEBT`\n\nRules locked before implementation:\n\n- **EXPIRED is not LOST.** Expired means no known award decision and is excluded from the ordinary win-rate denominator.\n- **CANCELLED is not LOST.** Broker/load withdrawal is its own terminal opportunity state.\n- **DZ-EXIT outcomes remain operational truth but are a separate calibration cohort.** They may count in raw broker interaction statistics, but they are excluded from normal-market winning-range/floor calibration.\n- **Lifecycle requires a DB version bump.** Migration is additive, dual-write is required during transition, and backup/delta/restore/import/export must accept both old and new record shapes until migration is retired.\n\n## Release gate\n\nNo v24 feature is release-ready unless full CI is green, version/SW parity is verified, backup/restore parity passes, and changed critical mobile journeys have regression coverage. GitHub branch protection should require the `playwright-suite` check when repository settings permit it.\n'''
+          Path('docs/V24_ROADMAP.md').write_text(roadmap)
+
+          claude = read('CLAUDE.md')
+          if '## v23.9.1 — Pre-v24 Integrity Gate' not in claude:
+              claude += '''\n\n## v23.9.1 — Pre-v24 Integrity Gate\n\n- Normal/preferred True RPM floors aligned to $1.40/$1.50.\n- Static July rate bands now expire through CURRENT/AGING/STALE freshness states; stale bands cannot relax protective pricing outside the explicit Dead Zone gate.\n- EIA/NWS/FMCSA/CBP use a shared live-source health contract surfaced in Diagnostics.\n- Conservative broker-history integrity pass normalizes proven broker keys and keeps unresolved legacy rows quarantined; it never infers broker identity from ambiguous `trip.customer`.\n- CI pins Playwright 1.62.1 and uses Node24-capable GitHub Action runtimes.\n- `docs/V24_ROADMAP.md` is the authoritative v24 sequencing/authority contract.\n'''
+          write('CLAUDE.md', claude)
+
+          # -----------------------------------------------------------------
+          # Patch-release version bump. Runtime changes must invalidate SW URLs.
+          # Only the documented shipped-version locations are touched.
+          # -----------------------------------------------------------------
+          version_files = [
+              'app.js', 'index.html', 'manifest.json', 'service-worker.js',
+              'midwest-stack-authority.js', 'sw-bridge.js', 'voice-load.js',
+              'CLAUDE.md', 'scripts/verify-cloudflare-parity.mjs'
+          ]
+          required = {'app.js','index.html','manifest.json','service-worker.js','midwest-stack-authority.js','sw-bridge.js','voice-load.js','scripts/verify-cloudflare-parity.mjs'}
+          for p in version_files:
+              text = read(p)
+              n = text.count('23.9.0')
+              if p in required and n == 0:
+                  raise SystemExit(f'version bump: expected at least one 23.9.0 in {p}')
+              if n:
+                  write(p, text.replace('23.9.0', '23.9.1'))
+
+          # Self-remove the temporary patch workflow so the resulting branch is clean.
+          Path('.github/workflows/pre-v24-integrity-patch.yml').unlink()
+          PY
+
+      - name: Sanity-check guarded patch
+        shell: bash
+        run: |
+          node tests/unit/pre-v24-integrity.spec.mjs
+          grep -n "normalFloorRPM" app.js | head
+          grep -n "RATE_OVERRIDE_FRESHNESS" midwest-stack-authority.js
+          grep -n "playwright@1.62.1" .github/workflows/tests.yml
+          git diff --check
+
+      - name: Commit integrity gate
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- app.js midwest-stack-authority.js .github/workflows/tests.yml tests/README.md tests/run-all.mjs tests/unit/pre-v24-integrity.spec.mjs docs/V24_ROADMAP.md CLAUDE.md index.html manifest.json service-worker.js sw-bridge.js voice-load.js scripts/verify-cloudflare-parity.mjs .github/workflows/pre-v24-integrity-patch.yml
+          git commit -m "fix: establish pre-v24 integrity gate"
+          git push origin HEAD:chatgpt/pre-v24-integrity-gate
