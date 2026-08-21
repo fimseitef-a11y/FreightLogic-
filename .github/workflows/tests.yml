@@ -1,57 +1,29 @@
 name: Tests
 
+# X-06 (v23.9 Phase 2): run the full Playwright suite (tests/run-all.mjs) on
+# every PR targeting main and on every push to main. The suite exits non-zero
+# on any failure. Configure playwright-suite as a required status check in
+# branch protection/rulesets when repository settings permit it.
+#
+# Pre-v24 integrity gate: keep the browser harness reproducible. Do not use
+# playwright@latest here; a floating browser/toolchain can turn CI green/red
+# independently of FreightLogic source changes.
+
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
 
-permissions:
-  contents: write
-
 jobs:
   playwright-suite:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: chatgpt/pre-v24-integrity-gate
-          fetch-depth: 0
-
-      - name: Apply staged pre-v24 integrity source patch
-        if: ${{ hashFiles('.github/workflows/pre-v24-integrity-patch.yml') != '' }}
-        shell: bash
-        run: |
-          # The guarded transform targets the exact current-main workflow text.
-          # Let it transform that file in the working tree, then restore every
-          # workflow path before committing. GitHub Actions tokens cannot push
-          # workflow-file mutations without the separate workflows permission.
-          git show origin/main:.github/workflows/tests.yml > .github/workflows/tests.yml
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('.github/workflows/pre-v24-integrity-patch.yml')
-          raw = p.read_text()
-          marker = "          python3 - <<'PY'\n"
-          start = raw.index(marker) + len(marker)
-          end = raw.index("\n          PY", start)
-          extracted = raw[start:end].splitlines()
-          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in extracted)
-          exec(compile(script, str(p) + ':embedded-python', 'exec'), {'__name__': '__main__'})
-          PY
-
-          # Keep this Actions-generated commit completely outside .github/workflows/.
-          git checkout HEAD -- .github/workflows/tests.yml .github/workflows/pre-v24-integrity-patch.yml .github/workflows/pre-v24-trigger.yml
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.js midwest-stack-authority.js tests/README.md tests/run-all.mjs tests/unit/pre-v24-integrity.spec.mjs docs/V24_ROADMAP.md CLAUDE.md index.html manifest.json service-worker.js sw-bridge.js voice-load.js scripts/verify-cloudflare-parity.mjs
-          git commit -m "fix: establish pre-v24 integrity gate"
-          git push origin HEAD:chatgpt/pre-v24-integrity-gate
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-          package-manager-cache: false
 
       - name: Install Playwright + Chromium
         run: |
@@ -59,6 +31,9 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Symlink playwright into node_modules
+        # FreightLogic intentionally has no package.json/build system. Node's
+        # ESM resolver will not use NODE_PATH, so mirror the documented local
+        # test setup by symlinking the pinned global Playwright package.
         run: |
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
