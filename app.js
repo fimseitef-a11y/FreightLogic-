@@ -6280,6 +6280,7 @@ function usaScoreLoad(opts){
   else                  { usaGrade = 'F'; usaVerdict = 'REJECT';    usaColor = 'var(--bad)'; }
 
   return {
+    authorityRole: 'EVIDENCE_ONLY',
     score, usaGrade, usaVerdict, usaColor,
     origMarket, destMarket, origZone, destZone,
     corridor, mode: mode || 'HARVEST', profileId: profileId || 'MIDWEST_STACK',
@@ -6721,6 +6722,155 @@ function isDeadZoneEligible({ distanceFromHome, distanceSaved, trueRPM, noReload
 }
 if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligible;
 
+
+// ================================================================================
+// v24.0 — Unified Decision Engine contract
+// The client is the single verdict/grade authority. Existing USA/Midwest/AI
+// systems are evidence/adapters and must not publish a competing authoritative
+// decision. This first v24 slice centralizes the result contract + grade
+// authority while the remaining hard-gate math is migrated behind it in-place.
+// No timestamps or ambient reads occur here: identical inputs yield identical
+// output, which makes this object suitable for regression tests and later
+// predicted-vs-actual calibration.
+// ================================================================================
+const UNIFIED_DECISION_SCHEMA_VERSION = '24.0.0';
+
+function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = {}){
+  const rpm = Number.isFinite(Number(trueRPM)) ? Number(trueRPM) : 0;
+  let raw;
+  if (rpm >= 1.75) raw = { grade:'A', gradeLabel:'PREMIUM WIN', gradeColor:'#34d399', gradeEmoji:'🟢' };
+  else if (rpm >= 1.60) raw = { grade:'B', gradeLabel:'STRONG ACCEPT', gradeColor:'var(--good)', gradeEmoji:'🟢' };
+  else if (rpm >= 1.50) raw = { grade:'C', gradeLabel:'CONDITIONAL', gradeColor:'var(--warn)', gradeEmoji:'🟡' };
+  else if (rpm >= 1.40) raw = { grade:'D', gradeLabel:'WEAK — NEGOTIATE', gradeColor:'#fb923c', gradeEmoji:'🟠' };
+  else if (rpm >= 1.25) raw = { grade:'E', gradeLabel:'STRATEGIC ONLY', gradeColor:'#f87171', gradeEmoji:'🔴' };
+  else raw = { grade:'F', gradeLabel:'REJECT', gradeColor:'var(--bad)', gradeEmoji:'🔴' };
+
+  const display = isDZActive
+    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠' }
+    : { ...raw };
+  return { raw, display };
+}
+
+function buildUnifiedDecisionContract(input){
+  const economics = Object.freeze({
+    trueRPM: input.trueRPM, loadedRPM: input.loadedRPM, totalMi: input.totalMi,
+    loadedMi: input.loadedMi, deadMi: input.deadMi, deadheadPct: input.deadheadPct,
+    revenue: input.revenue, effectiveRevenue: input.effectiveRevenue,
+    fuel: input.fuel, netAfterFuel: input.netAfterFuel,
+    operatingCost: input.operatingCost, totalCost: input.totalCost,
+    operationalProfit: input.operationalProfit, trueProfit: input.trueProfit,
+    profitMarginPct: input.profitMarginPct, breakEvenRPM: input.breakEvenRPM,
+    profitPerMile: input.profitPerMile, profitPerHour: input.profitPerHour,
+    fuelPerMile: input.fuelPerMile, estHours: input.estHours, opCPM: input.opCPM,
+  });
+  const deadZone = Object.freeze({
+    active: !!input.isDZActive, eligible: !!input.isDZEligible,
+    subTier: input.dzSubTier || null, check: input.dzCheck || null,
+    floorRPM: input.dzFloor, noReloadConfirmed: !!input.noReloadConfirmed,
+  });
+  const grades = deriveUnifiedGrade(economics.trueRPM, { isDZActive: deadZone.active, dzSubTier: deadZone.subTier });
+  const authority = Object.freeze({
+    source: 'CLIENT_UNIFIED_DECISION_ENGINE',
+    verdict: input.verdict,
+    reason: input.verdictReason || '',
+    grade: grades.display.grade,
+    gradeLabel: grades.display.gradeLabel,
+    gradeColor: grades.display.gradeColor,
+    gradeEmoji: grades.display.gradeEmoji,
+    rawGrade: grades.raw.grade,
+    rawGradeLabel: grades.raw.gradeLabel,
+    rawGradeColor: grades.raw.gradeColor,
+    rawGradeEmoji: grades.raw.gradeEmoji,
+    tier: input.tier,
+    floorRPM: input.floorRPM,
+  });
+  const usaEvidence = input.usaResult ? Object.freeze({ ...input.usaResult, authorityRole: 'EVIDENCE_ONLY' }) : null;
+  const decision = {
+    schemaVersion: UNIFIED_DECISION_SCHEMA_VERSION,
+    authority,
+    economics,
+    route: Object.freeze({ origin: input.origin || '', destination: input.dest || '', geo: input.geo || null }),
+    market: Object.freeze({ usaEvidence, crossBorder: input.crossBorder || null, urgency: input.urgency || null }),
+    personalIntel: Object.freeze({
+      score: Number(input.usaResult?.personalScore || 0),
+      bullets: Array.isArray(input.usaResult?.personalBullets) ? input.usaResult.personalBullets.slice() : [],
+    }),
+    risk: Object.freeze({
+      steps: Array.isArray(input.steps) ? input.steps.slice() : [],
+      warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
+    }),
+    bid: Object.freeze({ range: input.bidRange || null }),
+    operations: Object.freeze({
+      velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
+      velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
+      postDeliveryDetail: input.postDeliveryDetail, turnoverType: input.turnoverType,
+      repoSuggestion: input.repoSuggestion || '',
+    }),
+    context: Object.freeze({
+      weeklyGross: input.weeklyGross, fatigue: input.fatigue,
+      effectiveStrategic: !!input.effectiveStrategic, effectiveReason: input.effectiveReason || '',
+      verdictColors: input.verdictColors, verdictLabels: input.verdictLabels,
+    }),
+    deadZone,
+  };
+  return Object.freeze(decision);
+}
+
+function unifiedDecisionToLegacy(decision){
+  const a = decision.authority, e = decision.economics, r = decision.route;
+  const m = decision.market, o = decision.operations, c = decision.context, dz = decision.deadZone;
+  return {
+    trueRPM:e.trueRPM, loadedRPM:e.loadedRPM, totalMi:e.totalMi, loadedMi:e.loadedMi, deadMi:e.deadMi,
+    deadheadPct:e.deadheadPct, revenue:e.revenue, effectiveRevenue:e.effectiveRevenue,
+    tier:a.tier,
+    grade:a.rawGrade, gradeLabel:a.rawGradeLabel, gradeColor:a.rawGradeColor, gradeEmoji:a.rawGradeEmoji,
+    verdict:a.verdict, verdictReason:a.reason, verdictColors:c.verdictColors, verdictLabels:c.verdictLabels,
+    steps:decision.risk.steps,
+    fuel:e.fuel, netAfterFuel:e.netAfterFuel, operatingCost:e.operatingCost, totalCost:e.totalCost,
+    operationalProfit:e.operationalProfit, trueProfit:e.trueProfit, profitMarginPct:e.profitMarginPct,
+    breakEvenRPM:e.breakEvenRPM, profitPerMile:e.profitPerMile, profitPerHour:e.profitPerHour,
+    fuelPerMile:e.fuelPerMile, estHours:e.estHours, opCPM:e.opCPM,
+    weeklyGross:c.weeklyGross, repoSuggestion:o.repoSuggestion, geo:r.geo, fatigue:c.fatigue,
+    origin:r.origin, dest:r.destination, floorRPM:a.floorRPM,
+    effectiveStrategic:c.effectiveStrategic, effectiveReason:c.effectiveReason,
+    usaResult:m.usaEvidence, urgency:m.urgency, bidRange:decision.bid.range, crossBorder:m.crossBorder,
+    velocityMode:o.velocityMode, velocityDetail:o.velocityDetail, velocityFloor:o.velocityFloor,
+    postDeliveryCmd:o.postDeliveryCmd, postDeliveryDetail:o.postDeliveryDetail,
+    turnoverType:o.turnoverType, warnings:decision.risk.warnings,
+    isDZActive:dz.active, isDZEligible:dz.eligible, dzSubTier:dz.subTier, dzCheck:dz.check, dzFloor:dz.floorRPM,
+    dzDisplayGrade:a.grade, dzDisplayGradeLabel:a.gradeLabel, dzDisplayGradeColor:a.gradeColor, dzDisplayGradeEmoji:a.gradeEmoji,
+    noReloadConfirmed:dz.noReloadConfirmed,
+    _canonicalDecision: decision,
+  };
+}
+
+function unifiedDecisionForAI(decision){
+  if (!decision) return null;
+  return {
+    schemaVersion: decision.schemaVersion,
+    authority: {
+      source: decision.authority.source,
+      verdict: decision.authority.verdict,
+      reason: decision.authority.reason,
+      grade: decision.authority.grade,
+      gradeLabel: decision.authority.gradeLabel,
+      floorRPM: decision.authority.floorRPM,
+    },
+    economics: {
+      trueRPM: decision.economics.trueRPM,
+      loadedRPM: decision.economics.loadedRPM,
+      totalMi: decision.economics.totalMi,
+      deadMi: decision.economics.deadMi,
+      profitMarginPct: decision.economics.profitMarginPct,
+      breakEvenRPM: decision.economics.breakEvenRPM,
+    },
+    route: decision.route,
+    personalIntel: { score: decision.personalIntel.score },
+    risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
+    deadZone: { active: decision.deadZone.active, subTier: decision.deadZone.subTier },
+  };
+}
+
 // ================================================================================
 // 7D — Dimensional/payload pre-check (v23.9.1)
 // Configurable van profile; any load exceeding it fails BEFORE economics are
@@ -7027,28 +7177,16 @@ async function mwEvaluateLoad(){
   }
 
   // ════════════════════════════════════════════════════
-  // DECISION GRADE (A–F based on True RPM)
-  // A–E are displayed as the visible scale; <E is Reject
+  // DECISION GRADE — v24 canonical grade authority
   // ════════════════════════════════════════════════════
-  let grade, gradeLabel, gradeColor, gradeEmoji;
-  // v20: Blueprint grade labels — decisive, action-oriented
-  if (trueRPM >= 1.75){ grade = 'A'; gradeLabel = 'PREMIUM WIN'; gradeColor = '#34d399'; gradeEmoji = '🟢'; }
-  else if (trueRPM >= 1.60){ grade = 'B'; gradeLabel = 'STRONG ACCEPT'; gradeColor = 'var(--good)'; gradeEmoji = '🟢'; }
-  else if (trueRPM >= 1.50){ grade = 'C'; gradeLabel = 'CONDITIONAL'; gradeColor = 'var(--warn)'; gradeEmoji = '🟡'; }
-  else if (trueRPM >= 1.35){ grade = 'D'; gradeLabel = 'WEAK — NEGOTIATE'; gradeColor = '#fb923c'; gradeEmoji = '🟠'; }
-  else if (trueRPM >= 1.25){ grade = 'E'; gradeLabel = 'STRATEGIC ONLY'; gradeColor = '#f87171'; gradeEmoji = '🔴'; }
-  else { grade = 'F'; gradeLabel = 'REJECT'; gradeColor = 'var(--bad)'; gradeEmoji = '🔴'; }
-
-  // F20: DZ grade capping — DZ-Exit loads always display as C (hard cap).
-  // Was `(['A','B'].includes(grade) ? 'C' : grade)`: isDZActive can only be
-  // true when trueRPM < MW.hardRejectRPM (1.25, see dzClassifySubTier above),
-  // which is exactly the domain where the raw grade above is always 'F' —
-  // so that remap could never fire and DZ-Exit loads showed a raw "F"
-  // instead of the documented "capped at C" (app.js:6793/7107).
-  const dzDisplayGrade = isDZActive ? 'C' : grade;
-  const dzDisplayGradeLabel = isDZActive ? (dzSubTier || 'DZ-EXIT') : gradeLabel;
-  const dzDisplayGradeColor = isDZActive ? '#f0a500' : gradeColor;
-  const dzDisplayGradeEmoji = isDZActive ? '🟠' : gradeEmoji;
+  const gradeState = deriveUnifiedGrade(trueRPM, { isDZActive, dzSubTier });
+  const { grade, gradeLabel, gradeColor, gradeEmoji } = gradeState.raw;
+  const {
+    grade: dzDisplayGrade,
+    gradeLabel: dzDisplayGradeLabel,
+    gradeColor: dzDisplayGradeColor,
+    gradeEmoji: dzDisplayGradeEmoji,
+  } = gradeState.display;
 
   // Override display verdict with intelligence engine result
   const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)', 'DZ-EXIT': '#f0a500' };
@@ -7177,10 +7315,9 @@ async function mwEvaluateLoad(){
   if (weeklyGross > 0 && weeklyGross < 1500 && isThuFri) warnings.push({ icon: '📉', text: 'Behind pace late-week — stabilize, do not chase $5K from behind' });
   if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
 
-  const _decision = {
+  const unifiedDecision = buildUnifiedDecisionContract({
     trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
-    tier, grade, gradeLabel, gradeColor, gradeEmoji,
-    verdict, verdictReason, verdictColors, verdictLabels, steps,
+    tier, verdict, verdictReason, verdictColors, verdictLabels, steps,
     fuel, netAfterFuel, operatingCost, totalCost, operationalProfit,
     trueProfit, profitMarginPct, breakEvenRPM,
     profitPerMile, profitPerHour, fuelPerMile, estHours, opCPM,
@@ -7190,12 +7327,9 @@ async function mwEvaluateLoad(){
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
     turnoverType, warnings,
-    // F20: Dead Zone Exit data
-    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor,
-    dzDisplayGrade, dzDisplayGradeLabel, dzDisplayGradeColor, dzDisplayGradeEmoji,
-    noReloadConfirmed,
-  };
-  _mwRenderDecision(out, _decision);
+    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
+  });
+  _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
   mwRenderWeekStructure(weeklyGross);
 
   // Save to eval history (session, last 5)
@@ -7502,10 +7636,10 @@ function _mwRenderDecision(out, d){
     const u = usaResult;
     html += `<div style="margin-top:14px;border-top:2px solid ${u.usaColor}40;padding-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">USA Engine • ${escapeHtml(u.modeConf.label)} Mode</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">Market Evidence • ${escapeHtml(u.modeConf.label)} Mode</div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-family:var(--font-mono);font-size:22px;font-weight:800;color:${u.usaColor}">${u.usaGrade}</span>
-          <span style="font-size:12px;font-weight:700;color:${u.usaColor}">${escapeHtml(u.usaVerdict)}</span>
+          <span style="font-size:12px;font-weight:700;color:${u.usaColor}">Signal: ${escapeHtml(u.usaVerdict)}</span>
           <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">${u.score}/100</span>
         </div>
       </div>`;
@@ -7862,6 +7996,7 @@ function _mwRenderDecision(out, d){
           mpg: MW.mpg, fuelPrice: MW.fuelBaseline,
           operatingCostPerMile: opCPM || 0,
           strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
+          canonicalDecision: unifiedDecisionForAI(d?._canonicalDecision),
         };
 
         const res = await cloudFetch(CLOUD_WORKER_URL + '/evaluate', {
