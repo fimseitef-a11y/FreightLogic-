@@ -6,7 +6,7 @@
   'use strict';
 
   const VERSION = '23.9.1';
-  const UPDATED_AT = '2026-07-09';
+  const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({
     operator: {
@@ -253,7 +253,7 @@
       askRpm = Math.max(1.65, askRpm);
     }
     if (mode.id === 'ESCAPE_RECOVERY') {
-      if (destRole.role === 'tier1' || destRole.role === 'tier2') floorRpm = Math.max(1.10, Math.min(floorRpm, 1.25));
+      if (!staleProtectiveGuard && (destRole.role === 'tier1' || destRole.role === 'tier2')) floorRpm = Math.max(1.10, Math.min(floorRpm, 1.25));
       askRpm = Math.max(askRpm, 1.35 + premium);
     }
     // X-04: single canonical gate (isDeadZoneEligible, defined in app.js and

@@ -12796,16 +12796,16 @@ async function auditBrokerHistoryIntegrity(){
       if ((!normalizedBroker || rec.legacyUnkeyed === true) && provenDisplay){
         const provenKey = normBroker(provenDisplay);
         if (provenKey){
-next.broker = provenKey;
-next.brokerDisplay = provenDisplay;
-const origin = clampStr(rec.origin || matchedTrip?.origin || '', 80);
-const destination = clampStr(rec.destination || matchedTrip?.destination || '', 80);
-if (!next.lane && origin && destination) next.lane = normalizeLane(origin, destination);
-next.legacyUnkeyed = false;
-next.integrityBackfilledAt = Date.now();
-next.integrityBackfillSource = explicitDisplay ? 'explicit-broker-field' : 'matched-trip-broker-field';
-backfilled++;
-changed = true;
+          next.broker = provenKey;
+          next.brokerDisplay = provenDisplay;
+          const origin = clampStr(rec.origin || matchedTrip?.origin || '', 80);
+          const destination = clampStr(rec.destination || matchedTrip?.destination || '', 80);
+          if (!next.lane && origin && destination) next.lane = normalizeLane(origin, destination);
+          next.legacyUnkeyed = false;
+          next.integrityBackfilledAt = Date.now();
+          next.integrityBackfillSource = explicitDisplay ? 'explicit-broker-field' : 'matched-trip-broker-field';
+          backfilled++;
+          changed = true;
         }
       }
 
@@ -15460,7 +15460,6 @@ function setLiveSourceHealth(source, status, detail={}){
   const now = Date.now();
   const prev = LIVE_SOURCE_HEALTH.get(source) || {};
   const next = {
-    ...prev,
     source,
     status,
     lastAttempt: now,
