@@ -24,13 +24,13 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import textwrap
           p = Path('.github/workflows/pre-v24-integrity-patch.yml')
           raw = p.read_text()
           marker = "          python3 - <<'PY'\n"
           start = raw.index(marker) + len(marker)
           end = raw.index("\n          PY", start)
-          script = textwrap.dedent(raw[start:end])
+          extracted = raw[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in extracted)
           exec(compile(script, str(p) + ':embedded-python', 'exec'), {'__name__': '__main__'})
           PY
           rm -f .github/workflows/pre-v24-trigger.yml
