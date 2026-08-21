@@ -6576,10 +6576,6 @@ function mwGeoCheck(origin, dest){
   return { origDensity, destDensity, intoDensity, dT1, dT2, oT1, oT2 };
 }
 
-function mwFuelCost(totalMiles){
-  return roundCents((totalMiles / MW.mpg) * MW.fuelBaseline);
-}
-
 
 // ════════════════════════════════════════════════════
 // F20: DEAD ZONE EXIT — Helper functions
@@ -6749,6 +6745,62 @@ function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = 
     ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠' }
     : { ...raw };
   return { raw, display };
+}
+
+function deriveUnifiedEconomics(facts){
+  const f = facts || {};
+  const loadedMi = Math.max(0, Number(f.loadedMi || 0));
+  const deadMi = Math.max(0, Number(f.deadMi || 0));
+  const totalMi = loadedMi + deadMi;
+  const revenue = Math.max(0, Number(f.revenue || 0));
+  const effectiveRevenue = Math.max(0, Number(f.effectiveRevenue ?? revenue));
+  const mpg = Number(f.mpg || 0);
+  const fuelPrice = Math.max(0, Number(f.fuelPrice || 0));
+  const opCPM = Math.max(0, Number(f.opCPM || 0));
+  const borderAdminCost = Math.max(0, Number(f.borderAdminCost || 0));
+  const trueRPM = totalMi > 0 ? roundCents(effectiveRevenue / totalMi) : 0;
+  const loadedRPM = loadedMi > 0 ? roundCents(effectiveRevenue / loadedMi) : 0;
+  const fuel = (totalMi > 0 && mpg > 0) ? roundCents((totalMi / mpg) * fuelPrice) : 0;
+  const netAfterFuel = roundCents(effectiveRevenue - fuel);
+  const operatingCost = roundCents(totalMi * opCPM);
+  const totalCost = roundCents(fuel + operatingCost + borderAdminCost);
+  const operationalProfit = netAfterFuel;
+  const trueProfit = roundCents(effectiveRevenue - totalCost);
+  const profitMarginPct = effectiveRevenue > 0 ? roundCents((trueProfit / effectiveRevenue) * 100) : 0;
+  const breakEvenRPM = totalMi > 0 ? roundCents(totalCost / totalMi) : 0;
+  const profitPerMile = totalMi > 0 ? roundCents(trueProfit / totalMi) : 0;
+  const estHours = totalMi > 0 ? Math.max(1, Math.round(totalMi / 50)) : 1;
+  const profitPerHour = roundCents(trueProfit / estHours);
+  const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
+  const deadheadPct = totalMi > 0 ? roundCents((deadMi / totalMi) * 100) : 0;
+  return Object.freeze({
+    revenue, effectiveRevenue, loadedMi, deadMi, totalMi,
+    trueRPM, loadedRPM, deadheadPct,
+    mpg, fuelPrice, fuel, netAfterFuel,
+    opCPM, operatingCost, borderAdminCost, totalCost,
+    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, estHours, profitPerHour, fuelPerMile,
+  });
+}
+
+function deriveUnifiedBid(totalMiles, opts={}){
+  const miles = Math.max(0, Number(totalMiles || 0));
+  const urgencyBoost = Number(opts.urgencyBoost || 0);
+  const crossBorder = !!opts.crossBorder;
+  const rawRange = generateBidRange(miles, { urgencyBoost, crossBorder });
+  let range = null;
+  if (rawRange){
+    const entries = Object.entries(rawRange).map(([key, value]) => [key, Object.freeze({ ...value })]);
+    range = Object.freeze(Object.fromEntries(entries));
+  }
+  return Object.freeze({
+    authority: 'CLIENT_UNIFIED_DECISION_ENGINE',
+    basis: 'TRUE_MILES',
+    totalMiles: miles,
+    urgencyBoost: Math.min(0.30, urgencyBoost),
+    crossBorder,
+    range,
+  });
 }
 
 const UNIFIED_DECISION_POLICY = Object.freeze({
@@ -6937,18 +6989,11 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
 
 function buildUnifiedDecisionContract(input){
   if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required');
+  if (!input?.economicsResult) throw new Error('Canonical economicsResult is required');
+  if (!input?.bidResult) throw new Error('Canonical bidResult is required');
   const authorityResult = input.authorityResult;
-  const economics = Object.freeze({
-    trueRPM: input.trueRPM, loadedRPM: input.loadedRPM, totalMi: input.totalMi,
-    loadedMi: input.loadedMi, deadMi: input.deadMi, deadheadPct: input.deadheadPct,
-    revenue: input.revenue, effectiveRevenue: input.effectiveRevenue,
-    fuel: input.fuel, netAfterFuel: input.netAfterFuel,
-    operatingCost: input.operatingCost, totalCost: input.totalCost,
-    operationalProfit: input.operationalProfit, trueProfit: input.trueProfit,
-    profitMarginPct: input.profitMarginPct, breakEvenRPM: input.breakEvenRPM,
-    profitPerMile: input.profitPerMile, profitPerHour: input.profitPerHour,
-    fuelPerMile: input.fuelPerMile, estHours: input.estHours, opCPM: input.opCPM,
-  });
+  const economics = Object.freeze({ ...input.economicsResult });
+  const bid = Object.freeze({ ...input.bidResult });
   const deadZone = Object.freeze({
     active: !!input.isDZActive, eligible: !!input.isDZEligible,
     subTier: input.dzSubTier || null, check: input.dzCheck || null,
@@ -6986,7 +7031,7 @@ function buildUnifiedDecisionContract(input){
       steps: Array.isArray(authorityResult.steps) ? authorityResult.steps.slice() : [],
       warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
     }),
-    bid: Object.freeze({ range: input.bidRange || null }),
+    bid,
     operations: Object.freeze({
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
@@ -7204,8 +7249,7 @@ async function mwEvaluateLoad(){
   const effectiveStrategic = goingHome || strategicEnabled;
   const effectiveReason = goingHome && !strategicEnabled ? 'home' : strategicReason;
 
-  // ── Core calculations ──
-  const totalMi = loadedMi + deadMi;
+  // ── Core calculations / v24 canonical economics inputs ──
   const origMarket = naLookupMarket(origin);
   const destMarket = naLookupMarket(dest);
   const gateway = caFindGateway(origMarket, destMarket);
@@ -7216,13 +7260,22 @@ async function mwEvaluateLoad(){
   };
   const crossBorder = applyCanadaSettingsToCrossBorder(caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, gateway), revenue, revenueCurrency, caSettings);
   const effectiveRevenue = (crossBorder.isCrossBorder && revenueCurrency === 'CAD') ? crossBorder.normalizedRevenue : revenue;
-  const trueRPM = totalMi > 0 ? roundCents(effectiveRevenue / totalMi) : 0;
-  const loadedRPM = loadedMi > 0 ? roundCents(effectiveRevenue / loadedMi) : 0;
-  const fuel = mwFuelCost(totalMi);
-  const netAfterFuel = roundCents(effectiveRevenue - fuel);
+  const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
+  const fuelPrice = Number(await getSetting('fuelPrice', MW.fuelBaseline) || MW.fuelBaseline);
+  const vehicleMpg = Number(await getSetting('vehicleMpg', MW.mpg) || MW.mpg);
+  const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
+  const economicsResult = deriveUnifiedEconomics({
+    revenue, effectiveRevenue, loadedMi, deadMi,
+    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost,
+  });
+  const {
+    totalMi, trueRPM, loadedRPM, deadheadPct,
+    fuel, netAfterFuel, operatingCost, totalCost,
+    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, estHours, profitPerHour, fuelPerMile,
+  } = economicsResult;
   const tier = mwClassifyRPM(trueRPM);
   const geo = mwGeoCheck(origin, dest);
-  const deadheadPct = totalMi > 0 ? roundCents((deadMi / totalMi) * 100) : 0;
 
   // Floor logic
   // Normal floor is MW.hardRejectRPM. Strategic floor is only allowed when explicitly enabled.
@@ -7241,22 +7294,6 @@ async function mwEvaluateLoad(){
   });
   const dzSubTier = dzGate.eligible ? dzClassifySubTier(trueRPM, dzCheck.distanceSaved || 0, dzFloor) : null;
   const isDZActive = !!(dzSubTier);
-
-  // ── Operating cost (v14.5.0) ──
-  const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
-  const operatingCost = roundCents(totalMi * opCPM);
-  const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
-  const totalCost = roundCents(fuel + operatingCost + borderAdminCost);
-  const operationalProfit = netAfterFuel; // Effective revenue - Fuel
-  const trueProfit = roundCents(effectiveRevenue - totalCost); // Effective revenue - (Fuel + Operating)
-  const profitMarginPct = effectiveRevenue > 0 ? roundCents((trueProfit / effectiveRevenue) * 100) : 0;
-  const breakEvenRPM = totalMi > 0 ? roundCents(totalCost / totalMi) : 0;
-
-  // ── Efficiency metrics ──
-  const profitPerMile = totalMi > 0 ? roundCents(trueProfit / totalMi) : 0;
-  const estHours = totalMi > 0 ? Math.max(1, Math.round(totalMi / 50)) : 1; // ~50mph avg
-  const profitPerHour = roundCents(trueProfit / estHours);
-  const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
 
   const isMonWed = ['mon','tue','wed'].includes(dayOfWeek);
   const isThuFri = ['thu','fri'].includes(dayOfWeek);
@@ -7318,10 +7355,9 @@ async function mwEvaluateLoad(){
     gradeEmoji: dzDisplayGradeEmoji,
   } = gradeState.display;
 
-  // ── Collect decision data for render ──
-  // Generate bid range
+  // ── Canonical bid authority ──
   const isCrossBorder = !!(usaResult?.crossBorder?.isCrossBorder);
-  const bidRange = generateBidRange(totalMi, { urgencyBoost: urgency.boost, crossBorder: isCrossBorder });
+  const bidResult = deriveUnifiedBid(totalMi, { urgencyBoost: urgency.boost, crossBorder: isCrossBorder });
 
   // ════════════════════════════════════════════════════
   // VELOCITY MODE (Master Source v5 §11)
@@ -7395,14 +7431,11 @@ async function mwEvaluateLoad(){
   if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
 
   const unifiedDecision = buildUnifiedDecisionContract({
-    trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
+    economicsResult, bidResult,
     tier, authorityResult, verdictColors, verdictLabels,
-    fuel, netAfterFuel, operatingCost, totalCost, operationalProfit,
-    trueProfit, profitMarginPct, breakEvenRPM,
-    profitPerMile, profitPerHour, fuelPerMile, estHours, opCPM,
     weeklyGross, geo, fatigue, origin, dest,
     floorRPM, effectiveStrategic, effectiveReason,
-    usaResult, urgency, bidRange, crossBorder,
+    usaResult, urgency, crossBorder,
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
     turnoverType, warnings,
@@ -8072,7 +8105,7 @@ function _mwRenderDecision(out, d){
           rulesGrade: grade, rulesVerdict: verdict,
           notes: ($('#mwLoadNotes')?.value || '').trim(),
           currency: ($('#mwCurrency')?.value || 'USD'),
-          mpg: MW.mpg, fuelPrice: MW.fuelBaseline,
+          mpg: d?._canonicalDecision?.economics?.mpg || MW.mpg, fuelPrice: d?._canonicalDecision?.economics?.fuelPrice || MW.fuelBaseline,
           operatingCostPerMile: opCPM || 0,
           strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
           canonicalDecision: unifiedDecisionForAI(d?._canonicalDecision),
@@ -17477,7 +17510,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // X-04 (v23.9 Phase 5)
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
     // v24 Unified Decision Engine
-    deriveUnifiedAuthority, deriveUnifiedGrade, UNIFIED_DECISION_POLICY,
+    deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };

@@ -20,6 +20,13 @@ test('[V24-01] app has one canonical decision contract and compatibility adapter
   ok(app.includes('function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY)'), 'canonical hard-gate authority function missing');
   ok(app.includes("if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required')"), 'decision contract must reject legacy verdict injection');
   ok(!app.includes('let verdict = tier.verdict;'), 'legacy inline verdict authority must be removed');
+  ok(app.includes('function deriveUnifiedEconomics(facts)'), 'canonical economics function missing');
+  ok(app.includes('function deriveUnifiedBid(totalMiles, opts={})'), 'canonical bid function missing');
+  ok(app.includes("if (!input?.economicsResult) throw new Error('Canonical economicsResult is required')"), 'contract must reject legacy economics injection');
+  ok(app.includes("if (!input?.bidResult) throw new Error('Canonical bidResult is required')"), 'contract must reject legacy bid injection');
+  ok(!app.includes('const fuel = mwFuelCost(totalMi);'), 'evaluator must not use fixed-default fuel economics');
+  ok(app.includes("getSetting('fuelPrice', MW.fuelBaseline)"), 'evaluator must read current fuelPrice setting');
+  ok(app.includes("getSetting('vehicleMpg', MW.mpg)"), 'evaluator must read current vehicleMpg setting');
 });
 
 test('[V24-02] grade authority is centralized and DZ display cap is preserved', () => {

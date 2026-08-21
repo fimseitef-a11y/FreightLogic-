@@ -23,6 +23,7 @@ import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.m
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
+import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -43,6 +44,7 @@ const specs = [
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,
+  v24EconomicsBid,
 ];
 
 const results = [];
