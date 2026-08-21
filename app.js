@@ -15704,6 +15704,10 @@ function _showLocationPermissionModal() {
 
 function _doStartTracking() {
   if (!_activeTracking) return;
+  // Persist the recovery record before waiting on the first geolocation
+  // callback. A tab/app kill immediately after Start (including
+  // "Discard & Start New") must still leave a resumable session behind.
+  _persistTrackingState();
   // Never leave a previous watcher running — a second live watcher would keep
   // burning GPS with no way to clear it.
   if (_activeTracking.watcherId !== null && _activeTracking.watcherId !== undefined) {
