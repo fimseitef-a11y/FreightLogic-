@@ -21,7 +21,8 @@ test('[PRE24-02] July static rate bands have an enforceable freshness guard', ()
   ok(auth.includes('RATE_OVERRIDE_FRESHNESS'), 'freshness thresholds missing');
   ok(auth.includes("rateFreshness.status === 'STALE'"), 'STALE path missing');
   ok(auth.includes('staleProtectiveGuard'), 'stale bands must fall back to protective pricing');
-  ok(auth.includes('mode.id !== \'DEAD_ZONE\''), 'explicit DZ gate must remain a separate survival exception');
+  ok(auth.includes("!staleProtectiveGuard && (destRole.role === 'tier1' || destRole.role === 'tier2')"), 'ESCAPE_RECOVERY must not reopen a stale-band floor exception');
+  ok(auth.includes("mode.id !== 'DEAD_ZONE'"), 'explicit DZ gate must remain a separate survival exception');
 });
 
 test('[PRE24-03] live feeds publish health instead of silently collapsing to null', () => {
@@ -43,8 +44,8 @@ test('[PRE24-04] broker backfill only uses explicit broker-labelled evidence', (
 
 test('[PRE24-05] CI toolchain is reproducible', () => {
   const wf = source('.github/workflows/tests.yml');
-  ok(wf.includes('playwright@1.62.1'), 'Playwright must be pinned to the validated version');
-  ok(!wf.includes('playwright@latest'), 'CI must never float on Playwright latest');
+  ok(/npm\s+install\s+-g\s+playwright@1\.62\.1(?:\s|$)/.test(wf), 'Playwright install command must be pinned to the validated version');
+  ok(!/npm\s+install\s+-g\s+playwright@latest(?:\s|$)/.test(wf), 'CI install command must never float on Playwright latest');
   ok(wf.includes('actions/checkout@v6'), 'checkout should use a Node24-capable action runtime');
   ok(wf.includes('actions/setup-node@v6'), 'setup-node should use a Node24-capable action runtime');
 });
