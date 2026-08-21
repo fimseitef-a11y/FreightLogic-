@@ -22,6 +22,10 @@ jobs:
         if: ${{ hashFiles('.github/workflows/pre-v24-integrity-patch.yml') != '' }}
         shell: bash
         run: |
+          # The staged patch is guarded against current main. Restore only this
+          # workflow file in the working tree so its CI-hygiene replacements see
+          # that exact baseline; the running job definition is already loaded.
+          git show origin/main:.github/workflows/tests.yml > .github/workflows/tests.yml
           python3 - <<'PY'
           from pathlib import Path
           p = Path('.github/workflows/pre-v24-integrity-patch.yml')
