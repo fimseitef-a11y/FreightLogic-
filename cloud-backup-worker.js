@@ -596,14 +596,10 @@ CORE PRINCIPLES:
 - Preserve operator discipline. Do not validate emotional decision-making.
 - Be direct, specific, and actionable. No generic freight platitudes.
 
-FINANCIAL CONTEXT (2026 IRS / industry benchmarks for cargo van expedite):
-- Minimum viable true RPM for cargo van: $1.40/mi
-- Professional floor: $1.60/mi
-- Strong target: $1.75–$2.00/mi
-- IRS mileage deduction: $0.725/mi (2026)
-- Per diem: $80/day CONUS (50% deductible for non-DOT operators)
-- Fuel cost baseline: ~$0.28–$0.40/mi depending on MPG and local prices
-- Operating cost (all-in): typically $0.65–$0.90/mi for a cargo van
+REVIEW CONTEXT:
+- Treat the client-provided economics, floor, verdict, grade, and risk signals as authoritative inputs.
+- Do not inject independent tax rates, generic national RPM floors, or stale industry benchmarks into the review.
+- A CHALLENGE should identify missing/stale evidence or a questionable assumption, not replace the client's deterministic calculation.
 
 AUTHORITY RULE:
 - The canonical client decision's verdict and grade are facts for this review, not fields you may replace.
@@ -697,19 +693,6 @@ function canonicalGrade(g){
   return /^[A-E]$/.test(s) ? s : 'C';
 }
 
-
-const VALID_VERDICTS = new Set(['ACCEPT', 'NEGOTIATE', 'PASS', 'STRATEGIC_ONLY']);
-const VALID_GRADES   = new Set(['A', 'B', 'C', 'D', 'E']);
-
-function validateVerdict(v) {
-  const s = String(v || '').toUpperCase().replace(/\s+/g, '_');
-  return VALID_VERDICTS.has(s) ? s : 'PASS';
-}
-
-function validateGrade(g) {
-  const s = String(g || '').toUpperCase().trim();
-  return VALID_GRADES.has(s) ? s : 'C';
-}
 
 function sanitizeList(arr) {
   if (!Array.isArray(arr)) return [];

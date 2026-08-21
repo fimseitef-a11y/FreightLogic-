@@ -44,6 +44,8 @@ test('[V24-04] Worker AI cannot own verdict or grade', () => {
   ok(worker.includes('Canonical client decision required for AI review'), 'Worker must fail closed when client authority is absent');
   ok(!worker.includes('verdict:       validateVerdict(parsed.verdict)'), 'AI-parsed verdict must not remain authoritative');
   ok(!worker.includes('grade:         validateGrade(parsed.grade)'), 'AI-parsed grade must not remain authoritative');
+  ok(!worker.includes('Professional floor: $1.60/mi'), 'Worker must not inject a competing generic RPM floor');
+  ok(!worker.includes('IRS mileage deduction: $0.725/mi (2026)'), 'Worker review must not carry stale flat tax-rate context');
 });
 
 test('[V24-05] AI payload carries a compact canonical decision, not a second calculation request', () => {
