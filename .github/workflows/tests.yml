@@ -21,11 +21,12 @@ jobs:
       - name: Apply guarded v24 Phase B authority patch
         shell: bash
         run: |
+          python3 scripts/fix_v24_phase_b_patch.py
           python3 scripts/v24_phase_b_patch.py
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- app.js tests/run-all.mjs tests/integration/v24-authority-boundaries.spec.mjs tests/unit/v24-unified-decision.spec.mjs docs/V24_ROADMAP.md scripts/v24_phase_b_patch.py
+          git add -- app.js tests/run-all.mjs tests/integration/v24-authority-boundaries.spec.mjs tests/unit/v24-unified-decision.spec.mjs docs/V24_ROADMAP.md scripts/v24_phase_b_patch.py scripts/fix_v24_phase_b_patch.py
           git commit -m "refactor: centralize v24 hard verdict authority"
           git push origin HEAD:chatgpt/v24-unified-decision-engine
 
