@@ -22,6 +22,7 @@ import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
+import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -41,6 +42,7 @@ const specs = [
   vanFitPrecheck,
   preV24Integrity,
   v24UnifiedDecision,
+  v24AuthorityBoundaries,
 ];
 
 const results = [];

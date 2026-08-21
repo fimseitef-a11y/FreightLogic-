@@ -17,6 +17,9 @@ test('[V24-01] app has one canonical decision contract and compatibility adapter
   ok(app.includes('function unifiedDecisionToLegacy(decision)'), 'legacy adapter missing');
   ok(app.includes('const unifiedDecision = buildUnifiedDecisionContract({'), 'evaluator must build the canonical result');
   ok(app.includes('_mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));'), 'renderer must consume canonical decision through adapter');
+  ok(app.includes('function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY)'), 'canonical hard-gate authority function missing');
+  ok(app.includes("if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required')"), 'decision contract must reject legacy verdict injection');
+  ok(!app.includes('let verdict = tier.verdict;'), 'legacy inline verdict authority must be removed');
 });
 
 test('[V24-02] grade authority is centralized and DZ display cap is preserved', () => {

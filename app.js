@@ -6751,7 +6751,193 @@ function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = 
   return { raw, display };
 }
 
+const UNIFIED_DECISION_POLICY = Object.freeze({
+  version: '24.0.0-hard-gates-1',
+  normalFloorRPM: MW.normalFloorRPM,
+  preferredFloorRPM: MW.preferredFloorRPM,
+  strategicFloorRPM: MW.strategicFloorRPM,
+  longHaulMinRPM: MW.longHaulMinRPM,
+  longHaulMiles: 250,
+  strongRPM: 1.60,
+  healthyTrueMarginPct: 25,
+  healthyFuelMarginPct: 30,
+  rejectTrueMarginPct: 10,
+  rejectFuelMarginPct: 20,
+  healthyDeadheadPct: 20,
+  rejectDeadheadPct: 35,
+  fatigueOkayMax: 6,
+  fatigueRejectAt: 8,
+});
+
+/**
+ * v24 canonical verdict authority. Pure/deterministic: every external fact,
+ * user setting and historical signal needed for the decision is passed in.
+ * It does not read DOM/storage/time/network and it does not mutate its input.
+ * The step order intentionally preserves v23.9 behavior while moving ownership
+ * into one testable function.
+ */
+function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
+  const f = facts || {};
+  const geo = f.geo || {};
+  const steps = [];
+  let verdict = f.initialVerdict || 'REJECT';
+  let verdictReason = '';
+  const trueRPM = Number(f.trueRPM || 0);
+  const totalMi = Number(f.totalMi || 0);
+  const deadheadPct = Number(f.deadheadPct || 0);
+  const effectiveRevenue = Number(f.effectiveRevenue || 0);
+  const netAfterFuel = Number(f.netAfterFuel || 0);
+  const profitMarginPct = Number(f.profitMarginPct || 0);
+  const opCPM = Number(f.opCPM || 0);
+  const fatigue = Number(f.fatigue || 0);
+  const weeklyGross = Number(f.weeklyGross || 0);
+  const floorRPM = Number(f.floorRPM || policy.normalFloorRPM);
+  const dzFloor = Number(f.dzFloor || 0);
+  const isDZActive = !!f.isDZActive;
+  const effectiveStrategic = !!f.effectiveStrategic;
+  const effectiveReason = String(f.effectiveReason || '');
+  const origin = String(f.origin || '');
+  const dest = String(f.dest || '');
+
+  // STEP 1: Geography
+  if (geo.intoDensity){
+    steps.push({ pass: true, label: 'Geography', detail: `→ ${geo.destDensity || 'known'} density (${dest})` });
+  } else if (origin && dest){
+    steps.push({ pass: false, label: 'Geography', detail: 'Out of density — rate must be strong' });
+    if (trueRPM < policy.strongRPM){ verdict = 'REJECT'; verdictReason = 'Out of density + RPM below Strong'; }
+  } else {
+    steps.push({ pass: null, label: 'Geography', detail: 'No origin/dest — skipping geo check' });
+  }
+
+  // STEP 2: True RPM + survival gate result
+  const rpmPass = isDZActive ? trueRPM >= dzFloor : trueRPM >= floorRPM;
+  steps.push({ pass: rpmPass, label: 'True RPM', detail: `$${trueRPM.toFixed(2)} — ${isDZActive ? `${f.dzSubTier || 'DZ-EXIT'} (DZ mode)` : (f.tierLabel || '')}` });
+  if (!isDZActive && trueRPM < floorRPM){
+    verdict = 'REJECT';
+    verdictReason = `Under $${floorRPM.toFixed(2)} floor`;
+  }
+  if (isDZActive){
+    verdict = 'DZ-EXIT';
+    verdictReason = `Dead Zone Exit — ${f.dzSubTier || 'DZ-EXIT'} (${Number(f.dzCheck?.distanceFromHome || 0)}mi from home)`;
+    steps.push({ pass: true, label: 'Dead Zone Exit', detail: `${Number(f.dzCheck?.distanceSaved || 0)}mi saved toward home corridor • Survival scoring active` });
+  }
+
+  // Long-haul minimum — only home/replace strategic exceptions or active DZ.
+  if (!isDZActive && totalMi > policy.longHaulMiles && trueRPM < policy.longHaulMinRPM){
+    const allowLongHaulStrategic = effectiveStrategic && (effectiveReason === 'home' || effectiveReason === 'replace');
+    if (!allowLongHaulStrategic){
+      verdict = 'REJECT';
+      verdictReason = `Long haul under $${policy.longHaulMinRPM}`;
+    }
+  }
+
+  // Explicit strategic band.
+  if (effectiveStrategic && trueRPM >= policy.strategicFloorRPM && trueRPM < policy.normalFloorRPM && verdict !== 'REJECT'){
+    verdict = 'STRATEGIC';
+    const reasonLabel = effectiveReason === 'home' ? 'Going home'
+      : effectiveReason === 'slow' ? 'Escaping slow market'
+      : effectiveReason === 'replace' ? 'Replacing deadhead'
+      : 'Strategic mode';
+    verdictReason = verdictReason || `${reasonLabel} — strategic floor active`;
+  }
+
+  if (!effectiveStrategic && trueRPM >= policy.normalFloorRPM && trueRPM < policy.preferredFloorRPM && verdict === 'ACCEPT'){
+    verdictReason = verdictReason || `Below preferred $${policy.preferredFloorRPM.toFixed(2)} floor — acceptable only if it improves position or stabilizes the week`;
+  }
+
+  // STEP 3: Profit margin
+  const fuelMarginPct = effectiveRevenue > 0 ? ((netAfterFuel / effectiveRevenue) * 100) : 0;
+  const marginPass = opCPM > 0 ? profitMarginPct >= policy.healthyTrueMarginPct : fuelMarginPct >= policy.healthyFuelMarginPct;
+  steps.push({
+    pass: marginPass,
+    label: 'Profit Margin',
+    detail: opCPM > 0
+      ? `${profitMarginPct.toFixed(0)}% true margin (after all costs)`
+      : `${fuelMarginPct.toFixed(0)}% margin (fuel only — set op cost in settings for full analysis)`,
+  });
+  if (opCPM > 0 && profitMarginPct < policy.rejectTrueMarginPct){
+    verdict = 'REJECT'; verdictReason = `True profit margin below ${policy.rejectTrueMarginPct}%`;
+  } else if (!opCPM && effectiveRevenue > 0 && fuelMarginPct < policy.rejectFuelMarginPct){
+    verdict = 'REJECT'; verdictReason = `Fuel margin below ${policy.rejectFuelMarginPct}%`;
+  }
+
+  // STEP 4: Deadhead
+  const dhPass = deadheadPct <= policy.healthyDeadheadPct;
+  steps.push({ pass: dhPass, label: 'Deadhead', detail: `${deadheadPct.toFixed(1)}% empty${deadheadPct > 30 ? ' — excessive' : deadheadPct > policy.healthyDeadheadPct ? ' — elevated' : ''}` });
+  if (deadheadPct > policy.rejectDeadheadPct && trueRPM < policy.strongRPM){
+    verdict = 'REJECT'; verdictReason = 'High deadhead + weak RPM';
+  }
+
+  // STEP 5: Weekly position
+  if (weeklyGross > 0){
+    const target = Math.max(1, Number(f.weekTargetHigh || 0));
+    if (weeklyGross < Number(f.stabilizeFloor || 0) && !!f.isMonWed){
+      const weekNote = `Below $${Number(f.stabilizeFloor || 0).toLocaleString()} by mid-week — STABILIZE`;
+      if (verdict === 'ACCEPT' && trueRPM < policy.preferredFloorRPM){
+        verdict = 'STRATEGIC'; verdictReason = 'Below preferred floor mid-week — take only if it positions into density';
+      }
+      steps.push({ pass: false, label: 'Weekly Position', detail: weekNote });
+    } else if (weeklyGross >= Number(f.surgeFloor || 0) && !!f.isMonWed){
+      steps.push({ pass: true, label: 'Weekly Position', detail: `Above $${Number(f.surgeFloor || 0).toLocaleString()} by mid-week — controlled push allowed` });
+    } else {
+      const pct = Math.min(100, Math.round((weeklyGross / target) * 100));
+      steps.push({ pass: pct >= 50, label: 'Weekly Position', detail: `$${weeklyGross.toLocaleString()} / $${target.toLocaleString()} target (${pct}%)` });
+    }
+  } else {
+    steps.push({ pass: null, label: 'Weekly Position', detail: 'No weekly gross entered' });
+  }
+
+  // STEP 6: Fatigue — safety may override economics/DZ.
+  if (fatigue > 0){
+    const fatigueOk = fatigue <= policy.fatigueOkayMax;
+    steps.push({ pass: fatigueOk, label: 'Fatigue', detail: `Level ${fatigue}/10${fatigue >= 7 ? ' — DO NOT SIGN TIRED' : fatigue >= 5 ? ' — elevated' : ''}` });
+    if (fatigue >= policy.fatigueRejectAt){ verdict = 'REJECT'; verdictReason = 'Fatigue too high — rest first'; }
+  }
+
+  // Strategic positioning check (survival DZ is handled separately).
+  if (!isDZActive && verdict === 'STRATEGIC'){
+    if (geo.intoDensity && trueRPM >= policy.normalFloorRPM){
+      verdictReason = verdictReason || 'Strategic — positions into density';
+    } else if (!geo.intoDensity){
+      verdict = 'REJECT'; verdictReason = verdictReason || 'Strategic RPM but out of density';
+    }
+  }
+
+  // STEP 7: Personal Intelligence is evidence and downgrade-only.
+  const personalBullets = Array.isArray(f.personalBullets) ? f.personalBullets : [];
+  const personalScore = Number(f.personalScore || 0);
+  if ((verdict === 'ACCEPT' || verdict === 'STRATEGIC') && personalBullets.length){
+    const negatives = personalBullets.filter(b => b?.icon === '✕').map(b => String(b?.text || '')).filter(Boolean);
+    if (personalScore <= -6){
+      steps.push({ pass: false, label: 'Personal Intelligence', detail: negatives.join(' • ') });
+      if (verdict === 'ACCEPT'){
+        verdict = 'STRATEGIC';
+        verdictReason = `Downgraded from ACCEPT — your own history disagrees: ${negatives[0] || 'negative historical signal'}`;
+      }
+    } else if (personalScore >= 6){
+      const positives = personalBullets.filter(b => b?.icon === '✓').map(b => String(b?.text || '')).filter(Boolean);
+      steps.push({ pass: true, label: 'Personal Intelligence', detail: positives.join(' • ') });
+    } else {
+      steps.push({ pass: null, label: 'Personal Intelligence', detail: 'Your history on this lane/broker is roughly neutral' });
+    }
+  }
+
+  const repoSuggestion = verdict === 'REJECT' && !geo.intoDensity
+    ? 'Consider repositioning toward: Indianapolis, Chicago, Cleveland, or St. Louis corridor.'
+    : '';
+
+  return Object.freeze({
+    policyVersion: policy.version,
+    verdict,
+    verdictReason,
+    steps: Object.freeze(steps.map(s => Object.freeze({ ...s }))),
+    repoSuggestion,
+  });
+}
+
 function buildUnifiedDecisionContract(input){
+  if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required');
+  const authorityResult = input.authorityResult;
   const economics = Object.freeze({
     trueRPM: input.trueRPM, loadedRPM: input.loadedRPM, totalMi: input.totalMi,
     loadedMi: input.loadedMi, deadMi: input.deadMi, deadheadPct: input.deadheadPct,
@@ -6771,8 +6957,9 @@ function buildUnifiedDecisionContract(input){
   const grades = deriveUnifiedGrade(economics.trueRPM, { isDZActive: deadZone.active, dzSubTier: deadZone.subTier });
   const authority = Object.freeze({
     source: 'CLIENT_UNIFIED_DECISION_ENGINE',
-    verdict: input.verdict,
-    reason: input.verdictReason || '',
+    policyVersion: authorityResult.policyVersion || UNIFIED_DECISION_POLICY.version,
+    verdict: authorityResult.verdict,
+    reason: authorityResult.verdictReason || '',
     grade: grades.display.grade,
     gradeLabel: grades.display.gradeLabel,
     gradeColor: grades.display.gradeColor,
@@ -6796,7 +6983,7 @@ function buildUnifiedDecisionContract(input){
       bullets: Array.isArray(input.usaResult?.personalBullets) ? input.usaResult.personalBullets.slice() : [],
     }),
     risk: Object.freeze({
-      steps: Array.isArray(input.steps) ? input.steps.slice() : [],
+      steps: Array.isArray(authorityResult.steps) ? authorityResult.steps.slice() : [],
       warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
     }),
     bid: Object.freeze({ range: input.bidRange || null }),
@@ -6804,7 +6991,7 @@ function buildUnifiedDecisionContract(input){
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
       postDeliveryDetail: input.postDeliveryDetail, turnoverType: input.turnoverType,
-      repoSuggestion: input.repoSuggestion || '',
+      repoSuggestion: authorityResult.repoSuggestion || '',
     }),
     context: Object.freeze({
       weeklyGross: input.weeklyGross, fatigue: input.fatigue,
@@ -7074,119 +7261,7 @@ async function mwEvaluateLoad(){
   const isMonWed = ['mon','tue','wed'].includes(dayOfWeek);
   const isThuFri = ['thu','fri'].includes(dayOfWeek);
 
-  // ════════════════════════════════════════════════════
-  // FREIGHT INTELLIGENCE — Multi-factor decision engine
-  // ════════════════════════════════════════════════════
-  const steps = [];
-  let verdict = tier.verdict;
-  let verdictReason = '';
-
-  // STEP 1: Geography
-  if (geo.intoDensity){
-    steps.push({ pass: true, label: 'Geography', detail: `→ ${geo.destDensity} density (${escapeHtml(dest)})` });
-  } else if (origin && dest){
-    steps.push({ pass: false, label: 'Geography', detail: 'Out of density — rate must be strong' });
-    if (trueRPM < 1.60){ verdict = 'REJECT'; verdictReason = 'Out of density + RPM below Strong'; }
-  } else {
-    steps.push({ pass: null, label: 'Geography', detail: 'No origin/dest — skipping geo check' });
-  }
-
-  // STEP 2: True RPM
-  const rpmPass = isDZActive ? trueRPM >= dzFloor : trueRPM >= floorRPM;
-  steps.push({ pass: rpmPass, label: 'True RPM', detail: `$${trueRPM.toFixed(2)} — ${isDZActive ? `${dzSubTier} (DZ mode)` : tier.label}` });
-  if (!isDZActive && trueRPM < floorRPM){
-    verdict = 'REJECT';
-    verdictReason = `Under $${floorRPM.toFixed(2)} floor`;
-  }
-  if (isDZActive){
-    verdict = 'DZ-EXIT';
-    verdictReason = `Dead Zone Exit — ${dzSubTier} (${dzCheck.distanceFromHome}mi from home)`;
-    steps.push({ pass: true, label: 'Dead Zone Exit', detail: `${dzCheck.distanceSaved}mi saved toward home corridor • Survival scoring active` });
-  }
-  // Long-haul minimum: allow strategic exception ONLY for "going home" or "replacing deadhead", or DZ active.
-  if (!isDZActive && totalMi > 250 && trueRPM < MW.longHaulMinRPM){
-    const allowLongHaulStrategic = effectiveStrategic && (effectiveReason === 'home' || effectiveReason === 'replace');
-    if (!allowLongHaulStrategic){
-      verdict = 'REJECT';
-      verdictReason = `Long haul under $${MW.longHaulMinRPM}`;
-    }
-  }
-
-  // If strategic floor is enabled and we are between strategic and normal floors, mark explicitly.
-  if (effectiveStrategic && trueRPM >= MW.strategicFloorRPM && trueRPM < MW.normalFloorRPM && verdict !== 'REJECT'){
-    verdict = 'STRATEGIC';
-    const reasonLabel = (effectiveReason === 'home') ? 'Going home' : (effectiveReason === 'slow') ? 'Escaping slow market' : (effectiveReason === 'replace') ? 'Replacing deadhead' : 'Strategic mode';
-    verdictReason = verdictReason || `${reasonLabel} — strategic floor active`;
-  }
-
-  if (!effectiveStrategic && trueRPM >= MW.normalFloorRPM && trueRPM < MW.preferredFloorRPM && verdict === 'ACCEPT'){
-    verdictReason = verdictReason || `Below preferred $${MW.preferredFloorRPM.toFixed(2)} floor — acceptable only if it improves position or stabilizes the week`;
-  }
-
-  // STEP 3: Profit margin
-  const marginPass = opCPM > 0 ? profitMarginPct >= 25 : (effectiveRevenue > 0 ? ((netAfterFuel / effectiveRevenue) * 100) >= 30 : false);
-  steps.push({ pass: marginPass, label: 'Profit Margin', detail: opCPM > 0 ? `${profitMarginPct.toFixed(0)}% true margin (after all costs)` : `${effectiveRevenue > 0 ? ((netAfterFuel / effectiveRevenue).toFixed ? ((netAfterFuel / effectiveRevenue) * 100).toFixed(0) : 0) : 0}% margin (fuel only — set op cost in settings for full analysis)` });
-  if (opCPM > 0 && profitMarginPct < 10){ verdict = 'REJECT'; verdictReason = 'True profit margin below 10%'; }
-  else if (!opCPM && effectiveRevenue > 0 && ((netAfterFuel / effectiveRevenue) * 100) < 20){ verdict = 'REJECT'; verdictReason = 'Fuel margin below 20%'; }
-
-  // STEP 4: Deadhead
-  const dhPass = deadheadPct <= 20;
-  steps.push({ pass: dhPass, label: 'Deadhead', detail: `${deadheadPct.toFixed(1)}% empty${deadheadPct > 30 ? ' — excessive' : deadheadPct > 20 ? ' — elevated' : ''}` });
-  if (deadheadPct > 35 && trueRPM < 1.60){ verdict = 'REJECT'; verdictReason = 'High deadhead + weak RPM'; }
-
-  // STEP 5: Weekly position
-  let weekNote = '';
-  if (weeklyGross > 0){
-    const weeklyLoadValue = effectiveRevenue;
-    const projected = weeklyGross + weeklyLoadValue;
-    const targetCfg = getMWWeekTarget();
-    const target = targetCfg.high;
-    if (weeklyGross < MW.stabilizeFloor && isMonWed){
-      weekNote = `Below $${MW.stabilizeFloor.toLocaleString()} by mid-week — STABILIZE`;
-      if (verdict === 'ACCEPT' && trueRPM < MW.preferredFloorRPM){ verdict = 'STRATEGIC'; verdictReason = 'Below preferred floor mid-week — take only if it positions into density'; }
-      steps.push({ pass: false, label: 'Weekly Position', detail: weekNote });
-    } else if (weeklyGross >= MW.surgeFloor && isMonWed){
-      weekNote = `Above $${MW.surgeFloor.toLocaleString()} by mid-week — controlled push allowed`;
-      steps.push({ pass: true, label: 'Weekly Position', detail: weekNote });
-    } else {
-      const pct = Math.min(100, Math.round((weeklyGross / target) * 100));
-      weekNote = `$${weeklyGross.toLocaleString()} / $${target.toLocaleString()} target (${pct}%)`;
-      steps.push({ pass: pct >= 50, label: 'Weekly Position', detail: weekNote });
-    }
-  } else {
-    steps.push({ pass: null, label: 'Weekly Position', detail: 'No weekly gross entered' });
-  }
-
-  // STEP 6: Fatigue
-  if (fatigue > 0){
-    const fatigueOk = fatigue <= 6;
-    steps.push({ pass: fatigueOk, label: 'Fatigue', detail: `Level ${fatigue}/10${fatigue >= 7 ? ' — DO NOT SIGN TIRED' : fatigue >= 5 ? ' — elevated' : ''}` });
-    if (fatigue >= 8){ verdict = 'REJECT'; verdictReason = 'Fatigue too high — rest first'; }
-  }
-
-  // Strategic positioning check (skip if DZ active)
-  if (!isDZActive && verdict === 'STRATEGIC'){
-    if (geo.intoDensity && trueRPM >= 1.40){ verdictReason = verdictReason || 'Strategic — positions into density'; }
-    else if (!geo.intoDensity){ verdict = 'REJECT'; verdictReason = verdictReason || 'Strategic RPM but out of density'; }
-  }
-
-  // Reposition suggestion
-  let repoSuggestion = '';
-  if (verdict === 'REJECT' && !geo.intoDensity){
-    repoSuggestion = 'Consider repositioning toward: Indianapolis, Chicago, Cleveland, or St. Louis corridor.';
-  }
-
-  // ════════════════════════════════════════════════════
-  // DECISION GRADE — v24 canonical grade authority
-  // ════════════════════════════════════════════════════
-  const gradeState = deriveUnifiedGrade(trueRPM, { isDZActive, dzSubTier });
-  const { grade, gradeLabel, gradeColor, gradeEmoji } = gradeState.raw;
-  const {
-    grade: dzDisplayGrade,
-    gradeLabel: dzDisplayGradeLabel,
-    gradeColor: dzDisplayGradeColor,
-    gradeEmoji: dzDisplayGradeEmoji,
-  } = gradeState.display;
+  // v24 Phase B: hard gates are derived once, after evidence prefetch, by deriveUnifiedAuthority().
 
   // Override display verdict with intelligence engine result
   const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)', 'DZ-EXIT': '#f0a500' };
@@ -7212,32 +7287,36 @@ async function mwEvaluateLoad(){
     brokerIntel,
   });
 
-  // ════════════════════════════════════════════════════
-  // STEP 7 (v24.0.0): Personal Intelligence bridge
-  // laneHistory (F29 reviews + DZ-exit tracking), reloadOutcomes, and
-  // bidHistory (broker pay speed + counter-offer/win acceptance) are already
-  // aggregated above into usaResult.personalScore/personalBullets. Until now
-  // that number was display-only in the USA Engine panel and never touched
-  // `verdict`. It's advisory and downgrade-only: it can push an ACCEPT that
-  // already cleared every hard floor (RPM, margin, deadhead, fatigue) down to
-  // STRATEGIC when your own trip history disagrees with it, but it never
-  // touches REJECT or DZ-EXIT — those are safety-floor / survival outcomes,
-  // not places for a soft personal-history signal to intervene.
-  if (usaResult && (verdict === 'ACCEPT' || verdict === 'STRATEGIC') && usaResult.personalBullets.length){
-    const { personalScore, personalBullets } = usaResult;
-    const negatives = personalBullets.filter(b => b.icon === '✕').map(b => b.text);
-    if (personalScore <= -6){
-      steps.push({ pass: false, label: 'Personal Intelligence', detail: negatives.join(' • ') });
-      if (verdict === 'ACCEPT'){
-        verdict = 'STRATEGIC';
-        verdictReason = `Downgraded from ACCEPT — your own history disagrees: ${negatives[0]}`;
-      }
-    } else if (personalScore >= 6){
-      steps.push({ pass: true, label: 'Personal Intelligence', detail: personalBullets.filter(b => b.icon === '✓').map(b => b.text).join(' • ') });
-    } else {
-      steps.push({ pass: null, label: 'Personal Intelligence', detail: 'Your history on this lane/broker is roughly neutral' });
-    }
-  }
+  // v24 Phase B: one deterministic authority call owns all hard gates plus
+  // downgrade-only Personal Intelligence. External evidence is passed in;
+  // none of these sources can publish a second verdict.
+  const weekTargetForDecision = getMWWeekTarget();
+  const authorityResult = deriveUnifiedAuthority({
+    initialVerdict: tier.verdict,
+    tierLabel: tier.label,
+    trueRPM, totalMi, floorRPM,
+    dzFloor, isDZActive, dzSubTier, dzCheck,
+    effectiveStrategic, effectiveReason,
+    opCPM, profitMarginPct, effectiveRevenue, netAfterFuel,
+    deadheadPct,
+    weeklyGross, weekTargetHigh: weekTargetForDecision.high,
+    stabilizeFloor: MW.stabilizeFloor, surgeFloor: MW.surgeFloor, isMonWed,
+    fatigue, geo, origin, dest,
+    personalScore: usaResult?.personalScore || 0,
+    personalBullets: usaResult?.personalBullets || [],
+  });
+  const { verdict, verdictReason, steps, repoSuggestion } = authorityResult;
+
+  // Grade is a separate presentation classification but shares the same
+  // canonical v24 module and keeps the DZ C-cap invariant.
+  const gradeState = deriveUnifiedGrade(trueRPM, { isDZActive, dzSubTier });
+  const { grade, gradeLabel, gradeColor, gradeEmoji } = gradeState.raw;
+  const {
+    grade: dzDisplayGrade,
+    gradeLabel: dzDisplayGradeLabel,
+    gradeColor: dzDisplayGradeColor,
+    gradeEmoji: dzDisplayGradeEmoji,
+  } = gradeState.display;
 
   // ── Collect decision data for render ──
   // Generate bid range
@@ -7317,11 +7396,11 @@ async function mwEvaluateLoad(){
 
   const unifiedDecision = buildUnifiedDecisionContract({
     trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
-    tier, verdict, verdictReason, verdictColors, verdictLabels, steps,
+    tier, authorityResult, verdictColors, verdictLabels,
     fuel, netAfterFuel, operatingCost, totalCost, operationalProfit,
     trueProfit, profitMarginPct, breakEvenRPM,
     profitPerMile, profitPerHour, fuelPerMile, estHours, opCPM,
-    weeklyGross, repoSuggestion, geo, fatigue, origin, dest,
+    weeklyGross, geo, fatigue, origin, dest,
     floorRPM, effectiveStrategic, effectiveReason,
     usaResult, urgency, bidRange, crossBorder,
     velocityMode, velocityDetail, velocityFloor,
@@ -17397,6 +17476,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
     // X-04 (v23.9 Phase 5)
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
+    // v24 Unified Decision Engine
+    deriveUnifiedAuthority, deriveUnifiedGrade, UNIFIED_DECISION_POLICY,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };
