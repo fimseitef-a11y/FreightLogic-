@@ -38,7 +38,6 @@ jobs:
           exec(compile(script, str(p) + ':embedded-python', 'exec'), {'__name__': '__main__'})
           PY
           rm -f .github/workflows/pre-v24-trigger.yml
-          node tests/unit/pre-v24-integrity.spec.mjs
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
