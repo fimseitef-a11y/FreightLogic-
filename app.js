@@ -1,7 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.0 USA ENGINE
+/** FreightLogic v24.0.1 USA ENGINE
+ *  v24.0.1: Guarded bank-statement expense import with review-before-write, transfer/inflow protection, merchant categorization, and duplicate provenance.
  *  v24.0.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
  *          authoritative per-phase record): date-keyed IRS mileage rate
  *          (X-02), tax-method-sensitive deductions with an auto/cargo/
@@ -39,7 +40,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.0.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -69,7 +70,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v24.0.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v24.0.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -1204,6 +1205,12 @@ function sanitizeExpense(raw){
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
     updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
     receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,
+    ...(raw.importSource ? { importSource: clampStr(String(raw.importSource), 32) } : {}),
+    ...(raw.bankFingerprint ? { bankFingerprint: clampStr(String(raw.bankFingerprint), 96) } : {}),
+    ...(raw.bankDescription ? { bankDescription: clampStr(String(raw.bankDescription), 180) } : {}),
+    ...(['debit','credit','unknown'].includes(raw.bankDirection) ? { bankDirection: raw.bankDirection } : {}),
+    ...(raw.bankFileName ? { bankFileName: clampStr(String(raw.bankFileName), 120) } : {}),
+    ...(raw.bankReference ? { bankReference: clampStr(String(raw.bankReference), 120) } : {}),
     // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for
     // insurance-category expenses — see INSURANCE_CATEGORY_BUCKET / classifyExpenseTaxBucket.
     // Only meaningful when category contains "insurance"; undefined otherwise.
@@ -1784,6 +1791,278 @@ async function parseCSVTextAsync(text){
 
 function normalizeHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 
+// ── v24.0.1 Bank Statement → Expense Review foundation ────────────────────
+// Provider-neutral by design: CSV/XLSX exports enter the same candidate model
+// that a future Plaid/Finicity connector can feed. Nothing is written until the
+// driver reviews the candidates and explicitly imports selected rows.
+const BANK_IMPORT_MAX_ROWS = 1500;
+const BANK_IMPORT_CATEGORY_OPTIONS = Object.freeze([
+  'Fuel','Maintenance','Tolls','Parking','Meals','Lodging','Phone / Data',
+  'Insurance','Load Board / Software','Supplies','Transfer / Review','Other'
+]);
+
+function _bankHeaderList(headers){ return (Array.isArray(headers) ? headers : []).map(normalizeHeader); }
+function _bankHasHeader(headers, aliases){
+  const h = _bankHeaderList(headers);
+  return aliases.some(a => h.includes(normalizeHeader(a)));
+}
+function isLikelyBankCSV(headers){
+  const hasDate = _bankHasHeader(headers, ['date','transaction date','posted date','posting date','post date']);
+  const hasDescription = _bankHasHeader(headers, ['description','details','memo','merchant','payee','name','transaction description']);
+  const hasMoney = _bankHasHeader(headers, ['amount','transaction amount','debit','withdrawal','withdrawals','outflow','credit','deposit','inflow']);
+  const freightSpecific = _bankHasHeader(headers, ['order','order no','order number','load id','loaded miles','empty miles','deadhead miles','gallons','fuel state']);
+  if (!hasDate || !hasDescription || !hasMoney || freightSpecific) return false;
+  const explicitCategory = _bankHasHeader(headers, ['category','cat','expense type']);
+  const bankSpecific = _bankHasHeader(headers, [
+    'transaction date','posted date','posting date','post date','transaction amount',
+    'debit','withdrawal','withdrawals','outflow','credit','deposit','inflow',
+    'balance','running balance','running bal','available balance','transaction type',
+    'check number','check or slip #','reference number','transaction id'
+  ]);
+  return bankSpecific || !explicitCategory;
+}
+
+function parseBankMoney(value){
+  let s = sanitizeImportValue(value).trim();
+  if (!s) return 0;
+  const parenNeg = /^\(.*\)$/.test(s);
+  s = s.replace(/[()$,\s]/g, '');
+  const n = Number(s);
+  if (!Number.isFinite(n)) return 0;
+  return parenNeg ? -Math.abs(n) : n;
+}
+
+function normalizeBankImportDate(value){
+  const s = sanitizeImportValue(value).trim();
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso){
+    const out = `${iso[1]}-${iso[2]}-${iso[3]}`;
+    return isValidISODate(out) ? out : '';
+  }
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact){
+    const out = `${compact[1]}-${compact[2]}-${compact[3]}`;
+    return isValidISODate(out) ? out : '';
+  }
+  const us = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})(?:\s.*)?$/);
+  if (us){
+    let year = Number(us[3]);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
+    const out = `${String(year).padStart(4,'0')}-${String(Number(us[1])).padStart(2,'0')}-${String(Number(us[2])).padStart(2,'0')}`;
+    return isValidISODate(out) ? out : '';
+  }
+  return '';
+}
+
+function isBankTransferLike(description){
+  const d = String(description || '').toLowerCase();
+  return [
+    'online transfer','transfer to','transfer from','credit card payment','card payment',
+    'payment thank you','autopay payment','zelle','venmo transfer','cash app transfer',
+    'internal transfer','account transfer'
+  ].some(k => d.includes(k));
+}
+
+function inferBankExpenseCategory(description){
+  const d = String(description || '').toLowerCase();
+  if (isBankTransferLike(d)) return 'Transfer / Review';
+  if (['pilot','flying j','loves','love\'s','shell','exxon','mobil','marathon','citgo','kwik trip','speedway','casey\'s','fuel','gas station'].some(k => d.includes(k))) return 'Fuel';
+  if (['valvoline','jiffy lube','oil change','autozone','auto zone','o\'reilly','oreilly','discount tire','goodyear','firestone','repair','mechanic'].some(k => d.includes(k))) return 'Maintenance';
+  if (['i-pass','ipass','e-zpass','ezpass','tollway','toll road','turnpike toll'].some(k => d.includes(k))) return 'Tolls';
+  if (['parking','parkmobile','spothero'].some(k => d.includes(k))) return 'Parking';
+  if (['hotel','motel','inn ','holiday inn','hampton','marriott','hilton','wyndham'].some(k => d.includes(k))) return 'Lodging';
+  if (['restaurant','cafe','grill','diner','doordash','uber eats','ubereats'].some(k => d.includes(k))) return 'Meals';
+  if (['verizon','t-mobile','tmobile','at&t','att wireless','comcast','xfinity'].some(k => d.includes(k))) return 'Phone / Data';
+  if (['insurance','progressive','geico','state farm'].some(k => d.includes(k))) return 'Insurance';
+  if (['sylectus','dispatchland','truckstop','load board','dat freight','quickbooks','google workspace','microsoft 365'].some(k => d.includes(k))) return 'Load Board / Software';
+  if (['office depot','staples','home depot','lowes','lowe\'s','walmart'].some(k => d.includes(k))) return 'Supplies';
+  return 'Other';
+}
+
+function _bankFingerprintHash(text){
+  let h = 2166136261;
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i++){
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+function buildBankExpenseCandidates(headersInput, rowsInput){
+  const headers = _bankHeaderList(headersInput);
+  const rows = Array.isArray(rowsInput) ? rowsInput.slice(0, BANK_IMPORT_MAX_ROWS) : [];
+  const idx = (...aliases) => {
+    for (const alias of aliases){
+      const i = headers.indexOf(normalizeHeader(alias));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const at = (row, i) => i >= 0 && i < row.length ? sanitizeImportValue(row[i]) : '';
+
+  const dateI = idx('Date','Transaction Date','Posted Date','Posting Date','Post Date');
+  const descI = idx('Description','Details','Memo','Merchant','Payee','Name','Transaction Description');
+  const amountI = idx('Amount','Transaction Amount');
+  const debitI = idx('Debit','Withdrawal','Withdrawals','Outflow');
+  const creditI = idx('Credit','Deposit','Inflow');
+  const typeI = idx('Transaction Type','Type','Details');
+  const refI = idx('Transaction ID','Reference Number','Reference','Check Number','Check or Slip #','Confirmation');
+
+  const baseCounts = new Map();
+  const out = [];
+  for (const row of rows){
+    if (!Array.isArray(row) || row.every(v => !String(v || '').trim())) continue;
+    const date = normalizeBankImportDate(at(row, dateI));
+    const description = clampStr(at(row, descI).trim(), 180);
+    const reference = clampStr(at(row, refI).trim(), 120);
+    const typeText = at(row, typeI).trim().toLowerCase();
+    const debit = Math.abs(parseBankMoney(at(row, debitI)));
+    const credit = Math.abs(parseBankMoney(at(row, creditI)));
+    const signedAmount = parseBankMoney(at(row, amountI));
+
+    let direction = 'unknown';
+    let amount = 0;
+    if (debit > 0){ direction = 'debit'; amount = debit; }
+    else if (credit > 0){ direction = 'credit'; amount = credit; }
+    else {
+      amount = Math.abs(signedAmount);
+      if (/(purchase|debit|withdrawal|pos|card purchase|fee)/.test(typeText)) direction = 'debit';
+      else if (/(credit|deposit|refund|reversal|interest credit)/.test(typeText)) direction = 'credit';
+      else if (signedAmount < 0) direction = 'debit';
+    }
+
+    const transferLike = isBankTransferLike(description);
+    const category = inferBankExpenseCategory(description);
+    const valid = !!date && !!description && amount > 0;
+    let reviewReason = '';
+    if (!date) reviewReason = 'Invalid or missing date';
+    else if (!description) reviewReason = 'Missing description';
+    else if (!(amount > 0)) reviewReason = 'Missing or zero amount';
+    else if (direction === 'credit') reviewReason = 'Credit/inflow — not an expense';
+    else if (transferLike) reviewReason = 'Transfer/payment — review to prevent double-counting';
+    else if (direction === 'unknown') reviewReason = 'Amount direction is ambiguous — review required';
+
+    const normalizedDesc = description.toLowerCase().replace(/\s+/g, ' ').trim();
+    const baseIdentity = `${date}|${amount.toFixed(2)}|${normalizedDesc}|${reference.toLowerCase()}`;
+    const prior = baseCounts.get(baseIdentity) || 0;
+    baseCounts.set(baseIdentity, prior + 1);
+    const fingerprint = `bank_${_bankFingerprintHash(baseIdentity)}_${prior + 1}`;
+
+    out.push({
+      date, description, reference, amount: roundCents(amount), direction,
+      transferLike, category, valid, reviewReason, fingerprint,
+      defaultSelected: valid && direction === 'debit' && !transferLike,
+    });
+  }
+  return out;
+}
+
+async function openBankExpenseImportReview(headers, data, fileName='bank.csv'){
+  const candidates = buildBankExpenseCandidates(headers, data);
+  if (!candidates.length){ toast('No bank transactions found in this file', true); return; }
+
+  let existing = [];
+  try{
+    const { stores } = tx('expenses', 'readonly');
+    existing = await idbReq(stores.expenses.getAll());
+  }catch(err){
+    console.warn('[FL] bank import duplicate scan failed', err);
+  }
+  const existingFingerprints = new Set(existing.map(e => e?.bankFingerprint).filter(Boolean));
+  for (const c of candidates) c.duplicate = existingFingerprints.has(c.fingerprint);
+
+  const counts = {
+    debits: candidates.filter(c => c.direction === 'debit').length,
+    credits: candidates.filter(c => c.direction === 'credit').length,
+    unknown: candidates.filter(c => c.direction === 'unknown').length,
+    duplicates: candidates.filter(c => c.duplicate).length,
+  };
+
+  const body = document.createElement('div');
+  const safeName = escapeHtml(fileName || 'bank.csv');
+  const cappedNote = Array.isArray(data) && data.length > BANK_IMPORT_MAX_ROWS
+    ? `<div class="warn" style="font-size:12px;margin-top:6px">Showing the first ${BANK_IMPORT_MAX_ROWS.toLocaleString()} transactions. Split larger exports before importing.</div>` : '';
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div style="font-weight:800;margin-bottom:5px">Review before anything is saved</div>
+    <div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:10px">${safeName} • ${counts.debits} debit${counts.debits!==1?'s':''} • ${counts.credits} credit${counts.credits!==1?'s':''} ignored by default • ${counts.unknown} ambiguous • ${counts.duplicates} duplicate${counts.duplicates!==1?'s':''}</div>
+    ${cappedNote}
+    <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;margin:8px 0 12px">Transfers/card payments and ambiguous positive Amount-only rows start unchecked. Credits and known duplicates cannot be selected.</div>
+    <div id="bankImportRows" style="display:grid;gap:8px;max-height:52vh;overflow:auto"></div>
+    <div class="row" style="margin-top:14px;gap:8px">
+      <button class="btn primary" id="bankImportCommit" style="flex:1">Import Selected Expenses</button>
+      <button class="btn" id="bankImportCancel">Cancel</button>
+    </div>
+  </div>`;
+
+  const rowsEl = $('#bankImportRows', body);
+  candidates.forEach((c, i) => {
+    const disabled = !c.valid || c.direction === 'credit' || c.duplicate;
+    const checked = c.defaultSelected && !c.duplicate;
+    const status = c.duplicate ? 'Duplicate' : c.reviewReason || 'Debit expense';
+    const statusColor = (!c.reviewReason && !c.duplicate) ? 'var(--good)' : 'var(--warn)';
+    const row = document.createElement('div');
+    row.className = 'card';
+    row.style.cssText = 'padding:10px;margin:0';
+    const options = BANK_IMPORT_CATEGORY_OPTIONS.map(cat => `<option value="${escapeHtml(cat)}"${cat===c.category?' selected':''}>${escapeHtml(cat)}</option>`).join('');
+    row.innerHTML = `<div style="display:flex;gap:9px;align-items:flex-start">
+      <input class="bankImportPick" data-bank-index="${i}" type="checkbox" ${checked?'checked':''} ${disabled?'disabled':''} style="margin-top:4px;transform:scale(1.15)">
+      <div style="min-width:0;flex:1">
+        <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.description || 'Unknown transaction')}</b><b>${fmtMoney(c.amount)}</b></div>
+        <div class="muted" style="font-size:11px;margin:2px 0 7px">${escapeHtml(c.date || 'No valid date')} • <span style="color:${statusColor}">${escapeHtml(status)}</span></div>
+        <select class="bankImportCategory" data-bank-index="${i}" ${disabled?'disabled':''} style="width:100%;font-size:12px">${options}</select>
+      </div>
+    </div>`;
+    rowsEl.appendChild(row);
+  });
+
+  openModal('Review Bank Expenses', body);
+  $('#bankImportCancel', body)?.addEventListener('click', () => closeModal());
+  $('#bankImportCommit', body)?.addEventListener('click', async () => {
+    const commitBtn = $('#bankImportCommit', body);
+    const picks = [...body.querySelectorAll('.bankImportPick:checked:not(:disabled)')];
+    if (!picks.length){ toast('Select at least one expense to import', true); return; }
+    commitBtn.disabled = true;
+    commitBtn.textContent = 'Importing…';
+    let imported = 0;
+    const seen = new Set(existingFingerprints);
+    try{
+      for (const pick of picks){
+        const i = Number(pick.dataset.bankIndex);
+        const c = candidates[i];
+        if (!c || seen.has(c.fingerprint)) continue;
+        const categoryEl = body.querySelector(`.bankImportCategory[data-bank-index="${i}"]`);
+        const category = BANK_IMPORT_CATEGORY_OPTIONS.includes(categoryEl?.value) ? categoryEl.value : c.category;
+        await addExpense({
+date: c.date,
+amount: c.amount,
+category,
+notes: clampStr(`Bank import • ${c.description}`, 300),
+type: 'expense',
+importSource: 'bank_csv',
+bankFingerprint: c.fingerprint,
+bankDescription: c.description,
+bankDirection: c.direction,
+bankFileName: fileName || 'bank.csv',
+bankReference: c.reference || '',
+        });
+        seen.add(c.fingerprint);
+        imported++;
+      }
+      invalidateKPICache();
+      closeModal();
+      toast(`Imported ${imported} bank expense${imported!==1?'s':''}`);
+      await renderExpenses(true); await renderHome();
+    }catch(err){
+      console.error('[FL] bank expense import failed', err);
+      commitBtn.disabled = false;
+      commitBtn.textContent = 'Import Selected Expenses';
+      toast('Bank expense import failed. No further rows were added.', true);
+    }
+  });
+}
+
 async function importCSVFile(file){
   try{
     if (file?.size && file.size > LIMITS.MAX_IMPORT_BYTES){ toast('File too large', true); return; }
@@ -1804,14 +2083,16 @@ async function importCSVFile(file){
     const hasGallons = headers.some(h => ['gallons','gal','gallonsqty','qty'].includes(h));
     const hasCategory = headers.some(h => ['category','cat','type','expensetype'].includes(h));
     const hasState = headers.some(h => ['state','st','fuelstate'].includes(h));
+    const looksBank = isLikelyBankCSV(rows[0]);
 
     let type = 'unknown';
-    if (hasGallons || (hasState && !hasMiles)) type = 'fuel';
+    if (looksBank) type = 'bank';
+    else if (hasGallons || (hasState && !hasMiles)) type = 'fuel';
     else if (hasOrder || hasMiles) type = 'trips';
     else if (hasCategory || (hasPay && !hasMiles && !hasOrder)) type = 'expenses';
 
     if (type === 'unknown'){
-      toast('Could not detect CSV type. Expected trip, expense, or fuel columns.', true);
+      toast('Could not detect CSV type. Expected trip, expense, fuel, or bank-statement columns.', true);
       return;
     }
 
@@ -1829,6 +2110,11 @@ async function importCSVFile(file){
     }
 
     let imported = 0;
+
+    if (type === 'bank'){
+      await openBankExpenseImportReview(rows[0], data, file?.name || 'bank.csv');
+      return;
+    }
 
     if (type === 'trips'){
       const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
@@ -2015,7 +2301,7 @@ function openUniversalImport(){
   haptic(20);
   const body = document.createElement('div');
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
-    <div class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">Pick a file and we'll figure out what's in it. Supports trips, expenses, and fuel data.</div>
+    <div class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">Pick a file and we'll figure out what's in it. Supports trips, expenses, fuel data, and bank CSV/XLSX exports. Bank transactions always open in review mode before anything is saved.</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button class="btn primary imp-btn" data-accept=".csv,.tsv" style="padding:16px;font-size:15px;text-align:left">📄 CSV or TSV file</button>
       <button class="btn primary imp-btn" data-accept=".xlsx,.xls" style="padding:16px;font-size:15px;text-align:left">📊 Excel spreadsheet (.xlsx)</button>
@@ -17497,6 +17783,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel,
+    isLikelyBankCSV, parseBankMoney, normalizeBankImportDate, inferBankExpenseCategory,
+    isBankTransferLike, buildBankExpenseCandidates,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,

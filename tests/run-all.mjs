@@ -8,6 +8,7 @@ import { stopServer } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
+import { runSpec as bankExpenseImport } from './unit/bank-expense-import.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
 import { runSpec as pinLockout } from './integration/pin-lockout.spec.mjs';
@@ -29,6 +30,7 @@ const specs = [
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,
+  bankExpenseImport,
   dzGradeCap,
   taxCsvCorruption,
   pinLockout,

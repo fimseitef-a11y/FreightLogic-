@@ -2,7 +2,7 @@
 
 Status: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.
 
-v24.0 implementation status: **release candidate** — code complete; merge remains gated on the full Playwright suite and release-parity checks.
+v24.0 implementation status: **released** — Unified Decision Engine merged with the full Playwright gate green.
 
 ## Constitutional rules
 
@@ -22,6 +22,10 @@ v24.0 implementation status: **release candidate** — code complete; merge rema
 - CI uses a pinned Playwright version and non-deprecated GitHub Action runtimes.
 
 ## Delivery sequence
+
+**Patch release v24.0.1 — RELEASE CANDIDATE:** guarded bank-statement expense ingestion foundation. This does not consume the reserved v24.1 Confidence + Evidence milestone. Merge remains gated on the complete Playwright suite.
+
+Validation note: the initial v24.0.1 gate exposed a signed-Amount regression where the generic import sanitizer removed a legitimate leading minus before bank direction classification. The repair is intentionally scoped to the bank-money parser, preserves the global formula-injection guard, and adds explicit formula-like-input regression coverage. A second accounting guard is required before release: a transfer/card-payment row left as `Transfer / Review` must be reclassified before it can be written, because generic “Other” tax handling would otherwise allow an explicitly selected transfer to reach deductible Schedule C totals. A temporary CI bootstrap may write only these guarded parser/review repairs after repaired source passes the complete suite; the normal release workflow remains the final merge gate.
 
 1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
 2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.
