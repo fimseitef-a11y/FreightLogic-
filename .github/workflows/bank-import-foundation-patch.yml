@@ -1,16 +1,16 @@
 name: bank expense import foundation patch
 
 on:
-  push:
-    branches: [chatgpt/bank-expense-import-foundation]
-    paths:
-      - '.github/workflows/bank-import-foundation-patch.yml'
+  pull_request:
+    branches: [main]
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.event.pull_request.head.ref == 'chatgpt/bank-expense-import-foundation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,7 +38,6 @@ jobs:
                   raise SystemExit(f'{label}: expected exactly one match, found {count}')
               app = app.replace(old, new, 1)
 
-          # Preserve provider-neutral bank provenance on expense records without a DB-version bump.
           old = """    receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,\n    // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for"""
           new = """    receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,\n    ...(raw.importSource ? { importSource: clampStr(String(raw.importSource), 32) } : {}),\n    ...(raw.bankFingerprint ? { bankFingerprint: clampStr(String(raw.bankFingerprint), 96) } : {}),\n    ...(raw.bankDescription ? { bankDescription: clampStr(String(raw.bankDescription), 180) } : {}),\n    ...(['debit','credit','unknown'].includes(raw.bankDirection) ? { bankDirection: raw.bankDirection } : {}),\n    ...(raw.bankFileName ? { bankFileName: clampStr(String(raw.bankFileName), 120) } : {}),\n    ...(raw.bankReference ? { bankReference: clampStr(String(raw.bankReference), 120) } : {}),\n    // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for"""
           replace_once(old, new, 'sanitizeExpense provenance anchor')
@@ -67,10 +66,6 @@ function isLikelyBankCSV(headers){
   const hasMoney = _bankHasHeader(headers, ['amount','transaction amount','debit','withdrawal','withdrawals','outflow','credit','deposit','inflow']);
   const freightSpecific = _bankHasHeader(headers, ['order','order no','order number','load id','loaded miles','empty miles','deadhead miles','gallons','fuel state']);
   if (!hasDate || !hasDescription || !hasMoney || freightSpecific) return false;
-
-  // Avoid hijacking FreightLogic's ordinary Date/Description/Amount/Category
-  // expense exports. A bank-specific field (or no explicit category field) is
-  // required before we switch into guarded bank-review mode.
   const explicitCategory = _bankHasHeader(headers, ['category','cat','expense type']);
   const bankSpecific = _bankHasHeader(headers, [
     'transaction date','posted date','posting date','post date','transaction amount',
@@ -85,7 +80,7 @@ function parseBankMoney(value){
   let s = sanitizeImportValue(value).trim();
   if (!s) return 0;
   const parenNeg = /^\(.*\)$/.test(s);
-  s = s.replace(/[()$,$\s]/g, '').replace(/,/g, '');
+  s = s.replace(/[()$,\s]/g, '');
   const n = Number(s);
   if (!Number.isFinite(n)) return 0;
   return parenNeg ? -Math.abs(n) : n;
