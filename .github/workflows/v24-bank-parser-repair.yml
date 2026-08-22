@@ -1,8 +1,8 @@
 name: v24.0.1 Bank Import Repair
 
 # Temporary, branch-locked repair bootstrap for PR #76.
-# Security: pull_request_target is safe here only because the job refuses every
-# fork and every branch except this exact same-repository feature branch.
+# Security: pull_request_target is restricted to this exact same-repository
+# feature branch; forks and all other branch names are refused by the job gate.
 
 on:
   pull_request_target:
@@ -11,12 +11,18 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   repair-and-verify:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'chatgpt/bank-expense-import-foundation'
     runs-on: ubuntu-latest
     steps:
+      - name: Report repair gate start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate started: signed-bank parsing + transfer reclassification guard. No feature-branch code will be written unless the complete FreightLogic suite passes."
+
       - uses: actions/checkout@v6
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -36,8 +42,6 @@ jobs:
           app = Path('app.js')
           source = app.read_text()
 
-          # BANK-10: preserve a bank Amount column's leading minus as direction
-          # data without weakening the generic imported-text formula guard.
           old_money = "function parseBankMoney(value){\n  let s = sanitizeImportValue(value).trim();"
           new_money = """function parseBankMoney(value){
             // Bank Amount columns use a leading '-' as transaction-direction data.
@@ -51,8 +55,6 @@ jobs:
           elif "function parseBankMoney(value){\n  // Bank Amount columns use a leading '-'" not in source:
               raise SystemExit('Expected parseBankMoney pattern not found; refusing broad patch')
 
-          # BANK-11: a transfer/payment may be an expense only after the driver
-          # explicitly reclassifies it away from the non-deductible review bucket.
           if 'function bankTransferRequiresReclassification(' not in source:
               marker = 'function inferBankExpenseCategory(description){'
               helper = """function bankTransferRequiresReclassification(candidate, category){
@@ -161,3 +163,15 @@ test('[BANK-11] transfer review category requires explicit reclassification befo
           git add app.js tests/unit/bank-expense-import.spec.mjs
           git commit -m "fix: harden bank expense import boundaries"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Report repair gate success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate passed the complete FreightLogic suite and committed the guarded bank-import repairs to the feature branch."
+
+      - name: Report repair gate failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate failed before any repair commit was pushed. The PR remains draft and blocked from merge."
