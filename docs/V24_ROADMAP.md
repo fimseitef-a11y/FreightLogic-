@@ -23,7 +23,7 @@ v24.0 implementation status: **released** — Unified Decision Engine merged wit
 
 ## Delivery sequence
 
-**Patch release v24.0.1:** guarded bank-statement expense ingestion foundation. This does not consume the reserved v24.1 Confidence + Evidence milestone.
+**Patch release v24.0.1 — RELEASE CANDIDATE:** guarded bank-statement expense ingestion foundation. This does not consume the reserved v24.1 Confidence + Evidence milestone. Merge remains gated on the complete Playwright suite.
 
 1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
 2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.
