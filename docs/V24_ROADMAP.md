@@ -2,6 +2,8 @@
 
 Status: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.
 
+v24.0 implementation status: **release candidate** — code complete; merge remains gated on the full Playwright suite and release-parity checks.
+
 ## Constitutional rules
 
 1. **Single-file application architecture remains.** Core runtime logic stays in `app.js`; no build step, bundler, transpiler, or module split is introduced. Internal organization may improve without multiplying shipped runtime files.
