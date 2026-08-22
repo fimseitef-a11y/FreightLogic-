@@ -2,6 +2,8 @@
 
 Status: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.
 
+v24.0 implementation status: **release candidate** — code complete; merge remains gated on the full Playwright suite and release-parity checks.
+
 ## Constitutional rules
 
 1. **Single-file application architecture remains.** Core runtime logic stays in `app.js`; no build step, bundler, transpiler, or module split is introduced. Internal organization may improve without multiplying shipped runtime files.
@@ -21,7 +23,7 @@ Status: adopted after v23.9 Trust & Recovery. This document is the architecture 
 
 ## Delivery sequence
 
-1. **v24.0 Unified Decision Engine** — one deterministic result object inside `app.js`.
+1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
 2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.
 3. **v24.2 Load Lifecycle** — one accumulating operational identity with additive migration and dual-write transition.
 4. **v24.3 Personal Intelligence 2.0** — recency/sample-size weighting and self-calibrating market bands.

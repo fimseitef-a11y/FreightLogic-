@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v23.9.1
+/* FreightLogic Midwest Stack v2 Authority Overlay v24.0.0
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '23.9.1';
+  const VERSION = '24.0.0';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({
@@ -327,6 +327,7 @@
         : 'Counter once near the ask, then fall back toward realistic win if the lane improves position.';
 
     return {
+      authorityRole: 'ADAPTER_ONLY',
       version: VERSION,
       updatedAt: UPDATED_AT,
       input: { revenue, loadedMiles, deadheadMiles, totalMiles, origin, destination, weight, stops },
@@ -354,7 +355,8 @@
     panel.id = 'mwStackAuthorityPanel';
     panel.className = 'card';
     panel.style.marginTop = '12px';
-    panel.innerHTML = '<h3>Bid Strategy</h3>' +
+    panel.innerHTML = '<h3>Bid Strategy · Advisory</h3>' +
+      '<div class="muted" style="font-size:11px;margin-bottom:8px">Canonical decision above is authoritative; this panel is supporting market/bid evidence.</div>' +
       '<label for="mwBidMode">Bid mode</label>' +
       '<select id="mwBidMode" aria-label="Midwest Stack bid mode">' +
       '<option value="REALISTIC_WIN" selected>Realistic Win — compressed board</option>' +
@@ -397,7 +399,7 @@
       '<div class="pill"><span class="muted">Win</span><b>' + money(result.recommendation.winBid) + '</b></div>' +
       '<div class="pill"><span class="muted">Ask</span><b>' + money(result.recommendation.askBid) + '</b></div>' +
       '</div>' +
-      '<div style="margin-top:10px;font-weight:800;color:' + verdictColor + '">' + escapeHtml(result.recommendation.verdict) + '</div>' +
+      '<div style="margin-top:10px;font-weight:800;color:' + verdictColor + '">Signal: ' + escapeHtml(result.recommendation.verdict) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:4px">' + escapeHtml(result.recommendation.action) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:8px">→ ' + escapeHtml(result.market.destination.label) + ' · ' + escapeHtml(result.market.region) + ' region</div>' +
       (flags ? '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0;color:var(--warn)">' + flags + '</ul>' : '');
@@ -408,6 +410,7 @@
   }
 
   window.FreightLogicMidwestStack = Object.freeze({
+    authorityRole: 'ADAPTER_ONLY',
     version: VERSION,
     updatedAt: UPDATED_AT,
     config: CONFIG,
