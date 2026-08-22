@@ -1,9 +1,10 @@
 name: Apply bank parser fix
 
 on:
-  push:
-    branches:
-      - chatgpt/bank-expense-import-foundation
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-bank-parser-fix.yml'
 
 permissions:
   contents: write
@@ -38,8 +39,7 @@ jobs:
             let s = String(value ?? '').trim();"""
           if old not in source:
               raise SystemExit('Expected parseBankMoney pattern not found; refusing broad patch')
-          source = source.replace(old, new, 1)
-          app.write_text(source)
+          app.write_text(source.replace(old, new, 1))
 
           test_file = Path('tests/unit/bank-expense-import.spec.mjs')
           tests = test_file.read_text()
@@ -58,8 +58,7 @@ test('[BANK-10] bank money parser preserves numeric signs without accepting form
 '''
               if marker not in tests:
                   raise SystemExit('Expected bank test insertion marker not found')
-              tests = tests.replace(marker, regression + marker, 1)
-              test_file.write_text(tests)
+              test_file.write_text(tests.replace(marker, regression + marker, 1))
           PY
 
           node --check app.js
@@ -75,12 +74,11 @@ test('[BANK-10] bank money parser preserves numeric signs without accepting form
       - name: Run full FreightLogic suite
         run: node tests/run-all.mjs
 
-      - name: Commit verified fix and remove temporary workflow
+      - name: Commit verified parser fix
         shell: bash
         run: |
-          rm -f .github/workflows/apply-bank-parser-fix.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js tests/unit/bank-expense-import.spec.mjs .github/workflows/apply-bank-parser-fix.yml
+          git add app.js tests/unit/bank-expense-import.spec.mjs
           git commit -m "fix: preserve signed bank amounts in expense import"
           git push origin HEAD:chatgpt/bank-expense-import-foundation
