@@ -2,13 +2,15 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
 **v24.0 authority rule:** `app.js` is the sole deterministic owner of load verdict, grade, economics, and bid range. USA scoring and `midwest-stack-authority.js` are evidence/advisory layers. Cloud Worker `/evaluate` may explain or challenge assumptions, but it must project—not recalculate—the canonical decision.
+
+**v24.0.1 bank-import rule:** Bank CSV/XLSX data must enter the guarded expense-review candidate path. Credits/inflows, transfer-like payments, ambiguous direction, and known duplicates may not be silently imported as deductible expenses. Bank-link providers added later must feed this same provider-neutral candidate/review model rather than create a second bookkeeping path.
 
 ---
 

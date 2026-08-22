@@ -2,7 +2,7 @@
 
 Status: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.
 
-v24.0 implementation status: **release candidate** — code complete; merge remains gated on the full Playwright suite and release-parity checks.
+v24.0 implementation status: **released** — Unified Decision Engine merged with the full Playwright gate green.
 
 ## Constitutional rules
 
@@ -22,6 +22,8 @@ v24.0 implementation status: **release candidate** — code complete; merge rema
 - CI uses a pinned Playwright version and non-deprecated GitHub Action runtimes.
 
 ## Delivery sequence
+
+**Patch release v24.0.1:** guarded bank-statement expense ingestion foundation. This does not consume the reserved v24.1 Confidence + Evidence milestone.
 
 1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
 2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.

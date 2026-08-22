@@ -1,7 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.0 USA ENGINE
+/** FreightLogic v24.0.1 USA ENGINE
+ *  v24.0.1: Guarded bank-statement expense import with review-before-write, transfer/inflow protection, merchant categorization, and duplicate provenance.
  *  v24.0.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
  *          authoritative per-phase record): date-keyed IRS mileage rate
  *          (X-02), tax-method-sensitive deductions with an auto/cargo/
@@ -39,7 +40,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.0.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -69,7 +70,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v24.0.0 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v24.0.1 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
