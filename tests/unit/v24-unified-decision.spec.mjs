@@ -49,11 +49,16 @@ test('[V24-04] Worker AI cannot own verdict or grade', () => {
   const worker = source('cloud-backup-worker.js');
   ok(worker.includes('canonicalDecision?.authority?.verdict'), 'Worker must receive canonical verdict');
   ok(worker.includes("authority:     'CLIENT_UNIFIED_DECISION_ENGINE'"), 'Worker response authority marker missing');
-  ok(worker.includes('canonicalVerdictToAi(payload.canonicalDecision?.authority?.verdict)'), 'Worker compatibility verdict must project client authority');
-  ok(worker.includes('canonicalGrade(payload.canonicalDecision?.authority?.grade)'), 'Worker compatibility grade must project client authority');
-  ok(worker.includes('Canonical client decision required for AI review'), 'Worker must fail closed when client authority is absent');
+  ok(worker.includes('canonicalVerdict(payload.canonicalDecision?.authority?.verdict)'), 'Worker verdict must project exact client authority');
+  ok(worker.includes('canonicalGrade(payload.canonicalDecision?.authority?.grade)'), 'Worker grade must project client authority, including F rejects');
+  ok(worker.includes('Canonical client decision, economics, and bid range are required for AI review'), 'Worker must fail closed when canonical authority/economics/bid are absent');
   ok(!worker.includes('verdict:       validateVerdict(parsed.verdict)'), 'AI-parsed verdict must not remain authoritative');
   ok(!worker.includes('grade:         validateGrade(parsed.grade)'), 'AI-parsed grade must not remain authoritative');
+  ok(worker.includes('bidAdvice:     canonicalBidAdvice(payload.canonicalDecision?.bid)'), 'Worker bidAdvice must project the canonical client bid range');
+  ok(worker.includes('trueRpmBand:   canonicalTrueRpmLabel(payload.canonicalDecision)'), 'Worker True RPM display must project canonical economics');
+  ok(worker.includes('return /^[A-F]$/.test(s) ? s : 'F';'), 'Worker canonical grade projection must preserve F rejects');
+  ok(!worker.includes('String(parsed.bidAdvice'), 'AI must not be able to publish a competing dollar bid');
+  ok(!worker.includes('String(parsed.trueRpmBand'), 'AI must not be able to publish a competing RPM band');
   ok(!worker.includes('Professional floor: $1.60/mi'), 'Worker must not inject a competing generic RPM floor');
   ok(!worker.includes('IRS mileage deduction: $0.725/mi (2026)'), 'Worker review must not carry stale flat tax-rate context');
 });
@@ -62,6 +67,8 @@ test('[V24-05] AI payload carries a compact canonical decision, not a second cal
   const app = source('app.js');
   ok(app.includes('function unifiedDecisionForAI(decision)'), 'compact AI projection missing');
   ok(app.includes('canonicalDecision: unifiedDecisionForAI(d?._canonicalDecision)'), 'AI payload must carry canonical client decision');
+  ok(app.includes('authority: decision.bid.authority'), 'AI projection must include canonical bid authority');
+  ok(app.includes('range: decision.bid.range'), 'AI projection must include canonical bid range');
 });
 
 export async function runSpec(){ return await run(); }

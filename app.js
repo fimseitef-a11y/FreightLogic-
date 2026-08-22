@@ -1,8 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v23.9.1 USA ENGINE
- *  v23.9.1 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
+/** FreightLogic v24.0.0 USA ENGINE
+ *  v24.0.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
  *          authoritative per-phase record): date-keyed IRS mileage rate
  *          (X-02), tax-method-sensitive deductions with an auto/cargo/
  *          liability insurance split (X-03), a real release CI gate (X-06),
@@ -39,7 +39,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '23.9.1';
+const APP_VERSION = '24.0.0';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -69,7 +69,7 @@ const SETTINGS_CACHE = new Map();
 function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? SETTINGS_CACHE.get(key) : fallback; }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FREIGHTLOGIC v23.9.1 USA ENGINE — Production Security Hardened
+// FREIGHTLOGIC v24.0.0 USA ENGINE — Production Security Hardened
 // ════════════════════════════════════════════════════════════════════════════
 // • XSS / CSV injection / prototype pollution protection
 // • IndexedDB error recovery; DB: FreightLogic_v18 (migrated from XpediteOps_v1)
@@ -6785,7 +6785,8 @@ function deriveUnifiedEconomics(facts){
 
 function deriveUnifiedBid(totalMiles, opts={}){
   const miles = Math.max(0, Number(totalMiles || 0));
-  const urgencyBoost = Number(opts.urgencyBoost || 0);
+  const rawUrgencyBoost = Number(opts.urgencyBoost || 0);
+  const urgencyBoost = Number.isFinite(rawUrgencyBoost) ? Math.max(0, Math.min(0.30, rawUrgencyBoost)) : 0;
   const crossBorder = !!opts.crossBorder;
   const rawRange = generateBidRange(miles, { urgencyBoost, crossBorder });
   let range = null;
@@ -6797,7 +6798,7 @@ function deriveUnifiedBid(totalMiles, opts={}){
     authority: 'CLIENT_UNIFIED_DECISION_ENGINE',
     basis: 'TRUE_MILES',
     totalMiles: miles,
-    urgencyBoost: Math.min(0.30, urgencyBoost),
+    urgencyBoost,
     crossBorder,
     range,
   });
@@ -7096,6 +7097,11 @@ function unifiedDecisionForAI(decision){
       profitMarginPct: decision.economics.profitMarginPct,
       breakEvenRPM: decision.economics.breakEvenRPM,
     },
+    bid: {
+      authority: decision.bid.authority,
+      basis: decision.bid.basis,
+      range: decision.bid.range,
+    },
     route: decision.route,
     personalIntel: { score: decision.personalIntel.score },
     risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
@@ -7104,7 +7110,7 @@ function unifiedDecisionForAI(decision){
 }
 
 // ================================================================================
-// 7D — Dimensional/payload pre-check (v23.9.1)
+// 7D — Dimensional/payload pre-check (v24.0.0)
 // Configurable van profile; any load exceeding it fails BEFORE economics are
 // evaluated. Runs on every intake path (Smart Load Inbox, F27 Load Intake,
 // OCR quick-scan, manual entry) because all of them funnel into the same
@@ -8120,31 +8126,33 @@ function _mwRenderDecision(out, d){
         if (!res.ok){
           const errData = await res.json().catch(function(){ return {}; });
           resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">' + escapeHtml(errData.error || 'AI unavailable') + '</div>';
-          aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis';
+          aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision';
           return;
         }
 
         const aiData = await res.json();
-        if (!aiData.ok || !aiData.ai){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis'; return; }
+        if (!aiData.ok || !aiData.ai){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision'; return; }
 
         const ev = aiData.ai;
         const evGradeColor = ev.grade === 'A' ? 'var(--good)' : ev.grade === 'B' ? '#58a6ff' : ev.grade === 'C' ? 'var(--warn)' : ev.grade === 'D' ? '#ff8c42' : 'var(--bad)';
-        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : ev.verdict === 'NEGOTIATE' ? 'var(--warn)' : ev.verdict === 'STRATEGIC_ONLY' ? '#58a6ff' : 'var(--bad)';
+        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : (ev.verdict === 'STRATEGIC' || ev.verdict === 'DZ-EXIT') ? 'var(--warn)' : 'var(--bad)';
 
         var aiHTML = '<div style="border:2px solid var(--accent-border);border-radius:var(--r);padding:14px;background:var(--surface-0)">';
-        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI STRATEGIC ANALYSIS</span>';
+        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI REVIEW · CANONICAL DECISION LOCKED</span>';
         if (aiData.model) aiHTML += '<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">' + escapeHtml(aiData.model) + '</span>';
         aiHTML += '</div>';
 
         // Grade + Verdict
         aiHTML += '<div style="display:flex;gap:10px;margin-bottom:12px">';
-        aiHTML += '<div style="text-align:center;padding:10px 16px;border-radius:8px;background:' + evGradeColor + '15;border:1px solid ' + evGradeColor + '40"><div style="font-size:28px;font-weight:800;color:' + evGradeColor + ';font-family:var(--font-mono)">' + escapeHtml(ev.grade || '?') + '</div><div style="font-size:10px;color:var(--text-tertiary)">AI Grade</div></div>';
+        aiHTML += '<div style="text-align:center;padding:10px 16px;border-radius:8px;background:' + evGradeColor + '15;border:1px solid ' + evGradeColor + '40"><div style="font-size:28px;font-weight:800;color:' + evGradeColor + ';font-family:var(--font-mono)">' + escapeHtml(ev.grade || '?') + '</div><div style="font-size:10px;color:var(--text-tertiary)">FreightLogic Grade</div></div>';
         aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml((ev.verdict || '?').replace(/_/g, ' ')) + '</div>';
         if (ev.trueRpmBand) aiHTML += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono)">' + escapeHtml(ev.trueRpmBand) + '</div>';
         aiHTML += '</div></div>';
 
         // Summary
         if (ev.summary) aiHTML += '<div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px">' + escapeHtml(ev.summary) + '</div>';
+
+        if (ev.agreement === 'CHALLENGE' && ev.challenge) aiHTML += '<div style="font-size:12px;color:var(--warn);line-height:1.5;padding:9px 10px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn-border);margin-bottom:10px"><b>AI challenge — recheck:</b> ' + escapeHtml(ev.challenge) + '</div>';
 
         // Primary reason
         if (ev.primaryReason) aiHTML += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border-left:3px solid var(--accent-border)">' + escapeHtml(ev.primaryReason) + '</div>';
@@ -8166,7 +8174,8 @@ function _mwRenderDecision(out, d){
         }
 
         // Bid advice
-        if (ev.bidAdvice) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2);margin-bottom:8px"><b style="color:var(--text)">Bid:</b> ' + escapeHtml(ev.bidAdvice) + '</div>';
+        if (ev.bidAdvice) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2);margin-bottom:8px"><b style="color:var(--text)">Canonical bid:</b> ' + escapeHtml(ev.bidAdvice) + '</div>';
+        if (ev.bidTactic) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:8px 10px;border-radius:8px;background:var(--surface-1);margin-bottom:8px"><b style="color:var(--text)">AI tactic:</b> ' + escapeHtml(ev.bidTactic) + '</div>';
 
         // Next move
         if (ev.nextMove) aiHTML += '<div style="display:flex;gap:8px;margin-top:4px;font-size:11px"><div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Next: <b>' + escapeHtml(ev.nextMove) + '</b></div></div>';
@@ -8176,7 +8185,7 @@ function _mwRenderDecision(out, d){
       } catch(e) {
         resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">AI request failed: ' + escapeHtml(e.message || 'network error') + '</div>';
       }
-      aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Strategic Analysis';
+      aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision';
     });
   }
 
@@ -13005,7 +13014,7 @@ function renderLaneIntelHTML(intel){
 }
 
 
-// v23.9.1 PRE-v24: conservative bidHistory broker-integrity gate.
+// v24.0.0 PRE-v24: conservative bidHistory broker-integrity gate.
 // Only explicit broker-labelled evidence may repair legacy rows. Never infer a
 // broker from trip.customer: that field can represent carrier/company identity
 // and would silently recreate the attribution bug this gate is meant to stop.
@@ -15679,7 +15688,7 @@ async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickup
 
 
 // ════════════════════════════════════════════════════════════════
-// v23.9.1 PRE-v24: Live-source health contract
+// v24.0.0 PRE-v24: Live-source health contract
 // External feeds must never fail as an unexplained `null`. Each source records
 // the last attempt/result for Diagnostics while preserving the existing return
 // shapes so this correctness pass does not become a feature rewrite.

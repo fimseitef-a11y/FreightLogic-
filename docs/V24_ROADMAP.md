@@ -21,7 +21,7 @@ Status: adopted after v23.9 Trust & Recovery. This document is the architecture 
 
 ## Delivery sequence
 
-1. **v24.0 Unified Decision Engine** — one deterministic result object inside `app.js`. **In progress:** canonical result contract + grade authority + legacy-render adapter + Worker AI authority separation are complete; Phase B moved the full geography/RPM/long-haul/margin/deadhead/weekly/fatigue/personal hard-gate chain into `deriveUnifiedAuthority()` with boundary tests. Phase C moves economics + bid ownership into pure canonical functions and makes evaluator fuel economics honor the actual `fuelPrice`/`vehicleMpg` settings used elsewhere in FreightLogic.
+1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
 2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.
 3. **v24.2 Load Lifecycle** — one accumulating operational identity with additive migration and dual-write transition.
 4. **v24.3 Personal Intelligence 2.0** — recency/sample-size weighting and self-calibrating market bands.

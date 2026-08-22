@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v23.9.1
+/* FreightLogic Midwest Stack v2 Authority Overlay v24.0.0
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '23.9.1';
+  const VERSION = '24.0.0';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({

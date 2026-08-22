@@ -65,6 +65,12 @@ test('[V24-C06] urgency and border premiums are deterministic and urgency is cap
   eq(capped.urgencyBoost, 0.30, 'canonical metadata records capped urgency');
 });
 
+test('[V24-C07] invalid or negative urgency can never reduce the protective bid floor', async () => {
+  const negative = await bid(100, { urgencyBoost: -0.50, crossBorder: false });
+  eq(negative.range.minimum.rpm, 1.40, 'negative urgency must clamp to zero, not discount the floor');
+  eq(negative.urgencyBoost, 0, 'canonical urgency metadata must clamp negative values to zero');
+});
+
 export async function runSpec(){
   app = await launchApp();
   try { return await run(); }
