@@ -7,18 +7,12 @@ name: Tests
 #
 # Pre-v24 integrity gate: keep the browser harness reproducible. Do not use a
 # floating Playwright install here; browser/toolchain changes must be explicit.
-#
-# TEMPORARY v24.0.1 bootstrap: the bank-parser-repair job is hard-gated to the
-# v24.0.1 feature branch and will be removed as soon as its verified commit lands.
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
-
-permissions:
-  contents: write
 
 jobs:
   playwright-suite:
@@ -45,81 +39,3 @@ jobs:
 
       - name: Run full suite
         run: node tests/run-all.mjs
-
-  bank-parser-repair:
-    if: github.event_name == 'pull_request' && github.head_ref == 'chatgpt/bank-expense-import-foundation'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref }}
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Apply signed bank amount parser repair and regression coverage
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          app = Path('app.js')
-          source = app.read_text()
-          old = "function parseBankMoney(value){\n  let s = sanitizeImportValue(value).trim();"
-          new = """function parseBankMoney(value){
-            // Bank Amount columns use a leading '-' as transaction-direction data.
-            // Do not use sanitizeImportValue() here: that generic text sanitizer
-            // intentionally strips formula-leading characters, including '-'.
-            // This parser never evaluates text; Number() below accepts only numeric
-            // currency after formatting characters are removed and rejects formulas.
-            let s = String(value ?? '').trim();"""
-          if old in source:
-              source = source.replace(old, new, 1)
-              app.write_text(source)
-          elif "let s = String(value ?? '').trim();" not in source:
-              raise SystemExit('Expected parseBankMoney pattern not found; refusing broad patch')
-
-          test_file = Path('tests/unit/bank-expense-import.spec.mjs')
-          tests = test_file.read_text()
-          if '[BANK-10]' not in tests:
-              marker = "\nexport async function runSpec(){"
-              regression = r'''
-
-test('[BANK-10] bank money parser preserves numeric signs without accepting formula payloads', async () => {
-  eq(await call('parseBankMoney', '-64.25'), -64.25, 'leading minus must survive as bank direction data');
-  eq(await call('parseBankMoney', '(64.25)'), -64.25, 'accounting parentheses must remain a negative amount');
-  eq(await call('parseBankMoney', '$1,234.56'), 1234.56, 'formatted currency should parse normally');
-  eq(await call('parseBankMoney', '=1+1'), 0, 'spreadsheet formula text must not parse as money');
-  eq(await call('parseBankMoney', '@SUM(A1:A2)'), 0, 'formula-like command text must not parse as money');
-  eq(await call('parseBankMoney', '-1+2'), 0, 'a leading minus does not make an expression valid numeric input');
-});
-'''
-              if marker not in tests:
-                  raise SystemExit('Expected bank test insertion marker not found')
-              test_file.write_text(tests.replace(marker, regression + marker, 1))
-          PY
-          node --check app.js
-
-      - name: Install pinned Playwright + Chromium
-        run: |
-          npm install -g playwright@1.62.1
-          npx playwright install --with-deps chromium
-          mkdir -p node_modules
-          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-
-      - name: Run full FreightLogic suite on repaired source
-        run: node tests/run-all.mjs
-
-      - name: Commit repair only after green suite
-        shell: bash
-        run: |
-          if git diff --quiet -- app.js tests/unit/bank-expense-import.spec.mjs; then
-            echo "Parser repair already present; no commit needed."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js tests/unit/bank-expense-import.spec.mjs
-          git commit -m "fix: preserve signed bank amounts in expense import"
-          git push origin HEAD:${{ github.head_ref }}
