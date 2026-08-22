@@ -56,7 +56,7 @@ test('[V24-04] Worker AI cannot own verdict or grade', () => {
   ok(!worker.includes('grade:         validateGrade(parsed.grade)'), 'AI-parsed grade must not remain authoritative');
   ok(worker.includes('bidAdvice:     canonicalBidAdvice(payload.canonicalDecision?.bid)'), 'Worker bidAdvice must project the canonical client bid range');
   ok(worker.includes('trueRpmBand:   canonicalTrueRpmLabel(payload.canonicalDecision)'), 'Worker True RPM display must project canonical economics');
-  ok(worker.includes('return /^[A-F]$/.test(s) ? s : 'F';'), 'Worker canonical grade projection must preserve F rejects');
+  ok(worker.includes("return /^[A-F]$/.test(s) ? s : 'F';"), 'Worker canonical grade projection must preserve F rejects');
   ok(!worker.includes('String(parsed.bidAdvice'), 'AI must not be able to publish a competing dollar bid');
   ok(!worker.includes('String(parsed.trueRpmBand'), 'AI must not be able to publish a competing RPM band');
   ok(!worker.includes('Professional floor: $1.60/mi'), 'Worker must not inject a competing generic RPM floor');
