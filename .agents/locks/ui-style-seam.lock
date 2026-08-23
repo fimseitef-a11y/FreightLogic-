@@ -1,5 +1,0 @@
-owner: gpt
-token: 9f92c3ab-6a1e-4ec3-a585-d94d3a570823
-started_utc: 2026-08-23T22:40:00Z
-expected_release_utc: 2026-08-23T23:40:00Z
-task: Behavior-preserving CSS-first presentation seam: extract the single index.html design-system style block to styles.css and precache it in service-worker.js; no app.js or behavior logic changes.
