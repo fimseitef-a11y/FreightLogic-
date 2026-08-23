@@ -2,7 +2,15 @@
 
 Status: adopted after v23.9 Trust & Recovery. This document is the architecture guardrail for v24 work.
 
-v24.0 implementation status: **release candidate** — code complete; merge remains gated on the full Playwright suite and release-parity checks.
+v24.0 implementation status: **shipped** — code complete; full Playwright suite green
+(119 passed, 0 failed across 19 spec files) and source-side version/SW/CSP parity verified
+across all 13 release-checklist locations.
+
+One gate item remains environment-bound, not code-bound: the **live** half of
+`scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health` +
+admin-endpoint 401) has to be run from a network that can reach
+`freightlogic.pages.dev` and `freightlogic-backup.fimseitef.workers.dev`. Run it against
+the deploy before declaring the deployment parity-verified.
 
 ## Constitutional rules
 

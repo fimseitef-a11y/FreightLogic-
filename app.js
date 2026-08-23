@@ -2,16 +2,28 @@
 'use strict';
 
 /** FreightLogic v24.0.0 USA ENGINE
- *  v24.0.0 "Trust & Recovery" (X-01..X-12, in progress — see CLAUDE.md for the
- *          authoritative per-phase record): date-keyed IRS mileage rate
- *          (X-02), tax-method-sensitive deductions with an auto/cargo/
- *          liability insurance split (X-03), a real release CI gate (X-06),
- *          export checksum/payload consistency (X-05), cloud delta-sync
- *          restore + full mergeRestoreData coverage (X-01/X-07), a single
- *          shared Dead Zone Exit decision gate for both the evaluator and
- *          the standalone overlay (X-04), the overlay + bundled SheetJS
- *          moved into the SW critical shell (X-08/X-10), a real diagnostics
- *          token (X-09), the dead PDF-OCR import claim removed (X-11).
+ *  v24.0.0 "Unified Decision Engine": one deterministic, client-owned decision
+ *          object in app.js is the sole authority for load verdict, grade,
+ *          economics, and bid range. USA scoring is evidence-only, the Midwest
+ *          Stack overlay is advisory, and Worker /evaluate is review-only — it
+ *          projects the canonical verdict/grade/True RPM/bid fields rather than
+ *          recalculating them. Boundary, determinism, economics, bid, and
+ *          authority-regression suites enforce the contract. See
+ *          docs/V24_ROADMAP.md for the authority contract.
+ *  v23.9.1: Pre-v24 integrity gate — True RPM floors aligned to $1.40/$1.50,
+ *           static rate bands carry CURRENT/AGING/STALE freshness, live sources
+ *           (EIA/NWS/FMCSA/CBP) report health, conservative broker-key
+ *           normalization, pinned CI Playwright
+ *  v23.9:   "Trust & Recovery" (X-01..X-12 — see CLAUDE.md for the
+ *           authoritative per-phase record): date-keyed IRS mileage rate
+ *           (X-02), tax-method-sensitive deductions with an auto/cargo/
+ *           liability insurance split (X-03), a real release CI gate (X-06),
+ *           export checksum/payload consistency (X-05), cloud delta-sync
+ *           restore + full mergeRestoreData coverage (X-01/X-07), a single
+ *           shared Dead Zone Exit decision gate for both the evaluator and
+ *           the standalone overlay (X-04), the overlay + bundled SheetJS
+ *           moved into the SW critical shell (X-08/X-10), a real diagnostics
+ *           token (X-09), the dead PDF-OCR import claim removed (X-11).
  *  v23.8.4: Field-resilience fixes — new expense/fuel records no longer carry an
  *           explicit id:undefined that made every IndexedDB add() throw (F-8), and a
  *           GPS error no longer tears down an in-progress trip: the session degrades
