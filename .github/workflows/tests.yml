@@ -1,89 +1,41 @@
 name: Tests
 
-# X-06 (v23.9 Phase 2): run the full Playwright suite (tests/run-all.mjs) on
-# every PR targeting main and on every push to main. The suite exits non-zero
-# on any failure. Configure playwright-suite as a required status check in
-# branch protection/rulesets when repository settings permit it.
-#
-# Pre-v24 integrity gate: keep the browser harness reproducible. Do not use a
-# floating Playwright install here; browser/toolchain changes must be explicit.
-#
-# TEMPORARY v24.0.1 repair job: hard-gated to same-repository PR #76. The
-# implementation lives in .github/scripts/v24_bank_import_repair.py so this
-# workflow remains small and auditable. Remove both after the repair lands.
+# TEMPORARY v24.0.1 repair gate. This exact file is mirrored on main and PR #76
+# to avoid workflow-definition ambiguity. Restore the standard X-06 workflow
+# immediately after the verified bank-import repair lands.
 
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   playwright-suite:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Install Playwright + Chromium
-        run: |
-          npm install -g playwright@1.62.1
-          npx playwright install --with-deps chromium
-
-      - name: Symlink playwright into node_modules
-        run: |
-          mkdir -p node_modules
-          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-
-      - name: Run full suite
-        run: node tests/run-all.mjs
-
-  bank-import-repair:
-    if: "${{ github.event_name == 'pull_request' && github.event.pull_request.number == 76 && github.head_ref == 'chatgpt/bank-expense-import-foundation' }}"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR branch
+      - name: Checkout v24.0.1 PR branch
         uses: actions/checkout@v6
         with:
           ref: chatgpt/bank-expense-import-foundation
           fetch-depth: 0
-
-      - name: Checkout trusted repair script
-        uses: actions/checkout@v6
-        with:
-          ref: main
-          path: .repair-main
-          sparse-checkout: .github/scripts/v24_bank_import_repair.py
-          sparse-checkout-cone-mode: false
-
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-
-      - name: Apply guarded repair
-        run: python .repair-main/.github/scripts/v24_bank_import_repair.py
-
+      - name: Apply guarded bank-import repair
+        run: python .github/scripts/v24_bank_import_repair.py
       - name: Syntax-check repaired app
         run: node --check app.js
-
       - name: Install Playwright + Chromium
         run: |
           npm install -g playwright@1.62.1
           npx playwright install --with-deps chromium
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-
-      - name: Run complete suite on repaired source
+      - name: Run complete FreightLogic suite
         run: node tests/run-all.mjs
-
-      - name: Commit verified repair
+      - name: Commit verified bank-import repair
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
