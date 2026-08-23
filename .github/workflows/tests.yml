@@ -5,17 +5,14 @@ name: Tests
 # on any failure. Configure playwright-suite as a required status check in
 # branch protection/rulesets when repository settings permit it.
 #
-# Temporary v24.0.1 permission probe: same standard workflow, contents write
-# only. Remove the explicit permissions block after the guarded repair lands.
+# Pre-v24 integrity gate: keep the browser harness reproducible. Do not use a
+# floating Playwright install here; browser/toolchain changes must be explicit.
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
-
-permissions:
-  contents: write
 
 jobs:
   playwright-suite:
@@ -33,6 +30,9 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Symlink playwright into node_modules
+        # FreightLogic intentionally has no package.json/build system. Node's
+        # ESM resolver will not use NODE_PATH, so mirror the documented local
+        # test setup by symlinking the pinned global Playwright package.
         run: |
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
