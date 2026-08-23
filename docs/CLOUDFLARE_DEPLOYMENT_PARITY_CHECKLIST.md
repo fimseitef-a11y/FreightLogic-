@@ -11,11 +11,11 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 - Open the deployed Pages URL in a private/incognito browser session.
 - Open DevTools or Safari Web Inspector if available.
 - Confirm `index.html` loads without console syntax errors.
-- Confirm `app.js?v=23.9.0` loads.
-- Confirm `voice-load.js?v=23.9.0` loads.
-- Confirm `sw-bridge.js?v=23.9.0` loads.
-- Confirm `midwest-stack-authority.js?v=23.9.0` loads after service-worker activation.
-- Confirm `manifest.json?v=23.9.0` loads, and its `name` field reads `FreightLogic v23.9.0`.
+- Confirm `app.js?v=24.0.0` loads.
+- Confirm `voice-load.js?v=24.0.0` loads.
+- Confirm `sw-bridge.js?v=24.0.0` loads.
+- Confirm `midwest-stack-authority.js?v=24.0.0` loads after service-worker activation.
+- Confirm `manifest.json?v=24.0.0` loads, and its `name` field reads `FreightLogic v24.0.0`.
 - Confirm `vendor/xlsx.full.min.js` loads (X-10, v23.9 — bundled SheetJS, no CDN fallback).
 - Confirm icons load with 200 status.
 - Confirm `_headers` security headers are visible on the deployed site.
@@ -26,10 +26,10 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 
 ## Service worker checks
 
-- Confirm `service-worker.js` contains `SW_VERSION = '23.9.0'`.
-- Confirm `CORE` includes `midwest-stack-authority.js?v=23.9.0` and `vendor/xlsx.full.min.js`.
+- Confirm `service-worker.js` contains `SW_VERSION = '24.0.0'`.
+- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.0` and `vendor/xlsx.full.min.js`.
 - Confirm the `install` event's **critical** (install-blocking) shell array — distinct from
-  the broader `CORE` list — also includes `midwest-stack-authority.js?v=23.9.0` and
+  the broader `CORE` list — also includes `midwest-stack-authority.js?v=24.0.0` and
   `vendor/xlsx.full.min.js` (X-08/X-10, v23.9). Before v23.9, the overlay script was only in
   `CORE`, so a first offline install could complete and serve the app shell before the
   TRUE_RPM decision layer was actually cached, with no error surfaced.
@@ -57,11 +57,23 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
   RPM in the `[0.90, 1.25)` survival band, and the `#mwDZNoReloadToggle` confirmation
   checkbox checked. `tests/integration/dz-gate-parity.spec.mjs` covers this automatically.
 
+## v24.0 decision-authority checks
+
+- Confirm the evaluator's verdict, grade, economics, and bid range all come from the
+  canonical client-owned decision object in `app.js` (v24.0 Unified Decision Engine) —
+  the USA layer is evidence-only and the Midwest overlay is an advisory adapter.
+- Confirm a `/evaluate` response *projects* the canonical verdict/grade/True RPM/bid
+  rather than publishing a competing calculation of its own.
+- `tests/unit/v24-unified-decision.spec.mjs`,
+  `tests/integration/v24-authority-boundaries.spec.mjs`, and
+  `tests/integration/v24-economics-bid.spec.mjs` cover this automatically; the full
+  suite must be green before a deploy is considered parity-verified.
+
 ## Worker checks
 
-Expected source file: `cloud-backup-worker.js` v11.
+Expected source file: `cloud-backup-worker.js` v12.
 
-- `GET /health` should return JSON with `ok: true`, `version: '11'`, and a timestamp.
+- `GET /health` should return JSON with `ok: true`, `version: '12'`, and a timestamp.
 - Admin routes must reject without `X-Admin-Token`.
 - Driver backup/evaluate/extract routes must reject without `X-Backup-Token`.
 - `GET /backup/delta` should return `{ ok: true, deltas: [...], retainedCount, totalCreated }`

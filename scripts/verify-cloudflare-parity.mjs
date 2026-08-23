@@ -63,11 +63,27 @@ function checkLocalCspParity(checks) {
   }
 }
 
-async function main() {
-  const checks = [];
+function report(checks) {
+  for (const c of checks) {
+    console.log(`${c.pass ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
+  }
+  const failed = checks.filter(c => !c.pass);
+  if (failed.length) {
+    console.error(`\n${failed.length} parity check(s) failed.`);
+    process.exit(1);
+  }
+  console.log('\nAll FreightLogic Cloudflare parity checks passed.');
+}
 
-  checkLocalCspParity(checks);
-
+/** The live half needs to reach the deployed Pages origin and Worker. When it
+ *  can't (no network, DNS blocked, running from CI), a thrown fetch error used
+ *  to escape main() and hit the top-level catch, which printed only
+ *  "Parity verifier failed: fetch failed" and exited — discarding the local
+ *  CSP-parity result that had already been collected, despite that check being
+ *  purely static and documented as running "even when the live-fetch checks
+ *  below can't reach anything." Now a network failure is recorded as one failed
+ *  check and every collected result is still reported. */
+async function runLiveChecks(checks) {
   const index = await fetchText(`${pagesOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
   assert(checks, 'Index references app.js v24.0.0', index.text.includes('app.js?v=24.0.0'));
@@ -106,16 +122,21 @@ async function main() {
 
   const adminReject = await fetchJson(`${workerOrigin}/admin/users`);
   assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401, `${adminReject.status} (expected 401; got 429 means IP is rate-limited — run from a fresh IP or reset the rl: KV keys)`);
+}
 
-  const failed = checks.filter(c => !c.pass);
-  for (const c of checks) {
-    console.log(`${c.pass ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
+async function main() {
+  const checks = [];
+
+  checkLocalCspParity(checks);
+
+  try {
+    await runLiveChecks(checks);
+  } catch (err) {
+    assert(checks, 'live deployment checks reached the deployed origins', false,
+      `${err && err.message ? err.message : String(err)} — run this from a network that can reach ${pagesOrigin} and ${workerOrigin}`);
   }
-  if (failed.length) {
-    console.error(`\n${failed.length} parity check(s) failed.`);
-    process.exit(1);
-  }
-  console.log('\nAll FreightLogic Cloudflare parity checks passed.');
+
+  report(checks);
 }
 
 main().catch(err => {

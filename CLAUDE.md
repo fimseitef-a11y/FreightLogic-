@@ -272,7 +272,13 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       tag and `_headers`' `Content-Security-Policy` line are byte-identical — a real
       drift between them (missing Google Fonts origins in `_headers`) was found and
       fixed while adding this check. If you edit the CSP, edit both files together.
-  13. Also verify `service-worker.js`'s `critical` array (the install-blocking shell,
+  13. `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` — the *manual* checklist quotes
+      concrete `?v=` markers, `SW_VERSION`, the manifest `name`, and the expected Worker
+      version. Added to this list after the v24.0.0 close-out shipped with this file still
+      reading `23.9.0` / Worker `v11`: the close-out fixed every code-side marker and the
+      verify script, but nothing pointed at this doc, so it drifted a full release behind
+      the thing it exists to verify.
+  14. Also verify `service-worker.js`'s `critical` array (the install-blocking shell,
       distinct from the broader `CORE` list) still contains `midwest-stack-authority.js`
       and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — a stale/reverted `critical`
       array is a silent regression this checklist wouldn't otherwise catch, since the
@@ -1060,3 +1066,63 @@ locations, including the `critical` install-blocking shell and the
 `scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health`)
 must still be run from a network that can reach those origins before the deploy
 is considered parity-verified.
+
+*Correction (later pass):* the "all 13 checklist locations" claim above covered the 13
+locations the checklist listed **at the time** — which did not include the manual
+`docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` itself. That file was still reading
+`23.9.0` / Worker `v11` when v24.0.0 closed out, and was corrected afterwards; it is now
+location 13 in the version-bump checklist above (the `critical`-array item moved to 14).
+
+---
+
+## v24.1 "Confidence + Evidence" — specified, NOT implemented
+
+Roadmap item 2 in `docs/V24_ROADMAP.md`. As of this writing v24.1 exists **only as a
+contract**; there is zero runtime code for it, and no version marker moved (every shipped
+file is still `24.0.0`).
+
+Two documents landed in PR #80 and are the authoritative spec:
+
+- `docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md` — the behavior contract: the `EvidenceItem`
+  shape, categorical HIGH/MEDIUM/LOW confidence rules, deterministic thresholds
+  (static/historical freshness CURRENT ≤14d / AGING 15–30d / STALE >30d; aggregate sample
+  size HIGH ≥10 / MEDIUM 3–9 / LOW ≤2), domain summaries, the overall-confidence
+  aggregation rule (a material LOW domain caps overall at LOW — never averaged away), the
+  Worker boundary, and a 12-point acceptance contract.
+- `docs/V24_1_IMPLEMENTATION_MAP.md` — where it attaches in the current source:
+  `buildUnifiedDecisionContract()` is the additive attachment point,
+  `unifiedDecisionForAI()` the compact Worker projection, and the existing
+  `LIVE_SOURCE_HEALTH` / `LIVE_SOURCE_STATUS` substrate (v23.9.1) is the source-health
+  registry to normalize from — **do not create a second one**.
+
+Authority rules this release must not break (they are the v24.0 rules restated):
+confidence is descriptive only; it may never change verdict, grade, True RPM, or the
+canonical bid range, and may never relax a protective floor because evidence is stale or
+a source failed. `UNKNOWN` / `UNAVAILABLE` / source failure must stay visibly distinct
+from "no risk" or a favorable value. No numeric win probability in v24.1 — percentages
+wait for lifecycle calibration data (v24.2+).
+
+**Prerequisite gate, not yet met:** the spec's own sequencing puts a behavior-preserving
+UI seam extraction *before* any v24.1 code. That extraction has not landed. Persistence
+is also gated — if the evidence snapshot cannot be stored as additive optional fields on
+the existing shapes, that portion defers to the v24.2 lifecycle migration rather than
+spending its migration budget here (`DB_VERSION` stays 13).
+
+Out of scope for v24.1 (per the spec): calibrated probabilities, new external feeds,
+lifecycle DB migration, self-calibrating bands, Next-Move logic, Driver Mode redesign,
+screenshot-first rework, bank-account/statement import, and any change to v24.0 decision
+authority.
+
+### Related repo state at the time of the spec landing
+
+- The temporary v24.0.1 bank-repair CI machinery is gone (PR #82). `.github/workflows/`
+  contains only `tests.yml` again. v24.1 must not reintroduce comment-triggered or
+  branch-pushing CI repair paths.
+- PR #76 ("v24.0.1: Bank statement expense import foundation") was closed **unmerged** —
+  bank/statement import is not in the tree and is explicitly out of v24.1 scope.
+- `README.txt` was rewritten (PR #81) to match actual behavior: SheetJS is bundled and
+  install-critical with **no** CDN fallback, and the Tesseract OCR files are described as
+  historical notes rather than a supported optional drop-in, since they are not in
+  `vendor/`.
+- Baseline re-verified for this pass: full Playwright suite **119 passed, 0 failed across
+  19 spec files**.
