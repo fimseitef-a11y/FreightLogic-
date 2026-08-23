@@ -1,21 +1,21 @@
 name: v24.0.1 Bank Import Repair
 
-# TEMPORARY. Delete after PR #76 receives the verified repair commit.
-# This workflow runs only when a main-branch commit explicitly carries the
-# [v24-bank-repair] marker. It checks out the fixed same-repository PR branch,
-# runs the auditable repair script already stored there, executes the complete
-# FreightLogic suite, and pushes only after green verification.
+# TEMPORARY trusted continuation of the ordinary Tests gate for PR #76.
+# The PR test itself remains read-only. Only after that workflow completes does
+# this default-branch workflow obtain write permission, apply the audited repair,
+# rerun the complete suite, and push a repair commit if and only if all tests pass.
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
 
 permissions:
   contents: write
 
 jobs:
   repair-and-verify:
-    if: contains(github.event.head_commit.message, '[v24-bank-repair]')
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_branch == 'chatgpt/bank-expense-import-foundation'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR 76 branch
@@ -36,10 +36,14 @@ jobs:
           npx playwright install --with-deps chromium
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-      - name: Run complete suite
+      - name: Run complete FreightLogic suite
         run: node tests/run-all.mjs
       - name: Commit and push verified repair
         run: |
+          if git diff --quiet -- app.js tests/unit/bank-expense-import.spec.mjs; then
+            echo "Repair already present; nothing to commit."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app.js tests/unit/bank-expense-import.spec.mjs
