@@ -1,0 +1,5 @@
+owner: gpt
+token: 652facbc-5866-422c-aa7c-964d21df1925
+started_utc: 2026-08-23T07:11:00Z
+expected_release_utc: 2026-08-23T08:11:00Z
+task: Remove temporary v24.0.1 bank-repair CI residue and restore the standard read-only Playwright gate; no application logic changes.
