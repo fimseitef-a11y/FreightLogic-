@@ -2,7 +2,7 @@
 
 Ownership is physical-path based. Conceptual ownership does not authorize an edit outside the paths below. `SHARED` means serialized through the lock protocol in `/AGENTS.md`.
 
-This map reflects the current monolithic v24.x repository. It must be revised after an approved UI seam extraction lands and real presentation paths exist.
+This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
@@ -17,7 +17,7 @@ This map reflects the current monolithic v24.x repository. It must be revised af
 | `README.txt` | gpt | General/non-core documentation. |
 | `_headers` | claude | CSP/security/deployment headers. |
 | `admin-driver-ui.js` | gpt | Presentation/admin UI; if a change touches auth/storage semantics, hand off through inbox. |
-| `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** |
+| `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains Claude-owned unless explicitly reassigned. |
 | `cloud-backup-worker.js` | claude | Worker/auth/storage/backup core. |
 | `docs/` | gpt | General docs by default. Security/backup/tax/authority contract changes require Claude review; X-12 doc repair may be assigned to Claude because it is an audit finding. |
 | `favicon16.png` | gpt | Visual asset. |
@@ -39,17 +39,18 @@ This map reflects the current monolithic v24.x repository. It must be revised af
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | claude | Verification/release/tooling scripts. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
+| `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | claude | Test harness and assertions. GPT does not edit or run Claude-owned suites unless explicitly reassigned later. |
+| `tests/` | claude | Test harness and assertions. GPT does not edit Claude-owned suites unless explicitly reassigned later. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
-## Current lane intent before extraction
+## Current lane intent after CSS extraction
 
-Claude owns core implementation, audit remediation, security/storage/decision logic, and the test harness. GPT owns bounded presentation assets and non-core documentation, but **GPT does not begin application-code work until Claude's extraction PR is merged and fresh `main` is green**.
+Claude owns core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and the test harness. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, and non-core documentation.
 
-Because most UI still resides inside `app.js`, GPT currently has no safe independent application-code lane there. `app.js` remains SHARED/serialized rather than pretending conceptual UI/core sections are separate files.
+The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
 
 ## Cross-lane requests
 
