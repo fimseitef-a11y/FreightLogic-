@@ -1,9 +1,9 @@
 name: v24.0.1 Bank Import Repair
 
 # TEMPORARY trusted continuation of the ordinary Tests gate for PR #76.
-# The PR test itself remains read-only. Only after that workflow completes does
-# this default-branch workflow obtain write permission, apply the audited repair,
-# rerun the complete suite, and push a repair commit if and only if all tests pass.
+# Any completion of the repository Tests workflow executes this serialized job
+# against the fixed PR #76 branch. The job applies the audited repair, reruns the
+# complete suite, and pushes only after green verification. Delete after release.
 
 on:
   workflow_run:
@@ -13,9 +13,12 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: v24-bank-import-repair-pr76
+  cancel-in-progress: false
+
 jobs:
   repair-and-verify:
-    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_branch == 'chatgpt/bank-expense-import-foundation'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR 76 branch
