@@ -1,11 +1,13 @@
 name: v24.0.1 Bank Import Repair
 
-# Temporary trusted repair gate for PR #76. The write token is exposed only in
-# the final push step, after syntax validation and the complete test suite pass.
+# TEMPORARY. Delete after PR #76 receives the verified repair commit.
+# This workflow runs only when a main-branch commit explicitly carries the
+# [v24-bank-repair] marker. It checks out the fixed same-repository PR branch,
+# runs the auditable repair script already stored there, executes the complete
+# FreightLogic suite, and pushes only after green verification.
 
 on:
-  pull_request_target:
-    types: [reopened]
+  push:
     branches: [main]
 
 permissions:
@@ -13,40 +15,33 @@ permissions:
 
 jobs:
   repair-and-verify:
+    if: contains(github.event.head_commit.message, '[v24-bank-repair]')
     runs-on: ubuntu-latest
     steps:
-      - name: Guard exact same-repository PR
-        run: |
-          test "${{ github.event.pull_request.number }}" = "76"
-          test "${{ github.event.pull_request.head.ref }}" = "chatgpt/bank-expense-import-foundation"
-          test "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}"
-      - name: Checkout PR branch without persisted credentials
+      - name: Checkout PR 76 branch
         uses: actions/checkout@v6
         with:
           ref: chatgpt/bank-expense-import-foundation
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Apply guarded bank-import repair
+      - name: Apply guarded bank import repair
         run: python .github/scripts/v24_bank_import_repair.py
-      - name: Syntax-check repaired app
+      - name: Syntax check
         run: node --check app.js
-      - name: Install Playwright + Chromium
+      - name: Install Playwright and Chromium
         run: |
           npm install -g playwright@1.62.1
           npx playwright install --with-deps chromium
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-      - name: Run complete FreightLogic suite
+      - name: Run complete suite
         run: node tests/run-all.mjs
       - name: Commit and push verified repair
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app.js tests/unit/bank-expense-import.spec.mjs
           git commit -m "fix: harden bank expense import boundaries"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:chatgpt/bank-expense-import-foundation
+          git push origin HEAD:chatgpt/bank-expense-import-foundation
