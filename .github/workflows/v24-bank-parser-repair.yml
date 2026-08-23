@@ -1,12 +1,13 @@
 name: v24.0.1 Bank Import Repair
 
-# Temporary, branch-locked repair bootstrap for PR #76.
-# Security: pull_request_target is restricted to this exact same-repository
-# feature branch; forks and all other branch names are refused by the job gate.
+# TEMPORARY one-shot repair bootstrap for PR #76.
+# Runs only on an explicit main-branch trigger commit containing [v24-bank-repair].
+# It checks out only the exact same-repository feature branch below, applies the
+# two guarded bank-import boundary repairs, runs the complete suite, and pushes
+# only after green verification. Delete this workflow after the repair lands.
 
 on:
-  pull_request_target:
-    types: [synchronize, reopened]
+  push:
     branches: [main]
 
 permissions:
@@ -15,18 +16,17 @@ permissions:
 
 jobs:
   repair-and-verify:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'chatgpt/bank-expense-import-foundation'
+    if: contains(github.event.head_commit.message, '[v24-bank-repair]')
     runs-on: ubuntu-latest
     steps:
       - name: Report repair gate start
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate started: signed-bank parsing + transfer reclassification guard. No feature-branch code will be written unless the complete FreightLogic suite passes."
+        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate started: signed-bank parsing + transfer reclassification guard. No feature-branch code will be written unless the complete FreightLogic suite passes."
 
       - uses: actions/checkout@v6
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: chatgpt/bank-expense-import-foundation
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -42,6 +42,7 @@ jobs:
           app = Path('app.js')
           source = app.read_text()
 
+          # BANK-10 — preserve a legitimate leading minus in bank Amount fields.
           old_money = "function parseBankMoney(value){\n  let s = sanitizeImportValue(value).trim();"
           new_money = """function parseBankMoney(value){
             // Bank Amount columns use a leading '-' as transaction-direction data.
@@ -55,6 +56,8 @@ jobs:
           elif "function parseBankMoney(value){\n  // Bank Amount columns use a leading '-'" not in source:
               raise SystemExit('Expected parseBankMoney pattern not found; refusing broad patch')
 
+          # BANK-11 — transfer/card-payment rows may only be imported after the
+          # driver explicitly reclassifies them away from Transfer / Review.
           if 'function bankTransferRequiresReclassification(' not in source:
               marker = 'function inferBankExpenseCategory(description){'
               helper = """function bankTransferRequiresReclassification(candidate, category){
@@ -162,16 +165,16 @@ test('[BANK-11] transfer review category requires explicit reclassification befo
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app.js tests/unit/bank-expense-import.spec.mjs
           git commit -m "fix: harden bank expense import boundaries"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:chatgpt/bank-expense-import-foundation
 
       - name: Report repair gate success
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate passed the complete FreightLogic suite and committed the guarded bank-import repairs to the feature branch."
+        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate passed the complete FreightLogic suite and committed the guarded bank-import repairs to the feature branch."
 
       - name: Report repair gate failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "v24.0.1 repair gate failed before any repair commit was pushed. The PR remains draft and blocked from merge."
+        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate failed before any repair commit was pushed. The PR remains draft and blocked from merge."
