@@ -11,11 +11,11 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 - Open the deployed Pages URL in a private/incognito browser session.
 - Open DevTools or Safari Web Inspector if available.
 - Confirm `index.html` loads without console syntax errors.
-- Confirm `app.js?v=23.9.0` loads.
-- Confirm `voice-load.js?v=23.9.0` loads.
-- Confirm `sw-bridge.js?v=23.9.0` loads.
-- Confirm `midwest-stack-authority.js?v=23.9.0` loads after service-worker activation.
-- Confirm `manifest.json?v=23.9.0` loads, and its `name` field reads `FreightLogic v23.9.0`.
+- Confirm `app.js?v=24.0.0` loads.
+- Confirm `voice-load.js?v=24.0.0` loads.
+- Confirm `sw-bridge.js?v=24.0.0` loads.
+- Confirm `midwest-stack-authority.js?v=24.0.0` loads after service-worker activation.
+- Confirm `manifest.json?v=24.0.0` loads, and its `name` field reads `FreightLogic v24.0.0`.
 - Confirm `vendor/xlsx.full.min.js` loads (X-10, v23.9 — bundled SheetJS, no CDN fallback).
 - Confirm icons load with 200 status.
 - Confirm `_headers` security headers are visible on the deployed site.
@@ -26,10 +26,10 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 
 ## Service worker checks
 
-- Confirm `service-worker.js` contains `SW_VERSION = '23.9.0'`.
-- Confirm `CORE` includes `midwest-stack-authority.js?v=23.9.0` and `vendor/xlsx.full.min.js`.
+- Confirm `service-worker.js` contains `SW_VERSION = '24.0.0'`.
+- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.0` and `vendor/xlsx.full.min.js`.
 - Confirm the `install` event's **critical** (install-blocking) shell array — distinct from
-  the broader `CORE` list — also includes `midwest-stack-authority.js?v=23.9.0` and
+  the broader `CORE` list — also includes `midwest-stack-authority.js?v=24.0.0` and
   `vendor/xlsx.full.min.js` (X-08/X-10, v23.9). Before v23.9, the overlay script was only in
   `CORE`, so a first offline install could complete and serve the app shell before the
   TRUE_RPM decision layer was actually cached, with no error surfaced.
@@ -59,9 +59,17 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 
 ## Worker checks
 
-Expected source file: `cloud-backup-worker.js` v11.
+Expected source file: `cloud-backup-worker.js` v12.
 
-- `GET /health` should return JSON with `ok: true`, `version: '11'`, and a timestamp.
+- `GET /health` should return JSON with `ok: true`, `version: '12'`, and a timestamp.
+- **Deploy Pages BEFORE the Worker (v24.0.0).** v12's `POST /evaluate` fails closed: a request
+  without a `canonicalDecision` carrying `authority.verdict`, `authority.grade`, a finite
+  `economics.trueRPM`, and `bid.range` gets a 400 and never reaches OpenAI. A v12 Worker in front
+  of pre-v24 clients (including any still on a stale service-worker cache) breaks AI review for
+  them; a v11 Worker in front of v24 clients just ignores the extra field. Order accordingly.
+- After deploying, confirm one real `POST /evaluate` returns `ai.authority ===
+  'CLIENT_UNIFIED_DECISION_ENGINE'` and that `ai.verdict`/`ai.grade` match the verdict/grade the
+  local evaluator just displayed — those fields are projected from the client, never model-authored.
 - Admin routes must reject without `X-Admin-Token`.
 - Driver backup/evaluate/extract routes must reject without `X-Backup-Token`.
 - `GET /backup/delta` should return `{ ok: true, deltas: [...], retainedCount, totalCreated }`

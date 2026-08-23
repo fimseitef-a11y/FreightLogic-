@@ -24,6 +24,7 @@ import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
 import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec.mjs';
+import { runSpec as rateOverrideFreshness } from './integration/rate-override-freshness.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -45,6 +46,7 @@ const specs = [
   v24UnifiedDecision,
   v24AuthorityBoundaries,
   v24EconomicsBid,
+  rateOverrideFreshness,
 ];
 
 const results = [];

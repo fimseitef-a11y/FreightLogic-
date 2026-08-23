@@ -235,15 +235,17 @@
     const baseFloor = mode.floor;
     const baseTarget = mode.target;
     const protective = CONFIG.modes.PROTECT_FLOOR;
-    let floorRpm = staleProtectiveGuard
-      ? Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, protective.floor)
-      : Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);
-    let winRpm = staleProtectiveGuard
-      ? Math.max(mode.preferred, protective.preferred)
-      : Math.max(mode.preferred, compressedWinRpm);
-    let askRpm = (staleProtectiveGuard
-      ? Math.max(baseTarget, protective.target)
-      : Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier)) + premium;
+    // The stale guard is a one-way ratchet: a STALE static band may never RELAX
+    // pricing below the protective doctrine, but it must never LOWER a band that
+    // is already above it either. Replacing (rather than flooring) the band was
+    // backwards for every band priced over PROTECT_FLOOR — shortLocal ($1.80-2.40)
+    // and extremeLongLock ($1.50-1.90) — and cut those asks by ~30%.
+    const staleFloorGuard = staleProtectiveGuard ? protective.floor : 0;
+    const staleWinGuard = staleProtectiveGuard ? protective.preferred : 0;
+    const staleAskGuard = staleProtectiveGuard ? protective.target : 0;
+    let floorRpm = Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier, staleFloorGuard);
+    let winRpm = Math.max(mode.preferred, compressedWinRpm, staleWinGuard);
+    let askRpm = Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier, staleAskGuard) + premium;
     if (rateFreshness.status === 'STALE') flags.push(`Rate override STALE (${rateFreshness.ageDays}d old) — static July bands cannot relax protective pricing; refresh market evidence.`);
     else if (rateFreshness.status === 'AGING') flags.push(`Rate override AGING (${rateFreshness.ageDays}d old) — use as secondary evidence and verify current market.`);
 

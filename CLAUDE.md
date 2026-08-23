@@ -114,7 +114,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.9.1';
+const APP_VERSION = '24.0.0';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -209,7 +209,16 @@ copy. Do not remove that purge until enough releases have passed that no stale c
 - `DELETE /backup` — delete all backups for this user+device
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
-- `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
+- `POST /evaluate` — AI **review** of the client's canonical decision (OpenAI); rate limited 100 req/hr per
+  user (hourly window). **v12 (v24.0.0) fails closed:** the request body must carry
+  `canonicalDecision` with `authority.verdict`, `authority.grade`, a finite `economics.trueRPM`, and
+  `bid.range`, or the Worker returns 400 without calling OpenAI. `verdict`, `grade`, `trueRpmBand`, and
+  `bidAdvice` in the response are **projected from that client decision**, never from the model's own
+  output. Returns `{ ok, ai: { summary, verdict, grade, authority, agreement, challenge, trueRpmBand,
+  bidAdvice, bidTactic, primaryReason, risks, positives, nextMove }, model, user }` where `agreement` is
+  `AGREE | CHALLENGE` and `challenge`/`bidTactic` are the only fields the model may author freely.
+  **Deploy order matters:** ship Pages before the Worker — a v12 Worker 400s every request from a
+  pre-v24 client (which sends no `canonicalDecision`), while a v11 Worker simply ignores the extra field.
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 - `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
@@ -231,8 +240,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.9.1` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.9.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -989,3 +998,72 @@ A Dispatch upgrade is planned for a future release. Driver-only features are the
 - Conservative broker-history integrity pass normalizes proven broker keys and keeps unresolved legacy rows quarantined; it never infers broker identity from ambiguous `trip.customer`.
 - CI pins Playwright 1.62.1 and uses Node24-capable GitHub Action runtimes.
 - `docs/V24_ROADMAP.md` is the authoritative v24 sequencing/authority contract.
+
+---
+
+## v24.0.0 — Unified Decision Engine
+
+The release the `## v24.0.0 — Intelligence Bridge (in progress)` section above anticipated.
+`app.js` is now the sole deterministic owner of verdict, grade, economics, and bid range;
+every other system is evidence, adapter, or review.
+
+**Canonical decision module** (`app.js`, after `isDeadZoneEligible`) — five pure functions plus
+one contract builder, none of which read DOM/storage/time/network:
+- `deriveUnifiedEconomics(facts)` — true/loaded RPM, fuel, operating + border cost, true profit,
+  margin, break-even, per-mile/per-hour efficiency. Replaces the deleted `mwFuelCost()`, which
+  hardcoded `MW.mpg`/`MW.fuelBaseline`; the evaluator now passes the driver's own
+  `settings['vehicleMpg']` and `settings['fuelPrice']`.
+- `deriveUnifiedGrade(trueRPM, { isDZActive, dzSubTier })` — returns `{ raw, display }`; the F-1
+  DZ "capped at C" invariant lives in `display` and can no longer be forgotten by a caller.
+- `deriveUnifiedBid(totalMiles, opts)` — wraps `generateBidRange()`; clamps `urgencyBoost` to
+  `[0, 0.30]` so a negative or absurd urgency can never discount the protective bid floor.
+- `deriveUnifiedAuthority(facts, policy)` — every hard gate (geography, RPM floor, long-haul
+  minimum, margin, deadhead, weekly position, fatigue, downgrade-only Personal Intelligence) in
+  one deterministic function. Thresholds live in the frozen `UNIFIED_DECISION_POLICY`.
+- `buildUnifiedDecisionContract(input)` — throws unless a canonical `authorityResult`,
+  `economicsResult`, and `bidResult` are all supplied, so no caller can inject a legacy verdict.
+- `unifiedDecisionToLegacy(decision)` — flattens the contract back to the shape
+  `_mwRenderDecision()` already consumed, and attaches `_canonicalDecision` for the AI payload.
+
+**Non-authoritative layers, now labelled as such:** `usaScoreLoad()` returns
+`authorityRole: 'EVIDENCE_ONLY'` and its panel reads "Market Evidence • … / Signal: …";
+`midwest-stack-authority.js` exports `authorityRole: 'ADAPTER_ONLY'` and its panel reads
+"Bid Strategy · Advisory". Worker `/evaluate` is v12 review-only — see the endpoint list above.
+
+**Also in this release:** the v23.9.1 pre-v24 integrity gate items (floors, rate-override
+freshness, live-source health, broker-history integrity, CI pinning) shipped folded into
+24.0.0 rather than as a separate tag.
+
+### v24.0.0 audit corrections
+
+A full A-to-Z review of the release ran against the Playwright suite (119 → 124 passing).
+Three things it changed:
+
+1. **Rate-override freshness guard was inverted for strong bands.** `assessLoad()` *replaced*
+   the band-derived floor/win/ask with PROTECT_FLOOR's 1.40/1.50/1.65 whenever the static July
+   override read STALE. That is protective only for bands priced *below* the doctrine
+   (`mediumFeeder` $1.35–1.65, `longDisplacement` $1.35–1.55). For the two bands priced *above*
+   it — `shortLocal` $1.80–2.40 and `extremeLongLock` $1.50–1.90 — it silently *cut* the ask:
+   a 150mi core-Midwest run dropped from a $2.40/mi ask ($360) to $1.65/mi ($250), −31%. And
+   because `RATE_OVERRIDE_2026_07` carries a frozen `effectiveDate` of `2026-07-09` with **no
+   runtime refresh path**, STALE is permanent and growing — this was live on every short-haul
+   evaluation from the day it shipped, not a future edge case. The guard is now a one-way
+   ratchet (`Math.max(band, protective)`): it raises a weak band and never lowers a strong one.
+   Covered by `tests/integration/rate-override-freshness.spec.mjs`.
+2. **`.github/workflows/v24-bank-parser-repair.yml` deleted.** A `pull_request_target` workflow
+   holding `contents: write` that checked out PR head code, ran a heredoc Python patcher against
+   `app.js`, and auto-committed the result. Every symbol it patched (`parseBankMoney`,
+   `buildBankExpenseCandidates`, `isBankTransferLike`, `BANK_IMPORT_CATEGORY_OPTIONS`) and the
+   spec it edited (`tests/unit/bank-expense-import.spec.mjs`) exist nowhere in this repository,
+   so it could only ever hit its own `refusing broad patch` guard. Dead, and not a pattern to
+   leave armed.
+3. **Version/doc drift** — `APP_VERSION`, the PWA section, and the `/evaluate` contract in this
+   file, plus `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` (still on `23.9.0`/Worker `v11`),
+   were all missed by the 24.0.0 bump. See checklist items 10 and 12 above — these are the two
+   that keep drifting.
+
+**Known-good, deliberately left alone:** the freshness guard means `REALISTIC_WIN` and
+`ESCAPE_RECOVERY` can no longer price below the protective floor while the static bands stay
+stale. That is the documented doctrine, but it does make those two modes weaker than their
+labels imply until someone refreshes `RATE_OVERRIDE_2026_07` — a market-data decision, not a
+code fix, and the STALE advisory flag now says so on every evaluation.

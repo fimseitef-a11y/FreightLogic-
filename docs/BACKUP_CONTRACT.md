@@ -106,6 +106,23 @@ Already covered by the existing push/restore path with no additional code: `clou
 included automatically, and X-07's add-only settings merge in `mergeRestoreData()` handles
 any settings key generically — no per-key special-casing was needed for this field.
 
+## v24.0.0 — `bidHistory` integrity-backfill fields
+
+Added by `auditBrokerHistoryIntegrity()` (`app.js`), which runs once per session at `mwInit()`
+and repairs legacy `bidHistory` rows from **explicit broker-labelled evidence only**. Both
+fields ride the existing full-store `bidHistory` push/restore path — no new merge code.
+
+| Field | Shape | Notes |
+|---|---|---|
+| `integrityBackfilledAt` | `number` (epoch ms) | Set only on a row whose broker key was recovered. Absent on rows that were already keyed, and on rows still `legacyUnkeyed`. |
+| `integrityBackfillSource` | `'explicit-broker-field' \| 'matched-trip-broker-field'` | Provenance of the recovered key. `trip.customer` is deliberately **not** a permitted source — see `docs/V24_ROADMAP.md`. |
+
+Unlike the X-03 insurance split, this pass writes no pre-mutation backup and prompts for no
+confirmation: it only ever *adds* a broker key to a row that had none (or normalizes an
+existing one), never reassigns a row already attributed to a different broker, so there is no
+prior state to lose. Rows it cannot resolve stay `legacyUnkeyed: true` and stay excluded from
+`getBrokerIntel()`.
+
 - **7A** (concept tags: OPERATIONAL vs. TAX) — pending inventory approval (Amendment 5)
   before implementation; fields TBD.
 - **7B** (recovery verification) — TBD, this phase not yet implemented.
