@@ -10,6 +10,7 @@ const CORE = [
   './', APP_SHELL,
   './app.js?v=24.0.0',
   './voice-load.js?v=24.0.0',
+  './styles.css',
   './admin-driver-ui.js?v=24.0.0',
   './midwest-stack-authority.js?v=24.0.0',
   './manifest.json?v=24.0.0',
@@ -53,7 +54,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.0', './voice-load.js?v=24.0.0', './sw-bridge.js?v=24.0.0', './manifest.json?v=24.0.0', './midwest-stack-authority.js?v=24.0.0', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.0', './voice-load.js?v=24.0.0', './styles.css', './sw-bridge.js?v=24.0.0', './manifest.json?v=24.0.0', './midwest-stack-authority.js?v=24.0.0', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
