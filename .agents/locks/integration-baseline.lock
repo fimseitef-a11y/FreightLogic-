@@ -1,0 +1,5 @@
+owner: gpt
+token: a5ac83bf-913b-48cb-92a3-f70db0ce2889
+started_utc: 2026-08-23T07:18:22Z
+expected_release_utc: 2026-08-23T07:38:22Z
+task: Hold main integration stable while exact-tree full-suite baseline run #101 completes and is promoted to tested main SHA.
