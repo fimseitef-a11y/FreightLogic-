@@ -1,181 +1,52 @@
 name: v24.0.1 Bank Import Repair
 
-# TEMPORARY one-shot repair bootstrap for PR #76.
-# Runs only on an explicit main-branch trigger commit containing [v24-bank-repair].
-# Trigger armed for the current v24.0.1 release-candidate repair.
-# It checks out only the exact same-repository feature branch below, applies the
-# two guarded bank-import boundary repairs, runs the complete suite, and pushes
-# only after green verification. Delete this workflow after the repair lands.
+# Temporary trusted repair gate for PR #76. The write token is exposed only in
+# the final push step, after syntax validation and the complete test suite pass.
 
 on:
-  push:
+  pull_request_target:
+    types: [reopened]
     branches: [main]
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   repair-and-verify:
-    if: contains(github.event.head_commit.message, '[v24-bank-repair]')
     runs-on: ubuntu-latest
     steps:
-      - name: Report repair gate start
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate started: signed-bank parsing + transfer reclassification guard. No feature-branch code will be written unless the complete FreightLogic suite passes."
-
-      - uses: actions/checkout@v6
+      - name: Guard exact same-repository PR
+        run: |
+          test "${{ github.event.pull_request.number }}" = "76"
+          test "${{ github.event.pull_request.head.ref }}" = "chatgpt/bank-expense-import-foundation"
+          test "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}"
+      - name: Checkout PR branch without persisted credentials
+        uses: actions/checkout@v6
         with:
           ref: chatgpt/bank-expense-import-foundation
           fetch-depth: 0
-
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-
-      - name: Apply bank import boundary repairs and regression coverage
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          app = Path('app.js')
-          source = app.read_text()
-
-          # BANK-10 — preserve a legitimate leading minus in bank Amount fields.
-          old_money = "function parseBankMoney(value){\n  let s = sanitizeImportValue(value).trim();"
-          new_money = """function parseBankMoney(value){
-            // Bank Amount columns use a leading '-' as transaction-direction data.
-            // Do not use sanitizeImportValue() here: that generic text sanitizer
-            // intentionally strips formula-leading characters, including '-'.
-            // This parser never evaluates text; Number() below accepts only numeric
-            // currency after formatting characters are removed and rejects formulas.
-            let s = String(value ?? '').trim();"""
-          if old_money in source:
-              source = source.replace(old_money, new_money, 1)
-          elif "function parseBankMoney(value){\n  // Bank Amount columns use a leading '-'" not in source:
-              raise SystemExit('Expected parseBankMoney pattern not found; refusing broad patch')
-
-          # BANK-11 — transfer/card-payment rows may only be imported after the
-          # driver explicitly reclassifies them away from Transfer / Review.
-          if 'function bankTransferRequiresReclassification(' not in source:
-              marker = 'function inferBankExpenseCategory(description){'
-              helper = """function bankTransferRequiresReclassification(candidate, category){
-            return !!candidate?.transferLike && String(category || '') === 'Transfer / Review';
-          }
-
-          """
-              if marker not in source:
-                  raise SystemExit('Expected bank category marker not found')
-              source = source.replace(marker, helper + marker, 1)
-
-          old_help = 'Transfers/card payments and ambiguous positive Amount-only rows start unchecked. Credits and known duplicates cannot be selected.'
-          new_help = 'Transfers/card payments start unchecked and must be reclassified before import. Ambiguous positive Amount-only rows start unchecked. Credits and known duplicates cannot be selected.'
-          if old_help in source:
-              source = source.replace(old_help, new_help, 1)
-          elif new_help not in source:
-              raise SystemExit('Expected bank review help text not found')
-
-          pick_marker = """    const picks = [...body.querySelectorAll('.bankImportPick:checked:not(:disabled)')];
-              if (!picks.length){ toast('Select at least one expense to import', true); return; }
-          """
-          guard_block = """    const picks = [...body.querySelectorAll('.bankImportPick:checked:not(:disabled)')];
-              if (!picks.length){ toast('Select at least one expense to import', true); return; }
-              for (const pick of picks){
-                const i = Number(pick.dataset.bankIndex);
-                const c = candidates[i];
-                const categoryEl = body.querySelector(`.bankImportCategory[data-bank-index="${i}"]`);
-                const category = BANK_IMPORT_CATEGORY_OPTIONS.includes(categoryEl?.value) ? categoryEl.value : c?.category;
-                if (bankTransferRequiresReclassification(c, category)){
-                  toast('Reclassify transfer/payment rows before importing', true);
-                  return;
-                }
-              }
-          """
-          if 'Reclassify transfer/payment rows before importing' not in source:
-              if pick_marker not in source:
-                  raise SystemExit('Expected bank commit prevalidation marker not found')
-              source = source.replace(pick_marker, guard_block, 1)
-
-          old_export = 'isBankTransferLike, buildBankExpenseCandidates,'
-          new_export = 'isBankTransferLike, bankTransferRequiresReclassification, buildBankExpenseCandidates,'
-          if old_export in source:
-              source = source.replace(old_export, new_export, 1)
-          elif new_export not in source:
-              raise SystemExit('Expected __FL_TESTS bank export marker not found')
-
-          app.write_text(source)
-
-          test_file = Path('tests/unit/bank-expense-import.spec.mjs')
-          tests = test_file.read_text()
-          marker = "\nexport async function runSpec(){"
-          if marker not in tests:
-              raise SystemExit('Expected bank test insertion marker not found')
-
-          if '[BANK-10]' not in tests:
-              bank10 = r'''
-
-test('[BANK-10] bank money parser preserves numeric signs without accepting formula payloads', async () => {
-  eq(await call('parseBankMoney', '-64.25'), -64.25, 'leading minus must survive as bank direction data');
-  eq(await call('parseBankMoney', '(64.25)'), -64.25, 'accounting parentheses must remain a negative amount');
-  eq(await call('parseBankMoney', '$1,234.56'), 1234.56, 'formatted currency should parse normally');
-  eq(await call('parseBankMoney', '=1+1'), 0, 'spreadsheet formula text must not parse as money');
-  eq(await call('parseBankMoney', '@SUM(A1:A2)'), 0, 'formula-like command text must not parse as money');
-  eq(await call('parseBankMoney', '-1+2'), 0, 'a leading minus does not make an expression valid numeric input');
-});
-'''
-              tests = tests.replace(marker, bank10 + marker, 1)
-
-          if '[BANK-11]' not in tests:
-              bank11 = r'''
-
-test('[BANK-11] transfer review category requires explicit reclassification before import', async () => {
-  eq(await call('bankTransferRequiresReclassification', { transferLike: true }, 'Transfer / Review'), true,
-    'transfer/payment review rows must not import with the review category');
-  eq(await call('bankTransferRequiresReclassification', { transferLike: true }, 'Fuel'), false,
-    'explicit category override can clear a false-positive transfer flag');
-  eq(await call('bankTransferRequiresReclassification', { transferLike: false }, 'Transfer / Review'), false,
-    'non-transfer rows are not blocked solely by category text');
-});
-'''
-              tests = tests.replace(marker, bank11 + marker, 1)
-
-          test_file.write_text(tests)
-          PY
-          node --check app.js
-
-      - name: Install pinned Playwright + Chromium
+      - name: Apply guarded bank-import repair
+        run: python .github/scripts/v24_bank_import_repair.py
+      - name: Syntax-check repaired app
+        run: node --check app.js
+      - name: Install Playwright + Chromium
         run: |
           npm install -g playwright@1.62.1
           npx playwright install --with-deps chromium
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-
       - name: Run complete FreightLogic suite
         run: node tests/run-all.mjs
-
-      - name: Commit repair only after green suite
-        shell: bash
+      - name: Commit and push verified repair
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet -- app.js tests/unit/bank-expense-import.spec.mjs; then
-            echo "Bank import repairs already present; no commit needed."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app.js tests/unit/bank-expense-import.spec.mjs
           git commit -m "fix: harden bank expense import boundaries"
-          git push origin HEAD:chatgpt/bank-expense-import-foundation
-
-      - name: Report repair gate success
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate passed the complete FreightLogic suite and committed the guarded bank-import repairs to the feature branch."
-
-      - name: Report repair gate failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh pr comment 76 --repo "${{ github.repository }}" --body "v24.0.1 repair gate failed before any repair commit was pushed. The PR remains draft and blocked from merge."
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:chatgpt/bank-expense-import-foundation
