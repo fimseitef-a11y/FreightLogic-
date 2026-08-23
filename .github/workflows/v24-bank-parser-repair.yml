@@ -2,6 +2,7 @@ name: v24.0.1 Bank Import Repair
 
 # TEMPORARY one-shot repair bootstrap for PR #76.
 # Runs only on an explicit main-branch trigger commit containing [v24-bank-repair].
+# Trigger armed for the current v24.0.1 release-candidate repair.
 # It checks out only the exact same-repository feature branch below, applies the
 # two guarded bank-import boundary repairs, runs the complete suite, and pushes
 # only after green verification. Delete this workflow after the repair lands.
