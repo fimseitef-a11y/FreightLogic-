@@ -89,11 +89,11 @@ Integration:
 - `tests/integration/v24-authority-boundaries.spec.mjs`
 - `tests/integration/v24-economics-bid.spec.mjs`
 
-`tests/run-all.mjs` exits non-zero when any assertion fails (`process.exit(totalFail ? 1 : 0)`). The prior 119/0 result belongs to the v24.0.0 PR head and is **not** a substitute for the baseline you must observe on your exact starting SHA.
+`tests/run-all.mjs` exits non-zero when any assertion fails (`process.exit(totalFail ? 1 : 0)`). The historical 119/0 result on the v24.0.0 release head is not a substitute for a current baseline.
 
-The coordination ledger currently says:
+A real setup baseline has now also been observed through GitHub Actions on PR #77's integrated merge ref `483c33084e579b95b8972c5a96922d6db345f4d2` (protocol branch head `a8adfe3de0e3d63da1d2b4c793053bb17a46f05d` merged over base `0835d06c4415929b24d5684430b957412b026612`): **119 passed, 0 failed across 19 spec files**, with no rerun. That run is logged on `agent-coordination` in `TEST_LEDGER.md`.
 
-`BASELINE: PENDING — requires Claude Code execution`
+**This does not authorize you to skip ROUND A.** Before proposing or executing extraction, run the full suite again on the exact current `main`/starting SHA you will extract from and log that new run. The integrated setup baseline proves the coordination-only PR did not break the suite; it is not a substitute for a fresh extraction baseline if `main` has moved or after PR #77 merges.
 
 ## ROUND A — BASELINE ONLY
 
