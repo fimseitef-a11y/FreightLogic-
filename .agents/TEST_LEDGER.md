@@ -41,3 +41,17 @@ BASELINE: GREEN — observed on final PR #77 integrated head
 - rerun trigger/reason when a rerun occurs
 
 Historical note only, **not a current baseline**: v24.0.0 release commit `5dddefbc9dbef0a586bd60d9d1bd787ec5aaf8f5` recorded 119 passed / 0 failed across 19 spec files on its final PR head.
+
+## Run — 2026-08-23T07:18:12Z
+
+- Purpose: exact-current-main clean-CI baseline after removal of the temporary bank-import repair machinery and merge of the v24.1 docs contract.
+- Tested SHA: `971bf26f829c0ca5c9b751cfc82fc1d511ac576b` (PR #83 synthetic merge ref).
+- Git tree: `61f5f54a4cca5835661fd06ff5fa255c8df94436`, byte-identical to then-current `main` `eb50bbe743562d18beccef35e3ded26ec47b9167`. After the green run, `main` was fast-forwarded to this exact tested commit with no tree/content change.
+- Command: `node tests/run-all.mjs`
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
+- Workflow evidence: run `32625179952`, job `97159316919`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 78.7 seconds (`07:18:12.179Z` through aggregate result at `07:19:30.870Z`).
+- Rerun: none.
+- Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on this hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
+- Baseline disposition: this is now the exact `main` SHA, not merely tree-parity evidence. Clean-CI and exact-main baseline prerequisites for the behavior-preserving extraction gate are satisfied.
