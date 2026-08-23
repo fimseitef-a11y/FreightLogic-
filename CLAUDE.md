@@ -2,13 +2,15 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.1.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
 **v24.0 authority rule:** `app.js` is the sole deterministic owner of load verdict, grade, economics, and bid range. USA scoring and `midwest-stack-authority.js` are evidence/advisory layers. Cloud Worker `/evaluate` may explain or challenge assumptions, but it must project—not recalculate—the canonical decision.
+
+**v24.1 confidence rule:** confidence is *descriptive only*. It explains how trustworthy a decision's inputs are and never changes verdict, grade, True RPM, economics or the protective bid floor. It is computed after every authoritative number is fixed and is handed none of them, so there is no code path from a label back to a floor. Missing data, stale data and a failed source must stay visibly distinct from one another and from favourable data. No percentage or win probability.
 
 ---
 
@@ -114,7 +116,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.1.0';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -209,7 +211,7 @@ copy. Do not remove that purge until enough releases have passed that no stale c
 - `DELETE /backup` — delete all backups for this user+device
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
-- `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
+- `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, confidence, primaryReason, risks, positives, nextMove }, model, user }`. `verdict`/`grade`/`trueRpmBand`/`bidAdvice`/`confidence` are all **projected from the client payload**, never model-authored (v24.0 for the first four, v24.1 for `confidence`)
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 - `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
@@ -231,8 +233,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.1.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.1.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1060,3 +1062,110 @@ locations, including the `critical` install-blocking shell and the
 `scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health`)
 must still be run from a network that can reach those origins before the deploy
 is considered parity-verified.
+
+---
+
+## v24.1.0 — Confidence + Evidence
+
+The second roadmap milestone in `docs/V24_ROADMAP.md`. v24.0 made one layer
+authoritative; v24.1 answers the next question — *how much should the driver trust
+the inputs behind that answer?* — without building a second decision engine and
+without inventing probabilities.
+
+**Descriptive by construction, not by policy.** The confidence layer is computed in
+`buildUnifiedDecisionContract()` **after** verdict, grade, economics and bid are
+already fixed, and is handed none of those objects. It returns labels, summaries and
+provenance only. There is therefore no code path by which a LOW label can relax a
+protective floor — which is a structural property, not a rule someone has to
+remember. `[V241-A04]` is a static guard that fails if a future edit wires
+`deriveUnifiedAuthority` / `deriveUnifiedGrade` / `deriveUnifiedEconomics` /
+`deriveUnifiedBid` / `generateBidRange` into the v24.1 section.
+
+**The evidence item.** Every source-backed fact becomes a frozen item carrying `key`,
+`category`, `domain`, `source`, `sourceStatus`, `availability`, `observedAt`,
+`evaluatedAt`, `ageSeconds`, `sampleSize`, `windowDays`, `freshness`, `confidence`,
+`valueSummary`, `provenance` and `reasons[]`. Items are produced for personal lane
+history, static rate bands, destination reload outcomes, broker history, fuel price,
+operating cost per mile, MPG, route weather and vehicle fit.
+
+**Three states that must never blur together.** `availability` is
+`AVAILABLE | NO_DATA | SOURCE_UNAVAILABLE`. A lane you have never run says so; a feed
+that timed out says *that*, and says explicitly that it does not imply clear
+conditions. Neither is ever rendered as a neutral or favourable value.
+
+**Confidence assignment is a floor, not an average.** `deriveEvidenceConfidence()`
+checks every LOW condition first and any one of them wins: non-`OK` source health,
+unresolved broker identity, STALE freshness, ambiguous provenance, conflicting
+evidence, `NO_DATA`/`SOURCE_UNAVAILABLE`, or sample size ≤ 2. MEDIUM follows from
+AGING freshness, unknown age, sample size 3–9, fallback data or an indirect
+observation. HIGH requires none of the above. The same floor logic rolls items up to
+domains (`summarizeEvidenceDomain`) and domains up to overall
+(`aggregateOverallConfidence`) — one material LOW domain caps the whole result at LOW.
+
+**Thresholds are centralized.** `CONFIDENCE_THRESHOLDS` (14/30-day historical window,
+sample bands 10 / 3–9 / ≤2) and `LIVE_SOURCE_FRESHNESS_MS` (EIA 3d, NWS 30m, FMCSA
+24h, CBP 30m — the windows the v23.9.1 live-source layer already enforces). Live
+sources are judged against their own window first, so a 40-minute-old NWS alert is not
+called "current" for a month by the generic historical rule.
+
+**Material domains, and why weather is not one of them.** `operatingCosts` is always
+material; `market` when origin and destination are known; `broker` when a broker was
+named; `vehicleFit` when a cargo dimension was supplied. `weatherSafety` is *reported*
+with real source health but is **not material on the evaluator path**, because route
+weather feeds no part of the canonical decision there — it is injected into the result
+card for the driver to read. Counting a display-only feed would force nearly every
+decision to LOW for a reason that never touched the decision; the spec's own rule 5
+says irrelevant domains are excluded rather than counted. A future path that consumes
+weather passes `weatherMaterial: true`.
+
+**Two small upstream changes were required.** `getBrokerIntel()` and
+`getCityReloadScore()` now return `lastObservedMs`. The contract makes recency a
+precondition for HIGH on historical evidence, and without a date those aggregates
+could never honestly exceed MEDIUM. Separately, `_evidenceNum()` rejects
+`null`/`undefined`/`''` rather than coercing them, because `Number(null) === 0` would
+have turned "no observation" into "zero seconds old" and "not an aggregate" into "a
+zero-sized sample" — the exact conflation the contract forbids. That was a real bug
+caught by the boundary tests, not a theoretical one.
+
+**Worker boundary.** `unifiedDecisionForAI()` ships `confidenceForAI()` — client labels,
+domain labels, reasons and a weak-evidence list, deliberately *not* the raw aggregates
+a model would need to build a competing score. `cloud-backup-worker.js` (v12 → v13)
+gained a `CONFIDENCE RULE (v24.1)` prompt section and `canonicalConfidence()`, which
+projects the client's labels straight back; the model's output has no confidence field
+path at all. The AI panel in `app.js` renders `confidence.overall` from the canonical
+decision, never from the response.
+
+**UI.** A compact `CONFIDENCE: HIGH|MEDIUM|LOW` chip on the result hero with a one-line
+reason, and an "🔎 Evidence & Confidence" panel behind the existing Details disclosure
+listing every item with its source, health, age and sample size. Never a percentage.
+The visual overhaul remains v24.5.
+
+**Persistence — additive, no migration.** `logBid()` and the session evaluation history
+carry an optional `confidence` snapshot from `confidenceSnapshot()`. `bidHistory` keys
+on `id` with no index on the new field, so this needed no schema change and no
+`DB_VERSION` bump; none of the v24.2 lifecycle migration budget was spent. Records
+written before v24.1 stay readable, and v24.1 records survive the existing
+backup/restore path unchanged. Documented in `docs/BACKUP_CONTRACT.md`.
+
+**Deliberately unchanged:** `UNIFIED_DECISION_SCHEMA_VERSION` (`24.0.0`) and
+`UNIFIED_DECISION_POLICY.version` (`24.0.0-hard-gates-1`). The decision contract gained
+an additive sibling and the hard gates did not move, so bumping either would have been
+a false signal. The confidence contract carries its own
+`CONFIDENCE_SCHEMA_VERSION = '24.1.0'`.
+
+**Test coverage added:** `tests/integration/v24-1-confidence-evidence.spec.mjs` (14),
+`tests/integration/v24-1-confidence-authority.spec.mjs` (9),
+`tests/integration/v24-1-confidence-ui.spec.mjs` (5), all wired into
+`tests/run-all.mjs`. Every existing v24.0 and pre-v24 assertion was left byte-unchanged
+— including the `[V24-01]` anchors on the evaluator's `getSetting('fuelPrice', …)` /
+`getSetting('vehicleMpg', …)` calls, which is why fuel/MPG *provenance* is read by a
+separate probe rather than by altering those lines. Full suite: **147 passed, 0 failed
+across 22 spec files.**
+
+**Release gate status.** Full Playwright suite green (147/0). Source-side version/SW
+parity verified across all 13 checklist locations at `24.1.0` / Worker `v13`, including
+the `critical` install-blocking shell and the `index.html`/`_headers` CSP byte-identity
+check (the CSP itself was not modified). The *live* half of
+`scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health`) still
+has to be run from a network that can reach those origins before the deploy is
+parity-verified.

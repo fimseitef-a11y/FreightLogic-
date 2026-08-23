@@ -6,6 +6,10 @@ v24.0 implementation status: **shipped** — code complete; full Playwright suit
 (119 passed, 0 failed across 19 spec files) and source-side version/SW/CSP parity verified
 across all 13 release-checklist locations.
 
+v24.1 implementation status: **shipped** — code complete; full Playwright suite green
+(147 passed, 0 failed across 22 spec files) and source-side version/SW parity verified
+across all 13 release-checklist locations at `24.1.0` / Worker `v13`.
+
 One gate item remains environment-bound, not code-bound: the **live** half of
 `scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health` +
 admin-endpoint 401) has to be run from a network that can reach
@@ -32,7 +36,15 @@ the deploy before declaring the deployment parity-verified.
 ## Delivery sequence
 
 1. **v24.0 Unified Decision Engine — COMPLETE.** One deterministic client-owned result object inside `app.js` now owns hard-gate verdict, grade, economics, and bid range. USA scoring is evidence-only; the Midwest overlay is advisory; Worker `/evaluate` is review-only and must project canonical verdict/grade/True RPM/bid fields instead of recalculating them. Boundary, determinism, economics, bid, and authority-regression tests enforce the contract.
-2. **v24.1 Confidence + Evidence** — provenance, sample size, age, HIGH/MEDIUM/LOW.
+2. **v24.1 Confidence + Evidence — COMPLETE.** Every source-backed fact behind a
+   decision is an explicit evidence item carrying source, source health, observation age,
+   sample size and provenance, rolled up into categorical HIGH/MEDIUM/LOW per domain and
+   overall. Descriptive by construction: computed after every authoritative number is
+   fixed, handed none of them, and regression-proven to leave verdict, grade, True RPM,
+   economics and the protective bid floor byte-identical. Missing data, stale data and
+   failed sources stay visibly distinct; no percentage or win probability was introduced.
+   Persistence is an optional additive `bidHistory[].confidence` snapshot — no DB
+   migration, so none of the v24.2 lifecycle budget was consumed.
 3. **v24.2 Load Lifecycle** — one accumulating operational identity with additive migration and dual-write transition.
 4. **v24.3 Personal Intelligence 2.0** — recency/sample-size weighting and self-calibrating market bands.
 5. **v24.4 Next-Move Engine** — evolve F24 into time-aware commands (`STAY`, `REPOSITION NOW`, `WAIT UNTIL … THEN MOVE`, `KEEP BOARD OPEN WHILE MOVING`, `GO HOME`).

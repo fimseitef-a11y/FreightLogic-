@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v24.0.0
+/* FreightLogic Midwest Stack v2 Authority Overlay v24.1.0
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '24.0.0';
+  const VERSION = '24.1.0';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({
@@ -415,6 +415,11 @@
     updatedAt: UPDATED_AT,
     config: CONFIG,
     rateOverride: RATE_OVERRIDE_2026_07,
+    // v24.1: the static-band age already computed and enforced here is read by
+    // app.js's confidence layer as evidence metadata. Exposing the existing
+    // function keeps one owner for band freshness — no second implementation,
+    // and no new decision math in this adapter.
+    getRateOverrideFreshness,
     assessLoad,
     classifyMarket
   });

@@ -24,6 +24,9 @@ import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
 import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec.mjs';
+import { runSpec as v241ConfidenceEvidence } from './integration/v24-1-confidence-evidence.spec.mjs';
+import { runSpec as v241ConfidenceAuthority } from './integration/v24-1-confidence-authority.spec.mjs';
+import { runSpec as v241ConfidenceUi } from './integration/v24-1-confidence-ui.spec.mjs';
 
 const specs = [
   unitPureFunctions,
@@ -45,6 +48,9 @@ const specs = [
   v24UnifiedDecision,
   v24AuthorityBoundaries,
   v24EconomicsBid,
+  v241ConfidenceEvidence,
+  v241ConfidenceAuthority,
+  v241ConfidenceUi,
 ];
 
 const results = [];

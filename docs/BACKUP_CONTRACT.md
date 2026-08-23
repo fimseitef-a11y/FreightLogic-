@@ -111,6 +111,34 @@ any settings key generically — no per-key special-casing was needed for this f
 - **7B** (recovery verification) — TBD, this phase not yet implemented.
 - **7C** (health/release badge) — TBD, this phase not yet implemented.
 
+## Fields added in v24.1 (Confidence + Evidence)
+
+### `bidHistory[].confidence` — optional evidence snapshot
+
+| Key | Shape | Purpose |
+|---|---|---|
+| `confidence` | `{ schemaVersion, overall, domains{market,broker,operatingCosts,weatherSafety,vehicleFit}, materialDomains[], items[{key,source,sourceStatus,availability,freshness,sampleSize,confidence}], evaluatedAt }` | Compact snapshot of the evidence behind a logged bid outcome, so the decision can still be explained later. Written by `logBid()` from `confidenceSnapshot()`. |
+
+**Optional and additive.** `bidHistory` keys on `id` and the field carries no index, so
+this required **no schema change, no new store, and no `DB_VERSION` bump** — the v24.1
+implementation map's persistence boundary is respected, and none of the v24.2 lifecycle
+migration budget was consumed to ship confidence labels.
+
+**Backward compatibility runs both ways.** A record written before v24.1 simply has no
+`confidence` key and stays fully readable; a record written by v24.1 restores intact
+through the existing generic `bidHistory` loop in `mergeRestoreData()` with no
+per-field handling. Both directions are asserted by
+`tests/integration/v24-1-confidence-authority.spec.mjs` `[V241-A09]`.
+
+**Secret-free by contract.** The snapshot stores source *labels*, status codes, counts,
+ages and categorical labels only — never API keys, tokens, or external payloads.
+`[V241-A08]` asserts this and caps the snapshot size so it can ride along on every
+record.
+
+The same snapshot shape is also written to the session-scoped evaluation history
+(`sessionStorage['fl_eval_hist']`), which is not part of the backup contract and is
+listed here only so the two writers are documented together.
+
 ## Verification
 
 `tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4) asserts a full

@@ -1,6 +1,9 @@
 # FreightLogic v24.1 — Confidence + Evidence Contract
 
-Status: implementation specification only. This document does not change runtime behavior.
+Status: **implemented in v24.1.0.** This document remains the governing contract; the
+shipped implementation is mapped to it in the "Implementation record" section at the end
+of this file. Where the two ever disagree, this contract is the authority and the code is
+the bug.
 
 ## Purpose
 
@@ -243,3 +246,102 @@ Those remain later roadmap items or separate approved work.
 5. Add persistence only if it can remain backward-compatible without a schema migration.
 6. Run the full suite and authority-boundary tests.
 7. Version/release only after source-side and deployed parity gates are green.
+
+---
+
+## Implementation record (v24.1.0)
+
+Added after the contract shipped. This section records *where* each clause landed and,
+where the implementation made a judgement call the contract left open, what was decided
+and why.
+
+### Where it lives
+
+All of it is in `app.js`, in one section headed `v24.1 — Confidence + Evidence contract`,
+sited immediately after the v24.0 decision engine. Per constitutional rule 1 no new
+runtime file was introduced.
+
+| Contract clause | Implementation |
+|---|---|
+| Evidence item shape | `buildEvidenceItem(spec)` → frozen item; field names match the contract |
+| Confidence model | `deriveEvidenceConfidence(facts)` — LOW conditions checked first, any one wins |
+| Freshness | `classifyEvidenceFreshness(ageSeconds, window)` + `evidenceFreshnessWindow(source)` |
+| Sample-size bands | `classifyEvidenceSampleSize(n)` |
+| Source-status vocabulary | `normalizeEvidenceSourceStatus(status)` — reuses the v23.9.1 vocabulary, `UNKNOWN` only as the normalization fallback |
+| Thresholds | `CONFIDENCE_THRESHOLDS` and `LIVE_SOURCE_FRESHNESS_MS`, centralized as required |
+| Domain summaries | `summarizeEvidenceDomain(items)` |
+| Overall aggregation | `aggregateOverallConfidence(domains, materialDomains)` |
+| Material domains | `materialConfidenceDomains(ctx)`, documented inline |
+| Assembly | `buildDecisionConfidence(input)` |
+| Attachment point | additive `confidence` sibling on `buildUnifiedDecisionContract(input)` |
+| Worker projection | `confidenceForAI(confidence)` → `unifiedDecisionForAI` |
+| Persistence | `confidenceSnapshot(confidence)` → `logBid()` and `fl_eval_hist` |
+| UI | `_renderConfidenceChip()` / `_renderEvidencePanel()` in `_mwRenderDecision` |
+
+### Decisions the contract left to the implementation
+
+**Determinism required an injected clock.** Evidence ages are computed from a `nowMs`
+passed in as a fact, never from `Date.now()` inside the helpers. This preserves the v24.0
+property that identical inputs yield identical output, which is what makes acceptance
+item 1 testable at all.
+
+**Live sources are judged against their own cache windows first.** The generic 14/30-day
+rule would have called a 40-minute-old NWS alert "CURRENT" for a month. Each live feed is
+CURRENT within its existing cache/throttle window, AGING to 2x that window, STALE beyond
+— the windows are the ones the v23.9.1 layer already enforces, not new numbers.
+
+**Static fallback data caps at MEDIUM even when current.** The static July rate bands are
+`fallback: true`, so a CURRENT band is MEDIUM and a STALE one is LOW. Fallback data is
+never live observation, which the LOW list already implies for stale bands; this extends
+the same honesty to fresh ones.
+
+**Weather is reported but not material on the evaluator path.** Route weather feeds no
+part of the canonical verdict/grade/economics/bid there — it is injected into the result
+card for the driver to read. Under aggregation rule 5 it is therefore excluded rather than
+counted, and counting it would have forced nearly every decision to LOW for a reason that
+never touched the decision. It is still displayed with real source health, and an
+unavailable feed still says so rather than implying clear conditions. A future decision
+path that does consume weather passes `weatherMaterial: true`.
+
+**Personal aggregates had to start carrying recency.** The contract makes recency a
+precondition for HIGH on historical evidence, and `getBrokerIntel()` / `getCityReloadScore()`
+previously returned no date at all — so they could never honestly exceed MEDIUM. Both now
+return `lastObservedMs`. This was the one place the contract forced a (small, additive)
+change to an existing aggregator rather than only reading what was already there.
+
+**A strict numeric guard was necessary.** `Number(null)` is `0`, which would have turned
+"no observation" into "zero seconds old" and "not an aggregate" into "a zero-sized sample"
+— precisely the conflation rule 6 forbids. `_evidenceNum()` rejects `null`/`undefined`/`''`
+instead of coercing them, and the freshness/sample-size boundary tests cover it.
+
+### Acceptance contract status
+
+All twelve acceptance items are covered by regression tests:
+
+| # | Acceptance item | Test |
+|---|---|---|
+| 1 | deterministic output | `[V241-01]` |
+| 2 | stale item is LOW, cannot relax the floor | `[V241-02]`, `[V241-A03]` |
+| 3 | healthy + recent + sufficient sample can be HIGH | `[V241-03]` |
+| 4 | sample size 1–2 cannot be HIGH | `[V241-04]` |
+| 5 | unresolved broker identity cannot be HIGH | `[V241-05]` |
+| 6 | source failure is visibly LOW, not neutralized | `[V241-06]` |
+| 7 | Worker cannot override client labels | `[V241-A05]`, `[V241-A06]` |
+| 8 | missing evidence is explicit | `[V241-07]`, `[V241-U03]` |
+| 9 | pre-v24.1 records stay readable | `[V241-A07]`, `[V241-A09]` |
+| 10 | backup/export/restore preserves the snapshot | `[V241-A09]` |
+| 11 | v24.0 assertions unchanged and green | `tests/unit/v24-unified-decision.spec.mjs`, `tests/integration/v24-authority-boundaries.spec.mjs`, `tests/integration/v24-economics-bid.spec.mjs` — unmodified |
+| 12 | full suite green | 147 passed, 0 failed across 22 spec files |
+
+Two further guards were added beyond the acceptance list: `[V241-A01]` proves the
+authoritative half of the decision object is byte-identical under HIGH and LOW evidence,
+and `[V241-A04]` is a static guard that fails if any future edit wires an authority,
+grade, economics or bid function into the confidence section.
+
+### Out-of-scope items confirmed untouched
+
+No win probabilities, no new external feeds, no lifecycle DB migration, no self-calibrating
+bands, no Next-Move logic, no Driver Mode redesign, no screenshot-workflow change, no
+bank-linking, and no change to v24.0 decision authority. `UNIFIED_DECISION_SCHEMA_VERSION`
+and `UNIFIED_DECISION_POLICY.version` are deliberately unchanged: the decision contract
+gained an additive sibling, and the hard gates did not move.
