@@ -114,7 +114,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '23.9.1';
+const APP_VERSION = '24.0.0';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -231,8 +231,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=23.9.1` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `23.9.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.0` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -245,9 +245,14 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 - **No build step** — edit files directly and reload in browser.
 - **Test locally** with any static file server (e.g., `python3 -m http.server 8080`).
 - **IndexedDB migrations** — increment `DB_VERSION` and add `if (old < N)` block in `initDB()`.
-- **Version bumps** — every release must update all of these. Items 3 and 8 are the ones
-  that have silently drifted before, so verify them explicitly:
-  1. `APP_VERSION` in `app.js` (plus the header comment block at the top)
+- **Version bumps** — every release must update all of these. Items 1, 3, 8, and 10 have
+  all silently drifted in past releases, so verify them explicitly:
+  1. `APP_VERSION` in `app.js` (plus the header comment block at the top). The header
+     block's top entry is a *changelog entry*, not just a version string: give the new
+     release its own line describing what it shipped, and leave the prior release's text
+     under its own version. v24.0.0 shipped with v23.9's entry merely relabelled — it
+     still read `v24.0.0 "Trust & Recovery" (X-01..X-12, in progress)` — which is how a
+     finished release ends up claiming someone else's work and its own incompleteness.
   2. `SW_VERSION` in `service-worker.js` (plus its header comment)
   3. `?v=` cache-busters in `service-worker.js` — `ADMIN_UI_TAG`, `MIDWEST_STACK_TAG`, and
      every entry in the `CORE` array. These are easy to miss and stale values ship stale assets.
@@ -472,9 +477,12 @@ identity chain end-to-end so `bidHistory` finally records real broker/lane keys.
 
 ---
 
-## v24.0.0 — Intelligence Bridge (in progress)
+## Intelligence Bridge — first v24 slice (landed ahead of v24.0.0)
 
-Not shipped as a version bump yet — first slice only. Historically `laneHistory`,
+The first v24 slice, shipped before the v24.0.0 release and now folded into the
+Unified Decision Engine (see the v24.0.0 section at the end of this file) — its
+STEP 7 Personal Intelligence downgrade is one of the authority boundaries that
+release locked down. Historically `laneHistory`,
 `bidHistory`, and `reloadOutcomes` were recorded (F29 reviews, Counter-Offer
 Memory, bid win/loss log) and *displayed* (Lane Intel panel, USA Engine panel,
 counter-offer negotiation intel) but never touched the evaluator's ACCEPT /
@@ -989,3 +997,66 @@ A Dispatch upgrade is planned for a future release. Driver-only features are the
 - Conservative broker-history integrity pass normalizes proven broker keys and keeps unresolved legacy rows quarantined; it never infers broker identity from ambiguous `trip.customer`.
 - CI pins Playwright 1.62.1 and uses Node24-capable GitHub Action runtimes.
 - `docs/V24_ROADMAP.md` is the authoritative v24 sequencing/authority contract.
+
+---
+
+## v24.0.0 — Unified Decision Engine
+
+The first roadmap milestone in `docs/V24_ROADMAP.md`, and the release that makes
+the "v24.0 authority rule" at the top of this file structural rather than
+aspirational. Before it, the evaluator, the USA Engine, `midwest-stack-authority.js`,
+and the Worker's `/evaluate` response could each arrive at a verdict, and nothing
+reconciled them.
+
+**One canonical decision object.** A single deterministic, client-owned result
+object inside `app.js` now owns hard-gate verdict, grade, economics, and bid
+range. Every other layer is demoted to input or commentary:
+
+| Layer | Role after v24.0.0 |
+|---|---|
+| `app.js` canonical decision | **Authoritative** — verdict, grade, economics, bid range |
+| USA scoring | Evidence only |
+| `midwest-stack-authority.js` | Advisory overlay |
+| Worker `/evaluate` | Review only — *projects* canonical verdict/grade/True RPM/bid, never recalculates |
+
+The AI payload carries a compact canonical decision rather than a second
+calculation request, which is what keeps `/evaluate` from re-deriving an answer
+of its own.
+
+**Authority boundaries locked by regression tests.** These are exact thresholds,
+asserted on both sides of each boundary:
+- Normal floor — `1.39` rejects, `1.40` survives.
+- Out-of-density threshold — `1.59` rejects, `1.60` survives.
+- An explicit strategic band cannot rescue an out-of-density weak load.
+- Long-haul floor and the home/replace exception preserve legacy behavior.
+- True-cost and fuel-only margin reject thresholds are exact.
+- Deadhead hard gate is exact around 35% / strong RPM.
+- Mid-week stabilization downgrade is deterministic.
+- Fatigue safety veto overrides otherwise-valid economics *and* DZ survival.
+- Personal Intelligence may downgrade an ACCEPT but can never revive a hard
+  reject (the v24 restatement of the downgrade-only rule).
+- Valid DZ conditions activate DZ-EXIT *before* later safety gates.
+- Identical inputs always produce an identical canonical decision.
+
+**Economics and bid authority.** Economics uses the supplied driver/live MPG and
+fuel price exactly; fixed `MW` defaults cannot override it. Operating and border
+costs reconcile to true profit and break-even. The canonical bid minimum starts
+at `$1.40`/true-mile; urgency and border premiums are deterministic with urgency
+capped, and an invalid or negative urgency can never reduce the protective bid
+floor.
+
+**Worker.** `cloud-backup-worker.js` bumped v11 → v12 to carry the authority
+projection contract.
+
+**Test coverage added:** `tests/unit/v24-unified-decision.spec.mjs` (5),
+`tests/integration/v24-authority-boundaries.spec.mjs` (11),
+`tests/integration/v24-economics-bid.spec.mjs` (7), all wired into
+`tests/run-all.mjs`. Full suite: **119 passed, 0 failed across 19 spec files.**
+
+**Release gate status.** Full Playwright suite green (119/0, re-verified at
+close-out). Source-side version/SW parity verified across all 13 checklist
+locations, including the `critical` install-blocking shell and the
+`index.html`/`_headers` CSP byte-identity check. The *live* half of
+`scripts/verify-cloudflare-parity.mjs` (deployed Pages origin + Worker `/health`)
+must still be run from a network that can reach those origins before the deploy
+is considered parity-verified.
