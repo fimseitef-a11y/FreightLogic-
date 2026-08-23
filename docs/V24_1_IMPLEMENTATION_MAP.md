@@ -2,6 +2,10 @@
 
 Status: source-backed companion to `V24_1_CONFIDENCE_EVIDENCE_SPEC.md`. This file identifies integration seams in the current v24.0 runtime; it does not change runtime behavior.
 
+## Gate state at contract integration
+
+Temporary v24.0.1 bank-repair CI machinery was removed by PR #82 before this contract is integrated. The standard PR/push Playwright gate is again the only workflow under `.github/workflows/`; v24.1 must not reintroduce comment-triggered or branch-pushing CI repair paths.
+
 ## Core authority seam in `app.js`
 
 The v24.0 regression contract already names the canonical path. v24.1 should extend this path additively rather than create a parallel evaluator.
