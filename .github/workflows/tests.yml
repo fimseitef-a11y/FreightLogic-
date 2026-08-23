@@ -7,12 +7,20 @@ name: Tests
 #
 # Pre-v24 integrity gate: keep the browser harness reproducible. Do not use a
 # floating Playwright install here; browser/toolchain changes must be explicit.
+#
+# TEMPORARY v24.0.1 repair job: hard-gated to same-repository PR #76. The
+# implementation lives in .github/scripts/v24_bank_import_repair.py so this
+# workflow remains small and auditable. Remove both after the repair lands.
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
 
 jobs:
   playwright-suite:
@@ -30,12 +38,55 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Symlink playwright into node_modules
-        # FreightLogic intentionally has no package.json/build system. Node's
-        # ESM resolver will not use NODE_PATH, so mirror the documented local
-        # test setup by symlinking the pinned global Playwright package.
         run: |
           mkdir -p node_modules
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
 
       - name: Run full suite
         run: node tests/run-all.mjs
+
+  bank-import-repair:
+    if: "${{ github.event_name == 'pull_request' && github.event.pull_request.number == 76 && github.head_ref == 'chatgpt/bank-expense-import-foundation' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: chatgpt/bank-expense-import-foundation
+          fetch-depth: 0
+
+      - name: Checkout trusted repair script
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: .repair-main
+          sparse-checkout: .github/scripts/v24_bank_import_repair.py
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Apply guarded repair
+        run: python .repair-main/.github/scripts/v24_bank_import_repair.py
+
+      - name: Syntax-check repaired app
+        run: node --check app.js
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install -g playwright@1.62.1
+          npx playwright install --with-deps chromium
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
+
+      - name: Run complete suite on repaired source
+        run: node tests/run-all.mjs
+
+      - name: Commit verified repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js tests/unit/bank-expense-import.spec.mjs
+          git commit -m "fix: harden bank expense import boundaries"
+          git push origin HEAD:chatgpt/bank-expense-import-foundation
