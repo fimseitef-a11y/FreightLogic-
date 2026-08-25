@@ -5,22 +5,30 @@ Status: active finite completion plan. This document converts the broad v24 road
 ## Current source state
 
 - Main reference at plan start: `96224bc04ede159ffd09bc57d574a7938e2e927e`.
+- Evidence update reference after PR #90 and PR #91 docs gates: `3a26a974d959efadb079340f6235abb8224acd81`.
 - v24.0.0 Unified Decision Engine is already the canonical client authority for verdict, grade, economics, and bid range.
 - CSS presentation extraction is complete; `styles.css` is the GPT-owned presentation seam.
 - `app.js` remains SHARED/serialized and core runtime behavior is Claude-owned under `/.agents/LANES.md`.
-- PR #87 (`v24.1.0 — Confidence + Evidence`) is open and currently non-mergeable against current main. It must be reconciled rather than blindly merged.
-- PR #89 (`v24.2 load lifecycle implementation contract`) is open, docs-only, and reviewable independently of runtime work.
-- `dat-rateview.js` exists on main but project policy freezes it as dormant/non-authoritative for cargo-van expedite pricing.
+- PR #87 (`v24.1.0 — Confidence + Evidence`) remains open and must be reconciled onto the integrity-fixed main rather than blindly merged.
+- `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` is now merged as the governing v24.2 lifecycle contract (PR #91; stale predecessor PR #89 was closed unmerged).
+- `dat-rateview.js` exists on main but project policy freezes it as dormant/non-authoritative for cargo-van expedite pricing. It is not loaded by `index.html` or precached by `service-worker.js`.
+- Current official Warp docs expose `POST https://www.wearewarp.com/api/v1/van/quote` as a public/keyless cargo-van quote endpoint; authentication is required for booking/private operations, not for quote-only market evidence.
+- Current official 123Loadboard developer materials expose Search Loads / Check Rates APIs through their integration/partner process.
+- Current Direct Freight V1 docs require a partner `api-token` and use an `end-user-token` for user-scoped features.
 
 ## Confirmed current-source parity defects
 
-These are release-blocking correctness issues because they can alter or falsely sharpen load decisions.
+These are release-blocking correctness issues because they can alter, mislabel, or falsely sharpen load decisions.
 
 1. `midwest-stack-config.json` is still stamped `appTarget: FreightLogic v23.5.x`, authority `Midwest Stack v2 - Operator System`, effective date `2026-05-27`.
 2. `midwest-stack-config.json` still places Toledo and Cincinnati in Tier 2 instead of Tier 1.
-3. `midwest-stack-authority.js` still exposes `DEAD_ZONE.floor: 0.91` even though the formal F20/DZ absolute floor is `0.90`.
+3. `midwest-stack-authority.js` still exposes `DEAD_ZONE.floor: 0.91` even though the formal F20/DZ absolute floor is `0.90` and its own hard-stop value is `0.90`.
 4. `midwest-stack-authority.js` uses a `finite()` coercion helper that converts missing/non-finite numeric facts to `0`; `assessLoad()` therefore risks manufacturing precise economics from unknown revenue/mileage/deadhead inputs.
-5. Current overlay source/version labels still describe the older Midwest Stack generation and must be reconciled to the latest governing v11/Level X+ doctrine without creating a second decision engine.
+5. Canonical `app.js` has the same UNKNOWN-to-zero problem: `deriveUnifiedEconomics()`, `deriveUnifiedGrade()`, and `deriveUnifiedAuthority()` normalize absent material facts into numeric zeroes before economics/grade/hard-gate projection.
+6. Canonical `MW.tier1` still excludes Cincinnati and Toledo while `MW.tier2` includes them, so `mwGeoCheck()` itself still applies stale geography.
+7. `MW.rpmTiers` and rendered grade-ladder copy still treat `$1.35–$1.49` as the D/minimum-standard band, while the governing Level X+ / v24 authority boundary is D `$1.40–$1.49` and E `$1.25–$1.39`.
+8. Current overlay/config/source labels plus installed-app metadata still describe the older Midwest Stack generation (`Midwest Stack v2`) and must be reconciled to the latest governing v11/Level X+ doctrine without creating a second decision engine.
+9. `R-TOCTOU-EXPENSE-FUEL` is confirmed present on current main: expense and fuel edits read the latest row only for audit logging and then unconditionally `put()` the stale full object. Unlike trip edits, they do not compare the caller's expected `updatedAt`/revision and do not abort with `FL_CONFLICT` when another tab has already saved.
 
 ## Completion release definition
 
@@ -29,7 +37,7 @@ FreightLogic reaches a completion release when the current cargo-van decision pr
 A completion release must have:
 
 - one canonical decision authority;
-- Midwest Stack v11 / Level X+ money and input-integrity parity;
+- Midwest Stack v11 / Level X+ money, geography, taxonomy, and input-integrity parity;
 - categorical confidence/evidence on material inputs;
 - one stable load lifecycle identity across opportunity, execution, and settlement;
 - safe manual/email-normalized ingestion path that future APIs can feed;
@@ -50,18 +58,22 @@ Core-owned files expected:
 - `midwest-stack-authority.js`
 - `midwest-stack-config.json`
 - `tests/`
+- release/display metadata touched only as required by the release checklist
 - possibly `schemas/` only if an additive validation contract is required
 
 Required outcomes:
 
-- Align Cincinnati and Toledo to Tier 1.
-- Align formal F20/DZ absolute floor to exactly `0.90` everywhere.
+- Align Cincinnati and Toledo to Tier 1 through the canonical `MW` geography path and all adapter/config mirrors.
+- Align Level X+ grade bands everywhere: A `>=1.75`, B `1.60–1.74`, C `1.50–1.59`, D `1.40–1.49`, E `1.25–1.39`, ordinary Reject `<1.25` outside active DZ.
+- Remove the stale `$1.35–$1.39` "minimum standard" classification from helpers and driver-facing grade-ladder copy.
+- Align formal F20/DZ absolute floor to exactly `0.90` everywhere; preserve the already-correct canonical `MW.dzFloorRPM = 0.90`.
 - Treat blank/undefined/null/non-finite operational mileage and revenue facts as UNKNOWN, never zero.
-- If loaded or deadhead mileage is unknown, canonical economics must be unavailable/provisional rather than fabricated.
+- If required mileage/revenue is unknown, canonical economics must be unavailable/provisional rather than fabricated. A conservative incomplete/safety state must be visibly distinct from a calculated `$0.00/mi` load.
 - Add explicit mileage provenance/status: `VERIFIED | ESTIMATED | UNKNOWN`.
 - Keep loaded miles, deadhead/empty miles, platform-displayed miles, and post-delivery reposition miles distinct.
 - Preserve v24 Unified Decision Engine as sole verdict/grade/economics/bid authority.
 - Keep Midwest overlay `ADAPTER_ONLY` / evidence-only.
+- Reconcile obsolete `Midwest Stack v2` wording in installed-app/release metadata when the implementation release is versioned; do not let `manifest.json` or the Cloudflare deployment checklist advertise an authority generation the runtime no longer uses.
 - Add exact Level X+ regression boundaries for grade thresholds, deadhead bands, geography, F20, invalid inputs, and unknown inputs.
 
 Definition of done:
@@ -69,6 +81,7 @@ Definition of done:
 - Full Playwright suite green on exact implementation head.
 - No weakened existing authority tests.
 - No false-precision path remains for unknown core mileage/economics inputs.
+- `MW.rpmTiers`, `deriveUnifiedGrade()`, authority thresholds, and rendered ladder cannot drift from one another.
 - F20 `0.90` boundary and Tier 1 geography covered by explicit tests.
 
 Rollback point: pre-milestone main SHA.
@@ -79,39 +92,49 @@ Priority: HIGH.
 
 Primary target:
 
-- Revalidate and, if still present, fix `R-TOCTOU-EXPENSE-FUEL` optimistic-concurrency risk.
+- Fix the confirmed `R-TOCTOU-EXPENSE-FUEL` optimistic-concurrency defect.
+
+Confirmed current behavior:
+
+- `updateTrip()` already captures the caller's expected `updatedAt`, reads the stored record and compares the token inside one readwrite transaction, aborts on mismatch, and surfaces `FL_CONFLICT`.
+- `updateExpense()` and `updateFuel()` do not perform that comparison; their edit forms also do not carry the original `updatedAt`/revision token into the save call.
+- Two stale edit tabs can therefore still silently overwrite unrelated changes through a later full-object `put()`.
 
 Rules:
 
+- Reuse the proven trip optimistic-concurrency pattern rather than inventing a second model.
+- Preserve the original record's expected timestamp/revision through the expense/fuel edit form and compare it inside the same readwrite transaction before writing.
+- Abort/surface a conflict rather than silently overwrite; refresh the stale form with the latest stored record consistently with trip conflict behavior.
 - Do not mix broad refactoring with the repair.
 - Preserve existing accounting/expense/fuel behavior and backup contract.
 - Any IndexedDB/storage path change requires full-suite and backup/restore validation.
 
 Definition of done:
 
-- Reproducible test demonstrates the old race or proves it already cannot occur.
-- Fix, if needed, is covered by regression tests.
-- Full suite green.
+- Two-tab Playwright tests reproduce the stale-edit scenario for both expense and fuel.
+- Tab B is rejected after Tab A has saved; Tab A's unrelated field change remains stored.
+- No silent full-object lost update occurs.
+- Full suite and backup/restore parity remain green.
 
 ## Milestone 3 — Reconcile and land v24.1 Confidence + Evidence
 
 Priority: HIGH.
 
-Dependency: Milestone 1 must be green first so confidence describes trustworthy canonical facts rather than masking false precision.
+Dependency: Milestones 1 and 2 must be green first so confidence describes trustworthy canonical facts and the large `app.js` reconciliation does not race a known integrity repair.
 
 Disposition of PR #87:
 
-- Rebase/reconcile onto current main after Milestone 1.
-- Preserve its core architecture: evidence normalization, source health, freshness, sample size, categorical HIGH/MEDIUM/LOW, no probabilities, no relaxed protective floors.
+- Rebase/reconcile onto current main after Milestones 1 and 2.
+- Preserve its core architecture: strict evidence-number normalization, source health, freshness, sample size, categorical HIGH/MEDIUM/LOW, no probabilities, no relaxed protective floors.
 - Re-run all existing v24 authority tests unchanged.
 - Keep live-source health unified with existing EIA/NWS/FMCSA/CBP health vocabulary.
 - Keep Worker confidence projection client-owned; AI may explain, not replace.
 
 External-source semantics to encode for future adapters:
 
-- Warp: `SHIPPER_BOOKABLE_PRICE`, not carrier payout.
-- 123Loadboard: carrier-side posted/market evidence only when API/terms authorize access and exact price semantics are known.
-- Direct Freight: carrier-side posted evidence only when API/partner terms are verified.
+- Warp: `SHIPPER_BOOKABLE_PRICE`, not carrier payout. The public/keyless `/api/v1/van/quote` response is usable as live market evidence without waiting for a booking key, but must not populate canonical carrier revenue.
+- 123Loadboard: carrier-side posted/market evidence only when the integration/partner API is authorized and exact field/price semantics are known.
+- Direct Freight: carrier-side posted evidence only after a partner API token is issued and the permitted user-scoped access model is implemented.
 - DAT RateView: dormant/non-authoritative for cargo-van expedite unless owner explicitly re-authorizes a bounded role later.
 
 Definition of done:
@@ -125,7 +148,7 @@ Definition of done:
 
 Priority: HIGH.
 
-Governing contract: PR #89 / `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` after review/merge.
+Governing contract: merged `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` (PR #91).
 
 Required state dimensions:
 
@@ -160,21 +183,22 @@ Definition of done:
 
 Priority: MEDIUM-HIGH, but only the provider-independent foundation is required for completion release.
 
-Required before external API credentials are available:
+Required before gated external API credentials are available:
 
 - One normalized opportunity-ingestion contract that manual intake, screenshots/text extraction, email alerts, and future APIs all feed.
 - Provenance fields must distinguish platform, broker, carrier/company, source, price semantic, source timestamp, and health/confidence.
 - Email/manual intake must not bypass provider terms or fabricate API access.
+- Provider evidence must remain structurally separate from canonical expected carrier revenue until the price semantic is explicitly `CARRIER_PAYOUT` or a user-confirmed revenue value is supplied.
 
 Provider adapters:
 
-- Warp adapter can land when approved endpoint/docs/credentials exist.
-- 123Loadboard adapter can land only after separate API eligibility/terms are verified; free board access is not API access.
-- Direct Freight adapter can land only after partner/API terms are verified; free account access is not API authorization.
+- **Warp quote evidence:** credentials are **not** a blocker for quote-only integration. Current official docs expose `POST /api/v1/van/quote` publicly/keyless. Implement only after Milestones 1–3 are green so its all-inclusive shipper/bookable price enters the confidence/evidence layer with `SHIPPER_BOOKABLE_PRICE` semantics, never as carrier payout. Booking/private Warp actions remain out of scope until authenticated access is deliberately enabled.
+- **123Loadboard:** implement only after integration/partner API access is authorized; free load-board account access is not API authorization.
+- **Direct Freight:** implement only after the required partner `api-token` is issued and user-token handling/terms are satisfied; free site account access is not partner API authorization.
 
 Completion-release rule:
 
-- Missing third-party API approval does not block release if the normalized ingestion contract and manual/email-compatible path are stable.
+- Missing 123Loadboard/Direct Freight partner approval does not block release if the normalized ingestion contract, manual/email-compatible path, and any authorized public evidence adapters are stable.
 
 ## Milestone 6 — Historical import + Personal Intelligence calibration
 
@@ -234,6 +258,7 @@ These do not block completion release unless a newly discovered dependency makes
 
 - direct bank account linking;
 - unsupported/unapproved third-party freight APIs;
+- authenticated booking/dispatch through freight providers;
 - broad v24.4 Next-Move expansion beyond existing safe positioning behavior;
 - v24.5 full visual overhaul;
 - v24.6 broader screenshot-first automation beyond the normalized ingestion foundation;
@@ -243,10 +268,10 @@ These do not block completion release unless a newly discovered dependency makes
 ## Execution order
 
 1. Doctrine/money integrity.
-2. Expense/fuel concurrency revalidation.
+2. Expense/fuel concurrency repair.
 3. v24.1 reconciliation.
 4. v24.2 lifecycle.
-5. Normalized ingestion foundation and provider adapters as credentials permit.
+5. Normalized ingestion foundation and authorized evidence adapters.
 6. Historical import / Personal Intelligence calibration.
 7. Field + deployment certification.
 8. Freeze completion release.
