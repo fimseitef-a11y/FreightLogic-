@@ -55,3 +55,17 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Rerun: none.
 - Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on this hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
 - Baseline disposition: this is now the exact `main` SHA, not merely tree-parity evidence. Clean-CI and exact-main baseline prerequisites for the behavior-preserving extraction gate are satisfied.
+
+## Run — 2026-08-25T09:39:09Z
+
+- Purpose: fresh post-DAT/current-main runtime baseline while opening docs-only completion-plan PR #90.
+- Tested SHA: `de77f9c6990ca3ff11ce3d850fbcad8679c8528e` (PR #90 synthetic merge ref: docs-only head `f85892e4b28057ba55f34dd50adc031d4fd2269b` merged into base `96224bc04ede159ffd09bc57d574a7938e2e927e`).
+- Runtime equivalence: PR #90 changes only `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`; application/runtime/test files are byte-identical to current base main `96224bc04ede159ffd09bc57d574a7938e2e927e`.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
+- Workflow evidence: run `32833036042`, job `97755739019`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 77.4 seconds (`09:39:09.270Z` through aggregate result at `09:40:26.635Z`).
+- Rerun: none.
+- Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on the hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
+- Coverage note: this green baseline does not certify the newly identified Midwest Stack v11 / Level X+ gaps (Toledo/Cincinnati Tier-1 parity, exact standalone `0.90` DZ/F20 floor, and UNKNOWN-vs-zero operational inputs), because the current 19-spec suite does not assert those new requirements yet. Those remain Milestone-1 release blockers and require new core-owned regression coverage.
