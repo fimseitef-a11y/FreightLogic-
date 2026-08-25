@@ -12,6 +12,9 @@ Status: active finite completion plan. This document converts the broad v24 road
 - PR #87 (`v24.1.0 — Confidence + Evidence`) remains open and must be reconciled onto the integrity-fixed main rather than blindly merged.
 - `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` is now merged as the governing v24.2 lifecycle contract (PR #91; stale predecessor PR #89 was closed unmerged).
 - `dat-rateview.js` exists on main but project policy freezes it as dormant/non-authoritative for cargo-van expedite pricing. It is not loaded by `index.html` or precached by `service-worker.js`.
+- Current official Warp docs expose `POST https://www.wearewarp.com/api/v1/van/quote` as a public/keyless cargo-van quote endpoint; authentication is required for booking/private operations, not for quote-only market evidence.
+- Current official 123Loadboard developer materials expose Search Loads / Check Rates APIs through their integration/partner process.
+- Current Direct Freight V1 docs require a partner `api-token` and use an `end-user-token` for user-scoped features.
 
 ## Confirmed current-source parity defects
 
@@ -24,7 +27,7 @@ These are release-blocking correctness issues because they can alter, mislabel, 
 5. Canonical `app.js` has the same UNKNOWN-to-zero problem: `deriveUnifiedEconomics()`, `deriveUnifiedGrade()`, and `deriveUnifiedAuthority()` normalize absent material facts into numeric zeroes before economics/grade/hard-gate projection.
 6. Canonical `MW.tier1` still excludes Cincinnati and Toledo while `MW.tier2` includes them, so `mwGeoCheck()` itself still applies stale geography.
 7. `MW.rpmTiers` and rendered grade-ladder copy still treat `$1.35–$1.49` as the D/minimum-standard band, while the governing Level X+ / v24 authority boundary is D `$1.40–$1.49` and E `$1.25–$1.39`.
-8. Current overlay/config source/version labels still describe the older Midwest Stack generation and must be reconciled to the latest governing v11/Level X+ doctrine without creating a second decision engine.
+8. Current overlay/config/source labels plus installed-app metadata still describe the older Midwest Stack generation (`Midwest Stack v2`) and must be reconciled to the latest governing v11/Level X+ doctrine without creating a second decision engine.
 9. `R-TOCTOU-EXPENSE-FUEL` is confirmed present on current main: expense and fuel edits read the latest row only for audit logging and then unconditionally `put()` the stale full object. Unlike trip edits, they do not compare the caller's expected `updatedAt`/revision and do not abort with `FL_CONFLICT` when another tab has already saved.
 
 ## Completion release definition
@@ -55,6 +58,7 @@ Core-owned files expected:
 - `midwest-stack-authority.js`
 - `midwest-stack-config.json`
 - `tests/`
+- release/display metadata touched only as required by the release checklist
 - possibly `schemas/` only if an additive validation contract is required
 
 Required outcomes:
@@ -69,6 +73,7 @@ Required outcomes:
 - Keep loaded miles, deadhead/empty miles, platform-displayed miles, and post-delivery reposition miles distinct.
 - Preserve v24 Unified Decision Engine as sole verdict/grade/economics/bid authority.
 - Keep Midwest overlay `ADAPTER_ONLY` / evidence-only.
+- Reconcile obsolete `Midwest Stack v2` wording in installed-app/release metadata when the implementation release is versioned; do not let `manifest.json` or the Cloudflare deployment checklist advertise an authority generation the runtime no longer uses.
 - Add exact Level X+ regression boundaries for grade thresholds, deadhead bands, geography, F20, invalid inputs, and unknown inputs.
 
 Definition of done:
@@ -127,9 +132,9 @@ Disposition of PR #87:
 
 External-source semantics to encode for future adapters:
 
-- Warp: `SHIPPER_BOOKABLE_PRICE`, not carrier payout.
-- 123Loadboard: carrier-side posted/market evidence only when API/terms authorize access and exact price semantics are known.
-- Direct Freight: carrier-side posted evidence only when API/partner terms are verified.
+- Warp: `SHIPPER_BOOKABLE_PRICE`, not carrier payout. The public/keyless `/api/v1/van/quote` response is usable as live market evidence without waiting for a booking key, but must not populate canonical carrier revenue.
+- 123Loadboard: carrier-side posted/market evidence only when the integration/partner API is authorized and exact field/price semantics are known.
+- Direct Freight: carrier-side posted evidence only after a partner API token is issued and the permitted user-scoped access model is implemented.
 - DAT RateView: dormant/non-authoritative for cargo-van expedite unless owner explicitly re-authorizes a bounded role later.
 
 Definition of done:
@@ -178,21 +183,22 @@ Definition of done:
 
 Priority: MEDIUM-HIGH, but only the provider-independent foundation is required for completion release.
 
-Required before external API credentials are available:
+Required before gated external API credentials are available:
 
 - One normalized opportunity-ingestion contract that manual intake, screenshots/text extraction, email alerts, and future APIs all feed.
 - Provenance fields must distinguish platform, broker, carrier/company, source, price semantic, source timestamp, and health/confidence.
 - Email/manual intake must not bypass provider terms or fabricate API access.
+- Provider evidence must remain structurally separate from canonical expected carrier revenue until the price semantic is explicitly `CARRIER_PAYOUT` or a user-confirmed revenue value is supplied.
 
 Provider adapters:
 
-- Warp adapter can land when approved endpoint/docs/credentials exist.
-- 123Loadboard adapter can land only after separate API eligibility/terms are verified; free board access is not API access.
-- Direct Freight adapter can land only after partner/API terms are verified; free account access is not API authorization.
+- **Warp quote evidence:** credentials are **not** a blocker for quote-only integration. Current official docs expose `POST /api/v1/van/quote` publicly/keyless. Implement only after Milestones 1–3 are green so its all-inclusive shipper/bookable price enters the confidence/evidence layer with `SHIPPER_BOOKABLE_PRICE` semantics, never as carrier payout. Booking/private Warp actions remain out of scope until authenticated access is deliberately enabled.
+- **123Loadboard:** implement only after integration/partner API access is authorized; free load-board account access is not API authorization.
+- **Direct Freight:** implement only after the required partner `api-token` is issued and user-token handling/terms are satisfied; free site account access is not partner API authorization.
 
 Completion-release rule:
 
-- Missing third-party API approval does not block release if the normalized ingestion contract and manual/email-compatible path are stable.
+- Missing 123Loadboard/Direct Freight partner approval does not block release if the normalized ingestion contract, manual/email-compatible path, and any authorized public evidence adapters are stable.
 
 ## Milestone 6 — Historical import + Personal Intelligence calibration
 
@@ -252,6 +258,7 @@ These do not block completion release unless a newly discovered dependency makes
 
 - direct bank account linking;
 - unsupported/unapproved third-party freight APIs;
+- authenticated booking/dispatch through freight providers;
 - broad v24.4 Next-Move expansion beyond existing safe positioning behavior;
 - v24.5 full visual overhaul;
 - v24.6 broader screenshot-first automation beyond the normalized ingestion foundation;
@@ -264,7 +271,7 @@ These do not block completion release unless a newly discovered dependency makes
 2. Expense/fuel concurrency repair.
 3. v24.1 reconciliation.
 4. v24.2 lifecycle.
-5. Normalized ingestion foundation and provider adapters as credentials permit.
+5. Normalized ingestion foundation and authorized evidence adapters.
 6. Historical import / Personal Intelligence calibration.
 7. Field + deployment certification.
 8. Freeze completion release.
