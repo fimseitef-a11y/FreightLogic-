@@ -82,3 +82,16 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Full-suite command window observed in logs: approximately 78.7 seconds (`04:51:03.746Z` through aggregate result at `04:52:22.473Z`).
 - Rerun: none.
 - Scope note: PR #95 changed GPT-owned documentation only and removed the obsolete duplicate `docs/V24_ROADMAP.md`; no runtime or test source changed and the finite completion-plan milestone order was not modified.
+
+## Run — 2026-08-26T05:30:40Z
+
+- Purpose: integrated PR #96 gate for the operator-approved Gate 0 formalization and Milestone 5 ingestion ordering.
+- Tested SHA: `ad4bf17f5891923eb6a801a562faa9edea080d25` (PR #96 synthetic merge ref: docs-only head `eb8436a714e8332dd135d9f568eb2ed26297a260` merged into base `93c45bf52061121c901f074764546587db0f6d84`).
+- Merged main after successful gate: `86ae9b1eb60b1452370acb443982d1c35ef66c45`; merged tree `65a92e66e5b486711f6be94fb745e671aacc2bbf` matches the tested PR merge-ref tree.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`.
+- Workflow evidence: run `32934284234`, job `98072421221`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 79.8 seconds (`05:30:40.805Z` through aggregate result at `05:32:00.603Z`).
+- Rerun: none.
+- Scope note: PR #96 changed only `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/OPEN_QUESTIONS.md`. Gate 0 was marked complete; runtime Milestones 1–7 retained their order; vision/provider adapters remain non-blocking.
