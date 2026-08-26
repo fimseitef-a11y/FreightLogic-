@@ -1239,7 +1239,15 @@ function sanitizeExpense(raw){
   return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
-    updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
+    updated: Date.now(),
+    // M2 (R-TOCTOU-EXPENSE-FUEL): preserve the caller's optimistic-concurrency
+    // stamp exactly as sanitizeTrip() does for F-6. This used to be a hardcoded
+    // Date.now(), which destroyed the only value updateExpense() could have
+    // compared against — so there was nothing to detect a stale edit with.
+    // Left undefined for a genuinely new record: the correct "no conflict check
+    // yet" state. updateExpense() sets the real value after the check passes.
+    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined,
+    type: clampStr(raw.type || 'expense', 20),
     receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,
     // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for
     // insurance-category expenses — see INSURANCE_CATEGORY_BUCKET / classifyExpenseTaxBucket.
@@ -1259,6 +1267,7 @@ async function upsertExpense(exp){
 }
 async function addExpense(exp){
   const e = sanitizeExpense(exp);
+  e.updatedAt = Date.now(); // M2: first revision stamp — see updateExpense()
   validateRecordSize(e, 'Expense');
   const {t:txn, stores} = tx(['expenses','auditLog'],'readwrite');
   const req = stores.expenses.add(e);
@@ -1274,12 +1283,27 @@ async function addExpense(exp){
   });
 }
 async function updateExpense(exp){
+  // M2 (R-TOCTOU-EXPENSE-FUEL): read the caller's expected revision off the RAW
+  // argument before sanitizeExpense() builds a fresh object — identical to the
+  // F-6 pattern in upsertTrip(). Previously this function read the stored record
+  // for the audit snapshot and then did an unconditional full-object put(), so
+  // two tabs editing one expense silently lost the first write, including in
+  // fields the second tab never touched.
+  const expectedUpdatedAt = exp?.updatedAt ?? null;
   const e = sanitizeExpense(exp);
   if (!e.id) throw new Error('Missing id');
   // TOCTOU-safe: read + write in single readwrite transaction
   const {t:txn, stores} = tx(['expenses','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.expenses.get(e.id)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(err){ console.warn("[FL]", err); }
+    const err = new Error('This expense was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  e.updatedAt = Date.now();
   stores.expenses.put(e);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id), action:'UPDATE_EXPENSE', beforeData, afterData: e, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(e); txn.onerror = ()=> reject(txn.error); });
@@ -1319,10 +1343,13 @@ function sanitizeFuel(raw){
   return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
-    created: finiteNum(raw.created, Date.now()), updated: Date.now(), updatedAt: Date.now() };
+    created: finiteNum(raw.created, Date.now()), updated: Date.now(),
+    // M2: same F-6 preservation as sanitizeExpense/sanitizeTrip.
+    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined };
 }
 async function addFuel(f){
   const x = sanitizeFuel(f);
+  x.updatedAt = Date.now(); // M2: first revision stamp — see updateFuel()
   validateRecordSize(x, 'Fuel');
   const {t:txn, stores} = tx(['fuel','auditLog'],'readwrite');
   const req = stores.fuel.add(x);
@@ -1334,12 +1361,22 @@ async function addFuel(f){
   });
 }
 async function updateFuel(f){
+  // M2: same optimistic-concurrency contract as updateExpense/upsertTrip.
+  const expectedUpdatedAt = f?.updatedAt ?? null;
   const x = sanitizeFuel(f);
   if (!x.id) throw new Error('Missing id');
   // TOCTOU-safe: read + write in single readwrite transaction
   const {t:txn, stores} = tx(['fuel','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.fuel.get(x.id)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(err){ console.warn("[FL]", err); }
+    const err = new Error('This fuel entry was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  x.updatedAt = Date.now();
   stores.fuel.put(x);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(x.id), action:'UPDATE_FUEL', beforeData, afterData: x, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(x); txn.onerror = ()=> reject(txn.error); });
@@ -10064,12 +10101,26 @@ function openExpenseForm(existing=null){
     const insuranceBucket = catVal.toLowerCase().includes('insurance') ? classifyExpenseTaxBucket(catVal) : undefined;
     const obj = { id: e.id, date: $('#f_date', body).value || isoDate(), amount: Number($('#f_amt', body).value||0),
       category: catVal, notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created,
+      // M2: carry the revision this form was opened with, so updateExpense()
+      // has something to compare against. Absent on an add, which is correct.
+      ...(mode === 'edit' && Number.isFinite(Number(e.updatedAt)) ? { updatedAt: Number(e.updatedAt) } : {}),
       ...(insuranceBucket ? { insuranceBucket } : {}) };
     try{
       if (mode==='add') await addExpense(obj); else await updateExpense(obj);
       invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
       closeModal(); await renderExpenses(true); await renderHome();
-    }catch(err){ console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true); }
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        // M2: another tab saved this expense since this form opened. Same
+        // treatment as the trip path (F-6) — never silently pick a winner.
+        haptic(35);
+        toast('This expense changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openExpenseForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
   });
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
@@ -10162,13 +10213,25 @@ function openFuelForm(existing=null){
   $('#f_save', body).addEventListener('click', async ()=>{
     const obj = { id: f.id, date: $('#f_date', body).value || isoDate(),
       gallons: Number($('#f_gal', body).value || 0), amount: Number($('#f_amt', body).value || 0),
-      state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200) };
+      state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200),
+      created: f.created,
+      // M2: carry the revision this form was opened with (see updateFuel).
+      ...(mode === 'edit' && Number.isFinite(Number(f.updatedAt)) ? { updatedAt: Number(f.updatedAt) } : {}) };
     try{
       if (mode==='add') await addFuel(obj); else await updateFuel(obj);
       toast('Fuel saved'); closeModal();
       if (views.fuel.style.display !== 'none') await renderFuel(true);
       invalidateKPICache(); await computeKPIs();
-    }catch(err){ console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true); }
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        haptic(35);
+        toast('This fuel entry changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openFuelForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
   });
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
@@ -17656,6 +17719,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel,
+    // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
+    addExpense, updateExpense, addFuel, updateFuel, dumpStore,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
