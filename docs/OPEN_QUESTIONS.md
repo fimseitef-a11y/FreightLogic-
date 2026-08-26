@@ -1,6 +1,6 @@
 # FreightLogic Open Questions
 
-Version: 1.2.0
+Version: 1.3.0
 Snapshot date: 2026-08-26
 Owner lane: GPT (`docs/`)
 Status: operator confirmation queue
@@ -74,12 +74,9 @@ Use one of these dispositions when resolved:
 30. **CONFIRMED — 2026-08-26 — Gate 0.** The operator approved the proposal to make `OPERATOR_TRUTH.md` + `EVIDENCE_PROVENANCE.md` + `OPEN_QUESTIONS.md` formal Gate 0 of the one canonical completion roadmap. Gate 0 is already complete because all three files are durable on `main`. This adds no runtime milestone work.
 31. **CONFIRMED — 2026-08-26 — Vision is not a completion blocker.** The operator approved the proposal that vision ingestion may be implemented but must **not** enlarge the named completion-release definition. The release may freeze without successful vision-model extraction once the required provider-independent normalized/manual-email ingestion foundation and all other release gates are complete.
 32. **CONFIRMED — 2026-08-26 — Ingestion order.** Inside Milestone 5, the approved order is `normalized contract → manual/email → vision → provider adapters`. Provider adapters may not leapfrog vision. If vision is deferred, provider-adapter expansion is deferred too; neither is required to freeze the completion release.
+33. **CONFIRMED — 2026-08-26 — Milestone 1 MPG fallback parity.** The operator explicitly approved reconciling the stale `MW.mpg: 16.5` fallback/source label with the operator-confirmed approximately **17.5 MPG loaded baseline** already recorded in `OPERATOR_TRUTH.md`. This is authorized as a narrowly bounded Milestone-1 source-of-truth parity repair, not a new feature. Required implementation behavior: the fallback/comment must no longer contradict Gate 0, while an explicit user vehicle-MPG setting remains higher priority and must continue to override the fallback. Claude/core lane owns the runtime/test implementation under the normal `app.js` lock and full-suite rules.
 
 These resolved items remain here as an audit trail rather than being deleted.
-
-## Pending roadmap-scope proposals
-
-33. **PENDING OPERATOR APPROVAL — reconcile the canonical MPG fallback.** Gate 0 records the operator-confirmed loaded fuel-economy baseline as approximately **17.5 MPG** (operator statement dated 2026-06-01), while current `app.js` still carries `MW.mpg: 16.5` with a `Field-confirmed 2016 Transit T250 (gas)` comment and uses that value as a fallback when no user vehicle-MPG setting is available. This is a material source-of-truth conflict because MPG can affect canonical economics through fallback behavior. Do **not** change runtime scope merely from this observation. Proposed disposition: add a narrowly bounded Milestone-1 parity fix so the fallback/comment cannot contradict `OPERATOR_TRUTH.md`, with regression coverage proving an explicit user setting still overrides the fallback.
 
 ## Resolution discipline
 
