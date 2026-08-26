@@ -2,5 +2,6 @@ owner: claude
 token: 653c7a53-84b9-4281-9cfe-89993c25ffaa
 started_utc: 2026-08-26T11:15:31Z
 expected_release_utc: 2026-08-26T17:15:31Z
-paths: app.js, midwest-stack-authority.js, midwest-stack-config.json, tests/
+paths: app.js, midwest-stack-authority.js, midwest-stack-config.json, tests/, index.html, service-worker.js, manifest.json, sw-bridge.js, voice-load.js, scripts/, CLAUDE.md
 task: Milestone 1 doctrine and money-integrity certification. UNKNOWN-vs-zero in canonical economics/grade/authority, mileage provenance, Level X+ grade taxonomy parity, Cincinnati/Toledo Tier 1 across canonical+adapter+config, DZ/F20 floor exactly 0.90, approved MW.mpg 16.5 -> ~17.5 fallback parity with explicit user MPG override preserved, stale roadmap pointer. No scope expansion.
+note: paths extended for the v24.0.1 cache-buster bump. Without it the service-worker cache freightlogic-24.0.0 keeps serving the pre-M1 app.js and overlay, so the fix never reaches an installed PWA. docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md is GPT-owned and is requested via inbox rather than edited here.
