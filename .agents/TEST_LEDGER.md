@@ -69,3 +69,16 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Rerun: none.
 - Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on the hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
 - Coverage note: this green baseline does not certify the newly identified Midwest Stack v11 / Level X+ gaps (Toledo/Cincinnati Tier-1 parity, exact standalone `0.90` DZ/F20 floor, and UNKNOWN-vs-zero operational inputs), because the current 19-spec suite does not assert those new requirements yet. Those remain Milestone-1 release blockers and require new core-owned regression coverage.
+
+## Run — 2026-08-26T04:51:03Z
+
+- Purpose: integrated PR #95 gate for GPT-owned operator-truth/provenance/open-question extraction, vision-ingest specification, and duplicate-roadmap retirement.
+- Tested SHA: `f55c6c88319b78ea2df373c2f5a8110e4e9e69bd` (PR #95 synthetic merge ref: docs-only head `53a2404b88d503eaa540f909fa930cab7fcfbe13` merged into base `b6eb8d9fd2eb87777609e73cff809ea2a816b861`).
+- Merged main after successful gate: `93c45bf52061121c901f074764546587db0f6d84`; merged tree `75719bce539a02871b37ad27ca4dfa2d61a01b17` matches the tested PR merge-ref tree.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
+- Workflow evidence: run `32931726691`, job `98065131187`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 78.7 seconds (`04:51:03.746Z` through aggregate result at `04:52:22.473Z`).
+- Rerun: none.
+- Scope note: PR #95 changed GPT-owned documentation only and removed the obsolete duplicate `docs/V24_ROADMAP.md`; no runtime or test source changed and the finite completion-plan milestone order was not modified.
