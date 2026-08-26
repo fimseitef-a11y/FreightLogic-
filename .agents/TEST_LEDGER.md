@@ -157,3 +157,15 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Delta vs prior baseline (138 passed / 0 failed across 20 specs): +21 assertions, +1 spec file, entirely accounted for by the new `tests/integration/m1-doctrine-integrity.spec.mjs`. No pre-existing assertion was changed, skipped, weakened or removed.
 - Test-fixture note: `dz-exit-grade-cap`, `dz-gate-parity` and `van-fit-precheck` now fill `#mwDeadMi` with `0`. They never filled it and were relying on blank-means-zero, which M1 removes. Fixtures only — assertions untouched.
 - Scope note: v24.0.1 version bump included because `CACHE_NAME` is `freightlogic-${SW_VERSION}` and all cache-busters were `?v=24.0.0`; without it an installed PWA keeps serving the pre-M1 `app.js`/overlay from cache. `index.html`/`_headers` CSP byte-identity re-verified after the bump.
+
+## Run — 2026-08-26T12:05Z
+
+- Purpose: Milestone 2 expense/fuel optimistic-concurrency repair (R-TOCTOU-EXPENSE-FUEL), full suite on the exact implementation head.
+- Tested SHA: `e59360e` on `claude/audit-reconcile-lane-mechanics-hteibi`.
+- Command: `node tests/run-all.mjs`.
+- Environment: **local session container, not GitHub Actions.** Node `v22.22.2`; Playwright `1.56.1` (CI pins `1.62.1`) — not environment-equivalent to the CI gate.
+- Result: **GREEN — 166 passed, 0 failed across 22 spec files**.
+- Rerun: none.
+- Delta vs the M1 head (159 passed / 0 failed across 21 specs): +7 assertions, +1 spec file, entirely accounted for by `tests/integration/m2-expense-fuel-concurrency.spec.mjs`. No pre-existing assertion changed, skipped, weakened or removed.
+- Regression note: `tests/integration/toctou-concurrent-edit.spec.mjs` (trip F-6) still passes. That is the load-bearing regression check for this milestone, since M2 modifies the same `updatedAt` preservation pattern F-6 depends on.
+- Backup/restore parity: `backup-restore-parity.spec.mjs` green, satisfying the M2 definition of done. Delta-sync and merge-restore both read `updatedAt || updated || created`, so the sanitizer change does not alter their ordering behavior.
