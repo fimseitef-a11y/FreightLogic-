@@ -1,6 +1,6 @@
 # FreightLogic Operator Truth
 
-Version: 1.0.0
+Version: 1.0.1
 Snapshot date: 2026-08-26
 Owner lane: GPT (`docs/`)
 Status: canonical operator/evidence truth snapshot; amend by versioned commit only
@@ -17,11 +17,17 @@ Secondary AI handoffs/summaries are not sufficient authority by themselves.
 
 - `OPERATOR_CORRECTION` — explicit user correction that supersedes prior interpretation.
 - `OPERATOR_STATEMENT` — explicit user statement about operation, equipment, status, or experience.
+- `OPERATOR_OBSERVATION` — explicit user observation about board, market, or operating conditions. It remains anecdotal unless separately supported by a broader dataset.
+- `OPERATOR_REQUIREMENT` — explicit user instruction defining desired FreightLogic behavior or workflow. It is a product/operating requirement, not market evidence.
+- `OPERATOR_RECORD` — operator-supplied or transcribed load/order facts whose row-level primary artifact is not fully reproduced in this snapshot. It establishes only the facts stated and does not by itself upgrade lifecycle status beyond the accompanying evidence.
 - `SCREENSHOT` — value visibly present in a user-provided screenshot/load card.
 - `RATE_CONFIRMATION` — contractual/dispatch confirmation evidence; does not by itself prove delivery or payment unless the evidence says so.
 - `COMPLETION_RECORD` — source explicitly indicates the load was completed/delivered.
 - `BOARD_OBSERVATION` — live/historical load-board card or board-state observation.
 - `BROKER_CONVERSATION_RELAY` — operator relayed what a broker told them; useful market evidence, not a board-wide statistic.
+- `WARP_QUOTE_EVIDENCE` — captured Warp cargo-van quote evidence. Its money semantic is `SHIPPER_BOOKABLE_PRICE`, not carrier payout or operator revenue.
+
+Composite labels such as `OPERATOR_STATEMENT + RATE_CONFIRMATION` or `SCREENSHOT / BOARD_OBSERVATION` mean multiple defined source types jointly support the row; they do not create a new source type.
 
 ## Authority and reconciliation rules
 
