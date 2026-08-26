@@ -2,7 +2,7 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Last governance update: 2026-08-26 — operator approved formal Gate 0 and approved the Milestone 5 intake ordering described below. This approval does **not** make vision ingestion a completion-release blocker and does not authorize any other expansion of the completion target.
+Last governance update: 2026-08-26 — operator approved formal Gate 0, approved the Milestone 5 intake ordering, and explicitly approved the narrowly bounded Milestone-1 MPG fallback parity repair described below. Vision ingestion remains non-blocking for the completion release.
 
 This document converts the broad v24 work and the 2026-08-24 completion-audit handoff into the shortest safe route to a coherent FreightLogic completion release.
 
@@ -17,8 +17,8 @@ This document converts the broad v24 work and the 2026-08-24 completion-audit ha
 
 ## Current source state
 
-- Main reference before this governance update: `93c45bf52061121c901f074764546587db0f6d84`.
-- `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are now durable on `main` and form Gate 0.
+- Current governance baseline before this roadmap-sync PR: `762984afb3afe80a9a25d592927d8ec40b0f51ed`.
+- `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable on `main` and form Gate 0.
 - `docs/VISION_LOAD_INGEST_CONTRACT.md` is the governing vision replacement specification. Runtime implementation remains Claude/core-owned.
 - `docs/V24_ROADMAP.md` was retired so this file remains the single roadmap authority.
 - v24.0.0 Unified Decision Engine is already the canonical client authority for verdict, grade, economics, and bid range.
@@ -74,6 +74,7 @@ These remain release-blocking correctness issues because they can alter, mislabe
 7. `MW.rpmTiers` and rendered grade-ladder copy still contain the stale `$1.35–$1.39` D/minimum-standard classification rather than Level X+ D `$1.40–$1.49` and E `$1.25–$1.39`.
 8. Installed-app/source metadata still describes the older Midwest Stack generation and must be reconciled without creating a second decision engine.
 9. `R-TOCTOU-EXPENSE-FUEL` remains a confirmed lost-update risk: expense/fuel edits can overwrite a newer concurrent edit because they do not enforce the trip path's revision/`updatedAt` conflict check.
+10. **Operator-approved M1 parity repair:** Gate 0 records the loaded fallback baseline as approximately `17.5 MPG`, while current `app.js` still carries `MW.mpg: 16.5` with stale field-confirmed wording. The operator approved reconciling this fallback/source label while preserving explicit user vehicle-MPG settings as higher-priority overrides.
 
 ## Completion release definition
 
@@ -118,10 +119,11 @@ Required outcomes:
 - If required mileage/revenue is unknown, canonical economics must be unavailable/provisional rather than fabricated.
 - Add explicit mileage provenance/status: `VERIFIED | ESTIMATED | UNKNOWN`.
 - Keep loaded miles, deadhead/empty miles, platform-displayed miles, and post-delivery reposition miles distinct.
+- Reconcile the stale `MW.mpg: 16.5` fallback/source label to the operator-confirmed approximately `17.5 MPG` loaded baseline. An explicit user vehicle-MPG setting remains higher priority and must override the fallback.
 - Preserve v24 Unified Decision Engine as sole verdict/grade/economics/bid authority.
 - Keep Midwest overlay adapter/evidence-only.
 - Reconcile stale Midwest Stack generation wording in release/install metadata when versioned.
-- Add exact Level X+ regression boundaries for grade thresholds, deadhead bands, geography, F20, invalid inputs, and unknown inputs.
+- Add exact Level X+ regression boundaries for grade thresholds, deadhead bands, geography, F20, invalid inputs, unknown inputs, and MPG fallback/override parity.
 
 Definition of done:
 
@@ -130,6 +132,7 @@ Definition of done:
 - No false-precision path remains for unknown core mileage/economics inputs.
 - Grade taxonomy, thresholds, geography, and rendered copy cannot drift from one another.
 - F20 `0.90` and Tier 1 geography have explicit tests.
+- MPG fallback behavior is explicit and tested: absent user MPG uses the approved approximately `17.5` fallback; an explicit user MPG value continues to override it.
 
 Rollback point: pre-milestone main SHA.
 
@@ -359,7 +362,7 @@ These do not block the completion release unless a newly discovered dependency i
 ## Execution order
 
 0. **Gate 0 — Operator truth/provenance externalization: COMPLETE.**
-1. Doctrine/money integrity.
+1. Doctrine/money integrity, including the operator-approved MPG fallback parity repair.
 2. Expense/fuel concurrency repair.
 3. v24.1 Confidence + Evidence reconciliation.
 4. v24.2 lifecycle.
