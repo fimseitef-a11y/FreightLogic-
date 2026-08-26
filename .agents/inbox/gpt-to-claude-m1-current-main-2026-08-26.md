@@ -1,7 +1,7 @@
 # GPT → Claude: Milestone 1 Current-Main Kickoff
 
 Date: 2026-08-26
-Current canonical main: `2f466b0a0b6d03955e954b5ad2bf7a0f9ebf1bbd`
+Current canonical main: `762984afb3afe80a9a25d592927d8ec40b0f51ed`
 Runtime-defect inspection base: `86ae9b1eb60b1452370acb443982d1c35ef66c45`
 Roadmap authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`
 Gate 0: COMPLETE
@@ -9,11 +9,11 @@ Implementation owner: Claude/core lane
 
 ## Why this refresh exists
 
-The older M1 handoff was written against main `3a26a974...`. Main has since gained Gate 0 operator truth/provenance, the vision-ingest spec, duplicate-roadmap retirement, and the operator-approved Milestone-5 sequencing. This file refreshes the M1 implementation packet against current main without changing M1 scope.
+The older M1 handoff was written against main `3a26a974...`. Main has since gained Gate 0 operator truth/provenance, the vision-ingest spec, duplicate-roadmap retirement, the operator-approved Milestone-5 sequencing, and the operator-approved MPG parity item. This file refreshes the M1 implementation packet against current main without broadening beyond the explicitly approved M1 scope.
 
-PR #97 subsequently advanced main from inspection base `86ae9b1...` to `2f466b0...` by changing **only `docs/OPEN_QUESTIONS.md`** to record the MPG mismatch as a pending proposal. PR #97 full integrated gate was 119 passed / 0 failed across 19 specs and its tested tree exactly matches current main. No runtime/test bytes changed after the defect inspection below, so the findings remain current.
+PR #97 advanced main by changing only `docs/OPEN_QUESTIONS.md` to record the MPG mismatch as a proposal. PR #98 then recorded the operator's explicit approval of that proposal, again changing only `docs/OPEN_QUESTIONS.md`. PR #98 integrated gate: GitHub Actions run `32939599895`, job `98087666374`, `node tests/run-all.mjs` => **119 passed, 0 failed across 19 specs**, no rerun. No runtime/test bytes changed after the defect inspection below, so the findings remain current.
 
-At inspection time there was no active lock file under `/.agents/locks/` beyond `.gitkeep`. No new `agent/claude/*` M1 branch was present. Claim locks exactly as required by `AGENTS.md` before core work.
+At the latest inspection there was no active lock file under `/.agents/locks/` beyond `.gitkeep`. Claim locks exactly as required by `AGENTS.md` before core work.
 
 ## Current live defects reconfirmed on the runtime tree
 
@@ -31,6 +31,12 @@ Canonical geography/taxonomy drift remains live:
 - `MW.tier2` still includes Cincinnati and Toledo.
 - `MW.rpmTiers` still contains `1.35–1.49 = Minimum Standard / ACCEPT`.
 - rendered ladder still says D `$1.35–$1.49` and E `$1.25–$1.34`, while canonical `deriveUnifiedGrade()` already uses D from `$1.40` and E from `$1.25–$1.39`.
+
+Canonical source-of-truth MPG drift remains live and is now explicitly authorized for repair:
+
+- Gate 0 `OPERATOR_TRUTH.md` records the operator-confirmed loaded baseline as approximately `17.5 MPG`.
+- `app.js` still carries `MW.mpg: 16.5` with a `Field-confirmed 2016 Transit T250 (gas)` comment and uses that value as fallback when no explicit vehicle-MPG setting is available.
+- The operator explicitly approved reconciling this fallback/source label as part of Milestone 1 on 2026-08-26.
 
 Maintenance-pointer drift:
 
@@ -53,7 +59,7 @@ Maintenance-pointer drift:
 
 ## Binding M1 outcomes
 
-Implement only the existing roadmap scope:
+Implement only the existing roadmap scope plus the explicitly approved MPG parity repair:
 
 1. UNKNOWN material revenue/mileage remains UNKNOWN/provisional, never silently zero.
 2. Explicit real zero remains distinguishable from unknown (e.g. verified `deadMi: 0`).
@@ -65,6 +71,7 @@ Implement only the existing roadmap scope:
 8. DZ/F20 absolute floor is exactly `0.90` everywhere.
 9. Unified Decision Engine remains sole canonical verdict/grade/economics/bid authority; Midwest overlay remains adapter/evidence only.
 10. Correct the stale in-code roadmap pointer while `app.js` is already under lock.
+11. **AUTHORIZED MPG parity:** reconcile the `MW.mpg` fallback/source label from stale `16.5` to the operator-confirmed approximately `17.5 MPG` loaded baseline. An explicit user vehicle-MPG setting remains higher priority and must continue to override the fallback. Do not turn this into a broader fuel-model redesign.
 
 ## Required regression matrix
 
@@ -82,6 +89,8 @@ At minimum add/extend Claude-owned tests for:
 - incomplete canonical facts cannot produce a normal authoritative bid/verdict payload;
 - mileage provenance survives canonical contract projection;
 - Midwest adapter cannot own canonical verdict/bid;
+- `MW.mpg` fallback/source label matches the approved approximately `17.5 MPG` Gate 0 baseline;
+- explicit user vehicle-MPG setting still overrides the fallback and canonical economics uses the explicit value exactly;
 - all pre-existing valid-input v24 authority/economics behavior remains green.
 
 Any `app.js` change requires full `node tests/run-all.mjs` suite and exact SHA logging in `TEST_LEDGER.md`.
@@ -91,14 +100,16 @@ Any `app.js` change requires full `node tests/run-all.mjs` suite and exact SHA l
 - PR #87 remains OPEN but explicitly HOLD / BLOCKED ON M1+M2. Do not merge or weaken it now. Reconcile it only after M1 + M2 are green.
 - GPT closed stale PR #93 (Milestone 5 draft) and #94 (Milestone 6 draft) unmerged because they predated Gate 0 and approved sequencing. Their branches are historical drafting material only.
 
-## Pending scope proposal — DO NOT IMPLEMENT YET
+## MPG scope proposal — RESOLVED / AUTHORIZED
 
-A newly reconfirmed source-of-truth conflict is now durable in `docs/OPEN_QUESTIONS.md` item 33 as pending operator approval:
+`docs/OPEN_QUESTIONS.md` item 33 is now **CONFIRMED — 2026-08-26**.
 
-- Gate 0 says operator-confirmed loaded baseline ≈ `17.5 MPG`.
-- `app.js` currently has `MW.mpg: 16.5` with a `Field-confirmed` comment and uses it as a fallback.
+Operator authorization is explicit:
 
-This can affect canonical economics, but the operator required that anything enlarging completion scope be proposed first. Therefore **do not change the MPG fallback as part of M1 unless the operator explicitly approves that proposal**.
+- reconcile stale `MW.mpg: 16.5` fallback/source label with Gate 0's operator-confirmed approximately `17.5 MPG` loaded baseline;
+- preserve explicit user MPG settings as higher-priority overrides;
+- add regression coverage proving that override behavior;
+- keep the change narrowly bounded to M1 parity. No broader fuel/economics redesign is authorized by this approval.
 
 ## After M1
 
