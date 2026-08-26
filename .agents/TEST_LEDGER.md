@@ -51,7 +51,7 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
 - Workflow evidence: run `32625179952`, job `97159316919`.
 - Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
-- Full-suite command window observed in logs: approximately 78.7 seconds (`07:18:12.179Z` through aggregate result at `07:19:30.870Z`).
+- Full-suite execution window observed in logs: approximately 78.7 seconds (`07:18:12.179Z` through aggregate result at `07:19:30.870Z`).
 - Rerun: none.
 - Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on this hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
 - Baseline disposition: this is now the exact `main` SHA, not merely tree-parity evidence. Clean-CI and exact-main baseline prerequisites for the behavior-preserving extraction gate are satisfied.
@@ -95,3 +95,16 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Full-suite command window observed in logs: approximately 79.8 seconds (`05:30:40.805Z` through aggregate result at `05:32:00.603Z`).
 - Rerun: none.
 - Scope note: PR #96 changed only `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/OPEN_QUESTIONS.md`. Gate 0 was marked complete; runtime Milestones 1–7 retained their order; vision/provider adapters remain non-blocking.
+
+## Run — 2026-08-26T05:40:40Z
+
+- Purpose: integrated PR #97 gate for recording the pending MPG source-of-truth scope proposal without changing runtime scope.
+- Tested SHA: `dbe2a2523c6dca7f543828d890a99dd145edee36` (PR #97 synthetic merge ref: docs-only head `2f466b0a0b6d03955e954b5ad2bf7a0f9ebf1bbd` merged into base `86ae9b1eb60b1452370acb443982d1c35ef66c45`).
+- Tree parity: tested merge-ref tree `277dd55b99ece2ecde316ea5631ca9955ee105b0` exactly matches merged/fast-forwarded main `2f466b0a0b6d03955e954b5ad2bf7a0f9ebf1bbd` tree `277dd55b99ece2ecde316ea5631ca9955ee105b0`.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
+- Workflow evidence: run `32934945219`, job `98074282712`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 77.8 seconds (`05:40:40.390Z` through aggregate result at `05:41:58.218Z`).
+- Rerun: none.
+- Scope note: PR #97 changed only `docs/OPEN_QUESTIONS.md`, recording the `17.5 MPG` Gate-0 truth vs current `MW.mpg: 16.5` fallback conflict as a **pending operator approval**. No runtime, test, storage, service-worker, or completion-plan scope changed.
