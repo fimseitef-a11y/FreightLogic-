@@ -145,3 +145,15 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Rerun: none.
 - Delta vs the prior recorded baseline (119 passed / 0 failed across 19 specs): +19 assertions, +1 spec file, exactly accounted for by the new `tests/unit/lane-guard.spec.mjs`. No pre-existing assertion changed, was skipped, weakened, or removed.
 - Scope note: the change touches no application runtime file — no `app.js`, `index.html`, `service-worker.js`, `manifest.json`, or `styles.css`. `tests/run-all.mjs` gained two lines (import + registration).
+
+## Run — 2026-08-26T11:27Z
+
+- Purpose: Milestone 1 doctrine/money-integrity certification, full suite on the exact implementation head.
+- Tested SHA: `b56af9e` on `claude/audit-reconcile-lane-mechanics-hteibi`, based on main `ef3b84014c24e2f1498a1f9ba390183cdbca10bb`.
+- Command: `node tests/run-all.mjs`.
+- Environment: **local session container, not GitHub Actions.** Node `v22.22.2`; Playwright `1.56.1`. CI pins Playwright `1.62.1`, so this is not environment-equivalent to the CI gate and does not replace an Actions run on an integrated PR head.
+- Result: **GREEN — 159 passed, 0 failed across 21 spec files**.
+- Rerun: none. Three earlier attempts were discarded before producing a verdict and are NOT counted as runs: two were invalidated by concurrent suite processes contending for the harness server port, and one was killed by a `pkill -f headless_shell` pattern that matched its own wrapper command line. No test code was changed in response to any of them.
+- Delta vs prior baseline (138 passed / 0 failed across 20 specs): +21 assertions, +1 spec file, entirely accounted for by the new `tests/integration/m1-doctrine-integrity.spec.mjs`. No pre-existing assertion was changed, skipped, weakened or removed.
+- Test-fixture note: `dz-exit-grade-cap`, `dz-gate-parity` and `van-fit-precheck` now fill `#mwDeadMi` with `0`. They never filled it and were relying on blank-means-zero, which M1 removes. Fixtures only — assertions untouched.
+- Scope note: v24.0.1 version bump included because `CACHE_NAME` is `freightlogic-${SW_VERSION}` and all cache-busters were `?v=24.0.0`; without it an installed PWA keeps serving the pre-M1 `app.js`/overlay from cache. `index.html`/`_headers` CSP byte-identity re-verified after the bump.
