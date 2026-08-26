@@ -1,0 +1,12 @@
+#!/bin/sh
+# FreightLogic lane guard — fast local feedback on LANES.md ownership and the
+# AGENTS.md lock protocol.
+#
+# This is NOT the enforcement boundary. `git commit --no-verify` bypasses it and
+# hooks are not distributed by clone. CI (.github/workflows/lanes.yml) is the
+# real gate; this hook exists so a violation surfaces in seconds rather than
+# after a push.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Set your identity once: git config freightlogic.agent claude   (or gpt)
+exec node "$(git rev-parse --show-toplevel)/scripts/lane-guard.mjs" precommit

@@ -45,7 +45,8 @@ If the branch does not yet exist remotely, create and push it without switching 
 LOCK PROTOCOL (document verbatim in AGENTS.md — both agents obey it):
   Claim: fetch agent-coordination, fast-forward, create
     /.agents/locks/<slug>.lock containing:
-      owner: <claude|gpt> | token: <uuid> | started_utc | expected_release_utc | task
+      owner: <claude|gpt> | token: <uuid> | started_utc | expected_release_utc |
+      paths | task
     Commit THAT FILE ALONE — never bundle anything with a lock commit. Push.
   REJECTED PUSH = CLAIM FAILED. Never rebase, cherry-pick, or force the
     rejected lock commit — that silently defeats the protocol. Fetch and
@@ -65,6 +66,56 @@ LOCK PROTOCOL (document verbatim in AGENTS.md — both agents obey it):
 ## Clarification for rejected lock claims
 
 A rejected push proves only that the shared coordination ref advanced; it does not by itself prove the requested lock is held. The exact lock path must be inspected after a fresh fetch. A rejected claim commit is disposable coordination state and must never be rebased/cherry-picked past the rejection. If the exact lock does not exist, reset/discard **only the dedicated coordination worktree's rejected claim state**, rebuild a new lock-only commit from the new remote head, and retry. Never perform such a reset in an application worktree.
+
+## Amendment 1 — lock records declare their paths
+
+The lock record gained one field, `paths:`, a comma-separated list of the exact
+repository paths the lock covers. A trailing `/` covers a subtree.
+
+```
+owner: claude
+token: 1cd1f613-3ae0-4e92-a1ee-9c793449bfa1
+started_utc: 2026-08-26T09:56:54Z
+expected_release_utc: 2026-08-26T12:56:54Z
+paths: AGENTS.md, .agents/LANES.md
+task: <one line>
+```
+
+The field is additive: the five-field records already on `agent-coordination`
+still parse. A record without `paths:` covers **nothing**, because "which paths
+did this lock authorise" was previously answerable only by reading the prose
+`task:` line, which no check can do.
+
+This is what makes `lock/app-js` in the protocol above mechanically real: a lock
+covers `app.js` when it says `paths: app.js`, not when its slug happens to look
+related.
+
+## Amendment 2 — the protocol is enforced, not just documented
+
+Lane ownership and this lock protocol are now checked by tooling. See the
+Enforcement section of `/.agents/LANES.md` for the operator steps.
+
+- `scripts/lane-guard.mjs` — the checker. Parses `/.agents/LANES.md` directly;
+  there is no second machine-readable ownership file to drift.
+- `.githooks/pre-commit` — refuses a staged foreign-lane edit, and a staged
+  `SHARED` edit with no held lock covering that path. Fast feedback only:
+  `--no-verify` bypasses it and hooks are not distributed by clone.
+- `.github/workflows/lanes.yml` — the actual boundary. `path-ownership` and
+  `commit-prefix` are enforcing; `lock-trailer` is warn-only for its first round.
+
+Two rules the tooling encodes, both fail-closed:
+
+1. A path with no row in `/.agents/LANES.md` cannot be classified, so it is
+   rejected rather than allowed by default.
+2. A lock past `expected_release_utc` + 2h is **stale**. It grants nothing —
+   including to its own holder — and it is never auto-stolen. Reaping stays the
+   deliberate act this protocol already describes: delete, commit, push, and log
+   the token and reason in `STATUS.md`.
+
+Because a lock is correctly released when work finishes, CI cannot re-read a
+live lock at PR time. Commits touching a `SHARED` path therefore carry an
+`FL-Lock: <slug>/<token>` trailer, written by `.githooks/prepare-commit-msg`, so
+coverage stays auditable after release.
 
 ## STATUS discipline
 
@@ -103,8 +154,9 @@ A red baseline is evidence, not permission to alter the safety net. If the basel
 
 ## Git and integration
 
-- Claude task branches: `agent/claude/<task>`; commit prefix `[claude]`.
-- GPT task branches: `agent/gpt/<task>`; commit prefix `[gpt]`.
+- Claude task branches: `agent/claude/<task>` or `claude/<task>`; commit prefix `[claude]`.
+- GPT task branches: `agent/gpt/<task>` or `chatgpt/<task>`; commit prefix `[gpt]`.
+- Those four namespaces are the complete set. A branch outside them fails the `commit-prefix` CI check rather than being silently accepted; add the namespace here first if a new one is genuinely needed.
 - Never force-push.
 - Never push to the other agent's branch namespace.
 - Rebase task branches onto current `main` before integration when safe to do so; locks do not live on task branches.
