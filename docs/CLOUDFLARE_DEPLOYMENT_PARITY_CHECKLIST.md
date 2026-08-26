@@ -43,9 +43,10 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 ## Midwest Stack overlay checks
 
 - Open the Evaluate view.
-- Confirm `Midwest Stack v2 Authority` appears below the evaluator output area.
+- Confirm `Bid Strategy · Advisory` appears below the evaluator output area, with copy stating that the canonical decision above is authoritative and this panel is supporting market/bid evidence.
 - Enter revenue, loaded miles, and deadhead miles.
-- Confirm True RPM, grade, realistic win, ask, verdict, and risk flags update.
+- Confirm a blank deadhead field is treated as **UNKNOWN** and blocks a calculated decision; entering an explicit `0` is accepted as verified zero deadhead.
+- Confirm True RPM, grade, realistic win, ask, verdict, and risk flags update once all required material facts are present.
 - Confirm these modes are available:
   - Realistic Win
   - Protect Floor
@@ -62,18 +63,19 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 - Confirm the evaluator's verdict, grade, economics, and bid range all come from the
   canonical client-owned decision object in `app.js` (v24.0 Unified Decision Engine) —
   the USA layer is evidence-only and the Midwest overlay is an advisory adapter.
+- Confirm incomplete canonical facts remain unavailable/UNKNOWN: no missing revenue or mileage is projected as zero; no unknown grade becomes `F`; no suppressed bid range becomes `$0`.
 - Confirm a `/evaluate` response *projects* the canonical verdict/grade/True RPM/bid
   rather than publishing a competing calculation of its own.
 - `tests/unit/v24-unified-decision.spec.mjs`,
-  `tests/integration/v24-authority-boundaries.spec.mjs`, and
-  `tests/integration/v24-economics-bid.spec.mjs` cover this automatically; the full
-  suite must be green before a deploy is considered parity-verified.
+  `tests/integration/v24-authority-boundaries.spec.mjs`,
+  `tests/integration/v24-economics-bid.spec.mjs`, and the Milestone-1 doctrine-integrity regression suite cover this automatically; the full suite must be green before a deploy is considered parity-verified.
 
 ## Worker checks
 
-Expected source file: `cloud-backup-worker.js` v12.
+Expected source file: `cloud-backup-worker.js` v13.
 
-- `GET /health` should return JSON with `ok: true`, `version: '12'`, and a timestamp.
+- `GET /health` should return JSON with `ok: true`, `version: '13'`, and a timestamp.
+- Confirm `/evaluate` preserves canonical unavailable/UNKNOWN states and does **not** sanitize missing verdict/grade/True RPM/bid into `REJECT`, `F`, `$0.00`, or `$0`.
 - Admin routes must reject without `X-Admin-Token`.
 - Driver backup/evaluate/extract routes must reject without `X-Backup-Token`.
 - `GET /backup/delta` should return `{ ok: true, deltas: [...], retainedCount, totalCreated }`
