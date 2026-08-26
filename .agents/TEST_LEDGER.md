@@ -19,7 +19,7 @@ BASELINE: GREEN — observed on final PR #77 integrated head
 ## Prior observed run — 2026-08-23T03:11:20Z
 
 - Purpose: initial coordination-setup baseline / integrated PR gate
-- Tested SHA: `483c33084e579b95b8972c5a96922d6db345f4d2` (PR #77 merge ref; protocol branch head `a8adfe3de0e3d63da1d2b4c793053bb17a46f05d`, base `0835d06c4415929b24d5684430b957412b026612`)
+- Tested SHA: `483c33084e579b95b8972c5a96922d6db345f4d2` (PR #77 synthetic merge ref; protocol branch head `a8adfe3de0e3d63da1d2b4c793053bb17a46f05d`, base `0835d06c4415929b24d5684430b957412b026612`)
 - Command: `node tests/run-all.mjs`
 - Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`
 - Result: **GREEN — 119 passed, 0 failed across 19 spec files**
@@ -51,7 +51,7 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`; workflow token contents permission `read`.
 - Workflow evidence: run `32625179952`, job `97159316919`.
 - Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
-- Full-suite execution window observed in logs: approximately 78.7 seconds (`07:18:12.179Z` through aggregate result at `07:19:30.870Z`).
+- Full-suite command window observed in logs: approximately 78.7 seconds (`07:18:12.179Z` through aggregate result at `07:19:30.870Z`).
 - Rerun: none.
 - Environment note: `Storage.overrideQuotaForOrigin` remained unsupported on this hosted runner; the suite's explicit unsupported-runner path passed. Real device quota pressure remains a field-revalidation item.
 - Baseline disposition: this is now the exact `main` SHA, not merely tree-parity evidence. Clean-CI and exact-main baseline prerequisites for the behavior-preserving extraction gate are satisfied.
@@ -108,3 +108,29 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Full-suite command window observed in logs: approximately 77.8 seconds (`05:40:40.390Z` through aggregate result at `05:41:58.218Z`).
 - Rerun: none.
 - Scope note: PR #97 changed only `docs/OPEN_QUESTIONS.md`, recording the `17.5 MPG` Gate-0 truth vs current `MW.mpg: 16.5` fallback conflict as a **pending operator approval**. No runtime, test, storage, service-worker, or completion-plan scope changed.
+
+## Run — 2026-08-26T06:46:48Z
+
+- Purpose: integrated PR #98 gate for recording the operator's explicit approval of the bounded Milestone-1 MPG fallback parity repair.
+- Tested SHA: `5d158d2576ea7d6c4d03c72d5ef80c1b37bc0db3` (PR #98 synthetic merge ref: docs-only head `ccecada35c54f9f5f7c1c138cff32fb5faa1fb01` merged into base `2f466b0a0b6d03955e954b5ad2bf7a0f9ebf1bbd`).
+- Merged main after successful gate: `762984afb3afe80a9a25d592927d8ec40b0f51ed`.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`.
+- Workflow evidence: run `32939599895`, job `98087666374`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 78.1 seconds (`06:46:48.702Z` through aggregate result at `06:48:06.846Z`).
+- Rerun: none.
+- Scope note: PR #98 changed only `docs/OPEN_QUESTIONS.md`; it converted item 33 from pending to CONFIRMED. It authorized, but did not implement, the `~17.5 MPG` fallback/source-label parity repair with explicit user MPG remaining the higher-priority override.
+
+## Run — 2026-08-26T07:29:25Z
+
+- Purpose: integrated PR #99 gate synchronizing the already-approved MPG parity repair into the single canonical completion roadmap.
+- Tested SHA: `b1a215f4e17ccc212e0ba4c954fce7a5b177ee56` (PR #99 synthetic merge ref: docs-only head `b91774f1aa7d7a5fed2eb29cb6e358c1a8961c92` merged into base `762984afb3afe80a9a25d592927d8ec40b0f51ed`).
+- Merged main after successful gate: `da62c114885a2549f94bc26059f6d0cc51431e8b`.
+- Command: `node tests/run-all.mjs`.
+- Environment: GitHub Actions `ubuntu-24.04`; Node `22.23.2`; Playwright `1.62.1`; Chromium/Chrome for Testing `151.0.7922.34`.
+- Workflow evidence: run `32942947209`, job `98097573111`.
+- Result: **GREEN — 119 passed, 0 failed across 19 spec files**.
+- Full-suite command window observed in logs: approximately 76.7 seconds (`07:29:25.341Z` through aggregate result at `07:30:41.995Z`).
+- Rerun: none.
+- Scope note: PR #99 changed only `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` (9 additions / 6 deletions). It added the approved MPG fallback/override parity item to M1 defect tracking, required outcomes, definition of done, and execution order. No runtime, test, storage, service-worker, or milestone-order change occurred.
