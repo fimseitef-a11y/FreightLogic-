@@ -1,6 +1,6 @@
 # FreightLogic Open Questions
 
-Version: 1.0.0
+Version: 1.1.0
 Snapshot date: 2026-08-26
 Owner lane: GPT (`docs/`)
 Status: operator confirmation queue
@@ -11,7 +11,7 @@ If GPT cannot prove that a carried fact came from an explicit operator statement
 
 Use one of these dispositions when resolved:
 
-- `CONFIRMED` — promote to `OPERATOR_TRUTH.md` with date/source.
+- `CONFIRMED` — promote to the appropriate canonical document with date/source.
 - `REJECTED` — keep the historical question here with the rejection date; do not use it elsewhere.
 - `SUPERSEDED` — replace with newer operator-confirmed fact and link the replacement.
 - `PRIMARY_EVIDENCE_FOUND` — promote using the primary evidence, not the prior AI claim.
@@ -69,10 +69,13 @@ Use one of these dispositions when resolved:
 28. **Automatic retry privacy:** when a photo is captured offline, should extraction retry automatically on reconnect or only after an explicit user action? The contract defaults to explicit/user-controlled upload unless the operator approves a different policy.
 29. **Multi-card screenshots:** should the first implementation require the user to crop/select one load card before extraction, or support selecting among multiple detected cards? The contract takes the safer one-offer-per-extraction path for acceptance, but UI behavior remains to be confirmed.
 
-## Roadmap questions
+## Resolved roadmap decisions
 
-30. **Gate 0 reorder proposal:** confirm whether `OPERATOR_TRUTH.md` + `EVIDENCE_PROVENANCE.md` + `OPEN_QUESTIONS.md` should formally become Gate 0 of the one canonical roadmap before remaining runtime milestones. The files can exist now without changing milestone order.
-31. **Vision ingest as completion blocker:** the operator explicitly requested the vision replacement spec and a Claude implementation request. Confirm whether successful vision ingestion is required for the named completion release or may land without becoming a release-blocking target. Do not silently enlarge the completion definition.
+30. **CONFIRMED — 2026-08-26 — Gate 0.** The operator approved the proposal to make `OPERATOR_TRUTH.md` + `EVIDENCE_PROVENANCE.md` + `OPEN_QUESTIONS.md` formal Gate 0 of the one canonical completion roadmap. Gate 0 is already complete because all three files are durable on `main`. This adds no runtime milestone work.
+31. **CONFIRMED — 2026-08-26 — Vision is not a completion blocker.** The operator approved the proposal that vision ingestion may be implemented but must **not** enlarge the named completion-release definition. The release may freeze without successful vision-model extraction once the required provider-independent normalized/manual-email ingestion foundation and all other release gates are complete.
+32. **CONFIRMED — 2026-08-26 — Ingestion order.** Inside Milestone 5, the approved order is `normalized contract → manual/email → vision → provider adapters`. Provider adapters may not leapfrog vision. If vision is deferred, provider-adapter expansion is deferred too; neither is required to freeze the completion release.
+
+These resolved items remain here as an audit trail rather than being deleted.
 
 ## Resolution discipline
 
