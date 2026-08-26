@@ -1,7 +1,19 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.0 USA ENGINE
+/** FreightLogic v24.0.1 USA ENGINE
+ *  v24.0.1 "Doctrine & Money Integrity" (completion-plan Milestone 1): a
+ *          material operational fact is UNKNOWN unless it parses finite —
+ *          canonical economics, grade, and authority no longer coerce a
+ *          missing revenue/loaded/deadhead figure to 0 and derive a confident
+ *          verdict from it. An explicitly entered 0 stays a verified zero.
+ *          Mileage provenance (VERIFIED|ESTIMATED|UNKNOWN) is explicit and
+ *          loaded/deadhead/platform-displayed/reposition miles stay distinct.
+ *          Level X+ grade taxonomy is exact everywhere (D $1.40-1.49,
+ *          E $1.25-1.39); Cincinnati and Toledo are Tier 1 across canonical,
+ *          adapter and config; the F20/DZ absolute floor is exactly 0.90; and
+ *          the MW.mpg fallback is reconciled to the operator-confirmed ~17.5
+ *          baseline with explicit user MPG still overriding it.
  *  v24.0.0 "Unified Decision Engine": one deterministic, client-owned decision
  *          object in app.js is the sole authority for load verdict, grade,
  *          economics, and bid range. USA scoring is evidence-only, the Midwest
@@ -9,7 +21,8 @@
  *          projects the canonical verdict/grade/True RPM/bid fields rather than
  *          recalculating them. Boundary, determinism, economics, bid, and
  *          authority-regression suites enforce the contract. See
- *          docs/V24_ROADMAP.md for the authority contract.
+ *          docs/COMPLETION_RELEASE_PLAN_2026-08-25.md for the authority
+ *          contract and the single canonical roadmap.
  *  v23.9.1: Pre-v24 integrity gate — True RPM floors aligned to $1.40/$1.50,
  *           static rate bands carry CURRENT/AGING/STALE freshness, live sources
  *           (EIA/NWS/FMCSA/CBP) report health, conservative broker-key
@@ -51,7 +64,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.0.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -380,6 +393,18 @@ async function verifyPin(stored, candidate){
 function finiteNum(v, def=0){
   const x = Number(v);
   return Number.isFinite(x) ? x : def;
+}
+// M1 (doctrine/money integrity): a material operational fact is UNKNOWN unless
+// it parses to a finite number. null, undefined, blank/whitespace strings, NaN
+// and Infinity all return null — never a silent 0. An explicit 0 the operator
+// actually supplied (a verified `deadMi: 0` on a live-loaded pickup) returns 0
+// and stays a real, verified zero. This is the distinction the canonical
+// economics/grade/authority layer lost when it read facts through `Number(x||0)`.
+function knownNum(v){
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  const x = Number(v);
+  return Number.isFinite(x) ? x : null;
 }
 function posNum(v, def=0, max=1e9){
   const x = finiteNum(v, def);
@@ -1214,7 +1239,15 @@ function sanitizeExpense(raw){
   return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     amount: posNum(raw.amount, 0, 1000000), category: clampStr(raw.category, 60),
     notes: clampStr(raw.notes, 300), created: finiteNum(raw.created, Date.now()),
-    updated: Date.now(), updatedAt: Date.now(), type: clampStr(raw.type || 'expense', 20),
+    updated: Date.now(),
+    // M2 (R-TOCTOU-EXPENSE-FUEL): preserve the caller's optimistic-concurrency
+    // stamp exactly as sanitizeTrip() does for F-6. This used to be a hardcoded
+    // Date.now(), which destroyed the only value updateExpense() could have
+    // compared against — so there was nothing to detect a stale edit with.
+    // Left undefined for a genuinely new record: the correct "no conflict check
+    // yet" state. updateExpense() sets the real value after the check passes.
+    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined,
+    type: clampStr(raw.type || 'expense', 20),
     receiptBlobRef: raw.receiptBlobRef ? clampStr(String(raw.receiptBlobRef), 80) : undefined,
     // X-03: explicit auto (A) vs cargo/liability/occ-acc (B) vs unresolved (C) split for
     // insurance-category expenses — see INSURANCE_CATEGORY_BUCKET / classifyExpenseTaxBucket.
@@ -1234,6 +1267,7 @@ async function upsertExpense(exp){
 }
 async function addExpense(exp){
   const e = sanitizeExpense(exp);
+  e.updatedAt = Date.now(); // M2: first revision stamp — see updateExpense()
   validateRecordSize(e, 'Expense');
   const {t:txn, stores} = tx(['expenses','auditLog'],'readwrite');
   const req = stores.expenses.add(e);
@@ -1249,12 +1283,27 @@ async function addExpense(exp){
   });
 }
 async function updateExpense(exp){
+  // M2 (R-TOCTOU-EXPENSE-FUEL): read the caller's expected revision off the RAW
+  // argument before sanitizeExpense() builds a fresh object — identical to the
+  // F-6 pattern in upsertTrip(). Previously this function read the stored record
+  // for the audit snapshot and then did an unconditional full-object put(), so
+  // two tabs editing one expense silently lost the first write, including in
+  // fields the second tab never touched.
+  const expectedUpdatedAt = exp?.updatedAt ?? null;
   const e = sanitizeExpense(exp);
   if (!e.id) throw new Error('Missing id');
   // TOCTOU-safe: read + write in single readwrite transaction
   const {t:txn, stores} = tx(['expenses','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.expenses.get(e.id)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(err){ console.warn("[FL]", err); }
+    const err = new Error('This expense was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  e.updatedAt = Date.now();
   stores.expenses.put(e);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id), action:'UPDATE_EXPENSE', beforeData, afterData: e, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(e); txn.onerror = ()=> reject(txn.error); });
@@ -1294,10 +1343,13 @@ function sanitizeFuel(raw){
   return { ...(raw.id ? { id: intNum(raw.id, 0, 1e12) } : {}), date: isValidISODate(raw.date) ? raw.date : isoDate(),
     gallons: posNum(raw.gallons, 0, 100000), amount: posNum(raw.amount, 0, 1000000),
     state: clampStr(raw.state, 20), notes: clampStr(raw.notes, 200),
-    created: finiteNum(raw.created, Date.now()), updated: Date.now(), updatedAt: Date.now() };
+    created: finiteNum(raw.created, Date.now()), updated: Date.now(),
+    // M2: same F-6 preservation as sanitizeExpense/sanitizeTrip.
+    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : undefined };
 }
 async function addFuel(f){
   const x = sanitizeFuel(f);
+  x.updatedAt = Date.now(); // M2: first revision stamp — see updateFuel()
   validateRecordSize(x, 'Fuel');
   const {t:txn, stores} = tx(['fuel','auditLog'],'readwrite');
   const req = stores.fuel.add(x);
@@ -1309,12 +1361,22 @@ async function addFuel(f){
   });
 }
 async function updateFuel(f){
+  // M2: same optimistic-concurrency contract as updateExpense/upsertTrip.
+  const expectedUpdatedAt = f?.updatedAt ?? null;
   const x = sanitizeFuel(f);
   if (!x.id) throw new Error('Missing id');
   // TOCTOU-safe: read + write in single readwrite transaction
   const {t:txn, stores} = tx(['fuel','auditLog'],'readwrite');
   let beforeData = null;
   try{ beforeData = await idbReq(stores.fuel.get(x.id)); }catch(e){ console.warn("[FL]", e); }
+  if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
+    try{ txn.abort(); }catch(err){ console.warn("[FL]", err); }
+    const err = new Error('This fuel entry was changed elsewhere since you opened it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = beforeData;
+    throw err;
+  }
+  x.updatedAt = Date.now();
   stores.fuel.put(x);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(x.id), action:'UPDATE_FUEL', beforeData, afterData: x, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(x); txn.onerror = ()=> reject(txn.error); });
@@ -6311,7 +6373,11 @@ function usaScoreLoad(opts){
    ═══════════════════════════════════════════════════════════════ */
 
 const MW = {
-  mpg: 16.5,           // Field-confirmed 2016 Transit T250 (gas)
+  // M1: fallback only. Gate 0 docs/OPERATOR_TRUTH.md records the operator-
+  // confirmed loaded baseline as ~17.5 MPG; the prior 16.5 was labelled
+  // "field-confirmed" but predates that. An explicit vehicleMpg setting is
+  // higher priority and overrides this in canonical economics.
+  mpg: 17.5,           // Operator-confirmed loaded baseline (Gate 0), fallback only
   fuelBaseline: 3.55,  // Midwest regular gas, EIA wk of Jul 6 2026; user override via settings
   weekTarget: { low: 3800, high: 4200, stretch: 5000 },
   monWed: { low: 2200, high: 2600 },
@@ -6326,13 +6392,15 @@ const MW = {
   strategicFloorRPM: 1.25,
   longHaulMinRPM: 1.45,
   surgeMinRPM: 1.70,
-  tier1: ['chicago','indianapolis','cleveland','columbus','detroit'],
-  tier2: ['nashville','louisville','st. louis','st louis','stl','cincinnati','dayton','toledo','fort wayne','grand rapids','milwaukee','lexington'],
+  // M1: Level X+ doctrine puts Cincinnati and Toledo in Tier 1. Mirrored in
+  // midwest-stack-authority.js and midwest-stack-config.json.
+  tier1: ['chicago','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
+  tier2: ['nashville','louisville','st. louis','st louis','stl','dayton','fort wayne','grand rapids','milwaukee','lexington'],
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
   rpmTiers: [
     { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
-    { min: 1.25, max: 1.34, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
-    { min: 1.35, max: 1.49, label: 'Minimum Standard',   color: '#ff8c42',     verdict: 'ACCEPT' },
+    { min: 1.25, max: 1.39, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
+    { min: 1.40, max: 1.49, label: 'Weak — Negotiate',   color: '#ff8c42',     verdict: 'ACCEPT' },
     { min: 1.50, max: 1.59, label: 'Professional',       color: 'var(--text)', verdict: 'ACCEPT' },
     { min: 1.60, max: 1.74, label: 'Strong',             color: 'var(--good)', verdict: 'ACCEPT' },
     { min: 1.75, max: 1.99, label: 'Very Strong',        color: 'var(--good)', verdict: 'ACCEPT' },
@@ -6744,7 +6812,13 @@ if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligibl
 const UNIFIED_DECISION_SCHEMA_VERSION = '24.0.0';
 
 function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = {}){
-  const rpm = Number.isFinite(Number(trueRPM)) ? Number(trueRPM) : 0;
+  // M1: an unknown True RPM used to coerce to 0 and fall through to grade F —
+  // a REJECT that looks calculated but was only ever a missing input.
+  const rpm = knownNum(trueRPM);
+  if (rpm === null){
+    const unknown = { grade: '?', gradeLabel: 'UNKNOWN — insufficient data', gradeColor: 'var(--text-tertiary)', gradeEmoji: '⚪', known: false };
+    return { raw: { ...unknown }, display: { ...unknown } };
+  }
   let raw;
   if (rpm >= 1.75) raw = { grade:'A', gradeLabel:'PREMIUM WIN', gradeColor:'#34d399', gradeEmoji:'🟢' };
   else if (rpm >= 1.60) raw = { grade:'B', gradeLabel:'STRONG ACCEPT', gradeColor:'var(--good)', gradeEmoji:'🟢' };
@@ -6753,19 +6827,67 @@ function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = 
   else if (rpm >= 1.25) raw = { grade:'E', gradeLabel:'STRATEGIC ONLY', gradeColor:'#f87171', gradeEmoji:'🔴' };
   else raw = { grade:'F', gradeLabel:'REJECT', gradeColor:'var(--bad)', gradeEmoji:'🔴' };
 
+  raw.known = true;
   const display = isDZActive
-    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠' }
+    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠', known: true }
     : { ...raw };
   return { raw, display };
 }
 
+// M1: mileage semantics stay distinct. Loaded, deadhead/empty, the figure a
+// platform displayed, and post-delivery reposition miles are four different
+// numbers and are never merged or substituted for one another.
+const MILEAGE_PROVENANCE = Object.freeze({ VERIFIED:'VERIFIED', ESTIMATED:'ESTIMATED', UNKNOWN:'UNKNOWN' });
+function normalizeMileageProvenance(value, isKnown){
+  if (!isKnown) return MILEAGE_PROVENANCE.UNKNOWN;
+  const v = String(value || '').toUpperCase();
+  return MILEAGE_PROVENANCE[v] || MILEAGE_PROVENANCE.VERIFIED;
+}
+
+// The canonical economics shape when a material fact is missing. Every money
+// field is null rather than 0, so nothing downstream can render a
+// calculated-looking $0.00 that was never calculated.
+const UNAVAILABLE_ECONOMICS_FIELDS = Object.freeze([
+  'revenue','effectiveRevenue','loadedMi','deadMi','totalMi','trueRPM','loadedRPM','deadheadPct',
+  'mpg','fuelPrice','fuel','netAfterFuel','opCPM','operatingCost','borderAdminCost','totalCost',
+  'operationalProfit','trueProfit','profitMarginPct','breakEvenRPM','profitPerMile','estHours',
+  'profitPerHour','fuelPerMile',
+]);
+
 function deriveUnifiedEconomics(facts){
   const f = facts || {};
-  const loadedMi = Math.max(0, Number(f.loadedMi || 0));
-  const deadMi = Math.max(0, Number(f.deadMi || 0));
+  // M1: read material facts through knownNum. `Number(f.loadedMi || 0)` turned
+  // every missing input into a confident zero, which then produced a precise
+  // True RPM, a real grade, and a bid range out of nothing.
+  const loadedMiK = knownNum(f.loadedMi);
+  const deadMiK = knownNum(f.deadMi);
+  const revenueK = knownNum(f.revenue);
+  const effectiveRevenueK = f.effectiveRevenue === undefined || f.effectiveRevenue === null
+    ? revenueK
+    : knownNum(f.effectiveRevenue);
+
+  const mileageProvenance = Object.freeze({
+    loaded: normalizeMileageProvenance(f.loadedMiProvenance, loadedMiK !== null),
+    deadhead: normalizeMileageProvenance(f.deadMiProvenance, deadMiK !== null),
+    platformDisplayedMi: knownNum(f.platformDisplayedMi),
+    repositionMi: knownNum(f.repositionMi),
+  });
+
+  const unknownFacts = [];
+  if (loadedMiK === null) unknownFacts.push('loadedMi');
+  if (deadMiK === null) unknownFacts.push('deadMi');
+  if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');
+  if (unknownFacts.length){
+    const out = { available: false, unknownFacts: Object.freeze(unknownFacts), mileageProvenance };
+    for (const key of UNAVAILABLE_ECONOMICS_FIELDS) out[key] = null;
+    return Object.freeze(out);
+  }
+
+  const loadedMi = Math.max(0, loadedMiK);
+  const deadMi = Math.max(0, deadMiK);
   const totalMi = loadedMi + deadMi;
-  const revenue = Math.max(0, Number(f.revenue || 0));
-  const effectiveRevenue = Math.max(0, Number(f.effectiveRevenue ?? revenue));
+  const revenue = Math.max(0, revenueK === null ? effectiveRevenueK : revenueK);
+  const effectiveRevenue = Math.max(0, effectiveRevenueK === null ? revenue : effectiveRevenueK);
   const mpg = Number(f.mpg || 0);
   const fuelPrice = Math.max(0, Number(f.fuelPrice || 0));
   const opCPM = Math.max(0, Number(f.opCPM || 0));
@@ -6786,6 +6908,9 @@ function deriveUnifiedEconomics(facts){
   const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
   const deadheadPct = totalMi > 0 ? roundCents((deadMi / totalMi) * 100) : 0;
   return Object.freeze({
+    available: true,
+    unknownFacts: Object.freeze([]),
+    mileageProvenance,
     revenue, effectiveRevenue, loadedMi, deadMi, totalMi,
     trueRPM, loadedRPM, deadheadPct,
     mpg, fuelPrice, fuel, netAfterFuel,
@@ -6847,10 +6972,40 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
   const steps = [];
   let verdict = f.initialVerdict || 'REJECT';
   let verdictReason = '';
-  const trueRPM = Number(f.trueRPM || 0);
-  const totalMi = Number(f.totalMi || 0);
-  const deadheadPct = Number(f.deadheadPct || 0);
-  const effectiveRevenue = Number(f.effectiveRevenue || 0);
+
+  // M1: the hard-gate layer must not manufacture material facts. Previously
+  // every one of these read `Number(x || 0)`, so a load with no revenue or no
+  // deadhead figure still produced a full, authoritative-looking verdict —
+  // typically REJECT "under floor", derived from inputs that were never there.
+  const trueRPMKnown = knownNum(f.trueRPM);
+  const totalMiKnown = knownNum(f.totalMi);
+  const deadheadPctKnown = knownNum(f.deadheadPct);
+  const effectiveRevenueKnown = knownNum(f.effectiveRevenue);
+  const unknownFacts = [];
+  if (trueRPMKnown === null) unknownFacts.push('trueRPM');
+  if (totalMiKnown === null) unknownFacts.push('totalMi');
+  if (deadheadPctKnown === null) unknownFacts.push('deadheadPct');
+  if (effectiveRevenueKnown === null) unknownFacts.push('effectiveRevenue');
+  if (unknownFacts.length){
+    return Object.freeze({
+      policyVersion: policy.version,
+      available: false,
+      unknownFacts: Object.freeze(unknownFacts),
+      verdict: 'UNAVAILABLE',
+      verdictReason: `Cannot decide — missing: ${unknownFacts.join(', ')}`,
+      steps: Object.freeze([Object.freeze({
+        pass: null,
+        label: 'Canonical facts',
+        detail: `Incomplete — ${unknownFacts.join(', ')} unknown. No verdict, grade, or bid is derived from missing facts.`,
+      })]),
+      repoSuggestion: '',
+    });
+  }
+
+  const trueRPM = trueRPMKnown;
+  const totalMi = totalMiKnown;
+  const deadheadPct = deadheadPctKnown;
+  const effectiveRevenue = effectiveRevenueKnown;
   const netAfterFuel = Number(f.netAfterFuel || 0);
   const profitMarginPct = Number(f.profitMarginPct || 0);
   const opCPM = Number(f.opCPM || 0);
@@ -6993,11 +7148,328 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
 
   return Object.freeze({
     policyVersion: policy.version,
+    available: true,
+    unknownFacts: Object.freeze([]),
     verdict,
     verdictReason,
     steps: Object.freeze(steps.map(s => Object.freeze({ ...s }))),
     repoSuggestion,
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   v24.1 — CONFIDENCE + EVIDENCE
+   Governing contract: docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md
+   Source map:         docs/V24_1_IMPLEMENTATION_MAP.md
+
+   Confidence is DESCRIPTIVE ONLY. Nothing in this section is read by
+   deriveUnifiedAuthority/Grade/Economics/Bid — it is attached to the canonical
+   decision after those have already run, and never fed back. That is the
+   structural guarantee behind spec rule 1 and 3: a LOW label cannot relax a
+   protective floor, because no floor ever looks at a label.
+
+   UNKNOWN / UNAVAILABLE / source failure stay visibly distinct from "no risk"
+   and from a favorable value (spec rule 6).
+   ═══════════════════════════════════════════════════════════════ */
+
+const EVIDENCE_CONFIDENCE = Object.freeze({ HIGH:'HIGH', MEDIUM:'MEDIUM', LOW:'LOW' });
+const EVIDENCE_FRESHNESS = Object.freeze({ CURRENT:'CURRENT', AGING:'AGING', STALE:'STALE', UNKNOWN:'UNKNOWN' });
+const EVIDENCE_CATEGORY = Object.freeze({
+  MARKET:'MARKET', BROKER:'BROKER', FUEL:'FUEL', WEATHER:'WEATHER',
+  SAFETY:'SAFETY', OPERATIONS:'OPERATIONS', VEHICLE:'VEHICLE', OTHER:'OTHER',
+});
+// The spec's normalization fallback. The existing LIVE_SOURCE_STATUS vocabulary
+// (which also carries STALE) is preserved as-is; UNKNOWN is only used when no
+// health record exists at all.
+const EVIDENCE_SOURCE_STATUS_UNKNOWN = 'UNKNOWN';
+
+// Centralized thresholds — the spec explicitly asks for these not to be
+// scattered as magic numbers.
+const EVIDENCE_THRESHOLDS = Object.freeze({
+  historicalCurrentDays: 14,   // CURRENT <= 14d
+  historicalAgingDays: 30,     // AGING 15-30d, STALE > 30d
+  sampleHigh: 10,              // HIGH >= 10
+  sampleMedium: 3,             // MEDIUM 3-9, LOW <= 2
+});
+
+// Source-specific freshness windows, taken from the runtime behavior the
+// implementation map documents. Applied BEFORE the generic 14/30-day
+// historical fallback, because a 30-minute weather cache is not "CURRENT for
+// 14 days".
+const EVIDENCE_SOURCE_FRESHNESS_SEC = Object.freeze({
+  EIA: 3 * 24 * 3600,   // three-day fetch throttle
+  NWS: 30 * 60,         // 30-minute route-point cache
+  FMCSA: 24 * 3600,     // 24-hour DOT cache
+  CBP: 30 * 60,         // 30-minute port cache
+});
+
+function normalizeEvidenceSourceStatus(status){
+  if (typeof status !== 'string' || !status) return EVIDENCE_SOURCE_STATUS_UNKNOWN;
+  return Object.prototype.hasOwnProperty.call(LIVE_SOURCE_STATUS, status)
+    ? status
+    : EVIDENCE_SOURCE_STATUS_UNKNOWN;
+}
+
+// A status other than OK means the fact is not independently supported by that
+// source. UNCONFIGURED and OFFLINE are honest "we never asked" states rather
+// than failures, but they are still not evidence.
+function evidenceStatusIsHealthy(status){
+  return normalizeEvidenceSourceStatus(status) === LIVE_SOURCE_STATUS.OK;
+}
+
+function classifyEvidenceFreshness(ageSeconds, sourceKey){
+  const age = knownNum(ageSeconds);
+  if (age === null || age < 0) return EVIDENCE_FRESHNESS.UNKNOWN;
+  const specific = EVIDENCE_SOURCE_FRESHNESS_SEC[sourceKey];
+  if (Number.isFinite(specific)){
+    if (age <= specific) return EVIDENCE_FRESHNESS.CURRENT;
+    if (age <= specific * 2) return EVIDENCE_FRESHNESS.AGING;
+    return EVIDENCE_FRESHNESS.STALE;
+  }
+  const days = age / 86400;
+  if (days <= EVIDENCE_THRESHOLDS.historicalCurrentDays) return EVIDENCE_FRESHNESS.CURRENT;
+  if (days <= EVIDENCE_THRESHOLDS.historicalAgingDays) return EVIDENCE_FRESHNESS.AGING;
+  return EVIDENCE_FRESHNESS.STALE;
+}
+
+function classifyEvidenceSample(sampleSize){
+  const n = knownNum(sampleSize);
+  if (n === null) return null; // not an aggregate — sample size says nothing
+  if (n >= EVIDENCE_THRESHOLDS.sampleHigh) return EVIDENCE_CONFIDENCE.HIGH;
+  if (n >= EVIDENCE_THRESHOLDS.sampleMedium) return EVIDENCE_CONFIDENCE.MEDIUM;
+  return EVIDENCE_CONFIDENCE.LOW;
+}
+
+const _EVIDENCE_RANK = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+function _worstConfidence(a, b){
+  if (!a) return b; if (!b) return a;
+  return _EVIDENCE_RANK[a] <= _EVIDENCE_RANK[b] ? a : b;
+}
+
+// Deterministic: identical inputs always produce an identical item.
+function buildEvidenceItem(spec){
+  const src = spec || {};
+  const status = normalizeEvidenceSourceStatus(src.sourceStatus);
+  const observedAt = knownNum(src.observedAt);
+  const evaluatedAt = knownNum(src.evaluatedAt);
+  const ageSeconds = (observedAt !== null && evaluatedAt !== null && evaluatedAt >= observedAt)
+    ? Math.floor((evaluatedAt - observedAt) / 1000)
+    : null;
+  const freshness = src.freshness || classifyEvidenceFreshness(ageSeconds, src.sourceKey);
+  const sampleSize = knownNum(src.sampleSize);
+  const windowDays = knownNum(src.windowDays);
+  const reasons = [];
+
+  let confidence = EVIDENCE_CONFIDENCE.HIGH;
+
+  if (!evidenceStatusIsHealthy(status)){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(status === EVIDENCE_SOURCE_STATUS_UNKNOWN
+      ? 'No source-health record — treated as unverified, not as no risk'
+      : `Source status ${status} — not independently corroborated`);
+  }
+
+  if (freshness === EVIDENCE_FRESHNESS.STALE){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Observation is stale');
+  } else if (freshness === EVIDENCE_FRESHNESS.AGING){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation is aging but within an approved window');
+  } else if (freshness === EVIDENCE_FRESHNESS.UNKNOWN && observedAt === null){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation age unknown');
+  }
+
+  const sampleConfidence = classifyEvidenceSample(sampleSize);
+  if (sampleConfidence){
+    confidence = _worstConfidence(confidence, sampleConfidence);
+    if (sampleConfidence === EVIDENCE_CONFIDENCE.LOW) reasons.push(`Only ${sampleSize} observation(s)`);
+    else if (sampleConfidence === EVIDENCE_CONFIDENCE.MEDIUM) reasons.push(`${sampleSize} observations — moderate sample`);
+    else reasons.push(`${sampleSize} observations`);
+  }
+
+  // Unresolved broker identity can never be HIGH, whatever the sample size.
+  if (src.identityResolved === false){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Broker identity unresolved (legacyUnkeyed) — excluded from broker confidence claims');
+  }
+
+  // Static fallback standing in for absent live evidence is never HIGH.
+  if (src.isStaticFallback === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.LOW);
+    reasons.push('Static fallback data, not a live observation');
+  }
+
+  if (src.isIndirect === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Fact is indirect rather than directly observed');
+  }
+
+  if (!reasons.length) reasons.push('Healthy source within its freshness window');
+
+  return Object.freeze({
+    key: String(src.key || ''),
+    category: EVIDENCE_CATEGORY[src.category] || EVIDENCE_CATEGORY.OTHER,
+    source: String(src.source || ''),
+    sourceStatus: status,
+    observedAt, evaluatedAt, ageSeconds,
+    sampleSize, windowDays,
+    freshness,
+    confidence,
+    valueSummary: String(src.valueSummary || ''),
+    provenance: Object.freeze({ ...(src.provenance || {}) }),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// Reads the existing v23.9.1 registry. Deliberately NOT a second health
+// registry — the map forbids one.
+function evidenceFromLiveSource(sourceKey, spec = {}){
+  const health = (typeof LIVE_SOURCE_HEALTH !== 'undefined' && LIVE_SOURCE_HEALTH.get)
+    ? LIVE_SOURCE_HEALTH.get(sourceKey)
+    : null;
+  const evaluatedAt = knownNum(spec.evaluatedAt) ?? Date.now();
+  return buildEvidenceItem({
+    ...spec,
+    sourceKey,
+    source: spec.source || sourceKey,
+    sourceStatus: health ? health.status : EVIDENCE_SOURCE_STATUS_UNKNOWN,
+    observedAt: knownNum(spec.observedAt) ?? knownNum(health?.lastSuccess),
+    evaluatedAt,
+    provenance: {
+      ...(spec.provenance || {}),
+      // Never provenance a credential — spec: no tokens, no secrets.
+      registered: !!health,
+      lastAttempt: knownNum(health?.lastAttempt),
+    },
+  });
+}
+
+const EVIDENCE_DOMAIN_BY_CATEGORY = Object.freeze({
+  MARKET: 'market', BROKER: 'broker', FUEL: 'operatingCosts',
+  WEATHER: 'weatherSafety', SAFETY: 'weatherSafety', VEHICLE: 'vehicleFit',
+  OPERATIONS: 'operatingCosts', OTHER: null,
+});
+
+// Overall confidence must not average away a material LOW domain (spec rule 2
+// of the aggregation section). Domains with no applicable evidence are
+// UNKNOWN and are EXCLUDED rather than counted as HIGH.
+function summarizeEvidenceConfidence(items, materialDomains){
+  const list = Array.isArray(items) ? items : [];
+  const domains = { market:'UNKNOWN', broker:'UNKNOWN', operatingCosts:'UNKNOWN', weatherSafety:'UNKNOWN', vehicleFit:'UNKNOWN' };
+  const reasons = [];
+
+  for (const item of list){
+    const domain = EVIDENCE_DOMAIN_BY_CATEGORY[item.category];
+    if (!domain) continue;
+    domains[domain] = domains[domain] === 'UNKNOWN'
+      ? item.confidence
+      : _worstConfidence(domains[domain], item.confidence);
+  }
+
+  const material = Array.isArray(materialDomains) && materialDomains.length
+    ? materialDomains
+    : Object.keys(domains).filter(d => domains[d] !== 'UNKNOWN');
+
+  const considered = material.filter(d => domains[d] && domains[d] !== 'UNKNOWN');
+  let overall;
+  if (!considered.length){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('No material evidence available — absence of evidence is not favorable evidence');
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.LOW)){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(`Capped at LOW by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.LOW).join(', ')}`);
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM)){
+    overall = EVIDENCE_CONFIDENCE.MEDIUM;
+    reasons.push(`Limited by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM).join(', ')}`);
+  } else {
+    overall = EVIDENCE_CONFIDENCE.HIGH;
+    reasons.push(`All material domains healthy: ${considered.join(', ')}`);
+  }
+
+  return Object.freeze({
+    overall,
+    ...domains,
+    materialDomains: Object.freeze([...material]),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// v24.1: normalize this evaluation's actual inputs into evidence items. Purely
+// descriptive — see the CONFIDENCE + EVIDENCE header. Anything we genuinely do
+// not have becomes an explicit UNKNOWN-status item rather than being omitted,
+// because a silently missing row reads as "nothing to worry about".
+function buildEvaluationEvidence(ctx = {}){
+  const items = [];
+  const now = Date.now();
+
+  // Fuel price: a live EIA observation, or the static corridor baseline. These
+  // are not interchangeable and the driver should be able to tell which they got.
+  const usingLiveFuel = (typeof LIVE_SOURCE_HEALTH !== 'undefined')
+    && LIVE_SOURCE_HEALTH.get && !!LIVE_SOURCE_HEALTH.get('EIA');
+  items.push(usingLiveFuel
+    ? evidenceFromLiveSource('EIA', {
+        key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
+        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal`,
+      })
+    : buildEvidenceItem({
+        key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
+        sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+        isStaticFallback: true,
+        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal (static baseline)`,
+      }));
+
+  // Personal lane history behind the USA evidence layer, when it reported one.
+  const laneSample = knownNum(ctx.usaResult?.laneSampleSize);
+  items.push(buildEvidenceItem({
+    key: 'market.laneHistory', category: 'MARKET', source: 'laneHistory',
+    sourceStatus: laneSample === null ? EVIDENCE_SOURCE_STATUS_UNKNOWN : LIVE_SOURCE_STATUS.OK,
+    sampleSize: laneSample, windowDays: 90, evaluatedAt: now,
+    observedAt: knownNum(ctx.usaResult?.laneLastSeenAt),
+    valueSummary: laneSample === null
+      ? 'No personal lane history for this corridor'
+      : `${laneSample} personal observation(s) on this lane`,
+  }));
+
+  // Broker evidence. An unresolved (legacyUnkeyed) identity can never be HIGH,
+  // and we never infer identity from an ambiguous customer field.
+  const brokerName = String(ctx.broker || '').trim();
+  items.push(buildEvidenceItem({
+    key: 'broker.history', category: 'BROKER', source: 'bidHistory',
+    sourceStatus: brokerName ? LIVE_SOURCE_STATUS.OK : EVIDENCE_SOURCE_STATUS_UNKNOWN,
+    sampleSize: knownNum(ctx.usaResult?.brokerSampleSize),
+    identityResolved: brokerName ? undefined : false,
+    evaluatedAt: now,
+    valueSummary: brokerName ? `Broker history for ${brokerName}` : 'No broker entered — no broker evidence',
+  }));
+
+  return Object.freeze(items);
+}
+
+// v24.1 minimum UI. One compact line plus an on-demand evidence list. The
+// spec defers the visual overhaul to v24.5 and asks only that confidence be
+// inspectable — and that "no data", "bad data" and "source unavailable" stay
+// visually distinct. No percentage is ever shown: v24.1 has no calibrated odds.
+function _renderConfidenceLine(decision){
+  const c = decision?.confidence;
+  if (!c) return '';
+  const color = c.overall === 'HIGH' ? 'var(--good)' : c.overall === 'MEDIUM' ? 'var(--warn)' : 'var(--bad)';
+  const items = Array.isArray(decision.evidence) ? decision.evidence : [];
+  const rows = items.map(e => {
+    const badge = e.sourceStatus === 'OK' ? '' : ` · ${escapeHtml(e.sourceStatus)}`;
+    const fresh = e.freshness && e.freshness !== 'UNKNOWN' ? ` · ${escapeHtml(e.freshness)}` : '';
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--text-secondary)">${escapeHtml(e.valueSummary || e.key)}</span>
+      <span style="white-space:nowrap;color:var(--text-tertiary)">${escapeHtml(e.confidence)}${fresh}${badge}</span>
+    </div>`;
+  }).join('');
+  return `<details style="margin-top:8px;text-align:left">
+    <summary style="font-size:11px;color:${color};cursor:pointer;list-style:none">
+      Confidence: <b>${escapeHtml(c.overall)}</b>${c.reasons?.[0] ? ` — ${escapeHtml(c.reasons[0])}` : ''}
+    </summary>
+    <div style="margin-top:6px;font-size:10px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
+    <div style="font-size:9px;color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
+  </details>`;
 }
 
 function buildUnifiedDecisionContract(input){
@@ -7013,9 +7485,21 @@ function buildUnifiedDecisionContract(input){
     floorRPM: input.dzFloor, noReloadConfirmed: !!input.noReloadConfirmed,
   });
   const grades = deriveUnifiedGrade(economics.trueRPM, { isDZActive: deadZone.active, dzSubTier: deadZone.subTier });
+  // M1: incomplete canonical facts cannot produce a normal authoritative
+  // payload. The contract records exactly which facts were missing so a caller
+  // can say so, rather than rendering a confident verdict over holes.
+  const unknownFacts = Object.freeze([...new Set([
+    ...(economics.unknownFacts || []),
+    ...(authorityResult.unknownFacts || []),
+  ])]);
+  const factsComplete = economics.available !== false
+    && authorityResult.available !== false
+    && unknownFacts.length === 0;
   const authority = Object.freeze({
     source: 'CLIENT_UNIFIED_DECISION_ENGINE',
     policyVersion: authorityResult.policyVersion || UNIFIED_DECISION_POLICY.version,
+    factsComplete,
+    unknownFacts,
     verdict: authorityResult.verdict,
     reason: authorityResult.verdictReason || '',
     grade: grades.display.grade,
@@ -7030,8 +7514,19 @@ function buildUnifiedDecisionContract(input){
     floorRPM: input.floorRPM,
   });
   const usaEvidence = input.usaResult ? Object.freeze({ ...input.usaResult, authorityRole: 'EVIDENCE_ONLY' }) : null;
+
+  // v24.1 evidence assembly. A caller may supply pre-built items (tests, or a
+  // future intake path); otherwise we normalize from what this evaluation
+  // actually had. Nothing here can fail the decision — evidence is commentary.
+  const evidenceItems = Object.freeze(
+    Array.isArray(input.evidenceItems) ? input.evidenceItems.map(i => Object.freeze({ ...i })) : []
+  );
+  const confidence = summarizeEvidenceConfidence(evidenceItems, input.materialEvidenceDomains);
   const decision = {
     schemaVersion: UNIFIED_DECISION_SCHEMA_VERSION,
+    factsComplete,
+    unknownFacts,
+    mileageProvenance: economics.mileageProvenance || null,
     authority,
     economics,
     route: Object.freeze({ origin: input.origin || '', destination: input.dest || '', geo: input.geo || null }),
@@ -7044,7 +7539,13 @@ function buildUnifiedDecisionContract(input){
       steps: Array.isArray(authorityResult.steps) ? authorityResult.steps.slice() : [],
       warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
     }),
-    bid,
+    bid: factsComplete ? bid : Object.freeze({ ...bid, range: null, suppressed: true, suppressedReason: 'Incomplete canonical facts' }),
+    // v24.1: additive and descriptive only. Computed AFTER authority/grade/
+    // economics/bid have already been decided above, and never read back into
+    // them — that ordering is what makes "confidence cannot relax a floor"
+    // structural rather than a promise.
+    evidence: evidenceItems,
+    confidence,
     operations: Object.freeze({
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
@@ -7118,6 +7619,26 @@ function unifiedDecisionForAI(decision){
     personalIntel: { score: decision.personalIntel.score },
     risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
     deadZone: { active: decision.deadZone.active, subTier: decision.deadZone.subTier },
+    // v24.1: the Worker receives the client's ALREADY-COMPUTED labels so it can
+    // explain or challenge them. It is deliberately not given the raw inputs a
+    // competing confidence model would need, and its reply can never write back
+    // here — same boundary the verdict/grade projection already has.
+    confidence: {
+      authority: 'CLIENT_OWNED',
+      overall: decision.confidence.overall,
+      market: decision.confidence.market,
+      broker: decision.confidence.broker,
+      operatingCosts: decision.confidence.operatingCosts,
+      weatherSafety: decision.confidence.weatherSafety,
+      vehicleFit: decision.confidence.vehicleFit,
+      reasons: decision.confidence.reasons.slice(0, 4),
+    },
+    evidence: decision.evidence.slice(0, 8).map(e => ({
+      key: e.key, category: e.category, source: e.source,
+      sourceStatus: e.sourceStatus, freshness: e.freshness,
+      confidence: e.confidence, sampleSize: e.sampleSize,
+      valueSummary: e.valueSummary,
+    })),
   };
 }
 
@@ -7209,7 +7730,12 @@ async function mwEvaluateLoad(){
   const dest = ($('#mwDest')?.value || '').trim();
   const broker = ($('#mwBroker')?.value || '').trim();
   const loadedMi = Math.max(0, numVal('mwLoadedMi', 0));
-  const deadMi = Math.max(0, numVal('mwDeadMi', 0));
+  // M1: a blank deadhead field used to become a confident 0, which inflated
+  // True RPM and produced a grade the driver never supplied the inputs for.
+  // Blank now means UNKNOWN; an explicitly entered 0 is a verified zero.
+  const deadMiRaw = ($('#mwDeadMi')?.value ?? '').trim();
+  const deadMiKnown = knownNum(deadMiRaw);
+  const deadMi = deadMiKnown === null ? null : Math.max(0, deadMiKnown);
   const revenue = Math.max(0, numVal('mwRevenue', 0));
   const revenueCurrency = $('#mwCurrency')?.value || 'USD';
   const dayOfWeek = $('#mwDayOfWeek')?.value || 'mon';
@@ -7225,6 +7751,13 @@ async function mwEvaluateLoad(){
   // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
   const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
   if (!loadedMi || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
+  // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
+  // True RPM, so the evaluator asks for it instead of assuming zero. Entering
+  // 0 is one keystroke and records a verified zero.
+  if (deadMi === null){
+    out.innerHTML = '<div class="muted" style="font-size:13px">Enter deadhead miles — type <b>0</b> if you are already at the pickup.<br><span style="font-size:11px">Leaving it blank used to be treated as zero deadhead, which overstated True RPM.</span></div>';
+    return;
+  }
   if (strategicEnabled && !strategicReason){
     toast('Select a Strategic Reason (home / slow market / replace deadhead).', true);
     return;
@@ -7448,7 +7981,14 @@ async function mwEvaluateLoad(){
   if (weeklyGross > 0 && weeklyGross < 1500 && isThuFri) warnings.push({ icon: '📉', text: 'Behind pace late-week — stabilize, do not chase $5K from behind' });
   if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
 
+  // v24.1: assemble evidence for THIS evaluation. Built here, after the
+  // canonical decision inputs are settled, so it can only describe them.
+  const evidenceItems = buildEvaluationEvidence({
+    economicsResult, usaResult, geo, dest, broker,
+    vanFitChecked: true, weatherChecked: !!(warnings || []).length,
+  });
   const unifiedDecision = buildUnifiedDecisionContract({
+    evidenceItems,
     economicsResult, bidResult,
     tier, authorityResult, verdictColors, verdictLabels,
     weeklyGross, geo, fatigue, origin, dest,
@@ -7580,12 +8120,13 @@ function _mwRenderDecision(out, d){
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
       ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
-      ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
-      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
+      ${ladderRow('D','WEAK — NEGOTIATE','$1.40–$1.49')}
+      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.39')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
+    ${_renderConfidenceLine(d._canonicalDecision)}
     <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
     ${(crossBorder?.isCrossBorder && revenue !== effectiveRevenue) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">CAD normalized: ${fmtMoney(revenue)} CAD → ${fmtMoney(effectiveRevenue)} USD-equivalent for RPM/profit math</div>` : ''}
     ${(crossBorder?.isCrossBorder) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Border cost applied: ${fmtMoney(borderAdminCost)} • Docs ready: ${crossBorder?.docsReady ? 'yes' : 'no'}</div>` : ''}
@@ -9917,12 +10458,26 @@ function openExpenseForm(existing=null){
     const insuranceBucket = catVal.toLowerCase().includes('insurance') ? classifyExpenseTaxBucket(catVal) : undefined;
     const obj = { id: e.id, date: $('#f_date', body).value || isoDate(), amount: Number($('#f_amt', body).value||0),
       category: catVal, notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created,
+      // M2: carry the revision this form was opened with, so updateExpense()
+      // has something to compare against. Absent on an add, which is correct.
+      ...(mode === 'edit' && Number.isFinite(Number(e.updatedAt)) ? { updatedAt: Number(e.updatedAt) } : {}),
       ...(insuranceBucket ? { insuranceBucket } : {}) };
     try{
       if (mode==='add') await addExpense(obj); else await updateExpense(obj);
       invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
       closeModal(); await renderExpenses(true); await renderHome();
-    }catch(err){ console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true); }
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        // M2: another tab saved this expense since this form opened. Same
+        // treatment as the trip path (F-6) — never silently pick a winner.
+        haptic(35);
+        toast('This expense changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openExpenseForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
   });
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
@@ -10015,13 +10570,25 @@ function openFuelForm(existing=null){
   $('#f_save', body).addEventListener('click', async ()=>{
     const obj = { id: f.id, date: $('#f_date', body).value || isoDate(),
       gallons: Number($('#f_gal', body).value || 0), amount: Number($('#f_amt', body).value || 0),
-      state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200) };
+      state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200),
+      created: f.created,
+      // M2: carry the revision this form was opened with (see updateFuel).
+      ...(mode === 'edit' && Number.isFinite(Number(f.updatedAt)) ? { updatedAt: Number(f.updatedAt) } : {}) };
     try{
       if (mode==='add') await addFuel(obj); else await updateFuel(obj);
       toast('Fuel saved'); closeModal();
       if (views.fuel.style.display !== 'none') await renderFuel(true);
       invalidateKPICache(); await computeKPIs();
-    }catch(err){ console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true); }
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        haptic(35);
+        toast('This fuel entry changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openFuelForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
   });
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
@@ -17509,6 +18076,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel,
+    // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
+    addExpense, updateExpense, addFuel, updateFuel, dumpStore,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
@@ -17532,6 +18101,12 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
     // v24 Unified Decision Engine
     deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
+    knownNum, mwGeoCheck, buildUnifiedDecisionContract, MILEAGE_PROVENANCE,
+    // v24.1 Confidence + Evidence
+    buildEvidenceItem, evidenceFromLiveSource, summarizeEvidenceConfidence,
+    classifyEvidenceFreshness, classifyEvidenceSample, normalizeEvidenceSourceStatus,
+    EVIDENCE_CONFIDENCE, EVIDENCE_FRESHNESS, EVIDENCE_CATEGORY, EVIDENCE_THRESHOLDS,
+    unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };

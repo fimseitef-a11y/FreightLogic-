@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.0** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -114,7 +114,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.0.1';
 const DB_VERSION = 13;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -231,8 +231,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.0` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.0`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.1` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1126,3 +1126,78 @@ authority.
   `vendor/`.
 - Baseline re-verified for this pass: full Playwright suite **119 passed, 0 failed across
   19 spec files**.
+
+---
+
+## v24.0.1 — Doctrine & Money Integrity (completion-plan Milestone 1)
+
+Milestone 1 of `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, the single canonical
+roadmap. No new features; this is the money-integrity certification gate that must
+close before v24.1 Confidence + Evidence can land.
+
+**UNKNOWN is no longer a silent zero.** `knownNum(v)` (`app.js`, beside `finiteNum`)
+is the single rule: `null`, `undefined`, blank/whitespace strings, `NaN` and
+`Infinity` all return `null`. An explicit `0` the operator actually supplied returns
+`0` and stays a **verified** zero. Before this, the canonical layer read every
+material fact through `Number(x || 0)`, so a load with no revenue or no deadhead
+figure still produced a precise True RPM, a real letter grade, a verdict, and a bid
+range — all derived from inputs that were never there.
+
+- `deriveUnifiedEconomics()` returns `{ available: false, unknownFacts: [...] }` with
+  **every** money field `null` (not `0`) when `loadedMi`, `deadMi`, or revenue is
+  unknown. Valid input behaves exactly as before.
+- `deriveUnifiedGrade()` returns grade `?` / `known: false` for an unknown True RPM
+  instead of coercing to `0` and falling through to grade **F** — a REJECT that
+  looked calculated but was only a missing input. A genuinely low RPM is still a real F.
+- `deriveUnifiedAuthority()` returns verdict `UNAVAILABLE` when `trueRPM`, `totalMi`,
+  `deadheadPct`, or `effectiveRevenue` is unknown, and names the missing facts.
+- `buildUnifiedDecisionContract()` carries `factsComplete` / `unknownFacts` and
+  **suppresses the bid range** (`suppressed: true`) when facts are incomplete.
+- The evaluator treats a **blank deadhead field as UNKNOWN**, not zero, and asks for
+  the figure — entering `0` records a verified zero. This is a deliberate UX change:
+  blank-means-zero silently overstated True RPM on every load where deadhead was
+  omitted.
+
+**Mileage provenance is explicit.** `MILEAGE_PROVENANCE` = `VERIFIED | ESTIMATED |
+UNKNOWN`; economics carries `mileageProvenance` with `loaded`, `deadhead`,
+`platformDisplayedMi` and `repositionMi` kept as four distinct numbers. A
+platform-displayed figure never overwrites loaded miles.
+
+**Doctrine parity.**
+- Cincinnati and Toledo are **Tier 1** in canonical `MW.tier1`, in
+  `midwest-stack-authority.js`, and in `midwest-stack-config.json`.
+- Level X+ taxonomy is exact everywhere: A `>=1.75`, B `1.60–1.74`, C `1.50–1.59`,
+  D `1.40–1.49`, E `1.25–1.39`, Reject `<1.25`. The stale `MW.rpmTiers` band
+  `1.35–1.49 "Minimum Standard" / ACCEPT` and the rendered ladder row
+  `D $1.35–$1.49` both contradicted `deriveUnifiedGrade()` and the $1.40 normal
+  floor; both are corrected.
+- The F20/DZ absolute floor is exactly **`0.90`**. `midwest-stack-authority.js`
+  carried `DEAD_ZONE.floor: 0.91` while its own `hardStops.absoluteTrueRpmReject`
+  was already `0.90` — two survival floors in one file.
+- The overlay's `finite(value, fallback)` returned `fallback || 0` for a missing
+  material fact. Material facts now read through `knownNum()`; `assessLoad()` returns
+  `available: false` rather than an advisory built on invented zeros. `finite()`
+  survives for presentation helpers only.
+- `midwest-stack-config.json`: `appTarget` `v23.5.x` → `v24.0.1`, `authorityName`
+  `Midwest Stack v2` → `Midwest Stack v11 / Level X+`, `effectiveDate` refreshed.
+
+**Approved MPG parity.** `MW.mpg` `16.5` → **`17.5`**, matching the operator-confirmed
+loaded baseline in `docs/OPERATOR_TRUTH.md` (Gate 0). This is a **fallback only** — an
+explicit `vehicleMpg` setting still overrides it and canonical economics uses the
+explicit value exactly. Authorized by `docs/OPEN_QUESTIONS.md` item 33 (CONFIRMED
+2026-08-26); deliberately not a broader fuel-model redesign.
+
+**Why this shipped as a version bump.** All cache-busters were `?v=24.0.0` and
+`CACHE_NAME` is `freightlogic-${SW_VERSION}`. Landing M1 without bumping would leave
+every installed PWA serving the pre-M1 `app.js` and overlay from cache — the fix
+would never reach a driver. The bump is what makes the repair deliverable.
+
+**Tests:** `tests/integration/m1-doctrine-integrity.spec.mjs` (new) covers the packet's
+full regression matrix. Three existing evaluator specs
+(`dz-exit-grade-cap`, `dz-gate-parity`, `van-fit-precheck`) had their **fixtures**
+updated to enter deadhead `0` explicitly — they always meant a zero-deadhead load and
+were relying on blank-means-zero. No assertion was changed, skipped, or weakened.
+
+**Still open at M1 close:** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` is
+GPT-owned under `/.agents/LANES.md` and still reads `24.0.0`; a bump was requested
+through `/.agents/inbox/` rather than edited across lanes.

@@ -37,6 +37,7 @@ async function evaluateLoad(page, { origin, dest, loadedMi, revenue, confirmNoRe
   await page.fill('#mwOrigin', origin);
   await page.fill('#mwDest', dest);
   await page.fill('#mwLoadedMi', String(loadedMi));
+  await page.fill('#mwDeadMi', '0'); // M1: blank deadhead is UNKNOWN; this fixture means a verified zero
   await page.fill('#mwRevenue', String(revenue));
   await page.dispatchEvent('#mwRevenue', 'input');
   await page.waitForTimeout(400);

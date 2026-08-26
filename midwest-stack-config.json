@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
-  "appTarget": "FreightLogic v23.5.x",
-  "authorityName": "Midwest Stack v2 - Operator System",
-  "effectiveDate": "2026-05-27",
+  "appTarget": "FreightLogic v24.0.0",
+  "authorityName": "Midwest Stack v11 / Level X+ - Advisory Overlay",
+  "effectiveDate": "2026-08-26",
   "operatorProfile": {
     "vehicle": "2016 Ford Transit T250 / cargo van class",
     "homeBase": "Oak Creek, WI",
@@ -23,8 +23,8 @@
     "timing feasibility"
   ],
   "marketTiers": {
-    "tier1DensityAnchors": ["Chicago/Gary", "Indianapolis", "Cleveland", "Columbus", "Detroit"],
-    "tier2SupportAnchors": ["Nashville", "Louisville", "St. Louis", "Toledo", "Fort Wayne", "Grand Rapids", "Cincinnati", "Dayton", "Milwaukee"],
+    "tier1DensityAnchors": ["Chicago/Gary", "Indianapolis", "Cleveland", "Columbus", "Detroit", "Cincinnati", "Toledo"],
+    "tier2SupportAnchors": ["Nashville", "Louisville", "St. Louis", "Fort Wayne", "Grand Rapids", "Dayton", "Milwaukee"],
     "transitionalFeederMarkets": ["Kansas City", "Des Moines", "Memphis", "Atlanta", "Dallas", "Houston", "Pittsburgh", "Oklahoma City", "Minneapolis/St. Paul", "Charlotte", "Omaha", "Fargo"],
     "premiumOnlyTrapZones": ["Laredo", "South Texas", "West Texas", "New Mexico", "rural Southeast", "low-density Arkansas", "border markets", "Pacific Northwest displacement", "long-lock West freight"]
   },

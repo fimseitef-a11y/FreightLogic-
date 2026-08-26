@@ -15,10 +15,10 @@ const pagesOrigin = (process.argv[2] || 'https://freightlogic.pages.dev').replac
 const workerOrigin = (process.argv[3] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.0",
-  manifestName: "FreightLogic v24.0.0",
+  serviceWorkerVersion: "24.0.1",
+  manifestName: "FreightLogic v24.0.1",
   workerVersion: "12",
-  overlayScript: "midwest-stack-authority.js?v=24.0.0"
+  overlayScript: "midwest-stack-authority.js?v=24.0.1"
 };
 
 async function fetchText(url) {
@@ -86,13 +86,13 @@ function report(checks) {
 async function runLiveChecks(checks) {
   const index = await fetchText(`${pagesOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
-  assert(checks, 'Index references app.js v24.0.0', index.text.includes('app.js?v=24.0.0'));
-  assert(checks, 'Index references voice-load.js v24.0.0', index.text.includes('voice-load.js?v=24.0.0'));
-  assert(checks, 'Index references sw-bridge.js v24.0.0', index.text.includes('sw-bridge.js?v=24.0.0'));
+  assert(checks, 'Index references app.js v24.0.1', index.text.includes('app.js?v=24.0.1'));
+  assert(checks, 'Index references voice-load.js v24.0.1', index.text.includes('voice-load.js?v=24.0.1'));
+  assert(checks, 'Index references sw-bridge.js v24.0.1', index.text.includes('sw-bridge.js?v=24.0.1'));
 
   const sw = await fetchText(`${pagesOrigin}/service-worker.js?verify=${Date.now()}`);
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
-  assert(checks, 'Service worker version 24.0.0', sw.text.includes("SW_VERSION = '24.0.0'"));
+  assert(checks, 'Service worker version 24.0.1', sw.text.includes("SW_VERSION = '24.0.1'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
   // X-08/X-10 (v23.9, Amendment 4): the install-blocking `critical` array — not
   // just the broader, non-blocking CORE list — must include both files, or a
@@ -108,13 +108,13 @@ async function runLiveChecks(checks) {
   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
 
-  const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=24.0.0`);
+  const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=24.0.1`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
 
-  const manifest = await fetchJson(`${pagesOrigin}/manifest.json?v=24.0.0`);
+  const manifest = await fetchJson(`${pagesOrigin}/manifest.json?v=24.0.1`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
-  assert(checks, 'Manifest name v24.0.0', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+  assert(checks, 'Manifest name v24.0.1', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);

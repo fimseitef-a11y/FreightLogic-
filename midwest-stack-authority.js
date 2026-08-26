@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v2 Authority Overlay v24.0.0
+/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.1
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '24.0.0';
+  const VERSION = '24.0.1';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({
@@ -45,7 +45,7 @@
         id: 'DEAD_ZONE',
         label: 'Dead Zone Exit',
         description: 'Survival gate only. Requires 1000+ miles from home, no reloads above $1.25 nearby, and meaningful move toward density.',
-        floor: 0.91,
+        floor: 0.90,
         preferred: 1.00,
         target: 1.10
       }
@@ -59,8 +59,8 @@
       { grade: 'F', min: 0, label: 'Below floor' }
     ],
     marketRoles: {
-      tier1: ['chicago','gary','indianapolis','cleveland','columbus','detroit'],
-      tier2: ['nashville','louisville','st louis','saint louis','toledo','fort wayne','grand rapids','cincinnati','dayton','milwaukee'],
+      tier1: ['chicago','gary','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
+      tier2: ['nashville','louisville','st louis','saint louis','fort wayne','grand rapids','dayton','milwaukee'],
       feeder: ['kansas city','des moines','memphis','atlanta','dallas','houston','pittsburgh','oklahoma city','minneapolis','saint paul','st paul','twin cities','fargo','omaha','charlotte'],
       trap: ['laredo','el paso','odessa','midland','abilene','amarillo','nogales','reno','las vegas','new mexico','west texas','south texas','rural arkansas','rural mississippi','rural alabama','rural georgia','rural south carolina','rural north carolina']
     },
@@ -129,6 +129,16 @@
   }
 
   function cleanText(value){ return String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  // M1: material operational facts are UNKNOWN unless they parse finite.
+  // null/undefined/blank/NaN/Infinity => null, never a silent 0. An explicit
+  // 0 the operator actually entered stays a real 0.
+  function knownNum(value){
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  // Presentation-only coercion. Never use for a material fact.
   function finite(value, fallback){ const n = Number(value); return Number.isFinite(n) ? n : (fallback || 0); }
   function roundMoney(value){ return Math.round(finite(value) / 5) * 5; }
   function round2(value){ return Math.round(finite(value) * 100) / 100; }
@@ -196,15 +206,48 @@
   }
 
   function assessLoad(input){
-    const revenue = finite(input.revenue || input.pay || input.rate);
-    const loadedMiles = finite(input.loadedMiles || input.loadedMi || input.loaded);
-    const deadheadMiles = finite(input.deadheadMiles || input.deadMiles || input.deadhead || input.emptyMiles);
+    // M1: `a || b || c` collapses a real 0 into the next candidate, so pick the
+    // first DEFINED alias rather than the first truthy one.
+    const pick = (...vals) => { for (const v of vals){ const n = knownNum(v); if (n !== null) return n; } return null; };
+    const revenueK = pick(input.revenue, input.pay, input.rate);
+    const loadedMilesK = pick(input.loadedMiles, input.loadedMi, input.loaded);
+    const deadheadMilesK = pick(input.deadheadMiles, input.deadMiles, input.deadhead, input.emptyMiles);
+
+    // Missing material facts cannot produce a precise-looking advisory number.
+    const unknownFacts = [];
+    if (revenueK === null) unknownFacts.push('revenue');
+    if (loadedMilesK === null) unknownFacts.push('loadedMiles');
+    if (deadheadMilesK === null) unknownFacts.push('deadheadMiles');
+    if (unknownFacts.length){
+      return {
+        version: VERSION,
+        updatedAt: UPDATED_AT,
+        authorityRole: 'ADAPTER_ONLY',
+        available: false,
+        unknownFacts,
+        // Same shape the UI reads, with nulls where a fact is missing — the
+        // caller must never have to guess whether a 0 here was real.
+        input: {
+          revenue: revenueK, loadedMiles: loadedMilesK, deadheadMiles: deadheadMilesK,
+          totalMiles: null, origin: input.origin || input.pickup || '',
+          destination: input.destination || input.dest || '', weight: null, stops: null,
+        },
+        posted: { trueRpm: null, grade: null },
+        trueRpm: null,
+        recommendation: { floorBid: null, winBid: null, askBid: null, floorRpm: null, winRpm: null, askRpm: null, verdict: 'UNAVAILABLE', action: 'Enter revenue, loaded miles and deadhead miles. Blank is not zero.' },
+        risk: { flags: ['Missing: ' + unknownFacts.join(', ') + '. The overlay does not estimate material facts.'] },
+      };
+    }
+
+    const revenue = revenueK;
+    const loadedMiles = loadedMilesK;
+    const deadheadMiles = deadheadMilesK;
     const totalMiles = loadedMiles + deadheadMiles;
     const trueRpm = totalMiles > 0 ? revenue / totalMiles : 0;
     const destination = input.destination || input.dest || '';
     const origin = input.origin || input.pickup || '';
     const notes = String(input.notes || input.loadNotes || '');
-    const weight = finite(input.weight || input.weightLbs);
+    const weight = knownNum(input.weight ?? input.weightLbs) ?? 0; // 0 = 'no payload signal', only ever adds a flag
     const stops = finite(input.stops || input.stopCount || 1, 1);
     const mode = modeDefaults(input.mode || input.bidMode || 'REALISTIC_WIN');
     const destRole = classifyMarket(destination);
@@ -260,7 +303,7 @@
     // exposed on window since both scripts share one page/global scope — see
     // CLAUDE.md's v23.9 Phase 5 notes) decides whether DEAD_ZONE mode may
     // lower the floor to survival-mode levels at all. Before this fix,
-    // DEAD_ZONE mode unconditionally lowered floorRpm to 0.91 and let the
+    // DEAD_ZONE mode unconditionally lowered floorRpm to the survival floor and let the
     // normal tier1/tier2 TAKE_IF_LIVE branch below fire — with NO distance-
     // from-home, distance-saved, or manual-confirmation check whatsoever.
     // window.flDzGeoCheck (also app.js) supplies the distance numbers this
@@ -291,7 +334,7 @@
         dzGateResult = { eligible: false, gradeCap: 'C', reasons: ['DZ gate check unavailable (app.js not loaded) — treated as ineligible'] };
       }
       if (dzGateResult.eligible){
-        floorRpm = 0.91;
+        floorRpm = 0.90;
         winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
         askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
         flags.push('Dead-zone mode must be manually validated before acceptance.');
@@ -328,6 +371,8 @@
 
     return {
       authorityRole: 'ADAPTER_ONLY',
+      available: true,
+      unknownFacts: [],
       version: VERSION,
       updatedAt: UPDATED_AT,
       input: { revenue, loadedMiles, deadheadMiles, totalMiles, origin, destination, weight, stops },
@@ -388,6 +433,11 @@
       notes: readField('mwLoadNotes'),
       mode: readField('mwBidMode') || 'REALISTIC_WIN'
     });
+    if (result.available === false) {
+      box.innerHTML = '<div class="muted" style="font-size:12px">Enter revenue, loaded miles and deadhead miles for realistic bid guidance. '
+        + 'A blank field is treated as unknown, not zero.</div>';
+      return;
+    }
     if (!result.input.loadedMiles && !result.input.revenue) {
       box.innerHTML = '<div class="muted" style="font-size:12px">Enter revenue and miles to get realistic bid guidance.</div>';
       return;
