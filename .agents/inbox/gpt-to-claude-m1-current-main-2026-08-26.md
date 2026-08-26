@@ -1,7 +1,7 @@
 # GPT → Claude: Milestone 1 Current-Main Kickoff
 
 Date: 2026-08-26
-Current canonical main: `762984afb3afe80a9a25d592927d8ec40b0f51ed`
+Current canonical main: `da62c114885a2549f94bc26059f6d0cc51431e8b`
 Runtime-defect inspection base: `86ae9b1eb60b1452370acb443982d1c35ef66c45`
 Roadmap authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`
 Gate 0: COMPLETE
@@ -11,9 +11,9 @@ Implementation owner: Claude/core lane
 
 The older M1 handoff was written against main `3a26a974...`. Main has since gained Gate 0 operator truth/provenance, the vision-ingest spec, duplicate-roadmap retirement, the operator-approved Milestone-5 sequencing, and the operator-approved MPG parity item. This file refreshes the M1 implementation packet against current main without broadening beyond the explicitly approved M1 scope.
 
-PR #97 advanced main by changing only `docs/OPEN_QUESTIONS.md` to record the MPG mismatch as a proposal. PR #98 then recorded the operator's explicit approval of that proposal, again changing only `docs/OPEN_QUESTIONS.md`. PR #98 integrated gate: GitHub Actions run `32939599895`, job `98087666374`, `node tests/run-all.mjs` => **119 passed, 0 failed across 19 specs**, no rerun. No runtime/test bytes changed after the defect inspection below, so the findings remain current.
+PR #97 recorded the MPG mismatch as a proposal. PR #98 recorded the operator's explicit approval. PR #99 then synchronized that already-approved repair into the single canonical completion roadmap. PR #99 integrated gate: GitHub Actions run `32942947209`, job `98097573111`, `node tests/run-all.mjs` => **119 passed, 0 failed across 19 specs**, no rerun; merged main is `da62c114885a2549f94bc26059f6d0cc51431e8b`. PRs #97–#99 changed documentation only, so no runtime/test bytes changed after the defect inspection below and the findings remain current.
 
-At the latest inspection there was no active lock file under `/.agents/locks/` beyond `.gitkeep`. Claim locks exactly as required by `AGENTS.md` before core work.
+At the latest inspection there was no active lock file under `/.agents/locks/` beyond `.gitkeep`, and no active `agent/claude/*` Milestone-1 branch. Claim locks exactly as required by `AGENTS.md` before core work.
 
 ## Current live defects reconfirmed on the runtime tree
 
@@ -102,7 +102,7 @@ Any `app.js` change requires full `node tests/run-all.mjs` suite and exact SHA l
 
 ## MPG scope proposal — RESOLVED / AUTHORIZED
 
-`docs/OPEN_QUESTIONS.md` item 33 is now **CONFIRMED — 2026-08-26**.
+`docs/OPEN_QUESTIONS.md` item 33 is now **CONFIRMED — 2026-08-26** and the same requirement is explicitly present in the canonical roadmap after PR #99.
 
 Operator authorization is explicit:
 
