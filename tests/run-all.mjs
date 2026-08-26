@@ -21,6 +21,7 @@ import { runSpec as backupRestoreParity } from './integration/backup-restore-par
 import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
 import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
+import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
@@ -43,6 +44,7 @@ const specs = [
   dzGateParity,
   xlsxBundledVendor,
   vanFitPrecheck,
+  m1DoctrineIntegrity,
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,

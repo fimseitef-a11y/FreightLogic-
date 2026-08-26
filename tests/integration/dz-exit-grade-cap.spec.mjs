@@ -48,6 +48,10 @@ async function evaluateLoad(page, { origin, dest, loadedMi, revenue, confirmNoRe
   await page.fill('#mwOrigin', origin);
   await page.fill('#mwDest', dest);
   await page.fill('#mwLoadedMi', String(loadedMi));
+  // M1: deadhead is a material fact — blank now means UNKNOWN, not zero.
+  // This fixture always meant a zero-deadhead load, so it now says so
+  // explicitly. No assertion below changed.
+  await page.fill('#mwDeadMi', '0');
   await page.fill('#mwRevenue', String(revenue));
   await page.dispatchEvent('#mwRevenue', 'input');
   await page.waitForTimeout(400);

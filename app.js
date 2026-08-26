@@ -1,7 +1,19 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.0 USA ENGINE
+/** FreightLogic v24.0.1 USA ENGINE
+ *  v24.0.1 "Doctrine & Money Integrity" (completion-plan Milestone 1): a
+ *          material operational fact is UNKNOWN unless it parses finite —
+ *          canonical economics, grade, and authority no longer coerce a
+ *          missing revenue/loaded/deadhead figure to 0 and derive a confident
+ *          verdict from it. An explicitly entered 0 stays a verified zero.
+ *          Mileage provenance (VERIFIED|ESTIMATED|UNKNOWN) is explicit and
+ *          loaded/deadhead/platform-displayed/reposition miles stay distinct.
+ *          Level X+ grade taxonomy is exact everywhere (D $1.40-1.49,
+ *          E $1.25-1.39); Cincinnati and Toledo are Tier 1 across canonical,
+ *          adapter and config; the F20/DZ absolute floor is exactly 0.90; and
+ *          the MW.mpg fallback is reconciled to the operator-confirmed ~17.5
+ *          baseline with explicit user MPG still overriding it.
  *  v24.0.0 "Unified Decision Engine": one deterministic, client-owned decision
  *          object in app.js is the sole authority for load verdict, grade,
  *          economics, and bid range. USA scoring is evidence-only, the Midwest
@@ -9,7 +21,8 @@
  *          projects the canonical verdict/grade/True RPM/bid fields rather than
  *          recalculating them. Boundary, determinism, economics, bid, and
  *          authority-regression suites enforce the contract. See
- *          docs/V24_ROADMAP.md for the authority contract.
+ *          docs/COMPLETION_RELEASE_PLAN_2026-08-25.md for the authority
+ *          contract and the single canonical roadmap.
  *  v23.9.1: Pre-v24 integrity gate — True RPM floors aligned to $1.40/$1.50,
  *           static rate bands carry CURRENT/AGING/STALE freshness, live sources
  *           (EIA/NWS/FMCSA/CBP) report health, conservative broker-key
@@ -51,7 +64,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.0';
+const APP_VERSION = '24.0.1';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -380,6 +393,18 @@ async function verifyPin(stored, candidate){
 function finiteNum(v, def=0){
   const x = Number(v);
   return Number.isFinite(x) ? x : def;
+}
+// M1 (doctrine/money integrity): a material operational fact is UNKNOWN unless
+// it parses to a finite number. null, undefined, blank/whitespace strings, NaN
+// and Infinity all return null — never a silent 0. An explicit 0 the operator
+// actually supplied (a verified `deadMi: 0` on a live-loaded pickup) returns 0
+// and stays a real, verified zero. This is the distinction the canonical
+// economics/grade/authority layer lost when it read facts through `Number(x||0)`.
+function knownNum(v){
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  const x = Number(v);
+  return Number.isFinite(x) ? x : null;
 }
 function posNum(v, def=0, max=1e9){
   const x = finiteNum(v, def);
@@ -6311,7 +6336,11 @@ function usaScoreLoad(opts){
    ═══════════════════════════════════════════════════════════════ */
 
 const MW = {
-  mpg: 16.5,           // Field-confirmed 2016 Transit T250 (gas)
+  // M1: fallback only. Gate 0 docs/OPERATOR_TRUTH.md records the operator-
+  // confirmed loaded baseline as ~17.5 MPG; the prior 16.5 was labelled
+  // "field-confirmed" but predates that. An explicit vehicleMpg setting is
+  // higher priority and overrides this in canonical economics.
+  mpg: 17.5,           // Operator-confirmed loaded baseline (Gate 0), fallback only
   fuelBaseline: 3.55,  // Midwest regular gas, EIA wk of Jul 6 2026; user override via settings
   weekTarget: { low: 3800, high: 4200, stretch: 5000 },
   monWed: { low: 2200, high: 2600 },
@@ -6326,13 +6355,15 @@ const MW = {
   strategicFloorRPM: 1.25,
   longHaulMinRPM: 1.45,
   surgeMinRPM: 1.70,
-  tier1: ['chicago','indianapolis','cleveland','columbus','detroit'],
-  tier2: ['nashville','louisville','st. louis','st louis','stl','cincinnati','dayton','toledo','fort wayne','grand rapids','milwaukee','lexington'],
+  // M1: Level X+ doctrine puts Cincinnati and Toledo in Tier 1. Mirrored in
+  // midwest-stack-authority.js and midwest-stack-config.json.
+  tier1: ['chicago','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
+  tier2: ['nashville','louisville','st. louis','st louis','stl','dayton','fort wayne','grand rapids','milwaukee','lexington'],
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
   rpmTiers: [
     { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
-    { min: 1.25, max: 1.34, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
-    { min: 1.35, max: 1.49, label: 'Minimum Standard',   color: '#ff8c42',     verdict: 'ACCEPT' },
+    { min: 1.25, max: 1.39, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
+    { min: 1.40, max: 1.49, label: 'Weak — Negotiate',   color: '#ff8c42',     verdict: 'ACCEPT' },
     { min: 1.50, max: 1.59, label: 'Professional',       color: 'var(--text)', verdict: 'ACCEPT' },
     { min: 1.60, max: 1.74, label: 'Strong',             color: 'var(--good)', verdict: 'ACCEPT' },
     { min: 1.75, max: 1.99, label: 'Very Strong',        color: 'var(--good)', verdict: 'ACCEPT' },
@@ -6744,7 +6775,13 @@ if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligibl
 const UNIFIED_DECISION_SCHEMA_VERSION = '24.0.0';
 
 function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = {}){
-  const rpm = Number.isFinite(Number(trueRPM)) ? Number(trueRPM) : 0;
+  // M1: an unknown True RPM used to coerce to 0 and fall through to grade F —
+  // a REJECT that looks calculated but was only ever a missing input.
+  const rpm = knownNum(trueRPM);
+  if (rpm === null){
+    const unknown = { grade: '?', gradeLabel: 'UNKNOWN — insufficient data', gradeColor: 'var(--text-tertiary)', gradeEmoji: '⚪', known: false };
+    return { raw: { ...unknown }, display: { ...unknown } };
+  }
   let raw;
   if (rpm >= 1.75) raw = { grade:'A', gradeLabel:'PREMIUM WIN', gradeColor:'#34d399', gradeEmoji:'🟢' };
   else if (rpm >= 1.60) raw = { grade:'B', gradeLabel:'STRONG ACCEPT', gradeColor:'var(--good)', gradeEmoji:'🟢' };
@@ -6753,19 +6790,67 @@ function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = 
   else if (rpm >= 1.25) raw = { grade:'E', gradeLabel:'STRATEGIC ONLY', gradeColor:'#f87171', gradeEmoji:'🔴' };
   else raw = { grade:'F', gradeLabel:'REJECT', gradeColor:'var(--bad)', gradeEmoji:'🔴' };
 
+  raw.known = true;
   const display = isDZActive
-    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠' }
+    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠', known: true }
     : { ...raw };
   return { raw, display };
 }
 
+// M1: mileage semantics stay distinct. Loaded, deadhead/empty, the figure a
+// platform displayed, and post-delivery reposition miles are four different
+// numbers and are never merged or substituted for one another.
+const MILEAGE_PROVENANCE = Object.freeze({ VERIFIED:'VERIFIED', ESTIMATED:'ESTIMATED', UNKNOWN:'UNKNOWN' });
+function normalizeMileageProvenance(value, isKnown){
+  if (!isKnown) return MILEAGE_PROVENANCE.UNKNOWN;
+  const v = String(value || '').toUpperCase();
+  return MILEAGE_PROVENANCE[v] || MILEAGE_PROVENANCE.VERIFIED;
+}
+
+// The canonical economics shape when a material fact is missing. Every money
+// field is null rather than 0, so nothing downstream can render a
+// calculated-looking $0.00 that was never calculated.
+const UNAVAILABLE_ECONOMICS_FIELDS = Object.freeze([
+  'revenue','effectiveRevenue','loadedMi','deadMi','totalMi','trueRPM','loadedRPM','deadheadPct',
+  'mpg','fuelPrice','fuel','netAfterFuel','opCPM','operatingCost','borderAdminCost','totalCost',
+  'operationalProfit','trueProfit','profitMarginPct','breakEvenRPM','profitPerMile','estHours',
+  'profitPerHour','fuelPerMile',
+]);
+
 function deriveUnifiedEconomics(facts){
   const f = facts || {};
-  const loadedMi = Math.max(0, Number(f.loadedMi || 0));
-  const deadMi = Math.max(0, Number(f.deadMi || 0));
+  // M1: read material facts through knownNum. `Number(f.loadedMi || 0)` turned
+  // every missing input into a confident zero, which then produced a precise
+  // True RPM, a real grade, and a bid range out of nothing.
+  const loadedMiK = knownNum(f.loadedMi);
+  const deadMiK = knownNum(f.deadMi);
+  const revenueK = knownNum(f.revenue);
+  const effectiveRevenueK = f.effectiveRevenue === undefined || f.effectiveRevenue === null
+    ? revenueK
+    : knownNum(f.effectiveRevenue);
+
+  const mileageProvenance = Object.freeze({
+    loaded: normalizeMileageProvenance(f.loadedMiProvenance, loadedMiK !== null),
+    deadhead: normalizeMileageProvenance(f.deadMiProvenance, deadMiK !== null),
+    platformDisplayedMi: knownNum(f.platformDisplayedMi),
+    repositionMi: knownNum(f.repositionMi),
+  });
+
+  const unknownFacts = [];
+  if (loadedMiK === null) unknownFacts.push('loadedMi');
+  if (deadMiK === null) unknownFacts.push('deadMi');
+  if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');
+  if (unknownFacts.length){
+    const out = { available: false, unknownFacts: Object.freeze(unknownFacts), mileageProvenance };
+    for (const key of UNAVAILABLE_ECONOMICS_FIELDS) out[key] = null;
+    return Object.freeze(out);
+  }
+
+  const loadedMi = Math.max(0, loadedMiK);
+  const deadMi = Math.max(0, deadMiK);
   const totalMi = loadedMi + deadMi;
-  const revenue = Math.max(0, Number(f.revenue || 0));
-  const effectiveRevenue = Math.max(0, Number(f.effectiveRevenue ?? revenue));
+  const revenue = Math.max(0, revenueK === null ? effectiveRevenueK : revenueK);
+  const effectiveRevenue = Math.max(0, effectiveRevenueK === null ? revenue : effectiveRevenueK);
   const mpg = Number(f.mpg || 0);
   const fuelPrice = Math.max(0, Number(f.fuelPrice || 0));
   const opCPM = Math.max(0, Number(f.opCPM || 0));
@@ -6786,6 +6871,9 @@ function deriveUnifiedEconomics(facts){
   const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
   const deadheadPct = totalMi > 0 ? roundCents((deadMi / totalMi) * 100) : 0;
   return Object.freeze({
+    available: true,
+    unknownFacts: Object.freeze([]),
+    mileageProvenance,
     revenue, effectiveRevenue, loadedMi, deadMi, totalMi,
     trueRPM, loadedRPM, deadheadPct,
     mpg, fuelPrice, fuel, netAfterFuel,
@@ -6847,10 +6935,40 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
   const steps = [];
   let verdict = f.initialVerdict || 'REJECT';
   let verdictReason = '';
-  const trueRPM = Number(f.trueRPM || 0);
-  const totalMi = Number(f.totalMi || 0);
-  const deadheadPct = Number(f.deadheadPct || 0);
-  const effectiveRevenue = Number(f.effectiveRevenue || 0);
+
+  // M1: the hard-gate layer must not manufacture material facts. Previously
+  // every one of these read `Number(x || 0)`, so a load with no revenue or no
+  // deadhead figure still produced a full, authoritative-looking verdict —
+  // typically REJECT "under floor", derived from inputs that were never there.
+  const trueRPMKnown = knownNum(f.trueRPM);
+  const totalMiKnown = knownNum(f.totalMi);
+  const deadheadPctKnown = knownNum(f.deadheadPct);
+  const effectiveRevenueKnown = knownNum(f.effectiveRevenue);
+  const unknownFacts = [];
+  if (trueRPMKnown === null) unknownFacts.push('trueRPM');
+  if (totalMiKnown === null) unknownFacts.push('totalMi');
+  if (deadheadPctKnown === null) unknownFacts.push('deadheadPct');
+  if (effectiveRevenueKnown === null) unknownFacts.push('effectiveRevenue');
+  if (unknownFacts.length){
+    return Object.freeze({
+      policyVersion: policy.version,
+      available: false,
+      unknownFacts: Object.freeze(unknownFacts),
+      verdict: 'UNAVAILABLE',
+      verdictReason: `Cannot decide — missing: ${unknownFacts.join(', ')}`,
+      steps: Object.freeze([Object.freeze({
+        pass: null,
+        label: 'Canonical facts',
+        detail: `Incomplete — ${unknownFacts.join(', ')} unknown. No verdict, grade, or bid is derived from missing facts.`,
+      })]),
+      repoSuggestion: '',
+    });
+  }
+
+  const trueRPM = trueRPMKnown;
+  const totalMi = totalMiKnown;
+  const deadheadPct = deadheadPctKnown;
+  const effectiveRevenue = effectiveRevenueKnown;
   const netAfterFuel = Number(f.netAfterFuel || 0);
   const profitMarginPct = Number(f.profitMarginPct || 0);
   const opCPM = Number(f.opCPM || 0);
@@ -6993,6 +7111,8 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
 
   return Object.freeze({
     policyVersion: policy.version,
+    available: true,
+    unknownFacts: Object.freeze([]),
     verdict,
     verdictReason,
     steps: Object.freeze(steps.map(s => Object.freeze({ ...s }))),
@@ -7013,9 +7133,21 @@ function buildUnifiedDecisionContract(input){
     floorRPM: input.dzFloor, noReloadConfirmed: !!input.noReloadConfirmed,
   });
   const grades = deriveUnifiedGrade(economics.trueRPM, { isDZActive: deadZone.active, dzSubTier: deadZone.subTier });
+  // M1: incomplete canonical facts cannot produce a normal authoritative
+  // payload. The contract records exactly which facts were missing so a caller
+  // can say so, rather than rendering a confident verdict over holes.
+  const unknownFacts = Object.freeze([...new Set([
+    ...(economics.unknownFacts || []),
+    ...(authorityResult.unknownFacts || []),
+  ])]);
+  const factsComplete = economics.available !== false
+    && authorityResult.available !== false
+    && unknownFacts.length === 0;
   const authority = Object.freeze({
     source: 'CLIENT_UNIFIED_DECISION_ENGINE',
     policyVersion: authorityResult.policyVersion || UNIFIED_DECISION_POLICY.version,
+    factsComplete,
+    unknownFacts,
     verdict: authorityResult.verdict,
     reason: authorityResult.verdictReason || '',
     grade: grades.display.grade,
@@ -7032,6 +7164,9 @@ function buildUnifiedDecisionContract(input){
   const usaEvidence = input.usaResult ? Object.freeze({ ...input.usaResult, authorityRole: 'EVIDENCE_ONLY' }) : null;
   const decision = {
     schemaVersion: UNIFIED_DECISION_SCHEMA_VERSION,
+    factsComplete,
+    unknownFacts,
+    mileageProvenance: economics.mileageProvenance || null,
     authority,
     economics,
     route: Object.freeze({ origin: input.origin || '', destination: input.dest || '', geo: input.geo || null }),
@@ -7044,7 +7179,7 @@ function buildUnifiedDecisionContract(input){
       steps: Array.isArray(authorityResult.steps) ? authorityResult.steps.slice() : [],
       warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
     }),
-    bid,
+    bid: factsComplete ? bid : Object.freeze({ ...bid, range: null, suppressed: true, suppressedReason: 'Incomplete canonical facts' }),
     operations: Object.freeze({
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
@@ -7209,7 +7344,12 @@ async function mwEvaluateLoad(){
   const dest = ($('#mwDest')?.value || '').trim();
   const broker = ($('#mwBroker')?.value || '').trim();
   const loadedMi = Math.max(0, numVal('mwLoadedMi', 0));
-  const deadMi = Math.max(0, numVal('mwDeadMi', 0));
+  // M1: a blank deadhead field used to become a confident 0, which inflated
+  // True RPM and produced a grade the driver never supplied the inputs for.
+  // Blank now means UNKNOWN; an explicitly entered 0 is a verified zero.
+  const deadMiRaw = ($('#mwDeadMi')?.value ?? '').trim();
+  const deadMiKnown = knownNum(deadMiRaw);
+  const deadMi = deadMiKnown === null ? null : Math.max(0, deadMiKnown);
   const revenue = Math.max(0, numVal('mwRevenue', 0));
   const revenueCurrency = $('#mwCurrency')?.value || 'USD';
   const dayOfWeek = $('#mwDayOfWeek')?.value || 'mon';
@@ -7225,6 +7365,13 @@ async function mwEvaluateLoad(){
   // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
   const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
   if (!loadedMi || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
+  // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
+  // True RPM, so the evaluator asks for it instead of assuming zero. Entering
+  // 0 is one keystroke and records a verified zero.
+  if (deadMi === null){
+    out.innerHTML = '<div class="muted" style="font-size:13px">Enter deadhead miles — type <b>0</b> if you are already at the pickup.<br><span style="font-size:11px">Leaving it blank used to be treated as zero deadhead, which overstated True RPM.</span></div>';
+    return;
+  }
   if (strategicEnabled && !strategicReason){
     toast('Select a Strategic Reason (home / slow market / replace deadhead).', true);
     return;
@@ -7580,8 +7727,8 @@ function _mwRenderDecision(out, d){
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
       ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
-      ${ladderRow('D','WEAK — NEGOTIATE','$1.35–$1.49')}
-      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.34')}
+      ${ladderRow('D','WEAK — NEGOTIATE','$1.40–$1.49')}
+      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.39')}
       <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
@@ -17532,6 +17679,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
     // v24 Unified Decision Engine
     deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
+    knownNum, mwGeoCheck, buildUnifiedDecisionContract, MILEAGE_PROVENANCE,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };
