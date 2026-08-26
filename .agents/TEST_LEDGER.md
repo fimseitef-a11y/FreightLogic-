@@ -169,3 +169,15 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Delta vs the M1 head (159 passed / 0 failed across 21 specs): +7 assertions, +1 spec file, entirely accounted for by `tests/integration/m2-expense-fuel-concurrency.spec.mjs`. No pre-existing assertion changed, skipped, weakened or removed.
 - Regression note: `tests/integration/toctou-concurrent-edit.spec.mjs` (trip F-6) still passes. That is the load-bearing regression check for this milestone, since M2 modifies the same `updatedAt` preservation pattern F-6 depends on.
 - Backup/restore parity: `backup-restore-parity.spec.mjs` green, satisfying the M2 definition of done. Delta-sync and merge-restore both read `updatedAt || updated || created`, so the sanitizer change does not alter their ordering behavior.
+
+## Run — 2026-08-26T12:35Z
+
+- Purpose: Milestone 3 (v24.1 Confidence + Evidence), full suite on the exact implementation head.
+- Tested SHA: `03172d5` on `claude/audit-reconcile-lane-mechanics-hteibi`.
+- Command: `node tests/run-all.mjs`.
+- Environment: **local session container, not GitHub Actions.** Node `v22.22.2`; Playwright `1.56.1` (CI pins `1.62.1`) — not environment-equivalent to the CI gate.
+- Result: **GREEN — 183 passed, 0 failed across 23 spec files**.
+- Rerun: none.
+- Delta vs the M2 head (166 / 0 across 22): +17 assertions, +1 spec file, entirely `tests/integration/m3-confidence-evidence.spec.mjs`. No pre-existing assertion changed, skipped, weakened or removed.
+- Regression note: all four v24.0 authority/economics/bid/decision specs remain green, which is the load-bearing check for this milestone — v24.1 must not alter v24.0 authority.
+- One in-development failure (M3-13) was a fixture gap in the new spec itself: it omitted `netAfterFuel`/`profitMarginPct`, so the fuel-margin gate correctly returned REJECT. The fixture was completed. No product code changed in response and no assertion was weakened.
