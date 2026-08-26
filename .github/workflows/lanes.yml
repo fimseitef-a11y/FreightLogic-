@@ -1,0 +1,76 @@
+name: Lanes
+
+# Mechanical enforcement of the multi-agent protocol. Before this workflow,
+# /.agents/LANES.md ownership and the /AGENTS.md lock protocol were enforced
+# only by markdown an agent had to remember to read.
+#
+# Kept separate from tests.yml deliberately: a lane violation and a failing
+# Playwright assertion are different failures and should be separately
+# required (or separately waived) in branch protection.
+#
+# path-ownership and commit-prefix are enforcing. lock-trailer is warn-only for
+# its first round — see scripts/lane-guard.mjs.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  path-ownership:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Changed paths must respect LANES.md
+        run: |
+          node scripts/lane-guard.mjs ci-paths \
+            --branch "${{ github.head_ref }}" \
+            --base   "${{ github.event.pull_request.base.sha }}" \
+            --head   "${{ github.event.pull_request.head.sha }}"
+
+  commit-prefix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Commit prefixes must match the branch namespace
+        run: |
+          node scripts/lane-guard.mjs ci-prefix \
+            --branch "${{ github.head_ref }}" \
+            --base   "${{ github.event.pull_request.base.sha }}" \
+            --head   "${{ github.event.pull_request.head.sha }}"
+
+  lock-trailer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Locks live on agent-coordination and are correctly released once work
+      # completes, so CI cannot re-read a live lock. The FL-Lock commit trailer
+      # is what keeps coverage auditable after release.
+      - name: Fetch coordination ref
+        run: git fetch origin agent-coordination --depth=200 || true
+
+      - name: Audit lock trailers (warn-only)
+        run: |
+          node scripts/lane-guard.mjs ci-trailer \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"

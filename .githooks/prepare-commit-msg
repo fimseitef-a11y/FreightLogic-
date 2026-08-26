@@ -1,0 +1,12 @@
+#!/bin/sh
+# Records which lock authorised a SHARED-path edit, as a commit trailer:
+#   FL-Lock: <slug>/<token>
+#
+# Locks are released once work completes, so by the time CI runs on a PR the
+# lock is legitimately gone. The trailer is what makes lock coverage auditable
+# after the fact. The matching CI job is warn-only for its first round.
+#
+# Skips merges, squashes, and amends — those do not represent new edits.
+case "$2" in merge|squash|commit) exit 0 ;; esac
+node "$(git rev-parse --show-toplevel)/scripts/lane-guard.mjs" trailer >> "$1" 2>/dev/null || true
+exit 0
