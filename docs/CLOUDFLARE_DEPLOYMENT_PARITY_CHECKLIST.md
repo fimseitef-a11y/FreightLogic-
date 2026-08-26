@@ -11,11 +11,11 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 - Open the deployed Pages URL in a private/incognito browser session.
 - Open DevTools or Safari Web Inspector if available.
 - Confirm `index.html` loads without console syntax errors.
-- Confirm `app.js?v=24.0.0` loads.
-- Confirm `voice-load.js?v=24.0.0` loads.
-- Confirm `sw-bridge.js?v=24.0.0` loads.
-- Confirm `midwest-stack-authority.js?v=24.0.0` loads after service-worker activation.
-- Confirm `manifest.json?v=24.0.0` loads, and its `name` field reads `FreightLogic v24.0.0`.
+- Confirm `app.js?v=24.0.1` loads.
+- Confirm `voice-load.js?v=24.0.1` loads.
+- Confirm `sw-bridge.js?v=24.0.1` loads.
+- Confirm `midwest-stack-authority.js?v=24.0.1` loads after service-worker activation.
+- Confirm `manifest.json?v=24.0.1` loads, and its `name` field reads `FreightLogic v24.0.1`.
 - Confirm `vendor/xlsx.full.min.js` loads (X-10, v23.9 — bundled SheetJS, no CDN fallback).
 - Confirm icons load with 200 status.
 - Confirm `_headers` security headers are visible on the deployed site.
@@ -26,10 +26,10 @@ Prove that the live Cloudflare Pages site and Cloudflare Worker are running the 
 
 ## Service worker checks
 
-- Confirm `service-worker.js` contains `SW_VERSION = '24.0.0'`.
-- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.0` and `vendor/xlsx.full.min.js`.
+- Confirm `service-worker.js` contains `SW_VERSION = '24.0.1'`.
+- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.1` and `vendor/xlsx.full.min.js`.
 - Confirm the `install` event's **critical** (install-blocking) shell array — distinct from
-  the broader `CORE` list — also includes `midwest-stack-authority.js?v=24.0.0` and
+  the broader `CORE` list — also includes `midwest-stack-authority.js?v=24.0.1` and
   `vendor/xlsx.full.min.js` (X-08/X-10, v23.9). Before v23.9, the overlay script was only in
   `CORE`, so a first offline install could complete and serve the app shell before the
   TRUE_RPM decision layer was actually cached, with no error surfaced.
