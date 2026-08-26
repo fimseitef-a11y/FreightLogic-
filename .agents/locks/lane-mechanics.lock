@@ -1,6 +1,0 @@
-owner: claude
-token: 1cd1f613-3ae0-4e92-a1ee-9c793449bfa1
-started_utc: 2026-08-26T09:56:54Z
-expected_release_utc: 2026-08-26T12:56:54Z
-paths: AGENTS.md, .agents/LANES.md
-task: Make lane ownership and the app.js lock mechanically enforceable (pre-commit hook + CI checks). Adds a paths: field to the lock record format, blesses the branch namespaces actually in use, and assigns the unowned dat-rateview.js path. No application runtime code changes.
