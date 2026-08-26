@@ -7157,6 +7157,321 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   v24.1 — CONFIDENCE + EVIDENCE
+   Governing contract: docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md
+   Source map:         docs/V24_1_IMPLEMENTATION_MAP.md
+
+   Confidence is DESCRIPTIVE ONLY. Nothing in this section is read by
+   deriveUnifiedAuthority/Grade/Economics/Bid — it is attached to the canonical
+   decision after those have already run, and never fed back. That is the
+   structural guarantee behind spec rule 1 and 3: a LOW label cannot relax a
+   protective floor, because no floor ever looks at a label.
+
+   UNKNOWN / UNAVAILABLE / source failure stay visibly distinct from "no risk"
+   and from a favorable value (spec rule 6).
+   ═══════════════════════════════════════════════════════════════ */
+
+const EVIDENCE_CONFIDENCE = Object.freeze({ HIGH:'HIGH', MEDIUM:'MEDIUM', LOW:'LOW' });
+const EVIDENCE_FRESHNESS = Object.freeze({ CURRENT:'CURRENT', AGING:'AGING', STALE:'STALE', UNKNOWN:'UNKNOWN' });
+const EVIDENCE_CATEGORY = Object.freeze({
+  MARKET:'MARKET', BROKER:'BROKER', FUEL:'FUEL', WEATHER:'WEATHER',
+  SAFETY:'SAFETY', OPERATIONS:'OPERATIONS', VEHICLE:'VEHICLE', OTHER:'OTHER',
+});
+// The spec's normalization fallback. The existing LIVE_SOURCE_STATUS vocabulary
+// (which also carries STALE) is preserved as-is; UNKNOWN is only used when no
+// health record exists at all.
+const EVIDENCE_SOURCE_STATUS_UNKNOWN = 'UNKNOWN';
+
+// Centralized thresholds — the spec explicitly asks for these not to be
+// scattered as magic numbers.
+const EVIDENCE_THRESHOLDS = Object.freeze({
+  historicalCurrentDays: 14,   // CURRENT <= 14d
+  historicalAgingDays: 30,     // AGING 15-30d, STALE > 30d
+  sampleHigh: 10,              // HIGH >= 10
+  sampleMedium: 3,             // MEDIUM 3-9, LOW <= 2
+});
+
+// Source-specific freshness windows, taken from the runtime behavior the
+// implementation map documents. Applied BEFORE the generic 14/30-day
+// historical fallback, because a 30-minute weather cache is not "CURRENT for
+// 14 days".
+const EVIDENCE_SOURCE_FRESHNESS_SEC = Object.freeze({
+  EIA: 3 * 24 * 3600,   // three-day fetch throttle
+  NWS: 30 * 60,         // 30-minute route-point cache
+  FMCSA: 24 * 3600,     // 24-hour DOT cache
+  CBP: 30 * 60,         // 30-minute port cache
+});
+
+function normalizeEvidenceSourceStatus(status){
+  if (typeof status !== 'string' || !status) return EVIDENCE_SOURCE_STATUS_UNKNOWN;
+  return Object.prototype.hasOwnProperty.call(LIVE_SOURCE_STATUS, status)
+    ? status
+    : EVIDENCE_SOURCE_STATUS_UNKNOWN;
+}
+
+// A status other than OK means the fact is not independently supported by that
+// source. UNCONFIGURED and OFFLINE are honest "we never asked" states rather
+// than failures, but they are still not evidence.
+function evidenceStatusIsHealthy(status){
+  return normalizeEvidenceSourceStatus(status) === LIVE_SOURCE_STATUS.OK;
+}
+
+function classifyEvidenceFreshness(ageSeconds, sourceKey){
+  const age = knownNum(ageSeconds);
+  if (age === null || age < 0) return EVIDENCE_FRESHNESS.UNKNOWN;
+  const specific = EVIDENCE_SOURCE_FRESHNESS_SEC[sourceKey];
+  if (Number.isFinite(specific)){
+    if (age <= specific) return EVIDENCE_FRESHNESS.CURRENT;
+    if (age <= specific * 2) return EVIDENCE_FRESHNESS.AGING;
+    return EVIDENCE_FRESHNESS.STALE;
+  }
+  const days = age / 86400;
+  if (days <= EVIDENCE_THRESHOLDS.historicalCurrentDays) return EVIDENCE_FRESHNESS.CURRENT;
+  if (days <= EVIDENCE_THRESHOLDS.historicalAgingDays) return EVIDENCE_FRESHNESS.AGING;
+  return EVIDENCE_FRESHNESS.STALE;
+}
+
+function classifyEvidenceSample(sampleSize){
+  const n = knownNum(sampleSize);
+  if (n === null) return null; // not an aggregate — sample size says nothing
+  if (n >= EVIDENCE_THRESHOLDS.sampleHigh) return EVIDENCE_CONFIDENCE.HIGH;
+  if (n >= EVIDENCE_THRESHOLDS.sampleMedium) return EVIDENCE_CONFIDENCE.MEDIUM;
+  return EVIDENCE_CONFIDENCE.LOW;
+}
+
+const _EVIDENCE_RANK = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+function _worstConfidence(a, b){
+  if (!a) return b; if (!b) return a;
+  return _EVIDENCE_RANK[a] <= _EVIDENCE_RANK[b] ? a : b;
+}
+
+// Deterministic: identical inputs always produce an identical item.
+function buildEvidenceItem(spec){
+  const src = spec || {};
+  const status = normalizeEvidenceSourceStatus(src.sourceStatus);
+  const observedAt = knownNum(src.observedAt);
+  const evaluatedAt = knownNum(src.evaluatedAt);
+  const ageSeconds = (observedAt !== null && evaluatedAt !== null && evaluatedAt >= observedAt)
+    ? Math.floor((evaluatedAt - observedAt) / 1000)
+    : null;
+  const freshness = src.freshness || classifyEvidenceFreshness(ageSeconds, src.sourceKey);
+  const sampleSize = knownNum(src.sampleSize);
+  const windowDays = knownNum(src.windowDays);
+  const reasons = [];
+
+  let confidence = EVIDENCE_CONFIDENCE.HIGH;
+
+  if (!evidenceStatusIsHealthy(status)){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(status === EVIDENCE_SOURCE_STATUS_UNKNOWN
+      ? 'No source-health record — treated as unverified, not as no risk'
+      : `Source status ${status} — not independently corroborated`);
+  }
+
+  if (freshness === EVIDENCE_FRESHNESS.STALE){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Observation is stale');
+  } else if (freshness === EVIDENCE_FRESHNESS.AGING){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation is aging but within an approved window');
+  } else if (freshness === EVIDENCE_FRESHNESS.UNKNOWN && observedAt === null){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation age unknown');
+  }
+
+  const sampleConfidence = classifyEvidenceSample(sampleSize);
+  if (sampleConfidence){
+    confidence = _worstConfidence(confidence, sampleConfidence);
+    if (sampleConfidence === EVIDENCE_CONFIDENCE.LOW) reasons.push(`Only ${sampleSize} observation(s)`);
+    else if (sampleConfidence === EVIDENCE_CONFIDENCE.MEDIUM) reasons.push(`${sampleSize} observations — moderate sample`);
+    else reasons.push(`${sampleSize} observations`);
+  }
+
+  // Unresolved broker identity can never be HIGH, whatever the sample size.
+  if (src.identityResolved === false){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Broker identity unresolved (legacyUnkeyed) — excluded from broker confidence claims');
+  }
+
+  // Static fallback standing in for absent live evidence is never HIGH.
+  if (src.isStaticFallback === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.LOW);
+    reasons.push('Static fallback data, not a live observation');
+  }
+
+  if (src.isIndirect === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Fact is indirect rather than directly observed');
+  }
+
+  if (!reasons.length) reasons.push('Healthy source within its freshness window');
+
+  return Object.freeze({
+    key: String(src.key || ''),
+    category: EVIDENCE_CATEGORY[src.category] || EVIDENCE_CATEGORY.OTHER,
+    source: String(src.source || ''),
+    sourceStatus: status,
+    observedAt, evaluatedAt, ageSeconds,
+    sampleSize, windowDays,
+    freshness,
+    confidence,
+    valueSummary: String(src.valueSummary || ''),
+    provenance: Object.freeze({ ...(src.provenance || {}) }),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// Reads the existing v23.9.1 registry. Deliberately NOT a second health
+// registry — the map forbids one.
+function evidenceFromLiveSource(sourceKey, spec = {}){
+  const health = (typeof LIVE_SOURCE_HEALTH !== 'undefined' && LIVE_SOURCE_HEALTH.get)
+    ? LIVE_SOURCE_HEALTH.get(sourceKey)
+    : null;
+  const evaluatedAt = knownNum(spec.evaluatedAt) ?? Date.now();
+  return buildEvidenceItem({
+    ...spec,
+    sourceKey,
+    source: spec.source || sourceKey,
+    sourceStatus: health ? health.status : EVIDENCE_SOURCE_STATUS_UNKNOWN,
+    observedAt: knownNum(spec.observedAt) ?? knownNum(health?.lastSuccess),
+    evaluatedAt,
+    provenance: {
+      ...(spec.provenance || {}),
+      // Never provenance a credential — spec: no tokens, no secrets.
+      registered: !!health,
+      lastAttempt: knownNum(health?.lastAttempt),
+    },
+  });
+}
+
+const EVIDENCE_DOMAIN_BY_CATEGORY = Object.freeze({
+  MARKET: 'market', BROKER: 'broker', FUEL: 'operatingCosts',
+  WEATHER: 'weatherSafety', SAFETY: 'weatherSafety', VEHICLE: 'vehicleFit',
+  OPERATIONS: 'operatingCosts', OTHER: null,
+});
+
+// Overall confidence must not average away a material LOW domain (spec rule 2
+// of the aggregation section). Domains with no applicable evidence are
+// UNKNOWN and are EXCLUDED rather than counted as HIGH.
+function summarizeEvidenceConfidence(items, materialDomains){
+  const list = Array.isArray(items) ? items : [];
+  const domains = { market:'UNKNOWN', broker:'UNKNOWN', operatingCosts:'UNKNOWN', weatherSafety:'UNKNOWN', vehicleFit:'UNKNOWN' };
+  const reasons = [];
+
+  for (const item of list){
+    const domain = EVIDENCE_DOMAIN_BY_CATEGORY[item.category];
+    if (!domain) continue;
+    domains[domain] = domains[domain] === 'UNKNOWN'
+      ? item.confidence
+      : _worstConfidence(domains[domain], item.confidence);
+  }
+
+  const material = Array.isArray(materialDomains) && materialDomains.length
+    ? materialDomains
+    : Object.keys(domains).filter(d => domains[d] !== 'UNKNOWN');
+
+  const considered = material.filter(d => domains[d] && domains[d] !== 'UNKNOWN');
+  let overall;
+  if (!considered.length){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('No material evidence available — absence of evidence is not favorable evidence');
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.LOW)){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(`Capped at LOW by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.LOW).join(', ')}`);
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM)){
+    overall = EVIDENCE_CONFIDENCE.MEDIUM;
+    reasons.push(`Limited by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM).join(', ')}`);
+  } else {
+    overall = EVIDENCE_CONFIDENCE.HIGH;
+    reasons.push(`All material domains healthy: ${considered.join(', ')}`);
+  }
+
+  return Object.freeze({
+    overall,
+    ...domains,
+    materialDomains: Object.freeze([...material]),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// v24.1: normalize this evaluation's actual inputs into evidence items. Purely
+// descriptive — see the CONFIDENCE + EVIDENCE header. Anything we genuinely do
+// not have becomes an explicit UNKNOWN-status item rather than being omitted,
+// because a silently missing row reads as "nothing to worry about".
+function buildEvaluationEvidence(ctx = {}){
+  const items = [];
+  const now = Date.now();
+
+  // Fuel price: a live EIA observation, or the static corridor baseline. These
+  // are not interchangeable and the driver should be able to tell which they got.
+  const usingLiveFuel = (typeof LIVE_SOURCE_HEALTH !== 'undefined')
+    && LIVE_SOURCE_HEALTH.get && !!LIVE_SOURCE_HEALTH.get('EIA');
+  items.push(usingLiveFuel
+    ? evidenceFromLiveSource('EIA', {
+        key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
+        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal`,
+      })
+    : buildEvidenceItem({
+        key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
+        sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+        isStaticFallback: true,
+        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal (static baseline)`,
+      }));
+
+  // Personal lane history behind the USA evidence layer, when it reported one.
+  const laneSample = knownNum(ctx.usaResult?.laneSampleSize);
+  items.push(buildEvidenceItem({
+    key: 'market.laneHistory', category: 'MARKET', source: 'laneHistory',
+    sourceStatus: laneSample === null ? EVIDENCE_SOURCE_STATUS_UNKNOWN : LIVE_SOURCE_STATUS.OK,
+    sampleSize: laneSample, windowDays: 90, evaluatedAt: now,
+    observedAt: knownNum(ctx.usaResult?.laneLastSeenAt),
+    valueSummary: laneSample === null
+      ? 'No personal lane history for this corridor'
+      : `${laneSample} personal observation(s) on this lane`,
+  }));
+
+  // Broker evidence. An unresolved (legacyUnkeyed) identity can never be HIGH,
+  // and we never infer identity from an ambiguous customer field.
+  const brokerName = String(ctx.broker || '').trim();
+  items.push(buildEvidenceItem({
+    key: 'broker.history', category: 'BROKER', source: 'bidHistory',
+    sourceStatus: brokerName ? LIVE_SOURCE_STATUS.OK : EVIDENCE_SOURCE_STATUS_UNKNOWN,
+    sampleSize: knownNum(ctx.usaResult?.brokerSampleSize),
+    identityResolved: brokerName ? undefined : false,
+    evaluatedAt: now,
+    valueSummary: brokerName ? `Broker history for ${brokerName}` : 'No broker entered — no broker evidence',
+  }));
+
+  return Object.freeze(items);
+}
+
+// v24.1 minimum UI. One compact line plus an on-demand evidence list. The
+// spec defers the visual overhaul to v24.5 and asks only that confidence be
+// inspectable — and that "no data", "bad data" and "source unavailable" stay
+// visually distinct. No percentage is ever shown: v24.1 has no calibrated odds.
+function _renderConfidenceLine(decision){
+  const c = decision?.confidence;
+  if (!c) return '';
+  const color = c.overall === 'HIGH' ? 'var(--good)' : c.overall === 'MEDIUM' ? 'var(--warn)' : 'var(--bad)';
+  const items = Array.isArray(decision.evidence) ? decision.evidence : [];
+  const rows = items.map(e => {
+    const badge = e.sourceStatus === 'OK' ? '' : ` · ${escapeHtml(e.sourceStatus)}`;
+    const fresh = e.freshness && e.freshness !== 'UNKNOWN' ? ` · ${escapeHtml(e.freshness)}` : '';
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--text-secondary)">${escapeHtml(e.valueSummary || e.key)}</span>
+      <span style="white-space:nowrap;color:var(--text-tertiary)">${escapeHtml(e.confidence)}${fresh}${badge}</span>
+    </div>`;
+  }).join('');
+  return `<details style="margin-top:8px;text-align:left">
+    <summary style="font-size:11px;color:${color};cursor:pointer;list-style:none">
+      Confidence: <b>${escapeHtml(c.overall)}</b>${c.reasons?.[0] ? ` — ${escapeHtml(c.reasons[0])}` : ''}
+    </summary>
+    <div style="margin-top:6px;font-size:10px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
+    <div style="font-size:9px;color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
+  </details>`;
+}
+
 function buildUnifiedDecisionContract(input){
   if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required');
   if (!input?.economicsResult) throw new Error('Canonical economicsResult is required');
@@ -7199,6 +7514,14 @@ function buildUnifiedDecisionContract(input){
     floorRPM: input.floorRPM,
   });
   const usaEvidence = input.usaResult ? Object.freeze({ ...input.usaResult, authorityRole: 'EVIDENCE_ONLY' }) : null;
+
+  // v24.1 evidence assembly. A caller may supply pre-built items (tests, or a
+  // future intake path); otherwise we normalize from what this evaluation
+  // actually had. Nothing here can fail the decision — evidence is commentary.
+  const evidenceItems = Object.freeze(
+    Array.isArray(input.evidenceItems) ? input.evidenceItems.map(i => Object.freeze({ ...i })) : []
+  );
+  const confidence = summarizeEvidenceConfidence(evidenceItems, input.materialEvidenceDomains);
   const decision = {
     schemaVersion: UNIFIED_DECISION_SCHEMA_VERSION,
     factsComplete,
@@ -7217,6 +7540,12 @@ function buildUnifiedDecisionContract(input){
       warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
     }),
     bid: factsComplete ? bid : Object.freeze({ ...bid, range: null, suppressed: true, suppressedReason: 'Incomplete canonical facts' }),
+    // v24.1: additive and descriptive only. Computed AFTER authority/grade/
+    // economics/bid have already been decided above, and never read back into
+    // them — that ordering is what makes "confidence cannot relax a floor"
+    // structural rather than a promise.
+    evidence: evidenceItems,
+    confidence,
     operations: Object.freeze({
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
@@ -7290,6 +7619,26 @@ function unifiedDecisionForAI(decision){
     personalIntel: { score: decision.personalIntel.score },
     risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
     deadZone: { active: decision.deadZone.active, subTier: decision.deadZone.subTier },
+    // v24.1: the Worker receives the client's ALREADY-COMPUTED labels so it can
+    // explain or challenge them. It is deliberately not given the raw inputs a
+    // competing confidence model would need, and its reply can never write back
+    // here — same boundary the verdict/grade projection already has.
+    confidence: {
+      authority: 'CLIENT_OWNED',
+      overall: decision.confidence.overall,
+      market: decision.confidence.market,
+      broker: decision.confidence.broker,
+      operatingCosts: decision.confidence.operatingCosts,
+      weatherSafety: decision.confidence.weatherSafety,
+      vehicleFit: decision.confidence.vehicleFit,
+      reasons: decision.confidence.reasons.slice(0, 4),
+    },
+    evidence: decision.evidence.slice(0, 8).map(e => ({
+      key: e.key, category: e.category, source: e.source,
+      sourceStatus: e.sourceStatus, freshness: e.freshness,
+      confidence: e.confidence, sampleSize: e.sampleSize,
+      valueSummary: e.valueSummary,
+    })),
   };
 }
 
@@ -7632,7 +7981,14 @@ async function mwEvaluateLoad(){
   if (weeklyGross > 0 && weeklyGross < 1500 && isThuFri) warnings.push({ icon: '📉', text: 'Behind pace late-week — stabilize, do not chase $5K from behind' });
   if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
 
+  // v24.1: assemble evidence for THIS evaluation. Built here, after the
+  // canonical decision inputs are settled, so it can only describe them.
+  const evidenceItems = buildEvaluationEvidence({
+    economicsResult, usaResult, geo, dest, broker,
+    vanFitChecked: true, weatherChecked: !!(warnings || []).length,
+  });
   const unifiedDecision = buildUnifiedDecisionContract({
+    evidenceItems,
     economicsResult, bidResult,
     tier, authorityResult, verdictColors, verdictLabels,
     weeklyGross, geo, fatigue, origin, dest,
@@ -7770,6 +8126,7 @@ function _mwRenderDecision(out, d){
       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
+    ${_renderConfidenceLine(d._canonicalDecision)}
     <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
     ${(crossBorder?.isCrossBorder && revenue !== effectiveRevenue) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">CAD normalized: ${fmtMoney(revenue)} CAD → ${fmtMoney(effectiveRevenue)} USD-equivalent for RPM/profit math</div>` : ''}
     ${(crossBorder?.isCrossBorder) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Border cost applied: ${fmtMoney(borderAdminCost)} • Docs ready: ${crossBorder?.docsReady ? 'yes' : 'no'}</div>` : ''}
@@ -17745,6 +18102,11 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // v24 Unified Decision Engine
     deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
     knownNum, mwGeoCheck, buildUnifiedDecisionContract, MILEAGE_PROVENANCE,
+    // v24.1 Confidence + Evidence
+    buildEvidenceItem, evidenceFromLiveSource, summarizeEvidenceConfidence,
+    classifyEvidenceFreshness, classifyEvidenceSample, normalizeEvidenceSourceStatus,
+    EVIDENCE_CONFIDENCE, EVIDENCE_FRESHNESS, EVIDENCE_CATEGORY, EVIDENCE_THRESHOLDS,
+    unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };
