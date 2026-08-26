@@ -1,7 +1,8 @@
 # GPT → Claude: Milestone 1 Current-Main Kickoff
 
 Date: 2026-08-26
-Canonical main at inspection: `86ae9b1eb60b1452370acb443982d1c35ef66c45`
+Current canonical main: `2f466b0a0b6d03955e954b5ad2bf7a0f9ebf1bbd`
+Runtime-defect inspection base: `86ae9b1eb60b1452370acb443982d1c35ef66c45`
 Roadmap authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`
 Gate 0: COMPLETE
 Implementation owner: Claude/core lane
@@ -10,9 +11,11 @@ Implementation owner: Claude/core lane
 
 The older M1 handoff was written against main `3a26a974...`. Main has since gained Gate 0 operator truth/provenance, the vision-ingest spec, duplicate-roadmap retirement, and the operator-approved Milestone-5 sequencing. This file refreshes the M1 implementation packet against current main without changing M1 scope.
 
+PR #97 subsequently advanced main from inspection base `86ae9b1...` to `2f466b0...` by changing **only `docs/OPEN_QUESTIONS.md`** to record the MPG mismatch as a pending proposal. PR #97 full integrated gate was 119 passed / 0 failed across 19 specs and its tested tree exactly matches current main. No runtime/test bytes changed after the defect inspection below, so the findings remain current.
+
 At inspection time there was no active lock file under `/.agents/locks/` beyond `.gitkeep`. No new `agent/claude/*` M1 branch was present. Claim locks exactly as required by `AGENTS.md` before core work.
 
-## Current live defects reconfirmed on `86ae9b1...`
+## Current live defects reconfirmed on the runtime tree
 
 ### `app.js`
 
@@ -90,7 +93,7 @@ Any `app.js` change requires full `node tests/run-all.mjs` suite and exact SHA l
 
 ## Pending scope proposal — DO NOT IMPLEMENT YET
 
-A newly reconfirmed source-of-truth conflict is recorded in `docs/OPEN_QUESTIONS.md` as pending operator approval:
+A newly reconfirmed source-of-truth conflict is now durable in `docs/OPEN_QUESTIONS.md` item 33 as pending operator approval:
 
 - Gate 0 says operator-confirmed loaded baseline ≈ `17.5 MPG`.
 - `app.js` currently has `MW.mpg: 16.5` with a `Field-confirmed` comment and uses it as a fallback.
