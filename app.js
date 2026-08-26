@@ -1054,6 +1054,107 @@ async function linkLifecycle(patch, opts = {}){
   }
 }
 
+/* ---- v24.2 minimal lifecycle UI (spec section 13) ---- */
+
+// EXPIRED, LOST and CANCELLED must be visually distinct — they mean different
+// things and the spec calls that out explicitly.
+const LIFECYCLE_STAGE_STYLE = Object.freeze({
+  'PAID':               { bg:'rgba(52,211,153,.12)', bd:'rgba(52,211,153,.4)', fg:'var(--good)' },
+  'DELIVERED':          { bg:'rgba(52,211,153,.08)', bd:'rgba(52,211,153,.3)', fg:'var(--good)' },
+  'IN TRANSIT':         { bg:'rgba(88,166,255,.10)', bd:'rgba(88,166,255,.35)', fg:'#58a6ff' },
+  'EN ROUTE TO PICKUP': { bg:'rgba(88,166,255,.08)', bd:'rgba(88,166,255,.3)', fg:'#58a6ff' },
+  'OVERDUE':            { bg:'rgba(251,191,36,.12)', bd:'rgba(251,191,36,.4)', fg:'var(--warn)' },
+  'BAD DEBT':           { bg:'rgba(248,113,113,.14)', bd:'rgba(248,113,113,.45)', fg:'var(--bad)' },
+  'FELL THROUGH':       { bg:'rgba(248,113,113,.10)', bd:'rgba(248,113,113,.35)', fg:'var(--bad)' },
+  'LOST':               { bg:'rgba(248,113,113,.08)', bd:'rgba(248,113,113,.3)', fg:'var(--bad)' },
+  'CANCELLED':          { bg:'rgba(148,163,184,.12)', bd:'rgba(148,163,184,.4)', fg:'var(--text-secondary)' },
+  'EXPIRED':            { bg:'rgba(148,163,184,.08)', bd:'rgba(148,163,184,.3)', fg:'var(--text-tertiary)' },
+});
+
+function _lifecycleStageChip(stage, unresolved){
+  const st = LIFECYCLE_STAGE_STYLE[stage];
+  if (!st) return '';
+  const warn = unresolved ? ' ⚠' : '';
+  const title = unresolved ? ' title="Lifecycle link unresolved — needs review"' : '';
+  return `<span class="tag"${title} style="background:${st.bg};border-color:${st.bd};color:${st.fg};font-size:10px">${escapeHtml(stage)}${warn}</span>`;
+}
+
+// Populates the stage chips after a list render. Non-blocking and failure-safe:
+// no lifecycle data simply means no chip.
+async function renderLifecycleChips(root){
+  try{
+    const slots = (root || document).querySelectorAll('[data-lc-stage]');
+    if (!slots.length) return;
+    const rows = await listLifecycle();
+    if (!rows.length) return;
+    const byOrder = new Map();
+    for (const r of rows){ if (r.orderNo) byOrder.set(String(r.orderNo).toUpperCase(), r); }
+    for (const slot of slots){
+      const key = String(slot.getAttribute('data-lc-stage') || '').toUpperCase();
+      const lc = key && byOrder.get(key);
+      if (lc) slot.innerHTML = _lifecycleStageChip(lifecycleDisplayStage(lc), lc.migration?.unresolvedLink);
+    }
+  }catch(e){ console.warn('[FL] lifecycle chips', e); }
+}
+
+// The explicit correction path the spec requires: all three dimensions
+// editable, with the derived stage shown so a driver can see what their
+// correction will produce.
+async function openLifecycleEditor(orderNo){
+  const rows = await listLifecycle();
+  const lc = rows.find(r => String(r.orderNo).toUpperCase() === String(orderNo).toUpperCase());
+  if (!lc){ toast('No lifecycle record for this load yet.', true); return; }
+
+  const body = document.createElement('div');
+  const sel = (id, label, options, current) => `
+    <label style="font-size:12px">${label}</label>
+    <select id="${id}" style="width:100%">
+      ${options.map(o => `<option value="${o}"${o===current?' selected':''}>${o.replace(/_/g,' ')}</option>`).join('')}
+    </select>`;
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;margin-bottom:10px">
+      ${escapeHtml(lc.orderNo || '')} · stage <b id="lcStage">${escapeHtml(lifecycleDisplayStage(lc))}</b>
+    </div>
+    ${sel('lcOpp','Opportunity', LIFECYCLE_OPPORTUNITY, lc.opportunity)}
+    ${sel('lcExe','Execution', LIFECYCLE_EXECUTION, lc.execution)}
+    ${sel('lcSet','Settlement', LIFECYCLE_SETTLEMENT, lc.settlement)}
+    <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">
+      These are three independent facts. Winning a load does not start it, delivering it does not pay it,
+      and an expired quote is not a lost bid.
+    </div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="lcSave">Save correction</button></div>
+    <div class="muted" id="lcHint" style="font-size:12px;margin-top:8px"></div>
+  </div>`;
+
+  const preview = () => {
+    const draft = { opportunity: $('#lcOpp', body).value, execution: $('#lcExe', body).value, settlement: $('#lcSet', body).value };
+    $('#lcStage', body).textContent = lifecycleDisplayStage(draft);
+  };
+  ['lcOpp','lcExe','lcSet'].forEach(id => $('#'+id, body).addEventListener('change', preview));
+
+  $('#lcSave', body).addEventListener('click', async () => {
+    try{
+      await upsertLifecycle({
+        ...lc,
+        opportunity: $('#lcOpp', body).value,
+        execution: $('#lcExe', body).value,
+        settlement: $('#lcSet', body).value,
+      }, { expectedRevision: lc.revision, source: 'USER', sourceId: lc.orderNo, reason: 'manual correction' });
+      toast('Lifecycle updated');
+      closeModal();
+      await renderTrips(true);
+    }catch(e){
+      if (e?.code === 'FL_CONFLICT'){
+        $('#lcHint', body).textContent = 'This load changed elsewhere. Close and reopen to see the current state.';
+        return;
+      }
+      $('#lcHint', body).textContent = 'Could not save. Please try again.';
+    }
+  });
+
+  openModal('Load lifecycle', body);
+}
+
 async function initDB(){
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -4907,6 +5008,9 @@ async function renderTrips(reset=false){
     list.appendChild(empty);
   }
   else { res.items.forEach(t => list.appendChild(tripRow(t))); staggerItems(list); }
+  // v24.2: fill lifecycle stage chips after the rows exist. Non-blocking —
+  // the list is already usable, and no lifecycle data just means no chip.
+  renderLifecycleChips(list).catch(()=>{});
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
@@ -5036,7 +5140,7 @@ function tripRow(t, {compact=false}={}){
     <div class="fl-tf-body">
       <div class="fl-tf-origin">${escapeHtml(t.orderNo||'')} ${escapeHtml(t.customer ? '· ' + t.customer : '')}</div>
       <div class="fl-tf-sub">${escapeHtml(_origRaw ? _origRaw + ' ' : '')}${destLine}${escapeHtml(t.pickupDate||'')}</div>
-      <div class="fl-tf-tags">${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
+      <div class="fl-tf-tags">${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}<span data-lc-stage="${escapeHtml(t.orderNo||'')}"></span></div>
     </div>
     <div class="fl-tf-right">
       <div class="fl-tf-pay">${pay}</div>
@@ -5047,6 +5151,7 @@ function tripRow(t, {compact=false}={}){
         <button class="btn sm" data-act="docs">📎</button>
         ${_mapsHtml}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
+        <button class="btn sm" data-act="lifecycle" title="Correct load lifecycle state">⧗</button>
       </div>
     </div>`;
   // Score badge tap → open breakdown
@@ -5061,6 +5166,7 @@ function tripRow(t, {compact=false}={}){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
   $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo).catch(()=>{}); });
+  $('[data-act="lifecycle"]', d)?.addEventListener('click', ()=>{ haptic(15); openLifecycleEditor(t.orderNo).catch(()=>{}); });
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
@@ -14006,8 +14112,61 @@ async function getBrokerIntel(broker){
 }
 
 // Hook lane recording into trip saves — call after saveTrip
+// v24.2 (spec section 8, steps 4-5): derive execution + settlement state from
+// the trip record that is ALREADY saved and authoritative. Lifecycle never
+// becomes the source of operational or accounting detail — it only records
+// which stage this load reached.
+function _lifecycleStateFromTrip(trip){
+  const t = trip || {};
+  // Execution. A delivery date is the strongest signal we have; a pickup date
+  // without one means it is loaded and moving.
+  const execution =
+      t.fellThrough === true ? 'FELL_THROUGH'
+    : isValidISODate(t.deliveryDate) ? 'DELIVERED'
+    : isValidISODate(t.pickupDate) ? 'PICKED_UP'
+    : 'NOT_STARTED';
+
+  // Settlement is independent of execution: a delivered load can still be
+  // unpaid, overdue, or written off. Never infer PAID from delivery.
+  let settlement = 'NOT_INVOICED';
+  if (t.badDebt === true) settlement = 'BAD_DEBT';
+  else if (isValidISODate(t.paidDate)) settlement = 'PAID';
+  else if (isValidISODate(t.invoiceDate)){
+    // No per-trip payment-terms field exists today, so this uses the standard
+    // 30-day freight term. `t.termsDays` is read first so a future field drops
+    // in without touching this logic.
+    const dueDays = finiteNum(t.termsDays, 30);
+    const invoiced = Date.parse(t.invoiceDate);
+    settlement = (Number.isFinite(invoiced) && Date.now() > invoiced + dueDays * 86400000)
+      ? 'OVERDUE' : 'INVOICED';
+  }
+  return { execution, settlement };
+}
+
 async function _postTripSaveLaneHook(trip){
   try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+
+  // v24.2 dual-write. Runs after the trip is already persisted; linkLifecycle()
+  // swallows its own errors so this can never cost a saved trip.
+  try {
+    if (trip?.orderNo){
+      const { execution, settlement } = _lifecycleStateFromTrip(trip);
+      await linkLifecycle({
+        orderNo: trip.orderNo,
+        broker: trip.broker || trip.customer || '',
+        origin: trip.origin || '',
+        destination: trip.destination || '',
+        pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
+        deliveryAt: isValidISODate(trip.deliveryDate) ? trip.deliveryDate : null,
+        // A saved trip means the opportunity was won, whatever happened next.
+        opportunity: 'WON',
+        execution,
+        settlement,
+        cohort: { deadZoneExit: trip.isDZExit === true },
+        sourceRefs: { tripIds: [trip.orderNo] },
+      }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
+    }
+  } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
   // F29: Post-trip review prompt when trip has a delivery date
   if (trip && trip.deliveryDate && trip.origin && trip.destination){
     const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
@@ -14171,6 +14330,25 @@ async function logBid({ loadId, broker, origin, destination, miles, postedTarget
   validateRecordSize(record, 'bidOutcome');
   const { stores } = tx('bidHistory', 'readwrite');
   await idbReq(stores.bidHistory.add(record));
+
+  // v24.2 dual-write (spec section 8). Ordered AFTER the authoritative
+  // bidHistory write, and linkLifecycle() never throws, so a lifecycle failure
+  // cannot cost us the bid record that already landed. Compatibility beats
+  // consolidation during the transition.
+  await linkLifecycle({
+    orderNo: record.loadId,
+    broker: record.brokerDisplay || record.broker,
+    origin: record.origin,
+    destination: record.destination,
+    // A logged bid outcome is an ADJUDICATED opportunity state. 'expired' maps
+    // to EXPIRED, not LOST — that distinction is the whole point of the
+    // separate dimensions (see lifecycleWinRate).
+    opportunity: record.outcome === 'won' ? 'WON'
+      : record.outcome === 'rejected' ? 'LOST'
+      : 'EXPIRED',
+    sourceRefs: { bidHistoryIds: [record.id] },
+  }, { source: 'BID_HISTORY', sourceId: record.id, reason: `bid outcome ${record.outcome}` });
+
   return record;
 }
 
@@ -18371,6 +18549,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     lifecycleDeliveryReliability, lifecycleMatchCandidate, upsertLifecycle,
     getLifecycle, listLifecycle, linkLifecycle, mergeRestoreData,
     LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
+    _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
