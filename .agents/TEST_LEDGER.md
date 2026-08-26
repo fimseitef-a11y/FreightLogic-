@@ -134,3 +134,14 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Full-suite command window observed in logs: approximately 76.7 seconds (`07:29:25.341Z` through aggregate result at `07:30:41.995Z`).
 - Rerun: none.
 - Scope note: PR #99 changed only `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` (9 additions / 6 deletions). It added the approved MPG fallback/override parity item to M1 defect tracking, required outcomes, definition of done, and execution order. No runtime, test, storage, service-worker, or milestone-order change occurred.
+
+## Run — 2026-08-26T10:02:00Z
+
+- Purpose: full-suite verification of the lane-mechanics enforcement change (hooks + CI checks + new unit spec).
+- Tested SHA: `510ac8a2203e1eafd9717f87cd911371c4a3d384` on `claude/audit-reconcile-lane-mechanics-hteibi`, based on main `da62c114885a2549f94bc26059f6d0cc51431e8b`.
+- Command: `node tests/run-all.mjs`.
+- Environment: **local session container, not GitHub Actions.** Node `v22.22.2`; Playwright `1.56.1`. NOTE: CI pins Playwright `1.62.1`, so this run is not environment-equivalent to the CI gate and does not substitute for an Actions run on an integrated PR head.
+- Result: **GREEN — 138 passed, 0 failed across 20 spec files**.
+- Rerun: none.
+- Delta vs the prior recorded baseline (119 passed / 0 failed across 19 specs): +19 assertions, +1 spec file, exactly accounted for by the new `tests/unit/lane-guard.spec.mjs`. No pre-existing assertion changed, was skipped, weakened, or removed.
+- Scope note: the change touches no application runtime file — no `app.js`, `index.html`, `service-worker.js`, `manifest.json`, or `styles.css`. `tests/run-all.mjs` gained two lines (import + registration).
