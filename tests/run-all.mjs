@@ -24,6 +24,7 @@ import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.m
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fuel-concurrency.spec.mjs';
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
+import { runSpec as m4LoadLifecycle } from './integration/m4-load-lifecycle.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
@@ -49,6 +50,7 @@ const specs = [
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
   m3ConfidenceEvidence,
+  m4LoadLifecycle,
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,
