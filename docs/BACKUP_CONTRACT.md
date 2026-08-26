@@ -45,6 +45,31 @@ one pattern, two call sites, both correct.
 | `receiptBlobs` (Cache API, not IDB) | No | No — out of scope; receipts metadata round-trips, blob bytes do not |
 | `auditLog` | No | No — intentionally local-only, not part of the backup contract |
 
+## `loadLifecycle` (v24.2, DB v14)
+
+**Dependent runtime contract.** This section documents the required v24.2 behavior and must not be treated as deployed until the M4 runtime itself clears review and lands.
+
+| Property | Value |
+|---|---|
+| keyPath | `lifecycleId` (stable, generated, independent of broker order numbers) |
+| Pushed in full backup | yes |
+| Pushed in delta | yes — changed rows selected by `updatedAt > lastSynced` |
+| Restored | yes |
+| Merge strategy | **by `lifecycleId`, resolved on `revision` then `updatedAt`; `sourceRefs` merged as a de-duplicated union** |
+
+Why the union rather than last-writer-wins: a full backup and a later delta can
+each carry a *partial* `sourceRefs` list for the same load. Taking the winner's
+list wholesale would silently drop links that only exist in the loser — so the
+reference arrays are unioned even though the scalar state fields are not.
+
+`createdAt` takes the earliest of the two; `revision` takes the highest. An
+older delta therefore cannot roll a newer confirmed state backwards.
+
+A payload with no `loadLifecycle` key at all is valid legacy input (any backup
+written before v24.2) and must never be treated as corruption.
+
+Required verification on the final M4 head includes lifecycle export/import idempotence, full+delta source-reference union, stale-delta downgrade protection, and pre-v24.2 payload compatibility. The dedicated M4 lifecycle spec may cover those cases, but `tests/integration/backup-restore-parity.spec.mjs` must also continue to prove the shared backup/restore path remains intact.
+
 ## X-01: delta sync is now actually read back
 
 `cloudPushBackup()` writes a delta (`POST /backup/delta`) whenever the base full backup
