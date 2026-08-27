@@ -863,7 +863,16 @@ function _historicalRowFingerprint(rec){
     'amt', String(knownNum(r.amount ?? r.pay ?? r.rate) ?? ''),
     'pk', clampStr(r.pickupAt || '', 20),
   ];
-  return 'fp:' + parts.join('~');
+  // Hash to a BOUNDED token. The raw joined string routinely exceeds 200 chars
+  // with real provenance (long filenames + evidence refs), and migratedFrom is
+  // persisted through clampStr(120) — an unhashed fingerprint would be truncated
+  // on write and never match on re-import, silently breaking idempotency for
+  // quote observations (which have no short order key to fall back on). djb2
+  // over the full content keeps the stored token stable and short.
+  const raw = parts.join('~');
+  let h = 5381;
+  for (let i = 0; i < raw.length; i++) h = (((h << 5) + h) + raw.charCodeAt(i)) >>> 0;
+  return 'fp:' + h.toString(16).padStart(8, '0') + ':' + String(raw.length);
 }
 
 function _orderStableKey(rec){
