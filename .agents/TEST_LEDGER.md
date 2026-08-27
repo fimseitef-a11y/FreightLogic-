@@ -189,3 +189,10 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Result: **GREEN — 225 passed, 0 failed across 25 spec files**.
 - Progression this session on the branch: 183/23 (M3) → 203/24 (M4 core) → 209/24 (M4b) → 211/24 (M4c, section 16.8) → 225/25 (M5A/5B).
 - New specs since main: m4-load-lifecycle (28), m5-opportunity-ingestion (14). No pre-existing assertion changed, skipped, or weakened.
+
+## Run — 2026-08-27T (M6 real import + fingerprint fix)
+
+- Tested SHA: `d9d01a7` on `claude/audit-reconcile-lane-mechanics-hteibi`.
+- Command: `node tests/run-all.mjs`; Node v22.22.2; Playwright 1.56.1 (CI pins 1.62.1).
+- Result: **GREEN — 240 passed, 0 failed across 26 spec files** (+1: M6-15 long-provenance idempotency regression).
+- Real-data validation (harness, not a committed test): the operator's 2026-08-27 bundle imported through the merged importHistoricalOpportunities() — 142 lifecycle rows, deterministic checksum 70d378b, fully idempotent on re-import after the fix (142/142 duplicatesSkipped).
