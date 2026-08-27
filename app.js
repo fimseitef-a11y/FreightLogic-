@@ -104,7 +104,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -828,6 +828,447 @@ function idbReq(req){
     req.onerror = () => reject(req.error);
   });
 }
+/* ═══════════════════════════════════════════════════════════════
+   v24.2 MILESTONE 5A/5B — NORMALIZED OPPORTUNITY INGESTION
+   Governing contracts: docs/COMPLETION_RELEASE_PLAN_2026-08-25.md (M5),
+                        docs/EVIDENCE_PROVENANCE.md
+
+   One normalized opportunity shape that manual entry, email-derived evidence,
+   vision extraction (5C, later), historical import, and future provider
+   adapters (5D, later) all feed. This is the provider-INDEPENDENT foundation
+   the completion release requires; it does not fabricate API access and works
+   fully offline.
+
+   The load-bearing rule, straight from EVIDENCE_PROVENANCE.md: an amount only
+   becomes canonical carrier revenue when its price semantic PROVES it is
+   carrier payout (or an operator-confirmed expected revenue, or a settled
+   amount). A SHIPPER_BOOKABLE_PRICE, an OPERATOR_BID, or an unlabelled number
+   informs evidence/confidence but is NEVER silently converted into revenue.
+   ═══════════════════════════════════════════════════════════════ */
+
+const OPPORTUNITY_SOURCE_TYPE = Object.freeze(['MANUAL','EMAIL','VISION','HISTORY','PROVIDER_API']);
+const PRICE_SEMANTIC = Object.freeze([
+  'CARRIER_PAYOUT','OPERATOR_BID','SHIPPER_BOOKABLE_PRICE','CONTRACT_RATE',
+  'SETTLED_AMOUNT','UNKNOWN_PRICE_SEMANTIC',
+]);
+const MILEAGE_SEMANTIC = Object.freeze(['LOADED_MILES','DEADHEAD_MILES','DISPLAYED_TOTAL_MILES','MAP_ESTIMATE','UNKNOWN_MILEAGE_SEMANTIC']);
+const OPPORTUNITY_CONFIRMATION = Object.freeze(['UNCONFIRMED','OPERATOR_CONFIRMED']);
+
+// Only these price semantics may populate canonical carrier revenue. An
+// operator-confirmed amount is allowed regardless of semantic because the
+// operator is the top of the evidence-precedence order.
+const REVENUE_ELIGIBLE_SEMANTICS = Object.freeze(['CARRIER_PAYOUT','SETTLED_AMOUNT']);
+
+function normalizeOpportunity(raw, opts = {}){
+  const r = raw || {};
+  const pick = (list, v, fallback) => list.includes(v) ? v : fallback;
+
+  const sourceType = pick(OPPORTUNITY_SOURCE_TYPE, opts.sourceType || r.sourceType, 'MANUAL');
+  const confirmationState = pick(OPPORTUNITY_CONFIRMATION, opts.confirmationState || r.confirmationState, 'UNCONFIRMED');
+  const priceSemantic = pick(PRICE_SEMANTIC, r.priceSemantic, 'UNKNOWN_PRICE_SEMANTIC');
+  const mileageSemantic = pick(MILEAGE_SEMANTIC, r.mileageSemantic, 'UNKNOWN_MILEAGE_SEMANTIC');
+
+  // Every material fact is UNKNOWN unless it parses (M1 doctrine, reused).
+  const amount = knownNum(r.amount ?? r.pay ?? r.rate);
+  const loadedMi = knownNum(r.loadedMi ?? r.loadedMiles);
+  const deadMi = knownNum(r.deadMi ?? r.deadheadMiles);
+
+  // The gate: an amount becomes canonical revenue ONLY when its semantic proves
+  // carrier payout, OR the operator explicitly confirmed it as expected revenue.
+  const operatorConfirmedRevenue = confirmationState === 'OPERATOR_CONFIRMED' && r.operatorConfirmedRevenue === true;
+  const canonicalRevenue = (amount !== null && (REVENUE_ELIGIBLE_SEMANTICS.includes(priceSemantic) || operatorConfirmedRevenue))
+    ? amount
+    : null;
+
+  return Object.freeze({
+    // Identity is never quote/load ID alone (spec + EVIDENCE_PROVENANCE.md).
+    // A stable lifecycleId is minted; orderNo is retained as evidence, not identity.
+    lifecycleId: clampStr(r.lifecycleId || newLifecycleId(), 60),
+    orderNo: clampStr(r.orderNo || '', 60),
+    broker: clampStr(r.broker || '', 80),
+    origin: clampStr(r.origin || '', 80),
+    destination: clampStr(r.destination || '', 80),
+    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
+    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+
+    // Money: the raw amount AND its semantic are always kept. canonicalRevenue
+    // is the only field the decision engine may read as revenue.
+    amount,
+    priceSemantic,
+    canonicalRevenue,
+
+    // Mileage semantics stay distinct (M1); a displayed total is not loaded miles.
+    loadedMi,
+    deadMi,
+    mileageSemantic,
+
+    provenance: Object.freeze({
+      sourceType,
+      sourceName: clampStr(r.sourceName || opts.sourceName || '', 80),
+      sourceTimestamp: knownNum(r.sourceTimestamp),
+      rawEvidenceRef: clampStr(r.rawEvidenceRef || '', 120),
+      confirmationState,
+      operatorConfirmedAt: confirmationState === 'OPERATOR_CONFIRMED' ? (knownNum(r.operatorConfirmedAt) ?? Date.now()) : null,
+      fieldConfidence: sourceType === 'MANUAL' ? null : (clampStr(r.fieldConfidence || '', 20) || null),
+    }),
+    // A normalized opportunity that has NOT been proven won is SEEN. It never
+    // fabricates a WON/adjudicated state.
+    opportunity: pick(LIFECYCLE_OPPORTUNITY, r.opportunity, 'SEEN'),
+  });
+}
+
+// M5B: intake a normalized opportunity. Offline-safe (pure IndexedDB, no
+// network) and never fabricates provider access. Creates/links a lifecycle
+// record at its opportunity state via the conservative linker.
+async function intakeOpportunity(raw, opts = {}){
+  const norm = normalizeOpportunity(raw, opts);
+  const link = await linkLifecycle({
+    lifecycleId: norm.lifecycleId,
+    orderNo: norm.orderNo,
+    broker: norm.broker,
+    origin: norm.origin,
+    destination: norm.destination,
+    pickupAt: norm.pickupAt,
+    deliveryAt: norm.deliveryAt,
+    opportunity: norm.opportunity,
+  }, {
+    // Manual entry is a USER mutation; every machine-derived source (email,
+    // vision, history, provider) records as IMPORT.
+    source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
+    sourceId: norm.orderNo || norm.lifecycleId,
+    reason: `${norm.provenance.sourceType} opportunity intake`,
+  });
+  return Object.freeze({ normalized: norm, link });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   v24.2 — LOAD LIFECYCLE
+   Governing contract: docs/V24_2_LOAD_LIFECYCLE_SPEC.md
+
+   A record-LINKING and state-normalization layer. Not a second source of
+   truth: trips stay authoritative for operational detail, bidHistory for
+   negotiation, accounting for money. Lifecycle only says which stage one
+   freight opportunity is at, across three INDEPENDENT dimensions.
+
+   The three dimensions are deliberately not collapsed into one enum, because
+   the real distinctions are load-bearing for analytics:
+     EXPIRED is not LOST.  CANCELLED is not LOST.
+     WON does not imply DELIVERED.  DELIVERED does not imply PAID.
+   ═══════════════════════════════════════════════════════════════ */
+
+const LIFECYCLE_OPPORTUNITY = Object.freeze(['SEEN','QUOTED','BID','WON','LOST','EXPIRED','CANCELLED']);
+const LIFECYCLE_EXECUTION   = Object.freeze(['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP','DELIVERED','FELL_THROUGH']);
+const LIFECYCLE_SETTLEMENT  = Object.freeze(['NOT_INVOICED','INVOICED','OVERDUE','PAID','BAD_DEBT']);
+const LIFECYCLE_MUTATION_SOURCES = Object.freeze(['USER','BID_HISTORY','TRIP','GPS','IMPORT','RESTORE','MIGRATION']);
+
+function newLifecycleId(){
+  const rand = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/-/g,'').slice(0,10);
+  return `lc_${Date.now().toString(36)}_${rand}`;
+}
+
+function sanitizeLifecycle(raw){
+  const r = raw || {};
+  const pick = (list, v, fallback) => list.includes(v) ? v : fallback;
+  const refs = r.sourceRefs || {};
+  const uniqStrings = (arr) => Object.freeze([...new Set((Array.isArray(arr) ? arr : []).map(x => clampStr(String(x), 120)).filter(Boolean))]);
+  return {
+    lifecycleId: clampStr(String(r.lifecycleId || newLifecycleId()), 60),
+    createdAt: finiteNum(r.createdAt, Date.now()),
+    updatedAt: finiteNum(r.updatedAt, Date.now()),
+    revision: Math.max(1, intNum(r.revision, 1, 1e9)),
+
+    opportunity: pick(LIFECYCLE_OPPORTUNITY, r.opportunity, 'SEEN'),
+    execution:   pick(LIFECYCLE_EXECUTION,   r.execution,   'NOT_STARTED'),
+    settlement:  pick(LIFECYCLE_SETTLEMENT,  r.settlement,  'NOT_INVOICED'),
+
+    orderNo: clampStr(r.orderNo, 60),
+    broker: normBroker(r.broker || ''),
+    brokerDisplay: clampStr(r.brokerDisplay || r.broker || '', 80),
+    carrier: clampStr(r.carrier, 80),
+    origin: clampStr(r.origin, 80),
+    destination: clampStr(r.destination, 80),
+    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
+    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+
+    sourceRefs: {
+      bidHistoryIds: uniqStrings(refs.bidHistoryIds),
+      tripIds: uniqStrings(refs.tripIds),
+      reloadOutcomeIds: uniqStrings(refs.reloadOutcomeIds),
+      gpsTrackingIds: uniqStrings(refs.gpsTrackingIds),
+    },
+    cohort: {
+      // DZ-EXIT is a survival cohort. It may count in raw broker interaction
+      // totals but must never calibrate normal-market rates or floors.
+      deadZoneExit: r.cohort?.deadZoneExit === true,
+      normalMarketEligible: r.cohort?.deadZoneExit === true ? false : (r.cohort?.normalMarketEligible !== false),
+    },
+    migration: {
+      importedLegacy: r.migration?.importedLegacy === true,
+      migratedFrom: uniqStrings(r.migration?.migratedFrom),
+      unresolvedLink: r.migration?.unresolvedLink === true,
+    },
+    lastMutation: {
+      source: LIFECYCLE_MUTATION_SOURCES.includes(r.lastMutation?.source) ? r.lastMutation.source : 'USER',
+      sourceId: clampStr(r.lastMutation?.sourceId || '', 120),
+      reason: clampStr(r.lastMutation?.reason || '', 200),
+    },
+  };
+}
+
+// Presentation only. Analytics must query the three dimensions, never this.
+function lifecycleDisplayStage(lc){
+  if (!lc) return 'SEEN';
+  if (lc.settlement === 'PAID') return 'PAID';
+  if (lc.settlement === 'BAD_DEBT') return 'BAD DEBT';
+  if (lc.settlement === 'OVERDUE') return 'OVERDUE';
+  if (lc.execution === 'DELIVERED') return 'DELIVERED';
+  if (lc.execution === 'PICKED_UP') return 'IN TRANSIT';
+  if (lc.execution === 'EN_ROUTE_PICKUP') return 'EN ROUTE TO PICKUP';
+  if (lc.execution === 'FELL_THROUGH') return 'FELL THROUGH';
+  if (lc.opportunity === 'WON') return 'WON / NOT STARTED';
+  if (lc.opportunity === 'BID') return 'BID SUBMITTED';
+  if (lc.opportunity === 'QUOTED') return 'QUOTED';
+  if (lc.opportunity === 'EXPIRED') return 'EXPIRED';
+  if (lc.opportunity === 'CANCELLED') return 'CANCELLED';
+  if (lc.opportunity === 'LOST') return 'LOST';
+  return 'SEEN';
+}
+
+/* ---- analytics denominators: the whole reason the dimensions stay separate ---- */
+
+// numerator WON, denominator WON + LOST. EXPIRED and CANCELLED are excluded
+// because neither is an adjudicated loss — counting them understates win rate.
+function lifecycleWinRate(rows){
+  const list = (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.normalMarketEligible !== false);
+  const won = list.filter(r => r.opportunity === 'WON').length;
+  const lost = list.filter(r => r.opportunity === 'LOST').length;
+  const denominator = won + lost;
+  return Object.freeze({
+    won, lost, denominator,
+    excludedExpired: list.filter(r => r.opportunity === 'EXPIRED').length,
+    excludedCancelled: list.filter(r => r.opportunity === 'CANCELLED').length,
+    excludedDzExit: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.deadZoneExit === true).length,
+    // null, not 0 — an unknown rate is not a 0% rate (M1's UNKNOWN doctrine).
+    rate: denominator > 0 ? won / denominator : null,
+  });
+}
+
+// Delivery reliability is measured only over opportunities that became WON.
+function lifecycleDeliveryReliability(rows){
+  const won = (Array.isArray(rows) ? rows : []).filter(r => r?.opportunity === 'WON');
+  const delivered = won.filter(r => r.execution === 'DELIVERED').length;
+  const fellThroughAfterPickup = won.filter(r => r.execution === 'FELL_THROUGH' && r._pickedUpBeforeFailure === true).length;
+  const fellThrough = won.filter(r => r.execution === 'FELL_THROUGH').length;
+  return Object.freeze({
+    wonCount: won.length,
+    delivered,
+    fellThroughBeforePickup: fellThrough - fellThroughAfterPickup,
+    fellThroughAfterPickup,
+    rate: won.length > 0 ? delivered / won.length : null,
+  });
+}
+
+/* ---- conservative linking: a false merge is worse than a duplicate ---- */
+
+// Returns { linked, reason } or { linked:false, unresolved:true } when two
+// candidates compete. Never links from ambiguous customer text, a city pair
+// alone, a dollar amount alone, or approximate dates alone.
+function lifecycleMatchCandidate(record, candidates){
+  const list = Array.isArray(candidates) ? candidates : [];
+  const explicitId = clampStr(record?.lifecycleId || '', 60);
+  if (explicitId){
+    const hit = list.find(c => c.lifecycleId === explicitId);
+    if (hit) return { linked: true, lifecycleId: hit.lifecycleId, reason: 'explicit lifecycleId' };
+  }
+
+  const order = clampStr(record?.orderNo || '', 60).trim().toUpperCase();
+  const broker = normBroker(record?.broker || '');
+  if (!order || !broker) return { linked: false, unresolved: false, reason: 'insufficient strong evidence' };
+
+  const matches = list.filter(c =>
+    clampStr(c.orderNo || '', 60).trim().toUpperCase() === order && normBroker(c.broker || '') === broker);
+
+  if (matches.length === 1) return { linked: true, lifecycleId: matches[0].lifecycleId, reason: 'broker + order number' };
+  if (matches.length > 1){
+    // Competing candidates: mark unresolved and surface it rather than picking.
+    return { linked: false, unresolved: true, reason: `${matches.length} competing lifecycle records` };
+  }
+  return { linked: false, unresolved: false, reason: 'no match' };
+}
+
+/* ---- lifecycle CRUD. Optimistic concurrency from day one (spec §12). ---- */
+
+async function getLifecycle(lifecycleId){
+  const {stores} = tx('loadLifecycle');
+  return await idbReq(stores.loadLifecycle.get(String(lifecycleId)));
+}
+
+async function listLifecycle(){
+  return await dumpStore('loadLifecycle');
+}
+
+// Create-or-update. Mirrors upsertTrip()'s compare-and-abort contract so a
+// background update can never downgrade a newer user-confirmed state.
+async function upsertLifecycle(record, { expectedRevision = null, source = 'USER', sourceId = '', reason = '' } = {}){
+  const lc = sanitizeLifecycle(record);
+  validateRecordSize(lc, 'Lifecycle');
+  const {t:txn, stores} = tx(['loadLifecycle','auditLog'],'readwrite');
+  let before = null;
+  try{ before = await idbReq(stores.loadLifecycle.get(lc.lifecycleId)); }catch(e){ console.warn("[FL]", e); }
+
+  if (before && expectedRevision != null && before.revision !== expectedRevision){
+    try{ txn.abort(); }catch(e){ console.warn("[FL]", e); }
+    const err = new Error('This load was updated elsewhere since you loaded it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = before;
+    throw err;
+  }
+
+  lc.revision = before ? (finiteNum(before.revision, 1) + 1) : 1;
+  lc.createdAt = before ? finiteNum(before.createdAt, lc.createdAt) : lc.createdAt;
+  lc.updatedAt = Date.now();
+  lc.lastMutation = { source: LIFECYCLE_MUTATION_SOURCES.includes(source) ? source : 'USER', sourceId: clampStr(sourceId, 120), reason: clampStr(reason, 200) };
+
+  stores.loadLifecycle.put(lc);
+  try{ stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: lc.lifecycleId, action: before ? 'UPDATE_LIFECYCLE' : 'CREATE_LIFECYCLE', beforeData: before || null, afterData: lc, source: 'user' }); }catch(e){ console.warn("[FL]", e); }
+  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(lc); txn.onerror = ()=> reject(txn.error); txn.onabort = ()=> reject(txn.error || new Error('Transaction aborted')); });
+}
+
+// Dual-write helper (spec §8). Ordered so a lifecycle failure can NEVER leave
+// the authoritative legacy record unwritten: callers write their own store
+// first and call this afterwards, and this never throws into that path.
+async function linkLifecycle(patch, opts = {}){
+  try{
+    const existing = await listLifecycle();
+    const match = lifecycleMatchCandidate(patch, existing);
+    if (match.unresolved){
+      // Competing candidates — record the ambiguity instead of guessing.
+      console.warn('[FL] lifecycle link unresolved:', match.reason);
+      return { ok:false, unresolved:true, reason: match.reason };
+    }
+    const base = match.linked ? await getLifecycle(match.lifecycleId) : null;
+    const merged = sanitizeLifecycle({
+      ...(base || {}),
+      ...patch,
+      lifecycleId: base?.lifecycleId || patch.lifecycleId || newLifecycleId(),
+      sourceRefs: {
+        bidHistoryIds: [...(base?.sourceRefs?.bidHistoryIds || []), ...(patch.sourceRefs?.bidHistoryIds || [])],
+        tripIds: [...(base?.sourceRefs?.tripIds || []), ...(patch.sourceRefs?.tripIds || [])],
+        reloadOutcomeIds: [...(base?.sourceRefs?.reloadOutcomeIds || []), ...(patch.sourceRefs?.reloadOutcomeIds || [])],
+        gpsTrackingIds: [...(base?.sourceRefs?.gpsTrackingIds || []), ...(patch.sourceRefs?.gpsTrackingIds || [])],
+      },
+    });
+    const saved = await upsertLifecycle(merged, opts);
+    return { ok:true, lifecycleId: saved.lifecycleId, created: !base };
+  }catch(e){
+    // Dual-write must not break the authoritative write that already landed.
+    console.warn('[FL] lifecycle link failed (legacy record is unaffected):', e);
+    return { ok:false, error: String(e?.message || e) };
+  }
+}
+
+/* ---- v24.2 minimal lifecycle UI (spec section 13) ---- */
+
+// EXPIRED, LOST and CANCELLED must be visually distinct — they mean different
+// things and the spec calls that out explicitly.
+const LIFECYCLE_STAGE_STYLE = Object.freeze({
+  'PAID':               { bg:'rgba(52,211,153,.12)', bd:'rgba(52,211,153,.4)', fg:'var(--good)' },
+  'DELIVERED':          { bg:'rgba(52,211,153,.08)', bd:'rgba(52,211,153,.3)', fg:'var(--good)' },
+  'IN TRANSIT':         { bg:'rgba(88,166,255,.10)', bd:'rgba(88,166,255,.35)', fg:'#58a6ff' },
+  'EN ROUTE TO PICKUP': { bg:'rgba(88,166,255,.08)', bd:'rgba(88,166,255,.3)', fg:'#58a6ff' },
+  'OVERDUE':            { bg:'rgba(251,191,36,.12)', bd:'rgba(251,191,36,.4)', fg:'var(--warn)' },
+  'BAD DEBT':           { bg:'rgba(248,113,113,.14)', bd:'rgba(248,113,113,.45)', fg:'var(--bad)' },
+  'FELL THROUGH':       { bg:'rgba(248,113,113,.10)', bd:'rgba(248,113,113,.35)', fg:'var(--bad)' },
+  'LOST':               { bg:'rgba(248,113,113,.08)', bd:'rgba(248,113,113,.3)', fg:'var(--bad)' },
+  'CANCELLED':          { bg:'rgba(148,163,184,.12)', bd:'rgba(148,163,184,.4)', fg:'var(--text-secondary)' },
+  'EXPIRED':            { bg:'rgba(148,163,184,.08)', bd:'rgba(148,163,184,.3)', fg:'var(--text-tertiary)' },
+});
+
+function _lifecycleStageChip(stage, unresolved){
+  const st = LIFECYCLE_STAGE_STYLE[stage];
+  if (!st) return '';
+  const warn = unresolved ? ' ⚠' : '';
+  const title = unresolved ? ' title="Lifecycle link unresolved — needs review"' : '';
+  return `<span class="tag"${title} style="background:${st.bg};border-color:${st.bd};color:${st.fg};font-size:10px">${escapeHtml(stage)}${warn}</span>`;
+}
+
+// Populates the stage chips after a list render. Non-blocking and failure-safe:
+// no lifecycle data simply means no chip.
+async function renderLifecycleChips(root){
+  try{
+    const slots = (root || document).querySelectorAll('[data-lc-stage]');
+    if (!slots.length) return;
+    const rows = await listLifecycle();
+    if (!rows.length) return;
+    const byOrder = new Map();
+    for (const r of rows){ if (r.orderNo) byOrder.set(String(r.orderNo).toUpperCase(), r); }
+    for (const slot of slots){
+      const key = String(slot.getAttribute('data-lc-stage') || '').toUpperCase();
+      const lc = key && byOrder.get(key);
+      if (lc) slot.innerHTML = _lifecycleStageChip(lifecycleDisplayStage(lc), lc.migration?.unresolvedLink);
+    }
+  }catch(e){ console.warn('[FL] lifecycle chips', e); }
+}
+
+// The explicit correction path the spec requires: all three dimensions
+// editable, with the derived stage shown so a driver can see what their
+// correction will produce.
+async function openLifecycleEditor(orderNo){
+  const rows = await listLifecycle();
+  const lc = rows.find(r => String(r.orderNo).toUpperCase() === String(orderNo).toUpperCase());
+  if (!lc){ toast('No lifecycle record for this load yet.', true); return; }
+
+  const body = document.createElement('div');
+  const sel = (id, label, options, current) => `
+    <label style="font-size:12px">${label}</label>
+    <select id="${id}" style="width:100%">
+      ${options.map(o => `<option value="${o}"${o===current?' selected':''}>${o.replace(/_/g,' ')}</option>`).join('')}
+    </select>`;
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;margin-bottom:10px">
+      ${escapeHtml(lc.orderNo || '')} · stage <b id="lcStage">${escapeHtml(lifecycleDisplayStage(lc))}</b>
+    </div>
+    ${sel('lcOpp','Opportunity', LIFECYCLE_OPPORTUNITY, lc.opportunity)}
+    ${sel('lcExe','Execution', LIFECYCLE_EXECUTION, lc.execution)}
+    ${sel('lcSet','Settlement', LIFECYCLE_SETTLEMENT, lc.settlement)}
+    <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">
+      These are three independent facts. Winning a load does not start it, delivering it does not pay it,
+      and an expired quote is not a lost bid.
+    </div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="lcSave">Save correction</button></div>
+    <div class="muted" id="lcHint" style="font-size:12px;margin-top:8px"></div>
+  </div>`;
+
+  const preview = () => {
+    const draft = { opportunity: $('#lcOpp', body).value, execution: $('#lcExe', body).value, settlement: $('#lcSet', body).value };
+    $('#lcStage', body).textContent = lifecycleDisplayStage(draft);
+  };
+  ['lcOpp','lcExe','lcSet'].forEach(id => $('#'+id, body).addEventListener('change', preview));
+
+  $('#lcSave', body).addEventListener('click', async () => {
+    try{
+      await upsertLifecycle({
+        ...lc,
+        opportunity: $('#lcOpp', body).value,
+        execution: $('#lcExe', body).value,
+        settlement: $('#lcSet', body).value,
+      }, { expectedRevision: lc.revision, source: 'USER', sourceId: lc.orderNo, reason: 'manual correction' });
+      toast('Lifecycle updated');
+      closeModal();
+      await renderTrips(true);
+    }catch(e){
+      if (e?.code === 'FL_CONFLICT'){
+        $('#lcHint', body).textContent = 'This load changed elsewhere. Close and reopen to see the current state.';
+        return;
+      }
+      $('#lcHint', body).textContent = 'Could not save. Please try again.';
+    }
+  });
+
+  openModal('Load lifecycle', body);
+}
+
 async function initDB(){
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -859,6 +1300,7 @@ async function initDB(){
       ensureStore('receipts', { keyPath:'tripOrderNo' });
       ensureStore('receiptBlobs', { keyPath:'id' });
       ensureStore('auditLog', { keyPath:'id' });
+      ensureStore('loadLifecycle', { keyPath:'lifecycleId' });
       // v4: Reserved (no schema changes — feature-only release)
       if (old < 4) { /* no-op: schema unchanged */ }
       // v5: Reserved (load scoring engine — no schema changes)
@@ -924,6 +1366,20 @@ async function initDB(){
       if (old < 11) { /* no schema changes — settings store already holds the key */ }
       // v12: Ensure gpsLogs store exists for users upgrading from any version prior to v22
       if (old < 12) { ensureStore('gpsLogs', { keyPath: 'id', autoIncrement: true }); }
+      // v14 (v24.2): Load Lifecycle. A dedicated store rather than overloading
+      // `trips` or `bidHistory` as a new universal record — the spec is explicit
+      // that existing primary keys are never rewritten to fit lifecycle IDs.
+      // Purely additive: legacy records with no lifecycle link stay valid.
+      if (old < 14) {
+        if (!d.objectStoreNames.contains('loadLifecycle')) {
+          const lc = d.createObjectStore('loadLifecycle', { keyPath: 'lifecycleId' });
+          // Only indexes with a real query path, per the spec's warning against
+          // speculative indexes.
+          lc.createIndex('updatedAt', 'updatedAt', { unique: false });
+          lc.createIndex('orderNo', 'orderNo', { unique: false });
+          lc.createIndex('broker', 'broker', { unique: false });
+        }
+      }
       // v13: Broker Identity Chain — flag legacy bidHistory rows that predate real
       // broker/lane capture (the old hardcoded-empty-broker writer) so bid-to-book
       // aggregates can exclude them without deleting any data.
@@ -970,7 +1426,7 @@ async function migrateFromLegacyDB(){
 
   const STORES = ['trips','expenses','fuel','receipts','receiptBlobs',
                   'settings','auditLog','marketBoard','laneHistory',
-                  'weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'];
+                  'weeklyReports','reloadOutcomes','bidHistory','documents','loadLifecycle','gpsLogs'];
 
   const legacyDb = await new Promise(resolve => {
     let resolved = false;
@@ -1616,6 +2072,10 @@ async function exportJSON(){
     reloadOutcomes: await dumpStore('reloadOutcomes'),
     bidHistory: await dumpStore('bidHistory'),
     documents: await dumpStore('documents'),
+    // v24.2: lifecycle rows travel with every export. A v24.2 export must
+    // preserve the old stores too, so a lifecycle rollout can never strand
+    // operational history behind one new structure.
+    loadLifecycle: await dumpStore('loadLifecycle'),
     gpsLogs,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
@@ -4662,6 +5122,9 @@ async function renderTrips(reset=false){
     list.appendChild(empty);
   }
   else { res.items.forEach(t => list.appendChild(tripRow(t))); staggerItems(list); }
+  // v24.2: fill lifecycle stage chips after the rows exist. Non-blocking —
+  // the list is already usable, and no lifecycle data just means no chip.
+  renderLifecycleChips(list).catch(()=>{});
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
@@ -4791,7 +5254,7 @@ function tripRow(t, {compact=false}={}){
     <div class="fl-tf-body">
       <div class="fl-tf-origin">${escapeHtml(t.orderNo||'')} ${escapeHtml(t.customer ? '· ' + t.customer : '')}</div>
       <div class="fl-tf-sub">${escapeHtml(_origRaw ? _origRaw + ' ' : '')}${destLine}${escapeHtml(t.pickupDate||'')}</div>
-      <div class="fl-tf-tags">${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}</div>
+      <div class="fl-tf-tags">${tag}${reviewTag}${runTag}${stopsTag}${scoreBadge}<span data-lc-stage="${escapeHtml(t.orderNo||'')}"></span></div>
     </div>
     <div class="fl-tf-right">
       <div class="fl-tf-pay">${pay}</div>
@@ -4802,6 +5265,7 @@ function tripRow(t, {compact=false}={}){
         <button class="btn sm" data-act="docs">📎</button>
         ${_mapsHtml}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
+        <button class="btn sm" data-act="lifecycle" title="Correct load lifecycle state">⧗</button>
       </div>
     </div>`;
   // Score badge tap → open breakdown
@@ -4816,6 +5280,7 @@ function tripRow(t, {compact=false}={}){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
   $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo).catch(()=>{}); });
+  $('[data-act="lifecycle"]', d)?.addEventListener('click', ()=>{ haptic(15); openLifecycleEditor(t.orderNo).catch(()=>{}); });
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
@@ -12837,16 +13302,19 @@ async function cloudPushBackup(silent = true){
     const docs = isDelta ? changedDocuments : documents;
     const gl = isDelta ? changedGpsLogs : gpsLogs;
 
-    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0){
+    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0){
       _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
       if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
     }
 
+    const allLifecycle = await dumpStore('loadLifecycle');
+    const changedLifecycle = lastSynced > 0 ? allLifecycle.filter(r => finiteNum(r.updatedAt, 0) > lastSynced) : allLifecycle;
+    const lc = isDelta ? changedLifecycle : allLifecycle;
     const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
       laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
-      documents: documents.length, gpsLogs: gpsLogs.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, gpsLogs: gl });
+      documents: documents.length, gpsLogs: gpsLogs.length, loadLifecycle: allLifecycle.length };
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, loadLifecycle: lc, gpsLogs: gl });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
     const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
@@ -12920,6 +13388,46 @@ async function mergeRestoreData(parsed){
 
   // Other stores: per-record timestamp merge (laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents)
   // weeklyReports uses keyPath 'weekId'; all others use 'id'
+  // v24.2: lifecycle merge — keyed on the stable lifecycleId, resolved by
+  // revision (then updatedAt), with sourceRefs merged as a de-duplicated union.
+  // The union matters: a full backup and a later delta can each carry a
+  // partial ref list for the same load, and last-writer-wins would drop links.
+  {
+    const incomingLifecycle = arr(parsed.loadLifecycle);
+    for (const incoming of incomingLifecycle){
+      try{
+        if (!incoming?.lifecycleId) continue;
+        const {t:wt, stores:ws} = tx('loadLifecycle','readwrite');
+        const existing = await idbReq(ws.loadLifecycle.get(String(incoming.lifecycleId)));
+        let merged;
+        if (!existing){
+          merged = sanitizeLifecycle(incoming);
+        } else {
+          const incomingNewer =
+            finiteNum(incoming.revision, 0) > finiteNum(existing.revision, 0) ||
+            (finiteNum(incoming.revision, 0) === finiteNum(existing.revision, 0) &&
+             finiteNum(incoming.updatedAt, 0) > finiteNum(existing.updatedAt, 0));
+          const winner = incomingNewer ? incoming : existing;
+          merged = sanitizeLifecycle({
+            ...winner,
+            revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
+            createdAt: Math.min(finiteNum(existing.createdAt, Date.now()), finiteNum(incoming.createdAt, Date.now())),
+            sourceRefs: {
+              bidHistoryIds: [...(existing.sourceRefs?.bidHistoryIds || []), ...(incoming.sourceRefs?.bidHistoryIds || [])],
+              tripIds: [...(existing.sourceRefs?.tripIds || []), ...(incoming.sourceRefs?.tripIds || [])],
+              reloadOutcomeIds: [...(existing.sourceRefs?.reloadOutcomeIds || []), ...(incoming.sourceRefs?.reloadOutcomeIds || [])],
+              gpsTrackingIds: [...(existing.sourceRefs?.gpsTrackingIds || []), ...(incoming.sourceRefs?.gpsTrackingIds || [])],
+            },
+          });
+        }
+        ws.loadLifecycle.put(merged);
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        stats.loadLifecycle = stats.loadLifecycle || { added: 0, updated: 0 };
+        if (existing) stats.loadLifecycle.updated++; else stats.loadLifecycle.added++;
+      }catch(e){ console.warn('[FL] merge loadLifecycle', e); }
+    }
+  }
+
   const simpleStores = ['laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'];
   for (const storeName of simpleStores){
     const items = arr(parsed[storeName]);
@@ -13718,8 +14226,61 @@ async function getBrokerIntel(broker){
 }
 
 // Hook lane recording into trip saves — call after saveTrip
+// v24.2 (spec section 8, steps 4-5): derive execution + settlement state from
+// the trip record that is ALREADY saved and authoritative. Lifecycle never
+// becomes the source of operational or accounting detail — it only records
+// which stage this load reached.
+function _lifecycleStateFromTrip(trip){
+  const t = trip || {};
+  // Execution. A delivery date is the strongest signal we have; a pickup date
+  // without one means it is loaded and moving.
+  const execution =
+      t.fellThrough === true ? 'FELL_THROUGH'
+    : isValidISODate(t.deliveryDate) ? 'DELIVERED'
+    : isValidISODate(t.pickupDate) ? 'PICKED_UP'
+    : 'NOT_STARTED';
+
+  // Settlement is independent of execution: a delivered load can still be
+  // unpaid, overdue, or written off. Never infer PAID from delivery.
+  let settlement = 'NOT_INVOICED';
+  if (t.badDebt === true) settlement = 'BAD_DEBT';
+  else if (isValidISODate(t.paidDate)) settlement = 'PAID';
+  else if (isValidISODate(t.invoiceDate)){
+    // No per-trip payment-terms field exists today, so this uses the standard
+    // 30-day freight term. `t.termsDays` is read first so a future field drops
+    // in without touching this logic.
+    const dueDays = finiteNum(t.termsDays, 30);
+    const invoiced = Date.parse(t.invoiceDate);
+    settlement = (Number.isFinite(invoiced) && Date.now() > invoiced + dueDays * 86400000)
+      ? 'OVERDUE' : 'INVOICED';
+  }
+  return { execution, settlement };
+}
+
 async function _postTripSaveLaneHook(trip){
   try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+
+  // v24.2 dual-write. Runs after the trip is already persisted; linkLifecycle()
+  // swallows its own errors so this can never cost a saved trip.
+  try {
+    if (trip?.orderNo){
+      const { execution, settlement } = _lifecycleStateFromTrip(trip);
+      await linkLifecycle({
+        orderNo: trip.orderNo,
+        broker: trip.broker || trip.customer || '',
+        origin: trip.origin || '',
+        destination: trip.destination || '',
+        pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
+        deliveryAt: isValidISODate(trip.deliveryDate) ? trip.deliveryDate : null,
+        // A saved trip means the opportunity was won, whatever happened next.
+        opportunity: 'WON',
+        execution,
+        settlement,
+        cohort: { deadZoneExit: trip.isDZExit === true },
+        sourceRefs: { tripIds: [trip.orderNo] },
+      }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
+    }
+  } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
   // F29: Post-trip review prompt when trip has a delivery date
   if (trip && trip.deliveryDate && trip.origin && trip.destination){
     const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
@@ -13883,6 +14444,25 @@ async function logBid({ loadId, broker, origin, destination, miles, postedTarget
   validateRecordSize(record, 'bidOutcome');
   const { stores } = tx('bidHistory', 'readwrite');
   await idbReq(stores.bidHistory.add(record));
+
+  // v24.2 dual-write (spec section 8). Ordered AFTER the authoritative
+  // bidHistory write, and linkLifecycle() never throws, so a lifecycle failure
+  // cannot cost us the bid record that already landed. Compatibility beats
+  // consolidation during the transition.
+  await linkLifecycle({
+    orderNo: record.loadId,
+    broker: record.brokerDisplay || record.broker,
+    origin: record.origin,
+    destination: record.destination,
+    // A logged bid outcome is an ADJUDICATED opportunity state. 'expired' maps
+    // to EXPIRED, not LOST — that distinction is the whole point of the
+    // separate dimensions (see lifecycleWinRate).
+    opportunity: record.outcome === 'won' ? 'WON'
+      : record.outcome === 'rejected' ? 'LOST'
+      : 'EXPIRED',
+    sourceRefs: { bidHistoryIds: [record.id] },
+  }, { source: 'BID_HISTORY', sourceId: record.id, reason: `bid outcome ${record.outcome}` });
+
   return record;
 }
 
@@ -13892,12 +14472,17 @@ async function getBidWinRateStats(daysBack = 30) {
   const all = await idbReq(stores.bidHistory.getAll());
   const recent = all.filter(b => b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
   const won = recent.filter(b => b.outcome === 'won');
+  // v24.2 section 16.8: the denominator is adjudicated outcomes only. An
+  // 'expired' bid is the bidHistory analog of an EXPIRED opportunity — no known
+  // award decision — so it is excluded, exactly as lifecycleWinRate() excludes
+  // EXPIRED. Counting it understates the win rate on every board you watched.
+  const adjudicated = recent.filter(b => b.outcome === 'won' || b.outcome === 'rejected');
   const winningSpreads = won.map(b => b.spread / b.postedTarget);
   const avgWinningDiscount = winningSpreads.length > 0
     ? winningSpreads.reduce((a, v) => a + v, 0) / winningSpreads.length
     : 0;
   const byWindow = {};
-  for (const b of recent) {
+  for (const b of adjudicated) {
     const wk = b.timeWindow || 'UNKNOWN';
     if (!byWindow[wk]) byWindow[wk] = { total: 0, wins: 0 };
     byWindow[wk].total++;
@@ -13910,8 +14495,11 @@ async function getBidWinRateStats(daysBack = 30) {
   }
   return {
     totalBids: recent.length,
+    adjudicatedBids: adjudicated.length,
+    excludedExpired: recent.length - adjudicated.length,
     wins: won.length,
-    winRate: recent.length > 0 ? won.length / recent.length : 0,
+    // null, not 0, when nothing was adjudicated — an unknown rate is not 0%.
+    winRate: adjudicated.length > 0 ? won.length / adjudicated.length : null,
     avgWinningDiscount,
     bestWindow,
     byWindow,
@@ -15829,6 +16417,9 @@ async function openCounterOfferMemory(){
         if (!brokerMap[b]) brokerMap[b] = { broker: r.brokerDisplay || r.broker || 'Unknown', records: [], wins: 0 };
         brokerMap[b].records.push(r);
         if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
+        // v24.2 section 16.8: no_response is not adjudicated — track it apart.
+        if (r.outcome === 'accepted' || r.outcome === 'partial' || r.outcome === 'rejected') brokerMap[b].adjudicated = (brokerMap[b].adjudicated || 0) + 1;
+        else brokerMap[b].walked = (brokerMap[b].walked || 0) + 1;
       }
       const brokers = Object.values(brokerMap).sort((a,z) => z.records.length - a.records.length);
 
@@ -15836,8 +16427,12 @@ async function openCounterOfferMemory(){
       const outcomeLabel= { accepted:'Accepted', partial:'Partial', rejected:'Rejected', no_response:'Walked' };
 
       el.innerHTML = brokers.map(bk => {
-        const winRate = Math.round((bk.wins / bk.records.length) * 100);
-        const rateColor = winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
+        const adj = bk.adjudicated || 0;
+        const walked = bk.walked || 0;
+        // Denominator is adjudicated attempts only. Unknown (all walked) stays
+        // null rather than a misleading 0%.
+        const winRate = adj > 0 ? Math.round((bk.wins / adj) * 100) : null;
+        const rateColor = winRate === null ? 'var(--text-tertiary)' : winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
         const rows = bk.records.slice(0, 5).map(r => {
           const offer   = Number(r.offerAmt  || 0);
           const counter = Number(r.counterAmt|| 0);
@@ -15857,7 +16452,7 @@ async function openCounterOfferMemory(){
         return `<div class="card" style="margin-bottom:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <div style="font-weight:700;font-size:13px">${escapeHtml(bk.broker)}</div>
-            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate}% win · ${bk.records.length} attempt${bk.records.length!==1?'s':''}</div>
+            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate === null ? '—' : winRate + '% win'} · ${adj} adjudicated${walked ? ` · ${walked} walked` : ''}</div>
           </div>
           ${rows}
           ${bk.records.length > 5 ? `<div class="muted" style="font-size:11px;text-align:center;padding-top:6px">+${bk.records.length-5} more</div>` : ''}
@@ -18078,6 +18673,16 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     sanitizeTrip, sanitizeExpense, sanitizeFuel,
     // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
     addExpense, updateExpense, addFuel, updateFuel, dumpStore,
+    // v24.2 Load Lifecycle
+    sanitizeLifecycle, newLifecycleId, lifecycleDisplayStage, lifecycleWinRate,
+    lifecycleDeliveryReliability, lifecycleMatchCandidate, upsertLifecycle,
+    getLifecycle, listLifecycle, linkLifecycle, mergeRestoreData,
+    LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
+    _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
+    getBidWinRateStats,
+    // v24.2 M5A/5B normalized opportunity ingestion
+    normalizeOpportunity, intakeOpportunity,
+    PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
