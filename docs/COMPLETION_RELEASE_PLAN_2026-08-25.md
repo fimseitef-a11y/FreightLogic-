@@ -2,7 +2,7 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-08-27.** Gate 0 and Milestones 1–6 have implementation work on `main`, but the named completion release remains **ON HOLD**. Implementation presence and green CI are not equivalent to release certification. Current proof-backed blockers are tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`; this roadmap remains the authority for order and scope.
+Current status update: **2026-08-27.** Gate 0 and Milestones 1–6 have implementation work on `main`, but the named completion release remains **ON HOLD**. Implementation presence and green CI are not equivalent to release certification. Current proof-backed blockers are tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`; this roadmap remains the authority for order and scope.
 
 Vision ingestion remains an approved but non-blocking track for the named completion release. Provider-adapter expansion remains non-blocking and must not leapfrog the approved sequence.
 
@@ -18,11 +18,11 @@ Vision ingestion remains an approved but non-blocking track for the named comple
 
 ## Current source state
 
-- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`.
+- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`.
 - `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable Gate-0 sources.
 - `docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md` governs Confidence + Evidence behavior.
 - `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` governs lifecycle identity/state.
-- `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md`, once merged, defines the existing M5/M6 requirement that normalized evidence survive reload/backup/export/import with semantics intact.
+- `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md` is merged and defines the existing M5/M6 requirement that normalized evidence survive reload/backup/export/import with semantics intact.
 - `docs/VISION_LOAD_INGEST_CONTRACT.md` governs the non-blocking vision track.
 - `docs/V24_ROADMAP.md` is retired.
 - The Unified Decision Engine remains the sole client authority for verdict, grade, economics, and canonical bid range.
@@ -50,7 +50,7 @@ Rules:
 
 ## Current certification blockers
 
-The old pre-M1 defect list is retired because those repairs were implemented through Milestones 1–2. The current release blockers are the proof-backed items in `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`, including, at minimum until repaired and re-reviewed:
+The old pre-M1 defect list is retired because those repairs were implemented through Milestones 1–2. The current release blockers are the proof-backed items in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`, including, at minimum until repaired and re-reviewed:
 
 - Worker projection must preserve canonical `UNAVAILABLE`, unknown grade, null True RPM, and suppressed/null bid rather than requiring fabricated numeric completeness.
 - v24.1 evidence wiring/history must reflect actual source provenance, actual lane/broker/vehicle evidence, successful-zero vs no-data semantics, and a persisted compact evaluation snapshot.
@@ -241,7 +241,7 @@ Automated release-candidate gate:
 - full + delta backup/restore green;
 - local export/import and integrity checks green for every protected data class;
 - representative Level X+ and UNKNOWN/unavailable fixtures green;
-- no open proof-backed M3–M6 blocker from the certification-status document.
+- no open proof-backed M3–M6 blocker from the certification-state document.
 
 Field/deployment gate:
 
