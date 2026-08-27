@@ -456,6 +456,27 @@ test('[M4-28] a win-rate over only-expired bids is null, not 0%', async () => {
   eq(r.winRate, null, 'an unknown win rate must be null, never 0%');
 });
 
+test('[M4-29] local JSON import persists loadLifecycle (export/import parity)', async () => {
+  // Regression: exportJSON writes loadLifecycle and mergeRestoreData (cloud
+  // restore) reads it, but the LOCAL importJSON path dropped it — the same
+  // export-but-drop-on-import class as X-07. Drive the real importJSON with a
+  // File carrying a lifecycle row and confirm it lands.
+  const r = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const lc = T.sanitizeLifecycle({ lifecycleId:'lc_import_1', orderNo:'IMP-JSON-1', broker:'Acme', opportunity:'WON', execution:'DELIVERED' });
+    const payload = { meta:{ app:'FreightLogic' }, loadLifecycle:[lc] };
+    const file = new File([JSON.stringify(payload)], 'x.json', { type:'application/json' });
+    const before = (await T.listLifecycle()).some(x => x.orderNo === 'IMP-JSON-1');
+    await T.importJSON(file, { mode:'merge' });
+    const after = (await T.listLifecycle()).find(x => x.orderNo === 'IMP-JSON-1');
+    return { before, present: !!after, opportunity: after?.opportunity, execution: after?.execution };
+  });
+  eq(r.before, false, 'not present before import');
+  ok(r.present, 'the lifecycle row must land through the local JSON import path');
+  eq(r.opportunity, 'WON', 'state preserved');
+  eq(r.execution, 'DELIVERED', 'execution preserved');
+});
+
 export async function runSpec(){
   app = await launchApp();
   try { return await run(); } finally { await app.close(); }
