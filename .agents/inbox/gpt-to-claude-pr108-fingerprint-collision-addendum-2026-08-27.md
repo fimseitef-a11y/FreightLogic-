@@ -20,7 +20,7 @@ JaRWdaC8PladIXNaucQuLJs4
 aUrzhEqgDLOgR37CAPqKGOpa
 ```
 
-Both have length `24` and DJB2 unsigned value `1447490437` (`0x5647a5c5`). Under the current `hash:length` strategy they are indistinguishable. The regression does not need to use these strings as literal complete freight rows; they can be placed in a controlled fingerprint input field while keeping every other normalized component identical so the old implementation demonstrates the false dedup.
+Both have length `24` and DJB2 unsigned value `1447490437` (`0x5646f385`). Under the current `hash:length` strategy they are indistinguishable. The regression does not need to use these strings as literal complete freight rows; they can be placed in a controlled fingerprint input field while keeping every other normalized component identical so the old implementation demonstrates the false dedup.
 
 Because this key controls data deduplication rather than a cache hint, use a collision-resistant bounded fingerprint. Prefer a deterministic SHA-256 (or a sufficiently strong multiword digest if synchronous compatibility is required) over a single 32-bit non-cryptographic hash. The import pathway is already async, so an async digest is architecturally acceptable if call sites/tests are adjusted cleanly.
 
