@@ -1,6 +1,0 @@
-owner: claude
-token: 636b3ba2-4e15-43c9-9bb4-980cf1a0a683
-started_utc: 2026-08-27T05:59:26Z
-expected_release_utc: 2026-08-27T15:59:26Z
-paths: app.js, tests/
-task: Milestone 6 import pathway + calibration MACHINERY (not the operator's data). Build importHistoricalOpportunities() and the deterministic recency/sample-weighted calibration reader that consume operator-verified files through the M5 normalized contract + M4 lifecycle, tested with synthetic fixtures. Real import awaits the operator's files; the roadmap forbids reconstructing rows from AI memory.
