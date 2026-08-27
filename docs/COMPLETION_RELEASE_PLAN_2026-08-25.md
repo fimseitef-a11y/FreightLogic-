@@ -2,347 +2,259 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Last governance update: 2026-08-26 — operator approved formal Gate 0, approved the Milestone 5 intake ordering, and explicitly approved the narrowly bounded Milestone-1 MPG fallback parity repair described below. Vision ingestion remains non-blocking for the completion release.
+Current status update: **2026-08-27.** Gate 0 and Milestones 1–6 have implementation work on `main`, but the named completion release remains **ON HOLD**. Implementation presence and green CI are not equivalent to release certification. Current proof-backed blockers are tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`; this roadmap remains the authority for order and scope.
 
-This document converts the broad v24 work and the 2026-08-24 completion-audit handoff into the shortest safe route to a coherent FreightLogic completion release.
+Vision ingestion remains an approved but non-blocking track for the named completion release. Provider-adapter expansion remains non-blocking and must not leapfrog the approved sequence.
 
 ## Roadmap discipline
 
 1. This is the only active roadmap on `main`.
 2. Existing runtime milestone order may not be reordered without operator approval.
-3. Anything that enlarges the definition of the completion release must be proposed to the operator before it becomes release scope.
-4. New live sources, APIs, automation, visual expansion, or convenience features may not jump ahead of correctness, lifecycle identity, provenance, confidence, offline safety, and certification.
-5. Vision ingestion is an approved implementation track inside the ingestion milestone, but successful vision implementation is **not required** to freeze the named completion release.
-6. Provider adapters may not leapfrog the normalized manual/email/vision intake sequence. If vision is deferred, provider-adapter expansion is deferred with it; the completion release may still proceed once the required provider-independent foundation is complete.
+3. Anything that enlarges the definition of the completion release must be proposed before it becomes release scope.
+4. Correctness, lifecycle identity, provenance, confidence, offline safety, backup/import parity, and certification outrank new live sources or convenience features.
+5. Vision ingestion is approved inside Milestone 5, but successful model extraction is not required to freeze the named completion release.
+6. Provider adapters may not leapfrog the sequence `normalized contract → manual/email → vision → provider adapters`.
+7. Green tests do not overrule current-source evidence of an untested correctness defect.
 
 ## Current source state
 
-- Current governance baseline before this roadmap-sync PR: `762984afb3afe80a9a25d592927d8ec40b0f51ed`.
-- `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable on `main` and form Gate 0.
-- `docs/VISION_LOAD_INGEST_CONTRACT.md` is the governing vision replacement specification. Runtime implementation remains Claude/core-owned.
-- `docs/V24_ROADMAP.md` was retired so this file remains the single roadmap authority.
-- v24.0.0 Unified Decision Engine is already the canonical client authority for verdict, grade, economics, and bid range.
-- CSS presentation extraction is complete; `styles.css` is the GPT-owned presentation seam.
-- `app.js` remains SHARED/serialized and core runtime behavior is Claude-owned under `/.agents/LANES.md`.
-- PR #87 (`v24.1.0 — Confidence + Evidence`) remains subject to reconciliation onto integrity-fixed main rather than blind merge.
-- `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` is the governing v24.2 lifecycle contract.
-- `dat-rateview.js` exists on main but project policy freezes DAT RateView as dormant/non-authoritative for cargo-van expedite pricing.
-- Warp quote evidence, 123Loadboard, and Direct Freight remain subject to the source semantics and API-status rules in `EVIDENCE_PROVENANCE.md` and `OPEN_QUESTIONS.md`.
+- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`.
+- `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable Gate-0 sources.
+- `docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md` governs Confidence + Evidence behavior.
+- `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` governs lifecycle identity/state.
+- `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md`, once merged, defines the existing M5/M6 requirement that normalized evidence survive reload/backup/export/import with semantics intact.
+- `docs/VISION_LOAD_INGEST_CONTRACT.md` governs the non-blocking vision track.
+- `docs/V24_ROADMAP.md` is retired.
+- The Unified Decision Engine remains the sole client authority for verdict, grade, economics, and canonical bid range.
+- `app.js` remains SHARED/serialized and core runtime behavior remains Claude-owned under `/.agents/LANES.md`.
+- DAT RateView remains dormant/non-authoritative for cargo-van expedite pricing unless explicitly re-authorized.
+- Warp, 123Loadboard, and Direct Freight remain subject to `EVIDENCE_PROVENANCE.md` and verified API/partner authorization rules.
 
 ## Gate 0 — Operator truth and evidence provenance
 
 Priority: CRITICAL GOVERNANCE.
 
-Status: **COMPLETE as of 2026-08-26.**
+Status: **COMPLETE.**
 
 Purpose: prevent conversational memory, stale AI summaries, or inference from silently becoming operational truth.
 
-Required durable files:
-
-- `docs/OPERATOR_TRUTH.md`
-- `docs/EVIDENCE_PROVENANCE.md`
-- `docs/OPEN_QUESTIONS.md`
-
-Gate rules:
+Rules:
 
 - Operator corrections and primary evidence outrank AI summaries.
-- If a carried fact cannot be proven as operator-stated or primary-evidence-supported, it stays in `OPEN_QUESTIONS.md`.
-- Price semantics, mileage semantics, lifecycle state, and source provenance must remain explicit.
-- Quote/load ID alone is not guaranteed unique and cannot be used as destructive dedup identity.
-- Source-displayed loaded/deadhead mileage must not be overwritten by map estimates.
+- If a carried fact cannot be proven as operator-stated or primary-evidence-supported, it stays unresolved.
+- Price semantics, mileage semantics, lifecycle state, and source provenance remain explicit.
+- Quote/load/order ID alone is not guaranteed unique and cannot be used as destructive dedup identity.
+- Source-displayed mileage must not be overwritten by inferred/map mileage.
 - Provider account access must not be confused with API authorization.
-- New provider/source semantics must be defined in `EVIDENCE_PROVENANCE.md` before they can influence FreightLogic intelligence.
+- New source semantics must be defined before they influence canonical intelligence.
 
-Definition of done:
+## Current certification blockers
 
-- All three files exist on `main`.
-- Ambiguous carried claims remain outside confirmed truth.
-- Future implementation work reads these files before promoting operational facts.
+The old pre-M1 defect list is retired because those repairs were implemented through Milestones 1–2. The current release blockers are the proof-backed items in `docs/COMPLETION_RELEASE_CERTIFICATION_STATUS_2026-08-27.md`, including, at minimum until repaired and re-reviewed:
 
-Gate 0 adds no runtime feature work and does not change the order of Milestones 1–7.
+- Worker projection must preserve canonical `UNAVAILABLE`, unknown grade, null True RPM, and suppressed/null bid rather than requiring fabricated numeric completeness.
+- v24.1 evidence wiring/history must reflect actual source provenance, actual lane/broker/vehicle evidence, successful-zero vs no-data semantics, and a persisted compact evaluation snapshot.
+- lifecycle DB-v14 index creation must be correct for fresh/upgraded databases.
+- cloud delta backup must not read lifecycle delta state before initialization.
+- lifecycle/durable evidence must be covered by export integrity checks when exported as protected history.
+- reused external IDs must not cause false lifecycle linking, display, editing, or import deduplication; route/time/internal-source compatibility remains required.
+- normalized M5/M6 evidence must survive persistence, backup, export, import, and restore without losing price/mileage semantics or provenance.
+- M6 historical reconciliation must honor evidence precedence, preserve status classes, and use collision-resistant bounded import identity.
+- release/app/service-worker/manifest/Worker generation must be reconciled only after the corrected runtime is final.
+- M7 iPhone/offline and live Cloudflare certification remain unverified until executed against the corrected release candidate.
 
-## Confirmed current-source parity defects
-
-These remain release-blocking correctness issues because they can alter, mislabel, or falsely sharpen load decisions.
-
-1. `midwest-stack-config.json` still carries stale v23.5/older Midwest authority metadata.
-2. Toledo and Cincinnati remain stale Tier 2 entries where governing Level X+ doctrine requires Tier 1.
-3. `midwest-stack-authority.js` still exposes `DEAD_ZONE.floor: 0.91` despite the formal F20/DZ absolute floor being `0.90`.
-4. Midwest authority helpers can coerce missing/non-finite operational facts to `0`, manufacturing false precision.
-5. Canonical `app.js` has corresponding UNKNOWN-to-zero paths in unified economics/grade/authority derivation.
-6. Canonical `MW.tier1`/`MW.tier2` geography remains stale for Cincinnati and Toledo.
-7. `MW.rpmTiers` and rendered grade-ladder copy still contain the stale `$1.35–$1.39` D/minimum-standard classification rather than Level X+ D `$1.40–$1.49` and E `$1.25–$1.39`.
-8. Installed-app/source metadata still describes the older Midwest Stack generation and must be reconciled without creating a second decision engine.
-9. `R-TOCTOU-EXPENSE-FUEL` remains a confirmed lost-update risk: expense/fuel edits can overwrite a newer concurrent edit because they do not enforce the trip path's revision/`updatedAt` conflict check.
-10. **Operator-approved M1 parity repair:** Gate 0 records the loaded fallback baseline as approximately `17.5 MPG`, while current `app.js` still carries `MW.mpg: 16.5` with stale field-confirmed wording. The operator approved reconciling this fallback/source label while preserving explicit user vehicle-MPG settings as higher-priority overrides.
+A blocker leaves this list only after exact-current-source review and the applicable regression/full-suite gate are green.
 
 ## Completion release definition
 
-FreightLogic reaches a completion release when the current cargo-van decision product is coherent, safe, and certifiable end to end. It does **not** require every future third-party API, authenticated booking path, broad screenshot automation, or v25 market-data expansion.
+FreightLogic reaches the named completion release when the cargo-van decision product is coherent, safe, durable, and certifiable end to end.
 
-A completion release must have:
+Required:
 
 - one canonical decision authority;
-- Midwest Stack v11 / Level X+ money, geography, taxonomy, and input-integrity parity;
-- categorical confidence/evidence on material inputs;
-- one stable load lifecycle identity across opportunity, execution, and settlement;
-- safe normalized opportunity ingestion with a working manual/email-compatible path that future adapters can feed;
-- historical import with provenance and correct lifecycle denominators;
-- green automated regression suite;
-- backup/restore/import/export parity;
+- Midwest Stack v11 / Level X+ money, geography, taxonomy, MPG fallback, and UNKNOWN-vs-zero integrity;
+- categorical confidence/evidence on material inputs without a second decision engine;
+- stable load lifecycle identity across opportunity, execution, and settlement;
+- durable normalized opportunity evidence with working manual/email-compatible intake;
+- historical import with provenance and correct lifecycle/calibration denominators;
+- green automated regression suite on the exact release SHA;
+- backup/full-delta/restore/import/export integrity parity;
 - iPhone/offline field certification;
-- live Cloudflare Pages/Worker parity and auth verification;
-- a frozen release marker and rollback point.
+- live Cloudflare Pages/Worker parity and authority-boundary verification;
+- named frozen release marker and executable rollback point.
 
-**Not required to freeze the completion release:** successful vision-model extraction, 123Loadboard/Direct Freight partner approval, provider booking, or provider-adapter expansion, provided the required provider-independent normalized ingestion/manual-email foundation is complete and stable.
+Not required to freeze the completion release: successful vision-model extraction, 123Loadboard/Direct Freight partner approval, provider booking, or provider-adapter expansion, provided the required provider-independent M5 foundation is complete and stable.
 
 ## Milestone 1 — Doctrine and money-integrity certification
 
-Priority: CRITICAL. Complete before v24.1 runtime integration.
+Priority: CRITICAL.
 
-Core-owned files expected:
+Implementation status: **IMPLEMENTED; prior M1 doctrine/money repairs are not current open defects.**
 
-- `app.js`
-- `midwest-stack-authority.js`
-- `midwest-stack-config.json`
-- `tests/`
-- release/display metadata touched only as required by release certification
-- `schemas/` only if an additive validation contract is required
+Required outcomes remain the regression contract:
 
-Required outcomes:
+- Cincinnati and Toledo Tier 1 across canonical geography/mirrors.
+- Level X+ grade bands: A `>=1.75`, B `1.60–1.74`, C `1.50–1.59`, D `1.40–1.49`, E `1.25–1.39`; ordinary reject `<1.25` outside active DZ.
+- F20/DZ absolute floor exactly `0.90`.
+- Blank/null/non-finite operational mileage/revenue stay UNKNOWN, never zero.
+- Canonical economics/grade/authority become unavailable/provisional when required facts are unknown.
+- Mileage provenance distinguishes `VERIFIED | ESTIMATED | UNKNOWN` and keeps loaded/deadhead/displayed/reposition miles distinct.
+- Approved approximately `17.5 MPG` fallback remains subordinate to an explicit user MPG setting.
+- Unified Decision Engine remains sole verdict/grade/economics/bid authority; Midwest overlay remains advisory/evidence-only.
 
-- Align Cincinnati and Toledo to Tier 1 through canonical geography and all mirrors.
-- Align Level X+ grade bands everywhere: A `>=1.75`, B `1.60–1.74`, C `1.50–1.59`, D `1.40–1.49`, E `1.25–1.39`, ordinary Reject `<1.25` outside active DZ.
-- Remove stale `$1.35–$1.39` minimum-standard treatment.
-- Align formal F20/DZ absolute floor to exactly `0.90` everywhere.
-- Treat blank/undefined/null/non-finite operational mileage and revenue as UNKNOWN, never zero.
-- If required mileage/revenue is unknown, canonical economics must be unavailable/provisional rather than fabricated.
-- Add explicit mileage provenance/status: `VERIFIED | ESTIMATED | UNKNOWN`.
-- Keep loaded miles, deadhead/empty miles, platform-displayed miles, and post-delivery reposition miles distinct.
-- Reconcile the stale `MW.mpg: 16.5` fallback/source label to the operator-confirmed approximately `17.5 MPG` loaded baseline. An explicit user vehicle-MPG setting remains higher priority and must override the fallback.
-- Preserve v24 Unified Decision Engine as sole verdict/grade/economics/bid authority.
-- Keep Midwest overlay adapter/evidence-only.
-- Reconcile stale Midwest Stack generation wording in release/install metadata when versioned.
-- Add exact Level X+ regression boundaries for grade thresholds, deadhead bands, geography, F20, invalid inputs, unknown inputs, and MPG fallback/override parity.
+Definition of done remains enforced by regression tests and unchanged authority boundaries.
 
-Definition of done:
-
-- Full Playwright suite green on exact implementation head.
-- No weakened authority tests.
-- No false-precision path remains for unknown core mileage/economics inputs.
-- Grade taxonomy, thresholds, geography, and rendered copy cannot drift from one another.
-- F20 `0.90` and Tier 1 geography have explicit tests.
-- MPG fallback behavior is explicit and tested: absent user MPG uses the approved approximately `17.5` fallback; an explicit user MPG value continues to override it.
-
-Rollback point: pre-milestone main SHA.
-
-## Milestone 2 — Close remaining money/data-integrity risks
+## Milestone 2 — Expense/fuel concurrency integrity
 
 Priority: HIGH.
 
-Primary target: fix `R-TOCTOU-EXPENSE-FUEL` optimistic concurrency.
+Implementation status: **IMPLEMENTED.**
 
-Rules:
+Required invariant:
 
-- Reuse the proven trip concurrency pattern; do not invent a second model.
-- Preserve the original expected revision/`updatedAt` through expense/fuel edit forms.
-- Compare inside the same readwrite transaction before writing.
-- Abort and surface `FL_CONFLICT` rather than silently overwriting a newer record.
-- Refresh stale forms consistently with trip conflict behavior.
-- Do not mix broad refactoring with the repair.
-- Preserve accounting, backup, and import/export contracts.
+- expense/fuel edits reuse the trip optimistic-concurrency pattern;
+- expected revision/updatedAt is preserved through edit forms and compared inside the same readwrite transaction;
+- stale saves abort with `FL_CONFLICT` rather than overwriting newer data;
+- new-record ID semantics, accounting, backup, and import/export behavior remain intact.
 
-Definition of done:
-
-- Two-tab Playwright tests reproduce stale edits for expense and fuel.
-- A later stale save is rejected and the earlier concurrent edit survives.
-- No silent full-object lost update occurs.
-- Full suite and backup/restore parity remain green.
-
-## Milestone 3 — Reconcile and land v24.1 Confidence + Evidence
+## Milestone 3 — v24.1 Confidence + Evidence
 
 Priority: HIGH.
 
-Dependency: Milestones 1 and 2 green first.
+Implementation status: **IMPLEMENTED BUT RE-CERTIFICATION OPEN.**
 
 Required behavior:
 
-- Reconcile v24.1 work onto integrity-fixed main.
-- Preserve strict evidence-number normalization, source health, freshness, sample size, and categorical `HIGH | MEDIUM | LOW` confidence.
-- No percentage win probabilities.
-- Confidence cannot relax protective floors or alter verdict, grade, True RPM, or bid authority.
-- Keep Worker confidence projection client-owned; AI may explain, not replace.
-- Failed/unavailable source health remains visibly unavailable/LOW rather than being interpreted as no market signal.
+- evidence normalization is deterministic and source-aware;
+- confidence remains categorical `HIGH | MEDIUM | LOW`, never a fake win percentage;
+- confidence is descriptive only and cannot alter verdict, grade, True RPM, or canonical bid authority;
+- failed/unavailable sources remain unavailable/LOW rather than becoming zero/no-risk;
+- Worker may explain client-owned labels but may not replace them or require fabricated canonical facts;
+- source provenance must be write-point/observation based rather than inferred from unrelated source-health state;
+- successful zero observations must remain distinguishable from no observation/failure;
+- actual lane/broker/vehicle evidence must reach the confidence path;
+- persisted evaluations retain a compact secret-free confidence/evidence snapshot while old entries remain readable.
 
-Provider semantics for future adapters remain governed by `EVIDENCE_PROVENANCE.md`:
-
-- Warp quote = `SHIPPER_BOOKABLE_PRICE`, not carrier payout.
-- 123Loadboard evidence only after integration/partner authorization and exact field semantics are known.
-- Direct Freight evidence only after required partner authorization/token model and terms are satisfied.
-- DAT RateView remains dormant/non-authoritative unless explicitly re-authorized.
-
-Definition of done:
-
-- Full suite green on reconciled head.
-- Existing v24 authority tests remain intact.
-- Version/service-worker/manifest/Worker parity updated as required by release certification.
+Certification requires exact-current integration tests plus final app/PWA/Worker generation parity.
 
 ## Milestone 4 — v24.2 Load Lifecycle
 
 Priority: HIGH.
 
+Implementation status: **IMPLEMENTED BUT RE-CERTIFICATION OPEN.**
+
 Governing contract: `docs/V24_2_LOAD_LIFECYCLE_SPEC.md`.
 
-Required state dimensions:
+State dimensions:
 
 - Opportunity: `SEEN | QUOTED | BID | WON | LOST | EXPIRED | CANCELLED`
 - Execution: `NOT_STARTED | EN_ROUTE_PICKUP | PICKED_UP | DELIVERED | FELL_THROUGH`
 - Settlement: `NOT_INVOICED | INVOICED | OVERDUE | PAID | BAD_DEBT`
 
-Non-negotiable analytics rules:
+Non-negotiable rules:
 
 - EXPIRED is not LOST.
 - CANCELLED is not LOST.
 - WON does not imply DELIVERED.
 - DELIVERED does not imply PAID.
-- DZ-EXIT records are excluded from normal-market winning-range/floor calibration.
-
-Migration requirements:
-
-- Additive DB/lifecycle migration.
-- Conservative linking; no broker/order guessing from ambiguous text.
-- Dual-write transition with legacy opportunity/trip paths where required.
-- Optimistic concurrency/revision semantics from initial rollout.
-- Full backup, delta, restore, export, and import parity.
-- Pre-v24.2 backups remain valid.
-
-Definition of done:
-
-- One load can accumulate opportunity, execution, and settlement truth under one stable identity without discarding existing operational/accounting history.
-- Migration, concurrency, denominator, backup/restore, and compatibility tests are green.
+- DZ-EXIT is excluded from normal-market calibration.
+- stable lifecycle identity cannot depend on reused external IDs alone.
+- conservative linking requires strong evidence; competing candidates remain unresolved.
+- migration/backfill is additive, restart-safe, and idempotent.
+- dual writes occur after authoritative legacy writes and cannot corrupt the primary record.
+- optimistic concurrency applies to user and background lifecycle mutations.
+- full backup, delta, restore, local export/import, checksum, and pre-v24.2 compatibility are required.
 
 ## Milestone 5 — Freight-source ingestion foundation
 
 Priority: MEDIUM-HIGH.
 
-### Completion-release requirement
+Implementation status: **5A/5B IMPLEMENTED BUT DURABILITY RE-CERTIFICATION OPEN. 5C/5D NON-BLOCKING.**
 
-Only the **provider-independent normalized ingestion foundation plus working manual/email-compatible intake** is required for the named completion release.
+Approved order:
 
-### Approved internal implementation order
+**5A normalized contract → 5B manual/email → 5C vision → 5D provider adapters**
 
-The operator approved this order on 2026-08-26:
-
-**5A. Normalized contract → 5B. Manual/email intake → 5C. Vision intake → 5D. Provider adapters**
-
-Provider adapters may not be pulled ahead of the vision track merely because an API is easy to access.
-
-If vision implementation is deferred, provider-adapter expansion is also deferred. That does **not** block the completion release because neither vision success nor provider adapters are required to freeze the release.
-
-### 5A — Normalized opportunity-ingestion contract
+### 5A — Normalized opportunity contract
 
 Required:
 
-- One normalized opportunity shape that manual intake, email normalization, vision extraction, historical observation import where appropriate, and future APIs can feed.
-- Provenance fields distinguish platform, broker/carrier/company where actually known, source, source timestamp, price semantic, mileage semantic, health/confidence, and confirmation state.
-- Provider evidence remains structurally separate from canonical expected carrier revenue until semantics explicitly permit carrier revenue or the operator confirms the amount.
-- Unknown stays unknown; no missing-to-zero coercion.
-- Identity must not rely on quote/load ID alone.
+- one provider-independent normalized shape for manual, email, historical, future vision, and future authorized adapters;
+- provenance distinguishes source type/name, platform, broker/carrier/company where actually known, timestamps/evidence references, price semantic, mileage semantic, health/confidence, and confirmation state;
+- provider evidence remains structurally separate from canonical carrier revenue unless semantics/operator confirmation authorize promotion;
+- unknown remains unknown;
+- external ID alone is not identity;
+- normalized evidence must be durable and auditably linked, not merely returned transiently from a helper.
 
-### 5B — Manual and email-normalized intake
+### 5B — Manual/email intake
 
-Required for completion release:
+Completion release requires an actual call path that normalizes, durably persists, and conservatively lifecycle-links manual/email-compatible evidence while preserving the underlying source reference and offline manual behavior.
 
-- Manual opportunity intake works through the normalized contract.
-- Email-derived opportunity/confirmation evidence uses the same normalized contract and preserves the underlying message/evidence semantics.
-- Manual/email intake does not fabricate API access or bypass provider terms.
-- Offline/manual behavior remains functional.
+### 5C — Vision
 
-### 5C — Vision load intake
+Approved track, not a completion-release blocker. Governed by `docs/VISION_LOAD_INGEST_CONTRACT.md`.
 
-Approved implementation track; **not a completion-release blocker**.
+When implemented: schema-constrained extraction → deterministic validation → editable draft → explicit operator confirmation → normalized durable intake. No geocoding/hidden route math/bid/verdict/lifecycle inference by the model; no client-side model secret; no delayed overwrite of operator-confirmed data.
 
-Governing specification: `docs/VISION_LOAD_INGEST_CONTRACT.md`.
+### 5D — Provider adapters
 
-Required when implemented:
-
-- photo/screenshot → vision model → schema-constrained JSON → deterministic validation → editable draft → explicit operator confirmation → normalized opportunity intake;
-- field-level confidence/evidence rules from the governing contract;
-- hallucinated fields rejected deterministically;
-- no geocoding, hidden route math, bid/verdict/grade/lifecycle inference, or price-semantic promotion by the model;
-- offline capture/manual fallback must never break PWA startup or field behavior;
-- no model/provider secret in client JavaScript;
-- multiple offers may not be merged into one record;
-- delayed extraction may not overwrite operator-confirmed manual data;
-- deterministic CI fixtures; no flaky required live-model test dependency.
-
-Vision implementation remains Claude/core-owned under repository lock/test discipline.
-
-### 5D — Authorized provider adapters
-
-Provider-adapter work starts only after 5A–5C ordering has been respected. It is not required for completion release.
-
-- **Warp quote evidence:** may use the documented quote-only path when implementation reaches this stage. Preserve `SHIPPER_BOOKABLE_PRICE`; never populate carrier revenue from the bookable quote. Booking/private actions remain out of scope unless explicitly authorized later.
-- **123Loadboard:** implement only after integration/partner API authorization and provider terms/field semantics are verified. Free site/account access is not API approval.
-- **Direct Freight:** implement only after partner API authorization/token handling and permitted data usage are verified. Free site/account access is not partner API approval.
-- **DAT RateView:** remains dormant/non-authoritative unless explicitly re-authorized for a bounded role.
-
-Completion-release rule:
-
-- Missing vision implementation, 123Loadboard approval, Direct Freight approval, Warp authenticated booking access, or provider adapters does not block release once 5A and 5B are stable and all earlier release gates are satisfied.
+Non-blocking. Warp quote evidence retains `SHIPPER_BOOKABLE_PRICE`. 123Loadboard and Direct Freight require verified integration/partner authorization and exact field/data-use semantics. DAT RateView remains dormant unless explicitly re-authorized.
 
 ## Milestone 6 — Historical import + Personal Intelligence calibration
 
 Priority: MEDIUM-HIGH.
 
-Inputs:
+Implementation status: **MACHINERY IMPLEMENTED; REAL-IMPORT/ADAPTER AND DURABILITY RE-CERTIFICATION OPEN.**
 
-- operator-verified historical orders/loads;
-- operator-verified quote-board observations.
+Inputs remain operator-verified durable source files/evidence; missing row facts may not be reconstructed from AI memory.
 
 Rules:
 
-- Import from durable operator-verified source files/evidence; do not reconstruct missing row facts from AI memory.
-- Deduplicate completed/order history by the appropriate stable identity; do not apply quote-ID-only dedup to quote-board observations.
-- Preserve later operator-confirmed status corrections.
-- Preserve source-displayed mileage separately from inferred/estimated road mileage.
-- Quote-board observations are not completed loads unless later awarded/completed evidence exists.
-- Preserve price semantic and source provenance.
-- Keep DZ-EXIT as a separate calibration cohort.
-- Do not infer broker identity from ambiguous customer text.
+- completed/order history dedups only by an appropriate stable identity proven to represent the same shipment;
+- quote observations never dedup solely by quote ID;
+- later operator-confirmed corrections outrank lower-authority prior values;
+- merged material fields retain auditable provenance;
+- source-displayed mileage/RPM stays semantically distinct from canonical loaded/deadhead/True RPM;
+- quote observations are not completed loads without award/completion evidence;
+- EXPIRED, LOST, CANCELLED, dry-run, live-quote, and other status classes remain distinct;
+- dry runs remain separately represented rather than disappearing into normal-market economics;
+- unknown/secondary statuses cannot manufacture award evidence;
+- import fingerprints are bounded, deterministic, collision-resistant, and idempotent;
+- DZ-EXIT remains a separate cohort;
+- ordinary win rate uses `WON / (WON + LOST)`;
+- unknown RPM is excluded, not zero;
+- winning range remains unavailable below the defensible sample floor;
+- recency/sample weighting is deterministic and inspectable.
 
-Definition of done:
-
-- Verified history can enter lifecycle/personal-intelligence structures without source-code hardcoding.
-- Win-rate and winning-range denominators obey lifecycle rules.
-- Recency/sample-size weighting is deterministic and inspectable.
+Raw operator financial/history source CSVs remain outside the public repository unless explicitly authorized. CI uses synthetic fixtures.
 
 ## Milestone 7 — Completion release certification
 
 Priority: CRITICAL FINAL GATE.
 
-Automated:
+Status: **NOT COMPLETE.**
 
-- Full Playwright/Chromium suite green on exact release SHA.
-- Release/version/SW/manifest/Worker/CSP parity green.
-- Backup full + delta + restore green.
-- Import/export compatibility green.
-- Representative Level X+ fixtures green.
+Automated release-candidate gate:
 
-Field/deployment:
+- full Playwright/Chromium suite green on exact release SHA;
+- release/app/SW/manifest/Worker/CSP generation parity green;
+- full + delta backup/restore green;
+- local export/import and integrity checks green for every protected data class;
+- representative Level X+ and UNKNOWN/unavailable fixtures green;
+- no open proof-backed M3–M6 blocker from the certification-status document.
 
-- iPhone Safari one-handed decision journey.
-- Offline install/reload/update behavior.
-- GPS/background resilience representative check.
-- Live Cloudflare Pages deployment parity.
-- Worker `/health` reachable with expected version/bindings.
-- Unauthorized admin behavior returns expected denial.
-- Live `/evaluate` and `/extract` authority-boundary smoke tests with non-sensitive fixtures.
-- Rollback procedure documented and executable.
+Field/deployment gate:
 
-Definition of done:
+- iPhone Safari one-handed decision journey;
+- offline install/reload/update behavior;
+- representative GPS/background resilience check;
+- live Cloudflare Pages deployment parity;
+- Worker `/health` reachable with expected version/bindings;
+- unauthorized admin behavior returns the expected denial;
+- live `/evaluate` and `/extract` authority-boundary smoke tests using non-sensitive fixtures;
+- rollback procedure documented and executable.
 
-- Freeze a named completion release and stop adding roadmap scope until certification is complete.
+Definition of done: freeze a named completion release and stop adding roadmap scope until certification is complete.
 
 ## Explicit defer list
 
@@ -351,24 +263,24 @@ These do not block the completion release unless a newly discovered dependency i
 - direct bank-account linking;
 - successful vision-model extraction/runtime rollout;
 - unsupported/unapproved third-party freight APIs;
-- provider-adapter expansion when vision has not yet landed;
+- provider-adapter expansion when vision has not landed;
 - authenticated booking/dispatch through freight providers;
 - broad Next-Move expansion beyond existing safe positioning behavior;
 - full visual overhaul;
-- screenshot automation beyond the bounded single-offer vision-ingest contract;
+- screenshot automation beyond the bounded single-offer vision contract;
 - v25 live-market expansion;
 - calibrated percentage win probabilities before sufficient predicted-vs-actual lifecycle data exists.
 
 ## Execution order
 
-0. **Gate 0 — Operator truth/provenance externalization: COMPLETE.**
-1. Doctrine/money integrity, including the operator-approved MPG fallback parity repair.
-2. Expense/fuel concurrency repair.
-3. v24.1 Confidence + Evidence reconciliation.
-4. v24.2 lifecycle.
-5. Ingestion milestone in this internal order: **normalized contract → manual/email → vision → provider adapters**. Completion release requires the normalized contract + manual/email foundation; vision/provider adapters remain non-blocking.
-6. Historical import / Personal Intelligence calibration.
-7. Field + deployment certification.
-8. Freeze completion release.
+0. **Gate 0 — COMPLETE.**
+1. **M1 doctrine/money integrity — IMPLEMENTED; keep regressions green.**
+2. **M2 expense/fuel concurrency — IMPLEMENTED; keep regressions green.**
+3. **M3 Confidence + Evidence — IMPLEMENTED; current-source re-certification repairs required.**
+4. **M4 lifecycle — IMPLEMENTED; current-source re-certification repairs required.**
+5. **M5 normalized/manual-email foundation — IMPLEMENTED; durable evidence re-certification required. Vision/provider adapters remain non-blocking.**
+6. **M6 historical-import/calibration machinery — IMPLEMENTED; real-import adapter/durability reconciliation required.**
+7. **M7 field + deployment certification — pending corrected release candidate.**
+8. **Freeze completion release only after every release blocker is closed.**
 
-Do not invert this order merely to add more live sources. New data is only useful after canonical math, lifecycle identity, provenance, confidence, and ingestion semantics are trustworthy.
+Do not invert this order merely to add more live sources. New data is useful only when canonical math, lifecycle identity, provenance, confidence, ingestion durability, and certification are trustworthy.
