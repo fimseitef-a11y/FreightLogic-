@@ -829,6 +829,207 @@ function idbReq(req){
   });
 }
 /* ═══════════════════════════════════════════════════════════════
+   v24.2 MILESTONE 6 — HISTORICAL IMPORT + CALIBRATION MACHINERY
+   Governing contract: docs/COMPLETION_RELEASE_PLAN_2026-08-25.md (M6)
+
+   This is the PATHWAY, not the data. It imports operator-VERIFIED historical
+   rows (orders and quote-board observations) through the M5 normalized contract
+   and M4 lifecycle. It never reconstructs a missing row fact — a caller must
+   supply verified records; nothing here fabricates loads from memory.
+
+   Load-bearing distinctions the roadmap requires:
+   - completed/order history dedups by a stable order identity; quote-board
+     observations are NEVER deduped by quote-ID alone;
+   - a quote-board observation is not a completed load — it cannot claim
+     WON/DELIVERED/PAID without explicit operator award/completion evidence;
+   - DZ-EXIT stays a separate calibration cohort;
+   - broker identity is never inferred from ambiguous customer text (the M4
+     conservative linker already enforces this).
+   ═══════════════════════════════════════════════════════════════ */
+
+// Deterministic content fingerprint — the stable identity for a quote-board
+// observation, derived from its provenance + material facts, NOT its quote-ID.
+// Re-importing the same file is idempotent because the fingerprint is stable.
+function _historicalRowFingerprint(rec){
+  const r = rec || {};
+  const parts = [
+    'src', clampStr(r.sourceName || '', 80).toLowerCase(),
+    'ts', String(knownNum(r.sourceTimestamp) ?? ''),
+    'ev', clampStr(r.rawEvidenceRef || '', 120).toLowerCase(),
+    'bk', normBroker(r.broker || ''),
+    'or', clampStr(r.orderNo || '', 60).toUpperCase(),
+    'o', clampStr(r.origin || '', 80).toLowerCase(),
+    'd', clampStr(r.destination || '', 80).toLowerCase(),
+    'amt', String(knownNum(r.amount ?? r.pay ?? r.rate) ?? ''),
+    'pk', clampStr(r.pickupAt || '', 20),
+  ];
+  return 'fp:' + parts.join('~');
+}
+
+function _orderStableKey(rec){
+  const r = rec || {};
+  const explicit = clampStr(r.stableId || '', 80);
+  if (explicit) return 'ord:' + explicit.toUpperCase();
+  const broker = normBroker(r.broker || '');
+  const order = clampStr(r.orderNo || '', 60).toUpperCase();
+  // Order identity requires BOTH a broker and an order number. Neither alone,
+  // and never the customer text, is a stable identity.
+  return (broker && order) ? `ord:${broker}|${order}` : '';
+}
+
+async function importHistoricalOpportunities(records, opts = {}){
+  const rows = Array.isArray(records) ? records : [];
+  const existing = await listLifecycle();
+
+  // Index everything we have already imported by its stored migration tokens,
+  // so re-running an import file cannot duplicate rows.
+  const tokenToRow = new Map();
+  for (const e of existing){
+    for (const tok of (e.migration?.migratedFrom || [])) tokenToRow.set(tok, e);
+  }
+
+  const summary = { imported: 0, linkedToExisting: 0, duplicatesSkipped: 0, quoteObservations: 0, orders: 0, unresolved: 0, errors: 0 };
+
+  for (const rec of rows){
+    try{
+      const isQuote = String(rec.kind || '').toUpperCase() === 'QUOTE_OBSERVATION';
+      const fp = _historicalRowFingerprint(rec);
+
+      // Idempotency: the exact same observation already imported → skip.
+      if (tokenToRow.has(fp)){ summary.duplicatesSkipped++; continue; }
+
+      // A quote-board observation is not a completed load. It may only carry an
+      // adjudicated/executed state when the operator supplied explicit
+      // award/completion evidence (e.g. the confirmed 2026-08-24 expired batch).
+      const operatorAwarded = rec.operatorConfirmed === true &&
+        (rec.awarded === true || ['WON','LOST','EXPIRED','CANCELLED'].includes(rec.opportunity));
+      const opportunity = isQuote && !operatorAwarded
+        ? (rec.opportunity === 'QUOTED' ? 'QUOTED' : 'SEEN')
+        : (LIFECYCLE_OPPORTUNITY.includes(rec.opportunity) ? rec.opportunity : 'SEEN');
+
+      // Order history links to an existing lifecycle by stable identity.
+      let target = null, orderKey = '';
+      if (!isQuote){
+        orderKey = _orderStableKey(rec);
+        if (orderKey && tokenToRow.has(orderKey)) target = tokenToRow.get(orderKey);
+      }
+
+      const norm = normalizeOpportunity(
+        { ...rec, opportunity },
+        { sourceType: 'HISTORY', sourceName: rec.sourceName || opts.sourceFile || '',
+          confirmationState: rec.operatorConfirmed ? 'OPERATOR_CONFIRMED' : 'UNCONFIRMED' });
+
+      const migratedFrom = [fp];
+      if (orderKey) migratedFrom.push(orderKey);
+
+      const record = {
+        lifecycleId: target?.lifecycleId || norm.lifecycleId,
+        orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: rec.broker || '',
+        origin: norm.origin, destination: norm.destination,
+        pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
+        opportunity,
+        // Operator-confirmed status corrections are preserved verbatim.
+        execution: LIFECYCLE_EXECUTION.includes(rec.execution) ? rec.execution : (target?.execution || 'NOT_STARTED'),
+        settlement: LIFECYCLE_SETTLEMENT.includes(rec.settlement) ? rec.settlement : (target?.settlement || 'NOT_INVOICED'),
+        cohort: { deadZoneExit: rec.deadZoneExit === true },
+        migration: {
+          importedLegacy: true,
+          migratedFrom: [...(target?.migration?.migratedFrom || []), ...migratedFrom],
+        },
+        sourceRefs: target?.sourceRefs || {},
+      };
+
+      await upsertLifecycle(record, {
+        expectedRevision: target?.revision ?? null,
+        source: 'IMPORT', sourceId: rec.stableId || rec.orderNo || norm.lifecycleId,
+        reason: `historical ${isQuote ? 'quote observation' : 'order'} import`,
+      });
+
+      for (const tok of migratedFrom) tokenToRow.set(tok, record);
+      if (target) summary.linkedToExisting++; else summary.imported++;
+      if (isQuote) summary.quoteObservations++; else summary.orders++;
+    }catch(e){
+      console.warn('[FL] historical import row failed:', e);
+      summary.errors++;
+    }
+  }
+  return summary;
+}
+
+/* ---- deterministic recency + sample-size weighted calibration ---- */
+
+// Pure. observations: [{ won:bool, rpm:number|null, observedAt:number|null,
+// deadZoneExit:bool }]. DZ-EXIT is excluded from the normal-market cohort.
+// Winning range is recency-weighted with an exponential half-life; identical
+// input always yields identical output, and the weights are returned so the
+// result is inspectable rather than a black box.
+function calibrateWinningRange(observations, opts = {}){
+  const now = knownNum(opts.now) ?? Date.now();
+  const halfLifeDays = knownNum(opts.halfLifeDays) ?? 60;
+  const minSamples = knownNum(opts.minSamples) ?? 3;
+  const list = (Array.isArray(observations) ? observations : []).filter(o => o && o.deadZoneExit !== true);
+
+  const won = list.filter(o => o.won === true);
+  const lost = list.filter(o => o.won === false);
+  const winDenominator = won.length + lost.length;
+
+  // Winning-range inputs: WON observations with a known RPM only. Unknown RPM
+  // never counts as 0 (M1 doctrine).
+  const priced = won.filter(o => knownNum(o.rpm) !== null);
+  const decay = (observedAt) => {
+    const t = knownNum(observedAt);
+    if (t === null) return 1; // undated evidence gets full, not zero, weight
+    const ageDays = Math.max(0, (now - t) / 86400000);
+    return Math.pow(0.5, ageDays / halfLifeDays);
+  };
+
+  const weighted = priced.map(o => ({ rpm: knownNum(o.rpm), weight: decay(o.observedAt) }))
+    .sort((a, b) => a.rpm - b.rpm);
+  const totalWeight = weighted.reduce((s, w) => s + w.weight, 0);
+
+  let weightedMeanRpm = null, weightedMedianRpm = null;
+  if (priced.length >= minSamples && totalWeight > 0){
+    weightedMeanRpm = roundCents(weighted.reduce((s, w) => s + w.rpm * w.weight, 0) / totalWeight);
+    // Weighted median: first RPM at or past half the cumulative weight.
+    let acc = 0;
+    for (const w of weighted){ acc += w.weight; if (acc >= totalWeight / 2){ weightedMedianRpm = w.rpm; break; } }
+  }
+
+  return Object.freeze({
+    winRate: winDenominator > 0 ? won.length / winDenominator : null, // null, not 0
+    winDenominator, wonCount: won.length, lostCount: lost.length,
+    excludedDeadZone: (Array.isArray(observations) ? observations : []).filter(o => o?.deadZoneExit === true).length,
+    winningRangeSampleSize: priced.length,
+    sufficientSamples: priced.length >= minSamples,
+    weightedMeanRpm, weightedMedianRpm,
+    halfLifeDays,
+    // Inspectable: the exact per-observation weights that produced the range.
+    weights: Object.freeze(weighted.map(w => Object.freeze({ rpm: w.rpm, weight: roundCents(w.weight) }))),
+  });
+}
+
+// Bridges lifecycle rows to calibration observations via an rpm lookup the
+// caller supplies (from the linked trip/normalized record). Keeps the
+// deterministic math above independent of where the money actually lives.
+function calibrateFromLifecycle(lifecycleRows, rpmLookup, opts = {}){
+  const rows = Array.isArray(lifecycleRows) ? lifecycleRows : [];
+  const lookup = typeof rpmLookup === 'function' ? rpmLookup : () => null;
+  const observations = rows
+    .filter(r => r.opportunity === 'WON' || r.opportunity === 'LOST')
+    .map(r => {
+      const info = lookup(r.lifecycleId) || {};
+      return {
+        won: r.opportunity === 'WON',
+        rpm: knownNum(info.rpm),
+        observedAt: knownNum(info.observedAt) ?? knownNum(r.updatedAt),
+        deadZoneExit: r.cohort?.deadZoneExit === true,
+      };
+    });
+  return calibrateWinningRange(observations, opts);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
    v24.2 MILESTONE 5A/5B — NORMALIZED OPPORTUNITY INGESTION
    Governing contracts: docs/COMPLETION_RELEASE_PLAN_2026-08-25.md (M5),
                         docs/EVIDENCE_PROVENANCE.md
@@ -18683,6 +18884,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // v24.2 M5A/5B normalized opportunity ingestion
     normalizeOpportunity, intakeOpportunity,
     PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
+    // v24.2 M6 historical import + calibration
+    importHistoricalOpportunities, calibrateWinningRange, calibrateFromLifecycle,
+    _historicalRowFingerprint, _orderStableKey,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,

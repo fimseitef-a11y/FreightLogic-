@@ -26,6 +26,7 @@ import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fu
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
 import { runSpec as m4LoadLifecycle } from './integration/m4-load-lifecycle.spec.mjs';
 import { runSpec as m5OpportunityIngestion } from './integration/m5-opportunity-ingestion.spec.mjs';
+import { runSpec as m6HistoricalImport } from './integration/m6-historical-import.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
@@ -53,6 +54,7 @@ const specs = [
   m3ConfidenceEvidence,
   m4LoadLifecycle,
   m5OpportunityIngestion,
+  m6HistoricalImport,
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,
