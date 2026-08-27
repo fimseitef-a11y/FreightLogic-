@@ -1,0 +1,6 @@
+owner: claude
+token: 0fe1643e-d9d3-4219-bddc-0b2f4535df47
+started_utc: 2026-08-27T20:34:08Z
+expected_release_utc: 2026-08-28T00:34:08Z
+paths: app.js, tests/
+task: Fix loadLifecycle local-JSON-import parity gap (X-07 class) surfaced while preparing the operator's M6 import — exportJSON writes loadLifecycle and mergeRestoreData restores it, but importJSON drops it. Add it to importJSON sanitize/clear/putAll + test.
