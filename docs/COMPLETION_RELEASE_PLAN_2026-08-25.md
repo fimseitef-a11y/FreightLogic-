@@ -59,7 +59,8 @@ The old pre-M1 defect list is retired because those repairs were implemented thr
 - lifecycle/durable evidence must be covered by export integrity checks when exported as protected history.
 - reused external IDs must not cause false lifecycle linking, display, editing, or import deduplication; route/time/internal-source compatibility remains required.
 - normalized M5/M6 evidence must survive persistence, backup, export, import, and restore without losing price/mileage semantics or provenance.
-- M6 historical reconciliation must honor evidence precedence, preserve status classes, and use collision-resistant bounded import identity.
+- M5B requires a real production manual/email-compatible intake caller; a test-exposed helper alone does not satisfy the milestone.
+- M6 historical reconciliation must honor evidence precedence, preserve status classes, use collision-resistant bounded import identity, and weight source observation time rather than import/mutation time.
 - release/app/service-worker/manifest/Worker generation must be reconciled only after the corrected runtime is final.
 - M7 iPhone/offline and live Cloudflare certification remain unverified until executed against the corrected release candidate.
 
@@ -75,7 +76,7 @@ Required:
 - Midwest Stack v11 / Level X+ money, geography, taxonomy, MPG fallback, and UNKNOWN-vs-zero integrity;
 - categorical confidence/evidence on material inputs without a second decision engine;
 - stable load lifecycle identity across opportunity, execution, and settlement;
-- durable normalized opportunity evidence with working manual/email-compatible intake;
+- durable normalized opportunity evidence with working production manual/email-compatible intake;
 - historical import with provenance and correct lifecycle/calibration denominators;
 - green automated regression suite on the exact release SHA;
 - backup/full-delta/restore/import/export integrity parity;
@@ -169,7 +170,7 @@ Non-negotiable rules:
 
 Priority: MEDIUM-HIGH.
 
-Implementation status: **5A/5B IMPLEMENTED BUT DURABILITY RE-CERTIFICATION OPEN. 5C/5D NON-BLOCKING.**
+Implementation status: **5A NORMALIZATION HELPER IMPLEMENTED BUT DURABILITY OPEN; 5B PRODUCTION MANUAL/EMAIL CALL PATH NOT YET IMPLEMENTED; 5C/5D NON-BLOCKING.**
 
 Approved order:
 
@@ -184,11 +185,14 @@ Required:
 - provider evidence remains structurally separate from canonical carrier revenue unless semantics/operator confirmation authorize promotion;
 - unknown remains unknown;
 - external ID alone is not identity;
-- normalized evidence must be durable and auditably linked, not merely returned transiently from a helper.
+- normalized evidence must be durable and auditably linked, not merely returned transiently from a helper;
+- displayed-total mileage, loaded mileage, deadhead mileage, post-delivery reposition mileage, and map estimates must occupy semantically distinct durable fields/evidence rather than a displayed total being stored in a field named `loadedMi`.
 
 ### 5B — Manual/email intake
 
-Completion release requires an actual call path that normalizes, durably persists, and conservatively lifecycle-links manual/email-compatible evidence while preserving the underlying source reference and offline manual behavior.
+Current source contains the `intakeOpportunity()` helper, but production-source review found no caller in `app.js`, `voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, or `index.html`; current tests call the helper through `window.__FL_TESTS`.
+
+Completion release therefore still requires an actual production call path that normalizes, durably persists, and conservatively lifecycle-links manual/email-compatible evidence while preserving the underlying source reference and offline manual behavior.
 
 ### 5C — Vision
 
@@ -224,7 +228,8 @@ Rules:
 - ordinary win rate uses `WON / (WON + LOST)`;
 - unknown RPM is excluded, not zero;
 - winning range remains unavailable below the defensible sample floor;
-- recency/sample weighting is deterministic and inspectable.
+- recency/sample weighting is deterministic and inspectable;
+- recency must use the source observation timestamp; unknown observation age must not receive full-current weight, and lifecycle import/mutation `updatedAt` must not substitute for market-observation time.
 
 Raw operator financial/history source CSVs remain outside the public repository unless explicitly authorized. CI uses synthetic fixtures.
 
@@ -278,8 +283,8 @@ These do not block the completion release unless a newly discovered dependency i
 2. **M2 expense/fuel concurrency — IMPLEMENTED; keep regressions green.**
 3. **M3 Confidence + Evidence — IMPLEMENTED; current-source re-certification repairs required.**
 4. **M4 lifecycle — IMPLEMENTED; current-source re-certification repairs required.**
-5. **M5 normalized/manual-email foundation — IMPLEMENTED; durable evidence re-certification required. Vision/provider adapters remain non-blocking.**
-6. **M6 historical-import/calibration machinery — IMPLEMENTED; real-import adapter/durability reconciliation required.**
+5. **M5A normalization helper — IMPLEMENTED but durable evidence incomplete. M5B production manual/email call path — NOT YET IMPLEMENTED. Vision/provider adapters remain non-blocking.**
+6. **M6 historical-import/calibration machinery — IMPLEMENTED; real-import adapter/durability/recency reconciliation required.**
 7. **M7 field + deployment certification — pending corrected release candidate.**
 8. **Freeze completion release only after every release blocker is closed.**
 
