@@ -829,6 +829,120 @@ function idbReq(req){
   });
 }
 /* ═══════════════════════════════════════════════════════════════
+   v24.2 MILESTONE 5A/5B — NORMALIZED OPPORTUNITY INGESTION
+   Governing contracts: docs/COMPLETION_RELEASE_PLAN_2026-08-25.md (M5),
+                        docs/EVIDENCE_PROVENANCE.md
+
+   One normalized opportunity shape that manual entry, email-derived evidence,
+   vision extraction (5C, later), historical import, and future provider
+   adapters (5D, later) all feed. This is the provider-INDEPENDENT foundation
+   the completion release requires; it does not fabricate API access and works
+   fully offline.
+
+   The load-bearing rule, straight from EVIDENCE_PROVENANCE.md: an amount only
+   becomes canonical carrier revenue when its price semantic PROVES it is
+   carrier payout (or an operator-confirmed expected revenue, or a settled
+   amount). A SHIPPER_BOOKABLE_PRICE, an OPERATOR_BID, or an unlabelled number
+   informs evidence/confidence but is NEVER silently converted into revenue.
+   ═══════════════════════════════════════════════════════════════ */
+
+const OPPORTUNITY_SOURCE_TYPE = Object.freeze(['MANUAL','EMAIL','VISION','HISTORY','PROVIDER_API']);
+const PRICE_SEMANTIC = Object.freeze([
+  'CARRIER_PAYOUT','OPERATOR_BID','SHIPPER_BOOKABLE_PRICE','CONTRACT_RATE',
+  'SETTLED_AMOUNT','UNKNOWN_PRICE_SEMANTIC',
+]);
+const MILEAGE_SEMANTIC = Object.freeze(['LOADED_MILES','DEADHEAD_MILES','DISPLAYED_TOTAL_MILES','MAP_ESTIMATE','UNKNOWN_MILEAGE_SEMANTIC']);
+const OPPORTUNITY_CONFIRMATION = Object.freeze(['UNCONFIRMED','OPERATOR_CONFIRMED']);
+
+// Only these price semantics may populate canonical carrier revenue. An
+// operator-confirmed amount is allowed regardless of semantic because the
+// operator is the top of the evidence-precedence order.
+const REVENUE_ELIGIBLE_SEMANTICS = Object.freeze(['CARRIER_PAYOUT','SETTLED_AMOUNT']);
+
+function normalizeOpportunity(raw, opts = {}){
+  const r = raw || {};
+  const pick = (list, v, fallback) => list.includes(v) ? v : fallback;
+
+  const sourceType = pick(OPPORTUNITY_SOURCE_TYPE, opts.sourceType || r.sourceType, 'MANUAL');
+  const confirmationState = pick(OPPORTUNITY_CONFIRMATION, opts.confirmationState || r.confirmationState, 'UNCONFIRMED');
+  const priceSemantic = pick(PRICE_SEMANTIC, r.priceSemantic, 'UNKNOWN_PRICE_SEMANTIC');
+  const mileageSemantic = pick(MILEAGE_SEMANTIC, r.mileageSemantic, 'UNKNOWN_MILEAGE_SEMANTIC');
+
+  // Every material fact is UNKNOWN unless it parses (M1 doctrine, reused).
+  const amount = knownNum(r.amount ?? r.pay ?? r.rate);
+  const loadedMi = knownNum(r.loadedMi ?? r.loadedMiles);
+  const deadMi = knownNum(r.deadMi ?? r.deadheadMiles);
+
+  // The gate: an amount becomes canonical revenue ONLY when its semantic proves
+  // carrier payout, OR the operator explicitly confirmed it as expected revenue.
+  const operatorConfirmedRevenue = confirmationState === 'OPERATOR_CONFIRMED' && r.operatorConfirmedRevenue === true;
+  const canonicalRevenue = (amount !== null && (REVENUE_ELIGIBLE_SEMANTICS.includes(priceSemantic) || operatorConfirmedRevenue))
+    ? amount
+    : null;
+
+  return Object.freeze({
+    // Identity is never quote/load ID alone (spec + EVIDENCE_PROVENANCE.md).
+    // A stable lifecycleId is minted; orderNo is retained as evidence, not identity.
+    lifecycleId: clampStr(r.lifecycleId || newLifecycleId(), 60),
+    orderNo: clampStr(r.orderNo || '', 60),
+    broker: clampStr(r.broker || '', 80),
+    origin: clampStr(r.origin || '', 80),
+    destination: clampStr(r.destination || '', 80),
+    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
+    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+
+    // Money: the raw amount AND its semantic are always kept. canonicalRevenue
+    // is the only field the decision engine may read as revenue.
+    amount,
+    priceSemantic,
+    canonicalRevenue,
+
+    // Mileage semantics stay distinct (M1); a displayed total is not loaded miles.
+    loadedMi,
+    deadMi,
+    mileageSemantic,
+
+    provenance: Object.freeze({
+      sourceType,
+      sourceName: clampStr(r.sourceName || opts.sourceName || '', 80),
+      sourceTimestamp: knownNum(r.sourceTimestamp),
+      rawEvidenceRef: clampStr(r.rawEvidenceRef || '', 120),
+      confirmationState,
+      operatorConfirmedAt: confirmationState === 'OPERATOR_CONFIRMED' ? (knownNum(r.operatorConfirmedAt) ?? Date.now()) : null,
+      fieldConfidence: sourceType === 'MANUAL' ? null : (clampStr(r.fieldConfidence || '', 20) || null),
+    }),
+    // A normalized opportunity that has NOT been proven won is SEEN. It never
+    // fabricates a WON/adjudicated state.
+    opportunity: pick(LIFECYCLE_OPPORTUNITY, r.opportunity, 'SEEN'),
+  });
+}
+
+// M5B: intake a normalized opportunity. Offline-safe (pure IndexedDB, no
+// network) and never fabricates provider access. Creates/links a lifecycle
+// record at its opportunity state via the conservative linker.
+async function intakeOpportunity(raw, opts = {}){
+  const norm = normalizeOpportunity(raw, opts);
+  const link = await linkLifecycle({
+    lifecycleId: norm.lifecycleId,
+    orderNo: norm.orderNo,
+    broker: norm.broker,
+    origin: norm.origin,
+    destination: norm.destination,
+    pickupAt: norm.pickupAt,
+    deliveryAt: norm.deliveryAt,
+    opportunity: norm.opportunity,
+  }, {
+    // Manual entry is a USER mutation; every machine-derived source (email,
+    // vision, history, provider) records as IMPORT.
+    source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
+    sourceId: norm.orderNo || norm.lifecycleId,
+    reason: `${norm.provenance.sourceType} opportunity intake`,
+  });
+  return Object.freeze({ normalized: norm, link });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
    v24.2 — LOAD LIFECYCLE
    Governing contract: docs/V24_2_LOAD_LIFECYCLE_SPEC.md
 
@@ -18566,6 +18680,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
     _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
     getBidWinRateStats,
+    // v24.2 M5A/5B normalized opportunity ingestion
+    normalizeOpportunity, intakeOpportunity,
+    PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
