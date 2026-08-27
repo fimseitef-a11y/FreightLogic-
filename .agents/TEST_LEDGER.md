@@ -181,3 +181,11 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Delta vs the M2 head (166 / 0 across 22): +17 assertions, +1 spec file, entirely `tests/integration/m3-confidence-evidence.spec.mjs`. No pre-existing assertion changed, skipped, weakened or removed.
 - Regression note: all four v24.0 authority/economics/bid/decision specs remain green, which is the load-bearing check for this milestone — v24.1 must not alter v24.0 authority.
 - One in-development failure (M3-13) was a fixture gap in the new spec itself: it omitted `netAfterFuel`/`profitMarginPct`, so the fuel-margin gate correctly returned REJECT. The fixture was completed. No product code changed in response and no assertion was weakened.
+
+## Run — 2026-08-26T20:30Z (M4 complete + M5A/5B)
+
+- Tested SHA: `14671c8` on `claude/audit-reconcile-lane-mechanics-hteibi`.
+- Command: `node tests/run-all.mjs`; Node v22.22.2; Playwright 1.56.1 (CI pins 1.62.1 — not CI-equivalent).
+- Result: **GREEN — 225 passed, 0 failed across 25 spec files**.
+- Progression this session on the branch: 183/23 (M3) → 203/24 (M4 core) → 209/24 (M4b) → 211/24 (M4c, section 16.8) → 225/25 (M5A/5B).
+- New specs since main: m4-load-lifecycle (28), m5-opportunity-ingestion (14). No pre-existing assertion changed, skipped, or weakened.
