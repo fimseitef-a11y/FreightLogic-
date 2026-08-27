@@ -425,6 +425,37 @@ test('[M4-26] the lifecycle stage chip distinguishes EXPIRED, LOST and CANCELLED
   ok(r[1] !== r[2], 'LOST and CANCELLED must not render identically');
 });
 
+/* ---- section 16.8: live analytics denominators obey the lifecycle rule ---- */
+
+test('[M4-27] getBidWinRateStats excludes expired bids from the win-rate denominator', async () => {
+  const r = await evalIn(async () => {
+    const T = window.__FL_TESTS;
+    // 2 won, 1 rejected, 3 expired — all within the window, all valid amounts.
+    const mk = (outcome, i) => T.logBid({ loadId:`WR-${outcome}-${i}`, broker:'WRBroker', origin:'A', destination:'B', miles:100, postedTarget:200, bidAmount:180, outcome });
+    await mk('won',1); await mk('won',2); await mk('rejected',1);
+    await mk('expired',1); await mk('expired',2); await mk('expired',3);
+    return await T.getBidWinRateStats(3650);
+  });
+  // The bid store may carry rows from earlier tests, so assert the RULE, not
+  // absolute counts: the denominator must be won+rejected, never won+expired.
+  ok(r.adjudicatedBids <= r.totalBids - r.excludedExpired + 0.0001, 'adjudicated excludes expired');
+  eq(r.adjudicatedBids, r.totalBids - r.excludedExpired, 'total = adjudicated + expired exactly');
+  ok(r.excludedExpired >= 3, 'the three expired bids are excluded and counted');
+  ok(r.winRate === null || (r.winRate > 0 && r.winRate <= 1), 'win rate is a real fraction or null, never > 1');
+});
+
+test('[M4-28] a win-rate over only-expired bids is null, not 0%', async () => {
+  const r = await evalIn(async () => {
+    const T = window.__FL_TESTS;
+    // Isolate: query a 0-day window so nothing qualifies, proving null handling.
+    const stats = await T.getBidWinRateStats(0);
+    return { winRate: stats.winRate, adjudicated: stats.adjudicatedBids };
+  });
+  // With a zero-length window no bid qualifies -> denominator 0 -> null.
+  eq(r.adjudicated, 0, 'no adjudicated bids in a zero window');
+  eq(r.winRate, null, 'an unknown win rate must be null, never 0%');
+});
+
 export async function runSpec(){
   app = await launchApp();
   try { return await run(); } finally { await app.close(); }

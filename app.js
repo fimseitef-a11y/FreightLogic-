@@ -14358,12 +14358,17 @@ async function getBidWinRateStats(daysBack = 30) {
   const all = await idbReq(stores.bidHistory.getAll());
   const recent = all.filter(b => b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
   const won = recent.filter(b => b.outcome === 'won');
+  // v24.2 section 16.8: the denominator is adjudicated outcomes only. An
+  // 'expired' bid is the bidHistory analog of an EXPIRED opportunity — no known
+  // award decision — so it is excluded, exactly as lifecycleWinRate() excludes
+  // EXPIRED. Counting it understates the win rate on every board you watched.
+  const adjudicated = recent.filter(b => b.outcome === 'won' || b.outcome === 'rejected');
   const winningSpreads = won.map(b => b.spread / b.postedTarget);
   const avgWinningDiscount = winningSpreads.length > 0
     ? winningSpreads.reduce((a, v) => a + v, 0) / winningSpreads.length
     : 0;
   const byWindow = {};
-  for (const b of recent) {
+  for (const b of adjudicated) {
     const wk = b.timeWindow || 'UNKNOWN';
     if (!byWindow[wk]) byWindow[wk] = { total: 0, wins: 0 };
     byWindow[wk].total++;
@@ -14376,8 +14381,11 @@ async function getBidWinRateStats(daysBack = 30) {
   }
   return {
     totalBids: recent.length,
+    adjudicatedBids: adjudicated.length,
+    excludedExpired: recent.length - adjudicated.length,
     wins: won.length,
-    winRate: recent.length > 0 ? won.length / recent.length : 0,
+    // null, not 0, when nothing was adjudicated — an unknown rate is not 0%.
+    winRate: adjudicated.length > 0 ? won.length / adjudicated.length : null,
     avgWinningDiscount,
     bestWindow,
     byWindow,
@@ -16295,6 +16303,9 @@ async function openCounterOfferMemory(){
         if (!brokerMap[b]) brokerMap[b] = { broker: r.brokerDisplay || r.broker || 'Unknown', records: [], wins: 0 };
         brokerMap[b].records.push(r);
         if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
+        // v24.2 section 16.8: no_response is not adjudicated — track it apart.
+        if (r.outcome === 'accepted' || r.outcome === 'partial' || r.outcome === 'rejected') brokerMap[b].adjudicated = (brokerMap[b].adjudicated || 0) + 1;
+        else brokerMap[b].walked = (brokerMap[b].walked || 0) + 1;
       }
       const brokers = Object.values(brokerMap).sort((a,z) => z.records.length - a.records.length);
 
@@ -16302,8 +16313,12 @@ async function openCounterOfferMemory(){
       const outcomeLabel= { accepted:'Accepted', partial:'Partial', rejected:'Rejected', no_response:'Walked' };
 
       el.innerHTML = brokers.map(bk => {
-        const winRate = Math.round((bk.wins / bk.records.length) * 100);
-        const rateColor = winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
+        const adj = bk.adjudicated || 0;
+        const walked = bk.walked || 0;
+        // Denominator is adjudicated attempts only. Unknown (all walked) stays
+        // null rather than a misleading 0%.
+        const winRate = adj > 0 ? Math.round((bk.wins / adj) * 100) : null;
+        const rateColor = winRate === null ? 'var(--text-tertiary)' : winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
         const rows = bk.records.slice(0, 5).map(r => {
           const offer   = Number(r.offerAmt  || 0);
           const counter = Number(r.counterAmt|| 0);
@@ -16323,7 +16338,7 @@ async function openCounterOfferMemory(){
         return `<div class="card" style="margin-bottom:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <div style="font-weight:700;font-size:13px">${escapeHtml(bk.broker)}</div>
-            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate}% win · ${bk.records.length} attempt${bk.records.length!==1?'s':''}</div>
+            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate === null ? '—' : winRate + '% win'} · ${adj} adjudicated${walked ? ` · ${walked} walked` : ''}</div>
           </div>
           ${rows}
           ${bk.records.length > 5 ? `<div class="muted" style="font-size:11px;text-align:center;padding-top:6px">+${bk.records.length-5} more</div>` : ''}
@@ -18550,6 +18565,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     getLifecycle, listLifecycle, linkLifecycle, mergeRestoreData,
     LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
     _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
+    getBidWinRateStats,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     omegaTierForMiles, OMEGA_TIERS,
