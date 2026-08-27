@@ -2,7 +2,7 @@
 
 Status: **implementation contract / docs only**. No runtime, schema, migration, Worker, service-worker, or test code is changed by this document.
 
-This is the governing contract for roadmap milestone **v24.2 Load Lifecycle**. It starts from the state model already adopted in `docs/V24_ROADMAP.md` and turns it into an implementation-ready migration and compatibility plan.
+This is the governing contract for roadmap milestone **v24.2 Load Lifecycle** under `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, the only active roadmap on `main`. It turns the adopted lifecycle state model into an implementation-ready migration and compatibility plan.
 
 ## 1. Objective
 
