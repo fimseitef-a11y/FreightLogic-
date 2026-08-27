@@ -1,0 +1,6 @@
+owner: claude
+token: de20980f-575f-4b36-962f-8d9834fadf4a
+started_utc: 2026-08-27T20:16:10Z
+expected_release_utc: 2026-08-28T00:16:10Z
+paths: app.js, tests/
+task: Fix M6 quote-observation idempotency bug surfaced by the real operator import — _historicalRowFingerprint returns a ~200-char token but sanitizeLifecycle stores migration.migratedFrom via clampStr(120), truncating it so re-import cannot match. Hash the fingerprint to a bounded token + regression test with long provenance.
