@@ -1,159 +1,327 @@
 # FreightLogic Field Test Checklist
 
-Device-only tests that can't be run from this environment (no real iOS Safari,
-no week-long cold start, no real device backgrounding). Do these yourself, on
-your actual phone, when convenient — each is designed to fit under 2 minutes,
-so they're doable between loads or at a dock. You don't need to do them all in
-one sitting; check them off as you go.
+Purpose: the finite **Milestone 7 physical-device certification gate** for the named FreightLogic completion release, plus a separate long-horizon resilience watch list.
 
-For each: **Steps**, then **Pass looks like** / **Fail looks like**.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`.
 
----
+The automated suite must already be green on the exact release-candidate SHA before the blocking device checks below are treated as certification evidence. Do not mark a field check passed from an emulator, desktop browser, AI description, or an old app generation.
 
-## 1. iOS Safari 7-day eviction (⏱ 2 min to set up, then check back in a week)
+## Record before testing
 
-Safari can silently delete IndexedDB data if the site goes unused for 7 days.
-The app shows a warning banner about this (`showSafariWarning()`), but the
-audit couldn't verify Safari actually evicts data on schedule, or that the
-warning is enough to prevent real loss.
+For the candidate being tested, record:
 
-**Steps:**
-1. On your iPhone, open FreightLogic in Safari (not "Add to Home Screen" yet).
-2. Confirm the orange "Safari/iOS Data Warning" banner appears at the top.
-   Log one trip so there's something to lose.
-3. Tap **Add to Home Screen** from the Safari share sheet.
-4. Don't open the app (from Safari *or* the home screen icon) for 8+ days.
-5. On day 8+, open it from the home screen icon.
+- candidate Git SHA;
+- live FreightLogic URL;
+- app/PWA version displayed by the candidate;
+- Worker `/health` version reported by the candidate deployment;
+- iPhone model;
+- iOS version;
+- whether testing from Safari tab or installed Home Screen PWA.
 
-**Pass:** Your trip is still there.
-**Fail:** The app opens to an empty state — your trip is gone. If this
-happens, export a backup (Settings → Export & Backup) *immediately* after any
-session going forward, and treat "Add to Home Screen" + weekly manual backups
-as mandatory, not optional.
+Use non-sensitive synthetic/test entries where possible. Do not put private financial/history source files into screenshots or issue comments.
 
 ---
 
-## 2. Week-long cold start (⏱ 1 min to check, after a week away)
+# A. Completion-release blocking device checks
 
-**Steps:**
-1. Note today's date and your current trip/expense count (Home screen).
-2. Don't open the app for 7+ days (any browser/device — this is about app
-   state survival, not the Safari-specific eviction above).
-3. Open it again.
+These are the representative iPhone/offline/GPS checks required by Milestone 7. They are intentionally finite; the week-long observations later in this file are useful resilience evidence but are not a reason to hold a technically ready release candidate for eight days.
 
-**Pass:** Same trip/expense count, no error toast, dashboard loads normally.
-**Fail:** Error on startup ("App startup failed — try refreshing"), missing
-data, or a stuck loading screen. Screenshot whatever you see and note the
-exact device/browser/OS version.
+## A1. Install, launch, reload, and update path
 
----
+**Steps**
 
-## 3. Real device backgrounding during GPS trip tracking (⏱ 2 min)
+1. Open the exact release-candidate deployment in iPhone Safari.
+2. Add FreightLogic to the Home Screen if it is not already installed.
+3. Launch from the Home Screen.
+4. Reload/reopen once while online.
+5. Close the app fully, reopen it, and verify the same candidate generation is active.
+6. If this candidate is replacing an older installed generation, verify the normal update flow reaches the new generation rather than serving stale cached `app.js`/service-worker assets.
 
-**Steps:**
-1. Start GPS trip tracking (Home → Start Trip).
-2. Background the app (switch to another app, or lock your phone) for at
-   least 10 minutes while actually driving or moving.
-3. Return to FreightLogic.
+**Pass**
 
-**Pass:** Mileage looks right for the distance you actually covered; the trip
-is still "tracking" (not silently stopped).
-**Fail:** Mileage is 0 or way off, tracking silently stopped, or the app
-shows an error when you return to it.
+- app opens without startup error;
+- no blank/stuck shell;
+- expected candidate version is visible/diagnosable;
+- existing local data remains present;
+- installed PWA does not remain on an older cache generation after the update flow.
 
----
+**Fail**
 
-## 4. Storage full mid-save (⏱ 2 min)
-
-Fill your device storage close to the limit (e.g. by taking a bunch of
-photos, or checking iOS/Android Settings → Storage), then try to save a trip
-with 2-3 receipt photos attached.
-
-**Pass:** A clear "Storage full — export a backup and clear old data"
-message. The trip you were entering is either fully saved or not saved at
-all — never half-there (e.g. trip exists but missing the receipts, or a
-corrupted amount).
-**Fail:** Silent failure (tap Save, nothing happens, no message), or a
-trip that saved with some fields blank/wrong that you didn't enter that way.
+- old generation remains active after the documented update path;
+- blank shell, repeated reload loop, startup error, or missing existing local data.
 
 ---
 
-## 5. Airplane mode for a full driving day (⏱ 2 min to start, check at end of day)
+## A2. One-handed decision journey + UNKNOWN-vs-zero integrity
 
-**Steps:**
-1. Enable Airplane Mode before your first load of the day.
-2. Use the app normally all day — log the load, track GPS, log fuel, mark
-   paid, whatever you'd normally do — entirely offline.
-3. At day's end, disable Airplane Mode and open the app.
+Use a harmless synthetic cargo-van load.
 
-**Pass:** Nothing looks different. No sync errors, no "reconnecting" spinner
-stuck, all your entries from the day are there and correct.
-**Fail:** Any data entered while offline is missing, duplicated, or wrong
-once you're back online; the app shows a persistent error banner that a
-reconnect doesn't clear (reload the app once if so, then note whether that
-fixed it).
+**Steps**
+
+1. Enter a normal candidate with all required material facts, including an explicit deadhead value.
+2. Run the normal driver-facing evaluation journey one-handed on the phone.
+3. Confirm the displayed verdict, grade, True RPM, and bid range are readable and internally coherent.
+4. Repeat with the deadhead/material required field **blank**.
+5. Repeat with the same field explicitly entered as **0**.
+
+**Pass**
+
+- complete input yields the expected canonical decision surface;
+- blank/unknown material input produces `UNAVAILABLE`/unknown behavior and does not manufacture a numeric True RPM, grade, or bid;
+- explicit `0` remains a known zero and is not treated as blank;
+- Confidence/Evidence remains descriptive and does not replace the canonical verdict/grade/economics/bid.
+
+**Fail**
+
+- blank becomes zero;
+- unknown load shows fabricated `REJECT`, `F`, `$0.00`, numeric True RPM, or a bid range;
+- AI/Worker output replaces the client-owned canonical fields.
 
 ---
 
-## 6. GPS permission denied mid-trip (⏱ 2 min)
+## A3. Production manual/email-compatible intake survives reload
 
-**Steps:**
+Run this only after M5B is production-wired on the candidate. A helper exposed only through tests does not qualify.
+
+**Steps**
+
+1. From the shipped driver-facing intake surface, create one synthetic opportunity manually (or through the shipped email-compatible intake path).
+2. Include an external amount whose semantic is **not carrier payout** (for example a clearly labelled shipper/bookable or target price if the UI supports that semantic).
+3. Save/confirm through the real production path.
+4. Close the app completely and reopen it.
+5. Reopen the opportunity/evidence details.
+
+**Pass**
+
+- opportunity still exists after reload;
+- source/provenance and price/mileage semantics still exist;
+- a non-carrier price has **not** become canonical carrier revenue;
+- unknown deadhead/mileage stays unknown rather than becoming zero;
+- lifecycle state is conservative (normally `SEEN`/equivalent unless explicit evidence justified a later state).
+
+**Fail**
+
+- evidence exists only until reload;
+- source timestamp/provenance disappears;
+- shipper/target/bid money becomes operator revenue;
+- missing mileage becomes zero;
+- intake silently creates `WON`, `DELIVERED`, or `PAID` without evidence.
+
+---
+
+## A4. Offline full-use round trip
+
+**Steps**
+
+1. While online, confirm the PWA is fully loaded.
+2. Enable Airplane Mode.
+3. Create/edit representative local data: one trip/opportunity, one expense or fuel entry, and one lifecycle/status action available in the shipped UI.
+4. Close and reopen FreightLogic while still offline.
+5. Confirm the offline entries remain.
+6. Disable Airplane Mode and reopen once more.
+
+**Pass**
+
+- installed app launches offline;
+- offline saves persist across close/reopen;
+- reconnect does not duplicate, erase, or mutate the offline records;
+- no permanent reconnect/error spinner remains.
+
+**Fail**
+
+- app cannot launch offline after prior installation;
+- data disappears on offline reopen or reconnect;
+- duplicates appear after reconnect;
+- unknown values are silently filled during reconnect.
+
+---
+
+## A5. Local export/import round trip on the candidate
+
+Use synthetic/non-sensitive records.
+
+**Steps**
+
+1. Create or identify a small test set containing at least a trip, expense/fuel item, lifecycle row, and normalized opportunity evidence if M5B is present.
+2. Run the shipped local export/backup action.
+3. Preserve the exported test file.
+4. Use the shipped import/restore path on a disposable test profile/state or after otherwise making the test safe to restore.
+5. Reopen the restored records.
+
+**Pass**
+
+- protected data classes round-trip intact;
+- lifecycle/evidence semantics and provenance survive;
+- missing deadhead stays missing;
+- integrity/checksum validation accepts the untouched export and rejects a deliberately corrupted test payload when the UI/tooling exposes that check;
+- no duplicate lifecycle/evidence rows are created by an idempotent re-import where the contract says they should dedupe.
+
+**Fail**
+
+- lifecycle/evidence is absent after restore;
+- provenance/semantic fields disappear;
+- unknown mileage becomes zero;
+- export says success but imported protected data differs materially.
+
+---
+
+## A6. Real-device GPS background resilience
+
+**Steps**
+
 1. Start GPS trip tracking.
-2. Mid-trip, go to your phone's Settings and revoke location permission for
-   the browser/app.
-3. Return to FreightLogic and keep driving a bit, then stop tracking.
+2. Drive/move a representative distance.
+3. Background the app or lock the iPhone for at least 10 minutes during the trip.
+4. Return to FreightLogic.
+5. Complete/stop the test trip.
 
-**Pass:** A clear message that location access was lost (not a silent wrong
-number); the mileage shown is either reasonably accurate up to the point
-permission was revoked, or clearly flagged as incomplete/estimated — not
-presented as a confident, precise number that's actually garbage.
-**Fail:** The trip shows a mileage number with no indication it's
-unreliable — this is the one to watch closely, since a bad number here can
-flow straight into your tax mileage deduction with no red flag.
+**Pass**
 
----
+- trip remains active or resumes through the intended recovery path;
+- mileage is plausible for the movement actually made;
+- any degraded/incomplete tracking state is explicitly labelled rather than shown as confidently precise.
 
-## 7. Two tabs open at once, editing the same trip (⏱ 2 min)
+**Fail**
 
-This tests the fix for a real bug this audit found and fixed (F-6) — worth
-confirming it behaves the way it's supposed to on your actual device/browser,
-not just in the automated tests.
-
-**Steps:**
-1. Open FreightLogic in two browser tabs (or two windows) on the same
-   device.
-2. In Tab 1, open a trip for editing, change the pay amount, and save.
-3. Without reloading Tab 2, in Tab 2 open the *same* trip for editing,
-   change a different field (e.g. notes), and save.
-
-**Pass:** Tab 2 shows a message like "This trip changed elsewhere — showing
-the latest version" and reopens with Tab 1's pay change visible. You then
-redo your notes edit and save again — no data silently lost.
-**Fail:** Tab 2's save appears to succeed immediately with no warning, and
-checking the trip afterward shows Tab 1's pay change is gone.
+- tracking silently stops with no recovery state;
+- mileage resets to zero or is wildly wrong without warning;
+- orphaned trip cannot be recovered through the shipped path.
 
 ---
 
-## 8. Clock skew / DST transition (⏱ 2 min, only doable on the actual transition dates)
+## A7. GPS permission loss mid-trip
 
-**Steps:**
-1. Around a DST transition (early November "fall back" or mid-March "spring
-   forward" in the US), log a trip with a pickup time right around 1-3am
-   local time on the transition day.
-2. Check that the trip lands on the calendar date you actually meant, in
-   Trips list, in Tax Season Export, and in the Money Dashboard's week
-   bucket.
+**Steps**
 
-**Pass:** All three show the same, correct calendar date.
-**Fail:** Any of them show the trip a day off, or the week/tax-year bucket
-looks wrong for a date near a year boundary during a DST week.
+1. Start a test GPS trip.
+2. Revoke location permission in iOS Settings while the trip is active.
+3. Return to FreightLogic and then stop/review the trip.
+
+**Pass**
+
+- FreightLogic clearly reports location loss/degraded tracking;
+- mileage is limited to known tracked distance or marked incomplete/estimated;
+- an unreliable figure is not presented as verified precise mileage.
+
+**Fail**
+
+- permission loss is silent;
+- a suspect precise mileage flows into the trip/tax surface with no provenance warning.
 
 ---
 
-## Reporting back
+## A8. Stale-edit conflict on a real browser/device
 
-If any of these fail, the single most useful thing to send back is: which
-numbered test, exact device + OS + browser version, and a screenshot if
-there's anything on screen. For the ones involving data loss (1, 2, 4, 5),
-also note whether you'd made a backup export recently — that's the
-difference between "annoying" and "actually lost work."
+This confirms optimistic concurrency behavior outside the test harness.
+
+**Steps**
+
+1. Open FreightLogic in two Safari tabs/windows using the same local profile.
+2. In Tab 1, open the same existing trip (or the supported expense/fuel record) and save a change.
+3. Without refreshing Tab 2, save a conflicting edit to that same record.
+
+**Pass**
+
+- stale save is rejected/refreshes to the latest version with a clear conflict message;
+- Tab 1's newer value is not silently overwritten.
+
+**Fail**
+
+- both saves appear successful and the later stale form silently destroys the first edit.
+
+---
+
+# B. Live deployment checks
+
+These are release blockers too, but Claude/automation can perform most of them. Record their result against the same exact candidate SHA used for the iPhone tests.
+
+## B1. Cloudflare generation parity
+
+**Pass requires**
+
+- live Pages/Worker deployment resolves to the expected candidate generation;
+- app/PWA/service-worker/manifest/cache-buster/Worker markers agree with the final selected release generation;
+- no stale preview/branch deployment is mistaken for production.
+
+## B2. Worker health and auth boundary
+
+**Pass requires**
+
+- `/health` reachable and reports the expected Worker generation/bindings;
+- unauthorized admin request returns the expected denial;
+- no secret/token is exposed in response/logging surfaced to the client.
+
+## B3. Live `/evaluate` authority-boundary smoke test
+
+With a non-sensitive fixture:
+
+**Pass requires**
+
+- complete canonical decision can be explained without Worker recomputing/replacing verdict, grade, True RPM, or bid;
+- incomplete canonical decision preserves `UNAVAILABLE`, unknown grade, `trueRPM=null`, and suppressed/null bid rather than manufacturing `REJECT/F/$0.00`.
+
+## B4. Live `/extract` smoke test
+
+If `/extract` is part of the deployed candidate, use a non-sensitive synthetic fixture.
+
+**Pass requires**
+
+- extraction returns only the bounded evidence shape it is authorized to return;
+- no hidden bid/verdict/lifecycle inference;
+- extraction failure/no-data remains explicit rather than fabricated.
+
+## B5. Rollback point
+
+**Pass requires**
+
+- exact rollback SHA/release is recorded;
+- documented rollback procedure is executable, not merely descriptive.
+
+---
+
+# C. Non-blocking long-horizon resilience watch list
+
+These checks are valuable after the finite completion gate. Record failures as follow-up defects, but do not claim they were performed if the observation window has not elapsed.
+
+## C1. 7–8 day cold-storage observation
+
+1. Record current test trip/expense counts.
+2. Leave the installed app unused for 8+ days.
+3. Reopen the Home Screen PWA.
+
+**Watch for:** local data loss, startup failure, stale cache generation, or storage-warning behavior that is misleading on the actual iOS version.
+
+## C2. Storage-pressure save failure
+
+With device storage under deliberate pressure, save a test trip with receipt images.
+
+**Pass expectation:** explicit storage/error handling; no silently half-written operational record.
+
+## C3. DST / clock-boundary observation
+
+Around an actual DST or year boundary, record a trip near the local transition.
+
+**Pass expectation:** intended local calendar date agrees across trip list, money/week buckets, and tax export; lifecycle source timestamps retain their real clock/time-zone meaning where captured.
+
+---
+
+# Certification record
+
+For the named completion release, record each blocking item as one of:
+
+- `PASS` — personally/actually observed on the exact candidate;
+- `FAIL` — observed defect, include reproduction evidence;
+- `NOT RUN` — never convert this to PASS from inference;
+- `NOT APPLICABLE` — only if the canonical completion plan says the feature is non-blocking/not shipped in this release.
+
+Minimum report for a failure:
+
+- checklist ID (`A1`, `A2`, etc.);
+- exact candidate SHA/version;
+- iPhone model + iOS version + Safari/Home Screen context;
+- reproduction steps;
+- screenshot when useful;
+- whether local data was lost/changed;
+- whether an export/backup existed before the failure.
+
+The completion release is not certified until all Milestone 7 blocking automated, deployment, and physical-device checks applicable to the candidate are PASS and the current certification-state document has no remaining proof-backed runtime blocker.
