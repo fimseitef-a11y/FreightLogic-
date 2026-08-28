@@ -1,0 +1,6 @@
+owner: claude
+token: 5a4ec412-e006-420a-b8cd-cb67be0e6731
+started_utc: 2026-08-28T06:25:13Z
+expected_release_utc: 2026-08-28T20:25:13Z
+paths: app.js, midwest-stack-authority.js, cloud-backup-worker.js, service-worker.js, index.html, manifest.json, sw-bridge.js, voice-load.js, scripts/, tests/
+task: Issue #119 Batch A + Batch B — release-integrity hotfix (DB v14 indexes, cloudPushBackup TDZ, lifecycle concurrency, reused-ID safety, durable normalized evidence, Worker absence parity, M3 real evidence wiring, M7 runner semantics) and M6 reconciliation correctness (SHA-256 identity, stableId laundering, per-field provenance, dry-run class, recency weighting).
