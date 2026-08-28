@@ -18,12 +18,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const { test, run } = createSuite('unit/m7-runner-semantics.spec.mjs');
 
+// The certifier shells out to scripts/verify-cloudflare-parity.mjs, whose live
+// half reaches the deployed Pages/Worker origins. Invoking the certifier once
+// per test meant up to five rounds of that on every CI run — enough to stall
+// the whole suite on a runner whose network reaches those origins slowly. It is
+// run ONCE and the output shared; every assertion below is about that one run.
+let _cached = null;
 function runCertify(args = []){
+  if (args.length === 0 && _cached) return _cached;
+  let result;
   try {
-    return { code: 0, out: execFileSync('node', ['scripts/m7-certify.mjs', ...args], { cwd: ROOT, encoding: 'utf8' }) };
+    result = { code: 0, out: execFileSync('node', ['scripts/m7-certify.mjs', ...args], { cwd: ROOT, encoding: 'utf8', timeout: 180000 }) };
   } catch (e) {
-    return { code: e.status ?? 1, out: String(e.stdout || '') + String(e.stderr || '') };
+    result = { code: e.status ?? 1, out: String(e.stdout || '') + String(e.stderr || '') };
   }
+  if (args.length === 0) _cached = result;
+  return result;
 }
 
 // The canonical state this repo is actually in right now. Read from docs so the

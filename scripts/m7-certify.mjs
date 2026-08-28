@@ -102,7 +102,10 @@ ok('.github/workflows/lanes.yml present (lane guards)', existsSync(path.join(ROO
 
 /* ---- 5. static Cloudflare parity (no network half) ---- */
 try {
-  execSync('node scripts/verify-cloudflare-parity.mjs', { cwd: ROOT, stdio: 'pipe' });
+  // Bounded: that script's live half reaches deployed origins. It has its own
+  // per-fetch timeout, and this is the belt-and-braces bound so a stalled
+  // network can never hang the preflight itself.
+  execSync('node scripts/verify-cloudflare-parity.mjs', { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
   ok('verify-cloudflare-parity static CSP check', true);
 } catch (e) {
   const out = String(e.stdout || '') + String(e.stderr || '');

@@ -21,14 +21,26 @@ const EXPECTED = {
   overlayScript: "midwest-stack-authority.js?v=24.0.2"
 };
 
+// Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
+// can hang indefinitely on an unreachable origin is not a gate — it just stops
+// the pipeline with no verdict. 15 seconds is far longer than any of these
+// static assets or the Worker's /health should ever take.
+const LIVE_FETCH_TIMEOUT_MS = 15000;
+function liveFetch(url) {
+  return fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout ? AbortSignal.timeout(LIVE_FETCH_TIMEOUT_MS) : undefined,
+  });
+}
+
 async function fetchText(url) {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await liveFetch(url);
   const text = await res.text();
   return { url, ok: res.ok, status: res.status, headers: res.headers, text };
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await liveFetch(url);
   let json = null;
   try { json = await res.json(); } catch {}
   return { url, ok: res.ok, status: res.status, headers: res.headers, json };
