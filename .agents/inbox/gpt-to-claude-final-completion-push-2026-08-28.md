@@ -6,11 +6,11 @@ Operator directive: **finish FreightLogic now and get the completion release cer
 ## Current integration state
 
 - Current `main`: `a6d5f9ff5ed5c88a025b9c8e6eea3fdc750d2ed9` or newer.
-- No open pull requests were present when this packet was written.
-- `agent-coordination/.agents/locks/` contained no active lock other than `.gitkeep`.
-- PR #116 is merged: `scripts/m7-certify.mjs` now provides the finite automated Milestone-7 certification runner.
+- Issue #119 is the finite execution tracker; it is not a second roadmap.
+- PR #120 is a GPT-owned docs-only certification addendum correcting post-#116/#118 release-governance state; reconcile from current `main` if it has merged before core work integrates.
+- PR #116 is merged: `scripts/m7-certify.mjs` exists, but **while the canonical certification state is HOLD it is only an automated release preflight, not proof that the completion release is certified or freeze-ready.** A skipped full suite is SKIP/PENDING, not PASS.
 - PR #118 is merged: ANCS/DispatchLand notification-capture proof and future core handoff are documented. **ANCS is post-release product expansion unless it becomes necessary for an already-required intake gate; do not let it displace release correctness work.**
-- The authoritative blocker descriptions remain `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md` plus `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md` and the more detailed prior packet `.agents/inbox/gpt-to-claude-completion-continuation-2026-08-27.md`.
+- The authoritative blocker descriptions remain `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`, the 2026-08-28 certification addendum once merged, `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md`, and `.agents/inbox/gpt-to-claude-completion-continuation-2026-08-27.md`.
 
 ## Execution order — close, test, integrate, continue
 
@@ -28,6 +28,7 @@ Close the current-source correctness blockers with real-path regressions:
 6. Worker compatibility with canonical absence: preserve `UNAVAILABLE`, grade `?`, `trueRPM=null`, and suppressed/null bid; never manufacture REJECT/F/$0.00 or competing canonical answers.
 7. M3 real evidence wiring: actual fuel provenance, NWS zero-vs-no-observation semantics, compact evaluation evidence snapshot, actual lane/broker recency inputs, no broker materiality when absent, actual vehicle-fit evidence.
 8. Durable normalized-opportunity evidence and a **real production M5B caller**: production surface -> `normalizeOpportunity()` -> durable evidence -> conservative lifecycle link. Preserve price/mileage semantics, source timestamps, confirmation state, raw evidence refs, unknown confirmation times, and DISPLAYED_TOTAL_MILES vs loaded-mile separation through reload/full+delta backup/restore/export/import/checksum.
+9. Repair `scripts/m7-certify.mjs` release semantics so it fails closed / reports NOT CERTIFIABLE while canonical state is HOLD; default fast mode is preflight, skipped suite stays SKIP/PENDING, and only an explicitly executed green suite contributes suite evidence.
 
 ### Batch B — M6 reconciliation correctness
 
@@ -54,15 +55,15 @@ Only after A+B are green:
 - preserve CSP byte parity and install-critical service-worker shell requirements;
 - create a rollback point.
 
-### Batch D — automated certification
+### Batch D — exact-candidate automated gate
 
 On the exact integrated candidate SHA:
 
 1. run the full required Playwright suite with no skipped/weakened safety assertions;
 2. run lane checks;
-3. run `node scripts/m7-certify.mjs --suite`;
+3. run `node scripts/m7-certify.mjs --suite` only after its HOLD/preflight semantics have been repaired;
 4. resolve any failure at the cause; do not relabel a red gate as informational;
-5. keep a frozen candidate once all automated gates are green.
+5. freeze the candidate only when the canonical blocker state is clear and all applicable automated gates are genuinely green.
 
 ### Batch E — operator-only release gate
 
