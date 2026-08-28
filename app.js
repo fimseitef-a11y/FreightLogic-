@@ -863,7 +863,16 @@ function _historicalRowFingerprint(rec){
     'amt', String(knownNum(r.amount ?? r.pay ?? r.rate) ?? ''),
     'pk', clampStr(r.pickupAt || '', 20),
   ];
-  return 'fp:' + parts.join('~');
+  // Hash to a BOUNDED token. The raw joined string routinely exceeds 200 chars
+  // with real provenance (long filenames + evidence refs), and migratedFrom is
+  // persisted through clampStr(120) — an unhashed fingerprint would be truncated
+  // on write and never match on re-import, silently breaking idempotency for
+  // quote observations (which have no short order key to fall back on). djb2
+  // over the full content keeps the stored token stable and short.
+  const raw = parts.join('~');
+  let h = 5381;
+  for (let i = 0; i < raw.length; i++) h = (((h << 5) + h) + raw.charCodeAt(i)) >>> 0;
+  return 'fp:' + h.toString(16).padStart(8, '0') + ':' + String(raw.length);
 }
 
 function _orderStableKey(rec){
@@ -2435,13 +2444,18 @@ async function importJSON(file, opts={}){
       type: clampStr(r.type || '', 40),
     }));
 
+    // v24.2: local JSON import must persist loadLifecycle too. exportJSON writes
+    // it and mergeRestoreData (cloud restore) reads it, but this local-import
+    // path previously dropped it — the same export-but-drop-on-import class as
+    // the X-07 restore bug. Sanitized through the same guard as every other store.
+    const safeLifecycleArr = arr(data.loadLifecycle).map(r => { try { return sanitizeLifecycle(r); } catch { return null; } }).filter(Boolean);
     const safeGpsLogsArr = arr(data.gpsLogs).filter(r => r && typeof r === 'object' && typeof r.timestamp === 'number').map(r => ({
       ...deepCleanObj(r),
       tripTrackingId: clampStr(r.tripTrackingId || '', 60),
     }));
 
     const mode = opts.mode || 'merge';
-    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs'],'readwrite');
+    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs','loadLifecycle'],'readwrite');
     if (mode === 'replace'){
       try{ stores.trips.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.expenses.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -2455,6 +2469,7 @@ async function importJSON(file, opts={}){
       try{ stores.bidHistory.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.documents.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.gpsLogs.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores.loadLifecycle.clear(); }catch(e){ console.warn("[FL]", e); }
     }
     const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
     putAll(stores.trips, safeTripArr);
@@ -2469,6 +2484,7 @@ async function importJSON(file, opts={}){
     putAll(stores.bidHistory, safeBidHistoryArr);
     putAll(stores.documents, safeDocumentsArr);
     putAll(stores.gpsLogs, safeGpsLogsArr);
+    putAll(stores.loadLifecycle, safeLifecycleArr);
     await waitTxn(txn);
     SETTINGS_CACHE.clear();
     toast('Import complete');

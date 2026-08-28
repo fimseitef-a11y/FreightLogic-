@@ -205,6 +205,31 @@ test('[M6-14] calibrateFromLifecycle bridges lifecycle rows via an rpm lookup', 
   eq(r.winningRangeSampleSize, 1, 'one priced win from the lookup');
 });
 
+test('[M6-15] a quote observation with LONG provenance stays idempotent on re-import', async () => {
+  // Regression for the real 2026-08-27 bundle: fingerprints ran ~200 chars,
+  // but migration.migratedFrom is persisted through clampStr(120). An unhashed
+  // fingerprint was truncated on write and never matched on re-import, so
+  // fingerprint-only quote observations duplicated. The fingerprint is now a
+  // bounded hash. A long source name + evidence ref reproduces the overflow.
+  const longSource = 'FREIGHT_INCREMENTAL_LEDGER_2026-08-21_TO_2026-08-26.csv';
+  const longEvidence = 'incr::Lake Zurich, IL-Toledo, OH-2026-08-21 operator-confirmed chat-recovered pending source match';
+  const rec = { kind:'QUOTE_OBSERVATION', origin:'Lake Zurich, IL', destination:'Toledo, OH',
+    amount:450, priceSemantic:'OPERATOR_BID', sourceName:longSource, sourceTimestamp:1787702400000, rawEvidenceRef:longEvidence };
+  const r = await app.page.evaluate(async (rec) => {
+    const T = window.__FL_TESTS;
+    const fp = T._historicalRowFingerprint(rec);
+    const before = (await T.listLifecycle()).length;
+    await T.importHistoricalOpportunities([rec], { sourceFile:'longprov' });
+    const mid = (await T.listLifecycle()).length;
+    await T.importHistoricalOpportunities([rec], { sourceFile:'longprov' }); // re-import
+    const after = (await T.listLifecycle()).length;
+    return { fpLen: fp.length, addedFirst: mid - before, addedSecond: after - mid };
+  }, rec);
+  ok(r.fpLen <= 120, `the stored fingerprint token must fit under the 120-char persistence limit (was ${r.fpLen})`);
+  eq(r.addedFirst, 1, 'first import creates the observation');
+  eq(r.addedSecond, 0, 're-importing the same long-provenance observation must NOT duplicate');
+});
+
 export async function runSpec(){
   app = await launchApp();
   try { return await run(); } finally { await app.close(); }
