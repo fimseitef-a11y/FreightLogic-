@@ -3053,7 +3053,13 @@ async function importJSON(file, opts={}){
       'f30LastExportYear','f31TrendView',
       // v23.5 time-windows / blitz / auction / bid-log
       'cvsaAlertsEnabled','opportunityCostEnabled','auctionUndercut',
-      'emptyDayThresholdHours','lastWinningBidStats']);
+      'emptyDayThresholdHours','lastWinningBidStats',
+      // v23.9 Phase 1/7 + v24 keys that were already written but never allowed
+      // through import — a settings key the app writes but the importer drops
+      // is the same class of gap as X-07.
+      'vehicleProfiles','activeVehicleId','vanProfile',
+      // Issue #119 Batch A, item 7 — fuel-price provenance
+      'fuelPriceProvenance']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     const isAllowedSettingsKey = k => {
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
@@ -5232,7 +5238,8 @@ async function _saveSetupWizardResults(vals){
   if (vals.vehicleYear)  tasks.push(setSetting('vehicleYear',    clampStr(vals.vehicleYear, 10)));
   if (vals.vehicleMake)  tasks.push(setSetting('vehicleMake',    clampStr(vals.vehicleMake, 60)));
   if (vals.avgMpg)       tasks.push(setSetting('vehicleMpg',     posNum(vals.avgMpg)));
-  if (vals.fuelCost)     tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
+  if (vals.fuelCost){    tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
+                         tasks.push(setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR)); }
   if (vals.weeklyGoal)   tasks.push(setSetting('weeklyGoal',     posNum(vals.weeklyGoal)));
   if (vals.region)       tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
   if (vals.payloadLimit) tasks.push(setSetting('payloadLimitLbs', posNum(vals.payloadLimit)));
@@ -8750,46 +8757,133 @@ function summarizeEvidenceConfidence(items, materialDomains){
 function buildEvaluationEvidence(ctx = {}){
   const items = [];
   const now = Date.now();
+  const fuelPrice = Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2);
 
-  // Fuel price: a live EIA observation, or the static corridor baseline. These
-  // are not interchangeable and the driver should be able to tell which they got.
-  const usingLiveFuel = (typeof LIVE_SOURCE_HEALTH !== 'undefined')
-    && LIVE_SOURCE_HEALTH.get && !!LIVE_SOURCE_HEALTH.get('EIA');
-  items.push(usingLiveFuel
-    ? evidenceFromLiveSource('EIA', {
-        key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
-        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal`,
-      })
-    : buildEvidenceItem({
-        key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
-        sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
-        isStaticFallback: true,
-        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal (static baseline)`,
-      }));
+  // ── Fuel price ────────────────────────────────────────────────────────────
+  // Issue #119 Batch A, item 7: provenance is about ORIGIN, not coincidence.
+  // This used to claim EIA whenever an EIA health record merely EXISTED — so a
+  // price the driver typed by hand was attributed to EIA, and doubly so when
+  // the two numbers happened to be equal. The recorded provenance now decides.
+  const fuelProv = ctx.fuelProvenance || null;
+  if (fuelProv?.source === 'EIA'){
+    items.push(evidenceFromLiveSource('EIA', {
+      key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
+      // The EIA observation's OWN period, not when we stored it.
+      observedAt: fuelProv.observedAt,
+      valueSummary: `Fuel $${fuelPrice}/gal (EIA observation)`,
+    }));
+  } else if (fuelProv?.source === 'OPERATOR'){
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (driver)',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      // When the operator set it — a real, known observation instant.
+      observedAt: fuelProv.at,
+      valueSummary: `Fuel $${fuelPrice}/gal (your setting)`,
+    }));
+  } else {
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
+      sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+      isStaticFallback: true,
+      valueSummary: `Fuel $${fuelPrice}/gal (static baseline)`,
+    }));
+  }
 
-  // Personal lane history behind the USA evidence layer, when it reported one.
-  const laneSample = knownNum(ctx.usaResult?.laneSampleSize);
+  // ── Personal lane history ─────────────────────────────────────────────────
+  // Read from the ACTUAL laneHistory record the evaluator fetched, not from
+  // fields the USA engine never returned (`laneSampleSize`/`laneLastSeenAt`
+  // did not exist, so every evaluation reported an unknown sample).
+  const laneIntel = ctx.laneIntel || null;
+  const laneSample = knownNum(laneIntel?.count);
   items.push(buildEvidenceItem({
     key: 'market.laneHistory', category: 'MARKET', source: 'laneHistory',
     sourceStatus: laneSample === null ? EVIDENCE_SOURCE_STATUS_UNKNOWN : LIVE_SOURCE_STATUS.OK,
     sampleSize: laneSample, windowDays: 90, evaluatedAt: now,
-    observedAt: knownNum(ctx.usaResult?.laneLastSeenAt),
+    // The lane's own last-run date is its observation instant. Unknown stays
+    // unknown — it is never backfilled with "now".
+    observedAt: _evidenceInstantMs(laneIntel?.lastDate),
     valueSummary: laneSample === null
       ? 'No personal lane history for this corridor'
       : `${laneSample} personal observation(s) on this lane`,
   }));
 
-  // Broker evidence. An unresolved (legacyUnkeyed) identity can never be HIGH,
-  // and we never infer identity from an ambiguous customer field.
+  // ── Broker history ────────────────────────────────────────────────────────
+  // With no broker entered there is no broker DOMAIN to be confident or
+  // unconfident about. Emitting an UNKNOWN-status row made the broker domain
+  // material and capped overall confidence at LOW — a synthetic penalty for a
+  // question nobody asked. An inapplicable domain is omitted so it stays
+  // UNKNOWN and is excluded from the aggregate; a FAILED observation, by
+  // contrast, is still emitted (see weather below).
   const brokerName = String(ctx.broker || '').trim();
-  items.push(buildEvidenceItem({
-    key: 'broker.history', category: 'BROKER', source: 'bidHistory',
-    sourceStatus: brokerName ? LIVE_SOURCE_STATUS.OK : EVIDENCE_SOURCE_STATUS_UNKNOWN,
-    sampleSize: knownNum(ctx.usaResult?.brokerSampleSize),
-    identityResolved: brokerName ? undefined : false,
-    evaluatedAt: now,
-    valueSummary: brokerName ? `Broker history for ${brokerName}` : 'No broker entered — no broker evidence',
-  }));
+  if (brokerName){
+    const bi = ctx.brokerIntel || null;
+    items.push(buildEvidenceItem({
+      key: 'broker.history', category: 'BROKER', source: 'bidHistory',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      sampleSize: knownNum(bi?.sampleSize),
+      observedAt: knownNum(bi?.lastSeenAt),
+      // Never infer identity from an ambiguous customer field; an unresolved
+      // (legacyUnkeyed) identity can never be HIGH whatever the sample size.
+      identityResolved: bi?.identityResolved === false ? false : undefined,
+      evaluatedAt: now,
+      valueSummary: knownNum(bi?.sampleSize) === null
+        ? `No recorded history with ${brokerName}`
+        : `${bi.sampleSize} recorded interaction(s) with ${brokerName}`,
+    }));
+  }
+
+  // ── Route weather ─────────────────────────────────────────────────────────
+  // A successful route observation reporting ZERO alerts is a real fact and
+  // must read as one. No fetch, an offline device, a timeout or an HTTP error
+  // is an ABSENCE and must never render as "0 alerts". Both cases are emitted,
+  // because a failed observation is exactly the thing a silent omission would
+  // disguise as "nothing to worry about".
+  const wx = ctx.weatherObservation || null;
+  if (wx && wx.observed){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: wx.observedAt, evaluatedAt: now,
+      // Deliberately NO sampleSize: the number of route POINTS answered is not
+      // an aggregate sample of observations, and running it through the
+      // sample-size rule (HIGH >=10) would score a perfectly healthy two-point
+      // route observation as LOW purely because a route has two ends.
+      // A partially observed route is a real but incomplete observation.
+      isIndirect: wx.partial === true ? true : undefined,
+      valueSummary: wx.alertCount === 0
+        ? `No active NWS alerts on ${wx.pointsObserved} route point(s)`
+        : `${wx.alertCount} active NWS alert(s) on route`,
+    }));
+  } else if (wx){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: wx.status === 'NO_ROUTE_POINTS' ? EVIDENCE_SOURCE_STATUS_UNKNOWN : wx.status,
+      observedAt: null, evaluatedAt: now,
+      valueSummary: 'Route weather NOT observed — this is unknown, not "no alerts"',
+    }));
+  }
+
+  // ── Vehicle fit ───────────────────────────────────────────────────────────
+  // `vanFitChecked: true` was hardcoded at the call site, so this claimed a
+  // completed dimensional check on every load — including the common case
+  // where the posting carried no dimensions at all. With nothing measured
+  // there is no vehicleFit domain, so nothing is emitted.
+  const fit = ctx.vanFit || null;
+  if (fit && fit.checked){
+    const known = Number(fit.knownDims || 0);
+    items.push(buildEvidenceItem({
+      key: 'vehicle.fit', category: 'VEHICLE', source: 'checkVanFit + vanProfile',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: now, evaluatedAt: now,
+      // A partial measurement cannot support a full-confidence fit claim. It
+      // does NOT soften a hard rejection: a load that violated a limit never
+      // reaches here — mwEvaluateLoad returns before economics.
+      isIndirect: fit.complete === true ? undefined : true,
+      valueSummary: fit.complete
+        ? `Fits the configured van profile on all 4 measured limits`
+        : `Fits on the ${known} dimension(s) actually supplied — the rest are unmeasured`,
+    }));
+  }
 
   return Object.freeze(items);
 }
@@ -9123,14 +9217,22 @@ async function mwEvaluateLoad(){
   // intake path (they all funnel into these same fields). Only checks
   // dimensions actually entered; most load postings have none, and this is
   // a safety net, not a requirement.
+  // Issue #119 Batch A, item 7: the outcome is retained so evidence can report
+  // the MEASUREMENT STATE that actually applied — checked or not, complete or
+  // partial — instead of the hardcoded `vanFitChecked: true` that claimed a
+  // completed dimensional check on every load, dimensions or not.
+  let vanFitState = { checked: false, complete: false, knownDims: 0, fits: null };
   {
     const lengthIn = numVal('mwLoadLengthIn', NaN);
     const widthIn = numVal('mwLoadWidthIn', NaN);
     const heightIn = numVal('mwLoadHeightIn', NaN);
     const weightLbs = numVal('mwLoadWeightLbs', NaN);
-    if ([lengthIn, widthIn, heightIn, weightLbs].some(v => Number.isFinite(v) && v > 0)){
+    const dims = [lengthIn, widthIn, heightIn, weightLbs];
+    const knownDims = dims.filter(v => Number.isFinite(v) && v > 0).length;
+    if (knownDims > 0){
       const vanProfile = await getVanProfile();
       const fit = checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, vanProfile);
+      vanFitState = { checked: true, complete: knownDims === dims.length, knownDims, fits: fit.fits };
       if (!fit.fits){
         _renderVanFitBlock(out, fit.violations);
         return;
@@ -9339,9 +9441,16 @@ async function mwEvaluateLoad(){
 
   // v24.1: assemble evidence for THIS evaluation. Built here, after the
   // canonical decision inputs are settled, so it can only describe them.
+  // Issue #119 Batch A, item 7: the REAL inputs this evaluation used, not
+  // placeholders. `weatherChecked: !!(warnings||[]).length` was true whenever
+  // ANY warning of any kind existed, which had nothing to do with whether a
+  // route weather observation had been made.
   const evidenceItems = buildEvaluationEvidence({
     economicsResult, usaResult, geo, dest, broker,
-    vanFitChecked: true, weatherChecked: !!(warnings || []).length,
+    fuelProvenance: await getFuelPriceProvenance(),
+    laneIntel, brokerIntel,
+    weatherObservation: getRouteWeatherObservation(`${origin || ''}|${dest || ''}`),
+    vanFit: vanFitState,
   });
   const unifiedDecision = buildUnifiedDecisionContract({
     evidenceItems,
@@ -9370,6 +9479,24 @@ async function mwEvaluateLoad(){
       trueRPM: +trueRPM.toFixed(2),
       origin: origin || '', dest: dest || '',
       revenue: +revenue, loadedMi: +loadedMi,
+      // Issue #119 Batch A, item 7: a compact confidence/evidence snapshot, so
+      // a past evaluation can be read back with the evidence state it was made
+      // under. Bounded deliberately — this lives in sessionStorage. Entries
+      // written before this field exists simply lack it, and the renderer
+      // treats its absence as "not recorded", never as a healthy result.
+      confidence: unifiedDecision.confidence ? {
+        overall: unifiedDecision.confidence.overall,
+        market: unifiedDecision.confidence.market,
+        broker: unifiedDecision.confidence.broker,
+        operatingCosts: unifiedDecision.confidence.operatingCosts,
+        weatherSafety: unifiedDecision.confidence.weatherSafety,
+        vehicleFit: unifiedDecision.confidence.vehicleFit,
+      } : null,
+      evidence: (unifiedDecision.evidence || []).slice(0, 8).map(e => ({
+        key: e.key, source: e.source, sourceStatus: e.sourceStatus,
+        freshness: e.freshness, confidence: e.confidence, sampleSize: e.sampleSize,
+        valueSummary: clampStr(e.valueSummary || '', 120),
+      })),
     };
     let hist = [];
     try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
@@ -9917,7 +10044,7 @@ function _mwRenderDecision(out, d){
   if (navigator.onLine && (d.origin || d.dest)){
     const origCoords = d.origin ? getMarketCoords(d.origin) : null;
     const destCoords = d.dest ? getMarketCoords(d.dest) : null;
-    checkRouteWeather(origCoords, destCoords).then(alerts => {
+    checkRouteWeather(origCoords, destCoords, `${d.origin || ''}|${d.dest || ''}`).then(alerts => {
       const weatherSlot = $('#mwWeatherAlertSlot', out);
       if (!weatherSlot || !alerts.length) return;
       const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(clampStr(a.event,80))} at ${escapeHtml(clampStr(a.label,80))} (NWS)</span></div>`).join('');
@@ -10116,11 +10243,14 @@ function _renderEvalHistory(){
   const rows = hist.map((h, i) => {
     const route = (h.origin && h.dest) ? `${escapeHtml(h.origin)} → ${escapeHtml(h.dest)}` : '—';
     const ago = i === 0 ? 'Just now' : _timeAgoShort(h.ts);
+    // A legacy entry written before the snapshot field existed simply has no
+    // confidence recorded. That reads as "not recorded" — never as HIGH.
+    const confLabel = h.confidence?.overall ? ` · confidence ${escapeHtml(h.confidence.overall)}` : '';
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < hist.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
       <div style="width:28px;height:28px;border-radius:6px;background:${h.gradeColor}22;border:1px solid ${h.gradeColor}55;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${h.gradeColor};font-family:var(--font-mono);flex-shrink:0">${escapeHtml(h.grade)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${route}</div>
-        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}${confLabel}</div>
       </div>
       <div style="font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);flex-shrink:0">${h.revenue ? '$'+h.revenue.toLocaleString() : ''}</div>
     </div>`;
@@ -12165,6 +12295,9 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
   await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
   markFuelPriceUpdated().catch(()=>{});
+  // The operator saved this settings panel, so this price is the driver's own
+  // figure — whatever number it happens to equal.
+  setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
   // Monthly fixed costs → auto-calculate opCostPerMile
   const mIns = Number($('#monthlyInsurance')?.value || 0);
   const mVeh = Number($('#monthlyVehicle')?.value || 0);
@@ -16366,6 +16499,31 @@ async function markFuelPriceUpdated(){
   await setSetting('fuelPriceUpdatedAt', Date.now());
 }
 
+// Issue #119 Batch A, item 7: record WHICH source the current fuel price came
+// from. Evidence previously claimed "EIA" whenever an EIA health record
+// existed at all — even when the operator had typed the price by hand, and
+// even when the two numbers happened to be equal. Provenance is about origin,
+// not about coincidence of value.
+const FUEL_PRICE_SOURCE = Object.freeze({ OPERATOR: 'OPERATOR', EIA: 'EIA' });
+async function setFuelPriceProvenance(source, observedAt = null){
+  await setSetting('fuelPriceProvenance', {
+    source: FUEL_PRICE_SOURCE[source] ? source : FUEL_PRICE_SOURCE.OPERATOR,
+    at: Date.now(),
+    // The SOURCE observation instant (the EIA period), not the moment we
+    // stored it. Null when the operator typed a number with no source clock.
+    observedAt: _evidenceInstantMs(observedAt),
+  });
+}
+async function getFuelPriceProvenance(){
+  const p = await getSetting('fuelPriceProvenance', null);
+  if (!p || typeof p !== 'object') return null;
+  return {
+    source: FUEL_PRICE_SOURCE[p.source] || FUEL_PRICE_SOURCE.OPERATOR,
+    at: knownNum(p.at),
+    observedAt: knownNum(p.observedAt),
+  };
+}
+
 // ── F7: Deadhead Calculator with GPS ─────────────────────────────────────
 let _gpsCache = null; // { lat, lng, ts }
 
@@ -17882,6 +18040,9 @@ async function fetchEIAGasPrice(){
       if (ev.target?.id === 'eiaApplyBtn'){
         ev.preventDefault();
         await setSetting('fuelPrice', price);
+        // Applying an EIA observation explicitly switches provenance to EIA,
+        // carrying that observation's own period as its source instant.
+        await setFuelPriceProvenance(FUEL_PRICE_SOURCE.EIA, period || null);
         const fpEl = $('#fuelPrice');
         if (fpEl) fpEl.value = price.toFixed(2);
         toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA Midwest gas)`);
@@ -17896,20 +18057,53 @@ async function fetchEIAGasPrice(){
 // v21 T4B: NWS Weather Alerts for Route
 // ════════════════════════════════════════════════════════════════
 const _nwsCache = new Map();
-async function checkRouteWeather(originCoords, destCoords){
-  if (!navigator.onLine) { setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE); return []; }
+// Issue #119 Batch A, item 7: a route weather OBSERVATION record, distinct
+// from the source-health registry. "Zero alerts on a route we actually
+// checked" and "we never checked this route" are completely different facts,
+// and evidence must never render the second as the first. Keyed by route so a
+// previous evaluation's observation can never be reported for this one.
+let _routeWeatherObservation = null;
+function getRouteWeatherObservation(routeKey){
+  const o = _routeWeatherObservation;
+  return (o && o.routeKey === String(routeKey || '')) ? o : null;
+}
+
+async function checkRouteWeather(originCoords, destCoords, routeKey = ''){
+  const key = String(routeKey || '');
   const points = [];
   if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
   if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  const obs = {
+    routeKey: key, observed: false, partial: false,
+    pointsRequested: points.length, pointsObserved: 0,
+    alertCount: 0, observedAt: null,
+    status: points.length ? LIVE_SOURCE_STATUS.OK : 'NO_ROUTE_POINTS',
+  };
+  if (!navigator.onLine) {
+    setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE);
+    _routeWeatherObservation = { ...obs, status: LIVE_SOURCE_STATUS.OFFLINE };
+    return [];
+  }
   const alerts = [];
   for (const pt of points){
     const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
     const cached = _nwsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); alerts.push(...cached.alerts); continue; }
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){
+      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts });
+      alerts.push(...cached.alerts);
+      obs.pointsObserved++; obs.alertCount += cached.alerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, cached.ts);
+      continue;
+    }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
       const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
-      if (!res.ok){ setLiveSourceHealth('NWS', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, point: pt.label }); continue; }
+      if (!res.ok){
+        const st = (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR;
+        setLiveSourceHealth('NWS', st, { httpStatus: res.status, point: pt.label });
+        obs.status = st;
+        continue;
+      }
       const json = await res.json();
       const ptAlerts = (json.features || []).map(f => ({
         label: pt.label,
@@ -17921,8 +18115,20 @@ async function checkRouteWeather(originCoords, destCoords){
       _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: nwsSuccessTs });
       setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { point: pt.label, alertCount: ptAlerts.length, lastSuccess: nwsSuccessTs });
       alerts.push(...ptAlerts);
-    } catch(e){ setLiveSourceHealth('NWS', _liveSourceFailureStatus(e), { point: pt.label, message: String(e?.message || e || '') }); }
+      obs.pointsObserved++; obs.alertCount += ptAlerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, nwsSuccessTs);
+    } catch(e){
+      const st = _liveSourceFailureStatus(e);
+      setLiveSourceHealth('NWS', st, { point: pt.label, message: String(e?.message || e || '') });
+      obs.status = st;
+    }
   }
+  // `observed` means at least one route point genuinely answered. Only then is
+  // `alertCount: 0` a real "no active alerts" fact rather than an absence.
+  obs.observed = obs.pointsObserved > 0;
+  obs.partial = obs.observed && obs.pointsObserved < obs.pointsRequested;
+  if (obs.observed && !obs.partial) obs.status = LIVE_SOURCE_STATUS.OK;
+  _routeWeatherObservation = obs;
   return alerts;
 }
 
@@ -19657,6 +19863,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     classifyEvidenceFreshness, classifyEvidenceSample, normalizeEvidenceSourceStatus,
     EVIDENCE_CONFIDENCE, EVIDENCE_FRESHNESS, EVIDENCE_CATEGORY, EVIDENCE_THRESHOLDS,
     unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
+    // Issue #119 Batch A, item 7 — real evaluation-evidence wiring
+    buildEvaluationEvidence, getFuelPriceProvenance, setFuelPriceProvenance, FUEL_PRICE_SOURCE,
+    getRouteWeatherObservation, checkRouteWeather, getLaneIntel, getBrokerIntel, mwEvaluateLoad,
+    normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };

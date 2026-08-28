@@ -29,6 +29,7 @@ import { runSpec as m5OpportunityIngestion } from './integration/m5-opportunity-
 import { runSpec as m6HistoricalImport } from './integration/m6-historical-import.spec.mjs';
 // Issue #119 Batch A — release-integrity hotfix regressions
 import { runSpec as batchAReleaseIntegrity } from './integration/batch-a-release-integrity.spec.mjs';
+import { runSpec as m3RealEvidenceWiring } from './integration/m3-real-evidence-wiring.spec.mjs';
 import { runSpec as workerCanonicalAbsence } from './unit/worker-canonical-absence.spec.mjs';
 import { runSpec as m7RunnerSemantics } from './unit/m7-runner-semantics.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
@@ -60,6 +61,7 @@ const specs = [
   m5OpportunityIngestion,
   m6HistoricalImport,
   batchAReleaseIntegrity,
+  m3RealEvidenceWiring,
   workerCanonicalAbsence,
   m7RunnerSemantics,
   preV24Integrity,
