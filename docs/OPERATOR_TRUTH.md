@@ -1,7 +1,7 @@
 # FreightLogic Operator Truth
 
-Version: 1.0.1
-Snapshot date: 2026-08-26
+Version: 1.0.2
+Snapshot date: 2026-08-27
 Owner lane: GPT (`docs/`)
 Status: canonical operator/evidence truth snapshot; amend by versioned commit only
 
@@ -174,6 +174,21 @@ These values are external market evidence, not carrier payout. See `EVIDENCE_PRO
 | 2026-08-24 | OPERATOR_CORRECTION | Free load-board account access must be kept separate from API/partner authorization. FreightLogic must not treat a website login as API approval. |
 
 Exact API eligibility, token status, commercial terms, and any `$200` 123Loadboard integration/key offer are tracked in `OPEN_QUESTIONS.md` unless independently verified.
+
+## 2026-08-27 operator-history reconciliation addendum
+
+This addendum records only exact facts carried by operator-provided primary evidence or an explicit operator requirement. It does **not** change the previously confirmed 125-row master count; those row-level source files still require conservative M6 reconciliation before any new authoritative aggregate is asserted.
+
+| Evidence date | Lifecycle status | Order / source | Lane | Exact promoted facts | Source type |
+|---|---|---|---|---|---|
+| 2026-08-27 | OPERATOR REQUIREMENT | Claude Code / FreightLogic handoff | n/a | Claude Code must receive the operator's trip/load history with provenance and status distinctions: accepted/completed trips, loaded miles, deadhead miles, revenue/rate, True RPM when actually derivable, pickup/delivery dates and lane, load facts when available, and source/confidence. Live quotes, lost bids, board observations, dry runs, and external market quotes must remain distinct from actual trips. | OPERATOR_REQUIREMENT |
+| 2026-08-27 | COMPLETED | LS #30303 | Lima, OH 45805 → Dayton, OH 45414 | DispatchLand `Orders > Completed / ALL COMPANIES` screenshot shows pickup 2026-07-15 ASAP; delivery 2026-07-15 direct; 69 source-displayed miles; 500 lb; `$150`; app-displayed RPM `2.17`. Deadhead is not established by this evidence, so `2.17` is not promoted to True RPM. | SCREENSHOT + COMPLETION_RECORD |
+| 2026-08-27 | COMPLETED | DispatchLand Order #2070; company code `RPM` | Clinton, IA → Athens, TN | Primary app screenshots show completed **2026-08-12 23:33 CDT**; 838 source-displayed miles; 2,200 lb; `$850`; app-displayed RPM `1.01`. `Order Help` for this order identifies company code `RPM` as **CAROLINA CARGO INC.** The code-to-company mapping is preserved as order/company identity evidence and is not generalized into a canonical `broker` field without a proven provider semantic. Deadhead is not established, so `1.01` is not promoted to True RPM. | SCREENSHOT + COMPLETION_RECORD |
+| 2026-08-25 | WON/ACCEPTED; IN PROGRESS at observation | Order #348374 | Florence, KY 41042 → Dallas, TX 75207 | Signed rate confirmation / current-order evidence shows 1,006 source-displayed order miles; 90 lb; `$1,300`; app-displayed RPM `1.29`; status `IN PROGRESS: ON ROUTE TO PICKUP #1`; start timestamp 2026-08-25 15:50 EDT. Completion is not asserted here, and `1.29` is not True RPM without verified deadhead. | RATE_CONFIRMATION + SCREENSHOT |
+
+**Timestamp correction for Order #2070:** v1.0.1 listed the order under `2026-08-13` from an earlier extracted completion label. The later primary app screenshot preserves the source-local completion timestamp as `2026-08-12 23:33 CDT`. FreightLogic must preserve source clock/time-zone precision when available; a UTC/day rollover must not silently replace the source-local timestamp.
+
+Only rows whose exact fields are carried above are promoted from the 2026-08-27 screenshot/reconciliation work. Other visible completed cards remain primary evidence pending row-level extraction; this document does not guess their missing fields.
 
 ## Change control
 
