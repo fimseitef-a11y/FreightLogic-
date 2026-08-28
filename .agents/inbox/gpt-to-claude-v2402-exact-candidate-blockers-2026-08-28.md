@@ -65,6 +65,18 @@ Required correction:
 - do not silently downgrade a newer local correction from an older imported export;
 - add a real user-facing JSON merge regression: seed newer local lifecycle/evidence, import an older protected export with the same internal IDs, assert newer state/value/provenance survive and complementary references/provenance are merged only when semantically valid.
 
+8. **The current identical-observation test is not fully idempotent.**
+
+`[A-16]` checks only that a repeated identical intake resolves to the same `evidenceId`, reports `reimported:true`, and leaves row count 1. But `intakeOpportunity()` still runs `putEvidence()` for that same fingerprint, and `putEvidence()` increments `revision` and resets `recordedAt = Date.now()`. When the normalized content and lifecycle/link result are unchanged, a true no-op re-import therefore mutates protected history and produces a new cloud-delta candidate even though no evidence changed.
+
+`NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md` explicitly requires deterministic import idempotency and an identical-observation re-import regression. For an exact no-op, idempotence should mean persisted state is unchanged, not merely “no second row.”
+
+Required correction/test:
+- if fingerprint + normalized durable content + link state are unchanged, return the existing evidence record without incrementing revision/recordedAt;
+- if a re-import legitimately changes only link state because a previously unresolved observation can now be linked, that is a real mutation and may increment revision — make that distinction explicit;
+- extend the idempotence regression to assert `evidenceId`, `revision`, `recordedAt`, material facts, and row count are unchanged after an exact no-op repeat;
+- retain the historical M6 duplicate-skip/idempotence behavior already demonstrated off-repo.
+
 ## Exact-candidate CI findings
 
 PR #122 is red on **both** required repository workflows.
@@ -94,4 +106,4 @@ Exact candidate must return to **0 failed** before any freeze/certification deci
 - Worker v13 canonical UNAVAILABLE behavior.
 - GPT-owned release docs are pinned to app 24.0.2 / Worker 13 but intentionally say the candidate remains unverified.
 
-Do not bump/merge/final-certify again until all seven source correction categories above plus the failing M3R-05 gate are visibly resolved in the exact diff and exact-candidate Tests + Lanes are green.
+Do not bump/merge/final-certify again until all eight source correction categories above plus the failing M3R-05 gate are visibly resolved in the exact diff and exact-candidate Tests + Lanes are green.
