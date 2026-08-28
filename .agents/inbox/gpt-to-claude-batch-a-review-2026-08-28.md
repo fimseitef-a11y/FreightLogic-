@@ -95,6 +95,26 @@ The authority hierarchy must be field/source-specific, not a row-wide reward for
 - check only the expected-revenue confirmation box and prove amount provenance may become operator-authoritative while origin/destination/mileage provenance does not;
 - a later real primary document or explicit operator correction must still supersede lower-authority facts field-by-field.
 
+## REQUIRED correction 4 — M7 must not make historical HOLD documents permanent blockers
+
+The new M7 `readReleaseState()` scans every `COMPLETION_RELEASE_CERTIFICATION_STATE_*` / `ADDENDUM_*` file and treats **ANY** document whose Status contains `HOLD`, `NOT CERTIFIED`, or `BLOCKED` as an active release hold.
+
+That fails closed today, but it creates a permanent certification deadlock: the historical 2026-08-27 HOLD state is supposed to remain an auditable record. If the final frozen candidate later gets a newer authoritative `CERTIFIED/PASS` state document, the old historical HOLD file still exists and this implementation will continue returning `held:true` forever unless we rewrite/delete historical evidence.
+
+### Required shape
+
+Define one deterministic **current-authority** rule instead of “any HOLD in history.” Safe options include:
+
+- a single canonical current-state filename that is updated in place while dated addenda remain evidence; or
+- newest dated authoritative state wins, with an explicit supersedes chain / same-date conflict fail-closed rule.
+
+Whichever rule is chosen:
+
+- missing/unparseable current state fails closed;
+- a newer PASS must not silently clear an unrelated unresolved blocker; the current state document must explicitly represent that all blockers were cleared;
+- historical HOLD documents remain immutable audit evidence and do not need to be falsified to release;
+- tests must prove today’s HOLD blocks, and a synthetic newer authoritative CERTIFIED state can clear an older historical HOLD without editing the old file.
+
 ## Remaining active-lock scope not yet proven by commit 282640
 
 The active lock also claims the M3 real-evidence wiring addendum and Batch B. Commit `282640...` does not yet establish closure of all of these in its message/diff, so do not open/merge a final completion PR until those are handled:
