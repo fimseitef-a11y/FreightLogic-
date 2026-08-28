@@ -17,6 +17,7 @@ Disposition: strong progress, **do not merge yet**. Continue the active Issue #1
 - `putEvidence()` uses `expectedRevision` when `intakeOpportunity()` updates an existing fingerprint row.
 - Worker v13 unavailable-state projection is the correct authority shape: UNAVAILABLE/?/null/suppressed short-circuits before OpenAI; genuine REJECT/F remains representable.
 - M7 semantics are moving from false certification to HOLD-aware preflight.
+- production Opportunity Intake safely defaults the amount/mileage semantic selectors to UNKNOWN rather than silently assuming carrier payout/loaded miles.
 
 ## REQUIRED correction 1 before this batch is mergeable — evidence must actually be first
 
@@ -62,6 +63,37 @@ That violates the governing conservative identity rule: ambiguous `customer` tex
 ### Regression
 
 Create two reused-order candidates and a trip whose `customer` text equals one candidate's broker while `trip.broker` is absent. Prove the resolver does **not** treat customer text as broker proof and does not select that candidate merely because of the customer field.
+
+## REQUIRED correction 3 — manual intake must not over-promote provenance authority
+
+The new production Opportunity Intake correctly defaults price/mileage semantics to UNKNOWN, but its authority assignment currently does:
+
+```js
+authority: confirmed ? 'OPERATOR_CORRECTION' : 'PRIMARY_DOCUMENT'
+```
+
+where `confirmed` is only the checkbox **“I am confirming this amount as my expected revenue.”**
+
+This creates two provenance errors:
+
+1. an ordinary unconfirmed manually typed row is automatically labelled `PRIMARY_DOCUMENT`, even though typing/copying a fact is not proof that a primary document exists;
+2. confirming only the amount upgrades the ENTIRE evidence row to `OPERATOR_CORRECTION`, which silently promotes unrelated origin/destination/broker/mileage/timestamp fields to top precedence.
+
+The authority hierarchy must be field/source-specific, not a row-wide reward for checking a revenue checkbox.
+
+### Required shape
+
+- Do not label ordinary manual entry `PRIMARY_DOCUMENT` unless the source itself is actually established as primary documentary evidence.
+- The revenue confirmation checkbox may authorize/promote the **amount / canonical-revenue fact only**. It must not promote every other field in the record.
+- Use `fieldProvenance` (which this batch already introduced) to represent any amount-specific operator correction/confirmation while preserving conservative provenance for the remaining fields.
+- If the manual source authority is unknown/unconfirmed, keep that authority conservatively low/unknown rather than inventing `PRIMARY_DOCUMENT`.
+- Do not infer documentary authority merely from a non-empty source-name/reference text field.
+
+### Regression
+
+- save a manual unconfirmed row and prove it is not automatically primary-document authority;
+- check only the expected-revenue confirmation box and prove amount provenance may become operator-authoritative while origin/destination/mileage provenance does not;
+- a later real primary document or explicit operator correction must still supersede lower-authority facts field-by-field.
 
 ## Remaining active-lock scope not yet proven by commit 282640
 
