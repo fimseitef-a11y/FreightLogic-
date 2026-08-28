@@ -217,7 +217,9 @@ test('[M6-15] a quote observation with LONG provenance stays idempotent on re-im
     amount:450, priceSemantic:'OPERATOR_BID', sourceName:longSource, sourceTimestamp:1787702400000, rawEvidenceRef:longEvidence };
   const r = await app.page.evaluate(async (rec) => {
     const T = window.__FL_TESTS;
-    const fp = T._historicalRowFingerprint(rec);
+    // B1 (Issue #119 Batch B): the fingerprint is now a SHA-256 digest, so it
+    // is async. The bound it has to fit under is unchanged.
+    const fp = await T._historicalRowFingerprint(rec);
     const before = (await T.listLifecycle()).length;
     await T.importHistoricalOpportunities([rec], { sourceFile:'longprov' });
     const mid = (await T.listLifecycle()).length;

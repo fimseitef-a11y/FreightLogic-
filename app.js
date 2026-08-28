@@ -850,39 +850,58 @@ function idbReq(req){
 // Deterministic content fingerprint — the stable identity for a quote-board
 // observation, derived from its provenance + material facts, NOT its quote-ID.
 // Re-importing the same file is idempotent because the fingerprint is stable.
-function _historicalRowFingerprint(rec){
+// B1 (Issue #119 Batch B): a BOUNDED, COLLISION-RESISTANT identity.
+//
+// The raw joined string routinely exceeds 200 chars with real provenance (long
+// filenames plus evidence refs), and `migration.migratedFrom` is persisted
+// through clampStr(120) — an unhashed fingerprint is truncated on write and
+// never matches on re-import, which is what produced phantom duplicate rows.
+// Hashing fixed the length. It did NOT make the token a safe dedup key: a
+// single 32-bit DJB2 plus a length has a demonstrated same-length collision
+// pair, and a collision here silently merges two unrelated shipments.
+// `evidenceFingerprint()` is a SHA-256 digest truncated to 160 bits — 51
+// characters, comfortably inside the persisted bound, and a real identity.
+async function _historicalRowFingerprint(rec){
   const r = rec || {};
   const parts = [
     'src', clampStr(r.sourceName || '', 80).toLowerCase(),
-    'ts', String(knownNum(r.sourceTimestamp) ?? ''),
+    // Full source instant, not a numeric coercion. `knownNum()` returned null
+    // for every ISO timestamp string, so the source clock never entered the
+    // identity at all and two observations of the same lane on different days
+    // could share a fingerprint.
+    'ts', String(_evidenceInstantISO(r.sourceTimestamp) ?? ''),
     'ev', clampStr(r.rawEvidenceRef || '', 120).toLowerCase(),
     'bk', normBroker(r.broker || ''),
+    'cr', clampStr(r.carrierLabel || '', 80).toLowerCase(),
     'or', clampStr(r.orderNo || '', 60).toUpperCase(),
     'o', clampStr(r.origin || '', 80).toLowerCase(),
     'd', clampStr(r.destination || '', 80).toLowerCase(),
     'amt', String(knownNum(r.amount ?? r.pay ?? r.rate) ?? ''),
-    'pk', clampStr(r.pickupAt || '', 20),
+    'pk', String(_evidenceInstantISO(r.pickupAt) ?? ''),
+    'dl', String(_evidenceInstantISO(r.deliveryAt) ?? ''),
+    'cls', String(r.operationalClass || 'FREIGHT'),
+    'st', clampStr(r.statusRaw || '', 60).toLowerCase(),
   ];
-  // Hash to a BOUNDED token. The raw joined string routinely exceeds 200 chars
-  // with real provenance (long filenames + evidence refs), and migratedFrom is
-  // persisted through clampStr(120) — an unhashed fingerprint would be truncated
-  // on write and never match on re-import, silently breaking idempotency for
-  // quote observations (which have no short order key to fall back on). djb2
-  // over the full content keeps the stored token stable and short.
-  const raw = parts.join('~');
-  let h = 5381;
-  for (let i = 0; i < raw.length; i++) h = (((h << 5) + h) + raw.charCodeAt(i)) >>> 0;
-  return 'fp:' + h.toString(16).padStart(8, '0') + ':' + String(raw.length);
+  return await evidenceFingerprint(parts.join('~'));
 }
 
+// B2 (Issue #119 Batch B): an external order number is NEVER internal identity.
+//
+// This used to trust an explicit `rec.stableId` ahead of everything else, and
+// the historical adapter set `stableId: orderNo` for several source classes —
+// laundering a reused provider ID straight past the broker/route/time safety
+// doctrine. A caller may still supply an identity, but only one it has
+// established as internal (`internalStableId`); a bare `stableId` is ignored.
 function _orderStableKey(rec){
   const r = rec || {};
-  const explicit = clampStr(r.stableId || '', 80);
-  if (explicit) return 'ord:' + explicit.toUpperCase();
+  const internal = clampStr(r.internalStableId || '', 80);
+  if (internal) return 'ord:' + internal.toUpperCase();
   const broker = normBroker(r.broker || '');
   const order = clampStr(r.orderNo || '', 60).toUpperCase();
   // Order identity requires BOTH a broker and an order number. Neither alone,
-  // and never the customer text, is a stable identity.
+  // and never the customer text, is a stable identity. Even this pair is only a
+  // CANDIDATE — importHistoricalOpportunities() additionally requires the
+  // candidate's route/time facts not to conflict before it links.
   return (broker && order) ? `ord:${broker}|${order}` : '';
 }
 
@@ -897,12 +916,12 @@ async function importHistoricalOpportunities(records, opts = {}){
     for (const tok of (e.migration?.migratedFrom || [])) tokenToRow.set(tok, e);
   }
 
-  const summary = { imported: 0, linkedToExisting: 0, duplicatesSkipped: 0, quoteObservations: 0, orders: 0, unresolved: 0, errors: 0 };
+  const summary = { imported: 0, linkedToExisting: 0, duplicatesSkipped: 0, quoteObservations: 0, orders: 0, unresolved: 0, errors: 0, reusedIdKeptSeparate: 0, dryRuns: 0, evidenceRows: 0 };
 
   for (const rec of rows){
     try{
       const isQuote = String(rec.kind || '').toUpperCase() === 'QUOTE_OBSERVATION';
-      const fp = _historicalRowFingerprint(rec);
+      const fp = await _historicalRowFingerprint(rec);
 
       // Idempotency: the exact same observation already imported → skip.
       if (tokenToRow.has(fp)){ summary.duplicatesSkipped++; continue; }
@@ -916,11 +935,18 @@ async function importHistoricalOpportunities(records, opts = {}){
         ? (rec.opportunity === 'QUOTED' ? 'QUOTED' : 'SEEN')
         : (LIFECYCLE_OPPORTUNITY.includes(rec.opportunity) ? rec.opportunity : 'SEEN');
 
-      // Order history links to an existing lifecycle by stable identity.
+      // Order history links to an existing lifecycle by stable identity — but
+      // B2/A4: a broker + external order pair is a CANDIDATE. If the candidate's
+      // supplied route/time facts contradict this row, it is a different
+      // shipment wearing the same number, and the rows stay separate.
       let target = null, orderKey = '';
       if (!isQuote){
         orderKey = _orderStableKey(rec);
-        if (orderKey && tokenToRow.has(orderKey)) target = tokenToRow.get(orderKey);
+        if (orderKey && tokenToRow.has(orderKey)){
+          const candidate = tokenToRow.get(orderKey);
+          if (!lifecycleFactsConflict(rec, candidate)) target = candidate;
+          else summary.reusedIdKeptSeparate++;
+        }
       }
 
       const norm = normalizeOpportunity(
@@ -940,7 +966,10 @@ async function importHistoricalOpportunities(records, opts = {}){
         // Operator-confirmed status corrections are preserved verbatim.
         execution: LIFECYCLE_EXECUTION.includes(rec.execution) ? rec.execution : (target?.execution || 'NOT_STARTED'),
         settlement: LIFECYCLE_SETTLEMENT.includes(rec.settlement) ? rec.settlement : (target?.settlement || 'NOT_INVOICED'),
-        cohort: { deadZoneExit: rec.deadZoneExit === true },
+        // B7: a DRY RUN is real operational history that must never enter
+        // normal-market economics. It rides the same cohort mechanism DZ-EXIT
+        // uses, which is exactly what `normalMarketEligible` is for.
+        cohort: { deadZoneExit: rec.deadZoneExit === true, dryRun: rec.operationalClass === 'DRY_RUN' || rec.dryRun === true },
         migration: {
           importedLegacy: true,
           migratedFrom: [...(target?.migration?.migratedFrom || []), ...migratedFrom],
@@ -948,13 +977,46 @@ async function importHistoricalOpportunities(records, opts = {}){
         sourceRefs: target?.sourceRefs || {},
       };
 
-      await upsertLifecycle(record, {
+      const saved = await upsertLifecycle(record, {
         expectedRevision: target?.revision ?? null,
-        source: 'IMPORT', sourceId: rec.stableId || rec.orderNo || norm.lifecycleId,
+        source: 'IMPORT', sourceId: rec.orderNo || norm.lifecycleId,
         reason: `historical ${isQuote ? 'quote observation' : 'order'} import`,
       });
 
-      for (const tok of migratedFrom) tokenToRow.set(tok, record);
+      // B12: historical provenance lives in the SAME durable evidence layer the
+      // manual/email path uses — not a parallel one-off structure. This is what
+      // preserves per-field provenance, the source observation instant, the
+      // price/mileage semantics, and the operational class through backup,
+      // restore, export and import.
+      await putEvidence({
+        fingerprint: fp,
+        lifecycleId: saved.lifecycleId,
+        linkState: 'LINKED',
+        linkReason: target ? 'historical order identity' : 'new historical record',
+        observedAt: norm.observedAt, observedAtISO: norm.observedAtISO,
+        operationalClass: rec.operationalClass || (rec.dryRun === true ? 'DRY_RUN' : (isQuote ? 'BOARD_OBSERVATION' : 'FREIGHT')),
+        opportunityClaim: opportunity,
+        // B8: tri-state. An unrecognized source status establishes nothing
+        // about an award, and null is not false and emphatically not true.
+        awarded: rec.awarded === true ? true : (rec.awarded === false ? false : null),
+        statusRaw: rec.statusRaw || '',
+        orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: rec.broker || '',
+        // B6: a source column named "Carrier" stays a carrier label.
+        carrierLabel: rec.carrierLabel || '', companyLabel: rec.companyLabel || '',
+        origin: norm.origin, destination: norm.destination,
+        pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
+        amount: norm.amount, priceSemantic: norm.priceSemantic, canonicalRevenue: norm.canonicalRevenue,
+        loadedMi: norm.loadedMi, deadMi: norm.deadMi, displayedTotalMi: norm.displayedTotalMi,
+        repositionMi: norm.repositionMi, mapEstimateMi: norm.mapEstimateMi,
+        mileageSemantic: norm.mileageSemantic, sourceDisplayedRpm: norm.sourceDisplayedRpm,
+        provenance: { ...norm.provenance, authority: rec.authority || (rec.operatorConfirmed ? 'OPERATOR_CONFIRMED_HISTORY' : 'AI_SECONDARY') },
+        // B5: per-field provenance from the adapter's authority-aware merge.
+        fieldProvenance: rec.fieldProvenance || {},
+      });
+      summary.evidenceRows++;
+      if (record.cohort.dryRun) summary.dryRuns++;
+
+      for (const tok of migratedFrom) tokenToRow.set(tok, { ...record, lifecycleId: saved.lifecycleId, revision: saved.revision });
       if (target) summary.linkedToExisting++; else summary.imported++;
       if (isQuote) summary.quoteObservations++; else summary.orders++;
     }catch(e){
@@ -976,7 +1038,8 @@ function calibrateWinningRange(observations, opts = {}){
   const now = knownNum(opts.now) ?? Date.now();
   const halfLifeDays = knownNum(opts.halfLifeDays) ?? 60;
   const minSamples = knownNum(opts.minSamples) ?? 3;
-  const list = (Array.isArray(observations) ? observations : []).filter(o => o && o.deadZoneExit !== true);
+  const list = (Array.isArray(observations) ? observations : [])
+    .filter(o => o && o.deadZoneExit !== true && o.dryRun !== true);
 
   const won = list.filter(o => o.won === true);
   const lost = list.filter(o => o.won === false);
@@ -985,19 +1048,32 @@ function calibrateWinningRange(observations, opts = {}){
   // Winning-range inputs: WON observations with a known RPM only. Unknown RPM
   // never counts as 0 (M1 doctrine).
   const priced = won.filter(o => knownNum(o.rpm) !== null);
+
+  // B10 (Issue #119 Batch B): an observation with an UNKNOWN age used to
+  // receive weight 1 — full current weight, the single most favourable value in
+  // the whole decay curve. A five-year-old undated row therefore counted the
+  // same as one observed this morning. Unknown age is not freshness.
+  //
+  // Rather than invent a freshness constant nobody authorized, undated evidence
+  // is kept visible and COUNTED as undated but excluded from the
+  // recency-weighted cohort, and the counts are reported so the exclusion is
+  // inspectable rather than silent.
+  const dated = priced.filter(o => knownNum(o.observedAt) !== null);
+  const unknownAgeCount = priced.length - dated.length;
   const decay = (observedAt) => {
     const t = knownNum(observedAt);
-    if (t === null) return 1; // undated evidence gets full, not zero, weight
     const ageDays = Math.max(0, (now - t) / 86400000);
     return Math.pow(0.5, ageDays / halfLifeDays);
   };
 
-  const weighted = priced.map(o => ({ rpm: knownNum(o.rpm), weight: decay(o.observedAt) }))
+  const weighted = dated.map(o => ({ rpm: knownNum(o.rpm), weight: decay(o.observedAt) }))
     .sort((a, b) => a.rpm - b.rpm);
   const totalWeight = weighted.reduce((s, w) => s + w.weight, 0);
 
+  // Sufficiency is measured on the DEFENSIBLE weighted cohort, not on rows that
+  // received no valid recency weight at all.
   let weightedMeanRpm = null, weightedMedianRpm = null;
-  if (priced.length >= minSamples && totalWeight > 0){
+  if (dated.length >= minSamples && totalWeight > 0){
     weightedMeanRpm = roundCents(weighted.reduce((s, w) => s + w.rpm * w.weight, 0) / totalWeight);
     // Weighted median: first RPM at or past half the cumulative weight.
     let acc = 0;
@@ -1008,8 +1084,13 @@ function calibrateWinningRange(observations, opts = {}){
     winRate: winDenominator > 0 ? won.length / winDenominator : null, // null, not 0
     winDenominator, wonCount: won.length, lostCount: lost.length,
     excludedDeadZone: (Array.isArray(observations) ? observations : []).filter(o => o?.deadZoneExit === true).length,
+    excludedDryRun: (Array.isArray(observations) ? observations : []).filter(o => o?.dryRun === true).length,
+    // Every priced win is still counted and visible...
     winningRangeSampleSize: priced.length,
-    sufficientSamples: priced.length >= minSamples,
+    // ...but only the dated ones can support a recency-weighted range.
+    weightedSampleSize: dated.length,
+    unknownAgeCount,
+    sufficientSamples: dated.length >= minSamples,
     weightedMeanRpm, weightedMedianRpm,
     halfLifeDays,
     // Inspectable: the exact per-observation weights that produced the range.
@@ -1030,8 +1111,14 @@ function calibrateFromLifecycle(lifecycleRows, rpmLookup, opts = {}){
       return {
         won: r.opportunity === 'WON',
         rpm: knownNum(info.rpm),
-        observedAt: knownNum(info.observedAt) ?? knownNum(r.updatedAt),
+        // B11 (Issue #119 Batch B): ONLY a durable source observation time.
+        // Falling back to `updatedAt` meant a five-year-old row imported or
+        // corrected today looked freshly observed today — a lifecycle mutation
+        // clock silently standing in for a market-observation clock. Unknown
+        // stays unknown and the conservative undated rule above applies.
+        observedAt: knownNum(info.observedAt),
         deadZoneExit: r.cohort?.deadZoneExit === true,
+        dryRun: r.cohort?.dryRun === true,
       };
     });
   return calibrateWinningRange(observations, opts);
@@ -1130,8 +1217,9 @@ function normalizeOpportunity(raw, opts = {}){
     broker: clampStr(r.broker || '', 80),
     origin: clampStr(r.origin || '', 80),
     destination: clampStr(r.destination || '', 80),
-    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
-    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+    // B9: full source clock precision is preserved (see sanitizeLifecycle).
+    pickupAt: _evidenceInstantISO(r.pickupAt),
+    deliveryAt: _evidenceInstantISO(r.deliveryAt),
 
     // Money: the raw amount AND its semantic are always kept. canonicalRevenue
     // is the only field the decision engine may read as revenue.
@@ -1570,8 +1658,14 @@ function sanitizeLifecycle(raw){
     carrier: clampStr(r.carrier, 80),
     origin: clampStr(r.origin, 80),
     destination: clampStr(r.destination, 80),
-    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
-    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+    // B9 (Issue #119 Batch B): a lifecycle pickup/delivery is an INSTANT when
+    // the source has one. `isValidISODate()` accepts only `YYYY-MM-DD`, so any
+    // source carrying a real clock had its pickup and delivery nulled outright
+    // — and the reused-external-ID safety check (A4) has nothing to compare
+    // when the very facts that disambiguate two shipments are discarded.
+    // `isValidISODate` is unchanged: trips genuinely store date-only fields.
+    pickupAt: _evidenceInstantISO(r.pickupAt),
+    deliveryAt: _evidenceInstantISO(r.deliveryAt),
 
     sourceRefs: {
       bidHistoryIds: uniqStrings(refs.bidHistoryIds),
@@ -1583,7 +1677,14 @@ function sanitizeLifecycle(raw){
       // DZ-EXIT is a survival cohort. It may count in raw broker interaction
       // totals but must never calibrate normal-market rates or floors.
       deadZoneExit: r.cohort?.deadZoneExit === true,
-      normalMarketEligible: r.cohort?.deadZoneExit === true ? false : (r.cohort?.normalMarketEligible !== false),
+      // B7 (Issue #119 Batch B): a DRY RUN is preserved operational history and
+      // is excluded from normal-market calibration on the same terms. It is a
+      // separate flag, not a second meaning for deadZoneExit — they are
+      // different operational facts and analytics must be able to tell them apart.
+      dryRun: r.cohort?.dryRun === true,
+      normalMarketEligible: (r.cohort?.deadZoneExit === true || r.cohort?.dryRun === true)
+        ? false
+        : (r.cohort?.normalMarketEligible !== false),
     },
     migration: {
       importedLegacy: r.migration?.importedLegacy === true,
@@ -1631,6 +1732,7 @@ function lifecycleWinRate(rows){
     excludedExpired: list.filter(r => r.opportunity === 'EXPIRED').length,
     excludedCancelled: list.filter(r => r.opportunity === 'CANCELLED').length,
     excludedDzExit: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.deadZoneExit === true).length,
+    excludedDryRun: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.dryRun === true).length,
     // null, not 0 — an unknown rate is not a 0% rate (M1's UNKNOWN doctrine).
     rate: denominator > 0 ? won / denominator : null,
   });
@@ -1660,13 +1762,30 @@ function lifecycleDeliveryReliability(rows){
 //
 // A place fact is compared normalized. A missing fact on EITHER side is unknown,
 // and unknown never conflicts — it just fails to add support.
-function _placeKey(v){
-  return String(v == null ? '' : v).trim().toUpperCase().replace(/[.\s]+/g,' ').replace(/,\s*/g, ', ').trim();
+// A place is compared as a TOKEN SEQUENCE, so punctuation and spacing
+// differences between sources ("Deerfield, WI" vs "Deerfield WI") are the same
+// place — that is normalization, not fuzzy matching: the tokens are identical.
+function _placeTokens(v){
+  return String(v == null ? '' : v)
+    .toUpperCase().replace(/[.,]/g, ' ').trim().split(/\s+/).filter(Boolean);
 }
 function _placeConflict(a, b){
-  const x = _placeKey(a), y = _placeKey(b);
-  if (!x || !y) return false;
-  return x !== y;
+  const x = _placeTokens(a), y = _placeTokens(b);
+  if (!x.length || !y.length) return false;             // unknown never conflicts
+  if (x.join(' ') === y.join(' ')) return false;
+  // One side carrying LESS specificity is not a contradiction — it is simply
+  // less evidence, the same principle date-only vs. full-timestamp follows.
+  // "CHICAGO" states no state at all, so it cannot disagree with "CHICAGO, IL".
+  // The allowance is deliberately narrow — exactly one extra trailing
+  // two-letter state token — because that is the only difference that is
+  // provably a qualification rather than a different place. It is NOT prefix
+  // matching: "CHICAGO" vs "CHICAGO HEIGHTS IL" adds two tokens and stays a
+  // conflict, and "CHICAGO IL" vs "CHICAGO MO" both state a state and disagree.
+  const [shortSeq, longSeq] = x.length <= y.length ? [x, y] : [y, x];
+  if (longSeq.length === shortSeq.length + 1
+      && /^[A-Z]{2}$/.test(longSeq[longSeq.length - 1])
+      && longSeq.slice(0, shortSeq.length).join(' ') === shortSeq.join(' ')) return false;
+  return true;
 }
 // Time comparison preserves whatever precision the SOURCE actually had. Two full
 // timestamps conflict when they are different instants. When either side is

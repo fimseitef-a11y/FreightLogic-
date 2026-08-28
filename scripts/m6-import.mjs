@@ -67,7 +67,7 @@ const tsOf = d => { const t=Date.parse(str(d)); return Number.isFinite(t)?t:null
 
 /* ---- reconciled completed-ORDER ledger ---- */
 const orders = new Map();
-const report = { files:{}, statuses:{}, missingDeadhead:0, withheldFromTrueRpm:0, sourceRpmPreserved:0, reconciled:0, withheld:{ live_quote:0, partial:0, chat_captured:0 }, dryRuns:0, unknownStatus:0 };
+const report = { files:{}, statuses:{}, missingDeadhead:0, withheldFromTrueRpm:0, sourceRpmPreserved:0, reconciled:0, reusedIdKeptSeparate:0, withheld:{ live_quote:0, partial:0, chat_captured:0 }, dryRuns:0, unknownStatus:0 };
 
 // B4: docs/EVIDENCE_PROVENANCE.md's precedence order, as data. Index IS the
 // rank — lower outranks higher. The previous rule was "first source wins, later
@@ -89,31 +89,84 @@ const MATERIAL_FIELDS = [
 
 // B3: identity is NOT the external order number. Two shipments genuinely reuse
 // one order number across providers and across months, and collapsing on it
-// destroys both. The grouping key adds the facts that make a shipment a
-// shipment — broker/carrier, both endpoints, and the pickup date. When those
-// differ, the rows stay separate and the app's conservative linker gets to
-// decide later with the full route/time evidence in front of it.
-function identityKey(cand){
-  const norm = v => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-  const day = v => String(v ?? '').slice(0, 10);
-  return [
-    'ord', norm(cand.orderNo),
-    'party', norm(cand.broker) || norm(cand.carrierLabel),
-    'o', norm(cand.origin), 'd', norm(cand.destination),
-    'pk', day(cand.pickupAt) || day(cand.deliveryAt),
-  ].join('|');
+// destroys both.
+//
+// The order number is treated as what it is — a CANDIDATE signal. Rows sharing
+// one are only merged when their supplied route/time facts are compatible;
+// otherwise they stay separate and the app's conservative linker decides later
+// with the full evidence in front of it.
+//
+// Compatibility mirrors the app's doctrine exactly. A missing fact is unknown
+// and never conflicts. A LESS SPECIFIC value is not a contradiction either —
+// these files spell the same city three ways ("Chicago" in one, "Chicago, IL"
+// in another), and treating that as a conflict would split one shipment into
+// three, which is just the opposite error. The comma boundary keeps that from
+// becoming approximate matching: "Chicago" vs "Chicago Heights, IL" still
+// conflicts, and so does "Chicago, IL" vs "Chicago, MO".
+// Identical to the app's `_placeConflict` doctrine: compare TOKEN SEQUENCES, so
+// "Deerfield, WI" and "Deerfield WI" are the same place (these files genuinely
+// spell it both ways), and allow exactly one extra trailing two-letter state
+// token as a qualification of a less specific value.
+const placeTokens = v => String(v ?? '').toUpperCase().replace(/[.,]/g, ' ').trim().split(/\s+/).filter(Boolean);
+function placeConflict(a, b){
+  const x = placeTokens(a), y = placeTokens(b);
+  if (!x.length || !y.length) return false;
+  if (x.join(' ') === y.join(' ')) return false;
+  const [shortSeq, longSeq] = x.length <= y.length ? [x, y] : [y, x];
+  if (longSeq.length === shortSeq.length + 1
+      && /^[A-Z]{2}$/.test(longSeq[longSeq.length - 1])
+      && longSeq.slice(0, shortSeq.length).join(' ') === shortSeq.join(' ')) return false;
+  return true;
+}
+function timeConflict(a, b){
+  if (!a || !b) return false;
+  const sa = String(a), sb = String(b);
+  const dateOnly = v => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (dateOnly(sa) || dateOnly(sb)) return sa.slice(0,10) !== sb.slice(0,10);
+  const ta = Date.parse(sa), tb = Date.parse(sb);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return sa !== sb;
+  return ta !== tb;
+}
+function partyConflict(a, b){
+  const x = String(a ?? '').trim().toLowerCase(), y = String(b ?? '').trim().toLowerCase();
+  if (!x || !y) return false;
+  return x !== y;
+}
+function compatible(a, b){
+  return !placeConflict(a.origin, b.origin)
+      && !placeConflict(a.destination, b.destination)
+      && !timeConflict(a.pickupAt, b.pickupAt)
+      && !timeConflict(a.deliveryAt, b.deliveryAt)
+      && !partyConflict(a.broker, b.broker);
+}
+
+function seedProvenance(cand, sourceName, authority){
+  const fp = {};
+  for (const f of MATERIAL_FIELDS){
+    if (present(cand[f])) fp[f] = { sourceName, authority, rawEvidenceRef: cand.rawEvidenceRef || '' };
+  }
+  return fp;
+}
+
+function candidateKey(cand){
+  return String(cand.orderNo ?? '').trim().toUpperCase();
 }
 
 function upsertOrder(_orderNoIgnored, cand, sourceName, authority){
-  const key = identityKey(cand);
-  const cur = orders.get(key);
+  const candidates = candidateKey(cand);
+  // No order number at all: nothing to reconcile against, so it is its own row.
+  const bucket = candidates ? (orders.get(candidates) || []) : [];
+  if (!candidates){
+    orders.set('anon:' + orders.size, [{ ...cand, _sources:[sourceName], _fieldProvenance: seedProvenance(cand, sourceName, authority) }]);
+    return;
+  }
+  const cur = bucket.find(existing => compatible(existing, cand));
   const auth = AUTHORITY_ORDER.includes(authority) ? authority : 'AI_SECONDARY';
   if (!cur){
-    const rec = { ...cand, _sources: [sourceName], _fieldProvenance: {} };
-    for (const f of MATERIAL_FIELDS){
-      if (present(rec[f])) rec._fieldProvenance[f] = { sourceName, authority: auth, rawEvidenceRef: cand.rawEvidenceRef || '' };
-    }
-    orders.set(key, rec);
+    const rec = { ...cand, _sources: [sourceName], _fieldProvenance: seedProvenance(cand, sourceName, auth) };
+    bucket.push(rec);
+    orders.set(candidates, bucket);
+    if (bucket.length > 1) report.reusedIdKeptSeparate++;
     return;
   }
   for (const k of Object.keys(cand)){
@@ -307,7 +360,7 @@ const observations = [];
 }
 
 /* ---- assemble + True-RPM defensibility check ---- */
-const orderRecords = [...orders.values()];
+const orderRecords = [...orders.values()].flat();
 for (const rec of orderRecords){
   const loadedKnown = rec.loadedMi!==null && rec.loadedMi!==undefined;
   const deadKnown = rec.deadMi!==null && rec.deadMi!==undefined;
@@ -333,6 +386,7 @@ report.totals = {
   withheldRows: withheld.length,
   importRecords: importRecords.length,
   multiSourceRecords: orderRecords.filter(r => (r.contributingSources || []).length > 1).length,
+  reusedIdKeptSeparate: report.reusedIdKeptSeparate,
 };
 
 writeFileSync(path.join(OUT,'records-for-import.json'), JSON.stringify(importRecords,null,2));
