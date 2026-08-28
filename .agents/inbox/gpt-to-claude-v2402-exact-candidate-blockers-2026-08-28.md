@@ -7,15 +7,36 @@ Disposition: **HOLD / DO NOT MERGE**. The exact integrated diff proves the origi
 
 ## Required source corrections
 
-1. **Evidence-first durability is still backwards.** `intakeOpportunity()` calls `linkLifecycle()` before the first `putEvidence()`. Persist semantic evidence first with no lifecycle link, then link, then update the already-durable evidence row under `expectedRevision`. If the first evidence write fails, no lifecycle mutation should have happened. If linking or the second evidence update fails, the original evidence row must remain durable. Add explicit failure-path tests.
+1. **Evidence-first durability is still backwards on BOTH production intake and historical import.**
+
+`intakeOpportunity()` calls `linkLifecycle()` before the first `putEvidence()`. Batch B's `importHistoricalOpportunities()` has the same asymmetry in a different form: it commits `upsertLifecycle(record, ...)` and only afterward calls `putEvidence(...)` for the historical provenance row.
+
+That means either path can leave canonical lifecycle/state behind with no durable source evidence if the evidence transaction fails after the lifecycle transaction commits. Batch B explicitly says historical provenance uses the SAME durable evidence layer, so historical import must obey the same fail-safe boundary rather than becoming a second exception.
+
+Required shape for every source-normalization path that creates lifecycle state from evidence:
+- create/persist the semantic evidence observation first, initially unlinked/pending (`lifecycleId:null`);
+- if that first evidence write fails, do not create/mutate lifecycle state;
+- perform conservative lifecycle create/link only after evidence is durable;
+- attach the resulting lifecycleId/link state to the already-durable evidence row under `expectedRevision`;
+- if linking or the second evidence update fails, preserve the original evidence row and report the unresolved/failed attachment rather than deleting evidence or manufacturing success.
+
+For historical imports that need a lifecycleId before the final evidence shape, use the same two-phase pattern (or one deliberate IndexedDB transaction only if the architecture can make both stores + audit semantics genuinely atomic without weakening concurrency). Do not leave the current two independent lifecycle-first/evidence-second transactions.
+
+Add failure-path regressions for BOTH manual/email intake and M6 historical import. A deterministic way is to force only the `normalizedEvidence` write to fail and prove no new lifecycle row was committed before first evidence durability; separately prove an unresolved/link-update failure still leaves the evidence observation durable.
 
 2. **Customer is still promoted into broker identity.** `resolveLifecycleForTrip()` contains `broker: trip.broker || trip.customer || ''`. Remove `trip.customer` from the broker identity chain. Unknown broker stays unknown.
 
 3. **External order number is being laundered into a strong internal source reference.** `resolveLifecycleForTrip()` passes `sourceRefs: { tripIds: [trip.orderNo] }`. The governing identity doctrine says external order/quote IDs are reusable candidate signals, while exact internal source refs are strong identity. Do not relabel `orderNo` as `tripId`. Use a genuinely internal persisted source ID if one exists; otherwise omit the strong source ref and rely on conservative compatible evidence. Add a reused-ID regression proving order number alone cannot become an exact internal-reference match.
 
+Important architectural note: the legacy `trips` store itself is keyed by `orderNo`. That legacy primary-key fact does not magically turn the provider order number into a globally safe internal shipment identity for the new lifecycle linker. If there is no separate stable internal trip UUID today, treat that as an absence of strong internal trip identity and fall back conservatively; do not manufacture one by renaming the external key.
+
 4. **Manual intake still over-promotes row authority.** The production intake still uses `authority: confirmed ? 'OPERATOR_CORRECTION' : 'PRIMARY_DOCUMENT'`, where `confirmed` is only the expected-revenue checkbox. A typed row is not automatically a primary document. Confirming revenue may promote the amount/revenue field only; it must not promote broker/origin/destination/mileage/timestamps. Use `fieldProvenance` for amount-specific confirmation and keep unrelated fields at their actual conservative authority. Add regressions.
 
+Do not solve the first half by simply relabelling unconfirmed MANUAL rows as `AI_SECONDARY`; source type and authority are separate facts. Preserve `sourceType:'MANUAL'` and use an explicit conservative/unknown authority representation consistent with the governing provenance contract (extend the authority vocabulary if necessary rather than inventing documentary or AI provenance).
+
 5. **M7 still makes historical HOLD permanent.** Current release-state code treats any prior state/addendum with HOLD / NOT CERTIFIED / BLOCKED as an active hold forever. Historical HOLD evidence must remain immutable but a later exact-candidate state must be able to supersede it under one deterministic current-authority rule. Missing/unparseable current state still fails closed. Add tests proving today's HOLD blocks and a synthetic newer authoritative CERTIFIED/PASS state can clear the old historical HOLD without editing history.
+
+Do not use date-only filename ordering as the sole authority when multiple STATE/ADDENDUM files can exist on one date. Prefer one explicit current-state authority or explicit supersession metadata; historical files remain evidence, not mutable state.
 
 ## Exact-candidate CI findings
 
@@ -46,4 +67,4 @@ Exact candidate must return to **0 failed** before any freeze/certification deci
 - Worker v13 canonical UNAVAILABLE behavior.
 - GPT-owned release docs are pinned to app 24.0.2 / Worker 13 but intentionally say the candidate remains unverified.
 
-Do not bump/merge/final-certify again until the five source corrections plus the failing M3R-05 gate are visibly resolved in the exact diff and exact-candidate Tests + Lanes are green.
+Do not bump/merge/final-certify again until the five source correction categories above (including evidence-first on both intake paths) plus the failing M3R-05 gate are visibly resolved in the exact diff and exact-candidate Tests + Lanes are green.
