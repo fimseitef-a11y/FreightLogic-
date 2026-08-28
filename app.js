@@ -1,7 +1,32 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.1 USA ENGINE
+/** FreightLogic v24.0.2 USA ENGINE
+ *  v24.0.2 "Release Integrity" (Issue #119 Batch A + Batch B): the DB upgrade
+ *          creates the lifecycle indexes it always claimed to (they were
+ *          skipped on every path); a delta cloud push no longer dies in a
+ *          temporal dead zone before it can no-op; a background lifecycle link
+ *          compares the revision it read instead of overwriting a newer user
+ *          correction. A reused external order number is a candidate signal,
+ *          not identity — broker+order links only when the supplied route/time
+ *          facts agree, and the chip/editor lookups resolve through the same
+ *          doctrine rather than picking one arbitrary row. Normalized evidence
+ *          is now DURABLE (new `normalizedEvidence` store, DB v15): price and
+ *          mileage semantics, provenance, confirmation state and source
+ *          references survive reload, backup, restore, export and import, and
+ *          are covered by a protected export checksum. A displayed total can no
+ *          longer occupy canonical loaded miles, an ISO source timestamp is no
+ *          longer nulled, and an unknown operator-confirmation clock stays
+ *          unknown. Identity is a bounded SHA-256 digest, not a 32-bit hash.
+ *          Historical reconciliation is authority-aware with per-field
+ *          provenance; DRY RUN is preserved as its own excluded class; an
+ *          unrecognized status manufactures no award; undated evidence no
+ *          longer receives full current weight and a lifecycle mutation clock
+ *          no longer stands in for a market-observation clock. Evaluation
+ *          evidence reads the real fuel provenance, the real route weather
+ *          observation, the real lane/broker history and the real van-fit
+ *          measurement state. Worker v13 projects canonical ABSENCE verbatim
+ *          instead of manufacturing REJECT/F/$0.00.
  *  v24.0.1 "Doctrine & Money Integrity" (completion-plan Milestone 1): a
  *          material operational fact is UNKNOWN unless it parses finite —
  *          canonical economics, grade, and authority no longer coerce a
@@ -64,7 +89,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.1';
+const APP_VERSION = '24.0.2';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 

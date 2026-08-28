@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.1** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.2** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -84,7 +84,7 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
 21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
 
-### IndexedDB schema (`DB_VERSION = 13`, `DB_NAME = 'FreightLogic_v18'`)
+### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)
 - `trips` — keyPath: `orderNo`
 - `expenses` — keyPath: `id`
 - `fuel` — keyPath: `id`
@@ -99,6 +99,9 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 - `bidHistory` — keyPath: `id`
 - `documents` — keyPath: `id`
 - `gpsLogs` — keyPath: `id`, autoIncrement
+- `loadLifecycle` — keyPath: `lifecycleId` (v14; indexes `updatedAt`, `orderNo`, `broker`)
+- `normalizedEvidence` — keyPath: `evidenceId` (v15; indexes `recordedAt`, `lifecycleId`,
+  `fingerprint`, `observedAt`) — the durable normalized-evidence store
 
 ### DB migration
 On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
@@ -114,8 +117,8 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.1';
-const DB_VERSION = 13;
+const APP_VERSION = '24.0.2';
+const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
@@ -231,8 +234,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.1` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.1`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.2` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.2`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1201,3 +1204,122 @@ were relying on blank-means-zero. No assertion was changed, skipped, or weakened
 **Still open at M1 close:** `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` is
 GPT-owned under `/.agents/LANES.md` and still reads `24.0.0`; a bump was requested
 through `/.agents/inbox/` rather than edited across lanes.
+
+
+---
+
+## v24.0.2 "Release Integrity" — Issue #119 Batch A + Batch B
+
+A correctness pass over the completion-release blockers, driven by two exact-source
+audits (`.agents/inbox/gpt-to-claude-batch-a-source-audit-2026-08-28.md` and
+`…-batch-b-…`). No new features. Every fix carries a regression that drives the
+REAL runtime path the defect lived on — the previous coverage exercised helpers and
+store existence, which is exactly why these shipped green.
+
+### Batch A — release integrity
+
+- **DB indexes are created independently of the store.** The catch-all `ensureStore`
+  in `initDB()` runs BEFORE the versioned migration blocks, so `loadLifecycle`
+  already existed when the `old < 14` block tested `objectStoreNames` — and the whole
+  index body was skipped, on a fresh database as much as on an upgrade. A new
+  `ensureIndexes(store, specs)` helper runs unconditionally and guards each index
+  with `indexNames.contains`, which repairs a database that reached v14 index-less.
+- **`cloudPushBackup()` empty-delta TDZ.** `loadLifecycle` was dumped and filtered
+  AFTER the empty-delta guard that reads it — a temporal-dead-zone `ReferenceError`
+  on every delta push, invisible because the function's own `try/catch` turned it
+  into a generic "Backup failed" retry. It is now dumped with every other store.
+- **`linkLifecycle()` compare-and-abort.** It read the base record and then called
+  `upsertLifecycle()` without the revision it had just observed, so a background
+  link merged a stale base over a user correction that landed in between.
+  `FL_CONFLICT` is now reported as a conflict, never swallowed into a success.
+- **Reused external identifiers.** A broker + order-number pair is a CANDIDATE
+  signal, not identity. `lifecycleMatchCandidate()` links only when the supplied
+  route/time facts do not conflict and nothing competes; source clock precision is
+  preserved rather than truncated. `renderLifecycleChips()` and
+  `openLifecycleEditor()` resolve through the same doctrine (`resolveLifecycleForTrip`)
+  instead of a `Map` keyed on order number that let duplicates overwrite each other.
+- **Durable normalized evidence (`normalizedEvidence`, DB v15).** `intakeOpportunity()`
+  returned the normalized object and persisted only lifecycle identity/state, so price
+  and mileage semantics, provenance, confirmation state and source references did not
+  survive a reload. They now live in a dedicated bounded store that participates in
+  local export/import, full and delta cloud backup, and restore. `loadLifecycle`
+  stays a lifecycle state/linking structure — the durability contract's architectural
+  boundary. Evidence with an UNRESOLVED lifecycle link is still fully preserved.
+  - Full `EVIDENCE_PROVENANCE.md` price vocabulary (`BOARD_TARGET_RATE`,
+    `POSTED_RATE`, `MARKET_BENCHMARK` added); the revenue gate is unchanged.
+  - Mileage slots are semantic: a `DISPLAYED_TOTAL_MILES` value can never occupy
+    canonical `loadedMi`. `POST_DELIVERY_REPOSITION_MILES` and `MAP_ESTIMATE` have
+    their own slots.
+  - A valid ISO source timestamp is preserved (it was being nulled by `knownNum()`),
+    and an unknown operator-confirmation clock stays `null` instead of defaulting to
+    the import time. A live user action may stamp `now` via `stampConfirmationNow`.
+  - `evidenceFingerprint()` is a bounded SHA-256 digest (`fp:sha256:<40 hex>`).
+  - `reconcileEvidenceFields()` is authority-aware with per-field provenance.
+- **`computeExportChecksumProtected()`** covers lifecycle and evidence. Older exports
+  still verify through `checksumFull`.
+- **Real M5B production intake:** More → Intel → **Opportunity Intake**
+  (`openOpportunityIntake()`). Offline, no provider authorization, makes the operator
+  state the price semantic explicitly, and persists durable evidence before linking.
+- **Worker v12 → v13.** `UNAVAILABLE` / grade `?` / null True RPM / a suppressed bid
+  project verbatim instead of being coerced to `REJECT` / `F` / `$0.00`, and an
+  unavailable decision short-circuits before any OpenAI call. A real `REJECT` and a
+  real `F` still project unchanged.
+- **Evaluation evidence reads the real inputs.** Fuel provenance
+  (`settings['fuelPriceProvenance']`, written at all three real write points), the
+  real per-route NWS observation (a successful zero-alert fetch is a real zero; no
+  fetch / offline / timeout / HTTP error is an absence and never reads as "0 alerts"),
+  the real `laneHistory` and `bidHistory` records, and the real van-fit measurement
+  state (`vanFitChecked: true` was hardcoded). With no broker entered the broker
+  domain is inapplicable and omitted, rather than a synthetic LOW that capped overall
+  confidence. `sessionStorage['fl_eval_hist']` entries carry a bounded
+  confidence/evidence snapshot; legacy entries lacking it read as not-recorded.
+- **`scripts/m7-certify.mjs`** — the default run is a release PREFLIGHT, a skipped
+  suite is `SKIP` not `PASS`, and while the canonical certification state is HOLD it
+  prints `NOT CERTIFIABLE` and never tells the operator to freeze.
+
+### Batch B — M6 reconciliation
+
+- `_historicalRowFingerprint()` is SHA-256-based and async, and its input keeps the
+  full ISO source instant. The 32-bit DJB2 token it replaces has a demonstrated
+  same-length collision pair.
+- `_orderStableKey()` ignores a bare external `stableId`; only an explicit
+  `internalStableId` is honoured. `scripts/m6-import.mjs` no longer sets one.
+- The adapter groups by order number as a CANDIDATE and merges only compatible rows;
+  merging is authority-aware and per-field provenance survives it. A source column
+  named `Carrier` stays `carrierLabel`. DRY RUN is imported as its own class
+  (`cohort.dryRun` clears `normalMarketEligible`) rather than discarded. An
+  unrecognized status sets no award (`awarded` is tri-state). Full timestamps keep
+  their clock precision.
+- Places are compared as TOKEN SEQUENCES, with exactly one extra trailing two-letter
+  state token allowed as a qualification of a less specific value — normalization,
+  not fuzzy matching. `Chicago` vs `Chicago Heights IL`, and `Chicago IL` vs
+  `Chicago MO`, both still conflict.
+- `calibrateWinningRange()` no longer gives an undated observation weight `1.0`;
+  undated evidence stays counted but leaves the recency-weighted cohort, and
+  `unknownAgeCount` / `weightedSampleSize` are reported. `calibrateFromLifecycle()`
+  no longer substitutes lifecycle `updatedAt` for a market-observation time.
+
+### Test coverage
+
+Full suite: **302 passed, 0 failed across 31 spec files** (was 241/26 at v24.0.1).
+New: `tests/integration/batch-a-release-integrity.spec.mjs` (21),
+`tests/integration/m3-real-evidence-wiring.spec.mjs` (15),
+`tests/integration/batch-b-m6-reconciliation.spec.mjs` (14),
+`tests/unit/worker-canonical-absence.spec.mjs` (5),
+`tests/unit/m7-runner-semantics.spec.mjs` (5), plus
+`tests/fixtures/blank.html` and `launchBlank()` in the harness for tests that must
+establish database state before the app boots.
+
+Five existing assertions changed, each because it encoded a defect this release
+fixes: two `DB_VERSION` literals, the fabricated operator-confirmation timestamp,
+the displayed-total-in-`loadedMi` acceptance, the Worker's grade-`F` coercion, and
+the now-async fingerprint call. None was skipped or weakened.
+
+### Still owned by the GPT lane
+
+`docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` still carries
+`<FINAL_APP_VERSION>` / `<FINAL_WORKER_VERSION>` placeholders, and
+`docs/BACKUP_CONTRACT.md` needs the `normalizedEvidence` store recorded per its
+Amendment 2. Both are `docs/` (gpt) under `/.agents/LANES.md`; the landed values
+(`24.0.2`, Worker `13`) were requested through `/.agents/inbox/` rather than edited
+across lanes.
