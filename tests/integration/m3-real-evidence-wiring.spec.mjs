@@ -104,7 +104,12 @@ test('[M3R-04] a successful route fetch reporting zero alerts is valid zero-aler
     // A genuine successful NWS response carrying no active alerts.
     window.fetch = async () => new Response(JSON.stringify({ features: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     try {
-      await T.checkRouteWeather({ lat: 41.88, lng: -87.63 }, { lat: 41.65, lng: -83.54 }, 'WX-OK');
+      // Deliberately arbitrary open-ocean coordinates that no market city maps
+      // to. `checkRouteWeather` keeps a 30-minute per-point success cache, and
+      // a runner that CAN reach api.weather.gov will have populated it for the
+      // real route points via the evaluator's own async weather call — which
+      // would let a cached success answer this test instead of the stub.
+      await T.checkRouteWeather({ lat: 1.23, lng: 2.34 }, { lat: 3.45, lng: 4.56 }, 'WX-OK');
     } finally { window.fetch = realFetch; }
     const obs = T.getRouteWeatherObservation('WX-OK');
     const items = T.buildEvaluationEvidence({ weatherObservation: obs, economicsResult: { fuelPrice: 3.5 } });
@@ -128,10 +133,11 @@ test('[M3R-05] a failed or absent route fetch is UNKNOWN, never rendered as "0 a
     const realFetch = window.fetch;
     window.fetch = async () => { throw new Error('network down'); };
     try {
-      // Different coordinates: a cached SUCCESS from the previous test would
-      // legitimately answer these points, and a cached observation really is
-      // an observation — the case under test is a route with none.
-      await T.checkRouteWeather({ lat: 39.10, lng: -84.51 }, { lat: 41.66, lng: -83.56 }, 'WX-FAIL');
+      // Different arbitrary coordinates again, and different from WX-OK's: a
+      // cached SUCCESS would legitimately answer those points, and a cached
+      // observation really IS an observation. The case under test is a route
+      // with none, so it needs points nothing has successfully fetched.
+      await T.checkRouteWeather({ lat: 5.67, lng: 6.78 }, { lat: 7.89, lng: 8.9 }, 'WX-FAIL');
     } finally { window.fetch = realFetch; }
     const failed = T.getRouteWeatherObservation('WX-FAIL');
     const failedItem = T.buildEvaluationEvidence({ weatherObservation: failed, economicsResult: { fuelPrice: 3.5 } })
@@ -182,29 +188,31 @@ test('[M3R-06] real lane history reaches the evidence sample size and observatio
 });
 
 test('[M3R-07] with no broker entered the broker domain is UNKNOWN, not a synthetic LOW', async () => {
-  // Isolate the question. Every OTHER domain is put in a healthy state first,
-  // so if overall still comes back LOW the absent broker is the only thing that
-  // could have caused it. M3R-03 deliberately left fuel on its static fallback,
-  // and this environment cannot reach api.weather.gov, so both are set up here.
   await app.page.evaluate(async () => {
     const T = window.__FL_TESTS;
     await T.setSetting('fuelPrice', 3.55);
     await T.setFuelPriceProvenance(T.FUEL_PRICE_SOURCE.OPERATOR);
-    window.__wxRealFetch = window.fetch;
-    window.fetch = async () => new Response(JSON.stringify({ features: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    // Establish a genuine successful observation for THIS route, so the
-    // weather domain is healthy rather than carrying the failed observation an
-    // earlier evaluation of the same route left behind (this environment
-    // cannot reach api.weather.gov).
-    await T.checkRouteWeather({ lat: 41.881, lng: -87.629 }, { lat: 41.664, lng: -83.555 }, 'Chicago, IL|Toledo, OH');
   });
-  const h = await evaluate(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH', broker: '' });
-  await app.page.evaluate(() => { if (window.__wxRealFetch){ window.fetch = window.__wxRealFetch; delete window.__wxRealFetch; } });
-  const brokerItem = h.evidence.find(e => e.key === 'broker.history');
-  eq(brokerItem, undefined, 'no broker entered means no broker evidence claim at all');
-  eq(h.confidence.broker, 'UNKNOWN', 'the broker domain is inapplicable, not low-confidence');
-  ok(h.confidence.overall !== 'LOW',
-     `an absent broker must not by itself cap overall confidence at LOW — got ${h.confidence.overall} with domains ${JSON.stringify(h.confidence)}`);
+  // Differential: the SAME load evaluated with and without a broker. The old
+  // wiring emitted an UNKNOWN-status broker row when none was entered, which
+  // made the broker domain material and dragged the aggregate down purely
+  // because the driver had not typed a name. Comparing the two runs isolates
+  // that from whatever the other domains are doing on this route — the route
+  // weather domain in particular is legitimately LOW in this environment,
+  // which is a real fact about the route and not this test's subject.
+  const withBroker = await evaluate(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH', broker: 'Acme Logistics' });
+  const noBroker  = await evaluate(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH', broker: '' });
+
+  eq(noBroker.evidence.find(e => e.key === 'broker.history'), undefined,
+     'no broker entered means no broker evidence claim at all');
+  eq(noBroker.confidence.broker, 'UNKNOWN', 'the broker domain is inapplicable, not low-confidence');
+  const rank = { LOW: 0, MEDIUM: 1, HIGH: 2, UNKNOWN: 3 };
+  ok(rank[noBroker.confidence.overall] >= rank[withBroker.confidence.overall],
+     `omitting a broker must never make overall confidence WORSE — with: ${withBroker.confidence.overall}, without: ${noBroker.confidence.overall}`);
+  // Every other domain must be identical: the broker is the only variable.
+  for (const d of ['market','operatingCosts','weatherSafety','vehicleFit']){
+    eq(noBroker.confidence[d], withBroker.confidence[d], `the ${d} domain is unaffected by the broker field`);
+  }
 });
 
 test('[M3R-08] a named broker with real bidHistory reaches the evidence with its identity', async () => {
