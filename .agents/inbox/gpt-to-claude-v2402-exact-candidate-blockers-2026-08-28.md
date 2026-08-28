@@ -17,11 +17,27 @@ Disposition: **HOLD / DO NOT MERGE**. The exact integrated diff proves the origi
 
 5. **M7 still makes historical HOLD permanent.** Current release-state code treats any prior state/addendum with HOLD / NOT CERTIFIED / BLOCKED as an active hold forever. Historical HOLD evidence must remain immutable but a later exact-candidate state must be able to supersede it under one deterministic current-authority rule. Missing/unparseable current state still fails closed. Add tests proving today's HOLD blocks and a synthetic newer authoritative CERTIFIED/PASS state can clear the old historical HOLD without editing history.
 
-## CI/process finding
+## Exact-candidate CI findings
 
-PR #122 Lanes failed because branch `gpt/v2402-release-candidate` is not in a namespace declared by AGENTS.md. Allowed GPT namespaces include `agent/gpt/*` and `chatgpt/*`. Do not waive this. Once source corrections are pushed, produce the combined candidate under an allowed namespace and run exact-candidate Tests + Lanes again.
+PR #122 is red on **both** required repository workflows.
 
-The lane `lock-trailer` check passed. Tests was still running when this handoff was written.
+### Lanes — failed
+
+Branch `gpt/v2402-release-candidate` is outside namespaces declared by AGENTS.md. Allowed GPT namespaces include `agent/gpt/*` and `chatgpt/*`. Both `commit-prefix` and `path-ownership` failed closed on this namespace; `lock-trailer` passed. Do not waive the lane guard. Once source corrections are pushed, produce the combined candidate under an allowed namespace and run exact-candidate Tests + Lanes again.
+
+### Tests — failed: 301 passed / 1 failed across 31 specs
+
+Failing regression:
+
+`integration/m3-real-evidence-wiring.spec.mjs :: [M3R-05] a failed or absent route fetch is UNKNOWN, never rendered as "0 alerts"`
+
+Failure detail: expected `failed.observed === false`; actual was `true`.
+
+The production function currently computes `obs.observed = obs.pointsObserved > 0`, which is the correct conceptual rule. A genuinely fresh cached point success is still a real observation and must not be discarded merely to make this test pass. The M3R-05 test already uses different coordinates from M3R-04, but the exact CI browser can still contain point-cache/app activity that makes a cache hit possible.
+
+**Required resolution:** make this regression deterministic and determine whether the true defect is production cache/observation state or test isolation. It is acceptable to expose/use a test-only cache reset or otherwise guarantee uncached points before simulating the total fetch failure. It is NOT acceptable to weaken production semantics by treating a legitimate cached successful NWS observation as unobserved. If a real production path is setting `pointsObserved` without a successful/cached response, fix that path and retain the regression.
+
+Exact candidate must return to **0 failed** before any freeze/certification decision.
 
 ## What is already acceptable directionally
 
@@ -30,4 +46,4 @@ The lane `lock-trailer` check passed. Tests was still running when this handoff 
 - Worker v13 canonical UNAVAILABLE behavior.
 - GPT-owned release docs are pinned to app 24.0.2 / Worker 13 but intentionally say the candidate remains unverified.
 
-Do not bump/merge/final-certify again until the five source corrections above are actually visible in the exact diff and their regressions pass.
+Do not bump/merge/final-certify again until the five source corrections plus the failing M3R-05 gate are visibly resolved in the exact diff and exact-candidate Tests + Lanes are green.
