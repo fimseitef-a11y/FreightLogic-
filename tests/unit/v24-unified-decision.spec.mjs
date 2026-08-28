@@ -56,7 +56,14 @@ test('[V24-04] Worker AI cannot own verdict or grade', () => {
   ok(!worker.includes('grade:         validateGrade(parsed.grade)'), 'AI-parsed grade must not remain authoritative');
   ok(worker.includes('bidAdvice:     canonicalBidAdvice(payload.canonicalDecision?.bid)'), 'Worker bidAdvice must project the canonical client bid range');
   ok(worker.includes('trueRpmBand:   canonicalTrueRpmLabel(payload.canonicalDecision)'), 'Worker True RPM display must project canonical economics');
-  ok(worker.includes("return /^[A-F]$/.test(s) ? s : 'F';"), 'Worker canonical grade projection must preserve F rejects');
+  // Issue #119 Batch A, item 6: a REAL F must still project as F — but an
+  // ABSENT/unknown grade must NOT be coerced into F. The old assertion pinned
+  // the exact coercion that manufactured a failing grade out of a missing input.
+  ok(worker.includes("return /^[A-F]$/.test(s) ? s : '?';"), 'Worker grade projection preserves A-F verbatim and reports absence as ?');
+  ok(worker.includes("if (s === '?') return '?';"), 'Worker must pass the canonical unknown-RPM grade through unchanged');
+  ok(worker.includes("'ACCEPT','REJECT','STRATEGIC','DZ-EXIT','UNAVAILABLE'"), 'Worker must accept UNAVAILABLE as a canonical verdict');
+  ok(worker.includes('function isCanonicalUnavailable(decision)'), 'Worker must recognise a canonically unavailable decision');
+  ok(worker.includes("bid?.suppressed === true"), 'Worker must never fill a suppressed bid range with a figure');
   ok(!worker.includes('String(parsed.bidAdvice'), 'AI must not be able to publish a competing dollar bid');
   ok(!worker.includes('String(parsed.trueRpmBand'), 'AI must not be able to publish a competing RPM band');
   ok(!worker.includes('Professional floor: $1.60/mi'), 'Worker must not inject a competing generic RPM floor');

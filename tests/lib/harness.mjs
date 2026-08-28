@@ -95,6 +95,36 @@ export async function launchApp({ headless = true, geolocation = null, permissio
 }
 
 /**
+ * Launches a fresh, isolated browser context on a BLANK same-origin page — no
+ * app.js, no open IndexedDB connection. Use this when a test has to establish
+ * database state before the app's own initDB() runs (a seeded-old-version
+ * upgrade test, for example: a live page holding the DB open at the current
+ * version makes seeding an older version impossible).
+ *
+ * Call `bootApp()` on the returned object to then navigate the same context to
+ * index.html and wait for boot, exactly as launchApp() does.
+ */
+export async function launchBlank({ headless = true, enableTestExports = true } = {}) {
+  const { port } = await ensureServer();
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext();
+  if (enableTestExports) {
+    await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
+  }
+  const page = await context.newPage();
+  const baseUrl = `http://localhost:${port}`;
+  await page.goto(`${baseUrl}/tests/fixtures/blank.html`, { waitUntil: 'load' });
+  return {
+    browser, context, page, baseUrl,
+    bootApp: async () => {
+      await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
+      await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    },
+    close: async () => { await browser.close(); },
+  };
+}
+
+/**
  * Suppress the F26 First-Time Setup Wizard, which auto-opens ~800ms after
  * boot on an empty DB (app.js:3390-3397, checkFirstRunSetup) and steals
  * pointer events as a full-screen modal. Call this immediately after

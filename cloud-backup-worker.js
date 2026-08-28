@@ -1,4 +1,9 @@
-// FreightLogic Cloud Backup Worker v12 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v13 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v13 (Issue #119 Batch A, item 6): canonical-ABSENCE compatibility. The v12
+// output sanitizers coerced a missing/UNAVAILABLE canonical decision into
+// verdict REJECT and grade F, which manufactured a confident negative answer out
+// of the client saying "I do not have the facts". Absence is now projected AS
+// absence, and an unavailable decision short-circuits before OpenAI is called.
 // v11 (X-01, v23.9 Phase 4): added GET /backup/delta — deltas were POSTed and
 // stored but never readable back, so cloudPullBackup() could only ever
 // restore the last full snapshot, silently losing every delta synced after
@@ -138,7 +143,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '12', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '13', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -203,6 +208,33 @@ export default {
         const payload = await request.json().catch(() => null);
         if (!payload) {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
+        }
+        // v13: a canonical decision that says UNAVAILABLE is a VALID canonical
+        // decision — the client has determined the required facts are missing.
+        // Project that absence back verbatim and do not spend an OpenAI call
+        // asking a model to review a decision that does not exist. Critically,
+        // this never becomes REJECT/F/$0.00.
+        if (isCanonicalUnavailable(payload.canonicalDecision)) {
+          return json({
+            ok: true,
+            ai: {
+              summary: 'No canonical decision is available: the local engine reported required facts as missing, so there is nothing to review.',
+              verdict: 'UNAVAILABLE',
+              grade: '?',
+              authority: 'CLIENT_UNIFIED_DECISION_ENGINE',
+              agreement: 'AGREE',
+              challenge: '',
+              trueRpmBand: canonicalTrueRpmLabel(payload.canonicalDecision),
+              bidAdvice: canonicalBidAdvice(payload.canonicalDecision?.bid),
+              bidTactic: '',
+              primaryReason: unknownFactsReason(payload.canonicalDecision),
+              risks: [],
+              positives: [],
+              nextMove: 'Enter the missing facts, then evaluate again.'
+            },
+            model: null,
+            user: tokenData.name
+          }, 200, cors);
         }
         if (!payload.canonicalDecision?.authority?.verdict || !payload.canonicalDecision?.authority?.grade ||
             !Number.isFinite(Number(payload.canonicalDecision?.economics?.trueRPM)) || !payload.canonicalDecision?.bid?.range) {
@@ -689,19 +721,47 @@ function buildEvalPrompt(p) {
 
 // ─── Output sanitizers ────────────────────────────────────────────────────────
 
+// v13: UNAVAILABLE is a first-class canonical verdict, and an ABSENT verdict is
+// projected as UNAVAILABLE rather than silently becoming a REJECT the client
+// never issued. The Worker is review-only; inventing a negative answer is just
+// as much a second authority as inventing a positive one.
 function canonicalVerdict(v){
   const s = String(v || '').toUpperCase().trim();
-  return new Set(['ACCEPT','REJECT','STRATEGIC','DZ-EXIT']).has(s) ? s : 'REJECT';
+  return new Set(['ACCEPT','REJECT','STRATEGIC','DZ-EXIT','UNAVAILABLE']).has(s) ? s : 'UNAVAILABLE';
 }
+// Grade `?` is the canonical layer's "unknown True RPM" grade. Coercing it to F
+// turned a missing input into a failing score.
 function canonicalGrade(g){
   const s = String(g || '').toUpperCase().trim();
-  return /^[A-F]$/.test(s) ? s : 'F';
+  if (s === '?') return '?';
+  return /^[A-F]$/.test(s) ? s : '?';
+}
+// A decision is unavailable when the client says so — either by verdict or by
+// the facts-complete flag the M1 contract carries.
+function isCanonicalUnavailable(decision){
+  if (!decision) return true;
+  const verdict = String(decision?.authority?.verdict || '').toUpperCase().trim();
+  if (verdict === 'UNAVAILABLE') return true;
+  if (decision.factsComplete === false) return true;
+  if (decision?.economics?.available === false) return true;
+  return false;
+}
+function unknownFactsReason(decision){
+  const facts = Array.isArray(decision?.unknownFacts) ? decision.unknownFacts : [];
+  const named = facts.map(f => String(f).slice(0, 40)).filter(Boolean).slice(0, 6);
+  return named.length
+    ? 'Missing required facts: ' + named.join(', ')
+    : 'The local engine reported required facts as missing.';
 }
 function canonicalTrueRpmLabel(decision){
   const rpm = Number(decision?.economics?.trueRPM);
-  return Number.isFinite(rpm) ? `$${rpm.toFixed(2)} / true mile` : '';
+  if (decision?.economics?.trueRPM === null || decision?.economics?.trueRPM === undefined) return 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
+  return Number.isFinite(rpm) ? `$${rpm.toFixed(2)} / true mile` : 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
 }
 function canonicalBidAdvice(bid){
+  // A suppressed bid range means the client deliberately withheld a number
+  // because the facts were incomplete. Never fill that gap with a dollar figure.
+  if (bid?.suppressed === true) return 'Bid range suppressed — the canonical facts are incomplete, so no bid figure is defensible.';
   const range = bid?.range;
   if (!range) return 'Use the canonical FreightLogic bid range shown in the local decision.';
   const fmt = (label, tier) => {

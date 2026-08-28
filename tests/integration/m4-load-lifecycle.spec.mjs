@@ -14,7 +14,7 @@ const evalIn = (fn, arg) => app.page.evaluate(fn, arg);
 
 /* ---- 1/2. migration is additive and legacy data still opens ---- */
 
-test('[M4-01] the DB upgraded to v14 and the loadLifecycle store exists', async () => {
+test('[M4-01] the DB is at the declared version and the loadLifecycle store exists', async () => {
   const r = await evalIn(async () => {
     const T = window.__FL_TESTS;
     const db = await new Promise((res, rej) => {
@@ -26,9 +26,14 @@ test('[M4-01] the DB upgraded to v14 and the loadLifecycle store exists', async 
     db.close();
     return { version, hasStore: names.includes('loadLifecycle'), declared: T.DB_VERSION, names };
   });
-  eq(r.declared, 14, 'DB_VERSION must be 14');
-  eq(r.version, 14, 'the opened database is actually at v14');
+  // v15 (Issue #119 Batch A / A5) added the durable normalized-evidence store.
+  // The assertion is that the DECLARED version and the OPENED version agree —
+  // pinning the literal was what made this test go stale on every bump without
+  // testing anything the next line doesn't already cover.
+  eq(r.version, r.declared, 'the opened database is actually at the declared DB_VERSION');
+  ok(r.declared >= 15, 'DB_VERSION must be at least 15 (durable evidence store)');
   ok(r.hasStore, 'loadLifecycle store exists');
+  ok(r.names.includes('normalizedEvidence'), 'the durable normalized-evidence store exists');
   for (const legacy of ['trips','expenses','fuel','bidHistory','settings','gpsLogs']){
     ok(r.names.includes(legacy), `legacy store ${legacy} must survive the upgrade`);
   }
@@ -53,7 +58,7 @@ test('[M4-03] the migration is idempotent — reopening does not duplicate rows'
     const before = (await T.listLifecycle()).length;
     for (let i = 0; i < 3; i++){
       const db = await new Promise((res, rej) => {
-        const q = indexedDB.open('FreightLogic_v18', 14);
+        const q = indexedDB.open('FreightLogic_v18', T.DB_VERSION);
         q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
       });
       db.close();
