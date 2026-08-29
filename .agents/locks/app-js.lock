@@ -1,0 +1,6 @@
+owner: claude
+token: 060ec1c3-eddd-4ea7-9b78-455fa05caf57
+started_utc: 2026-08-29T02:00:10Z
+expected_release_utc: 2026-08-29T18:00:10Z
+paths: app.js, midwest-stack-authority.js, cloud-backup-worker.js, service-worker.js, index.html, manifest.json, sw-bridge.js, voice-load.js, scripts/, tests/
+task: v24.0.2 exact-candidate blockers 1-8 (evidence-first durability on both intake paths, remove customer->broker inference, remove orderNo->tripIds laundering, field-specific confirmation authority, M7 current-state supersession, cloud-restore provenance pairing, local JSON merge reconciliation, true no-op re-import) plus deterministic NWS cache reset for M3R-05.
