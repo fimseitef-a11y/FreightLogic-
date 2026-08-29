@@ -43,30 +43,57 @@ const gate = (name, state, detail='') => checks.push({ name, state, detail });
 const ok = (name, pass, detail='') => gate(name, pass ? PASS : FAIL, detail);
 
 /* ---- 0. canonical release state — authoritative over every gate below ---- */
+// Blocker 5: a historical HOLD must stay immutable EVIDENCE without becoming a
+// permanent, unclearable state. The previous rule — any file that ever said
+// HOLD holds the release forever — made certification impossible without
+// editing history, which is exactly what must never happen.
+//
+// The rule is explicit supersession, not date ordering. Date-only ordering is
+// not an authority: several STATE/ADDENDUM files can carry the same date, and
+// "newest filename wins" would let an unrelated addendum silently clear a
+// blocking state. A document supersedes another only by naming it:
+//
+//     Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md
+//
+// A superseded file remains on disk as evidence and stops being current state.
+// The release is held while ANY non-superseded document declares a hold.
+// Missing, unreadable or unparseable state fails closed.
 function readCanonicalReleaseState(){
   const dir = path.join(ROOT, 'docs');
   let files = [];
   try {
     files = readdirSync(dir)
       .filter(f => /^COMPLETION_RELEASE_CERTIFICATION_(STATE|ADDENDUM)_\d{4}-\d{2}-\d{2}\.md$/.test(f))
-      // Sort by the DATE embedded in the filename, not the filename itself —
-      // STATE_ and ADDENDUM_ have different prefixes, so lexical order is not
-      // chronological order across the two kinds.
-      .sort((a, b) => (a.match(/\d{4}-\d{2}-\d{2}/)||[''])[0].localeCompare((b.match(/\d{4}-\d{2}-\d{2}/)||[''])[0]));
+      .sort();
   } catch { /* no docs dir */ }
   if (!files.length) return { held: true, source: null, status: 'no certification-state document found' };
-  // ANY document still declaring HOLD holds the release. A newer document does
-  // not silently clear an older unresolved one; it has to say so itself.
-  const held = [];
-  let latest = null;
+
+  const docs = [];
+  const superseded = new Set();
   for (const f of files){
-    const status = (readFileSync(path.join(dir, f), 'utf8').match(/^Status:\s*(.+)$/m) || [,''])[1].trim();
-    latest = { file: f, status };
-    if (/HOLD|NOT\s+CERTIFIED|BLOCKED/i.test(status)) held.push({ file: f, status });
+    let text;
+    try { text = readFileSync(path.join(dir, f), 'utf8'); }
+    catch { return { held: true, source: f, status: `certification-state document ${f} could not be read` }; }
+    const status = (text.match(/^Status:\s*(.+)$/m) || [,''])[1].trim();
+    if (!status) return { held: true, source: f, status: `certification-state document ${f} declares no Status:` };
+    const sup = (text.match(/^Supersedes:\s*(.+)$/m) || [,''])[1].trim();
+    for (const name of sup.split(',').map(x => x.trim()).filter(Boolean)) superseded.add(name);
+    docs.push({ file: f, status });
   }
-  return held.length
-    ? { held: true, source: held[held.length-1].file, status: held[held.length-1].status }
-    : { held: false, source: latest.file, status: latest.status };
+
+  const current = docs.filter(d => !superseded.has(d.file));
+  if (!current.length){
+    // Everything claims to be superseded by something: there is no current
+    // state at all. Fail closed rather than guess which one governs.
+    return { held: true, source: null, status: 'every certification-state document is superseded — no current state' };
+  }
+  const holding = current.filter(d => /HOLD|NOT\s+CERTIFIED|BLOCKED/i.test(d.status));
+  if (holding.length){
+    return { held: true, source: holding[holding.length - 1].file, status: holding[holding.length - 1].status,
+             currentCount: current.length, supersededCount: superseded.size };
+  }
+  return { held: false, source: current[current.length - 1].file, status: current[current.length - 1].status,
+           currentCount: current.length, supersededCount: superseded.size };
 }
 const releaseState = readCanonicalReleaseState();
 
@@ -100,18 +127,19 @@ ok('tests/run-all.mjs exits non-zero on failure (X-06 gate)', R('tests/run-all.m
 ok('.github/workflows/tests.yml present', existsSync(path.join(ROOT, '.github/workflows/tests.yml')));
 ok('.github/workflows/lanes.yml present (lane guards)', existsSync(path.join(ROOT, '.github/workflows/lanes.yml')));
 
-/* ---- 5. static Cloudflare parity (no network half) ---- */
+/* ---- 5. static Cloudflare parity (genuinely no network half) ---- */
+// This gate's name has always said "static". It was nonetheless invoking the
+// verifier's LIVE half and then inspecting the failure text, which made an
+// automated code gate depend on reaching the deployed origins — slow or
+// unreachable, and a preflight that should take a second takes minutes or
+// stalls. `--static-only` runs the local CSP-parity check alone; the live half
+// stays where it belongs, in the LIVE DEPLOYMENT GATES section below.
 try {
-  // Bounded: that script's live half reaches deployed origins. It has its own
-  // per-fetch timeout, and this is the belt-and-braces bound so a stalled
-  // network can never hang the preflight itself.
-  execSync('node scripts/verify-cloudflare-parity.mjs', { cwd: ROOT, stdio: 'pipe', timeout: 120000 });
-  ok('verify-cloudflare-parity static CSP check', true);
+  execSync('node scripts/verify-cloudflare-parity.mjs --static-only', { cwd: ROOT, stdio: 'pipe', timeout: 60000 });
+  ok('verify-cloudflare-parity static CSP check', true, 'live half is an operator gate, listed separately below');
 } catch (e) {
   const out = String(e.stdout || '') + String(e.stderr || '');
-  // The live half fails without network reach — that's the operator gate, not a defect.
-  ok('verify-cloudflare-parity static CSP check', /CSP are byte-identical/.test(out) && out.includes('PASS'),
-     'static passed; live half needs the deployed origins (operator gate)');
+  ok('verify-cloudflare-parity static CSP check', false, out.split('\n').filter(Boolean).slice(-2).join(' | '));
 }
 
 /* ---- 6. the full suite: run it, or record that it was NOT run ---- */

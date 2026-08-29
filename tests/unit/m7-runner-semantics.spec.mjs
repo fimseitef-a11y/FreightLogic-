@@ -9,7 +9,7 @@
 // These tests EXECUTE the runner rather than grepping it, so they test the
 // behaviour the operator actually sees.
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSuite, ok, eq } from '../lib/harness.mjs';
@@ -24,6 +24,13 @@ const { test, run } = createSuite('unit/m7-runner-semantics.spec.mjs');
 // the whole suite on a runner whose network reaches those origins slowly. It is
 // run ONCE and the output shared; every assertion below is about that one run.
 let _cached = null;
+function runCertifyFresh(args = []){
+  try {
+    return { code: 0, out: execFileSync('node', ['scripts/m7-certify.mjs', ...args], { cwd: ROOT, encoding: 'utf8', timeout: 180000 }) };
+  } catch (e) {
+    return { code: e.status ?? 1, out: String(e.stdout || '') + String(e.stderr || '') };
+  }
+}
 function runCertify(args = []){
   if (args.length === 0 && _cached) return _cached;
   let result;
@@ -92,6 +99,71 @@ test('[M7-05] a clean preflight on a held release still exits 0, and the verdict
   // correctly-held release look like a broken tool.
   const failed = Number((out.match(/AUTOMATED GATES: \d+ passed, (\d+) failed/) || [,'0'])[1]);
   eq(code, failed ? 1 : 0, 'the exit code tracks failed gates, not the certification verdict');
+});
+
+/* ── blocker 5: a historical HOLD is immutable evidence, not a permanent state ── */
+
+test('[M7-06] a later authoritative state supersedes a historical HOLD without rewriting history', () => {
+  const dir = path.join(ROOT, 'docs');
+  const held = readdirSync(dir).filter(f =>
+    /^COMPLETION_RELEASE_CERTIFICATION_(STATE|ADDENDUM)_\d{4}-\d{2}-\d{2}\.md$/.test(f));
+
+  // Today's real state must block. This is not a hypothetical: the repository
+  // is on HOLD right now and the runner has to say so.
+  ok(/NOT CERTIFIABLE/.test(runCertify().out), 'the real current HOLD blocks certification');
+
+  // Now add a synthetic LATER document that explicitly supersedes every
+  // currently-held one. Nothing on disk is edited — the historical files stay
+  // exactly as they are, as evidence.
+  const synthetic = path.join(dir, 'COMPLETION_RELEASE_CERTIFICATION_STATE_2099-01-01.md');
+  const before = held.map(f => readFileSync(path.join(dir, f), 'utf8'));
+  writeFileSync(synthetic, [
+    '# Synthetic certification state (test fixture)',
+    '',
+    'Date: 2099-01-01',
+    `Supersedes: ${held.join(', ')}`,
+    'Status: **CERTIFIED — completion release approved**',
+    '',
+  ].join('\n'));
+  let out;
+  try { out = runCertifyFresh().out; }
+  finally { unlinkSync(synthetic); }
+
+  ok(!/canonical release state is HOLD/.test(out),
+     'an explicitly superseding authoritative state clears the historical hold');
+  ok(/CERTIFIED/.test(out), 'and the runner reports the current state, not an archived one');
+
+  // The historical evidence is untouched.
+  held.forEach((f, i) => {
+    eq(readFileSync(path.join(dir, f), 'utf8'), before[i],
+       `${f} must not be edited to clear a hold — history stays immutable`);
+  });
+  // And the real state blocks again the moment the fixture is gone.
+  ok(/NOT CERTIFIABLE/.test(runCertifyFresh().out), 'removing the superseding state restores the hold');
+});
+
+test('[M7-07] a superseding document that itself declares a hold still holds', () => {
+  const dir = path.join(ROOT, 'docs');
+  const held = readdirSync(dir).filter(f =>
+    /^COMPLETION_RELEASE_CERTIFICATION_(STATE|ADDENDUM)_\d{4}-\d{2}-\d{2}\.md$/.test(f));
+  const synthetic = path.join(dir, 'COMPLETION_RELEASE_CERTIFICATION_STATE_2099-01-02.md');
+  writeFileSync(synthetic, [
+    '# Synthetic certification state (test fixture)', '', 'Date: 2099-01-02',
+    `Supersedes: ${held.join(', ')}`,
+    'Status: **HOLD — blockers remain**', '',
+  ].join('\n'));
+  let out;
+  try { out = runCertifyFresh().out; } finally { unlinkSync(synthetic); }
+  ok(/NOT CERTIFIABLE/.test(out), 'supersession is not a way to clear a hold — only a CLEAR state clears it');
+});
+
+test('[M7-08] a state document with no parseable Status fails closed', () => {
+  const dir = path.join(ROOT, 'docs');
+  const synthetic = path.join(dir, 'COMPLETION_RELEASE_CERTIFICATION_STATE_2099-01-03.md');
+  writeFileSync(synthetic, '# Synthetic fixture with no Status line\n\nDate: 2099-01-03\n');
+  let out;
+  try { out = runCertifyFresh().out; } finally { unlinkSync(synthetic); }
+  ok(/NOT CERTIFIABLE/.test(out), 'an unparseable state document must never read as permission to proceed');
 });
 
 export async function runSpec(){ return await run(); }

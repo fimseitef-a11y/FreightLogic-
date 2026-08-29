@@ -11,8 +11,14 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 
-const pagesOrigin = (process.argv[2] || 'https://freightlogic.pages.dev').replace(/\/$/, '');
-const workerOrigin = (process.argv[3] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
+// `--static-only` runs the local, no-network half alone. The live half needs to
+// reach the deployed origins, which is an OPERATOR gate — it belongs in a
+// deliberate deployment check, not inside an automated test suite, where an
+// unreachable or slow origin turns a code gate into a network gate.
+const STATIC_ONLY = process.argv.includes('--static-only');
+const positional = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const pagesOrigin = (positional[0] || 'https://freightlogic.pages.dev').replace(/\/$/, '');
+const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
   serviceWorkerVersion: "24.0.2",
@@ -140,6 +146,12 @@ async function main() {
   const checks = [];
 
   checkLocalCspParity(checks);
+
+  if (STATIC_ONLY){
+    console.log('(--static-only: the live deployment half was not run — it is an operator gate)');
+    report(checks);
+    return;
+  }
 
   try {
     await runLiveChecks(checks);

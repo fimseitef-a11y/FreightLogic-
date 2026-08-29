@@ -31,6 +31,8 @@ import { runSpec as m6HistoricalImport } from './integration/m6-historical-impor
 import { runSpec as batchAReleaseIntegrity } from './integration/batch-a-release-integrity.spec.mjs';
 import { runSpec as m3RealEvidenceWiring } from './integration/m3-real-evidence-wiring.spec.mjs';
 import { runSpec as batchBM6Reconciliation } from './integration/batch-b-m6-reconciliation.spec.mjs';
+// v24.0.2 exact-candidate blockers 1-8
+import { runSpec as blockersExactCandidate } from './integration/blockers-exact-candidate.spec.mjs';
 import { runSpec as workerCanonicalAbsence } from './unit/worker-canonical-absence.spec.mjs';
 import { runSpec as m7RunnerSemantics } from './unit/m7-runner-semantics.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
@@ -64,6 +66,7 @@ const specs = [
   batchAReleaseIntegrity,
   m3RealEvidenceWiring,
   batchBM6Reconciliation,
+  blockersExactCandidate,
   workerCanonicalAbsence,
   m7RunnerSemantics,
   preV24Integrity,

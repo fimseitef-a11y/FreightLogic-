@@ -103,12 +103,13 @@ test('[M3R-04] a successful route fetch reporting zero alerts is valid zero-aler
     const realFetch = window.fetch;
     // A genuine successful NWS response carrying no active alerts.
     window.fetch = async () => new Response(JSON.stringify({ features: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    // `checkRouteWeather` keeps a 30-minute per-point success cache. A runner
+    // that CAN reach api.weather.gov will have populated it via the evaluator's
+    // own async weather call, so the cache is reset to guarantee this test
+    // observes what the stub returns and nothing else. Coordinates are
+    // deliberately arbitrary too, so no market city maps to them.
+    T._resetRouteWeatherStateForTests();
     try {
-      // Deliberately arbitrary open-ocean coordinates that no market city maps
-      // to. `checkRouteWeather` keeps a 30-minute per-point success cache, and
-      // a runner that CAN reach api.weather.gov will have populated it for the
-      // real route points via the evaluator's own async weather call — which
-      // would let a cached success answer this test instead of the stub.
       await T.checkRouteWeather({ lat: 1.23, lng: 2.34 }, { lat: 3.45, lng: 4.56 }, 'WX-OK');
     } finally { window.fetch = realFetch; }
     const obs = T.getRouteWeatherObservation('WX-OK');
@@ -132,11 +133,13 @@ test('[M3R-05] a failed or absent route fetch is UNKNOWN, never rendered as "0 a
     const T = window.__FL_TESTS;
     const realFetch = window.fetch;
     window.fetch = async () => { throw new Error('network down'); };
+    // The subject here is a route with NO successful observation, so the point
+    // cache is cleared first. A cached success is a real observation and must
+    // never be discarded to make a test pass — the reset removes the ambiguity
+    // instead of weakening `obs.observed = pointsObserved > 0`, which is the
+    // correct production rule.
+    T._resetRouteWeatherStateForTests();
     try {
-      // Different arbitrary coordinates again, and different from WX-OK's: a
-      // cached SUCCESS would legitimately answer those points, and a cached
-      // observation really IS an observation. The case under test is a route
-      // with none, so it needs points nothing has successfully fetched.
       await T.checkRouteWeather({ lat: 5.67, lng: 6.78 }, { lat: 7.89, lng: 8.9 }, 'WX-FAIL');
     } finally { window.fetch = realFetch; }
     const failed = T.getRouteWeatherObservation('WX-FAIL');

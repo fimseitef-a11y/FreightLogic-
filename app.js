@@ -1002,42 +1002,52 @@ async function importHistoricalOpportunities(records, opts = {}){
         sourceRefs: target?.sourceRefs || {},
       };
 
+      // Blocker 1 — EVIDENCE FIRST here too. The historical path had the same
+      // asymmetry in a different form: it committed the lifecycle row and only
+      // then wrote the provenance evidence, so a failed evidence write left
+      // lifecycle state standing for an observation that was never recorded.
+      // Same three phases as manual/email intake.
+      //
+      // B12: historical provenance lives in the SAME durable evidence layer the
+      // manual/email path uses — not a parallel one-off structure. This is what
+      // preserves per-field provenance, the source observation instant, the
+      // price/mileage semantics, and the operational class through backup,
+      // restore, export and import.
+      const evidenceContent = buildEvidenceContent(norm, {
+        ...rec,
+        broker: rec.broker || '',
+        awarded: rec.awarded,
+        statusRaw: rec.statusRaw || '',
+        // B6: a source column named "Carrier" stays a carrier label.
+        carrierLabel: rec.carrierLabel || '', companyLabel: rec.companyLabel || '',
+        // B5: per-field provenance from the adapter's authority-aware merge.
+        fieldProvenance: rec.fieldProvenance || {},
+      }, {
+        authority: rec.authority || (rec.operatorConfirmed ? 'OPERATOR_CONFIRMED_HISTORY' : 'AI_SECONDARY'),
+      }, fp);
+      evidenceContent.operationalClass = rec.operationalClass
+        || (rec.dryRun === true ? 'DRY_RUN' : (isQuote ? 'BOARD_OBSERVATION' : 'FREIGHT'));
+      evidenceContent.opportunityClaim = opportunity;
+
+      // ── phase 1: the observation becomes durable before any lifecycle state ──
+      const pendingEvidence = await putEvidence({
+        ...evidenceContent, lifecycleId: null, linkState: 'UNLINKED', linkReason: 'pending link',
+      });
+
+      // ── phase 2: lifecycle create/link ──
       const saved = await upsertLifecycle(record, {
         expectedRevision: target?.revision ?? null,
         source: 'IMPORT', sourceId: rec.orderNo || norm.lifecycleId,
         reason: `historical ${isQuote ? 'quote observation' : 'order'} import`,
       });
 
-      // B12: historical provenance lives in the SAME durable evidence layer the
-      // manual/email path uses — not a parallel one-off structure. This is what
-      // preserves per-field provenance, the source observation instant, the
-      // price/mileage semantics, and the operational class through backup,
-      // restore, export and import.
+      // ── phase 3: attach the link to the already-durable evidence row ──
       await putEvidence({
-        fingerprint: fp,
+        ...pendingEvidence,
         lifecycleId: saved.lifecycleId,
         linkState: 'LINKED',
         linkReason: target ? 'historical order identity' : 'new historical record',
-        observedAt: norm.observedAt, observedAtISO: norm.observedAtISO,
-        operationalClass: rec.operationalClass || (rec.dryRun === true ? 'DRY_RUN' : (isQuote ? 'BOARD_OBSERVATION' : 'FREIGHT')),
-        opportunityClaim: opportunity,
-        // B8: tri-state. An unrecognized source status establishes nothing
-        // about an award, and null is not false and emphatically not true.
-        awarded: rec.awarded === true ? true : (rec.awarded === false ? false : null),
-        statusRaw: rec.statusRaw || '',
-        orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: rec.broker || '',
-        // B6: a source column named "Carrier" stays a carrier label.
-        carrierLabel: rec.carrierLabel || '', companyLabel: rec.companyLabel || '',
-        origin: norm.origin, destination: norm.destination,
-        pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
-        amount: norm.amount, priceSemantic: norm.priceSemantic, canonicalRevenue: norm.canonicalRevenue,
-        loadedMi: norm.loadedMi, deadMi: norm.deadMi, displayedTotalMi: norm.displayedTotalMi,
-        repositionMi: norm.repositionMi, mapEstimateMi: norm.mapEstimateMi,
-        mileageSemantic: norm.mileageSemantic, sourceDisplayedRpm: norm.sourceDisplayedRpm,
-        provenance: { ...norm.provenance, authority: rec.authority || (rec.operatorConfirmed ? 'OPERATOR_CONFIRMED_HISTORY' : 'AI_SECONDARY') },
-        // B5: per-field provenance from the adapter's authority-aware merge.
-        fieldProvenance: rec.fieldProvenance || {},
-      });
+      }, { expectedRevision: pendingEvidence.revision });
       summary.evidenceRows++;
       if (record.cohort.dryRun) summary.dryRuns++;
 
@@ -1333,6 +1343,14 @@ const EVIDENCE_AUTHORITY_ORDER = Object.freeze([
   'CANONICAL_DOCTRINE',
   'VERIFIED_EXTERNAL_DOC',
   'DERIVED_MATH',
+  // Blocker 4: a value the operator TYPED but has not confirmed. It is
+  // operator-authored, so calling it AI_SECONDARY would misdescribe its source;
+  // it is unverified, so calling it PRIMARY_DOCUMENT would promote a typed row
+  // to documentary evidence. Source type and authority are separate facts, and
+  // this is the authority half. Ranked below deterministic derived math — an
+  // arithmetic result from known inputs is more defensible than an unchecked
+  // keystroke — and above an AI summary, which no human asserted at all.
+  'OPERATOR_ENTERED_UNVERIFIED',
   'AI_SECONDARY',
 ]);
 function evidenceAuthorityRank(a){
@@ -1567,10 +1585,87 @@ function reconcileEvidenceFields(observations, fields){
   return { values, fieldProvenance };
 }
 
+// The durable content of an evidence row — everything except its identity, its
+// bookkeeping, and its lifecycle link. Two rows with equal durable content
+// describe the same observation, whatever their revision or recordedAt.
+const _EVIDENCE_CONTENT_KEYS = Object.freeze([
+  'fingerprint','observedAt','observedAtISO','operationalClass','opportunityClaim',
+  'awarded','statusRaw','orderNo','broker','brokerDisplay','carrierLabel','companyLabel',
+  'origin','destination','pickupAt','deliveryAt','amount','priceSemantic','canonicalRevenue',
+  'loadedMi','deadMi','displayedTotalMi','repositionMi','mapEstimateMi','mileageSemantic',
+  'sourceDisplayedRpm',
+]);
+function _evidenceContentEqual(a, b){
+  if (!a || !b) return false;
+  for (const k of _EVIDENCE_CONTENT_KEYS){
+    if ((a[k] ?? null) !== (b[k] ?? null)) return false;
+  }
+  const ap = a.provenance || {}, bp = b.provenance || {};
+  for (const k of ['sourceType','sourceName','platform','sourceTimestamp','sourceTimestampMs',
+                   'rawEvidenceRef','confirmationState','operatorConfirmedAt','fieldConfidence','authority']){
+    if ((ap[k] ?? null) !== (bp[k] ?? null)) return false;
+  }
+  return JSON.stringify(a.fieldProvenance || {}) === JSON.stringify(b.fieldProvenance || {});
+}
+
+// Builds the durable evidence content for one normalized observation, plus the
+// field-level provenance. Shared by manual/email intake and historical import
+// so both produce the same shape from the same rules.
+//
+// Blocker 4: `confirmedFields` promotes ONLY the fields the operator explicitly
+// confirmed. The row keeps the authority of whatever actually produced it.
+function buildEvidenceContent(norm, raw = {}, opts = {}, fingerprint = ''){
+  const rowAuthority = opts.authority || raw?.authority || 'AI_SECONDARY';
+  const confirmedFields = Array.isArray(opts.confirmedFields) ? opts.confirmedFields : [];
+  const fieldProvenance = { ...(raw?.fieldProvenance || {}) };
+  for (const field of confirmedFields){
+    fieldProvenance[field] = {
+      sourceName: norm.provenance.sourceName || 'operator',
+      sourceType: norm.provenance.sourceType,
+      authority: 'OPERATOR_CORRECTION',
+      at: norm.provenance.operatorConfirmedAt,
+      rawEvidenceRef: norm.provenance.rawEvidenceRef,
+    };
+  }
+  return {
+    fingerprint,
+    observedAt: norm.observedAt,
+    observedAtISO: norm.observedAtISO,
+    operationalClass: norm.operationalClass,
+    opportunityClaim: norm.opportunity,
+    awarded: raw?.awarded === true ? true : (raw?.awarded === false ? false : null),
+    statusRaw: raw?.statusRaw || '',
+    orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: raw?.broker || norm.broker,
+    carrierLabel: norm.carrierLabel, companyLabel: norm.companyLabel,
+    origin: norm.origin, destination: norm.destination,
+    pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
+    amount: norm.amount, priceSemantic: norm.priceSemantic, canonicalRevenue: norm.canonicalRevenue,
+    loadedMi: norm.loadedMi, deadMi: norm.deadMi, displayedTotalMi: norm.displayedTotalMi,
+    repositionMi: norm.repositionMi, mapEstimateMi: norm.mapEstimateMi,
+    mileageSemantic: norm.mileageSemantic, sourceDisplayedRpm: norm.sourceDisplayedRpm,
+    provenance: { ...norm.provenance, authority: rowAuthority },
+    fieldProvenance,
+  };
+}
+
 // M5B: intake a normalized opportunity. Offline-safe (pure IndexedDB, no
-// network) and never fabricates provider access. Persists the durable evidence
-// FIRST — evidence must survive even when the lifecycle link is unresolved —
-// then links or creates lifecycle state conservatively.
+// network) and never fabricates provider access.
+//
+// Blocker 1 — EVIDENCE FIRST. The durability contract's M5 sequence is
+// normalize -> persist durable evidence -> link/create lifecycle. This used to
+// link first and persist second, which meant a lifecycle row could be committed
+// for an observation whose evidence then failed to store: lifecycle state
+// derived from evidence that does not exist. The order is now
+//
+//   phase 1  persist the semantic observation, deliberately UNLINKED
+//   phase 2  conservative lifecycle link/create
+//   phase 3  attach the resulting link to the already-durable evidence row,
+//            under expectedRevision
+//
+// A phase-1 failure propagates and NO lifecycle state is touched. A phase-2 or
+// phase-3 failure leaves the evidence observation durable and reports the
+// unresolved/failed attachment — it never deletes evidence, and never reports a
+// success it did not achieve.
 async function intakeOpportunity(raw, opts = {}){
   const norm = normalizeOpportunity(raw, opts);
 
@@ -1587,53 +1682,80 @@ async function intakeOpportunity(raw, opts = {}){
   ])), 120);
 
   const existing = await findEvidenceByFingerprint(fingerprint);
+  const content = buildEvidenceContent(norm, raw, opts, fingerprint);
 
-  const link = await linkLifecycle({
-    // An explicit lifecycleId is only carried through when the caller actually
-    // supplied one; a freshly minted id is not evidence of a link.
-    ...(raw?.lifecycleId ? { lifecycleId: clampStr(raw.lifecycleId, 60) } : {}),
-    ...(existing?.lifecycleId ? { lifecycleId: existing.lifecycleId } : {}),
-    orderNo: norm.orderNo,
-    broker: norm.broker,
-    origin: norm.origin,
-    destination: norm.destination,
-    pickupAt: norm.pickupAt,
-    deliveryAt: norm.deliveryAt,
-    opportunity: norm.opportunity,
-    cohort: { deadZoneExit: raw?.cohort?.deadZoneExit === true },
-  }, {
-    // Manual entry is a USER mutation; every machine-derived source (email,
-    // vision, history, provider) records as IMPORT.
-    source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
-    sourceId: norm.orderNo || norm.lifecycleId,
-    reason: `${norm.provenance.sourceType} opportunity intake`,
-  });
+  // Blocker 8 — a TRUE no-op. Re-importing an identical observation that is
+  // already linked used to call putEvidence() anyway, which bumps `revision`
+  // and resets `recordedAt`: protected history mutated and a fresh cloud-delta
+  // candidate produced, for an observation that had not changed. Idempotence
+  // means the persisted state is unchanged, not merely that no second row
+  // appeared. A previously UNRESOLVED/UNLINKED row is deliberately excluded —
+  // it may now be linkable, and that is a real mutation.
+  if (existing && existing.linkState === 'LINKED'
+      && _evidenceContentEqual(existing, sanitizeEvidence({ ...existing, ...content }))){
+    return Object.freeze({
+      normalized: norm,
+      link: { ok: true, lifecycleId: existing.lifecycleId, created: false, reason: 'unchanged observation' },
+      evidence: existing, fingerprint, reimported: true, noop: true,
+    });
+  }
 
-  const evidence = await putEvidence({
+  // ── phase 1: the observation becomes durable BEFORE any lifecycle state ──
+  const pending = await putEvidence({
     ...(existing ? { evidenceId: existing.evidenceId, revision: existing.revision } : {}),
-    fingerprint,
-    lifecycleId: link.ok ? link.lifecycleId : null,
-    linkState: link.ok ? 'LINKED' : (link.unresolved ? 'UNRESOLVED' : 'UNLINKED'),
-    linkReason: clampStr(link.reason || '', 120),
-    observedAt: norm.observedAt,
-    observedAtISO: norm.observedAtISO,
-    operationalClass: norm.operationalClass,
-    opportunityClaim: norm.opportunity,
-    awarded: raw?.awarded === true ? true : (raw?.awarded === false ? false : null),
-    statusRaw: raw?.statusRaw || '',
-    orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: raw?.broker || norm.broker,
-    carrierLabel: norm.carrierLabel, companyLabel: norm.companyLabel,
-    origin: norm.origin, destination: norm.destination,
-    pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
-    amount: norm.amount, priceSemantic: norm.priceSemantic, canonicalRevenue: norm.canonicalRevenue,
-    loadedMi: norm.loadedMi, deadMi: norm.deadMi, displayedTotalMi: norm.displayedTotalMi,
-    repositionMi: norm.repositionMi, mapEstimateMi: norm.mapEstimateMi,
-    mileageSemantic: norm.mileageSemantic, sourceDisplayedRpm: norm.sourceDisplayedRpm,
-    provenance: { ...norm.provenance, authority: opts.authority || raw?.authority || 'AI_SECONDARY' },
-    fieldProvenance: raw?.fieldProvenance || {},
+    ...content,
+    lifecycleId: existing?.lifecycleId ?? null,
+    linkState: existing?.linkState === 'LINKED' ? 'LINKED' : 'UNLINKED',
+    linkReason: 'pending link',
   }, existing ? { expectedRevision: existing.revision } : {});
 
-  return Object.freeze({ normalized: norm, link, evidence, fingerprint, reimported: !!existing });
+  // ── phase 2: conservative lifecycle link/create ──
+  let link;
+  try {
+    link = await linkLifecycle({
+      // An explicit lifecycleId is only carried through when the caller actually
+      // supplied one; a freshly minted id is not evidence of a link.
+      ...(raw?.lifecycleId ? { lifecycleId: clampStr(raw.lifecycleId, 60) } : {}),
+      ...(pending.lifecycleId ? { lifecycleId: pending.lifecycleId } : {}),
+      orderNo: norm.orderNo,
+      broker: norm.broker,
+      origin: norm.origin,
+      destination: norm.destination,
+      pickupAt: norm.pickupAt,
+      deliveryAt: norm.deliveryAt,
+      opportunity: norm.opportunity,
+      cohort: { deadZoneExit: raw?.cohort?.deadZoneExit === true },
+    }, {
+      // Manual entry is a USER mutation; every machine-derived source (email,
+      // vision, history, provider) records as IMPORT.
+      source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
+      sourceId: norm.orderNo || norm.lifecycleId,
+      reason: `${norm.provenance.sourceType} opportunity intake`,
+    });
+  } catch(e){
+    console.warn('[FL] lifecycle link threw during intake; the evidence is already durable:', e);
+    link = { ok: false, error: String(e?.message || e) };
+  }
+
+  // ── phase 3: attach the link result to the durable evidence row ──
+  try {
+    const attached = await putEvidence({
+      ...pending,
+      lifecycleId: link.ok ? link.lifecycleId : null,
+      linkState: link.ok ? 'LINKED' : (link.unresolved ? 'UNRESOLVED' : 'UNLINKED'),
+      linkReason: clampStr(link.reason || link.error || '', 120),
+    }, { expectedRevision: pending.revision });
+    return Object.freeze({ normalized: norm, link, evidence: attached, fingerprint, reimported: !!existing, noop: false });
+  } catch(e){
+    // The observation stays durable. Report the failed attachment rather than
+    // manufacturing a success or discarding evidence to keep the stores tidy.
+    console.warn('[FL] evidence link attachment failed; the observation is preserved unlinked:', e);
+    return Object.freeze({
+      normalized: norm, link, evidence: pending, fingerprint,
+      reimported: !!existing, noop: false, attachmentFailed: true,
+      attachmentError: String(e?.message || e),
+    });
+  }
 }
 
 
@@ -2094,8 +2216,14 @@ async function openOpportunityIntake(prefill = {}){
         // A live operator action is the one place a confirmation clock may be
         // stamped as now — the operator is confirming it right now.
         stampConfirmationNow: confirmed,
-        // A manual entry the operator typed is an operator-authored fact.
-        authority: confirmed ? 'OPERATOR_CORRECTION' : 'PRIMARY_DOCUMENT',
+        // Blocker 4: the row's authority is what the operator actually did —
+        // they typed it. Ticking "I am confirming this amount as my expected
+        // revenue" is a statement about the AMOUNT, not about the broker, the
+        // route, the mileage or the timestamps, and it never made this a
+        // primary document. The row stays OPERATOR_ENTERED_UNVERIFIED and the
+        // confirmation is applied to the confirmed fields alone.
+        authority: 'OPERATOR_ENTERED_UNVERIFIED',
+        confirmedFields: confirmed ? ['amount', 'canonicalRevenue'] : [],
       });
       const linkNote = res.link.ok
         ? (res.link.created ? 'new lifecycle record created' : 'linked to an existing lifecycle record')
@@ -2123,12 +2251,26 @@ function resolveLifecycleForTrip(trip, rows){
   if (!trip) return { lifecycle: null, unresolved: false };
   const m = lifecycleMatchCandidate({
     orderNo: trip.orderNo,
-    broker: trip.broker || trip.customer || '',
+    // Blocker 2: `trip.customer` is NOT part of the broker identity chain. That
+    // field can hold a carrier or a shipper name as easily as a broker, and the
+    // pre-v24 broker-integrity gate already established that inferring broker
+    // identity from it recreates the attribution bug it exists to stop. An
+    // unknown broker stays unknown — this signal then adds no support, rather
+    // than inventing one.
+    broker: trip.broker || '',
     origin: trip.origin || '',
     destination: trip.destination || '',
     pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
     deliveryAt: isValidISODate(trip.deliveryDate) ? trip.deliveryDate : null,
-    sourceRefs: { tripIds: [trip.orderNo] },
+    // Blocker 3: the STRONG internal-source-reference signal may only carry a
+    // genuinely internal identifier. `trip.orderNo` is an external provider
+    // number that shipments demonstrably reuse; passing it as a `tripId`
+    // relabelled a reusable candidate signal as exact identity and let the
+    // strong-match branch fire on it. `trip.id` is the trips store's own minted
+    // UUID (see newTripTemplate), which is what an exact internal reference
+    // means. A caller with no trip record — the chip slot carries only an order
+    // number — has no internal identity to offer, and none is fabricated.
+    ...(trip.id ? { sourceRefs: { tripIds: [String(trip.id)] } } : {}),
   }, rows);
   if (m.linked) return { lifecycle: (rows || []).find(r => r.lifecycleId === m.lifecycleId) || null, unresolved: false };
   return { lifecycle: null, unresolved: m.unresolved === true, reason: m.reason };
@@ -2998,6 +3140,83 @@ async function enforceReceiptCacheLimit(){
   finally { _evictLock = false; }
 }
 
+/* ── shared protected-history reconcilers (Issue #119 blockers 6 and 7) ──
+ *
+ * Cloud restore and local JSON import both bring in lifecycle and evidence rows
+ * that may be OLDER than what is already stored. Cloud restore reconciled by
+ * revision; local JSON `merge` mode ran a plain `put()`, so an older export
+ * silently overwrote a newer local correction. Both paths now go through these
+ * two functions, so there is one rule and it cannot drift between them.
+ */
+
+// Blocker 6: field provenance must stay PAIRED with the value it describes.
+//
+// The scalar winner supplies every material value in the merged row, so its
+// provenance is the provenance of the merged row. The previous
+// `{...existing.fp, ...incoming.fp}` spread ran regardless of who won, so a
+// stale incoming delta could lose the value conflict and still relabel the
+// retained value's provenance — a $900 operator correction kept as the value
+// while an older $700 AI row supplied the "where this came from".
+//
+// A losing row's provenance entry is carried over only where it cannot
+// misattribute anything: the winner has no entry for that field AND the loser's
+// value for that field is the value the merged row actually retained.
+function reconcileFieldProvenance(winner, loser){
+  const out = { ...(winner.fieldProvenance || {}) };
+  const loserProv = loser?.fieldProvenance || {};
+  for (const [field, prov] of Object.entries(loserProv)){
+    if (out[field]) continue;                                  // winner already attributes it
+    const winnerValue = winner?.[field];
+    const loserValue = loser?.[field];
+    if (winnerValue === undefined || winnerValue === null) continue;  // nothing retained to attribute
+    if (winnerValue !== loserValue) continue;                  // different fact — not this source's
+    out[field] = prov;                                         // same retained fact, known source
+  }
+  return out;
+}
+
+// Newer wins by revision, then by the record's own mutation clock. Neither path
+// may downgrade a newer local record with an older incoming one.
+function _incomingIsNewer(existing, incoming, clockField){
+  const er = finiteNum(existing.revision, 0), ir = finiteNum(incoming.revision, 0);
+  if (ir !== er) return ir > er;
+  return finiteNum(incoming[clockField], 0) > finiteNum(existing[clockField], 0);
+}
+
+function reconcileLifecycleRecord(existing, incoming){
+  if (!existing) return sanitizeLifecycle(incoming);
+  const incomingNewer = _incomingIsNewer(existing, incoming, 'updatedAt');
+  const winner = incomingNewer ? incoming : existing;
+  return sanitizeLifecycle({
+    ...winner,
+    revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
+    createdAt: Math.min(finiteNum(existing.createdAt, Date.now()), finiteNum(incoming.createdAt, Date.now())),
+    // Source refs are a de-duplicated UNION on purpose: a full backup and a
+    // later delta can each carry a partial ref list for the same load, and
+    // last-writer-wins would drop links. Unlike field provenance, a reference
+    // makes no claim about which source supplied a value, so unioning it cannot
+    // misattribute a fact.
+    sourceRefs: {
+      bidHistoryIds: [...(existing.sourceRefs?.bidHistoryIds || []), ...(incoming.sourceRefs?.bidHistoryIds || [])],
+      tripIds: [...(existing.sourceRefs?.tripIds || []), ...(incoming.sourceRefs?.tripIds || [])],
+      reloadOutcomeIds: [...(existing.sourceRefs?.reloadOutcomeIds || []), ...(incoming.sourceRefs?.reloadOutcomeIds || [])],
+      gpsTrackingIds: [...(existing.sourceRefs?.gpsTrackingIds || []), ...(incoming.sourceRefs?.gpsTrackingIds || [])],
+    },
+  });
+}
+
+function reconcileEvidenceRecord(existing, incoming){
+  if (!existing) return sanitizeEvidence(incoming);
+  const incomingNewer = _incomingIsNewer(existing, incoming, 'recordedAt');
+  const winner = incomingNewer ? incoming : existing;
+  const loser  = incomingNewer ? existing : incoming;
+  return sanitizeEvidence({
+    ...winner,
+    revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
+    fieldProvenance: reconcileFieldProvenance(winner, loser),
+  });
+}
+
 // ---- Export / Import (P0-3: includes auditLog + sanitization) ----
 async function dumpStore(name){
   const {stores} = tx(name);
@@ -3296,8 +3515,32 @@ async function importJSON(file, opts={}){
     putAll(stores.bidHistory, safeBidHistoryArr);
     putAll(stores.documents, safeDocumentsArr);
     putAll(stores.gpsLogs, safeGpsLogsArr);
-    putAll(stores.loadLifecycle, safeLifecycleArr);
-    putAll(stores[EVIDENCE_STORE], safeEvidenceArr);
+
+    // Blocker 7: lifecycle and durable evidence are PROTECTED history, and a
+    // blind put() is not the protection cloud restore already gives them. In
+    // `merge` mode an older export carrying the same lifecycleId/evidenceId
+    // silently overwrote a newer local correction — no revision comparison, no
+    // source-ref union, no field-provenance pairing. Both stores now go through
+    // the same reconcilers `mergeRestoreData()` uses, so the two import paths
+    // cannot drift apart. `replace` mode still replaces: it has already cleared
+    // the stores above, deliberately and after its documented backup.
+    if (mode === 'replace'){
+      putAll(stores.loadLifecycle, safeLifecycleArr);
+      putAll(stores[EVIDENCE_STORE], safeEvidenceArr);
+    } else {
+      for (const incoming of safeLifecycleArr){
+        try {
+          const existing = await idbReq(stores.loadLifecycle.get(String(incoming.lifecycleId)));
+          stores.loadLifecycle.put(reconcileLifecycleRecord(existing || null, incoming));
+        } catch(e){ console.warn('[FL] import reconcile loadLifecycle', e); }
+      }
+      for (const incoming of safeEvidenceArr){
+        try {
+          const existing = await idbReq(stores[EVIDENCE_STORE].get(String(incoming.evidenceId)));
+          stores[EVIDENCE_STORE].put(reconcileEvidenceRecord(existing || null, incoming));
+        } catch(e){ console.warn('[FL] import reconcile normalizedEvidence', e); }
+      }
+    }
     await waitTxn(txn);
     SETTINGS_CACHE.clear();
     toast('Import complete');
@@ -14577,27 +14820,7 @@ async function mergeRestoreData(parsed){
         if (!incoming?.lifecycleId) continue;
         const {t:wt, stores:ws} = tx('loadLifecycle','readwrite');
         const existing = await idbReq(ws.loadLifecycle.get(String(incoming.lifecycleId)));
-        let merged;
-        if (!existing){
-          merged = sanitizeLifecycle(incoming);
-        } else {
-          const incomingNewer =
-            finiteNum(incoming.revision, 0) > finiteNum(existing.revision, 0) ||
-            (finiteNum(incoming.revision, 0) === finiteNum(existing.revision, 0) &&
-             finiteNum(incoming.updatedAt, 0) > finiteNum(existing.updatedAt, 0));
-          const winner = incomingNewer ? incoming : existing;
-          merged = sanitizeLifecycle({
-            ...winner,
-            revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
-            createdAt: Math.min(finiteNum(existing.createdAt, Date.now()), finiteNum(incoming.createdAt, Date.now())),
-            sourceRefs: {
-              bidHistoryIds: [...(existing.sourceRefs?.bidHistoryIds || []), ...(incoming.sourceRefs?.bidHistoryIds || [])],
-              tripIds: [...(existing.sourceRefs?.tripIds || []), ...(incoming.sourceRefs?.tripIds || [])],
-              reloadOutcomeIds: [...(existing.sourceRefs?.reloadOutcomeIds || []), ...(incoming.sourceRefs?.reloadOutcomeIds || [])],
-              gpsTrackingIds: [...(existing.sourceRefs?.gpsTrackingIds || []), ...(incoming.sourceRefs?.gpsTrackingIds || [])],
-            },
-          });
-        }
+        const merged = reconcileLifecycleRecord(existing, incoming);
         ws.loadLifecycle.put(merged);
         await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
         stats.loadLifecycle = stats.loadLifecycle || { added: 0, updated: 0 };
@@ -14617,21 +14840,7 @@ async function mergeRestoreData(parsed){
         if (!incoming?.evidenceId) continue;
         const {t:wt, stores:ws} = tx(EVIDENCE_STORE,'readwrite');
         const existing = await idbReq(ws[EVIDENCE_STORE].get(String(incoming.evidenceId)));
-        let merged;
-        if (!existing){ merged = sanitizeEvidence(incoming); }
-        else {
-          const incomingNewer =
-            finiteNum(incoming.revision, 0) > finiteNum(existing.revision, 0) ||
-            (finiteNum(incoming.revision, 0) === finiteNum(existing.revision, 0) &&
-             finiteNum(incoming.recordedAt, 0) > finiteNum(existing.recordedAt, 0));
-          merged = sanitizeEvidence({
-            ...(incomingNewer ? incoming : existing),
-            revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
-            // Field provenance is a union: a full backup and a later delta can
-            // each carry provenance for different fields of the same row.
-            fieldProvenance: { ...(existing.fieldProvenance || {}), ...(incoming.fieldProvenance || {}) },
-          });
-        }
+        const merged = reconcileEvidenceRecord(existing, incoming);
         ws[EVIDENCE_STORE].put(merged);
         await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
         stats[EVIDENCE_STORE] = stats[EVIDENCE_STORE] || { added: 0, updated: 0 };
@@ -15479,7 +15688,11 @@ async function _postTripSaveLaneHook(trip){
       const { execution, settlement } = _lifecycleStateFromTrip(trip);
       await linkLifecycle({
         orderNo: trip.orderNo,
-        broker: trip.broker || trip.customer || '',
+        // Blockers 2/3, write side. Fixing only the read side would leave every
+        // newly written lifecycle row carrying customer-as-broker and
+        // orderNo-as-internal-ref, so the laundering is removed where the value
+        // is minted, not only where it is read.
+        broker: trip.broker || '',
         origin: trip.origin || '',
         destination: trip.destination || '',
         pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
@@ -15489,7 +15702,7 @@ async function _postTripSaveLaneHook(trip){
         execution,
         settlement,
         cohort: { deadZoneExit: trip.isDZExit === true },
-        sourceRefs: { tripIds: [trip.orderNo] },
+        ...(trip.id ? { sourceRefs: { tripIds: [String(trip.id)] } } : {}),
       }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
     }
   } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
@@ -18211,6 +18424,15 @@ function getRouteWeatherObservation(routeKey){
   const o = _routeWeatherObservation;
   return (o && o.routeKey === String(routeKey || '')) ? o : null;
 }
+// A regression that means to exercise "this route was never successfully
+// observed" has to start from genuinely uncached points. The 30-minute
+// per-point success cache is real production behaviour and a cache hit IS a
+// real observation — so the test resets the cache rather than the semantics.
+// Production never calls this.
+function _resetRouteWeatherStateForTests(){
+  _nwsCache.clear();
+  _routeWeatherObservation = null;
+}
 
 async function checkRouteWeather(originCoords, destCoords, routeKey = ''){
   const key = String(routeKey || '');
@@ -20009,7 +20231,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
     // Issue #119 Batch A, item 7 — real evaluation-evidence wiring
     buildEvaluationEvidence, getFuelPriceProvenance, setFuelPriceProvenance, FUEL_PRICE_SOURCE,
-    getRouteWeatherObservation, checkRouteWeather, getLaneIntel, getBrokerIntel, mwEvaluateLoad,
+    getRouteWeatherObservation, checkRouteWeather, _resetRouteWeatherStateForTests,
+    getLaneIntel, getBrokerIntel, mwEvaluateLoad,
+    // Issue #119 exact-candidate blockers
+    buildEvidenceContent, reconcileLifecycleRecord, reconcileEvidenceRecord, reconcileFieldProvenance,
     normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
