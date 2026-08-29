@@ -1301,12 +1301,13 @@ store existence, which is exactly why these shipped green.
 
 ### Test coverage
 
-Full suite: **302 passed, 0 failed across 31 spec files** (was 241/26 at v24.0.1).
+Full suite: **318 passed, 0 failed across 32 spec files** (was 241/26 at v24.0.1).
 New: `tests/integration/batch-a-release-integrity.spec.mjs` (21),
 `tests/integration/m3-real-evidence-wiring.spec.mjs` (15),
 `tests/integration/batch-b-m6-reconciliation.spec.mjs` (14),
 `tests/unit/worker-canonical-absence.spec.mjs` (5),
-`tests/unit/m7-runner-semantics.spec.mjs` (5), plus
+`tests/unit/m7-runner-semantics.spec.mjs` (8),
+`tests/integration/blockers-exact-candidate.spec.mjs` (12), plus
 `tests/fixtures/blank.html` and `launchBlank()` in the harness for tests that must
 establish database state before the app boots.
 
@@ -1314,6 +1315,61 @@ Five existing assertions changed, each because it encoded a defect this release
 fixes: two `DB_VERSION` literals, the fabricated operator-confirmation timestamp,
 the displayed-total-in-`loadedMi` acceptance, the Worker's grade-`F` coercion, and
 the now-async fingerprint call. None was skipped or weakened.
+
+### Exact-candidate blocker corrections (post-freeze review)
+
+The v24.0.2 freeze was reviewed against exact source and held. Eight contract
+defects were corrected before the candidate could stand
+(`.agents/inbox/gpt-to-claude-v2402-exact-candidate-blockers-2026-08-28.md`):
+
+1. **Evidence-first durability, on BOTH source-normalization paths.**
+   `intakeOpportunity()` linked lifecycle before persisting evidence, and
+   `importHistoricalOpportunities()` committed the lifecycle row before writing
+   its provenance evidence. Either could leave lifecycle state standing for an
+   observation that was never recorded. Both now run three phases — persist the
+   observation UNLINKED, link/create lifecycle, attach the link under
+   `expectedRevision`. A first-phase failure touches no lifecycle state; a link
+   or attachment failure preserves the evidence and reports the failure.
+2. **`trip.customer` is out of the broker identity chain**, read side and write
+   side. The `trips` store has no `broker` field at all, so a trip-sourced
+   lifecycle row now carries no broker — the app does not know it and stops
+   inferring it. Linking is unaffected because of (3).
+3. **`trip.orderNo` is no longer laundered into `sourceRefs.tripIds`.** Trips
+   already mint an internal UUID (`newTripTemplate`), so the exact-internal-
+   reference signal carries real internal identity; a caller with no trip
+   record offers none rather than fabricating one.
+4. **Confirmation is field-scoped.** New authority `OPERATOR_ENTERED_UNVERIFIED`
+   describes a typed, unconfirmed value honestly (`sourceType` stays `MANUAL` —
+   source and authority are separate facts). Confirming revenue promotes
+   `amount`/`canonicalRevenue` through `fieldProvenance` alone, never broker,
+   route, mileage or timestamps.
+5. **A historical HOLD is immutable evidence, not a permanent state.**
+   Supersession in `scripts/m7-certify.mjs` is explicit (`Supersedes: <file>`),
+   never date ordering. Missing, unreadable or `Status:`-less state fails
+   closed, and a superseding document that itself holds still holds.
+6. **Restore keeps a retained value paired with its own provenance.**
+   `fieldProvenance` was spread incoming-last regardless of who won the scalar
+   conflict, so a stale delta could relabel a retained newer value. A loser's
+   entry now survives only where the winner has none AND the loser's value is
+   the value actually retained.
+7. **Local JSON `merge` reconciles protected history.** `importJSON()` ran a
+   plain `putAll()` into `loadLifecycle` and `normalizedEvidence`. Both now use
+   `reconcileLifecycleRecord()` / `reconcileEvidenceRecord()`, shared with
+   cloud restore so the paths cannot drift. `replace` still replaces.
+8. **An identical re-import is a true no-op** — the stored record is returned
+   untouched rather than re-written with a new `revision`/`recordedAt`. A
+   previously UNRESOLVED row is excluded: it may now be linkable, which is a
+   real mutation.
+
+`_resetRouteWeatherStateForTests()` makes the NWS regression deterministic by
+clearing the point cache; production's `observed = pointsObserved > 0` is
+unchanged, because a cached success is a real observation.
+
+**Raised, not changed:** `sanitizeTrip()` defaults `invoiceDate` to
+`deliveryDate`, so every saved delivered trip reads as INVOICED for settlement
+and AR. That is long-standing trips-schema behaviour outside this release's
+scope; M4-24 now documents it rather than masking it with a fixture that
+bypassed sanitization.
 
 ### Still owned by the GPT lane
 
