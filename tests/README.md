@@ -74,6 +74,40 @@ proves).
   shape `sanitizeTrip()` produces, then reads back what the app itself
   wrote to the DOM/sessionStorage/IndexedDB/exported Blob.
 
+## Fixture dates must be relative when the assertion depends on age
+
+A spec that hardcodes a calendar date in a fact whose *meaning* changes with
+time is a scheduled red build. It passes the day it is written and fails later
+against source that never moved.
+
+This is not hypothetical. `[M4-23]`/`[M4-24]` asserted `INVOICED` against a
+hardcoded `2026-08-03` invoice date; `_lifecycleStateFromTrip()` derives
+settlement against the standard 30-day term, so on 2026-09-02 the same
+unchanged code correctly returned `OVERDUE` and turned `main` red.
+`[M3R-06]` carried the same fuse with two days left on it — a `laneHistory`
+`lastDate` of `2026-08-20` under a HIGH-confidence assertion that requires the
+row to sit inside the CURRENT (<=14d) freshness window.
+
+So: derive the date from `Date.now()` whenever the assertion depends on how old
+the value is. Inside a `page.evaluate()` body, the idiom the specs use is
+
+```js
+const iso = (n) => new Date(Date.now() - n*86400000).toISOString().slice(0,10);
+```
+
+The runtime behaviours that make a date time-sensitive today:
+
+- **settlement terms** — `INVOICED` becomes `OVERDUE` after `termsDays` (30);
+- **evidence freshness** — CURRENT <=14d, AGING 15-30d, STALE >30d, which
+  feeds domain and overall confidence;
+- **calibration recency** — observation age drives weight, and unknown age is
+  deliberately not weighted as fresh.
+
+Absolute dates stay correct — and are preferable — where the fact is genuinely
+fixed in time: IRS mileage-band boundaries, DST transitions, and assertions
+about timestamp *precision* surviving a round trip (`batch-a`, `blockers`),
+where the point is that the exact instant is preserved unchanged.
+
 ## What this suite does NOT cover
 
 See "What could NOT be tested, and why" in `AUDIT_REPORT.md` — field
