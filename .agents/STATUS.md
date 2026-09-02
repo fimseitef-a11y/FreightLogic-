@@ -89,3 +89,20 @@ Not claimed: this does not explain a device pinned to v23.7.0, which runs the
 v23.7.0 bridge and reloads unconditionally. The deployed origin/generation
 remains the live-gate question. No version marker moved; the freeze generation
 stays an operator decision.
+
+## 2026-09-02 — claude — Diagnostics install identity
+
+Claimed and released `lock/app-js` (`paths: app.js`) to add an Install section
+to the F28 Diagnostics panel. Merged as PR #136.
+
+Why: the A1 investigation could not distinguish a failed update from an icon
+installed from a different origin, because an installed PWA keeps its install
+origin along with that origin's own IndexedDB and Cache Storage — both present
+as an old version with missing data. Diagnostics now reports Origin, Launch
+Mode, SW Script, SW Scope, and Cached Generation (parsed from the
+`freightlogic-<SW_VERSION>` shell cache and rendered as a fault when it
+disagrees with `APP_VERSION`).
+
+Read-only reporting; no storage, service-worker, or decision behaviour changed.
+`openDiagnosticsPanel` added to `__FL_TESTS` so the 5 regressions drive the real
+panel. A1 remains FAIL pending a device retest on a verified origin.
