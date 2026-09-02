@@ -2,7 +2,7 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-02.** Gate 0 and Milestones 1–6 are implemented on `main`, and the exact automated candidate is green at **318 passed / 0 failed across 32 spec files**. Later physical-iPhone evidence failed A1: the installed PWA remained on `v23.x`, and source review found an uncovered service-worker update/reload handshake defect. The named completion release remains **ON HOLD** for that core repair plus live Cloudflare and finite physical-iPhone certification evidence. The current state is tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`; this roadmap remains the authority for order and scope.
+Current status update: **2026-09-02.** Gate 0 and Milestones 1–6 are implemented on `main`, and the exact automated candidate is green at **318 passed / 0 failed across 32 spec files**. Later physical-iPhone evidence failed A1: the installed PWA remained on **v23.7.0**, indicating a production-origin/deployment or update-path failure; source review also found an uncovered v24.0.2 service-worker update/reload handshake defect. The named completion release remains **ON HOLD** for deployment-origin verification, that core repair, and the remaining live Cloudflare and physical-iPhone certification evidence. The current state is tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`; this roadmap remains the authority for order and scope.
 
 Vision ingestion remains an approved but non-blocking track for the named completion release. Provider-adapter expansion remains non-blocking and must not leapfrog the approved sequence.
 

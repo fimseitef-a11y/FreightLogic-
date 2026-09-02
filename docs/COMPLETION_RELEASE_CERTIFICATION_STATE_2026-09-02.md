@@ -56,13 +56,12 @@ evidence may reopen a code-side gate as described below.
 The candidate remains on HOLD until both evidence classes below are observed on
 this exact release generation.
 
-### Observed A1 failure — installed iPhone remained on v23.x
+### Observed A1 failure — installed iPhone remained on v23.7.0
 
 On 2026-09-02, the operator supplied screenshots from the installed iPhone Home
-Screen PWA. The app launched, but its header visibly reported `Omega • v23.x`
-(the final digits were obscured by the iPhone status overlay), not v24.0.2. It
-also presented first-run onboarding. `FIELD_TEST_CHECKLIST.md` A1 is therefore
-**FAIL**, not pending or passed.
+Screen PWA. The app launched, but its More screen reported **FreightLogic
+v23.7.0**, not v24.0.2. It also presented first-run onboarding.
+`FIELD_TEST_CHECKLIST.md` A1 is therefore **FAIL**, not pending or passed.
 
 Exact-current source review found an uncovered update handshake defect:
 
@@ -75,13 +74,15 @@ Exact-current source review found an uncovered update handshake defect:
 - the automated suite contains no real regression for update-ready -> waiting
   worker -> controller change -> exactly one reload.
 
-This source defect is consistent with an update failing to reload immediately,
-but the screenshots alone do not distinguish it from an old production
-deployment or an origin/storage mismatch. Certification requires a core-lane
-repair with a real regression, production-generation verification, and a safe
-retest on the operator's iPhone. Do not use PWA deletion or Safari website-data
-clearing as the primary remedy because those actions can erase local IndexedDB
-evidence.
+The older v23.7.0 bridge performs an immediate `registration.update()` and an
+unconditional controller-change reload. That makes an old/wrong production
+origin, a stale Pages/assets deployment, or a failed network update the primary
+investigation for this exact device observation. The v24.0.2 handshake defect
+above remains independently real, but is not proven to be the sole cause.
+Certification requires exact installed-origin and production-generation
+verification, a core-lane repair with a real regression, and a safe retest on
+the operator's iPhone. Do not use PWA deletion or Safari website-data clearing
+as the primary remedy because those actions can erase local IndexedDB evidence.
 
 ### 1. Live Cloudflare verification
 
