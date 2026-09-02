@@ -7,10 +7,10 @@ Expected runtime: app/PWA/service worker v24.0.2, DB v15, Worker v13
 
 ## Physical-device evidence
 
-The operator supplied two screenshots from the installed iPhone PWA. The app
-launches, but the header visibly reads `Omega • v23.x` (the final digits are
-obscured by the iPhone status/Dynamic Island overlay), not v24.0.2. The app also
-shows the first-run home card and setup wizard.
+The operator supplied screenshots from the installed iPhone PWA. A later
+More-screen screenshot establishes the exact installed generation as
+**FreightLogic v23.7.0**, not v24.0.2. The app also shows the first-run home card
+and setup wizard.
 
 Disposition:
 
@@ -20,13 +20,22 @@ Disposition:
   enter real data until the origin/deployment and local-data implications are
   understood. Those actions could destroy local IndexedDB evidence.
 - The screenshots do not by themselves prove whether the cause is an old
-  production deployment, an origin mismatch/new storage partition, or a stale
-  service-worker update. Verify each separately.
+  production deployment, an origin mismatch/new storage partition, or a failed
+  service-worker fetch/update. Verify each separately.
+
+Exact v23.7.0 source is material to triage: its `sw-bridge.js` calls
+`registration.update()` immediately on load and its `controllerchange` listener
+reloads unconditionally. If the same production origin were serving the
+v24.0.2 service worker and the device could reach it, that old client should at
+least discover an update. This shifts the primary investigation toward the
+actual installed origin and the production Pages/assets deployment. The
+current-source handshake defect below remains real and must still be repaired,
+but it is not proven to be the sole cause of this v23.7.0 observation.
 
 ## Current-source update handshake defect
 
-Exact-current source contains an uncovered update handshake defect consistent
-with a waiting update failing to reload immediately:
+Exact-current v24.0.2 source also contains an uncovered update handshake defect
+that can make a waiting update fail to reload immediately:
 
 1. `sw-bridge.js` reloads on `controllerchange` only when its private
    `skipWaitingRequested` flag is true.
@@ -56,10 +65,12 @@ Under `lock/app-js` (and any other required shared-path lock):
    controller change -> one reload path. Do not settle for a string-presence
    assertion.
 3. Run the full suite on the exact PR head.
-4. Verify the production deployment is sourced from current `main` and that the
-   live app, manifest, service worker, and cache-busted assets all report
-   v24.0.2.
-5. Preserve IndexedDB/local-storage safety. Do not use delete/reinstall/clear as
+4. Identify the exact origin of the installed Home Screen PWA and verify the
+   production Pages/assets deployment is sourced from current `main`; do not
+   infer app deployment from a successful `freightlogic-v2` Worker build.
+5. Verify the live app, manifest, service worker, and cache-busted assets all
+   report v24.0.2.
+6. Preserve IndexedDB/local-storage safety. Do not use delete/reinstall/clear as
    the primary update procedure.
 
 ## Acceptance evidence to return
@@ -70,5 +81,6 @@ Under `lock/app-js` (and any other required shared-path lock):
 - production deployed SHA and visible v24.0.2 generation markers; and
 - a safe operator update sequence that does not erase existing local data.
 
-This is a newly observed physical-field failure and reopens the code/live side
-of the completion HOLD until repaired and re-tested on the operator's iPhone.
+This exact v23.7.0 physical-field failure reopens the code/live side of the
+completion HOLD until the deployment origin and update path are repaired and
+re-tested on the operator's iPhone.
