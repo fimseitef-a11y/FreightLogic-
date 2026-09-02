@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SW update bridge fixture</title>
+<body>
+<!-- Counts every load of this document, so a test can prove the bridge caused
+     EXACTLY ONE reload rather than none (the shipped defect) or a loop. -->
+<script>
+  const n = Number(sessionStorage.getItem('loads') || '0') + 1;
+  sessionStorage.setItem('loads', String(n));
+  window.__loads = n;
+</script>
+<div id="loads"></div>
+<script>document.getElementById('loads').textContent = 'loads=' + window.__loads;</script>
+<!-- The REAL bridge, unmodified, served from the repo root. -->
+<script src="/sw-bridge.js"></script>
