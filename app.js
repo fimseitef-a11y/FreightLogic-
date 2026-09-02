@@ -1,7 +1,32 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.1 USA ENGINE
+/** FreightLogic v24.0.2 USA ENGINE
+ *  v24.0.2 "Release Integrity" (Issue #119 Batch A + Batch B): the DB upgrade
+ *          creates the lifecycle indexes it always claimed to (they were
+ *          skipped on every path); a delta cloud push no longer dies in a
+ *          temporal dead zone before it can no-op; a background lifecycle link
+ *          compares the revision it read instead of overwriting a newer user
+ *          correction. A reused external order number is a candidate signal,
+ *          not identity — broker+order links only when the supplied route/time
+ *          facts agree, and the chip/editor lookups resolve through the same
+ *          doctrine rather than picking one arbitrary row. Normalized evidence
+ *          is now DURABLE (new `normalizedEvidence` store, DB v15): price and
+ *          mileage semantics, provenance, confirmation state and source
+ *          references survive reload, backup, restore, export and import, and
+ *          are covered by a protected export checksum. A displayed total can no
+ *          longer occupy canonical loaded miles, an ISO source timestamp is no
+ *          longer nulled, and an unknown operator-confirmation clock stays
+ *          unknown. Identity is a bounded SHA-256 digest, not a 32-bit hash.
+ *          Historical reconciliation is authority-aware with per-field
+ *          provenance; DRY RUN is preserved as its own excluded class; an
+ *          unrecognized status manufactures no award; undated evidence no
+ *          longer receives full current weight and a lifecycle mutation clock
+ *          no longer stands in for a market-observation clock. Evaluation
+ *          evidence reads the real fuel provenance, the real route weather
+ *          observation, the real lane/broker history and the real van-fit
+ *          measurement state. Worker v13 projects canonical ABSENCE verbatim
+ *          instead of manufacturing REJECT/F/$0.00.
  *  v24.0.1 "Doctrine & Money Integrity" (completion-plan Milestone 1): a
  *          material operational fact is UNKNOWN unless it parses finite —
  *          canonical economics, grade, and authority no longer coerce a
@@ -64,7 +89,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.1';
+const APP_VERSION = '24.0.2';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -104,7 +129,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -850,39 +875,58 @@ function idbReq(req){
 // Deterministic content fingerprint — the stable identity for a quote-board
 // observation, derived from its provenance + material facts, NOT its quote-ID.
 // Re-importing the same file is idempotent because the fingerprint is stable.
-function _historicalRowFingerprint(rec){
+// B1 (Issue #119 Batch B): a BOUNDED, COLLISION-RESISTANT identity.
+//
+// The raw joined string routinely exceeds 200 chars with real provenance (long
+// filenames plus evidence refs), and `migration.migratedFrom` is persisted
+// through clampStr(120) — an unhashed fingerprint is truncated on write and
+// never matches on re-import, which is what produced phantom duplicate rows.
+// Hashing fixed the length. It did NOT make the token a safe dedup key: a
+// single 32-bit DJB2 plus a length has a demonstrated same-length collision
+// pair, and a collision here silently merges two unrelated shipments.
+// `evidenceFingerprint()` is a SHA-256 digest truncated to 160 bits — 51
+// characters, comfortably inside the persisted bound, and a real identity.
+async function _historicalRowFingerprint(rec){
   const r = rec || {};
   const parts = [
     'src', clampStr(r.sourceName || '', 80).toLowerCase(),
-    'ts', String(knownNum(r.sourceTimestamp) ?? ''),
+    // Full source instant, not a numeric coercion. `knownNum()` returned null
+    // for every ISO timestamp string, so the source clock never entered the
+    // identity at all and two observations of the same lane on different days
+    // could share a fingerprint.
+    'ts', String(_evidenceInstantISO(r.sourceTimestamp) ?? ''),
     'ev', clampStr(r.rawEvidenceRef || '', 120).toLowerCase(),
     'bk', normBroker(r.broker || ''),
+    'cr', clampStr(r.carrierLabel || '', 80).toLowerCase(),
     'or', clampStr(r.orderNo || '', 60).toUpperCase(),
     'o', clampStr(r.origin || '', 80).toLowerCase(),
     'd', clampStr(r.destination || '', 80).toLowerCase(),
     'amt', String(knownNum(r.amount ?? r.pay ?? r.rate) ?? ''),
-    'pk', clampStr(r.pickupAt || '', 20),
+    'pk', String(_evidenceInstantISO(r.pickupAt) ?? ''),
+    'dl', String(_evidenceInstantISO(r.deliveryAt) ?? ''),
+    'cls', String(r.operationalClass || 'FREIGHT'),
+    'st', clampStr(r.statusRaw || '', 60).toLowerCase(),
   ];
-  // Hash to a BOUNDED token. The raw joined string routinely exceeds 200 chars
-  // with real provenance (long filenames + evidence refs), and migratedFrom is
-  // persisted through clampStr(120) — an unhashed fingerprint would be truncated
-  // on write and never match on re-import, silently breaking idempotency for
-  // quote observations (which have no short order key to fall back on). djb2
-  // over the full content keeps the stored token stable and short.
-  const raw = parts.join('~');
-  let h = 5381;
-  for (let i = 0; i < raw.length; i++) h = (((h << 5) + h) + raw.charCodeAt(i)) >>> 0;
-  return 'fp:' + h.toString(16).padStart(8, '0') + ':' + String(raw.length);
+  return await evidenceFingerprint(parts.join('~'));
 }
 
+// B2 (Issue #119 Batch B): an external order number is NEVER internal identity.
+//
+// This used to trust an explicit `rec.stableId` ahead of everything else, and
+// the historical adapter set `stableId: orderNo` for several source classes —
+// laundering a reused provider ID straight past the broker/route/time safety
+// doctrine. A caller may still supply an identity, but only one it has
+// established as internal (`internalStableId`); a bare `stableId` is ignored.
 function _orderStableKey(rec){
   const r = rec || {};
-  const explicit = clampStr(r.stableId || '', 80);
-  if (explicit) return 'ord:' + explicit.toUpperCase();
+  const internal = clampStr(r.internalStableId || '', 80);
+  if (internal) return 'ord:' + internal.toUpperCase();
   const broker = normBroker(r.broker || '');
   const order = clampStr(r.orderNo || '', 60).toUpperCase();
   // Order identity requires BOTH a broker and an order number. Neither alone,
-  // and never the customer text, is a stable identity.
+  // and never the customer text, is a stable identity. Even this pair is only a
+  // CANDIDATE — importHistoricalOpportunities() additionally requires the
+  // candidate's route/time facts not to conflict before it links.
   return (broker && order) ? `ord:${broker}|${order}` : '';
 }
 
@@ -897,12 +941,12 @@ async function importHistoricalOpportunities(records, opts = {}){
     for (const tok of (e.migration?.migratedFrom || [])) tokenToRow.set(tok, e);
   }
 
-  const summary = { imported: 0, linkedToExisting: 0, duplicatesSkipped: 0, quoteObservations: 0, orders: 0, unresolved: 0, errors: 0 };
+  const summary = { imported: 0, linkedToExisting: 0, duplicatesSkipped: 0, quoteObservations: 0, orders: 0, unresolved: 0, errors: 0, reusedIdKeptSeparate: 0, dryRuns: 0, evidenceRows: 0 };
 
   for (const rec of rows){
     try{
       const isQuote = String(rec.kind || '').toUpperCase() === 'QUOTE_OBSERVATION';
-      const fp = _historicalRowFingerprint(rec);
+      const fp = await _historicalRowFingerprint(rec);
 
       // Idempotency: the exact same observation already imported → skip.
       if (tokenToRow.has(fp)){ summary.duplicatesSkipped++; continue; }
@@ -916,11 +960,18 @@ async function importHistoricalOpportunities(records, opts = {}){
         ? (rec.opportunity === 'QUOTED' ? 'QUOTED' : 'SEEN')
         : (LIFECYCLE_OPPORTUNITY.includes(rec.opportunity) ? rec.opportunity : 'SEEN');
 
-      // Order history links to an existing lifecycle by stable identity.
+      // Order history links to an existing lifecycle by stable identity — but
+      // B2/A4: a broker + external order pair is a CANDIDATE. If the candidate's
+      // supplied route/time facts contradict this row, it is a different
+      // shipment wearing the same number, and the rows stay separate.
       let target = null, orderKey = '';
       if (!isQuote){
         orderKey = _orderStableKey(rec);
-        if (orderKey && tokenToRow.has(orderKey)) target = tokenToRow.get(orderKey);
+        if (orderKey && tokenToRow.has(orderKey)){
+          const candidate = tokenToRow.get(orderKey);
+          if (!lifecycleFactsConflict(rec, candidate)) target = candidate;
+          else summary.reusedIdKeptSeparate++;
+        }
       }
 
       const norm = normalizeOpportunity(
@@ -940,7 +991,10 @@ async function importHistoricalOpportunities(records, opts = {}){
         // Operator-confirmed status corrections are preserved verbatim.
         execution: LIFECYCLE_EXECUTION.includes(rec.execution) ? rec.execution : (target?.execution || 'NOT_STARTED'),
         settlement: LIFECYCLE_SETTLEMENT.includes(rec.settlement) ? rec.settlement : (target?.settlement || 'NOT_INVOICED'),
-        cohort: { deadZoneExit: rec.deadZoneExit === true },
+        // B7: a DRY RUN is real operational history that must never enter
+        // normal-market economics. It rides the same cohort mechanism DZ-EXIT
+        // uses, which is exactly what `normalMarketEligible` is for.
+        cohort: { deadZoneExit: rec.deadZoneExit === true, dryRun: rec.operationalClass === 'DRY_RUN' || rec.dryRun === true },
         migration: {
           importedLegacy: true,
           migratedFrom: [...(target?.migration?.migratedFrom || []), ...migratedFrom],
@@ -948,13 +1002,56 @@ async function importHistoricalOpportunities(records, opts = {}){
         sourceRefs: target?.sourceRefs || {},
       };
 
-      await upsertLifecycle(record, {
+      // Blocker 1 — EVIDENCE FIRST here too. The historical path had the same
+      // asymmetry in a different form: it committed the lifecycle row and only
+      // then wrote the provenance evidence, so a failed evidence write left
+      // lifecycle state standing for an observation that was never recorded.
+      // Same three phases as manual/email intake.
+      //
+      // B12: historical provenance lives in the SAME durable evidence layer the
+      // manual/email path uses — not a parallel one-off structure. This is what
+      // preserves per-field provenance, the source observation instant, the
+      // price/mileage semantics, and the operational class through backup,
+      // restore, export and import.
+      const evidenceContent = buildEvidenceContent(norm, {
+        ...rec,
+        broker: rec.broker || '',
+        awarded: rec.awarded,
+        statusRaw: rec.statusRaw || '',
+        // B6: a source column named "Carrier" stays a carrier label.
+        carrierLabel: rec.carrierLabel || '', companyLabel: rec.companyLabel || '',
+        // B5: per-field provenance from the adapter's authority-aware merge.
+        fieldProvenance: rec.fieldProvenance || {},
+      }, {
+        authority: rec.authority || (rec.operatorConfirmed ? 'OPERATOR_CONFIRMED_HISTORY' : 'AI_SECONDARY'),
+      }, fp);
+      evidenceContent.operationalClass = rec.operationalClass
+        || (rec.dryRun === true ? 'DRY_RUN' : (isQuote ? 'BOARD_OBSERVATION' : 'FREIGHT'));
+      evidenceContent.opportunityClaim = opportunity;
+
+      // ── phase 1: the observation becomes durable before any lifecycle state ──
+      const pendingEvidence = await putEvidence({
+        ...evidenceContent, lifecycleId: null, linkState: 'UNLINKED', linkReason: 'pending link',
+      });
+
+      // ── phase 2: lifecycle create/link ──
+      const saved = await upsertLifecycle(record, {
         expectedRevision: target?.revision ?? null,
-        source: 'IMPORT', sourceId: rec.stableId || rec.orderNo || norm.lifecycleId,
+        source: 'IMPORT', sourceId: rec.orderNo || norm.lifecycleId,
         reason: `historical ${isQuote ? 'quote observation' : 'order'} import`,
       });
 
-      for (const tok of migratedFrom) tokenToRow.set(tok, record);
+      // ── phase 3: attach the link to the already-durable evidence row ──
+      await putEvidence({
+        ...pendingEvidence,
+        lifecycleId: saved.lifecycleId,
+        linkState: 'LINKED',
+        linkReason: target ? 'historical order identity' : 'new historical record',
+      }, { expectedRevision: pendingEvidence.revision });
+      summary.evidenceRows++;
+      if (record.cohort.dryRun) summary.dryRuns++;
+
+      for (const tok of migratedFrom) tokenToRow.set(tok, { ...record, lifecycleId: saved.lifecycleId, revision: saved.revision });
       if (target) summary.linkedToExisting++; else summary.imported++;
       if (isQuote) summary.quoteObservations++; else summary.orders++;
     }catch(e){
@@ -976,7 +1073,8 @@ function calibrateWinningRange(observations, opts = {}){
   const now = knownNum(opts.now) ?? Date.now();
   const halfLifeDays = knownNum(opts.halfLifeDays) ?? 60;
   const minSamples = knownNum(opts.minSamples) ?? 3;
-  const list = (Array.isArray(observations) ? observations : []).filter(o => o && o.deadZoneExit !== true);
+  const list = (Array.isArray(observations) ? observations : [])
+    .filter(o => o && o.deadZoneExit !== true && o.dryRun !== true);
 
   const won = list.filter(o => o.won === true);
   const lost = list.filter(o => o.won === false);
@@ -985,19 +1083,32 @@ function calibrateWinningRange(observations, opts = {}){
   // Winning-range inputs: WON observations with a known RPM only. Unknown RPM
   // never counts as 0 (M1 doctrine).
   const priced = won.filter(o => knownNum(o.rpm) !== null);
+
+  // B10 (Issue #119 Batch B): an observation with an UNKNOWN age used to
+  // receive weight 1 — full current weight, the single most favourable value in
+  // the whole decay curve. A five-year-old undated row therefore counted the
+  // same as one observed this morning. Unknown age is not freshness.
+  //
+  // Rather than invent a freshness constant nobody authorized, undated evidence
+  // is kept visible and COUNTED as undated but excluded from the
+  // recency-weighted cohort, and the counts are reported so the exclusion is
+  // inspectable rather than silent.
+  const dated = priced.filter(o => knownNum(o.observedAt) !== null);
+  const unknownAgeCount = priced.length - dated.length;
   const decay = (observedAt) => {
     const t = knownNum(observedAt);
-    if (t === null) return 1; // undated evidence gets full, not zero, weight
     const ageDays = Math.max(0, (now - t) / 86400000);
     return Math.pow(0.5, ageDays / halfLifeDays);
   };
 
-  const weighted = priced.map(o => ({ rpm: knownNum(o.rpm), weight: decay(o.observedAt) }))
+  const weighted = dated.map(o => ({ rpm: knownNum(o.rpm), weight: decay(o.observedAt) }))
     .sort((a, b) => a.rpm - b.rpm);
   const totalWeight = weighted.reduce((s, w) => s + w.weight, 0);
 
+  // Sufficiency is measured on the DEFENSIBLE weighted cohort, not on rows that
+  // received no valid recency weight at all.
   let weightedMeanRpm = null, weightedMedianRpm = null;
-  if (priced.length >= minSamples && totalWeight > 0){
+  if (dated.length >= minSamples && totalWeight > 0){
     weightedMeanRpm = roundCents(weighted.reduce((s, w) => s + w.rpm * w.weight, 0) / totalWeight);
     // Weighted median: first RPM at or past half the cumulative weight.
     let acc = 0;
@@ -1008,8 +1119,13 @@ function calibrateWinningRange(observations, opts = {}){
     winRate: winDenominator > 0 ? won.length / winDenominator : null, // null, not 0
     winDenominator, wonCount: won.length, lostCount: lost.length,
     excludedDeadZone: (Array.isArray(observations) ? observations : []).filter(o => o?.deadZoneExit === true).length,
+    excludedDryRun: (Array.isArray(observations) ? observations : []).filter(o => o?.dryRun === true).length,
+    // Every priced win is still counted and visible...
     winningRangeSampleSize: priced.length,
-    sufficientSamples: priced.length >= minSamples,
+    // ...but only the dated ones can support a recency-weighted range.
+    weightedSampleSize: dated.length,
+    unknownAgeCount,
+    sufficientSamples: dated.length >= minSamples,
     weightedMeanRpm, weightedMedianRpm,
     halfLifeDays,
     // Inspectable: the exact per-observation weights that produced the range.
@@ -1030,8 +1146,14 @@ function calibrateFromLifecycle(lifecycleRows, rpmLookup, opts = {}){
       return {
         won: r.opportunity === 'WON',
         rpm: knownNum(info.rpm),
-        observedAt: knownNum(info.observedAt) ?? knownNum(r.updatedAt),
+        // B11 (Issue #119 Batch B): ONLY a durable source observation time.
+        // Falling back to `updatedAt` meant a five-year-old row imported or
+        // corrected today looked freshly observed today — a lifecycle mutation
+        // clock silently standing in for a market-observation clock. Unknown
+        // stays unknown and the conservative undated rule above applies.
+        observedAt: knownNum(info.observedAt),
         deadZoneExit: r.cohort?.deadZoneExit === true,
+        dryRun: r.cohort?.dryRun === true,
       };
     });
   return calibrateWinningRange(observations, opts);
@@ -1057,11 +1179,20 @@ function calibrateFromLifecycle(lifecycleRows, rpmLookup, opts = {}){
    ═══════════════════════════════════════════════════════════════ */
 
 const OPPORTUNITY_SOURCE_TYPE = Object.freeze(['MANUAL','EMAIL','VISION','HISTORY','PROVIDER_API']);
+// A5.5 (Issue #119 Batch A): the full vocabulary from docs/EVIDENCE_PROVENANCE.md.
+// The previous list silently collapsed BOARD_TARGET_RATE / POSTED_RATE /
+// MARKET_BENCHMARK to UNKNOWN_PRICE_SEMANTIC, which destroyed the distinction
+// the contract exists to preserve. Expanding the vocabulary does NOT expand the
+// revenue gate — see REVENUE_ELIGIBLE_SEMANTICS below, which is unchanged.
 const PRICE_SEMANTIC = Object.freeze([
-  'CARRIER_PAYOUT','OPERATOR_BID','SHIPPER_BOOKABLE_PRICE','CONTRACT_RATE',
-  'SETTLED_AMOUNT','UNKNOWN_PRICE_SEMANTIC',
+  'CARRIER_PAYOUT','OPERATOR_BID','BOARD_TARGET_RATE','SHIPPER_BOOKABLE_PRICE',
+  'POSTED_RATE','MARKET_BENCHMARK','CONTRACT_RATE','SETTLED_AMOUNT',
+  'UNKNOWN_PRICE_SEMANTIC',
 ]);
-const MILEAGE_SEMANTIC = Object.freeze(['LOADED_MILES','DEADHEAD_MILES','DISPLAYED_TOTAL_MILES','MAP_ESTIMATE','UNKNOWN_MILEAGE_SEMANTIC']);
+const MILEAGE_SEMANTIC = Object.freeze([
+  'LOADED_MILES','DEADHEAD_MILES','DISPLAYED_TOTAL_MILES',
+  'POST_DELIVERY_REPOSITION_MILES','MAP_ESTIMATE','UNKNOWN_MILEAGE_SEMANTIC',
+]);
 const OPPORTUNITY_CONFIRMATION = Object.freeze(['UNCONFIRMED','OPERATOR_CONFIRMED']);
 
 // Only these price semantics may populate canonical carrier revenue. An
@@ -1080,8 +1211,31 @@ function normalizeOpportunity(raw, opts = {}){
 
   // Every material fact is UNKNOWN unless it parses (M1 doctrine, reused).
   const amount = knownNum(r.amount ?? r.pay ?? r.rate);
-  const loadedMi = knownNum(r.loadedMi ?? r.loadedMiles);
-  const deadMi = knownNum(r.deadMi ?? r.deadheadMiles);
+
+  // A5.4 (Issue #119 Batch A): mileage slots are semantic, not positional. A
+  // caller-named `loadedMi` used to land in canonical loaded miles even when
+  // `mileageSemantic` said the number was a DISPLAYED TOTAL — the exact
+  // violation the durability contract forbids ("displayed total is not loaded
+  // mileage"). The semantic now decides the slot; an explicitly named slot
+  // always wins over the generic field.
+  const genericMi = knownNum(r.loadedMi ?? r.loadedMiles ?? r.miles);
+  let loadedMi = null;
+  let deadMi = knownNum(r.deadMi ?? r.deadheadMiles);
+  let displayedTotalMi = knownNum(r.displayedTotalMi ?? r.platformDisplayedMi);
+  let repositionMi = knownNum(r.repositionMi ?? r.postDeliveryRepositionMi);
+  let mapEstimateMi = knownNum(r.mapEstimateMi);
+  if (genericMi !== null){
+    switch (mileageSemantic){
+      case 'DISPLAYED_TOTAL_MILES': if (displayedTotalMi === null) displayedTotalMi = genericMi; break;
+      case 'DEADHEAD_MILES': if (deadMi === null) deadMi = genericMi; break;
+      case 'POST_DELIVERY_REPOSITION_MILES': if (repositionMi === null) repositionMi = genericMi; break;
+      case 'MAP_ESTIMATE': if (mapEstimateMi === null) mapEstimateMi = genericMi; break;
+      // LOADED_MILES, and UNKNOWN_MILEAGE_SEMANTIC where the caller named the
+      // field `loadedMi` — the field name is the caller's own claim, and no
+      // semantic contradicts it.
+      default: loadedMi = genericMi;
+    }
+  }
 
   // The gate: an amount becomes canonical revenue ONLY when its semantic proves
   // carrier payout, OR the operator explicitly confirmed it as expected revenue.
@@ -1098,8 +1252,9 @@ function normalizeOpportunity(raw, opts = {}){
     broker: clampStr(r.broker || '', 80),
     origin: clampStr(r.origin || '', 80),
     destination: clampStr(r.destination || '', 80),
-    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
-    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+    // B9: full source clock precision is preserved (see sanitizeLifecycle).
+    pickupAt: _evidenceInstantISO(r.pickupAt),
+    deliveryAt: _evidenceInstantISO(r.deliveryAt),
 
     // Money: the raw amount AND its semantic are always kept. canonicalRevenue
     // is the only field the decision engine may read as revenue.
@@ -1110,45 +1265,497 @@ function normalizeOpportunity(raw, opts = {}){
     // Mileage semantics stay distinct (M1); a displayed total is not loaded miles.
     loadedMi,
     deadMi,
+    displayedTotalMi,
+    repositionMi,
+    mapEstimateMi,
     mileageSemantic,
+    // Source-displayed RPM is evidence. It is NEVER True RPM (durability
+    // contract, "Mileage preservation") — the canonical layer recomputes.
+    sourceDisplayedRpm: knownNum(r.sourceDisplayedRpm),
 
     provenance: Object.freeze({
       sourceType,
       sourceName: clampStr(r.sourceName || opts.sourceName || '', 80),
-      sourceTimestamp: knownNum(r.sourceTimestamp),
+      platform: clampStr(r.platform || opts.platform || '', 60),
+      // A5.2 (Issue #119 Batch A): a source timestamp is an INSTANT, and most
+      // real sources express it as an ISO string. Running it through
+      // `knownNum()` returned null for every one of them, silently destroying
+      // the provenance clock. Both representations are kept: the original
+      // string (offset/precision intact, auditable) and its epoch value.
+      sourceTimestamp: _evidenceInstantISO(r.sourceTimestamp),
+      sourceTimestampMs: _evidenceInstantMs(r.sourceTimestamp),
       rawEvidenceRef: clampStr(r.rawEvidenceRef || '', 120),
       confirmationState,
-      operatorConfirmedAt: confirmationState === 'OPERATOR_CONFIRMED' ? (knownNum(r.operatorConfirmedAt) ?? Date.now()) : null,
+      // A5.3 (Issue #119 Batch A): unknown stays unknown. Defaulting to
+      // `Date.now()` stamped every imported historical confirmation with the
+      // import clock, manufacturing a fact. A live user action may stamp now,
+      // but only by passing `stampConfirmationNow` at that action boundary.
+      operatorConfirmedAt: confirmationState === 'OPERATOR_CONFIRMED'
+        ? (_evidenceInstantMs(r.operatorConfirmedAt) ?? (opts.stampConfirmationNow === true ? Date.now() : null))
+        : null,
       fieldConfidence: sourceType === 'MANUAL' ? null : (clampStr(r.fieldConfidence || '', 20) || null),
     }),
+    // Durable observation time — when the market fact was OBSERVED, never when
+    // it was imported, corrected or restored (B10/B11).
+    observedAt: _evidenceInstantMs(r.observedAt ?? r.sourceTimestamp),
+    observedAtISO: _evidenceInstantISO(r.observedAt ?? r.sourceTimestamp),
+    operationalClass: EVIDENCE_OPERATIONAL_CLASS.includes(r.operationalClass) ? r.operationalClass : 'FREIGHT',
+    carrierLabel: clampStr(r.carrierLabel || '', 80),
+    companyLabel: clampStr(r.companyLabel || '', 80),
     // A normalized opportunity that has NOT been proven won is SEEN. It never
     // fabricates a WON/adjudicated state.
     opportunity: pick(LIFECYCLE_OPPORTUNITY, r.opportunity, 'SEEN'),
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   DURABLE NORMALIZED EVIDENCE  (Issue #119 Batch A / A5, A6)
+   Governing contract: docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md
+
+   `normalizeOpportunity()` produced a correct semantic object and then threw it
+   away — `intakeOpportunity()` returned it to the caller and persisted only
+   lifecycle identity/state. Price semantics, mileage semantics, provenance,
+   confirmation state and source references did not survive a reload, a backup,
+   an export, or an import. This store is that missing durability.
+
+   Architectural boundary the contract sets, and this respects: `loadLifecycle`
+   stays a lifecycle STATE/LINKING structure. Evidence lives here, in its own
+   bounded store, and links to a lifecycle when — and only when — the link is
+   strong. Evidence with an unresolved link is still fully preserved.
+   ═══════════════════════════════════════════════════════════════ */
+
+const EVIDENCE_STORE = 'normalizedEvidence';
+
+// Status classes the contract requires kept distinct. DRY_RUN in particular is
+// operational history that must never be confused with completed freight, and
+// must never be silently discarded (B7).
+const EVIDENCE_OPERATIONAL_CLASS = Object.freeze([
+  'FREIGHT','DRY_RUN','BOARD_OBSERVATION','MARKET_QUOTE',
+]);
+
+// docs/EVIDENCE_PROVENANCE.md's precedence order, as data. Index IS the rank:
+// lower index outranks higher. A later higher-authority value supersedes an
+// earlier lower-authority one; a later LOWER-authority value never does.
+const EVIDENCE_AUTHORITY_ORDER = Object.freeze([
+  'OPERATOR_CORRECTION',
+  'PRIMARY_DOCUMENT',
+  'OPERATOR_CONFIRMED_HISTORY',
+  'CANONICAL_DOCTRINE',
+  'VERIFIED_EXTERNAL_DOC',
+  'DERIVED_MATH',
+  // Blocker 4: a value the operator TYPED but has not confirmed. It is
+  // operator-authored, so calling it AI_SECONDARY would misdescribe its source;
+  // it is unverified, so calling it PRIMARY_DOCUMENT would promote a typed row
+  // to documentary evidence. Source type and authority are separate facts, and
+  // this is the authority half. Ranked below deterministic derived math — an
+  // arithmetic result from known inputs is more defensible than an unchecked
+  // keystroke — and above an AI summary, which no human asserted at all.
+  'OPERATOR_ENTERED_UNVERIFIED',
+  'AI_SECONDARY',
+]);
+function evidenceAuthorityRank(a){
+  const i = EVIDENCE_AUTHORITY_ORDER.indexOf(a);
+  return i < 0 ? EVIDENCE_AUTHORITY_ORDER.length : i;
+}
+
+/* ---- instants: preserve source clock precision, never invent one ---- */
+
+// A date-only string is genuinely date-only evidence and stays that way. A full
+// timestamp keeps its clock and offset. Neither is ever widened or narrowed.
+function _evidenceInstantISO(v){
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return new Date(v).toISOString();
+  const s = String(v).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(s) && Number.isFinite(Date.parse(s))) return clampStr(s, 40);
+  const n = Number(s);
+  if (Number.isFinite(n) && s !== '') return new Date(n).toISOString();
+  return null;
+}
+function _evidenceInstantMs(v){
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  if (Number.isFinite(n) && /^[-+]?\d+(\.\d+)?$/.test(s)) return n;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
+
+/* ---- bounded, collision-resistant identity (B1) ---- */
+
+// The persisted `migratedFrom` provenance token is clamped to 120 chars, so the
+// fingerprint has to be BOTH short and collision-resistant. A single 32-bit
+// DJB2 hash plus a length is neither — a same-length collision pair has already
+// been demonstrated against it. SHA-256 truncated to 160 bits is bounded at 51
+// characters and is a real dedup key.
+async function evidenceFingerprint(raw){
+  const input = String(raw == null ? '' : raw);
+  try{
+    if (globalThis.crypto?.subtle?.digest){
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+      const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+      return 'fp:sha256:' + hex.slice(0, 40);
+    }
+  }catch(e){ console.warn('[FL] subtle digest unavailable, using multi-lane fallback', e); }
+  // Fallback for a context without WebCrypto. Four INDEPENDENT 32-bit lanes
+  // (different seeds and multipliers) = 128 bits, and it is labelled as the
+  // fallback so a token can never be mistaken for the cryptographic one.
+  const lanes = [
+    [5381, 33], [7919, 31], [2166136261, 16777619], [radix32(input.length) || 1315423911, 65599],
+  ];
+  const out = lanes.map(([seed, mul]) => {
+    let h = seed >>> 0;
+    for (let i = 0; i < input.length; i++) h = (Math.imul(h, mul) + input.charCodeAt(i)) >>> 0;
+    return h.toString(16).padStart(8, '0');
+  }).join('');
+  return 'fp:h128:' + out;
+}
+function radix32(n){ return (n * 2654435761) >>> 0; }
+
+function newEvidenceId(){
+  const rand = (crypto.randomUUID?.() || String(Math.random()).slice(2)).replace(/-/g,'').slice(0,10);
+  return `ev_${Date.now().toString(36)}_${rand}`;
+}
+
+/* ---- the persisted shape ---- */
+
+function sanitizeEvidence(raw){
+  const r = raw || {};
+  const pick = (list, v, fallback) => list.includes(v) ? v : fallback;
+  const prov = r.provenance || {};
+  const fp = {};
+  // Field-level provenance (B4/B5): which source supplied each material fact,
+  // and under what authority it won. A merged row must never claim one source
+  // owns values that came from another.
+  for (const [k, v] of Object.entries(r.fieldProvenance || {})){
+    if (!v || typeof v !== 'object') continue;
+    fp[clampStr(k, 40)] = {
+      sourceName: clampStr(v.sourceName || '', 80),
+      sourceType: pick(OPPORTUNITY_SOURCE_TYPE, v.sourceType, 'MANUAL'),
+      authority: pick(EVIDENCE_AUTHORITY_ORDER, v.authority, 'AI_SECONDARY'),
+      at: _evidenceInstantMs(v.at),
+      rawEvidenceRef: clampStr(v.rawEvidenceRef || '', 120),
+    };
+  }
+  const linkedId = clampStr(r.lifecycleId || '', 60) || null;
+  return {
+    evidenceId: clampStr(String(r.evidenceId || newEvidenceId()), 60),
+    recordedAt: finiteNum(r.recordedAt, Date.now()),
+    revision: Math.max(1, intNum(r.revision, 1, 1e9)),
+    // Evidence is representable with NO lifecycle link. That is the point.
+    lifecycleId: linkedId,
+    linkState: pick(['LINKED','UNRESOLVED','UNLINKED'], r.linkState, linkedId ? 'LINKED' : 'UNLINKED'),
+    linkReason: clampStr(r.linkReason || '', 120),
+    fingerprint: clampStr(r.fingerprint || '', 120),
+
+    // Observation time is a SOURCE fact. Import time, correction time and
+    // restore time are not observation times and never populate this (B11).
+    observedAt: _evidenceInstantMs(r.observedAt),
+    observedAtISO: _evidenceInstantISO(r.observedAtISO ?? r.observedAt),
+
+    operationalClass: pick(EVIDENCE_OPERATIONAL_CLASS, r.operationalClass, 'FREIGHT'),
+    // A source's status CLAIM, kept as a claim. `awarded` is tri-state: null
+    // means the source never established it, which is not `false` and is
+    // emphatically not `true` (B8).
+    opportunityClaim: pick(LIFECYCLE_OPPORTUNITY, r.opportunityClaim, 'SEEN'),
+    awarded: r.awarded === true ? true : (r.awarded === false ? false : null),
+    statusRaw: clampStr(r.statusRaw || '', 60),
+
+    orderNo: clampStr(r.orderNo, 60),
+    broker: normBroker(r.broker || ''),
+    brokerDisplay: clampStr(r.brokerDisplay || r.broker || '', 80),
+    // B6: a source column labelled "Carrier" is a carrier label until documented
+    // otherwise. It is never promoted into `broker` by this layer.
+    carrierLabel: clampStr(r.carrierLabel || '', 80),
+    companyLabel: clampStr(r.companyLabel || '', 80),
+    origin: clampStr(r.origin, 80),
+    destination: clampStr(r.destination, 80),
+    // Full source precision preserved — never sliced to date (B9).
+    pickupAt: _evidenceInstantISO(r.pickupAt),
+    deliveryAt: _evidenceInstantISO(r.deliveryAt),
+
+    amount: knownNum(r.amount),
+    priceSemantic: pick(PRICE_SEMANTIC, r.priceSemantic, 'UNKNOWN_PRICE_SEMANTIC'),
+    // Persistence does not authorize promotion. This mirrors whatever the
+    // normalizer's revenue gate already decided; it is never widened here.
+    canonicalRevenue: knownNum(r.canonicalRevenue),
+
+    loadedMi: knownNum(r.loadedMi),
+    deadMi: knownNum(r.deadMi),
+    displayedTotalMi: knownNum(r.displayedTotalMi),
+    repositionMi: knownNum(r.repositionMi),
+    mapEstimateMi: knownNum(r.mapEstimateMi),
+    mileageSemantic: pick(MILEAGE_SEMANTIC, r.mileageSemantic, 'UNKNOWN_MILEAGE_SEMANTIC'),
+    sourceDisplayedRpm: knownNum(r.sourceDisplayedRpm),
+
+    provenance: {
+      sourceType: pick(OPPORTUNITY_SOURCE_TYPE, prov.sourceType, 'MANUAL'),
+      sourceName: clampStr(prov.sourceName || '', 80),
+      platform: clampStr(prov.platform || '', 60),
+      sourceTimestamp: _evidenceInstantISO(prov.sourceTimestamp),
+      sourceTimestampMs: _evidenceInstantMs(prov.sourceTimestampMs ?? prov.sourceTimestamp),
+      rawEvidenceRef: clampStr(prov.rawEvidenceRef || '', 120),
+      confirmationState: pick(OPPORTUNITY_CONFIRMATION, prov.confirmationState, 'UNCONFIRMED'),
+      operatorConfirmedAt: _evidenceInstantMs(prov.operatorConfirmedAt),
+      fieldConfidence: clampStr(prov.fieldConfidence || '', 20) || null,
+      authority: pick(EVIDENCE_AUTHORITY_ORDER, prov.authority, 'AI_SECONDARY'),
+    },
+    fieldProvenance: fp,
+  };
+}
+
+/* ---- evidence CRUD, with the same compare-and-abort contract ---- */
+
+async function getEvidence(evidenceId){
+  const {stores} = tx(EVIDENCE_STORE);
+  return await idbReq(stores[EVIDENCE_STORE].get(String(evidenceId)));
+}
+async function listEvidence(){ return await dumpStore(EVIDENCE_STORE); }
+
+async function findEvidenceByFingerprint(fingerprint){
+  const fpv = String(fingerprint || '');
+  if (!fpv) return null;
+  const rows = await listEvidence();
+  return rows.find(r => r.fingerprint === fpv) || null;
+}
+
+async function putEvidence(record, { expectedRevision = null } = {}){
+  const ev = sanitizeEvidence(record);
+  validateRecordSize(ev, 'Evidence');
+  const {t:txn, stores} = tx([EVIDENCE_STORE,'auditLog'],'readwrite');
+  let before = null;
+  try{ before = await idbReq(stores[EVIDENCE_STORE].get(ev.evidenceId)); }catch(e){ console.warn('[FL]', e); }
+  if (before && expectedRevision != null && before.revision !== expectedRevision){
+    try{ txn.abort(); }catch(e){ console.warn('[FL]', e); }
+    const err = new Error('This evidence record was updated elsewhere since you loaded it.');
+    err.code = 'FL_CONFLICT';
+    err.serverRecord = before;
+    throw err;
+  }
+  ev.revision = before ? (finiteNum(before.revision, 1) + 1) : 1;
+  ev.recordedAt = Date.now();
+  stores[EVIDENCE_STORE].put(ev);
+  try{ stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: ev.evidenceId, action: before ? 'UPDATE_EVIDENCE' : 'CREATE_EVIDENCE', beforeData: before || null, afterData: ev, source: 'user' }); }catch(e){ console.warn('[FL]', e); }
+  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(ev); txn.onerror = ()=> reject(txn.error); txn.onabort = ()=> reject(txn.error || new Error('Transaction aborted')); });
+}
+
+/* ---- authority-aware field reconciliation (B4/B5) ---- */
+
+// Given several observations of the same shipment, decide each material field
+// by EVIDENCE AUTHORITY, not by arrival order. The old "first source wins,
+// later sources only fill blanks" rule meant an explicit operator correction
+// could never replace a populated AI-derived guess. Losing evidence is never
+// deleted — every contributing row stays its own durable record.
+function reconcileEvidenceFields(observations, fields){
+  const rows = (Array.isArray(observations) ? observations : []).filter(Boolean);
+  const values = {};
+  const fieldProvenance = {};
+  const present = (v) => v !== null && v !== undefined && v !== '';
+  for (const field of fields){
+    let best = null, bestRank = Infinity, bestAt = -Infinity;
+    for (const row of rows){
+      const v = row?.[field];
+      if (!present(v)) continue;
+      const authority = row?.provenance?.authority || row?.authority || 'AI_SECONDARY';
+      const rank = evidenceAuthorityRank(authority);
+      const at = _evidenceInstantMs(row?.provenance?.sourceTimestampMs ?? row?.observedAt ?? row?.recordedAt) ?? -Infinity;
+      // Higher authority always wins. Within one authority tier, the later
+      // observation wins — a newer correction supersedes an older one.
+      if (rank < bestRank || (rank === bestRank && at > bestAt)){
+        best = { value: v, row, authority, at }; bestRank = rank; bestAt = at;
+      }
+    }
+    if (best){
+      values[field] = best.value;
+      fieldProvenance[field] = {
+        sourceName: best.row?.provenance?.sourceName || best.row?.sourceName || '',
+        sourceType: best.row?.provenance?.sourceType || best.row?.sourceType || 'MANUAL',
+        authority: best.authority,
+        at: Number.isFinite(best.at) ? best.at : null,
+        rawEvidenceRef: best.row?.provenance?.rawEvidenceRef || '',
+      };
+    } else {
+      // Unknown stays unknown. Never zero, never empty-string-as-fact.
+      values[field] = null;
+    }
+  }
+  return { values, fieldProvenance };
+}
+
+// The durable content of an evidence row — everything except its identity, its
+// bookkeeping, and its lifecycle link. Two rows with equal durable content
+// describe the same observation, whatever their revision or recordedAt.
+const _EVIDENCE_CONTENT_KEYS = Object.freeze([
+  'fingerprint','observedAt','observedAtISO','operationalClass','opportunityClaim',
+  'awarded','statusRaw','orderNo','broker','brokerDisplay','carrierLabel','companyLabel',
+  'origin','destination','pickupAt','deliveryAt','amount','priceSemantic','canonicalRevenue',
+  'loadedMi','deadMi','displayedTotalMi','repositionMi','mapEstimateMi','mileageSemantic',
+  'sourceDisplayedRpm',
+]);
+function _evidenceContentEqual(a, b){
+  if (!a || !b) return false;
+  for (const k of _EVIDENCE_CONTENT_KEYS){
+    if ((a[k] ?? null) !== (b[k] ?? null)) return false;
+  }
+  const ap = a.provenance || {}, bp = b.provenance || {};
+  for (const k of ['sourceType','sourceName','platform','sourceTimestamp','sourceTimestampMs',
+                   'rawEvidenceRef','confirmationState','operatorConfirmedAt','fieldConfidence','authority']){
+    if ((ap[k] ?? null) !== (bp[k] ?? null)) return false;
+  }
+  return JSON.stringify(a.fieldProvenance || {}) === JSON.stringify(b.fieldProvenance || {});
+}
+
+// Builds the durable evidence content for one normalized observation, plus the
+// field-level provenance. Shared by manual/email intake and historical import
+// so both produce the same shape from the same rules.
+//
+// Blocker 4: `confirmedFields` promotes ONLY the fields the operator explicitly
+// confirmed. The row keeps the authority of whatever actually produced it.
+function buildEvidenceContent(norm, raw = {}, opts = {}, fingerprint = ''){
+  const rowAuthority = opts.authority || raw?.authority || 'AI_SECONDARY';
+  const confirmedFields = Array.isArray(opts.confirmedFields) ? opts.confirmedFields : [];
+  const fieldProvenance = { ...(raw?.fieldProvenance || {}) };
+  for (const field of confirmedFields){
+    fieldProvenance[field] = {
+      sourceName: norm.provenance.sourceName || 'operator',
+      sourceType: norm.provenance.sourceType,
+      authority: 'OPERATOR_CORRECTION',
+      at: norm.provenance.operatorConfirmedAt,
+      rawEvidenceRef: norm.provenance.rawEvidenceRef,
+    };
+  }
+  return {
+    fingerprint,
+    observedAt: norm.observedAt,
+    observedAtISO: norm.observedAtISO,
+    operationalClass: norm.operationalClass,
+    opportunityClaim: norm.opportunity,
+    awarded: raw?.awarded === true ? true : (raw?.awarded === false ? false : null),
+    statusRaw: raw?.statusRaw || '',
+    orderNo: norm.orderNo, broker: norm.broker, brokerDisplay: raw?.broker || norm.broker,
+    carrierLabel: norm.carrierLabel, companyLabel: norm.companyLabel,
+    origin: norm.origin, destination: norm.destination,
+    pickupAt: norm.pickupAt, deliveryAt: norm.deliveryAt,
+    amount: norm.amount, priceSemantic: norm.priceSemantic, canonicalRevenue: norm.canonicalRevenue,
+    loadedMi: norm.loadedMi, deadMi: norm.deadMi, displayedTotalMi: norm.displayedTotalMi,
+    repositionMi: norm.repositionMi, mapEstimateMi: norm.mapEstimateMi,
+    mileageSemantic: norm.mileageSemantic, sourceDisplayedRpm: norm.sourceDisplayedRpm,
+    provenance: { ...norm.provenance, authority: rowAuthority },
+    fieldProvenance,
+  };
+}
+
 // M5B: intake a normalized opportunity. Offline-safe (pure IndexedDB, no
-// network) and never fabricates provider access. Creates/links a lifecycle
-// record at its opportunity state via the conservative linker.
+// network) and never fabricates provider access.
+//
+// Blocker 1 — EVIDENCE FIRST. The durability contract's M5 sequence is
+// normalize -> persist durable evidence -> link/create lifecycle. This used to
+// link first and persist second, which meant a lifecycle row could be committed
+// for an observation whose evidence then failed to store: lifecycle state
+// derived from evidence that does not exist. The order is now
+//
+//   phase 1  persist the semantic observation, deliberately UNLINKED
+//   phase 2  conservative lifecycle link/create
+//   phase 3  attach the resulting link to the already-durable evidence row,
+//            under expectedRevision
+//
+// A phase-1 failure propagates and NO lifecycle state is touched. A phase-2 or
+// phase-3 failure leaves the evidence observation durable and reports the
+// unresolved/failed attachment — it never deletes evidence, and never reports a
+// success it did not achieve.
 async function intakeOpportunity(raw, opts = {}){
   const norm = normalizeOpportunity(raw, opts);
-  const link = await linkLifecycle({
-    lifecycleId: norm.lifecycleId,
-    orderNo: norm.orderNo,
-    broker: norm.broker,
-    origin: norm.origin,
-    destination: norm.destination,
-    pickupAt: norm.pickupAt,
-    deliveryAt: norm.deliveryAt,
-    opportunity: norm.opportunity,
-  }, {
-    // Manual entry is a USER mutation; every machine-derived source (email,
-    // vision, history, provider) records as IMPORT.
-    source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
-    sourceId: norm.orderNo || norm.lifecycleId,
-    reason: `${norm.provenance.sourceType} opportunity intake`,
-  });
-  return Object.freeze({ normalized: norm, link });
+
+  // Deterministic identity over the full normalized observation, so the same
+  // source observation re-imported is idempotent while two different shipments
+  // that happen to reuse an external order number stay distinct.
+  const fingerprint = clampStr(opts.fingerprint || await evidenceFingerprint(JSON.stringify([
+    norm.provenance.sourceType, norm.provenance.sourceName, norm.provenance.rawEvidenceRef,
+    norm.orderNo, norm.broker, norm.origin, norm.destination,
+    norm.pickupAt, norm.deliveryAt, norm.observedAtISO,
+    norm.amount, norm.priceSemantic,
+    norm.loadedMi, norm.deadMi, norm.displayedTotalMi, norm.repositionMi, norm.mileageSemantic,
+    norm.operationalClass, norm.opportunity,
+  ])), 120);
+
+  const existing = await findEvidenceByFingerprint(fingerprint);
+  const content = buildEvidenceContent(norm, raw, opts, fingerprint);
+
+  // Blocker 8 — a TRUE no-op. Re-importing an identical observation that is
+  // already linked used to call putEvidence() anyway, which bumps `revision`
+  // and resets `recordedAt`: protected history mutated and a fresh cloud-delta
+  // candidate produced, for an observation that had not changed. Idempotence
+  // means the persisted state is unchanged, not merely that no second row
+  // appeared. A previously UNRESOLVED/UNLINKED row is deliberately excluded —
+  // it may now be linkable, and that is a real mutation.
+  if (existing && existing.linkState === 'LINKED'
+      && _evidenceContentEqual(existing, sanitizeEvidence({ ...existing, ...content }))){
+    return Object.freeze({
+      normalized: norm,
+      link: { ok: true, lifecycleId: existing.lifecycleId, created: false, reason: 'unchanged observation' },
+      evidence: existing, fingerprint, reimported: true, noop: true,
+    });
+  }
+
+  // ── phase 1: the observation becomes durable BEFORE any lifecycle state ──
+  const pending = await putEvidence({
+    ...(existing ? { evidenceId: existing.evidenceId, revision: existing.revision } : {}),
+    ...content,
+    lifecycleId: existing?.lifecycleId ?? null,
+    linkState: existing?.linkState === 'LINKED' ? 'LINKED' : 'UNLINKED',
+    linkReason: 'pending link',
+  }, existing ? { expectedRevision: existing.revision } : {});
+
+  // ── phase 2: conservative lifecycle link/create ──
+  let link;
+  try {
+    link = await linkLifecycle({
+      // An explicit lifecycleId is only carried through when the caller actually
+      // supplied one; a freshly minted id is not evidence of a link.
+      ...(raw?.lifecycleId ? { lifecycleId: clampStr(raw.lifecycleId, 60) } : {}),
+      ...(pending.lifecycleId ? { lifecycleId: pending.lifecycleId } : {}),
+      orderNo: norm.orderNo,
+      broker: norm.broker,
+      origin: norm.origin,
+      destination: norm.destination,
+      pickupAt: norm.pickupAt,
+      deliveryAt: norm.deliveryAt,
+      opportunity: norm.opportunity,
+      cohort: { deadZoneExit: raw?.cohort?.deadZoneExit === true },
+    }, {
+      // Manual entry is a USER mutation; every machine-derived source (email,
+      // vision, history, provider) records as IMPORT.
+      source: norm.provenance.sourceType === 'MANUAL' ? 'USER' : 'IMPORT',
+      sourceId: norm.orderNo || norm.lifecycleId,
+      reason: `${norm.provenance.sourceType} opportunity intake`,
+    });
+  } catch(e){
+    console.warn('[FL] lifecycle link threw during intake; the evidence is already durable:', e);
+    link = { ok: false, error: String(e?.message || e) };
+  }
+
+  // ── phase 3: attach the link result to the durable evidence row ──
+  try {
+    const attached = await putEvidence({
+      ...pending,
+      lifecycleId: link.ok ? link.lifecycleId : null,
+      linkState: link.ok ? 'LINKED' : (link.unresolved ? 'UNRESOLVED' : 'UNLINKED'),
+      linkReason: clampStr(link.reason || link.error || '', 120),
+    }, { expectedRevision: pending.revision });
+    return Object.freeze({ normalized: norm, link, evidence: attached, fingerprint, reimported: !!existing, noop: false });
+  } catch(e){
+    // The observation stays durable. Report the failed attachment rather than
+    // manufacturing a success or discarding evidence to keep the stores tidy.
+    console.warn('[FL] evidence link attachment failed; the observation is preserved unlinked:', e);
+    return Object.freeze({
+      normalized: norm, link, evidence: pending, fingerprint,
+      reimported: !!existing, noop: false, attachmentFailed: true,
+      attachmentError: String(e?.message || e),
+    });
+  }
 }
 
 
@@ -1198,8 +1805,14 @@ function sanitizeLifecycle(raw){
     carrier: clampStr(r.carrier, 80),
     origin: clampStr(r.origin, 80),
     destination: clampStr(r.destination, 80),
-    pickupAt: isValidISODate(r.pickupAt) ? r.pickupAt : null,
-    deliveryAt: isValidISODate(r.deliveryAt) ? r.deliveryAt : null,
+    // B9 (Issue #119 Batch B): a lifecycle pickup/delivery is an INSTANT when
+    // the source has one. `isValidISODate()` accepts only `YYYY-MM-DD`, so any
+    // source carrying a real clock had its pickup and delivery nulled outright
+    // — and the reused-external-ID safety check (A4) has nothing to compare
+    // when the very facts that disambiguate two shipments are discarded.
+    // `isValidISODate` is unchanged: trips genuinely store date-only fields.
+    pickupAt: _evidenceInstantISO(r.pickupAt),
+    deliveryAt: _evidenceInstantISO(r.deliveryAt),
 
     sourceRefs: {
       bidHistoryIds: uniqStrings(refs.bidHistoryIds),
@@ -1211,7 +1824,14 @@ function sanitizeLifecycle(raw){
       // DZ-EXIT is a survival cohort. It may count in raw broker interaction
       // totals but must never calibrate normal-market rates or floors.
       deadZoneExit: r.cohort?.deadZoneExit === true,
-      normalMarketEligible: r.cohort?.deadZoneExit === true ? false : (r.cohort?.normalMarketEligible !== false),
+      // B7 (Issue #119 Batch B): a DRY RUN is preserved operational history and
+      // is excluded from normal-market calibration on the same terms. It is a
+      // separate flag, not a second meaning for deadZoneExit — they are
+      // different operational facts and analytics must be able to tell them apart.
+      dryRun: r.cohort?.dryRun === true,
+      normalMarketEligible: (r.cohort?.deadZoneExit === true || r.cohort?.dryRun === true)
+        ? false
+        : (r.cohort?.normalMarketEligible !== false),
     },
     migration: {
       importedLegacy: r.migration?.importedLegacy === true,
@@ -1259,6 +1879,7 @@ function lifecycleWinRate(rows){
     excludedExpired: list.filter(r => r.opportunity === 'EXPIRED').length,
     excludedCancelled: list.filter(r => r.opportunity === 'CANCELLED').length,
     excludedDzExit: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.deadZoneExit === true).length,
+    excludedDryRun: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.dryRun === true).length,
     // null, not 0 — an unknown rate is not a 0% rate (M1's UNKNOWN doctrine).
     rate: denominator > 0 ? won / denominator : null,
   });
@@ -1284,12 +1905,72 @@ function lifecycleDeliveryReliability(rows){
 // Returns { linked, reason } or { linked:false, unresolved:true } when two
 // candidates compete. Never links from ambiguous customer text, a city pair
 // alone, a dollar amount alone, or approximate dates alone.
+// A4 (Issue #119 Batch A): route/time compatibility.
+//
+// A place fact is compared normalized. A missing fact on EITHER side is unknown,
+// and unknown never conflicts — it just fails to add support.
+// A place is compared as a TOKEN SEQUENCE, so punctuation and spacing
+// differences between sources ("Deerfield, WI" vs "Deerfield WI") are the same
+// place — that is normalization, not fuzzy matching: the tokens are identical.
+function _placeTokens(v){
+  return String(v == null ? '' : v)
+    .toUpperCase().replace(/[.,]/g, ' ').trim().split(/\s+/).filter(Boolean);
+}
+function _placeConflict(a, b){
+  const x = _placeTokens(a), y = _placeTokens(b);
+  if (!x.length || !y.length) return false;             // unknown never conflicts
+  if (x.join(' ') === y.join(' ')) return false;
+  // One side carrying LESS specificity is not a contradiction — it is simply
+  // less evidence, the same principle date-only vs. full-timestamp follows.
+  // "CHICAGO" states no state at all, so it cannot disagree with "CHICAGO, IL".
+  // The allowance is deliberately narrow — exactly one extra trailing
+  // two-letter state token — because that is the only difference that is
+  // provably a qualification rather than a different place. It is NOT prefix
+  // matching: "CHICAGO" vs "CHICAGO HEIGHTS IL" adds two tokens and stays a
+  // conflict, and "CHICAGO IL" vs "CHICAGO MO" both state a state and disagree.
+  const [shortSeq, longSeq] = x.length <= y.length ? [x, y] : [y, x];
+  if (longSeq.length === shortSeq.length + 1
+      && /^[A-Z]{2}$/.test(longSeq[longSeq.length - 1])
+      && longSeq.slice(0, shortSeq.length).join(' ') === shortSeq.join(' ')) return false;
+  return true;
+}
+// Time comparison preserves whatever precision the SOURCE actually had. Two full
+// timestamps conflict when they are different instants. When either side is
+// genuinely date-only evidence, only the dates are comparable — widening the
+// date-only side to a fake midnight instant would invent precision, and
+// narrowing the precise side would discard it.
+function _timeConflict(a, b){
+  if (!a || !b) return false;
+  const sa = String(a), sb = String(b);
+  const dateOnly = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (dateOnly(sa) || dateOnly(sb)) return sa.slice(0,10) !== sb.slice(0,10);
+  const ta = Date.parse(sa), tb = Date.parse(sb);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return sa !== sb;
+  return ta !== tb;
+}
+// True when any supplied compatibility fact contradicts the candidate.
+function lifecycleFactsConflict(record, candidate){
+  return _placeConflict(record?.origin, candidate?.origin)
+      || _placeConflict(record?.destination, candidate?.destination)
+      || _timeConflict(record?.pickupAt, candidate?.pickupAt)
+      || _timeConflict(record?.deliveryAt, candidate?.deliveryAt);
+}
+
 function lifecycleMatchCandidate(record, candidates){
   const list = Array.isArray(candidates) ? candidates : [];
   const explicitId = clampStr(record?.lifecycleId || '', 60);
   if (explicitId){
     const hit = list.find(c => c.lifecycleId === explicitId);
     if (hit) return { linked: true, lifecycleId: hit.lifecycleId, reason: 'explicit lifecycleId' };
+  }
+
+  // Exact internal source reference — the second-strongest signal in the
+  // durability contract, and unlike an external order number it is ours.
+  const tripRefs = (record?.sourceRefs?.tripIds || []).map(x => String(x));
+  if (tripRefs.length){
+    const refHits = list.filter(c => (c.sourceRefs?.tripIds || []).some(x => tripRefs.includes(String(x))));
+    if (refHits.length === 1) return { linked: true, lifecycleId: refHits[0].lifecycleId, reason: 'internal source reference' };
+    if (refHits.length > 1) return { linked: false, unresolved: true, reason: `${refHits.length} records share this internal source reference` };
   }
 
   const order = clampStr(record?.orderNo || '', 60).trim().toUpperCase();
@@ -1299,10 +1980,22 @@ function lifecycleMatchCandidate(record, candidates){
   const matches = list.filter(c =>
     clampStr(c.orderNo || '', 60).trim().toUpperCase() === order && normBroker(c.broker || '') === broker);
 
-  if (matches.length === 1) return { linked: true, lifecycleId: matches[0].lifecycleId, reason: 'broker + order number' };
-  if (matches.length > 1){
+  // A4: broker + external order number is a CANDIDATE signal, not identity.
+  // Real quote/load/order IDs are reused across unrelated shipments, so a
+  // candidate whose supplied route/time evidence contradicts this record is not
+  // this record — it is a different load wearing the same number.
+  const compatible = matches.filter(c => !lifecycleFactsConflict(record, c));
+  const rejected = matches.length - compatible.length;
+
+  if (compatible.length === 1) return { linked: true, lifecycleId: compatible[0].lifecycleId, reason: 'broker + order number, route/time compatible' };
+  if (compatible.length > 1){
     // Competing candidates: mark unresolved and surface it rather than picking.
-    return { linked: false, unresolved: true, reason: `${matches.length} competing lifecycle records` };
+    return { linked: false, unresolved: true, reason: `${compatible.length} competing lifecycle records` };
+  }
+  if (rejected > 0){
+    // The number matched but the freight does not. Fail safe: a duplicate is
+    // recoverable, a false merge silently destroys two shipments' history.
+    return { linked: false, unresolved: true, reason: `reused order number — ${rejected} candidate(s) conflict on route/time` };
   }
   return { linked: false, unresolved: false, reason: 'no match' };
 }
@@ -1358,6 +2051,13 @@ async function linkLifecycle(patch, opts = {}){
       return { ok:false, unresolved:true, reason: match.reason };
     }
     const base = match.linked ? await getLifecycle(match.lifecycleId) : null;
+    // A3 (Issue #119 Batch A): the revision observed on THIS read is what the
+    // write must be checked against. Without it a background link merged onto a
+    // stale base and overwrote a user correction that landed in between —
+    // `upsertLifecycle` had the compare-and-abort contract, but nothing was
+    // being compared. Automated linking does not get to skip the boundary just
+    // because it is automated (durability contract, "Optimistic concurrency").
+    const observedRevision = base ? finiteNum(base.revision, null) : null;
     const merged = sanitizeLifecycle({
       ...(base || {}),
       ...patch,
@@ -1369,10 +2069,16 @@ async function linkLifecycle(patch, opts = {}){
         gpsTrackingIds: [...(base?.sourceRefs?.gpsTrackingIds || []), ...(patch.sourceRefs?.gpsTrackingIds || [])],
       },
     });
-    const saved = await upsertLifecycle(merged, opts);
+    const saved = await upsertLifecycle(merged, { ...opts, expectedRevision: observedRevision });
     return { ok:true, lifecycleId: saved.lifecycleId, created: !base };
   }catch(e){
     // Dual-write must not break the authoritative write that already landed.
+    // A conflict is reported AS a conflict — never swallowed into a success —
+    // so the caller can see that the newer state was preserved, not clobbered.
+    if (e?.code === 'FL_CONFLICT'){
+      console.warn('[FL] lifecycle link aborted: record changed since read (newer state kept)');
+      return { ok:false, conflict:true, reason:'lifecycle changed since read', error: String(e.message || e) };
+    }
     console.warn('[FL] lifecycle link failed (legacy record is unaffected):', e);
     return { ok:false, error: String(e?.message || e) };
   }
@@ -1405,18 +2111,189 @@ function _lifecycleStageChip(stage, unresolved){
 
 // Populates the stage chips after a list render. Non-blocking and failure-safe:
 // no lifecycle data simply means no chip.
-async function renderLifecycleChips(root){
+/* ═══════════════════════════════════════════════════════════════
+   M5B PRODUCTION INTAKE SURFACE  (Issue #119 Batch A / A5)
+
+   The durability contract is explicit that M5B "is not complete merely because
+   a normalization helper exists" — there must be a real, shipped call path that
+   normalizes, PERSISTS the durable evidence, and links lifecycle state
+   conservatively. This is that surface: More → Intel → Opportunity Intake.
+
+   It is fully offline (IndexedDB only, no network, no provider authorization of
+   any kind) and it makes the operator state the price semantic explicitly,
+   because that is the single fact that decides whether an amount may ever
+   become canonical revenue. Email intake is the same path with the message
+   reference preserved in `rawEvidenceRef`.
+   ═══════════════════════════════════════════════════════════════ */
+
+const _PRICE_SEMANTIC_LABEL = Object.freeze({
+  CARRIER_PAYOUT: 'Carrier payout — what I get paid',
+  SETTLED_AMOUNT: 'Settled amount — actually paid after completion',
+  OPERATOR_BID: 'My bid — what I asked for',
+  BOARD_TARGET_RATE: 'Board target rate shown on the offer',
+  SHIPPER_BOOKABLE_PRICE: 'Shipper bookable price',
+  POSTED_RATE: 'Posted rate on a load board',
+  MARKET_BENCHMARK: 'Market benchmark / modelled reference',
+  CONTRACT_RATE: 'Contract rate',
+  UNKNOWN_PRICE_SEMANTIC: "Unlabelled number — I can't prove what it means",
+});
+const _MILEAGE_SEMANTIC_LABEL = Object.freeze({
+  LOADED_MILES: 'Loaded miles',
+  DEADHEAD_MILES: 'Deadhead miles to pickup',
+  DISPLAYED_TOTAL_MILES: 'Total miles displayed by the source',
+  POST_DELIVERY_REPOSITION_MILES: 'Repositioning miles after delivery',
+  MAP_ESTIMATE: 'Map/route estimate',
+  UNKNOWN_MILEAGE_SEMANTIC: 'Unlabelled mileage number',
+});
+
+async function openOpportunityIntake(prefill = {}){
+  const body = document.createElement('div');
+  const opts = (map, current) => Object.keys(map).map(k =>
+    `<option value="${k}"${k === current ? ' selected' : ''}>${escapeHtml(map[k])}</option>`).join('');
+  const row = (id, label, value = '', type = 'text') =>
+    `<label style="font-size:12px;display:block;margin-top:8px">${escapeHtml(label)}
+       <input id="${id}" type="${type}" value="${escapeHtml(String(value ?? ''))}" style="width:100%"></label>`;
+
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:6px">
+      Logs an offer exactly as the source stated it. Nothing here is treated as revenue
+      unless the price semantic proves it is — an unlabelled number or your own bid stays
+      evidence. Works fully offline.
+    </div>
+    ${row('oiOrder','Order / quote number as shown', prefill.orderNo || '')}
+    ${row('oiBroker','Broker', prefill.broker || '')}
+    ${row('oiCarrier','Carrier label, if the source names one separately', prefill.carrierLabel || '')}
+    ${row('oiOrigin','Origin', prefill.origin || '')}
+    ${row('oiDest','Destination', prefill.destination || '')}
+    ${row('oiPickup','Pickup (date, or full timestamp if the source has one)', prefill.pickupAt || '')}
+    ${row('oiDelivery','Delivery (date, or full timestamp)', prefill.deliveryAt || '')}
+    ${row('oiAmount','Amount', prefill.amount ?? '', 'number')}
+    <label style="font-size:12px;display:block;margin-top:8px">What does that amount mean?
+      <select id="oiPriceSem" style="width:100%">${opts(_PRICE_SEMANTIC_LABEL, prefill.priceSemantic || 'UNKNOWN_PRICE_SEMANTIC')}</select></label>
+    ${row('oiMiles','Mileage number', prefill.miles ?? '', 'number')}
+    <label style="font-size:12px;display:block;margin-top:8px">What does that mileage mean?
+      <select id="oiMileSem" style="width:100%">${opts(_MILEAGE_SEMANTIC_LABEL, prefill.mileageSemantic || 'UNKNOWN_MILEAGE_SEMANTIC')}</select></label>
+    ${row('oiDead','Deadhead miles, if separately stated', prefill.deadMi ?? '', 'number')}
+    ${row('oiObserved','When was this observed? (blank = unknown, and stays unknown)', prefill.observedAt || '')}
+    ${row('oiRef','Source reference (email message id, screenshot name, thread)', prefill.rawEvidenceRef || '')}
+    ${row('oiSourceName','Source name (mailbox, board, person)', prefill.sourceName || '')}
+    <label style="font-size:12px;display:block;margin-top:10px">
+      <input type="checkbox" id="oiConfirm"> I am confirming this amount as my expected revenue
+    </label>
+    <label style="font-size:12px;display:block;margin-top:6px">
+      <input type="checkbox" id="oiDryRun"> This is a dry run (kept as operational history, excluded from rate calibration)
+    </label>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="oiSave">Save evidence</button></div>
+    <div class="muted" id="oiHint" style="font-size:12px;margin-top:8px;line-height:1.5"></div>
+  </div>`;
+
+  $('#oiSave', body).addEventListener('click', async () => {
+    const hint = $('#oiHint', body);
+    const val = (id) => String($('#'+id, body).value || '').trim();
+    try{
+      const confirmed = $('#oiConfirm', body).checked === true;
+      const res = await intakeOpportunity({
+        orderNo: val('oiOrder'),
+        broker: val('oiBroker'),
+        carrierLabel: val('oiCarrier'),
+        origin: val('oiOrigin'),
+        destination: val('oiDest'),
+        pickupAt: val('oiPickup') || null,
+        deliveryAt: val('oiDelivery') || null,
+        amount: val('oiAmount') === '' ? null : val('oiAmount'),
+        priceSemantic: $('#oiPriceSem', body).value,
+        miles: val('oiMiles') === '' ? null : val('oiMiles'),
+        mileageSemantic: $('#oiMileSem', body).value,
+        deadMi: val('oiDead') === '' ? null : val('oiDead'),
+        observedAt: val('oiObserved') || null,
+        rawEvidenceRef: val('oiRef'),
+        sourceName: val('oiSourceName'),
+        confirmationState: confirmed ? 'OPERATOR_CONFIRMED' : 'UNCONFIRMED',
+        operatorConfirmedRevenue: confirmed,
+        operationalClass: $('#oiDryRun', body).checked === true ? 'DRY_RUN' : 'FREIGHT',
+      }, {
+        sourceType: 'MANUAL',
+        // A live operator action is the one place a confirmation clock may be
+        // stamped as now — the operator is confirming it right now.
+        stampConfirmationNow: confirmed,
+        // Blocker 4: the row's authority is what the operator actually did —
+        // they typed it. Ticking "I am confirming this amount as my expected
+        // revenue" is a statement about the AMOUNT, not about the broker, the
+        // route, the mileage or the timestamps, and it never made this a
+        // primary document. The row stays OPERATOR_ENTERED_UNVERIFIED and the
+        // confirmation is applied to the confirmed fields alone.
+        authority: 'OPERATOR_ENTERED_UNVERIFIED',
+        confirmedFields: confirmed ? ['amount', 'canonicalRevenue'] : [],
+      });
+      const linkNote = res.link.ok
+        ? (res.link.created ? 'new lifecycle record created' : 'linked to an existing lifecycle record')
+        : (res.link.unresolved ? 'lifecycle link left UNRESOLVED — ' + (res.link.reason || 'ambiguous') : 'no lifecycle link');
+      const revNote = res.normalized.canonicalRevenue === null
+        ? 'Amount kept as evidence only — its semantic does not prove carrier revenue.'
+        : 'Amount recorded as canonical revenue.';
+      hint.textContent = `Saved. Evidence ${res.evidence.evidenceId}; ${linkNote}. ${revNote}`;
+      toast(res.reimported ? 'Evidence updated (same observation)' : 'Evidence saved');
+    }catch(e){
+      console.warn('[FL] opportunity intake', e);
+      hint.textContent = 'Could not save this evidence. Nothing was written.';
+    }
+  });
+
+  openModal('Opportunity intake', body);
+}
+
+// A4 (Issue #119 Batch A): resolve a trip to its lifecycle record through the
+// SAME conservative doctrine the linker uses — internal source reference first,
+// then broker + order number only when the trip's own route/time evidence is
+// compatible and nothing competes. Order-number-only lookup silently chose one
+// arbitrary shipment whenever an external ID was reused.
+function resolveLifecycleForTrip(trip, rows){
+  if (!trip) return { lifecycle: null, unresolved: false };
+  const m = lifecycleMatchCandidate({
+    orderNo: trip.orderNo,
+    // Blocker 2: `trip.customer` is NOT part of the broker identity chain. That
+    // field can hold a carrier or a shipper name as easily as a broker, and the
+    // pre-v24 broker-integrity gate already established that inferring broker
+    // identity from it recreates the attribution bug it exists to stop. An
+    // unknown broker stays unknown — this signal then adds no support, rather
+    // than inventing one.
+    broker: trip.broker || '',
+    origin: trip.origin || '',
+    destination: trip.destination || '',
+    pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
+    deliveryAt: isValidISODate(trip.deliveryDate) ? trip.deliveryDate : null,
+    // Blocker 3: the STRONG internal-source-reference signal may only carry a
+    // genuinely internal identifier. `trip.orderNo` is an external provider
+    // number that shipments demonstrably reuse; passing it as a `tripId`
+    // relabelled a reusable candidate signal as exact identity and let the
+    // strong-match branch fire on it. `trip.id` is the trips store's own minted
+    // UUID (see newTripTemplate), which is what an exact internal reference
+    // means. A caller with no trip record — the chip slot carries only an order
+    // number — has no internal identity to offer, and none is fabricated.
+    ...(trip.id ? { sourceRefs: { tripIds: [String(trip.id)] } } : {}),
+  }, rows);
+  if (m.linked) return { lifecycle: (rows || []).find(r => r.lifecycleId === m.lifecycleId) || null, unresolved: false };
+  return { lifecycle: null, unresolved: m.unresolved === true, reason: m.reason };
+}
+
+async function renderLifecycleChips(root, trips){
   try{
     const slots = (root || document).querySelectorAll('[data-lc-stage]');
     if (!slots.length) return;
     const rows = await listLifecycle();
     if (!rows.length) return;
-    const byOrder = new Map();
-    for (const r of rows){ if (r.orderNo) byOrder.set(String(r.orderNo).toUpperCase(), r); }
+    const tripByOrder = new Map();
+    for (const t of (Array.isArray(trips) ? trips : [])){ if (t?.orderNo) tripByOrder.set(String(t.orderNo).toUpperCase(), t); }
     for (const slot of slots){
       const key = String(slot.getAttribute('data-lc-stage') || '').toUpperCase();
-      const lc = key && byOrder.get(key);
-      if (lc) slot.innerHTML = _lifecycleStageChip(lifecycleDisplayStage(lc), lc.migration?.unresolvedLink);
+      if (!key) continue;
+      // Without the trip record there is no route/time evidence to check, so
+      // the only safe input is the order number alone — which resolves only
+      // when exactly one non-conflicting candidate carries it.
+      const trip = tripByOrder.get(key) || { orderNo: key };
+      const { lifecycle, unresolved } = resolveLifecycleForTrip(trip, rows);
+      if (lifecycle) slot.innerHTML = _lifecycleStageChip(lifecycleDisplayStage(lifecycle), lifecycle.migration?.unresolvedLink);
+      else if (unresolved) slot.innerHTML = _lifecycleStageChip('SEEN', true);
     }
   }catch(e){ console.warn('[FL] lifecycle chips', e); }
 }
@@ -1424,9 +2301,20 @@ async function renderLifecycleChips(root){
 // The explicit correction path the spec requires: all three dimensions
 // editable, with the derived stage shown so a driver can see what their
 // correction will produce.
-async function openLifecycleEditor(orderNo){
+async function openLifecycleEditor(tripOrOrderNo){
   const rows = await listLifecycle();
-  const lc = rows.find(r => String(r.orderNo).toUpperCase() === String(orderNo).toUpperCase());
+  // A4: accepts the trip record (preferred — it carries the route/time evidence
+  // that disambiguates a reused order number) or a bare order number.
+  const trip = (tripOrOrderNo && typeof tripOrOrderNo === 'object')
+    ? tripOrOrderNo
+    : { orderNo: String(tripOrOrderNo || '') };
+  const { lifecycle: lc, unresolved, reason } = resolveLifecycleForTrip(trip, rows);
+  if (unresolved){
+    // Opening an arbitrary one of several candidates would let a correction
+    // land on the wrong shipment. Say so instead.
+    toast('Cannot identify this load\u2019s lifecycle record: ' + (reason || 'ambiguous match') + '.', true);
+    return;
+  }
   if (!lc){ toast('No lifecycle record for this load yet.', true); return; }
 
   const body = document.createElement('div');
@@ -1486,6 +2374,20 @@ async function initDB(){
       const d = e.target.result;
       const old = e.oldVersion;
       const ensureStore = (name, opts) => { if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts); };
+      // A1 (Issue #119 Batch A): index creation must be independent of store
+      // creation. The catch-all `ensureStore` calls below run BEFORE the
+      // versioned migration blocks, so a store the migration block intended to
+      // create-with-indexes already exists by the time that block tests
+      // `objectStoreNames`, and the whole index body is skipped — on a fresh DB
+      // as well as on an upgrade. Creating each index individually, guarded by
+      // `indexNames.contains`, is correct for both paths and never drops data.
+      const ensureIndexes = (storeName, specs) => {
+        if (!d.objectStoreNames.contains(storeName)) return;
+        const store = e.target.transaction.objectStore(storeName);
+        for (const [idxName, keyPath, opts] of specs) {
+          if (!store.indexNames.contains(idxName)) store.createIndex(idxName, keyPath, opts || { unique: false });
+        }
+      };
       if (old < 1) {
         const tripStore = d.createObjectStore('trips', { keyPath: 'orderNo' });
         tripStore.createIndex('pickupDate', 'pickupDate', { unique: false });
@@ -1511,6 +2413,7 @@ async function initDB(){
       ensureStore('receiptBlobs', { keyPath:'id' });
       ensureStore('auditLog', { keyPath:'id' });
       ensureStore('loadLifecycle', { keyPath:'lifecycleId' });
+      ensureStore(EVIDENCE_STORE, { keyPath:'evidenceId' });
       // v4: Reserved (no schema changes — feature-only release)
       if (old < 4) { /* no-op: schema unchanged */ }
       // v5: Reserved (load scoring engine — no schema changes)
@@ -1581,15 +2484,29 @@ async function initDB(){
       // that existing primary keys are never rewritten to fit lifecycle IDs.
       // Purely additive: legacy records with no lifecycle link stay valid.
       if (old < 14) {
-        if (!d.objectStoreNames.contains('loadLifecycle')) {
-          const lc = d.createObjectStore('loadLifecycle', { keyPath: 'lifecycleId' });
-          // Only indexes with a real query path, per the spec's warning against
-          // speculative indexes.
-          lc.createIndex('updatedAt', 'updatedAt', { unique: false });
-          lc.createIndex('orderNo', 'orderNo', { unique: false });
-          lc.createIndex('broker', 'broker', { unique: false });
-        }
+        ensureStore('loadLifecycle', { keyPath: 'lifecycleId' });
       }
+      // Indexes are ensured unconditionally (not gated on `old < 14`) so a DB
+      // that reached v14 through the pre-A1 code — store created by the
+      // catch-all `ensureStore`, index body skipped — is repaired on its next
+      // upgrade instead of staying permanently index-less. Only indexes with a
+      // real query path, per the spec's warning against speculative indexes.
+      ensureIndexes('loadLifecycle', [
+        ['updatedAt', 'updatedAt'],
+        ['orderNo', 'orderNo'],
+        ['broker', 'broker']
+      ]);
+      // v15 (Issue #119 Batch A / A5): durable normalized evidence. A dedicated
+      // bounded store, per docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md's
+      // architectural boundary — `loadLifecycle` must not become a catch-all
+      // ledger. Purely additive; no existing record is rewritten.
+      if (old < 15) { ensureStore(EVIDENCE_STORE, { keyPath:'evidenceId' }); }
+      ensureIndexes(EVIDENCE_STORE, [
+        ['recordedAt', 'recordedAt'],
+        ['lifecycleId', 'lifecycleId'],
+        ['fingerprint', 'fingerprint'],
+        ['observedAt', 'observedAt']
+      ]);
       // v13: Broker Identity Chain — flag legacy bidHistory rows that predate real
       // broker/lane capture (the old hardcoded-empty-broker writer) so bid-to-book
       // aggregates can exclude them without deleting any data.
@@ -2223,6 +3140,83 @@ async function enforceReceiptCacheLimit(){
   finally { _evictLock = false; }
 }
 
+/* ── shared protected-history reconcilers (Issue #119 blockers 6 and 7) ──
+ *
+ * Cloud restore and local JSON import both bring in lifecycle and evidence rows
+ * that may be OLDER than what is already stored. Cloud restore reconciled by
+ * revision; local JSON `merge` mode ran a plain `put()`, so an older export
+ * silently overwrote a newer local correction. Both paths now go through these
+ * two functions, so there is one rule and it cannot drift between them.
+ */
+
+// Blocker 6: field provenance must stay PAIRED with the value it describes.
+//
+// The scalar winner supplies every material value in the merged row, so its
+// provenance is the provenance of the merged row. The previous
+// `{...existing.fp, ...incoming.fp}` spread ran regardless of who won, so a
+// stale incoming delta could lose the value conflict and still relabel the
+// retained value's provenance — a $900 operator correction kept as the value
+// while an older $700 AI row supplied the "where this came from".
+//
+// A losing row's provenance entry is carried over only where it cannot
+// misattribute anything: the winner has no entry for that field AND the loser's
+// value for that field is the value the merged row actually retained.
+function reconcileFieldProvenance(winner, loser){
+  const out = { ...(winner.fieldProvenance || {}) };
+  const loserProv = loser?.fieldProvenance || {};
+  for (const [field, prov] of Object.entries(loserProv)){
+    if (out[field]) continue;                                  // winner already attributes it
+    const winnerValue = winner?.[field];
+    const loserValue = loser?.[field];
+    if (winnerValue === undefined || winnerValue === null) continue;  // nothing retained to attribute
+    if (winnerValue !== loserValue) continue;                  // different fact — not this source's
+    out[field] = prov;                                         // same retained fact, known source
+  }
+  return out;
+}
+
+// Newer wins by revision, then by the record's own mutation clock. Neither path
+// may downgrade a newer local record with an older incoming one.
+function _incomingIsNewer(existing, incoming, clockField){
+  const er = finiteNum(existing.revision, 0), ir = finiteNum(incoming.revision, 0);
+  if (ir !== er) return ir > er;
+  return finiteNum(incoming[clockField], 0) > finiteNum(existing[clockField], 0);
+}
+
+function reconcileLifecycleRecord(existing, incoming){
+  if (!existing) return sanitizeLifecycle(incoming);
+  const incomingNewer = _incomingIsNewer(existing, incoming, 'updatedAt');
+  const winner = incomingNewer ? incoming : existing;
+  return sanitizeLifecycle({
+    ...winner,
+    revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
+    createdAt: Math.min(finiteNum(existing.createdAt, Date.now()), finiteNum(incoming.createdAt, Date.now())),
+    // Source refs are a de-duplicated UNION on purpose: a full backup and a
+    // later delta can each carry a partial ref list for the same load, and
+    // last-writer-wins would drop links. Unlike field provenance, a reference
+    // makes no claim about which source supplied a value, so unioning it cannot
+    // misattribute a fact.
+    sourceRefs: {
+      bidHistoryIds: [...(existing.sourceRefs?.bidHistoryIds || []), ...(incoming.sourceRefs?.bidHistoryIds || [])],
+      tripIds: [...(existing.sourceRefs?.tripIds || []), ...(incoming.sourceRefs?.tripIds || [])],
+      reloadOutcomeIds: [...(existing.sourceRefs?.reloadOutcomeIds || []), ...(incoming.sourceRefs?.reloadOutcomeIds || [])],
+      gpsTrackingIds: [...(existing.sourceRefs?.gpsTrackingIds || []), ...(incoming.sourceRefs?.gpsTrackingIds || [])],
+    },
+  });
+}
+
+function reconcileEvidenceRecord(existing, incoming){
+  if (!existing) return sanitizeEvidence(incoming);
+  const incomingNewer = _incomingIsNewer(existing, incoming, 'recordedAt');
+  const winner = incomingNewer ? incoming : existing;
+  const loser  = incomingNewer ? existing : incoming;
+  return sanitizeEvidence({
+    ...winner,
+    revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
+    fieldProvenance: reconcileFieldProvenance(winner, loser),
+  });
+}
+
 // ---- Export / Import (P0-3: includes auditLog + sanitization) ----
 async function dumpStore(name){
   const {stores} = tx(name);
@@ -2254,6 +3248,17 @@ async function computeExportChecksum(trips, expenses, fuel){
 async function computeExportChecksumFull(trips, expenses, fuel, settings){
   return _computeChecksum({ trips, expenses, fuel, settings });
 }
+/**
+ * A6 (Issue #119 Batch A): the PROTECTED checksum. `checksumFull` covers only
+ * trips/expenses/fuel/settings, so lifecycle state and durable normalized
+ * evidence could be edited in an export file without the integrity check
+ * noticing — the durability contract calls that out explicitly. This one covers
+ * them too. Strictly additive: exports written before this field still verify
+ * through `checksumFull`, and this is checked first when present.
+ */
+async function computeExportChecksumProtected(trips, expenses, fuel, settings, loadLifecycle, normalizedEvidence){
+  return _computeChecksum({ trips, expenses, fuel, settings, loadLifecycle, normalizedEvidence });
+}
 
 async function exportJSON(){
   const trips = await dumpStore('trips');
@@ -2266,11 +3271,14 @@ async function exportJSON(){
   // legitimate export mismatched its own integrity check on import (a false
   // "tampered" warning on every normal export/import round-trip).
   const exportableSettings = (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey');
+  const loadLifecycle = await dumpStore('loadLifecycle');
+  const normalizedEvidence = await dumpStore(EVIDENCE_STORE);
   const checksum = await computeExportChecksum(trips, expenses, fuel);
   const checksumFull = await computeExportChecksumFull(trips, expenses, fuel, exportableSettings);
+  const checksumProtected = await computeExportChecksumProtected(trips, expenses, fuel, exportableSettings, loadLifecycle, normalizedEvidence);
   const gpsLogs = await dumpStore('gpsLogs');
   const payload = {
-    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length } },
+    meta: { app: 'Freight Logic', version: APP_VERSION, exportedAt: new Date().toISOString(), checksum, checksumFull, checksumProtected, recordCounts: { trips: trips.length, expenses: expenses.length, fuel: fuel.length, gpsLogs: gpsLogs.length, loadLifecycle: loadLifecycle.length, [EVIDENCE_STORE]: normalizedEvidence.length } },
     trips,
     expenses,
     fuel,
@@ -2285,7 +3293,10 @@ async function exportJSON(){
     // v24.2: lifecycle rows travel with every export. A v24.2 export must
     // preserve the old stores too, so a lifecycle rollout can never strand
     // operational history behind one new structure.
-    loadLifecycle: await dumpStore('loadLifecycle'),
+    loadLifecycle,
+    // A5/A6: durable normalized evidence travels with every export and is
+    // covered by the protected checksum above.
+    [EVIDENCE_STORE]: normalizedEvidence,
     gpsLogs,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
@@ -2344,8 +3355,20 @@ async function importJSON(file, opts={}){
     const data = deepCleanObj(JSON.parse(await file.text()));
     const arr = (x)=> Array.isArray(x) ? x : [];
 
-    // P1-5: Verify export integrity checksum (full first, then legacy partial)
-    if (data.meta?.checksumFull){
+    // P1-5: Verify export integrity checksum. Protected first (covers lifecycle
+    // + durable evidence), then full, then the legacy partial — an older export
+    // that carries only the older field still verifies under that field.
+    if (data.meta?.checksumProtected){
+      try {
+        const verify = await computeExportChecksumProtected(
+          arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings),
+          arr(data.loadLifecycle), arr(data[EVIDENCE_STORE]));
+        if (verify !== data.meta.checksumProtected){
+          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Settings, lifecycle state, or evidence records may have been tampered with.\n\nImport anyway?');
+          if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
+        }
+      } catch(e){ console.warn("[FL]", e); }
+    } else if (data.meta?.checksumFull){
       try {
         const verify = await computeExportChecksumFull(arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings));
         if (verify !== data.meta.checksumFull){
@@ -2393,7 +3416,13 @@ async function importJSON(file, opts={}){
       'f30LastExportYear','f31TrendView',
       // v23.5 time-windows / blitz / auction / bid-log
       'cvsaAlertsEnabled','opportunityCostEnabled','auctionUndercut',
-      'emptyDayThresholdHours','lastWinningBidStats']);
+      'emptyDayThresholdHours','lastWinningBidStats',
+      // v23.9 Phase 1/7 + v24 keys that were already written but never allowed
+      // through import — a settings key the app writes but the importer drops
+      // is the same class of gap as X-07.
+      'vehicleProfiles','activeVehicleId','vanProfile',
+      // Issue #119 Batch A, item 7 — fuel-price provenance
+      'fuelPriceProvenance']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     const isAllowedSettingsKey = k => {
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
@@ -2449,13 +3478,14 @@ async function importJSON(file, opts={}){
     // path previously dropped it — the same export-but-drop-on-import class as
     // the X-07 restore bug. Sanitized through the same guard as every other store.
     const safeLifecycleArr = arr(data.loadLifecycle).map(r => { try { return sanitizeLifecycle(r); } catch { return null; } }).filter(Boolean);
+    const safeEvidenceArr = arr(data[EVIDENCE_STORE]).map(r => { try { return sanitizeEvidence(r); } catch { return null; } }).filter(Boolean);
     const safeGpsLogsArr = arr(data.gpsLogs).filter(r => r && typeof r === 'object' && typeof r.timestamp === 'number').map(r => ({
       ...deepCleanObj(r),
       tripTrackingId: clampStr(r.tripTrackingId || '', 60),
     }));
 
     const mode = opts.mode || 'merge';
-    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs','loadLifecycle'],'readwrite');
+    const {t:txn, stores} = tx(['trips','expenses','fuel','receipts','settings','auditLog','laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents','gpsLogs','loadLifecycle',EVIDENCE_STORE],'readwrite');
     if (mode === 'replace'){
       try{ stores.trips.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.expenses.clear(); }catch(e){ console.warn("[FL]", e); }
@@ -2470,6 +3500,7 @@ async function importJSON(file, opts={}){
       try{ stores.documents.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.gpsLogs.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores.loadLifecycle.clear(); }catch(e){ console.warn("[FL]", e); }
+      try{ stores[EVIDENCE_STORE].clear(); }catch(e){ console.warn("[FL]", e); }
     }
     const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
     putAll(stores.trips, safeTripArr);
@@ -2484,7 +3515,32 @@ async function importJSON(file, opts={}){
     putAll(stores.bidHistory, safeBidHistoryArr);
     putAll(stores.documents, safeDocumentsArr);
     putAll(stores.gpsLogs, safeGpsLogsArr);
-    putAll(stores.loadLifecycle, safeLifecycleArr);
+
+    // Blocker 7: lifecycle and durable evidence are PROTECTED history, and a
+    // blind put() is not the protection cloud restore already gives them. In
+    // `merge` mode an older export carrying the same lifecycleId/evidenceId
+    // silently overwrote a newer local correction — no revision comparison, no
+    // source-ref union, no field-provenance pairing. Both stores now go through
+    // the same reconcilers `mergeRestoreData()` uses, so the two import paths
+    // cannot drift apart. `replace` mode still replaces: it has already cleared
+    // the stores above, deliberately and after its documented backup.
+    if (mode === 'replace'){
+      putAll(stores.loadLifecycle, safeLifecycleArr);
+      putAll(stores[EVIDENCE_STORE], safeEvidenceArr);
+    } else {
+      for (const incoming of safeLifecycleArr){
+        try {
+          const existing = await idbReq(stores.loadLifecycle.get(String(incoming.lifecycleId)));
+          stores.loadLifecycle.put(reconcileLifecycleRecord(existing || null, incoming));
+        } catch(e){ console.warn('[FL] import reconcile loadLifecycle', e); }
+      }
+      for (const incoming of safeEvidenceArr){
+        try {
+          const existing = await idbReq(stores[EVIDENCE_STORE].get(String(incoming.evidenceId)));
+          stores[EVIDENCE_STORE].put(reconcileEvidenceRecord(existing || null, incoming));
+        } catch(e){ console.warn('[FL] import reconcile normalizedEvidence', e); }
+      }
+    }
     await waitTxn(txn);
     SETTINGS_CACHE.clear();
     toast('Import complete');
@@ -4569,7 +5625,8 @@ async function _saveSetupWizardResults(vals){
   if (vals.vehicleYear)  tasks.push(setSetting('vehicleYear',    clampStr(vals.vehicleYear, 10)));
   if (vals.vehicleMake)  tasks.push(setSetting('vehicleMake',    clampStr(vals.vehicleMake, 60)));
   if (vals.avgMpg)       tasks.push(setSetting('vehicleMpg',     posNum(vals.avgMpg)));
-  if (vals.fuelCost)     tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
+  if (vals.fuelCost){    tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
+                         tasks.push(setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR)); }
   if (vals.weeklyGoal)   tasks.push(setSetting('weeklyGoal',     posNum(vals.weeklyGoal)));
   if (vals.region)       tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
   if (vals.payloadLimit) tasks.push(setSetting('payloadLimitLbs', posNum(vals.payloadLimit)));
@@ -5341,7 +6398,7 @@ async function renderTrips(reset=false){
   else { res.items.forEach(t => list.appendChild(tripRow(t))); staggerItems(list); }
   // v24.2: fill lifecycle stage chips after the rows exist. Non-blocking —
   // the list is already usable, and no lifecycle data just means no chip.
-  renderLifecycleChips(list).catch(()=>{});
+  renderLifecycleChips(list, res.items).catch(()=>{});
   $('#btnTripMore').disabled = !tripCursor;
   await computeKPIs();
   await refreshStorageHealth('');
@@ -5497,7 +6554,7 @@ function tripRow(t, {compact=false}={}){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openTripWizard(t));
   $('[data-act="receipts"]', d).addEventListener('click', ()=> openReceiptManager(t.orderNo));
   $('[data-act="docs"]', d).addEventListener('click', ()=>{ haptic(15); openDocumentVault(t.orderNo).catch(()=>{}); });
-  $('[data-act="lifecycle"]', d)?.addEventListener('click', ()=>{ haptic(15); openLifecycleEditor(t.orderNo).catch(()=>{}); });
+  $('[data-act="lifecycle"]', d)?.addEventListener('click', ()=>{ haptic(15); openLifecycleEditor(t).catch(()=>{}); });
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
@@ -5868,6 +6925,7 @@ const INTEL_TILES = [
   { icon:'Ω', title:'Rate Tiers / Bid Calc', sub:'All-in pricing by mileage band', act:'omegaTiers' },
   { icon:'📡', title:'Market Board', sub:'Log market observations', act:'marketBoard' },
   { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
+  { icon:'📨', title:'Opportunity Intake', sub:'Log a quote / email offer with its real semantics', act:'opportunityIntake' },
 ];
 
 const MORE_TILES = [
@@ -6025,6 +7083,7 @@ async function renderIntel(){
         else if (tile.act === 'omegaTiers'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="omega"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
         else if (tile.act === 'marketBoard'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="board"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
         else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        else if (tile.act === 'opportunityIntake') await openOpportunityIntake();
       } catch(e){ console.warn('[FL] Intel tile error:', e); }
     };
     el.addEventListener('click', tileAction);
@@ -6163,6 +7222,7 @@ async function renderMore(){
           }, 100);
         }
         else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        else if (tile.act === 'opportunityIntake') await openOpportunityIntake();
         else if (tile.act === 'monthlyCosts') await openMonthlyExpenseManager();
         else if (tile.act === 'taxExport') await openTaxSeasonExport();
         else if (tile.act === 'diagnostics') await openDiagnosticsPanel();
@@ -8084,46 +9144,133 @@ function summarizeEvidenceConfidence(items, materialDomains){
 function buildEvaluationEvidence(ctx = {}){
   const items = [];
   const now = Date.now();
+  const fuelPrice = Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2);
 
-  // Fuel price: a live EIA observation, or the static corridor baseline. These
-  // are not interchangeable and the driver should be able to tell which they got.
-  const usingLiveFuel = (typeof LIVE_SOURCE_HEALTH !== 'undefined')
-    && LIVE_SOURCE_HEALTH.get && !!LIVE_SOURCE_HEALTH.get('EIA');
-  items.push(usingLiveFuel
-    ? evidenceFromLiveSource('EIA', {
-        key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
-        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal`,
-      })
-    : buildEvidenceItem({
-        key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
-        sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
-        isStaticFallback: true,
-        valueSummary: `Fuel $${Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2)}/gal (static baseline)`,
-      }));
+  // ── Fuel price ────────────────────────────────────────────────────────────
+  // Issue #119 Batch A, item 7: provenance is about ORIGIN, not coincidence.
+  // This used to claim EIA whenever an EIA health record merely EXISTED — so a
+  // price the driver typed by hand was attributed to EIA, and doubly so when
+  // the two numbers happened to be equal. The recorded provenance now decides.
+  const fuelProv = ctx.fuelProvenance || null;
+  if (fuelProv?.source === 'EIA'){
+    items.push(evidenceFromLiveSource('EIA', {
+      key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
+      // The EIA observation's OWN period, not when we stored it.
+      observedAt: fuelProv.observedAt,
+      valueSummary: `Fuel $${fuelPrice}/gal (EIA observation)`,
+    }));
+  } else if (fuelProv?.source === 'OPERATOR'){
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (driver)',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      // When the operator set it — a real, known observation instant.
+      observedAt: fuelProv.at,
+      valueSummary: `Fuel $${fuelPrice}/gal (your setting)`,
+    }));
+  } else {
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
+      sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+      isStaticFallback: true,
+      valueSummary: `Fuel $${fuelPrice}/gal (static baseline)`,
+    }));
+  }
 
-  // Personal lane history behind the USA evidence layer, when it reported one.
-  const laneSample = knownNum(ctx.usaResult?.laneSampleSize);
+  // ── Personal lane history ─────────────────────────────────────────────────
+  // Read from the ACTUAL laneHistory record the evaluator fetched, not from
+  // fields the USA engine never returned (`laneSampleSize`/`laneLastSeenAt`
+  // did not exist, so every evaluation reported an unknown sample).
+  const laneIntel = ctx.laneIntel || null;
+  const laneSample = knownNum(laneIntel?.count);
   items.push(buildEvidenceItem({
     key: 'market.laneHistory', category: 'MARKET', source: 'laneHistory',
     sourceStatus: laneSample === null ? EVIDENCE_SOURCE_STATUS_UNKNOWN : LIVE_SOURCE_STATUS.OK,
     sampleSize: laneSample, windowDays: 90, evaluatedAt: now,
-    observedAt: knownNum(ctx.usaResult?.laneLastSeenAt),
+    // The lane's own last-run date is its observation instant. Unknown stays
+    // unknown — it is never backfilled with "now".
+    observedAt: _evidenceInstantMs(laneIntel?.lastDate),
     valueSummary: laneSample === null
       ? 'No personal lane history for this corridor'
       : `${laneSample} personal observation(s) on this lane`,
   }));
 
-  // Broker evidence. An unresolved (legacyUnkeyed) identity can never be HIGH,
-  // and we never infer identity from an ambiguous customer field.
+  // ── Broker history ────────────────────────────────────────────────────────
+  // With no broker entered there is no broker DOMAIN to be confident or
+  // unconfident about. Emitting an UNKNOWN-status row made the broker domain
+  // material and capped overall confidence at LOW — a synthetic penalty for a
+  // question nobody asked. An inapplicable domain is omitted so it stays
+  // UNKNOWN and is excluded from the aggregate; a FAILED observation, by
+  // contrast, is still emitted (see weather below).
   const brokerName = String(ctx.broker || '').trim();
-  items.push(buildEvidenceItem({
-    key: 'broker.history', category: 'BROKER', source: 'bidHistory',
-    sourceStatus: brokerName ? LIVE_SOURCE_STATUS.OK : EVIDENCE_SOURCE_STATUS_UNKNOWN,
-    sampleSize: knownNum(ctx.usaResult?.brokerSampleSize),
-    identityResolved: brokerName ? undefined : false,
-    evaluatedAt: now,
-    valueSummary: brokerName ? `Broker history for ${brokerName}` : 'No broker entered — no broker evidence',
-  }));
+  if (brokerName){
+    const bi = ctx.brokerIntel || null;
+    items.push(buildEvidenceItem({
+      key: 'broker.history', category: 'BROKER', source: 'bidHistory',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      sampleSize: knownNum(bi?.sampleSize),
+      observedAt: knownNum(bi?.lastSeenAt),
+      // Never infer identity from an ambiguous customer field; an unresolved
+      // (legacyUnkeyed) identity can never be HIGH whatever the sample size.
+      identityResolved: bi?.identityResolved === false ? false : undefined,
+      evaluatedAt: now,
+      valueSummary: knownNum(bi?.sampleSize) === null
+        ? `No recorded history with ${brokerName}`
+        : `${bi.sampleSize} recorded interaction(s) with ${brokerName}`,
+    }));
+  }
+
+  // ── Route weather ─────────────────────────────────────────────────────────
+  // A successful route observation reporting ZERO alerts is a real fact and
+  // must read as one. No fetch, an offline device, a timeout or an HTTP error
+  // is an ABSENCE and must never render as "0 alerts". Both cases are emitted,
+  // because a failed observation is exactly the thing a silent omission would
+  // disguise as "nothing to worry about".
+  const wx = ctx.weatherObservation || null;
+  if (wx && wx.observed){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: wx.observedAt, evaluatedAt: now,
+      // Deliberately NO sampleSize: the number of route POINTS answered is not
+      // an aggregate sample of observations, and running it through the
+      // sample-size rule (HIGH >=10) would score a perfectly healthy two-point
+      // route observation as LOW purely because a route has two ends.
+      // A partially observed route is a real but incomplete observation.
+      isIndirect: wx.partial === true ? true : undefined,
+      valueSummary: wx.alertCount === 0
+        ? `No active NWS alerts on ${wx.pointsObserved} route point(s)`
+        : `${wx.alertCount} active NWS alert(s) on route`,
+    }));
+  } else if (wx){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: wx.status === 'NO_ROUTE_POINTS' ? EVIDENCE_SOURCE_STATUS_UNKNOWN : wx.status,
+      observedAt: null, evaluatedAt: now,
+      valueSummary: 'Route weather NOT observed — this is unknown, not "no alerts"',
+    }));
+  }
+
+  // ── Vehicle fit ───────────────────────────────────────────────────────────
+  // `vanFitChecked: true` was hardcoded at the call site, so this claimed a
+  // completed dimensional check on every load — including the common case
+  // where the posting carried no dimensions at all. With nothing measured
+  // there is no vehicleFit domain, so nothing is emitted.
+  const fit = ctx.vanFit || null;
+  if (fit && fit.checked){
+    const known = Number(fit.knownDims || 0);
+    items.push(buildEvidenceItem({
+      key: 'vehicle.fit', category: 'VEHICLE', source: 'checkVanFit + vanProfile',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: now, evaluatedAt: now,
+      // A partial measurement cannot support a full-confidence fit claim. It
+      // does NOT soften a hard rejection: a load that violated a limit never
+      // reaches here — mwEvaluateLoad returns before economics.
+      isIndirect: fit.complete === true ? undefined : true,
+      valueSummary: fit.complete
+        ? `Fits the configured van profile on all 4 measured limits`
+        : `Fits on the ${known} dimension(s) actually supplied — the rest are unmeasured`,
+    }));
+  }
 
   return Object.freeze(items);
 }
@@ -8276,6 +9423,12 @@ function unifiedDecisionForAI(decision){
   if (!decision) return null;
   return {
     schemaVersion: decision.schemaVersion,
+    // Issue #119 Batch A, item 6: absence must be VISIBLE to the reviewer. The
+    // projection previously omitted these, so a Worker receiving an UNAVAILABLE
+    // decision saw only null numbers and had nothing telling it that the client
+    // deliberately declined to decide.
+    factsComplete: decision.factsComplete,
+    unknownFacts: Array.isArray(decision.unknownFacts) ? decision.unknownFacts.slice(0, 8) : [],
     authority: {
       source: decision.authority.source,
       verdict: decision.authority.verdict,
@@ -8285,6 +9438,7 @@ function unifiedDecisionForAI(decision){
       floorRPM: decision.authority.floorRPM,
     },
     economics: {
+      available: decision.economics.available,
       trueRPM: decision.economics.trueRPM,
       loadedRPM: decision.economics.loadedRPM,
       totalMi: decision.economics.totalMi,
@@ -8295,6 +9449,7 @@ function unifiedDecisionForAI(decision){
     bid: {
       authority: decision.bid.authority,
       basis: decision.bid.basis,
+      suppressed: decision.bid.suppressed === true,
       range: decision.bid.range,
     },
     route: decision.route,
@@ -8449,14 +9604,22 @@ async function mwEvaluateLoad(){
   // intake path (they all funnel into these same fields). Only checks
   // dimensions actually entered; most load postings have none, and this is
   // a safety net, not a requirement.
+  // Issue #119 Batch A, item 7: the outcome is retained so evidence can report
+  // the MEASUREMENT STATE that actually applied — checked or not, complete or
+  // partial — instead of the hardcoded `vanFitChecked: true` that claimed a
+  // completed dimensional check on every load, dimensions or not.
+  let vanFitState = { checked: false, complete: false, knownDims: 0, fits: null };
   {
     const lengthIn = numVal('mwLoadLengthIn', NaN);
     const widthIn = numVal('mwLoadWidthIn', NaN);
     const heightIn = numVal('mwLoadHeightIn', NaN);
     const weightLbs = numVal('mwLoadWeightLbs', NaN);
-    if ([lengthIn, widthIn, heightIn, weightLbs].some(v => Number.isFinite(v) && v > 0)){
+    const dims = [lengthIn, widthIn, heightIn, weightLbs];
+    const knownDims = dims.filter(v => Number.isFinite(v) && v > 0).length;
+    if (knownDims > 0){
       const vanProfile = await getVanProfile();
       const fit = checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, vanProfile);
+      vanFitState = { checked: true, complete: knownDims === dims.length, knownDims, fits: fit.fits };
       if (!fit.fits){
         _renderVanFitBlock(out, fit.violations);
         return;
@@ -8665,9 +9828,16 @@ async function mwEvaluateLoad(){
 
   // v24.1: assemble evidence for THIS evaluation. Built here, after the
   // canonical decision inputs are settled, so it can only describe them.
+  // Issue #119 Batch A, item 7: the REAL inputs this evaluation used, not
+  // placeholders. `weatherChecked: !!(warnings||[]).length` was true whenever
+  // ANY warning of any kind existed, which had nothing to do with whether a
+  // route weather observation had been made.
   const evidenceItems = buildEvaluationEvidence({
     economicsResult, usaResult, geo, dest, broker,
-    vanFitChecked: true, weatherChecked: !!(warnings || []).length,
+    fuelProvenance: await getFuelPriceProvenance(),
+    laneIntel, brokerIntel,
+    weatherObservation: getRouteWeatherObservation(`${origin || ''}|${dest || ''}`),
+    vanFit: vanFitState,
   });
   const unifiedDecision = buildUnifiedDecisionContract({
     evidenceItems,
@@ -8696,6 +9866,24 @@ async function mwEvaluateLoad(){
       trueRPM: +trueRPM.toFixed(2),
       origin: origin || '', dest: dest || '',
       revenue: +revenue, loadedMi: +loadedMi,
+      // Issue #119 Batch A, item 7: a compact confidence/evidence snapshot, so
+      // a past evaluation can be read back with the evidence state it was made
+      // under. Bounded deliberately — this lives in sessionStorage. Entries
+      // written before this field exists simply lack it, and the renderer
+      // treats its absence as "not recorded", never as a healthy result.
+      confidence: unifiedDecision.confidence ? {
+        overall: unifiedDecision.confidence.overall,
+        market: unifiedDecision.confidence.market,
+        broker: unifiedDecision.confidence.broker,
+        operatingCosts: unifiedDecision.confidence.operatingCosts,
+        weatherSafety: unifiedDecision.confidence.weatherSafety,
+        vehicleFit: unifiedDecision.confidence.vehicleFit,
+      } : null,
+      evidence: (unifiedDecision.evidence || []).slice(0, 8).map(e => ({
+        key: e.key, source: e.source, sourceStatus: e.sourceStatus,
+        freshness: e.freshness, confidence: e.confidence, sampleSize: e.sampleSize,
+        valueSummary: clampStr(e.valueSummary || '', 120),
+      })),
     };
     let hist = [];
     try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
@@ -9243,7 +10431,7 @@ function _mwRenderDecision(out, d){
   if (navigator.onLine && (d.origin || d.dest)){
     const origCoords = d.origin ? getMarketCoords(d.origin) : null;
     const destCoords = d.dest ? getMarketCoords(d.dest) : null;
-    checkRouteWeather(origCoords, destCoords).then(alerts => {
+    checkRouteWeather(origCoords, destCoords, `${d.origin || ''}|${d.dest || ''}`).then(alerts => {
       const weatherSlot = $('#mwWeatherAlertSlot', out);
       if (!weatherSlot || !alerts.length) return;
       const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(clampStr(a.event,80))} at ${escapeHtml(clampStr(a.label,80))} (NWS)</span></div>`).join('');
@@ -9442,11 +10630,14 @@ function _renderEvalHistory(){
   const rows = hist.map((h, i) => {
     const route = (h.origin && h.dest) ? `${escapeHtml(h.origin)} → ${escapeHtml(h.dest)}` : '—';
     const ago = i === 0 ? 'Just now' : _timeAgoShort(h.ts);
+    // A legacy entry written before the snapshot field existed simply has no
+    // confidence recorded. That reads as "not recorded" — never as HIGH.
+    const confLabel = h.confidence?.overall ? ` · confidence ${escapeHtml(h.confidence.overall)}` : '';
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < hist.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
       <div style="width:28px;height:28px;border-radius:6px;background:${h.gradeColor}22;border:1px solid ${h.gradeColor}55;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${h.gradeColor};font-family:var(--font-mono);flex-shrink:0">${escapeHtml(h.grade)}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${route}</div>
-        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}${confLabel}</div>
       </div>
       <div style="font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);flex-shrink:0">${h.revenue ? '$'+h.revenue.toLocaleString() : ''}</div>
     </div>`;
@@ -11491,6 +12682,9 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
   await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
   markFuelPriceUpdated().catch(()=>{});
+  // The operator saved this settings panel, so this price is the driver's own
+  // figure — whatever number it happens to equal.
+  setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
   // Monthly fixed costs → auto-calculate opCostPerMile
   const mIns = Number($('#monthlyInsurance')?.value || 0);
   const mVeh = Number($('#monthlyVehicle')?.value || 0);
@@ -13507,7 +14701,17 @@ async function cloudPushBackup(silent = true){
     const changedBidHistory = lastSynced > 0 ? bidHistory.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : bidHistory;
     const changedDocuments = lastSynced > 0 ? documents.filter(r => (r.updatedAt || r.createdAt || 0) > lastSynced) : documents;
     const changedGpsLogs = lastSynced > 0 ? gpsLogs.filter(r => (r.timestamp || 0) > lastSynced) : gpsLogs;
-    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length) < 50;
+    // A2 (Issue #119 Batch A): `loadLifecycle` is dumped and filtered HERE, with
+    // every other store, not after the empty-delta guard below. The guard reads
+    // `lc`, so declaring it later was a temporal-dead-zone ReferenceError on
+    // every delta push — the exact path a routine background sync takes.
+    // `changedLifecycle` also belongs in the isDelta size test: a sync whose
+    // only changes are lifecycle rows is still a delta.
+    const allLifecycle = await dumpStore('loadLifecycle');
+    const changedLifecycle = lastSynced > 0 ? allLifecycle.filter(r => finiteNum(r.updatedAt, 0) > lastSynced) : allLifecycle;
+    const allEvidence = await dumpStore(EVIDENCE_STORE);
+    const changedEvidence = lastSynced > 0 ? allEvidence.filter(r => finiteNum(r.recordedAt, 0) > lastSynced) : allEvidence;
+    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length + changedLifecycle.length + changedEvidence.length) < 50;
 
     const trips = isDelta ? changedTrips : allTrips;
     const expenses = isDelta ? changedExps : allExpenses;
@@ -13518,20 +14722,20 @@ async function cloudPushBackup(silent = true){
     const bh = isDelta ? changedBidHistory : bidHistory;
     const docs = isDelta ? changedDocuments : documents;
     const gl = isDelta ? changedGpsLogs : gpsLogs;
+    const lc = isDelta ? changedLifecycle : allLifecycle;
+    const ev = isDelta ? changedEvidence : allEvidence;
 
-    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0){
+    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0 && ev.length === 0){
       _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
       if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
     }
 
-    const allLifecycle = await dumpStore('loadLifecycle');
-    const changedLifecycle = lastSynced > 0 ? allLifecycle.filter(r => finiteNum(r.updatedAt, 0) > lastSynced) : allLifecycle;
-    const lc = isDelta ? changedLifecycle : allLifecycle;
     const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
       laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
       reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
-      documents: documents.length, gpsLogs: gpsLogs.length, loadLifecycle: allLifecycle.length };
-    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, loadLifecycle: lc, gpsLogs: gl });
+      documents: documents.length, gpsLogs: gpsLogs.length, loadLifecycle: allLifecycle.length,
+      [EVIDENCE_STORE]: allEvidence.length };
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, loadLifecycle: lc, [EVIDENCE_STORE]: ev, gpsLogs: gl });
     const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
     const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
     const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
@@ -13616,32 +14820,32 @@ async function mergeRestoreData(parsed){
         if (!incoming?.lifecycleId) continue;
         const {t:wt, stores:ws} = tx('loadLifecycle','readwrite');
         const existing = await idbReq(ws.loadLifecycle.get(String(incoming.lifecycleId)));
-        let merged;
-        if (!existing){
-          merged = sanitizeLifecycle(incoming);
-        } else {
-          const incomingNewer =
-            finiteNum(incoming.revision, 0) > finiteNum(existing.revision, 0) ||
-            (finiteNum(incoming.revision, 0) === finiteNum(existing.revision, 0) &&
-             finiteNum(incoming.updatedAt, 0) > finiteNum(existing.updatedAt, 0));
-          const winner = incomingNewer ? incoming : existing;
-          merged = sanitizeLifecycle({
-            ...winner,
-            revision: Math.max(finiteNum(existing.revision, 1), finiteNum(incoming.revision, 1)),
-            createdAt: Math.min(finiteNum(existing.createdAt, Date.now()), finiteNum(incoming.createdAt, Date.now())),
-            sourceRefs: {
-              bidHistoryIds: [...(existing.sourceRefs?.bidHistoryIds || []), ...(incoming.sourceRefs?.bidHistoryIds || [])],
-              tripIds: [...(existing.sourceRefs?.tripIds || []), ...(incoming.sourceRefs?.tripIds || [])],
-              reloadOutcomeIds: [...(existing.sourceRefs?.reloadOutcomeIds || []), ...(incoming.sourceRefs?.reloadOutcomeIds || [])],
-              gpsTrackingIds: [...(existing.sourceRefs?.gpsTrackingIds || []), ...(incoming.sourceRefs?.gpsTrackingIds || [])],
-            },
-          });
-        }
+        const merged = reconcileLifecycleRecord(existing, incoming);
         ws.loadLifecycle.put(merged);
         await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
         stats.loadLifecycle = stats.loadLifecycle || { added: 0, updated: 0 };
         if (existing) stats.loadLifecycle.updated++; else stats.loadLifecycle.added++;
       }catch(e){ console.warn('[FL] merge loadLifecycle', e); }
+    }
+  }
+
+  // A5/A6: durable normalized evidence restores on the same terms — keyed on
+  // the internal evidenceId, resolved by revision then recordedAt. Evidence is
+  // append-mostly source history, so a restore never deletes a local row the
+  // backup didn't carry; the fingerprint keeps re-imports idempotent.
+  {
+    const incomingEvidence = arr(parsed[EVIDENCE_STORE]);
+    for (const incoming of incomingEvidence){
+      try{
+        if (!incoming?.evidenceId) continue;
+        const {t:wt, stores:ws} = tx(EVIDENCE_STORE,'readwrite');
+        const existing = await idbReq(ws[EVIDENCE_STORE].get(String(incoming.evidenceId)));
+        const merged = reconcileEvidenceRecord(existing, incoming);
+        ws[EVIDENCE_STORE].put(merged);
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        stats[EVIDENCE_STORE] = stats[EVIDENCE_STORE] || { added: 0, updated: 0 };
+        if (existing) stats[EVIDENCE_STORE].updated++; else stats[EVIDENCE_STORE].added++;
+      }catch(e){ console.warn('[FL] merge normalizedEvidence', e); }
     }
   }
 
@@ -14484,7 +15688,11 @@ async function _postTripSaveLaneHook(trip){
       const { execution, settlement } = _lifecycleStateFromTrip(trip);
       await linkLifecycle({
         orderNo: trip.orderNo,
-        broker: trip.broker || trip.customer || '',
+        // Blockers 2/3, write side. Fixing only the read side would leave every
+        // newly written lifecycle row carrying customer-as-broker and
+        // orderNo-as-internal-ref, so the laundering is removed where the value
+        // is minted, not only where it is read.
+        broker: trip.broker || '',
         origin: trip.origin || '',
         destination: trip.destination || '',
         pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
@@ -14494,7 +15702,7 @@ async function _postTripSaveLaneHook(trip){
         execution,
         settlement,
         cohort: { deadZoneExit: trip.isDZExit === true },
-        sourceRefs: { tripIds: [trip.orderNo] },
+        ...(trip.id ? { sourceRefs: { tripIds: [String(trip.id)] } } : {}),
       }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
     }
   } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
@@ -15646,6 +16854,31 @@ async function checkFuelPriceStaleness(){
 // Called from settings save (patched below at settings save handler)
 async function markFuelPriceUpdated(){
   await setSetting('fuelPriceUpdatedAt', Date.now());
+}
+
+// Issue #119 Batch A, item 7: record WHICH source the current fuel price came
+// from. Evidence previously claimed "EIA" whenever an EIA health record
+// existed at all — even when the operator had typed the price by hand, and
+// even when the two numbers happened to be equal. Provenance is about origin,
+// not about coincidence of value.
+const FUEL_PRICE_SOURCE = Object.freeze({ OPERATOR: 'OPERATOR', EIA: 'EIA' });
+async function setFuelPriceProvenance(source, observedAt = null){
+  await setSetting('fuelPriceProvenance', {
+    source: FUEL_PRICE_SOURCE[source] ? source : FUEL_PRICE_SOURCE.OPERATOR,
+    at: Date.now(),
+    // The SOURCE observation instant (the EIA period), not the moment we
+    // stored it. Null when the operator typed a number with no source clock.
+    observedAt: _evidenceInstantMs(observedAt),
+  });
+}
+async function getFuelPriceProvenance(){
+  const p = await getSetting('fuelPriceProvenance', null);
+  if (!p || typeof p !== 'object') return null;
+  return {
+    source: FUEL_PRICE_SOURCE[p.source] || FUEL_PRICE_SOURCE.OPERATOR,
+    at: knownNum(p.at),
+    observedAt: knownNum(p.observedAt),
+  };
 }
 
 // ── F7: Deadhead Calculator with GPS ─────────────────────────────────────
@@ -17164,6 +18397,9 @@ async function fetchEIAGasPrice(){
       if (ev.target?.id === 'eiaApplyBtn'){
         ev.preventDefault();
         await setSetting('fuelPrice', price);
+        // Applying an EIA observation explicitly switches provenance to EIA,
+        // carrying that observation's own period as its source instant.
+        await setFuelPriceProvenance(FUEL_PRICE_SOURCE.EIA, period || null);
         const fpEl = $('#fuelPrice');
         if (fpEl) fpEl.value = price.toFixed(2);
         toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA Midwest gas)`);
@@ -17178,20 +18414,62 @@ async function fetchEIAGasPrice(){
 // v21 T4B: NWS Weather Alerts for Route
 // ════════════════════════════════════════════════════════════════
 const _nwsCache = new Map();
-async function checkRouteWeather(originCoords, destCoords){
-  if (!navigator.onLine) { setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE); return []; }
+// Issue #119 Batch A, item 7: a route weather OBSERVATION record, distinct
+// from the source-health registry. "Zero alerts on a route we actually
+// checked" and "we never checked this route" are completely different facts,
+// and evidence must never render the second as the first. Keyed by route so a
+// previous evaluation's observation can never be reported for this one.
+let _routeWeatherObservation = null;
+function getRouteWeatherObservation(routeKey){
+  const o = _routeWeatherObservation;
+  return (o && o.routeKey === String(routeKey || '')) ? o : null;
+}
+// A regression that means to exercise "this route was never successfully
+// observed" has to start from genuinely uncached points. The 30-minute
+// per-point success cache is real production behaviour and a cache hit IS a
+// real observation — so the test resets the cache rather than the semantics.
+// Production never calls this.
+function _resetRouteWeatherStateForTests(){
+  _nwsCache.clear();
+  _routeWeatherObservation = null;
+}
+
+async function checkRouteWeather(originCoords, destCoords, routeKey = ''){
+  const key = String(routeKey || '');
   const points = [];
   if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
   if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  const obs = {
+    routeKey: key, observed: false, partial: false,
+    pointsRequested: points.length, pointsObserved: 0,
+    alertCount: 0, observedAt: null,
+    status: points.length ? LIVE_SOURCE_STATUS.OK : 'NO_ROUTE_POINTS',
+  };
+  if (!navigator.onLine) {
+    setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE);
+    _routeWeatherObservation = { ...obs, status: LIVE_SOURCE_STATUS.OFFLINE };
+    return [];
+  }
   const alerts = [];
   for (const pt of points){
     const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
     const cached = _nwsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){ setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); alerts.push(...cached.alerts); continue; }
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){
+      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts });
+      alerts.push(...cached.alerts);
+      obs.pointsObserved++; obs.alertCount += cached.alerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, cached.ts);
+      continue;
+    }
     try {
       const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
       const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
-      if (!res.ok){ setLiveSourceHealth('NWS', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, point: pt.label }); continue; }
+      if (!res.ok){
+        const st = (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR;
+        setLiveSourceHealth('NWS', st, { httpStatus: res.status, point: pt.label });
+        obs.status = st;
+        continue;
+      }
       const json = await res.json();
       const ptAlerts = (json.features || []).map(f => ({
         label: pt.label,
@@ -17203,8 +18481,20 @@ async function checkRouteWeather(originCoords, destCoords){
       _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: nwsSuccessTs });
       setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { point: pt.label, alertCount: ptAlerts.length, lastSuccess: nwsSuccessTs });
       alerts.push(...ptAlerts);
-    } catch(e){ setLiveSourceHealth('NWS', _liveSourceFailureStatus(e), { point: pt.label, message: String(e?.message || e || '') }); }
+      obs.pointsObserved++; obs.alertCount += ptAlerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, nwsSuccessTs);
+    } catch(e){
+      const st = _liveSourceFailureStatus(e);
+      setLiveSourceHealth('NWS', st, { point: pt.label, message: String(e?.message || e || '') });
+      obs.status = st;
+    }
   }
+  // `observed` means at least one route point genuinely answered. Only then is
+  // `alertCount: 0` a real "no active alerts" fact rather than an absence.
+  obs.observed = obs.pointsObserved > 0;
+  obs.partial = obs.observed && obs.pointsObserved < obs.pointsRequested;
+  if (obs.observed && !obs.partial) obs.status = LIVE_SOURCE_STATUS.OK;
+  _routeWeatherObservation = obs;
   return alerts;
 }
 
@@ -18900,6 +20190,13 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // v24.2 M5A/5B normalized opportunity ingestion
     normalizeOpportunity, intakeOpportunity,
     PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
+    // Issue #119 Batch A — durable normalized evidence + production intake path
+    EVIDENCE_STORE, EVIDENCE_AUTHORITY_ORDER, EVIDENCE_OPERATIONAL_CLASS,
+    sanitizeEvidence, putEvidence, getEvidence, listEvidence, findEvidenceByFingerprint,
+    evidenceFingerprint, evidenceAuthorityRank, reconcileEvidenceFields,
+    openOpportunityIntake, resolveLifecycleForTrip, renderLifecycleChips,
+    openLifecycleEditor, lifecycleFactsConflict,
+    computeExportChecksumProtected, initDB,
     // v24.2 M6 historical import + calibration
     importHistoricalOpportunities, calibrateWinningRange, calibrateFromLifecycle,
     _historicalRowFingerprint, _orderStableKey,
@@ -18932,6 +20229,13 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     classifyEvidenceFreshness, classifyEvidenceSample, normalizeEvidenceSourceStatus,
     EVIDENCE_CONFIDENCE, EVIDENCE_FRESHNESS, EVIDENCE_CATEGORY, EVIDENCE_THRESHOLDS,
     unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
+    // Issue #119 Batch A, item 7 — real evaluation-evidence wiring
+    buildEvaluationEvidence, getFuelPriceProvenance, setFuelPriceProvenance, FUEL_PRICE_SOURCE,
+    getRouteWeatherObservation, checkRouteWeather, _resetRouteWeatherStateForTests,
+    getLaneIntel, getBrokerIntel, mwEvaluateLoad,
+    // Issue #119 exact-candidate blockers
+    buildEvidenceContent, reconcileLifecycleRecord, reconcileEvidenceRecord, reconcileFieldProvenance,
+    normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
   };

@@ -23,7 +23,7 @@ async function connectCloud(page, worker) {
 
 async function dumpAllStores(page) {
   return page.evaluate(async () => {
-    const names = ['trips', 'expenses', 'fuel', 'settings', 'receipts', 'gpsLogs'];
+    const names = ['trips', 'expenses', 'fuel', 'settings', 'receipts', 'gpsLogs', 'loadLifecycle', 'normalizedEvidence'];
     const out = {};
     for (const name of names) {
       out[name] = await new Promise((resolve, reject) => {
@@ -44,7 +44,7 @@ async function dumpAllStores(page) {
 
 async function wipeAllStores(page) {
   await page.evaluate(async () => {
-    const names = ['trips', 'expenses', 'fuel', 'settings', 'receipts', 'gpsLogs', 'auditLog', 'laneHistory', 'weeklyReports', 'reloadOutcomes', 'bidHistory', 'documents'];
+    const names = ['trips', 'expenses', 'fuel', 'settings', 'receipts', 'gpsLogs', 'auditLog', 'laneHistory', 'weeklyReports', 'reloadOutcomes', 'bidHistory', 'documents', 'loadLifecycle', 'normalizedEvidence'];
     await new Promise((resolve, reject) => {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
@@ -88,6 +88,18 @@ test('[X-01/X-07] full backup, then 3 delta syncs, each adding a new record', as
   await seedRecord(app.page, 'gpsLogs', { tripTrackingId: 'trk-base', lat: 41.8, lng: -87.6, accuracy: 10, speed: 0, timestamp: Date.now() - 100000 });
   await seedRecord(app.page, 'receipts', { tripOrderNo: 'BASE-1', files: [{ id: 'f1', name: 'base-receipt.jpg', type: 'image/jpeg', size: 1000, added: Date.now(), thumbDataUrl: '', cached: false, status: 'imported' }] });
 
+  // Issue #119 Batch A / A5: durable normalized evidence must ride the full
+  // backup. It is written through the REAL intake path, not seeded raw, so the
+  // semantics under test are the ones production actually produces.
+  await app.page.evaluate(async () => {
+    await window.__FL_TESTS.intakeOpportunity({
+      orderNo: 'EV-BASE', broker: 'Base Broker', origin: 'Chicago, IL', destination: 'Toledo, OH',
+      amount: 640, priceSemantic: 'BOARD_TARGET_RATE',
+      miles: 262, mileageSemantic: 'DISPLAYED_TOTAL_MILES',
+      observedAt: '2026-05-01T06:12:44Z', rawEvidenceRef: 'base-thread-1',
+    }, { sourceType: 'EMAIL' });
+  });
+
   await app.page.evaluate(async () => { await window.__FL_TESTS.cloudPushBackup(false); });
   await app.page.waitForTimeout(300);
 
@@ -97,6 +109,17 @@ test('[X-01/X-07] full backup, then 3 delta syncs, each adding a new record', as
     const t = await app.page.evaluate((orderNo) =>
       window.__FL_TESTS.sanitizeTrip({ orderNo, customer: 'Delta Broker', pay: 500, loadedMiles: 150, pickupDate: '2026-05-02', deliveryDate: '2026-05-02' }), orderNo);
     await seedRecord(app.page, 'trips', t);
+    // One evidence row per delta, so the DELTA path (not just the full push) is
+    // proven to carry the store — the A2 empty-delta fix is what makes this
+    // path reachable at all.
+    await app.page.evaluate(async (orderNo) => {
+      await window.__FL_TESTS.intakeOpportunity({
+        orderNo: 'EV-' + orderNo, broker: 'Delta Broker', origin: 'Gary, IN', destination: 'Erie, PA',
+        amount: 410, priceSemantic: 'CARRIER_PAYOUT',
+        loadedMi: 190, mileageSemantic: 'LOADED_MILES',
+        observedAt: '2026-05-02T11:00:00Z', rawEvidenceRef: 'delta-' + orderNo,
+      }, { sourceType: 'EMAIL' });
+    }, orderNo);
     await app.page.evaluate(async () => { await window.__FL_TESTS.cloudPushBackup(false); });
     await app.page.waitForTimeout(300);
   }
@@ -104,6 +127,7 @@ test('[X-01/X-07] full backup, then 3 delta syncs, each adding a new record', as
   // Sanity: the pre-wipe local state has all 4 trips.
   const preWipe = await dumpAllStores(app.page);
   eq(preWipe.trips.length, 4, 'sanity: 1 base + 3 delta trips exist locally before wipe');
+  eq(preWipe.normalizedEvidence.length, 4, 'sanity: 1 base + 3 delta evidence rows exist locally before wipe');
 });
 
 test('[X-01/X-07] wipe local data, restore, and assert parity of every contracted store', async () => {
@@ -116,6 +140,7 @@ test('[X-01/X-07] wipe local data, restore, and assert parity of every contracte
 
   const postWipe = await dumpAllStores(app.page);
   eq(postWipe.trips.length, 0, 'sanity: wipe actually cleared trips');
+  eq(postWipe.normalizedEvidence.length, 0, 'sanity: wipe actually cleared durable evidence');
   // Boot re-seeds a few of its own defaults (uiMode, localUserId, ...) on a
   // fresh empty DB — that's expected, not a leftover. The load-bearing fact
   // is that the cloud CONNECTION specifically was wiped, same as a genuine
@@ -138,6 +163,24 @@ test('[X-01/X-07] wipe local data, restore, and assert parity of every contracte
   eq(restored.trips.length, 4, `all 4 trips (1 base + 3 delta) must be restored — got ${restored.trips.length}: ${JSON.stringify(restored.trips.map(t=>t.orderNo))}`);
   const orderNos = restored.trips.map(t => t.orderNo).sort();
   eq(JSON.stringify(orderNos), JSON.stringify(['BASE-1', 'DELTA-1', 'DELTA-2', 'DELTA-3']), 'exact set of trips must match what was pushed across the base + 3 deltas');
+
+  // Issue #119 Batch A / A5: the durable evidence store must come back from the
+  // full backup AND the deltas, with its semantics byte-intact. A data class
+  // that backs up but is dropped on restore is a release blocker.
+  eq(restored.normalizedEvidence.length, 4, `all 4 evidence rows must be restored — got ${restored.normalizedEvidence.length}`);
+  const evByOrder = Object.fromEntries(restored.normalizedEvidence.map(e => [e.orderNo, e]));
+  const base = evByOrder['EV-BASE'];
+  ok(!!base, 'the full-backup evidence row is restored');
+  eq(base.priceSemantic, 'BOARD_TARGET_RATE', 'its price semantic survives the cloud round trip');
+  eq(base.canonicalRevenue, null, 'a board target rate is still not revenue after restore');
+  eq(base.displayedTotalMi, 262, 'a displayed total is still a displayed total');
+  eq(base.loadedMi, null, 'and still never occupies canonical loaded miles');
+  eq(base.observedAtISO, '2026-05-01T06:12:44Z', 'the source observation instant survives with full precision');
+  eq(base.provenance.rawEvidenceRef, 'base-thread-1', 'the source reference survives');
+  const d1 = evByOrder['EV-DELTA-1'];
+  ok(!!d1, 'a delta-carried evidence row is restored');
+  eq(d1.canonicalRevenue, 410, 'a proven carrier payout is still revenue after restore');
+  eq(d1.loadedMi, 190, 'and its loaded miles survive in their own slot');
 
   // X-07: settings, receipts, gpsLogs must now also be restorable (previously
   // silently dropped by mergeRestoreData).

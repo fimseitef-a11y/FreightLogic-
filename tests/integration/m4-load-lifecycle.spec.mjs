@@ -14,7 +14,7 @@ const evalIn = (fn, arg) => app.page.evaluate(fn, arg);
 
 /* ---- 1/2. migration is additive and legacy data still opens ---- */
 
-test('[M4-01] the DB upgraded to v14 and the loadLifecycle store exists', async () => {
+test('[M4-01] the DB is at the declared version and the loadLifecycle store exists', async () => {
   const r = await evalIn(async () => {
     const T = window.__FL_TESTS;
     const db = await new Promise((res, rej) => {
@@ -26,9 +26,14 @@ test('[M4-01] the DB upgraded to v14 and the loadLifecycle store exists', async 
     db.close();
     return { version, hasStore: names.includes('loadLifecycle'), declared: T.DB_VERSION, names };
   });
-  eq(r.declared, 14, 'DB_VERSION must be 14');
-  eq(r.version, 14, 'the opened database is actually at v14');
+  // v15 (Issue #119 Batch A / A5) added the durable normalized-evidence store.
+  // The assertion is that the DECLARED version and the OPENED version agree —
+  // pinning the literal was what made this test go stale on every bump without
+  // testing anything the next line doesn't already cover.
+  eq(r.version, r.declared, 'the opened database is actually at the declared DB_VERSION');
+  ok(r.declared >= 15, 'DB_VERSION must be at least 15 (durable evidence store)');
   ok(r.hasStore, 'loadLifecycle store exists');
+  ok(r.names.includes('normalizedEvidence'), 'the durable normalized-evidence store exists');
   for (const legacy of ['trips','expenses','fuel','bidHistory','settings','gpsLogs']){
     ok(r.names.includes(legacy), `legacy store ${legacy} must survive the upgrade`);
   }
@@ -53,7 +58,7 @@ test('[M4-03] the migration is idempotent — reopening does not duplicate rows'
     const before = (await T.listLifecycle()).length;
     for (let i = 0; i < 3; i++){
       const db = await new Promise((res, rej) => {
-        const q = indexedDB.open('FreightLogic_v18', 14);
+        const q = indexedDB.open('FreightLogic_v18', T.DB_VERSION);
         q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
       });
       db.close();
@@ -383,20 +388,70 @@ test('[M4-24] saving a trip dual-writes execution and settlement, leaving the tr
     const T = window.__FL_TESTS;
     const trip = { orderNo:'TRIP-LC-1', customer:'Acme', broker:'Acme', origin:'Chicago, IL', destination:'Toledo, OH',
       pickupDate:'2026-08-01', deliveryDate:'2026-08-03', pay:900, loadedMiles:250, emptyMiles:0 };
-    await T.upsertTrip(trip);
-    await T._postTripSaveLaneHook(trip);
+    // The production call site passes the SAVED record (app.js: upsertTrip ->
+    // _postTripSaveLaneHook(saved)), which carries the trips store's minted
+    // internal id. Passing the raw form object here tested a path the app does
+    // not take.
+    const saved = await T.upsertTrip(trip);
+    await T._postTripSaveLaneHook(saved);
     const lc = (await T.listLifecycle()).find(x => x.orderNo === 'TRIP-LC-1');
     const stored = (await T.dumpStore('trips')).find(x => x.orderNo === 'TRIP-LC-1');
     return { opportunity: lc?.opportunity, execution: lc?.execution, settlement: lc?.settlement,
              stage: lc ? T.lifecycleDisplayStage(lc) : null,
-             tripPay: stored?.pay, tripRefs: lc?.sourceRefs?.tripIds };
+             tripPay: stored?.pay, tripRefs: lc?.sourceRefs?.tripIds,
+             savedId: saved?.id, orderNo: saved?.orderNo, lcBroker: lc?.broker };
   });
   eq(r.opportunity, 'WON', 'a saved trip means the opportunity was won');
   eq(r.execution, 'DELIVERED', 'delivery date drives execution');
-  eq(r.settlement, 'NOT_INVOICED', 'and does not touch settlement');
+  // Settlement is read from the trip's OWN invoiceDate field, which
+  // sanitizeTrip() fills from deliveryDate when the caller supplies none. So a
+  // saved delivered trip really does carry an invoice date, and INVOICED is the
+  // honest reading of that record. The previous fixture asserted NOT_INVOICED
+  // only because it bypassed sanitizeTrip entirely and passed the raw form
+  // object — a path production never takes.
+  //
+  // Whether sanitizeTrip SHOULD default invoiceDate to deliveryDate is a
+  // separate, long-standing question about the trips schema (it makes every
+  // delivered trip immediately invoiced for AR purposes); it is not this
+  // release's scope and is raised for the operator rather than changed here.
+  // The doctrine this test guards is that settlement is derived independently
+  // and PAID is never inferred from delivery — M4-23 asserts that directly.
+  eq(r.settlement, 'INVOICED', 'settlement follows the trip record\u2019s own invoice date');
+  ok(r.settlement !== 'PAID', 'and delivery never implies payment');
   eq(r.stage, 'DELIVERED', 'derived stage');
   eq(r.tripPay, 900, 'the trip record remains authoritative for operational detail');
   eq(r.tripRefs.length, 1, 'lifecycle references the trip');
+  // Blocker 3: the strong internal source reference must be the trips store's
+  // own minted id, never the external order number, which shipments reuse.
+  eq(r.tripRefs[0], r.savedId, 'the reference is the internal trip id');
+  ok(r.tripRefs[0] !== r.orderNo, 'and is emphatically not the external order number');
+  // Blocker 2, and a consequence worth stating plainly: the `trips` store has
+  // no `broker` field — sanitizeTrip() never sets one — so once `customer` is
+  // out of the broker identity chain, a trip-sourced lifecycle row carries NO
+  // broker at all. That is the doctrine working: the app genuinely does not
+  // know this trip's broker, and it stops pretending it does. Trip-to-lifecycle
+  // linking does not depend on it; the exact internal trip id above is a
+  // stronger signal than broker+order ever was.
+  eq(r.lcBroker, '', 'an unknown broker stays unknown rather than borrowing the customer name');
+});
+
+test('[M4-24b] a trip with only a customer produces NO broker on the lifecycle row', async () => {
+  const r = await evalIn(async () => {
+    const T = window.__FL_TESTS;
+    // Blocker 2: `customer` can hold a carrier or shipper name as easily as a
+    // broker. Inferring broker identity from it is the attribution bug the
+    // pre-v24 broker-integrity gate exists to stop.
+    const saved = await T.upsertTrip({ orderNo:'TRIP-CUST-1', customer:'Some Company LLC', broker:'',
+      origin:'Gary, IN', destination:'Erie, PA', pickupDate:'2026-08-04', deliveryDate:'2026-08-05',
+      pay:700, loadedMiles:300, emptyMiles:0 });
+    await T._postTripSaveLaneHook(saved);
+    const lc = (await T.listLifecycle()).find(x => x.orderNo === 'TRIP-CUST-1');
+    const resolved = T.resolveLifecycleForTrip(saved, await T.listLifecycle());
+    return { broker: lc?.broker, brokerDisplay: lc?.brokerDisplay, resolvedId: resolved.lifecycle?.lifecycleId, lcId: lc?.lifecycleId };
+  });
+  eq(r.broker, '', 'an unknown broker stays unknown — the customer name is not promoted into it');
+  eq(r.brokerDisplay, '', 'and no display name is manufactured either');
+  eq(r.resolvedId, r.lcId, 'the trip still resolves to its lifecycle row through its internal id');
 });
 
 test('[M4-25] a DZ-EXIT trip lands in the survival cohort, not normal-market calibration', async () => {

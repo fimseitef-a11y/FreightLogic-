@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FreightLogic test fixture — blank same-origin page</title>
+<!--
+  A deliberately empty, same-origin page that does NOT load app.js.
+
+  Some regressions have to set up IndexedDB state BEFORE the app boots and
+  opens its own connection — a v13→current upgrade test, for instance, cannot
+  seed a v13 database while a live page holds the database open at the current
+  version. Loading this page first gives a test a real same-origin JS context
+  with no app running, so it can create/delete/seed the database, and only then
+  navigate to index.html and let the real initDB() upgrade path run.
+-->
+<p>FreightLogic test fixture. Intentionally blank.</p>

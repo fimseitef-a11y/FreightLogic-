@@ -27,6 +27,14 @@ import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evi
 import { runSpec as m4LoadLifecycle } from './integration/m4-load-lifecycle.spec.mjs';
 import { runSpec as m5OpportunityIngestion } from './integration/m5-opportunity-ingestion.spec.mjs';
 import { runSpec as m6HistoricalImport } from './integration/m6-historical-import.spec.mjs';
+// Issue #119 Batch A — release-integrity hotfix regressions
+import { runSpec as batchAReleaseIntegrity } from './integration/batch-a-release-integrity.spec.mjs';
+import { runSpec as m3RealEvidenceWiring } from './integration/m3-real-evidence-wiring.spec.mjs';
+import { runSpec as batchBM6Reconciliation } from './integration/batch-b-m6-reconciliation.spec.mjs';
+// v24.0.2 exact-candidate blockers 1-8
+import { runSpec as blockersExactCandidate } from './integration/blockers-exact-candidate.spec.mjs';
+import { runSpec as workerCanonicalAbsence } from './unit/worker-canonical-absence.spec.mjs';
+import { runSpec as m7RunnerSemantics } from './unit/m7-runner-semantics.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
@@ -55,6 +63,12 @@ const specs = [
   m4LoadLifecycle,
   m5OpportunityIngestion,
   m6HistoricalImport,
+  batchAReleaseIntegrity,
+  m3RealEvidenceWiring,
+  batchBM6Reconciliation,
+  blockersExactCandidate,
+  workerCanonicalAbsence,
+  m7RunnerSemantics,
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,
