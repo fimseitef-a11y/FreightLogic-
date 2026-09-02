@@ -4,7 +4,7 @@ Date: 2026-09-02
 Candidate: `14c489582f65716fc2f33d88918184477e7060d9`
 Release: FreightLogic v24.0.2 / DB v15 / Worker v13
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md, COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-08-28.md
-Status: **HOLD — CODE CANDIDATE GREEN; LIVE AND PHYSICAL CERTIFICATION PENDING**
+Status: **HOLD — IPHONE UPDATE PATH FAILED; LIVE AND PHYSICAL CERTIFICATION PENDING**
 
 This is the current certification-state record for the completion candidate. It
 supersedes the two earlier HOLD records named above without deleting their audit
@@ -47,13 +47,41 @@ durability, unknown-value, intake, Worker-projection, evidence, and M6
 reconciliation behavior. The former 241-test baseline is therefore historical;
 the controlling automated result for this candidate is 318/0/32.
 
-This statement closes the earlier *code-side* HOLD reasons. It does not convert
-unobserved deployment or device checks into passes.
+This statement closes the earlier enumerated source blockers. It does not
+convert unobserved deployment or device checks into passes, and later field
+evidence may reopen a code-side gate as described below.
 
 ## Remaining release gates
 
 The candidate remains on HOLD until both evidence classes below are observed on
 this exact release generation.
+
+### Observed A1 failure — installed iPhone remained on v23.x
+
+On 2026-09-02, the operator supplied screenshots from the installed iPhone Home
+Screen PWA. The app launched, but its header visibly reported `Omega • v23.x`
+(the final digits were obscured by the iPhone status overlay), not v24.0.2. It
+also presented first-run onboarding. `FIELD_TEST_CHECKLIST.md` A1 is therefore
+**FAIL**, not pending or passed.
+
+Exact-current source review found an uncovered update handshake defect:
+
+- `sw-bridge.js` reloads on `controllerchange` only after its private request
+  flag is set through `_flRequestSWUpdate`;
+- the `app.js` update-ready button bypasses that helper and sends
+  `SKIP_WAITING` directly to the installing worker;
+- the helper itself targets the active controller rather than deliberately
+  targeting the waiting worker; and
+- the automated suite contains no real regression for update-ready -> waiting
+  worker -> controller change -> exactly one reload.
+
+This source defect is consistent with an update failing to reload immediately,
+but the screenshots alone do not distinguish it from an old production
+deployment or an origin/storage mismatch. Certification requires a core-lane
+repair with a real regression, production-generation verification, and a safe
+retest on the operator's iPhone. Do not use PWA deletion or Safari website-data
+clearing as the primary remedy because those actions can erase local IndexedDB
+evidence.
 
 ### 1. Live Cloudflare verification
 
@@ -96,8 +124,8 @@ the deployment target and data-compatibility implications.
 
 ## Repository and integration disposition
 
-- The exact candidate has a green full suite and is ready for live and physical
-  verification.
+- The exact candidate has a green automated suite, but the later physical A1
+  observation reopened the update path for code repair and regression.
 - Issue #119 remains open as the finite completion tracker until the outstanding
   observations are recorded.
 - No open pull request was present when this state was prepared.
