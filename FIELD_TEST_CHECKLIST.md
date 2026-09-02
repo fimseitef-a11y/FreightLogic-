@@ -2,7 +2,7 @@
 
 Purpose: the finite **Milestone 7 physical-device certification gate** for the named FreightLogic completion release, plus a separate long-horizon resilience watch list.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`.
 
 The automated suite must already be green on the exact release-candidate SHA before the blocking device checks below are treated as certification evidence. Do not mark a field check passed from an emulator, desktop browser, AI description, or an old app generation.
 
