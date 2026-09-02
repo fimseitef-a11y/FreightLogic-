@@ -1,0 +1,6 @@
+owner: claude
+token: a827ef71-e597-4492-b7d0-bcfc20ab876e
+started_utc: 2026-09-02T23:41:35Z
+expected_release_utc: 2026-09-03T01:41:35Z
+paths: app.js
+task: add origin / service-worker script URL / cache generation readout to the F28 Diagnostics panel
