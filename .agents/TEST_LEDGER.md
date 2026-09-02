@@ -196,3 +196,16 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Command: `node tests/run-all.mjs`; Node v22.22.2; Playwright 1.56.1 (CI pins 1.62.1).
 - Result: **GREEN — 240 passed, 0 failed across 26 spec files** (+1: M6-15 long-provenance idempotency regression).
 - Real-data validation (harness, not a committed test): the operator's 2026-08-27 bundle imported through the merged importHistoricalOpportunities() — 142 lifecycle rows, deterministic checksum 70d378b, fully idempotent on re-import after the fix (142/142 duplicatesSkipped).
+
+## Run — 2026-09-02T19:20Z (v24.0.2 exact-current main)
+
+- Purpose: exact-current-main completion baseline after PR #124 runtime and PR #125 release-doc merges.
+- Tested SHA: `fa63be5430b2f89e85c0df14df7ab7a6294c974d` on `main`.
+- Command/environment: GitHub Actions `node tests/run-all.mjs`; run `33672667233`, job `100389810421`.
+- Result: **RED — 316 passed, 2 failed across 32 spec files**.
+- Failures:
+  - `integration/m4-load-lifecycle.spec.mjs` :: `[M4-23] settlement is derived from the trip without inferring PAID from delivery` — expected `INVOICED`, actual `OVERDUE`.
+  - `integration/m4-load-lifecycle.spec.mjs` :: `[M4-24] saving a trip dual-writes execution and settlement, leaving the trip authoritative` — expected `INVOICED`, actual `OVERDUE`.
+- Classification: deterministic test-fixture time bomb. Both fixtures hard-code 2026-08-03 as the effective invoice date; production's existing 30-day terms rule correctly returns `OVERDUE` on 2026-09-02. No product regression is evidenced by these failures.
+- Rerun: none. An unchanged rerun is not justified; the fixtures require a Claude/test-lane repair followed by the full suite.
+- Local workspace note: one local attempt could not execute because this workspace denies the suite's network/live-origin activity. It is not counted as a product/test result.

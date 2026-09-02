@@ -62,3 +62,6 @@ open while waiting on PR #121 CI and the operator's exact-candidate review; no
 other agent was blocked. Re-claimed immediately for the eight v24.0.2
 exact-candidate blocker corrections
 (`.agents/inbox/gpt-to-claude-v2402-exact-candidate-blockers-2026-08-28.md`).
+
+[2026-09-02T19:29:01Z][gpt][baseline-red][main:fa63be5430b2f89e85c0df14df7ab7a6294c974d] Exact-current-main GitHub Actions run 33672667233 / job 100389810421 is RED: 316 passed / 2 failed across 32 specs. Both failures are date-dependent M4 fixtures that hard-code 2026-08-03 while asserting INVOICED; the existing 30-day settlement rule correctly returns OVERDUE on 2026-09-02. No app/runtime edit made. Exact Claude/test-lane repair packet added at `.agents/inbox/gpt-to-claude-v2402-date-fixture-timebomb-2026-09-02.md`; Issue #119 Batch D remains incomplete until a repaired full gate is green.
+[2026-09-02T19:29:01Z][gpt][reap][lock/app-js] Reaped stale Claude lock token `060ec1c3-eddd-4ea7-9b78-455fa05caf57`. Its expected release was 2026-08-29T18:00:10Z and the +2h grace elapsed more than four days ago; the referenced v24.0.2 blocker work merged in PR #124. Reaping removes obsolete coordination state only and authorizes no application edit.
