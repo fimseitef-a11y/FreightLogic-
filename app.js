@@ -20271,7 +20271,18 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
               document.body.appendChild(banner);
               document.getElementById('swUpdateNow')?.addEventListener('click', ()=>{
                 banner.remove();
-                if (nw.postMessage) nw.postMessage({ type:'SKIP_WAITING' }); else location.reload();
+                // Route through the bridge. Posting SKIP_WAITING directly does
+                // activate the new worker, but it leaves sw-bridge.js's private
+                // `skipWaitingRequested` flag false, so the controllerchange
+                // that follows is ignored and the page never reloads: the update
+                // installs silently and the driver keeps looking at the version
+                // they were just told was out of date. `nw` is passed because
+                // `registration.waiting` is not reliably populated at click time.
+                if (typeof window._flRequestSWUpdate === 'function'){ window._flRequestSWUpdate(nw); return; }
+                // Bridge absent (blocked script, older cached shell): do it here,
+                // and still reload so the click means something.
+                if (nw.postMessage){ nw.postMessage({ type:'SKIP_WAITING' }); setTimeout(()=> location.reload(), 1500); }
+                else location.reload();
               });
               document.getElementById('swUpdateLater')?.addEventListener('click', ()=>{
                 banner.remove();
