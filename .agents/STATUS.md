@@ -67,3 +67,25 @@ exact-candidate blocker corrections
 [2026-09-02T19:29:01Z][gpt][reap][lock/app-js] Reaped stale Claude lock token `060ec1c3-eddd-4ea7-9b78-455fa05caf57`. Its expected release was 2026-08-29T18:00:10Z and the +2h grace elapsed more than four days ago; the referenced v24.0.2 blocker work merged in PR #124. Reaping removes obsolete coordination state only and authorizes no application edit.
 [2026-09-02T22:55:00Z][gpt][field-fail][iPhone:A1] Operator screenshots show the installed Home Screen PWA running `Omega • v23.x`, not the v24.0.2 candidate, and presenting first-run onboarding. Exact-current source review independently found an uncovered update handshake defect: `app.js` sends `SKIP_WAITING` directly to the installing worker while `sw-bridge.js` permits `controllerchange` reload only when its private flag was set through `_flRequestSWUpdate`; that helper currently targets the active controller rather than necessarily the waiting worker. Added `.agents/inbox/gpt-to-claude-v2402-ios-stale-generation-update-path-2026-09-02.md`. Completion field A1 is FAIL; do not uninstall/clear storage or enter real data pending a locked Claude-lane repair, full-suite regression, production-generation verification, and safe on-device retest.
 [2026-09-02T23:05:00Z][gpt][field-evidence][iPhone:A1] Follow-up More-screen screenshot identifies the installed generation exactly: FreightLogic v23.7.0. Triage correction: v23.7.0's own bridge performs immediate `registration.update()` and unconditional controller-change reload, so the primary lead is now stale/wrong production origin or Pages/assets deployment (or failed network update), not solely the separate v24.0.2 handshake defect. Updated the existing Claude packet with exact-version evidence and required installed-origin/deployment verification. A1 remains FAIL; preserve local data.
+
+## 2026-09-02 — claude — SW update handshake (A1 field failure)
+
+Claimed and released `lock/app-js` (`paths: app.js, sw-bridge.js`) for the
+update-handshake repair reopened by the A1 iPhone observation. Merged as
+PR #134.
+
+Defect: the `app.js` update banner posted `SKIP_WAITING` directly to the new
+worker, bypassing `window._flRequestSWUpdate`, so `sw-bridge.js`'s private
+`skipWaitingRequested` flag stayed false and the `controllerchange` that
+followed was ignored — the worker activated and the page never reloaded.
+`_flRequestSWUpdate` separately targeted `navigator.serviceWorker.controller`
+(the old active worker, whose `skipWaiting()` is a no-op) and had no caller.
+
+Regression: `tests/integration/sw-update-handshake.spec.mjs` drives a real
+service-worker update in Chromium and asserts exactly one reload. SWU-01 and
+SWU-03 were verified to fail against the pre-repair bridge.
+
+Not claimed: this does not explain a device pinned to v23.7.0, which runs the
+v23.7.0 bridge and reloads unconditionally. The deployed origin/generation
+remains the live-gate question. No version marker moved; the freeze generation
+stays an operator decision.
