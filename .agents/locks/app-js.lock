@@ -1,6 +1,0 @@
-owner: claude
-token: c7249a9a-45ff-47ed-8af1-cf351bbefeb8
-started_utc: 2026-09-02T23:22:04Z
-expected_release_utc: 2026-09-03T02:22:04Z
-paths: app.js, sw-bridge.js
-task: repair the service-worker update handshake reopened by the A1 iPhone field failure, with a real regression
