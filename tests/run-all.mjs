@@ -37,6 +37,7 @@ import { runSpec as workerCanonicalAbsence } from './unit/worker-canonical-absen
 import { runSpec as m7RunnerSemantics } from './unit/m7-runner-semantics.spec.mjs';
 import { runSpec as liveAuthorityRunner } from './unit/live-authority-runner.spec.mjs';
 import { runSpec as swUpdateHandshake } from './integration/sw-update-handshake.spec.mjs';
+import { runSpec as diagnosticsInstallIdentity } from './integration/diagnostics-install-identity.spec.mjs';
 import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
@@ -73,6 +74,7 @@ const specs = [
   m7RunnerSemantics,
   liveAuthorityRunner,
   swUpdateHandshake,
+  diagnosticsInstallIdentity,
   preV24Integrity,
   v24UnifiedDecision,
   v24AuthorityBoundaries,
