@@ -14393,6 +14393,12 @@ async function openDiagnosticsPanel(){
     ${row('App Version',       'dxAppVer',  APP_VERSION)}
     ${row('Service Worker',    'dxSwVer',   '...')}
     ${row('Cache Status',      'dxCache',   '...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Install</div>
+    ${row('Origin',            'dxOrigin',  '...')}
+    ${row('Launch Mode',       'dxDisplay', '...')}
+    ${row('SW Script',         'dxSwUrl',   '...')}
+    ${row('SW Scope',          'dxScope',   '...')}
+    ${row('Cached Generation', 'dxCacheGen','...')}
     <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Database</div>
     ${row('Trips',             'dxTrips',   '...')}
     ${row('Expenses',          'dxExp',     '...')}
@@ -14430,6 +14436,45 @@ async function openDiagnosticsPanel(){
         set('dxSwVer', 'No SW', false);
       }
     } catch(e){ set('dxSwVer', 'Unavailable', null); }
+
+    // Install identity. An installed Home Screen PWA carries the origin it was
+    // installed from for the life of the icon, and each origin has its own
+    // IndexedDB and Cache Storage. So an app showing an old version with no
+    // data is not necessarily a failed update — it can be a different origin
+    // entirely, and nothing else in this panel could tell the two apart. That
+    // ambiguity cost a full investigation once; these five rows answer it.
+    try {
+      set('dxOrigin', location.origin, null);
+      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || navigator.standalone === true;
+      set('dxDisplay', standalone ? 'Installed (standalone)' : 'Browser tab', null);
+    } catch(e){ set('dxOrigin', 'Unavailable', null); }
+    try {
+      const swReg2 = await navigator.serviceWorker?.getRegistration();
+      const worker = swReg2 && (swReg2.active || swReg2.waiting || swReg2.installing);
+      set('dxSwUrl', worker ? worker.scriptURL : 'No registration', worker ? null : false);
+      set('dxScope', swReg2 ? swReg2.scope : '—', null);
+    } catch(e){ set('dxSwUrl', 'Unavailable', null); set('dxScope', 'Unavailable', null); }
+
+    // Which shell generation is actually cached. The service worker names its
+    // cache `freightlogic-<SW_VERSION>`, so a cache that disagrees with
+    // APP_VERSION means the running code and the cached shell are different
+    // releases — the visible symptom of an update that never completed.
+    try {
+      if (typeof caches !== 'undefined'){
+        const keys = await caches.keys();
+        const gens = keys.map(k => (/^freightlogic-(\d+\.\d+\.\d+)$/.exec(k) || [])[1]).filter(Boolean);
+        if (!gens.length){
+          set('dxCacheGen', 'No versioned shell cache', false);
+        } else if (gens.length === 1 && gens[0] === APP_VERSION){
+          set('dxCacheGen', gens[0] + ' (matches app)', true);
+        } else {
+          set('dxCacheGen', gens.join(', ') + ' vs app ' + APP_VERSION, false);
+        }
+      } else {
+        set('dxCacheGen', 'Not supported', false);
+      }
+    } catch(e){ set('dxCacheGen', 'Error', false); }
 
     // Cache API
     try {
@@ -20195,7 +20240,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     sanitizeEvidence, putEvidence, getEvidence, listEvidence, findEvidenceByFingerprint,
     evidenceFingerprint, evidenceAuthorityRank, reconcileEvidenceFields,
     openOpportunityIntake, resolveLifecycleForTrip, renderLifecycleChips,
-    openLifecycleEditor, lifecycleFactsConflict,
+    openLifecycleEditor, lifecycleFactsConflict, openDiagnosticsPanel,
     computeExportChecksumProtected, initDB,
     // v24.2 M6 historical import + calibration
     importHistoricalOpportunities, calibrateWinningRange, calibrateFromLifecycle,
