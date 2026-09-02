@@ -1,153 +1,167 @@
 # Backup Contract
 
-Started in Phase 1 of v23.9 "Trust & Recovery" (Amendment 2) and completed in Phase 4
-(X-01/X-07). This document is the single list of what `cloudPushBackup()` uploads and
-what a restore (`cloudPullBackup()` → `mergeRestoreData()`) is required to bring back.
+Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
 ## Rule
 
-**Every store or settings field `cloudPushBackup()` uploads must be restorable by
-`mergeRestoreData()`.** Credentials are the only documented exception (see below). If a
-phase adds a new persisted field, it must be added to this document, included in the
-push payload, handled by the merge/restore path, and covered by the Phase 4 restore
-E2E test (`tests/integration/backup-restore-parity.spec.mjs`) in the same commit that
-introduces the field — not deferred to a later cleanup pass.
+**Every persisted store or settings field uploaded by `cloudPushBackup()` must be restorable by `mergeRestoreData()`.** Credentials are the only documented exception. Any release that adds a durable store/field must update this document, push/export coverage, merge/restore coverage, integrity coverage when protected, and regression tests in the same release.
+
+A restore must preserve newer local protected history. For revisioned records, import/restore is reconciliation, not blind overwrite. Scalar values and their provenance must travel together.
 
 ## Credentials exception
 
-`cloudPushBackup()`'s `settings` dump does not allowlist fields the way `exportJSON()`
-does — it filters out exactly two secret keys, the same two `exportJSON()` strips
-(`app.js:1374`, X-05):
+Cloud backup and `exportJSON()` exclude these secret settings:
 
 - `fmcsaApiKey`
 - `eiaApiKey`
 
-**Fixed in Phase 4.** `cloudPushBackup()` previously uploaded the raw
-`dumpStore('settings')` result verbatim, including these two keys if set. It now
-filters them the same way `exportJSON()`'s `exportableSettings` does (Phase 3, X-05) —
-one pattern, two call sites, both correct.
+No backup/import path may re-introduce them from an export payload.
 
-## Store-level contract
+## Store-level contract — v24.0.2 / DB v15
 
-| Store | Pushed by `cloudPushBackup()`? | Restored by `mergeRestoreData()`? |
-|---|---|---|
-| `trips` | Yes | Yes |
-| `expenses` | Yes | Yes |
-| `fuel` | Yes | Yes |
-| `laneHistory` | Yes | Yes |
-| `weeklyReports` | Yes | Yes |
-| `reloadOutcomes` | Yes | Yes |
-| `bidHistory` | Yes | Yes |
-| `documents` | Yes | Yes |
-| `gpsLogs` | Yes | **Yes — X-07, fixed Phase 4** (dedup on `tripTrackingId`+`timestamp`; incoming numeric `id` never used as a write key — see `mergeRestoreData()`) |
-| `settings` | Yes (secrets filtered — see above) | **Yes — X-07, fixed Phase 4** (add-only: a key already present locally is never overwritten, since settings carry no revision timestamp to compare against — see `mergeRestoreData()`) |
-| `receipts` | Yes | **Yes — X-07, fixed Phase 4** (file-list union by file `id`; blob bytes still not part of this contract, only the metadata pointer) |
-| `receiptBlobs` (Cache API, not IDB) | No | No — out of scope; receipts metadata round-trips, blob bytes do not |
-| `auditLog` | No | No — intentionally local-only, not part of the backup contract |
+| Store | Full backup | Delta backup | Restored | Contract |
+|---|---:|---:|---:|---|
+| `trips` | Yes | Yes | Yes | Existing trip merge rules; no secret material. |
+| `expenses` | Yes | Yes | Yes | Includes `insuranceBucket` where present. |
+| `fuel` | Yes | Yes | Yes | Preserve persisted fuel records. |
+| `laneHistory` | Yes | Yes | Yes | Preserve history without manufacturing newer evidence. |
+| `weeklyReports` | Yes | Yes | Yes | Existing report identity/merge rules. |
+| `reloadOutcomes` | Yes | Yes | Yes | Existing outcome identity/merge rules. |
+| `bidHistory` | Yes | Yes | Yes | Preserve historical bid evidence. |
+| `documents` | Yes | Yes | Yes | Metadata/document records under existing contract. |
+| `gpsLogs` | Yes | Yes | Yes | Deduplicate on `tripTrackingId` + `timestamp`; incoming numeric ID is not trusted as a write key. |
+| `settings` | Yes | Yes | Yes | Secret keys filtered; merge remains conservative/additive unless a setting has an explicit newer contract. |
+| `receipts` | Yes | Yes | Yes | File-list union by receipt file `id`; metadata pointer only. |
+| `loadLifecycle` | Yes | Yes | Yes | Protected revisioned lifecycle state; see below. |
+| `normalizedEvidence` | Yes | Yes | Yes | Protected durable normalized opportunity evidence; see below. |
+| `receiptBlobs` (Cache API) | No | No | No | Out of scope; receipt metadata round-trips, blob bytes do not. |
+| `auditLog` | No | No | No | Intentionally local-only. |
 
-## `loadLifecycle` (v24.2, DB v14)
+## `loadLifecycle` contract
 
-**Required runtime contract.** PR #105 introduced `loadLifecycle` on `main`, but post-merge source review reopened M4 certification because the live delta path, real JSON import path, lifecycle checksum coverage, and other lifecycle-integrity paths still require a corrective hotfix. The table below is the behavior the runtime must satisfy; presence of the store on `main` is not by itself evidence that the contract is certified.
+`loadLifecycle` is lifecycle state/linking, not the normalized market-evidence store.
 
 | Property | Value |
 |---|---|
-| keyPath | `lifecycleId` (stable, generated, independent of broker order numbers) |
-| Pushed in full backup | yes |
-| Pushed in delta | yes — changed rows selected by `updatedAt > lastSynced` |
-| Restored | yes |
-| Merge strategy | **by `lifecycleId`, resolved on `revision` then `updatedAt`; `sourceRefs` merged as a de-duplicated union** |
+| keyPath | `lifecycleId` — stable internal identity, independent of broker/order number |
+| Required indexes | `updatedAt`, `orderNo`, `broker` |
+| Full backup | yes |
+| Delta backup | yes; changed records selected by persisted update state |
+| Restore/import | yes |
+| Protected checksum | yes (`checksumProtected`) |
+| Merge | by stable lifecycle identity; reconcile `revision`/`updatedAt`; `sourceRefs` unioned and de-duplicated |
 
-Why the union rather than last-writer-wins: a full backup and a later delta can
-each carry a *partial* `sourceRefs` list for the same load. Taking the winner's
-list wholesale would silently drop links that only exist in the loser — so the
-reference arrays are unioned even though the scalar state fields are not.
+External order numbers are candidate linking signals only. Reused identifiers must never collapse unrelated shipments. Ambiguous links fail unresolved rather than guessing.
 
-`createdAt` takes the earliest of the two; `revision` takes the highest. An
-older delta therefore cannot roll a newer confirmed state backwards.
+For competing lifecycle copies, an older delta/import must not roll a newer confirmed state backward. `createdAt` keeps the earliest defensible creation time; revision/newer scalar state wins according to runtime reconciliation; `sourceRefs` are unioned because each copy can carry a legitimate partial reference set.
 
-A payload with no `loadLifecycle` key at all is valid legacy input (any backup
-written before v24.2) and must never be treated as corruption.
+A legacy payload with no `loadLifecycle` key is valid legacy input and is not corruption.
 
-Required verification on the corrected M4 head includes lifecycle export/import idempotence through the real user-facing import path, full+delta source-reference union, stale-delta downgrade protection, lifecycle-only integrity-check coverage, and pre-v24.2 payload compatibility. The dedicated M4 lifecycle spec may cover those cases, but `tests/integration/backup-restore-parity.spec.mjs` must also continue to prove the shared backup/restore path remains intact.
+## `normalizedEvidence` contract — v24.0.2 / DB v15
 
-## X-01: delta sync is now actually read back
+`normalizedEvidence` is the durable evidence layer introduced by the release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
 
-`cloudPushBackup()` writes a delta (`POST /backup/delta`) whenever the base full backup
-is recent and the changed-record count is small; `cloudPullBackup()` previously only
-ever fetched the last full snapshot (`GET /backup`) and never read deltas back — every
-delta synced after the last full backup was silently unreachable on restore. Fixed:
-`cloudPullBackup()` now also calls `GET /backup/delta` (new in Worker v11), applies
-every currently-retained delta **in chronological order** on top of the base snapshot
-via `mergeRestoreData()`, and distinguishes two non-silent outcomes when full coverage
-can't be proven:
+| Property | Value |
+|---|---|
+| keyPath | `evidenceId` |
+| Required indexes | `recordedAt`, `lifecycleId`, `fingerprint`, `observedAt` |
+| Full backup | yes |
+| Delta backup | yes |
+| Restore/import | yes |
+| Protected checksum | yes (`checksumProtected`) |
+| Identity | bounded SHA-256 evidence fingerprint / stable evidence ID contract |
+| No-op re-import | must preserve the existing evidence row, revision, and `recordedAt` |
+| Lifecycle link | may remain unresolved; evidence durability does not depend on successful linking |
+| Provenance | field-specific and preserved with the scalar it qualifies |
 
-- **Confirmed gap** — the Worker's delta pointer tracks a lifetime `totalCreated`
-  counter alongside the currently-retained `keys`; when `totalCreated > retainedCount`,
-  some deltas were evicted (the 20-key cap or the 7-day TTL) and coverage is provably
-  incomplete.
-- **Unverifiable** — the `/backup/delta` request itself failed, or a delta payload
-  couldn't be decrypted/parsed; coverage cannot be proven either way.
+### Evidence-first durability
 
-Both surface a visible `⚠️ Partial restore — …` toast (never a silent "Cloud backup
-restored!") — see `cloudPullBackup()`/`cloudFetchDeltas()` in `app.js`.
+Both source-normalization paths must persist the normalized observation **before** lifecycle linkage is attempted:
 
-## Settings fields added in Phase 1 (X-02/X-03)
+1. manual/production `intakeOpportunity()`;
+2. historical reconciliation/import.
 
-All of the following live in the existing `settings` store (keyPath `key`) — no new IDB
-object store, no `DB_VERSION` bump. As of Phase 4 they are both pushed and restorable
-(add-only merge — see the store-level contract above).
+A lifecycle row must never stand as the only durable trace of an observation whose normalized evidence failed to persist.
 
-| Key | Shape | Purpose |
-|---|---|---|
-| `vehicleProfiles` | `Array<{ id, label, vehicleTaxMethod, firstYearElection, createdAt }>` | Per-vehicle tax-method election (X-03). `vehicleTaxMethod` ∈ `UNSET \| STANDARD_MILEAGE \| ACTUAL_EXPENSE`; `firstYearElection` ∈ `UNKNOWN \| ACTUAL_EXPENSE \| STANDARD_MILEAGE`. |
-| `activeVehicleId` | string | Points at the currently-active entry in `vehicleProfiles`. |
-| `insuranceSplitMigrationDone` | boolean | Set once the one-time insurance-category migration has run; skips the boot-time re-scan. |
-| `insuranceMigrationBackupKeys` | `string[]` | Index of retained pre-migration snapshot keys (see next row) — lets a future revert tool find them without a full settings scan. |
-| `insuranceMigrationBackup_<timestamp>` | `Array<{ id, category, insuranceBucket }>` | One retained snapshot per migration run, written **before** mutating (Amendment 3). Consumed by `revertInsuranceCategorySplit(key)`. Never auto-deleted — small (one row per affected expense, three fields each). |
+### Semantic preservation
 
-## Expense record field added in Phase 1 (X-03)
+Backup/import must preserve the evidence vocabulary rather than reinterpret values:
 
-| Field | Store | Shape | Purpose |
-|---|---|---|---|
-| `insuranceBucket` | `expenses` | `'A' \| 'B' \| 'C' \| undefined` | Explicit auto (A, vehicle-operating) vs. cargo/liability/occ-acc (B, always deductible) vs. unresolved (C, excluded + flagged) split for insurance-category expenses. `undefined` for any non-insurance expense. See `classifyExpenseTaxBucket()` in `app.js`. |
+- `SHIPPER_BOOKABLE_PRICE`, `OPERATOR_BID`, `BOARD_TARGET_RATE`, `POSTED_RATE`, and `MARKET_BENCHMARK` remain evidence and do not become canonical carrier revenue;
+- only proven carrier-payout/settled semantics or explicit field-specific operator revenue confirmation may populate canonical revenue;
+- `DISPLAYED_TOTAL_MILES` must not occupy canonical loaded-mile fields;
+- unknown material facts remain null/UNKNOWN, not zero;
+- typed/manual values keep truthful field-specific provenance and are not upgraded wholesale to `PRIMARY_DOCUMENT` or `OPERATOR_CORRECTION`;
+- source timestamps retain available precision; an unknown confirmation timestamp stays unknown unless a live action explicitly stamps it.
 
-This field travels with its parent `expenses` record, so it is already covered by the
-existing `expenses` push/restore path (both Yes above) — no separate contract entry
-needed beyond documenting its shape here.
+### Restore reconciliation
 
-## Fields added in Phase 7
+Cloud restore and local JSON import must use the same protected-record principle:
 
-Updated in the same commit each Phase 7 sub-phase lands, per Amendment 2.
+- compare stable identity/revision before replacing a protected record;
+- never overwrite newer protected local history with a stale incoming record;
+- keep scalar/provenance pairs from the same winning side;
+- do not synthesize provenance for absent fields;
+- repeated exact evidence imports are idempotent.
 
-### 7D — van profile (`settings['vanProfile']`)
+A pre-v15 payload with no `normalizedEvidence` key is valid legacy input and is not corruption.
 
-| Key | Shape | Purpose |
-|---|---|---|
-| `vanProfile` | `{ cargoLengthIn, cargoWidthIn, cargoHeightIn, doorWidthIn, doorHeightIn, payloadLbs }` (all numbers) | Configurable van dimensions/payload for the pre-economics fit check (`checkVanFit()`). Defaults to published 2016 Ford Transit T250 148" figures (`VAN_PROFILE_DEFAULT` in `app.js`) until the driver edits Settings → Van Profile. |
+## Protected export integrity
 
-Lives in the existing `settings` store — no new IDB object store, no `DB_VERSION` bump.
-Already covered by the existing push/restore path with no additional code: `cloudPushBackup()`'s
-`settings` dump is a full-store dump (secrets excepted, see above) so `vanProfile` is
-included automatically, and X-07's add-only settings merge in `mergeRestoreData()` handles
-any settings key generically — no per-key special-casing was needed for this field.
+v24.0.2 retains the legacy `checksumFull` compatibility path for older exports and adds/uses `checksumProtected` for current protected data. Current-generation integrity coverage includes at least:
 
-- **7A** (concept tags: OPERATIONAL vs. TAX) — pending inventory approval (Amendment 5)
-  before implementation; fields TBD.
-- **7B** (recovery verification) — TBD, this phase not yet implemented.
-- **7C** (health/release badge) — TBD, this phase not yet implemented.
+- `loadLifecycle`;
+- `normalizedEvidence`;
+- the existing core export data included by the implementation.
+
+A lifecycle-only or normalized-evidence-only mutation of a current export must be detectable. Legacy exports lacking the newer protected sections remain eligible for the documented compatibility path; absence must not be silently interpreted as current complete coverage.
+
+## Delta restore coverage
+
+`cloudPushBackup()` can write deltas when the base full backup is recent and the change set is small. `cloudPullBackup()` must read the base snapshot and retained deltas, applying deltas in chronological order.
+
+Coverage has two non-silent failure states:
+
+- **Confirmed gap** — Worker lifetime `totalCreated` is greater than retained delta count, proving eviction/expiry occurred.
+- **Unverifiable** — delta retrieval, decrypt, or parse failed, so full coverage cannot be proven.
+
+Either state must surface a visible partial-restore warning rather than a false success.
+
+The zero-change delta path is also part of the contract: it must not reference uninitialized store variables or throw a hidden retry-only exception.
+
+## Settings fields carried by this contract
+
+The settings store is generic; current durable keys include, among others:
+
+| Key | Shape / purpose |
+|---|---|
+| `vehicleProfiles` | per-vehicle tax-method election profiles |
+| `activeVehicleId` | current vehicle profile reference |
+| `insuranceSplitMigrationDone` | one-time insurance migration marker |
+| `insuranceMigrationBackupKeys` | retained migration snapshot index |
+| `insuranceMigrationBackup_<timestamp>` | pre-mutation insurance category snapshots |
+| `vanProfile` | configurable cargo dimensions/payload used by fit checks |
+
+These keys are covered through the settings-store backup/restore path; no separate store is required. Secret exclusions above still apply.
+
+## Expense field carried by this contract
+
+`expenses.insuranceBucket` (`A | B | C | undefined`) travels with its parent expense record and is therefore covered by the `expenses` store contract.
 
 ## Verification
 
-`tests/integration/backup-restore-parity.spec.mjs` (added in Phase 4) asserts a full
-backup → 3 delta syncs → wipe local data → restore round-trip preserves trips (base +
-all 3 deltas), settings, receipts, and gpsLogs, and separately that a confirmed delta
-gap (simulated pruning) surfaces the visible partial-restore warning instead of a
-silent success. Uses `tests/lib/mock-worker.mjs` (a local stand-in for the Worker's
-KV-backed endpoints — see that file's header comment for why: this environment has no
-live Cloudflare Worker to test against). Full run: 4/4 passing.
+The release suite must continue to exercise the real shared paths, not helper-only substitutes. For v24.0.2 that includes:
 
-Once Phase 7 lands, this test (or a follow-up in the same commit) must also cover the
-Phase 1 fields (`vehicleProfiles`, `activeVehicleId`, `insuranceBucket` on expense
-records — already covered structurally since `expenses`/`settings` round-trip, but
-worth a direct assertion) and every Phase 7 field added to this document. Phase 7 must
-not be marked closed until that assertion is green.
+- full backup → delta(s) → wipe → restore;
+- settings, receipts metadata, gpsLogs, lifecycle, and normalized-evidence preservation;
+- confirmed delta-gap warning behavior;
+- zero-change delta push;
+- stale lifecycle/evidence downgrade protection;
+- `sourceRefs` de-duplicated union;
+- scalar/provenance pairing on cloud restore;
+- local JSON protected-record revision reconciliation;
+- exact no-op evidence re-import;
+- lifecycle/evidence protected-checksum mutation detection;
+- legacy payload compatibility with absent lifecycle/evidence sections.
+
+Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.2 release-integrity/blocker specs, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
