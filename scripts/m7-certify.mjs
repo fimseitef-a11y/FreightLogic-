@@ -173,8 +173,8 @@ console.log(`${'-'.repeat(72)}\n  AUTOMATED GATES: ${counts.PASS} passed, ${coun
 console.log(`LIVE DEPLOYMENT GATES (need network reach to the deployed origins):`);
 for (const [g, cmd] of [
   ['Live Cloudflare Pages + Worker parity', 'node scripts/verify-cloudflare-parity.mjs  (from a network reaching the deployed origins)'],
-  ['Worker /health + unauthorized-admin denial', 'curl the deployed Worker /health and an admin endpoint without a token'],
-  ['Live /evaluate + /extract authority smoke', 'non-sensitive fixture POST to the deployed Worker; confirm it projects, not recalculates'],
+  ['Worker /health + unauthorized-admin denial', 'covered by verify-cloudflare-parity.mjs above (it checks /health, the Worker version, and a tokenless /admin/users)'],
+  ['Live /evaluate + /extract authority smoke', 'FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs --paid   (omit --paid to run only the checks that spend no OpenAI quota; exit 2 = UNOBSERVED, not a failure)'],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 console.log(`\nPHYSICAL DEVICE GATES (need the operator's iPhone — see FIELD_TEST_CHECKLIST.md):`);
