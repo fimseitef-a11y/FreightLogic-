@@ -2,7 +2,7 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-08-27.** Gate 0 and Milestones 1–6 have implementation work on `main`, but the named completion release remains **ON HOLD**. Implementation presence and green CI are not equivalent to release certification. Current proof-backed blockers are tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`; this roadmap remains the authority for order and scope.
+Current status update: **2026-09-02.** Gate 0 and Milestones 1–6 are implemented on `main`, and the exact code candidate is green at **318 passed / 0 failed across 32 spec files**. The named completion release remains **ON HOLD** only for the live Cloudflare and finite physical-iPhone certification evidence. The current state is tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`; this roadmap remains the authority for order and scope.
 
 Vision ingestion remains an approved but non-blocking track for the named completion release. Provider-adapter expansion remains non-blocking and must not leapfrog the approved sequence.
 
@@ -18,7 +18,7 @@ Vision ingestion remains an approved but non-blocking track for the named comple
 
 ## Current source state
 
-- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`.
+- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`.
 - `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable Gate-0 sources.
 - `docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md` governs Confidence + Evidence behavior.
 - `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` governs lifecycle identity/state.
