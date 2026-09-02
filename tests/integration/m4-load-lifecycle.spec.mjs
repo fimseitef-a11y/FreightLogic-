@@ -360,16 +360,22 @@ test('[M4-23] settlement is derived from the trip without inferring PAID from de
   const r = await evalIn(() => {
     const T = window.__FL_TESTS;
     const d = (o) => T._lifecycleStateFromTrip(o);
-    const longAgo = new Date(Date.now() - 90*86400000).toISOString().slice(0,10);
+    // Settlement reads the 30-day invoice term against Date.now(), so these
+    // dates must stay relative. A hardcoded invoice date silently crosses the
+    // term boundary and flips INVOICED -> OVERDUE with no source change --
+    // which is exactly how this test went red on 2026-09-02.
+    const iso = (n) => new Date(Date.now() - n*86400000).toISOString().slice(0,10);
+    const longAgo = iso(90);
+    const picked = iso(4), delivered = iso(2), paid = iso(1);
     return {
       fresh:      d({}),
-      picked:     d({ pickupDate:'2026-08-01' }),
-      delivered:  d({ pickupDate:'2026-08-01', deliveryDate:'2026-08-03' }),
-      invoiced:   d({ deliveryDate:'2026-08-03', invoiceDate:'2026-08-03' }),
+      picked:     d({ pickupDate: picked }),
+      delivered:  d({ pickupDate: picked, deliveryDate: delivered }),
+      invoiced:   d({ deliveryDate: delivered, invoiceDate: delivered }),
       overdue:    d({ deliveryDate: longAgo, invoiceDate: longAgo }),
-      paid:       d({ deliveryDate:'2026-08-03', invoiceDate:'2026-08-03', paidDate:'2026-08-20' }),
-      badDebt:    d({ deliveryDate:'2026-08-03', badDebt:true }),
-      fellThrough:d({ pickupDate:'2026-08-01', fellThrough:true }),
+      paid:       d({ deliveryDate: delivered, invoiceDate: delivered, paidDate: paid }),
+      badDebt:    d({ deliveryDate: delivered, badDebt:true }),
+      fellThrough:d({ pickupDate: picked, fellThrough:true }),
     };
   });
   eq(r.fresh.execution, 'NOT_STARTED', 'no dates means not started');
@@ -386,8 +392,11 @@ test('[M4-23] settlement is derived from the trip without inferring PAID from de
 test('[M4-24] saving a trip dual-writes execution and settlement, leaving the trip authoritative', async () => {
   const r = await evalIn(async () => {
     const T = window.__FL_TESTS;
+    // Relative for the same reason as M4-23: sanitizeTrip() fills invoiceDate
+    // from deliveryDate, so a delivery older than the 30-day term reads OVERDUE.
+    const iso = (n) => new Date(Date.now() - n*86400000).toISOString().slice(0,10);
     const trip = { orderNo:'TRIP-LC-1', customer:'Acme', broker:'Acme', origin:'Chicago, IL', destination:'Toledo, OH',
-      pickupDate:'2026-08-01', deliveryDate:'2026-08-03', pay:900, loadedMiles:250, emptyMiles:0 };
+      pickupDate: iso(4), deliveryDate: iso(2), pay:900, loadedMiles:250, emptyMiles:0 };
     // The production call site passes the SAVED record (app.js: upsertTrip ->
     // _postTripSaveLaneHook(saved)), which carries the trips store's minted
     // internal id. Passing the raw form object here tested a path the app does
