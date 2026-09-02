@@ -77,7 +77,11 @@ test('[M3R-02] applying an EIA observation switches provenance to EIA with its o
   await app.page.evaluate(async () => {
     const T = window.__FL_TESTS;
     await T.setSetting('fuelPrice', 3.61);
-    await T.setFuelPriceProvenance(T.FUEL_PRICE_SOURCE.EIA, '2026-08-14');
+    // Relative so the applied observation stays a recent one; the assertion
+    // below is about attribution and a real freshness bucket, not about which
+    // bucket a calendar date happens to fall in today.
+    await T.setFuelPriceProvenance(T.FUEL_PRICE_SOURCE.EIA,
+      new Date(Date.now() - 5*86400000).toISOString().slice(0,10));
   });
   const h = await evaluate(app.page);
   const fuel = h.evidence.find(e => e.key === 'fuel.price');
@@ -174,7 +178,11 @@ test('[M3R-06] real lane history reaches the evidence sample size and observatio
         t.objectStore('laneHistory').put({
           id: 'lane-real-1', lane, displayOrigin: 'Chicago, IL', displayDest: 'Toledo, OH',
           count: 12, avgRPM: 1.72, bestPay: 900, wouldRunCount: 10, wouldRunYes: 9,
-          dzExitCount: 0, lastDate: '2026-08-20', created: Date.now(), updated: Date.now(),
+          // Relative: this row must stay inside the CURRENT freshness window for
+          // the HIGH-confidence assertion below to mean what it says. A fixed
+          // date ages out of that window and fails with no source change.
+          dzExitCount: 0, lastDate: new Date(Date.now() - 3*86400000).toISOString().slice(0,10),
+          created: Date.now(), updated: Date.now(),
         });
         t.oncomplete = () => { d.close(); resolve(); };
         t.onerror = () => reject(t.error);
