@@ -2,11 +2,11 @@
 
 Use this checklist after every FreightLogic repository update.
 
-## Current completion candidate — 2026-08-29
+## Current completion candidate — 2026-09-02
 
 The corrected code-side completion candidate is **FreightLogic v24.0.2 / IndexedDB v15 / Worker v13**. The Batch A/B/C defects and the eight exact-candidate blocker corrections tracked in Issue #119 are implemented and covered by regression tests.
 
-**This document does not certify the release.** The canonical certification state remains **HOLD** until the exact merged `main` SHA is proven live and the finite physical-iPhone checks are performed. Historical HOLD documents remain evidence; a later certification state must explicitly supersede the current HOLD after proof exists.
+**This document does not certify the release.** The canonical state is `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md` and remains **HOLD** until the exact merged `main` generation is proven live and the finite physical-iPhone checks are performed. Historical HOLD documents remain evidence; a later certification state must explicitly supersede the current HOLD after proof exists.
 
 Expected generation markers for this candidate:
 
