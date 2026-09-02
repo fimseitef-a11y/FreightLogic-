@@ -1371,11 +1371,14 @@ and AR. That is long-standing trips-schema behaviour outside this release's
 scope; M4-24 now documents it rather than masking it with a fixture that
 bypassed sanitization.
 
-### Still owned by the GPT lane
+### Docs handoff — closed by PR #125
 
-`docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` still carries
-`<FINAL_APP_VERSION>` / `<FINAL_WORKER_VERSION>` placeholders, and
-`docs/BACKUP_CONTRACT.md` needs the `normalizedEvidence` store recorded per its
-Amendment 2. Both are `docs/` (gpt) under `/.agents/LANES.md`; the landed values
-(`24.0.2`, Worker `13`) were requested through `/.agents/inbox/` rather than edited
-across lanes.
+`docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` carried
+`<FINAL_APP_VERSION>` / `<FINAL_WORKER_VERSION>` placeholders and
+`docs/BACKUP_CONTRACT.md` was missing the `normalizedEvidence` store required by
+its Amendment 2. Both are `docs/` (gpt) under `/.agents/LANES.md`, so the landed
+values (`24.0.2`, DB `v15`, Worker `13`) went through `/.agents/inbox/` rather
+than a cross-lane edit. The GPT lane delivered them in PR #125, reviewed and
+merged from this lane on 2026-09-02; the checklist now reads `24.0.2` throughout
+and the backup contract records `normalizedEvidence` with its protected-checksum
+and revision-aware restore semantics.
