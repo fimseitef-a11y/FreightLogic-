@@ -1,7 +1,28 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.3 USA ENGINE
+/** FreightLogic v24.0.4 USA ENGINE
+ *  v24.0.4 "Fail Closed": the behavioral half of the RECON_24_0_2.md findings.
+ *          An unknown location no longer resolves to a coincidental market —
+ *          `''` used to match the first Canadian key (every string contains the
+ *          empty string) so a blank origin AND destination both became Toronto
+ *          and earned a +8 favorable corridor bonus. Short fragments matched on
+ *          a stray letter, and 'Gary' (Tier 1, Indiana) resolved to 'calgary'
+ *          (ALBERTA) because a key ENDING in the input counted as a match.
+ *          An unknown deadhead stays unknown on every intake: Quick Evaluate
+ *          coerced it to 0 and wrote "0" into the field, satisfying the M1
+ *          guard with a value the operator never supplied and producing a full
+ *          A/ACCEPT off an inflated True RPM; F23 separately destroyed an
+ *          explicitly typed 0. The advisory overlay no longer owns money or a
+ *          verdict — it had its own floors, grade ladder and regional
+ *          multipliers and rendered TAKE_IF_LIVE at $1.19 directly beneath a
+ *          canonical REJECT/F. The service worker no longer answers a script
+ *          request with the HTML app shell. Portable payloads no longer carry
+ *          the bearer backup token, the PIN hash or lockout state. True Profit
+ *          is not claimed without a real cost denominator, and onboarding now
+ *          collects the monthly miles that denominator needs. Cargo length
+ *          defaults to the operator-confirmed 121in, not the 130in brochure
+ *          figure. DB stays 15 and the Worker stays 13.
  *  v24.0.3 "Cache Generation": a release-identity freeze, no behaviour change.
  *          PR #134 (service-worker update handshake) and PR #136 (install
  *          identity in Diagnostics) both changed app.js and sw-bridge.js but
@@ -100,7 +121,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.3';
+const APP_VERSION = '24.0.4';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3262,7 +3283,16 @@ async function dumpStore(name){
     req.onsuccess = (e)=>{ const cur = e.target.result; if (!cur){ resolve(out); return; } out.push(cur.value); cur.continue(); };
   });
 }
-/** SHA-256 (with FNV-1a fallback) over an arbitrary JSON-serialisable object. */
+/** SHA-256 (with FNV-1a fallback) over an arbitrary JSON-serialisable object.
+ *
+ *  v24.0.4 item 5 — what this does and does not prove. The digest is UNKEYED and
+ *  is stored in the same file as the data it covers, so anyone editing the file
+ *  can recompute it in one step. It detects ACCIDENTAL corruption: truncation, a
+ *  partial write, an editor mangling the JSON, or a mismatch between the checksum
+ *  input and the payload (the X-05 class of bug). It is NOT authenticated and is
+ *  NOT proof against deliberate tampering. Call it an integrity check, never
+ *  tamper-proof. Making it authenticated would require a key the app does not
+ *  have anywhere to keep. */
 async function _computeChecksum(data){
   const raw = JSON.stringify(data);
   const buf = new TextEncoder().encode(raw);
@@ -3295,6 +3325,49 @@ async function computeExportChecksumProtected(trips, expenses, fuel, settings, l
   return _computeChecksum({ trips, expenses, fuel, settings, loadLifecycle, normalizedEvidence });
 }
 
+// ── v24.0.4 item 5: one export-safety policy, shared by EVERY portability path ──
+//
+// Before this, `exportJSON()` and `cloudPushBackup()` each carried their own
+// two-key denylist (`fmcsaApiKey`, `eiaApiKey`) — so everything else in the
+// `settings` store travelled in the clear, including the bearer cloud token and
+// the app-lock PIN hash. The import-side `ALLOWED_SETTINGS_KEYS` list is not a
+// defence here: it governs what an import will ACCEPT, never what an export
+// EMITS, and it explicitly names `cloudBackupToken` and `appLockPin`.
+//
+// This is deny-by-default in the direction that matters. A key is withheld if it
+// is named below OR if its NAME LOOKS LIKE A CREDENTIAL, so a secret added in a
+// future release is excluded even if nobody remembers to update this list. That
+// pattern arm is the important half — the named list alone would fail open
+// exactly the way the old denylist did.
+//
+// Deliberately NOT a pure allowlist of exportable keys: that inverts the failure
+// into silent data loss, where a newly added benign setting stops being backed
+// up and is gone after a restore — the same class of gap X-07 (v23.9) was
+// written to close. See the inbox note accompanying this change.
+const SETTINGS_NEVER_EXPORT = Object.freeze(new Set([
+  'cloudBackupToken',   // bearer credential for the cloud backup Worker
+  'appLockPin',         // PBKDF2 hash of the device PIN
+  'appLockFailCount',   // lockout state — device-local, must not travel
+  'appLockLockedUntil', // lockout state — device-local, must not travel
+  'fmcsaApiKey',        // third-party API credential
+  'eiaApiKey',          // third-party API credential
+]));
+const SETTINGS_SECRET_NAME_RE = /(token|secret|password|passphrase|apikey|api_key|credential|_pin$|^pin$|privatekey)/i;
+
+/** Is this settings key safe to place in a portable payload? */
+function isSettingExportSafe(key){
+  const k = String(key || '');
+  if (SETTINGS_NEVER_EXPORT.has(k)) return false;
+  if (SETTINGS_SECRET_NAME_RE.test(k)) return false;
+  return true;
+}
+
+/** The settings array every portability path must use — local export, cloud full
+ *  backup, cloud delta, and every checksum computed over settings. */
+function exportSafeSettings(allSettings){
+  return (allSettings || []).filter(s => s && isSettingExportSafe(s.key));
+}
+
 async function exportJSON(){
   const trips = await dumpStore('trips');
   const expenses = await dumpStore('expenses');
@@ -3305,7 +3378,7 @@ async function exportJSON(){
   // settings dump but wrote the FILTERED array into the payload, so every
   // legitimate export mismatched its own integrity check on import (a false
   // "tampered" warning on every normal export/import round-trip).
-  const exportableSettings = (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey');
+  const exportableSettings = exportSafeSettings(await dumpStore('settings'));
   const loadLifecycle = await dumpStore('loadLifecycle');
   const normalizedEvidence = await dumpStore(EVIDENCE_STORE);
   const checksum = await computeExportChecksum(trips, expenses, fuel);
@@ -3399,7 +3472,7 @@ async function importJSON(file, opts={}){
           arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings),
           arr(data.loadLifecycle), arr(data[EVIDENCE_STORE]));
         if (verify !== data.meta.checksumProtected){
-          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Settings, lifecycle state, or evidence records may have been tampered with.\n\nImport anyway?');
+          const proceed = confirm('⚠️ INTEGRITY CHECK FAILED\n\nThis file does not match its own checksum, so it has been altered or damaged since it was written. Settings, lifecycle state or evidence records may be incomplete or corrupted.\n\nNote: this checksum detects corruption. It is not authenticated, so it cannot prove a file was NOT deliberately edited.\n\nImport anyway?');
           if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
         }
       } catch(e){ console.warn("[FL]", e); }
@@ -3407,7 +3480,7 @@ async function importJSON(file, opts={}){
       try {
         const verify = await computeExportChecksumFull(arr(data.trips), arr(data.expenses), arr(data.fuel), arr(data.settings));
         if (verify !== data.meta.checksumFull){
-          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Settings or data may have been tampered with.\n\nImport anyway?');
+          const proceed = confirm('⚠️ INTEGRITY CHECK FAILED\n\nThis file does not match its own checksum, so it has been altered or damaged since it was written. Settings or records may be incomplete or corrupted.\n\nNote: this checksum detects corruption. It is not authenticated, so it cannot prove a file was NOT deliberately edited.\n\nImport anyway?');
           if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
         }
       } catch(e){ console.warn("[FL]", e); }
@@ -3415,7 +3488,7 @@ async function importJSON(file, opts={}){
       try {
         const verify = await computeExportChecksum(arr(data.trips), arr(data.expenses), arr(data.fuel));
         if (verify !== data.meta.checksum){
-          const proceed = confirm('⚠️ INTEGRITY WARNING\n\nThis export file has been modified since it was created. Data may have been tampered with.\n\nTrips expected: ' + (data.meta.recordCounts?.trips ?? '?') + ', found: ' + arr(data.trips).length + '\nExpenses expected: ' + (data.meta.recordCounts?.expenses ?? '?') + ', found: ' + arr(data.expenses).length + '\n\nImport anyway?');
+          const proceed = confirm('⚠️ INTEGRITY CHECK FAILED\n\nThis file does not match its own checksum, so it has been altered or damaged since it was written. This checksum detects corruption; it is not authenticated.\n\nTrips expected: ' + (data.meta.recordCounts?.trips ?? '?') + ', found: ' + arr(data.trips).length + '\nExpenses expected: ' + (data.meta.recordCounts?.expenses ?? '?') + ', found: ' + arr(data.expenses).length + '\n\nImport anyway?');
           if (!proceed){ toast('Import cancelled — integrity check failed', true); return; }
         }
       } catch(e){ console.warn("[FL]", e); }
@@ -5374,7 +5447,15 @@ function openQuickEvalModal(){
       const parsed = parseLoadTextEnhanced(rawText);
       const rev = Number(parsed.pay) || 0;
       const lm = Number(parsed.loadedMiles) || 0;
-      const dm = Number(parsed.deadheadMiles) || 0;
+      // v24.0.4 item 2: a deadhead the parser never found is UNKNOWN, not zero.
+      // `Number(x) || 0` collapsed both into a confident 0, which was then written
+      // into #mwDeadMi as the string "0" — satisfying mwEvaluateLoad()'s M1
+      // blank-deadhead guard with a value the operator never supplied. The load
+      // then scored a full grade/verdict/bid off an inflated True RPM
+      // (560/(280+0) = $2.00 -> "A / ACCEPT" on a load whose real deadhead was
+      // simply never stated). knownNum() keeps the distinction; an explicitly
+      // parsed 0 is still a real, verified zero.
+      const dm = knownNum(parsed.deadheadMiles);
       const origin = parsed.origin || '';
       const dest = parsed.destination || '';
       const broker = parsed.customer || '';
@@ -5389,7 +5470,9 @@ function openQuickEvalModal(){
         const el = $('#'+id); if (!el) return;
         if (id==='mwRevenue') el.value = String(rev);
         else if (id==='mwLoadedMi') el.value = String(lm);
-        else if (id==='mwDeadMi') el.value = String(dm);
+        // Unknown deadhead leaves the field BLANK so the evaluator's guard fires
+        // and asks for it, exactly as it does for manual entry.
+        else if (id==='mwDeadMi') el.value = dm === null ? '' : String(dm);
         else if (id==='mwOrigin') el.value = origin;
         else if (id==='mwDest') el.value = dest;
         else if (id==='mwBroker' && broker) el.value = broker;
@@ -5399,7 +5482,10 @@ function openQuickEvalModal(){
       const evalOut = $('#mwEvalOutput');
       const gradeEl = evalOut?.querySelector('[data-qe-grade]');
       // Build the inline result: grade + sentence + bid range
-      const trueRPM = rev / (lm + dm || 1); // rough, actual from evaluator
+      // `trueRPM` here is a rough preview only — the evaluator above owns the real
+      // number. With deadhead UNKNOWN there is no honest denominator, so this stays
+      // null rather than silently reverting to the loaded-only rate.
+      const trueRPM = dm === null ? null : (rev / (lm + dm || 1));
       const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
       const gradeHTML = actualGradeEl?.outerHTML || '';
       const evalClone = evalOut ? evalOut.cloneNode(true) : null;
@@ -5414,7 +5500,9 @@ function openQuickEvalModal(){
       if (evalClone) resultSlot.querySelector('#qeEvalPreview').appendChild(evalClone);
       $('#qeBookBtn', body)?.addEventListener('click', ()=>{
         closeModal();
-        openTripWizard({ _evalPrefill: true, pay: rev, loadedMiles: lm, emptyMiles: dm, origin, destination: dest });
+        // An unknown deadhead must not be prefilled as a verified 0 on the trip either.
+        openTripWizard({ _evalPrefill: true, pay: rev, loadedMiles: lm,
+          ...(dm === null ? {} : { emptyMiles: dm }), origin, destination: dest });
       });
       $('#qeFullBtn', body)?.addEventListener('click', ()=>{
         closeModal();
@@ -5483,6 +5571,7 @@ async function openSetupWizard(){
     avgMpg:'', fuelCost:'', weeklyGoal:'', region:'',
     payloadLimit:'',
     mIns:0, mVan:0, mPhone:0, mDispatch:0, mParking:0, mSubs:0, mMaint:0,
+    mMiles:'',
   };
 
   const body = document.createElement('div');
@@ -5540,6 +5629,11 @@ async function openSetupWizard(){
       vals.mParking  = posNum(g('wz_park')?.value || 0);
       vals.mSubs     = posNum(g('wz_subs')?.value || 0);
       vals.mMaint    = posNum(g('wz_maint')?.value || 0);
+      // v24.0.4 item 6: the DENOMINATOR. Without monthly miles the fixed costs
+      // above cannot become an operating cost per mile, so onboarding finished
+      // with opCostPerMile unset and the evaluator showed a bare 'True Profit'
+      // that was really only revenue minus fuel.
+      vals.mMiles    = (g('wz_miles')?.value || '').trim();
     }
     if (step === 4){
       vals.region       = g('wz_region')?.value.trim() || '';
@@ -5584,6 +5678,9 @@ async function openSetupWizard(){
       html += moneyField('wz_park',   'Parking / storage',         '0');
       html += moneyField('wz_subs',   'Subscriptions (DAT, etc.)', '0');
       html += moneyField('wz_maint',  'Maintenance reserve',       '0');
+      html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"></div>`;
+      html += field('wz_miles','Estimated miles you drive per month','number','e.g. 8000', vals.mMiles);
+      html += `<div style="font-size:11px;color:var(--text-tertiary);margin-top:-6px">Needed to turn the costs above into a cost per mile. Without it the app cannot show true profit and will say so rather than guess.</div>`;
     } else if (step === 4){
       html += `<div style="margin-bottom:14px">
         <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Preferred Operating Region</label>
@@ -5684,6 +5781,18 @@ async function _saveSetupWizardResults(vals){
   tasks.push(setSetting('monthlyMaintenance', vals.mMaint || 0));
   const otherTotal = (vals.mPhone||0) + (vals.mDispatch||0) + (vals.mParking||0) + (vals.mSubs||0);
   tasks.push(setSetting('monthlyOther', otherTotal));
+
+  // v24.0.4 item 6: persist the denominator and derive the operating cost per
+  // mile when BOTH sides are real. Mirrors the Settings-panel derivation at the
+  // monthly-costs save so the two paths cannot disagree. If miles are missing,
+  // opCostPerMile is deliberately left unset — economics then reports itself
+  // unavailable instead of presenting revenue-minus-fuel as profit.
+  const wizMiles = posNum(vals.mMiles || 0);
+  tasks.push(setSetting('monthlyMiles', wizMiles));
+  const wizFixed = (vals.mIns||0) + (vals.mVan||0) + (vals.mMaint||0) + otherTotal;
+  if (wizMiles > 0 && wizFixed > 0){
+    tasks.push(setSetting('opCostPerMile', roundCents(wizFixed / wizMiles)));
+  }
 
   tasks.push(setSetting('f26SetupComplete', true));
   tasks.push(setSetting('autoRecurringExpenses', monthlyItems.length > 0));
@@ -7802,20 +7911,65 @@ function caNormCity(s){
     .replace(/[.,;]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-/** Lookup a city — check Canada first, then USA. Returns { city, ...data, country } */
+// v24.0.4 item 1: the shortest input the fuzzy substring pass may be trusted
+// with. Below this an underspecified fragment matches a real market by
+// coincidence rather than by evidence — `''` matches EVERY key (every string
+// contains the empty string, so the first table entry always won), and one- or
+// two-character fragments match on a stray letter: 'a' matched 'mississauga',
+// 'x' matched 'halifax'. A blank origin and destination therefore both resolved
+// to Toronto and earned a +8 "favorable" Ontario↔Ontario corridor bonus for a
+// lane the operator never supplied. Three characters is the shortest prefix
+// that identifies a real city in these tables without colliding.
+const NA_MIN_FUZZY_CHARS = 3;
+
+/** Is a normalized place string specific enough to fuzzy-match against a market table? */
+function naPlaceIsSpecific(norm){
+  return typeof norm === 'string' && norm.trim().length >= NA_MIN_FUZZY_CHARS;
+}
+
+/** One fuzzy place comparison, used by both table lookups.
+ *
+ *  The two substring directions are NOT equally safe:
+ *
+ *    norm.includes(key)   — the input carries extra qualifiers around a real key
+ *                           ("chicago il" contains "chicago"). Trustworthy.
+ *    key.includes(norm)   — the input appears ANYWHERE inside a longer key. This
+ *                           is what resolved "Gary" (Gary, Indiana — a Tier 1
+ *                           Midwest market) to "calgary" (ALBERTA), because
+ *                           'calgary'.endsWith('gary'). The load then scored
+ *                           against the premium_only "Any → Alberta" corridor
+ *                           (bonus -10) instead of the Midwest it was actually in.
+ *
+ *  A genuine abbreviation is a PREFIX of the full name ("indianapol" →
+ *  "indianapolis"), never an arbitrary infix or suffix. Requiring startsWith in
+ *  that direction keeps abbreviation support and drops the coincidences. */
+function naFuzzyPlaceMatch(norm, key){
+  return norm.includes(key) || key.startsWith(norm);
+}
+
+/** Lookup a city — check Canada first, then USA. Returns { city, ...data, country }
+ *  or null. Fails CLOSED on blank/whitespace/underspecified input: an unknown
+ *  location must contribute no market identity at all, never a coincidental one. */
 function naLookupMarket(city){
   const norm = caNormCity(city);
-  // Direct match in Canada
+  // Exact table hits are always trustworthy, however short the key.
   if (CA_MARKETS[norm]) return { city: norm, ...CA_MARKETS[norm] };
+  // Everything below here is substring guesswork. Refuse to guess from a
+  // fragment that carries no identifying information.
+  if (!naPlaceIsSpecific(norm)) {
+    const usExact = USA_MARKETS[usaNormCity(city)];
+    return usExact ? { city: usaNormCity(city), ...usExact, country: 'US' } : null;
+  }
   // Fuzzy match in Canada
   for (const [key, data] of Object.entries(CA_MARKETS)){
-    if (norm.includes(key) || key.includes(norm)) return { city: key, ...data };
+    if (naFuzzyPlaceMatch(norm, key)) return { city: key, ...data };
   }
   // Fall through to USA
   const usNorm = usaNormCity(city);
   if (USA_MARKETS[usNorm]) return { city: usNorm, ...USA_MARKETS[usNorm], country: 'US' };
+  if (!naPlaceIsSpecific(usNorm)) return null;
   for (const [key, data] of Object.entries(USA_MARKETS)){
-    if (usNorm.includes(key) || key.includes(usNorm)) return { city: key, ...data, country: 'US' };
+    if (naFuzzyPlaceMatch(usNorm, key)) return { city: key, ...data, country: 'US' };
   }
   return null;
 }
@@ -7958,9 +8112,14 @@ function usaLookupMarket(city){
   const norm = usaNormCity(city);
   // Direct match
   if (USA_MARKETS[norm]) return { city: norm, ...USA_MARKETS[norm] };
-  // Partial match — check if any market key is contained in or contains the input
+  // Partial match — check if any market key is contained in or contains the input.
+  // v24.0.4 item 1: same fail-closed rule as naLookupMarket. This function is the
+  // FALLBACK at the `naLookupMarket(x) || usaLookupMarket(x)` call sites, so
+  // without this guard it would re-admit exactly the underspecified fragments
+  // naLookupMarket just refused, and the fail-closed fix would be a no-op.
+  if (!naPlaceIsSpecific(norm)) return null;
   for (const [key, data] of Object.entries(USA_MARKETS)){
-    if (norm.includes(key) || key.includes(norm)) return { city: key, ...data };
+    if (naFuzzyPlaceMatch(norm, key)) return { city: key, ...data };
   }
   return null;
 }
@@ -9522,11 +9681,24 @@ function unifiedDecisionForAI(decision){
 // evaluator fields and mwEvaluateLoad() — see the guard at its very start.
 // ================================================================================
 
-/** Published 2016 Ford Transit T250 148" WB cargo-van figures — a reasonable
- *  starting point, NOT a substitute for the driver's own spec sheet/door
- *  sticker. Editable in Settings → Van Profile; never hardcoded elsewhere. */
+/** Operator-confirmed figures for THIS van, not published brochure specs.
+ *
+ *  v24.0.4 item 7: `cargoLengthIn` was 130, taken from published 2016 Ford
+ *  Transit T250 148" WB copy. `docs/OPERATOR_TRUTH.md` records an
+ *  OPERATOR_CORRECTION dated 2026-08-20: "Usable cargo-floor length is a hard
+ *  121-inch limit in the operator's actual van configuration. Freight measuring
+ *  176 in long was rejected on fit." A 2026-06-19 statement records a 144 in
+ *  load already rejected, consistent with the same limit.
+ *
+ *  The gap was not cosmetic: with 130 in force, every load between 122 in and
+ *  130 in scored as FITTING and went on to a full grade/verdict/bid, for freight
+ *  this van physically cannot carry. Fail-closed means the default must be the
+ *  confirmed usable figure, not the brochure one.
+ *
+ *  Still editable in Settings → Van Profile; an explicit operator override wins
+ *  and carries its own provenance. Never hardcoded elsewhere. */
 const VAN_PROFILE_DEFAULT = Object.freeze({
-  cargoLengthIn: 130,
+  cargoLengthIn: 121,
   cargoWidthIn: 65,
   cargoHeightIn: 56,
   doorWidthIn: 60,
@@ -10077,7 +10249,7 @@ function _mwRenderDecision(out, d){
       </div>
       ${profitPct <= 25 ? `<span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;color:var(--text-secondary)">${fmtMoney(profitVal)}</span>` : ''}
     </div>
-    <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${opCPM > 0 ? 'True Profit (after all costs)' : 'Operational Profit (fuel only — set op cost/mi in settings)'}</div>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${opCPM > 0 ? 'True Profit (after all costs)' : 'Revenue \u2212 fuel only. NOT profit \u2014 operating cost per mile is not set, so fixed costs are missing.'}</div>
   </div>`;
 
   // ── 4. DECISION METRICS ──
@@ -10148,11 +10320,15 @@ function _mwRenderDecision(out, d){
         <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Operational Profit</div>
         <div style="font-size:9px;color:var(--text-tertiary)">Revenue − Fuel</div>
       </div>
-      <div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:${trueProfit >= 0 ? 'var(--good-muted)' : 'var(--bad-muted)'};border:1px solid ${trueProfit >= 0 ? 'var(--good-border)' : 'var(--bad-border)'}">
+      ${opCPM > 0 ? `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:${trueProfit >= 0 ? 'var(--good-muted)' : 'var(--bad-muted)'};border:1px solid ${trueProfit >= 0 ? 'var(--good-border)' : 'var(--bad-border)'}">
         <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(trueProfit)}</div>
         <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
-        <div style="font-size:9px;color:var(--text-tertiary)">${opCPM > 0 ? 'Revenue − All Costs' : 'Set op cost/mi →'}</div>
-      </div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − All Costs</div>
+      </div>` : `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--surface-0);border:1px dashed var(--border)">
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text-tertiary)">—</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Unavailable — set op cost/mi</div>
+      </div>`}
     </div>
   </div>`;
 
@@ -11606,7 +11782,7 @@ function parseLoadTextEnhanced(rawText){
   // Deadhead/empty miles: "22 DH" or "22 empty miles" or "empty: 22"
   const dhMatch = text.match(/(\d[\d,]{0,5})\s*(?:dh|empty|deadhead)\s*(?:mi(?:les?)?)?(?:\s|$)/i) ||
                   text.match(/(?:empty|dh|deadhead)\s*:?\s*(\d[\d,]{0,5})\s*(?:mi(?:les?)?)?/i);
-  if (dhMatch && !base.deadheadMiles) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
+  if (dhMatch && base.deadheadMiles == null) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
 
   // Rate: "$1,650" or "Rate: 1650" or "$1.65/mi" style (reject per-mile rates)
   if (!base.pay){
@@ -11766,7 +11942,11 @@ async function buildCategorySuggestionMap(){
 function parseLoadText(text){
   // T5-FIX: Cap OCR text length to prevent regex DoS on adversarial images
   const safeText = String(text || '').slice(0, 10000);
-  const result = { orderNo:'', customer:'', origin:'', destination:'', pay:0, loadedMiles:0, deadheadMiles:0, pickupDate:'', deliveryDate:'', weight:0, notes:'' };
+  // v24.0.4 item 2: `deadheadMiles` starts as null, not 0. It was the parser's
+  // own default that made an unstated deadhead indistinguishable from a real
+  // zero — every downstream knownNum() check saw a genuine 0 and the evaluator's
+  // blank-deadhead guard was satisfied by a value nobody supplied.
+  const result = { orderNo:'', customer:'', origin:'', destination:'', pay:0, loadedMiles:0, deadheadMiles:null, pickupDate:'', deliveryDate:'', weight:0, notes:'' };
   const lines = safeText.split('\n').map(l => l.trim()).filter(Boolean);
   const full = lines.join(' ');
   const arrowLane = parseArrowLaneLine(lines.join(' | ')) || parseArrowLaneLine(full);
@@ -14392,7 +14572,9 @@ function openLoadIntake(){
       destination: f.destination || '',
       pay:         f.pay || 0,
       loadedMiles: f.loadedMiles || 0,
-      deadMiles:   f.deadheadMiles || 0,
+      // v24.0.4 item 2: omit the key entirely when deadhead is unknown, rather
+      // than recording a fabricated verified zero on the draft trip.
+      ...(knownNum(f.deadheadMiles) === null ? {} : { deadMiles: knownNum(f.deadheadMiles) }),
       weight:      f.weight || 0,
       notes:       f.notes || '',
       status:      'pending',
@@ -14756,12 +14938,12 @@ async function cloudPushBackup(silent = true){
     const lastSynced = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
     const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
     const allFuel = await dumpStore('fuel');
-    // Strip the same two secret keys exportJSON() does (X-05's exportableSettings
-    // pattern) — cloud backup is still a backup, not a place for API keys to
-    // leave the device. This was a gap noted in docs/DEFERRED.md while writing
-    // docs/BACKUP_CONTRACT.md in Phase 1 and closed here in the same pass as
-    // the rest of the restore-path work (X-01/X-07).
-    const settings = (await dumpStore('settings')).filter(s => s.key !== 'fmcsaApiKey' && s.key !== 'eiaApiKey');
+    // v24.0.4 item 5: the SAME export-safety policy exportJSON() uses. Cloud
+    // backup is a portability path like any other — the bearer token and PIN
+    // hash must not travel in it either, even though the payload is encrypted
+    // before transmission (the passphrase is recoverable by whoever holds the
+    // backup; the token must not be recoverable WITH it).
+    const settings = exportSafeSettings(await dumpStore('settings'));
     const receipts = await dumpStore('receipts');
     const laneHistory = await dumpStore('laneHistory');
     const weeklyReports = await dumpStore('weeklyReports');
@@ -19978,7 +20160,10 @@ function parseLoadTextForInbox(rawText) {
 
   return {
     origin: base.origin || '', destination: base.destination || '',
-    loadedMiles: base.loadedMiles || 0, emptyMiles: base.deadheadMiles || 0,
+    loadedMiles: base.loadedMiles || 0,
+    // v24.0.4 item 2: null means the parser found no deadhead figure. Consumers
+    // must not read that as a verified zero.
+    emptyMiles: knownNum(base.deadheadMiles),
     pay: base.pay || 0, payType, ratePerMile,
     pickupDate, pickupTime, broker: base.customer || '',
     weight: base.weight || 0, isUrgent,
@@ -20100,7 +20285,11 @@ function _renderInboxParsed(parsed, card) {
   const rpmStr = parsed.ratePerMile > 0 ? ` ($${parsed.ratePerMile.toFixed(2)}/mi)` : '';
   const payStr = parsed.pay > 0 ? escapeHtml(fmtMoney(parsed.pay) + rpmStr) : 'Pay unknown';
   const miStr  = parsed.loadedMiles > 0 ? `${parsed.loadedMiles} loaded miles` : 'Miles unknown';
-  const dhStr  = ` &bull; ${parsed.emptyMiles > 0 ? parsed.emptyMiles : 0} deadhead`;
+  // v24.0.4 item 2: an unstated deadhead must not read as "0 deadhead" — that is
+  // the precise UNKNOWN-as-zero presentation this release exists to remove.
+  const dhStr  = parsed.emptyMiles === null
+    ? ` &bull; deadhead not stated`
+    : ` &bull; ${parsed.emptyMiles} deadhead`;
   const puStr  = parsed.pickupDate ? escapeHtml(parsed.pickupDate + (parsed.pickupTime ? ' ' + parsed.pickupTime : '')) : 'Unknown';
 
   const resultDiv = document.createElement('div');
@@ -20124,7 +20313,7 @@ function _renderInboxParsed(parsed, card) {
     + `<label style="font-size:12px">Origin</label><input id="f23eOrigin" value="${escapeHtml(parsed.origin)}" style="min-height:48px;margin-bottom:8px" />`
     + `<label style="font-size:12px">Destination</label><input id="f23eDest" value="${escapeHtml(parsed.destination)}" style="min-height:48px;margin-bottom:8px" />`
     + `<label style="font-size:12px">Loaded Miles</label><input id="f23eMiles" type="number" value="${parsed.loadedMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
-    + `<label style="font-size:12px">Deadhead Miles</label><input id="f23eDH" type="number" value="${parsed.emptyMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Deadhead Miles</label><input id="f23eDH" type="number" placeholder="required — enter 0 if none" value="${parsed.emptyMiles === null ? '' : parsed.emptyMiles}" style="min-height:48px;margin-bottom:8px" />`
     + `<label style="font-size:12px">Pay ($)</label><input id="f23ePay" type="number" step="0.01" value="${parsed.pay || ''}" style="min-height:48px;margin-bottom:8px" /></div>`
     + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
     + '<button class="btn primary" id="f23ScoreLoad" style="flex:2;min-height:48px;font-weight:700">Score Load &rarr;</button>'
@@ -20157,12 +20346,18 @@ function _renderInboxParsed(parsed, card) {
     const origin = editing ? (resultDiv.querySelector('#f23eOrigin')?.value || parsed.origin) : parsed.origin;
     const dest   = editing ? (resultDiv.querySelector('#f23eDest')?.value   || parsed.destination) : parsed.destination;
     const miles  = editing ? (Number(resultDiv.querySelector('#f23eMiles')?.value) || parsed.loadedMiles) : parsed.loadedMiles;
-    const dh     = editing ? (Number(resultDiv.querySelector('#f23eDH')?.value)    || parsed.emptyMiles)  : parsed.emptyMiles;
+    // v24.0.4 item 2: `Number(x) || parsed.emptyMiles` destroyed an explicitly
+    // typed 0 (0 is falsy), so the inbox could never record a verified zero
+    // deadhead. knownNum() distinguishes a typed 0 from an empty field, and the
+    // parsed value is used only when the operator actually left it blank.
+    const dhEdited = editing ? knownNum(resultDiv.querySelector('#f23eDH')?.value) : null;
+    const dh     = dhEdited !== null ? dhEdited : knownNum(parsed.emptyMiles);
     const pay    = editing ? (Number(resultDiv.querySelector('#f23ePay')?.value)   || parsed.pay)         : parsed.pay;
 
     const revEl  = $('#mwRevenue');   if (revEl)  revEl.value  = pay   || '';
     const lmEl   = $('#mwLoadedMi');  if (lmEl)   lmEl.value   = miles || '';
-    const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh    || '';
+    // Blank ONLY when genuinely unknown — a verified 0 must survive to the evaluator.
+    const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh === null ? '' : String(dh);
     const origEl = $('#mwOrigin');    if (origEl) origEl.value = origin || '';
     const destEl = $('#mwDest');      if (destEl) destEl.value = dest   || '';
     const brkEl  = $('#mwBroker');    if (brkEl && parsed.customer) brkEl.value = parsed.customer;
@@ -20327,6 +20522,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
+    // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
+    naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
+    parseLoadTextEnhanced, parseLoadTextForInbox,
+    isSettingExportSafe, exportSafeSettings,
   };
 }
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.3** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.4** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -117,7 +117,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.3';
+const APP_VERSION = '24.0.4';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -234,8 +234,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.3` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.3`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.4` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.4`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1480,3 +1480,113 @@ satisfiable from an automated environment. This release does not change that
 status, and nothing here should be read as instructing the operator to reinstall
 the PWA or clear website data — doing so destroys the local IndexedDB evidence the
 installed-origin investigation still needs.
+
+---
+
+## v24.0.4 "Fail Closed" — the behavioural half of the recon findings
+
+v24.0.3 moved the release identity but changed no behaviour. This release fixes
+the defects `RECON_24_0_2.md` confirmed, per
+`.agents/inbox/gpt-to-claude-v2404-core-corrections-2026-09-03.md` (Issue #119).
+`DB_VERSION` stays **15** and the Worker stays **v13** — neither's semantics changed.
+
+**1 — An unknown location no longer becomes a market.** `naLookupMarket('')`
+returned Toronto: the fuzzy pass tests `key.includes(norm)`, and every string
+contains the empty string, so the *first* table entry always won. A blank origin
+**and** destination therefore both resolved to Toronto and earned a `+8`
+"favorable" Ontario↔Ontario corridor bonus for a lane the operator never supplied.
+One- and two-character fragments matched on a stray letter (`'a'`→`mississauga`,
+`'x'`→`halifax`). `NA_MIN_FUZZY_CHARS = 3` now gates the fuzzy pass; exact table
+hits are still honoured at any length. `usaLookupMarket()` needed the same guard —
+it is the fallback at every `naLookupMarket(x) || usaLookupMarket(x)` call site, so
+without it the fix would have been a no-op.
+
+*Found while fixing this, not in the packet:* `'Gary'` (Gary, Indiana — Tier 1)
+resolved to `'calgary'` (ALBERTA), because `'calgary'.endsWith('gary')`, scoring an
+Indiana load against the `premium_only` "Any → Alberta" corridor. The two substring
+directions are not equally safe: `norm.includes(key)` means the input carries extra
+qualifiers around a real key and is trustworthy; `key.includes(norm)` matches any
+longer name that merely *contains* the input. A genuine abbreviation is a **prefix**,
+so `naFuzzyPlaceMatch()` requires `key.startsWith(norm)` in that direction.
+`'Gary'` now returns `null` (fail-closed) rather than the wrong market — it is
+absent from `USA_MARKETS` entirely, and `MW.tier1` omits it while the overlay's
+`marketRoles.tier1` includes it. That table gap is **reported, not invented**:
+adding a market needs real coordinates and operator authority.
+
+**2 — An unknown deadhead stays unknown on every intake.** The root cause was the
+parser's own initializer, `deadheadMiles: 0` — an unstated deadhead was
+indistinguishable from a verified zero, so every downstream `knownNum()` check saw
+a genuine `0`. It is now `null`. Quick Evaluate additionally coerced it
+(`Number(x) || 0`) and wrote `"0"` into `#mwDeadMi`, satisfying the M1 blank-deadhead
+guard with a value nobody supplied: `Chicago→Detroit, 280mi, $560` produced
+**A / ACCEPT / True RPM $2.00** while the full evaluator refused to grade the very
+same load. F23 had the mirror-image bug — `Number(x) || parsed.emptyMiles` and
+`dh || ''` both destroyed an **explicitly typed 0**, so the inbox could never record
+a verified zero. An unstated deadhead also rendered as the literal text
+`"0 deadhead"`. All four paths now distinguish missing from zero.
+
+**3 — The advisory overlay no longer owns money or a verdict.**
+`midwest-stack-authority.js` labelled itself `ADAPTER_ONLY` while carrying its own
+mode floors, grade ladder and regional compression multipliers, computing
+`floorBid/winBid/askBid` and an independent verdict, and rendering them as
+`#mwEvalOutput.nextSibling` — directly beneath the canonical result. They
+contradicted: on Minneapolis→Chicago at True RPM `$1.19` the canonical card read
+**REJECT / F / PASS** while the overlay read **"Signal: TAKE_IF_LIVE"** with a `$475`
+floor — below the `$1.25` hard reject, on a load whose Dead Zone gate had failed all
+three checks. `assessLoad()` no longer returns `recommendation`, `posted.grade`, or
+any bid; the panel is now "Market Context · Advisory" and renders destination role,
+region and risk flags only. The bid-mode selector is gone with the ladder it drove —
+a control that no longer changes any money is a second authority in appearance.
+What survives is `dzGate`, which is what X-04 actually promised: proof that this file
+and the main evaluator called the same `window.isDeadZoneEligible()`. The parity
+spec now asserts the gate outcome directly instead of inferring it from a verdict
+string, which is strictly stronger; M1-19 asserts the absence structurally rather
+than trusting the `ADAPTER_ONLY` label.
+
+**4 — The service worker never answers a subresource with HTML.** Every same-origin
+`.js` was classified as app logic, and the failure path was
+`cache.match(req) || cache.match(APP_SHELL)`. `cache.match(req)` does not pass
+`{ ignoreSearch: true }`, so any `?v=` drift was a hard miss and a `<script src>`
+received `index.html` — HTTP 200, `Content-Type: text/html`. The browser refuses to
+execute it silently: no 404, no console error, the script simply vanishes. There was
+also no bound on which same-origin scripts got cached. `KNOWN_ASSET_PATHS` is now
+derived **from `CORE` itself**, so the fetch policy cannot drift from what
+`install()` precaches; known assets fall back query-insensitively (so drift
+self-heals to the right file); and only a navigation may receive HTML — everything
+else gets an honest `504 text/plain`.
+
+**5 — Portable payloads carry no credentials.** Both export paths used a two-key
+denylist, so the bearer `cloudBackupToken` and the `appLockPin` PBKDF2 hash
+travelled in the clear in every local export, plus device-local lockout state.
+(`ALLOWED_SETTINGS_KEYS` is not a defence: it governs what an import *accepts*, and
+it explicitly names both.) `isSettingExportSafe()` / `exportSafeSettings()` is now
+the single policy for local export, cloud full backup, cloud delta **and every
+checksum input**. It excludes named secrets *and* anything whose key name looks like
+a credential, so a secret added later is withheld by default. Deliberately not a
+pure allowlist: that inverts the failure into silent backup data loss for new benign
+keys — the X-07 class of gap. Checksum wording is corrected throughout: an unkeyed
+SHA-256 stored beside the data it covers is a **corruption check**, not proof
+against deliberate editing.
+
+**6 — No profit claim without a denominator.** The metric tile printed
+"True Profit" unconditionally; with `opCostPerMile` unset that number was only
+revenue − fuel. It now renders as unavailable. The wizard never collected monthly
+miles, so a driver could complete onboarding having supplied every input the
+derivation needs *except* the denominator — it is now collected, and
+`opCostPerMile` is derived when both sides are real.
+
+**7 — Cargo length reconciled to operator truth.** `VAN_PROFILE_DEFAULT.cargoLengthIn`
+was `130`, from published Transit T250 copy. `docs/OPERATOR_TRUTH.md` records a hard
+**121-inch** usable limit (OPERATOR_CORRECTION 2026-08-20, after a 176 in load was
+rejected on fit). Every load between 122 in and 130 in was scoring as *fitting* and
+proceeding to a full grade and bid, for freight this van cannot carry.
+
+**Tests.** `tests/integration/v2404-fail-closed.spec.mjs` (11) and
+`tests/integration/sw-subresource-semantics.spec.mjs` (8, driving the real worker
+with the origin killed outright — Playwright's `setOffline()` does not reliably
+apply to service-worker fetches). Every new assertion carries a negative control:
+reverting the parser default fails V2404-05/06, reverting the export policy fails
+V2404-10, and reverting the SW fallback to `APP_SHELL` fails SW-03/04.
+
+**Still HOLD.** Live Cloudflare and physical-iPhone gates are unchanged and remain
+the operator's. Nothing here instructs a reinstall or a website-data clear.
