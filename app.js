@@ -2771,7 +2771,15 @@ async function upsertTrip(trip){
     err.serverRecord = beforeData;
     throw err;
   }
-  t.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  t.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
@@ -2886,7 +2894,15 @@ async function updateExpense(exp){
     err.serverRecord = beforeData;
     throw err;
   }
-  e.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  e.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.expenses.put(e);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id), action:'UPDATE_EXPENSE', beforeData, afterData: e, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(e); txn.onerror = ()=> reject(txn.error); });
@@ -2959,7 +2975,15 @@ async function updateFuel(f){
     err.serverRecord = beforeData;
     throw err;
   }
-  x.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  x.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.fuel.put(x);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(x.id), action:'UPDATE_FUEL', beforeData, afterData: x, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(x); txn.onerror = ()=> reject(txn.error); });
@@ -14809,14 +14833,24 @@ async function mergeRestoreData(parsed){
   const arr = (x) => Array.isArray(x) ? x : [];
   const stats = { trips:{added:0,updated:0,skipped:0}, expenses:{added:0,updated:0,skipped:0}, fuel:{added:0,updated:0,skipped:0} };
 
-  // Trips — keyed by orderNo
-  const tripStore = tx(['trips'],'readwrite');
+  // Trips — keyed by orderNo.
+  //
+  // DEFERRED.md (v23.9 Phase 4) flagged a two-tab/two-device TOCTOU on this
+  // path and it was real: the `get` ran in its own transaction, the `put` in a
+  // second one, with an await across the boundary. The "is the incoming record
+  // newer?" decision was therefore made against a snapshot that a live edit in
+  // another tab could invalidate before the write landed — and the restore then
+  // wrote its older copy over the newer local record. Reading inside the SAME
+  // readwrite transaction closes that: IndexedDB serialises overlapping
+  // readwrite transactions on a store, so a concurrent local save either
+  // commits first (and this read sees it, and skips) or commits after (and
+  // wins). This is the idiom upsertTrip() has used since F-6, and the one the
+  // lifecycle/evidence loops further down already use.
   const inTrips = arr(parsed.trips);
   for (const incoming of inTrips){
     try {
-      const {stores} = tx('trips');
-      const existing = await idbReq(stores.trips.get(incoming.orderNo));
       const {t:wt, stores:ws} = tx('trips','readwrite');
+      const existing = await idbReq(ws.trips.get(incoming.orderNo));
       if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
       else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); stats.trips.updated++; }
       else { stats.trips.skipped++; }
@@ -14828,9 +14862,8 @@ async function mergeRestoreData(parsed){
   const inExps = arr(parsed.expenses);
   for (const incoming of inExps){
     try {
-      const {stores} = tx('expenses');
-      const existing = incoming.id ? await idbReq(stores.expenses.get(Number(incoming.id))) : null;
       const {t:wt, stores:ws} = tx('expenses','readwrite');
+      const existing = incoming.id ? await idbReq(ws.expenses.get(Number(incoming.id))) : null;
       if (!existing){ ws.expenses.put(incoming); stats.expenses.added++; }
       else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
       else { stats.expenses.skipped++; }
@@ -14842,9 +14875,8 @@ async function mergeRestoreData(parsed){
   const inFuel = arr(parsed.fuel);
   for (const incoming of inFuel){
     try {
-      const {stores} = tx('fuel');
-      const existing = incoming.id ? await idbReq(stores.fuel.get(Number(incoming.id))) : null;
       const {t:wt, stores:ws} = tx('fuel','readwrite');
+      const existing = incoming.id ? await idbReq(ws.fuel.get(Number(incoming.id))) : null;
       if (!existing){ ws.fuel.put(incoming); stats.fuel.added++; }
       else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
       else { stats.fuel.skipped++; }
@@ -14908,9 +14940,8 @@ async function mergeRestoreData(parsed){
           await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
           continue;
         }
-        const {stores} = tx(storeName);
-        const existing = await idbReq(stores[storeName].get(key));
         const {t:wt, stores:ws} = tx(storeName,'readwrite');
+        const existing = await idbReq(ws[storeName].get(key));
         const inTs = incoming.updatedAt || incoming.generatedAt || incoming.updated || incoming.created || incoming.createdAt || incoming.timestamp || 0;
         const exTs = existing ? (existing.updatedAt || existing.generatedAt || existing.updated || existing.created || existing.createdAt || existing.timestamp || 0) : 0;
         if (!existing || inTs > exTs){ ws[storeName].put(incoming); }
@@ -14932,14 +14963,17 @@ async function mergeRestoreData(parsed){
   const inSettings = arr(parsed.settings);
   stats.settings = { added: 0, skipped: 0 };
   if (inSettings.length){
-    const {stores} = tx('settings');
-    const existingKeys = new Set((await idbReq(stores.settings.getAll())).map(s => s.key));
+    // Same single-transaction rule as the record loops above. "Never overwrite
+    // a key that already exists locally" is only true if the existence check
+    // and the write cannot be separated: read in one transaction and write in
+    // another, and a key written locally in the gap gets clobbered by the
+    // snapshot's value — the precise thing this add-only merge promises not to
+    // do.
+    const {t:wt, stores:ws} = tx('settings','readwrite');
+    const existingKeys = new Set((await idbReq(ws.settings.getAll())).map(s => s.key));
     const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key));
-    if (toAdd.length){
-      const {t:wt, stores:ws} = tx('settings','readwrite');
-      for (const s of toAdd) ws.settings.put(s);
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }
+    for (const s of toAdd) ws.settings.put(s);
+    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     stats.settings.added = toAdd.length;
     stats.settings.skipped = inSettings.length - toAdd.length;
   }
@@ -14957,9 +14991,8 @@ async function mergeRestoreData(parsed){
   for (const incoming of inReceipts){
     if (!incoming || typeof incoming.tripOrderNo !== 'string' || !Array.isArray(incoming.files)) continue;
     try {
-      const {stores} = tx('receipts');
-      const existing = await idbReq(stores.receipts.get(incoming.tripOrderNo));
       const {t:wt, stores:ws} = tx('receipts','readwrite');
+      const existing = await idbReq(ws.receipts.get(incoming.tripOrderNo));
       if (!existing){
         ws.receipts.put(incoming);
         stats.receipts.added++;
@@ -14984,15 +15017,15 @@ async function mergeRestoreData(parsed){
   const inGpsLogs = arr(parsed.gpsLogs);
   stats.gpsLogs = { added: 0, skipped: 0 };
   if (inGpsLogs.length){
-    const {stores} = tx('gpsLogs');
-    const existingAll = await idbReq(stores.gpsLogs.getAll());
+    // The (tripTrackingId, timestamp) dedup has to see the same store state it
+    // writes into, or a ping added locally between the read and the write is
+    // duplicated rather than deduplicated.
+    const {t:wt, stores:ws} = tx('gpsLogs','readwrite');
+    const existingAll = await idbReq(ws.gpsLogs.getAll());
     const existingKeySet = new Set(existingAll.map(g => g.tripTrackingId + '|' + g.timestamp));
     const toAdd = inGpsLogs.filter(g => g && g.tripTrackingId && g.timestamp && !existingKeySet.has(g.tripTrackingId + '|' + g.timestamp));
-    if (toAdd.length){
-      const {t:wt, stores:ws} = tx('gpsLogs','readwrite');
-      for (const g of toAdd){ const { id, ...rest } = g; ws.gpsLogs.add(rest); }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }
+    for (const g of toAdd){ const { id, ...rest } = g; ws.gpsLogs.add(rest); }
+    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     stats.gpsLogs.added = toAdd.length;
     stats.gpsLogs.skipped = inGpsLogs.length - toAdd.length;
   }
