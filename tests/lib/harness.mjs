@@ -8,58 +8,132 @@
 //   NODE_PATH=/opt/node22/lib/node_modules node tests/integration/foo.spec.mjs
 //
 // The repo has no local package.json/node_modules; Playwright is installed
-// globally in this environment. Run tests with NODE_PATH set as above, or
-// via `bash tests/run-all.sh` which sets it for you.
+// globally in this environment. The static test server below uses only Node
+// built-ins, so CI never depends on `npx` package resolution or a warm npm cache.
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import http from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import net from 'node:net';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
+const ROOT_PREFIX = REPO_ROOT.endsWith(path.sep) ? REPO_ROOT : REPO_ROOT + path.sep;
 
-function getFreePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, () => {
-      const port = srv.address().port;
-      srv.close(() => resolve(port));
-    });
-    srv.on('error', reject);
-  });
+const MIME = new Map([
+  ['.css', 'text/css; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.ico', 'image/x-icon'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.png', 'image/png'],
+  ['.svg', 'image/svg+xml; charset=utf-8'],
+  ['.txt', 'text/plain; charset=utf-8'],
+  ['.webmanifest', 'application/manifest+json; charset=utf-8'],
+  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+]);
+
+function contentTypeFor(filePath) {
+  return MIME.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
 }
 
-let sharedServer = null; // { proc, port } — reused across launchApp() calls in one process
+function requestPath(req) {
+  const rawPath = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+  let pathname;
+  try { pathname = decodeURIComponent(rawPath); }
+  catch { return null; }
+  if (pathname === '/') pathname = '/index.html';
+  const filePath = path.resolve(REPO_ROOT, '.' + pathname);
+  if (filePath !== REPO_ROOT && !filePath.startsWith(ROOT_PREFIX)) return null;
+  return filePath;
+}
+
+async function serveStatic(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+
+  let filePath = requestPath(req);
+  if (!filePath) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('Bad request');
+    return;
+  }
+
+  try {
+    const info = await stat(filePath);
+    if (info.isDirectory()) filePath = path.join(filePath, 'index.html');
+    const body = await readFile(filePath);
+    res.writeHead(200, {
+      'Content-Type': contentTypeFor(filePath),
+      'Content-Length': String(body.length),
+      'Cache-Control': 'no-store',
+      'Service-Worker-Allowed': '/',
+    });
+    if (req.method === 'HEAD') res.end();
+    else res.end(body);
+  } catch (error) {
+    const notFound = error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
+    res.writeHead(notFound ? 404 : 500, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(notFound ? 'Not found' : 'Test server error');
+  }
+}
+
+let sharedServer = null; // { server, port } — reused across launchApp() calls in one process
 
 async function ensureServer() {
   if (sharedServer) return sharedServer;
-  const port = await getFreePort();
-  const proc = spawn('npx', ['http-server', REPO_ROOT, '-p', String(port), '-c-1', '--silent'], {
-    stdio: 'ignore',
-    env: process.env,
+
+  const server = http.createServer((req, res) => {
+    serveStatic(req, res).catch((error) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      }
+      if (!res.writableEnded) res.end('Test server error');
+      console.error('test static server request failed:', error);
+    });
   });
+
   await new Promise((resolve, reject) => {
-    const start = Date.now();
-    const tryConnect = () => {
-      const sock = net.connect(port, '127.0.0.1');
-      sock.once('connect', () => { sock.end(); resolve(); });
-      sock.once('error', () => {
-        if (Date.now() - start > 10000) reject(new Error('server did not start'));
-        else setTimeout(tryConnect, 100);
-      });
+    const onError = (error) => {
+      server.off('listening', onListening);
+      reject(error);
     };
-    tryConnect();
+    const onListening = () => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(0, '127.0.0.1');
   });
-  sharedServer = { proc, port };
+
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    await new Promise(resolve => server.close(resolve));
+    throw new Error('test static server did not expose a TCP port');
+  }
+
+  sharedServer = { server, port: address.port };
   return sharedServer;
 }
 
 export async function stopServer() {
   if (sharedServer) {
-    sharedServer.proc.kill();
+    const { server } = sharedServer;
     sharedServer = null;
+    await new Promise((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve());
+    });
   }
 }
 
@@ -83,7 +157,7 @@ export async function launchApp({ headless = true, geolocation = null, permissio
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
   const page = await context.newPage();
-  const baseUrl = `http://localhost:${port}`;
+  const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
   // Boot-ready signal must NOT depend on __FL_TESTS — that would hang forever on a
   // genuine (enableTestExports:false) production load once F-5 gates the export.
@@ -112,7 +186,7 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
   const page = await context.newPage();
-  const baseUrl = `http://localhost:${port}`;
+  const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/tests/fixtures/blank.html`, { waitUntil: 'load' });
   return {
     browser, context, page, baseUrl,
