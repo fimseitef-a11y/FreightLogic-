@@ -1,6 +1,0 @@
-owner: gpt
-token: 1ec6621b-fe8f-4460-8ddc-04837ffcb162
-started_utc: 2026-09-03T21:49:20Z
-expected_release_utc: 2026-09-03T22:49:20Z
-paths: .agents/LANES.md
-task: classify the merged RECON_24_0_2.md artifact so lane enforcement returns green
