@@ -1,5 +1,5 @@
     /* ═══════════════════════════════════════════════════════════════
-       FREIGHT LOGIC v24.0.0 — DESIGN SYSTEM v3.0 "Command"
+       FREIGHT LOGIC — DESIGN SYSTEM v3.0 "Command"
        Dark-first. Precision-built for cargo van operators.
        ═══════════════════════════════════════════════════════════════ */
 
@@ -18,7 +18,7 @@
 
       --text:           #eeeef8;
       --text-secondary: #9090b0;
-      --text-tertiary:  #606078;
+      --text-tertiary:  #8585a5;
 
       --accent:        #f0a800;
       --accent-dark:   #e09200;
@@ -63,7 +63,7 @@
       --border-focus:  rgba(0,0,0,0.16);
       --text:           #0f0f20;
       --text-secondary: #424268;
-      --text-tertiary:  #8080a0;
+      --text-tertiary:  #5f5f78;
       --accent:        #c88800;
       --accent-dark:   #a07000;
       --accent-muted:  rgba(200,136,0,0.08);
@@ -104,7 +104,7 @@
     /* ── Header ─────────────────────────────────────────────────── */
     header {
       position: sticky; top: 0; z-index: 30;
-      padding: 10px 16px;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
       background: rgba(7,7,16,0.92);
       -webkit-backdrop-filter: saturate(180%) blur(20px);
       backdrop-filter: saturate(180%) blur(20px);
@@ -399,13 +399,45 @@
     .nav a.nav-eval-center { flex: 0 0 68px; padding: 4px 2px }
     .nav a.nav-eval-center .ni {
       width: 48px; height: 48px; border-radius: 16px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-      color: #07070f; font-size: 22px; font-weight: 800;
-      box-shadow: 0 4px 20px rgba(240,168,0,.32), 0 0 0 1px rgba(240,168,0,0.18);
+      background: var(--surface-3); border: 1px solid var(--border-focus);
+      color: var(--text-secondary); font-size: 22px; font-weight: 800;
+      box-shadow: 0 3px 14px rgba(0,0,0,.28);
+      transition: background .15s, border-color .15s, color .15s, transform .15s var(--spring), box-shadow .15s;
     }
-    .nav a.nav-eval-center:active .ni { transform: scale(.88); box-shadow: 0 2px 8px rgba(240,168,0,.14) }
-    .nav a.nav-eval-center .nl { color: var(--accent-text); font-weight: 800 }
-    .nav a.nav-eval-center.active .ni { box-shadow: 0 4px 24px rgba(240,168,0,.44), 0 0 0 2px rgba(240,168,0,.36) }
+    .nav a.nav-eval-center:active .ni { transform: scale(.88); box-shadow: 0 2px 8px rgba(0,0,0,.22) }
+    .nav a.nav-eval-center .nl { color: inherit; font-weight: 800 }
+    .nav a.nav-eval-center.active .ni {
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      border-color: var(--accent); color: #07070f;
+      box-shadow: 0 4px 24px rgba(240,168,0,.44), 0 0 0 2px rgba(240,168,0,.36);
+    }
+    .nav a.nav-eval-center.active .nl { color: var(--accent-text) }
+
+    /* ── PWA install banner ───────────────────────────────────────── */
+    #pwaInstallBanner {
+      display: none;
+      position: fixed; left: 50%; bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+      transform: translateX(-50%); z-index: 55;
+      width: min(640px, calc(100% - 24px));
+      padding: 14px 52px 14px 14px;
+      border: 1px solid var(--accent-border); border-radius: var(--r);
+      background: var(--surface-1);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+      backdrop-filter: saturate(180%) blur(24px);
+      box-shadow: var(--shadow-lg), 0 0 32px var(--accent-glow);
+    }
+    #pwaInstallBanner .pwa-row { display: flex; align-items: center; gap: 12px }
+    #pwaInstallBanner .pwa-row > div { min-width: 0 }
+    #pwaInstallBanner .btn { min-height: 44px; padding: 9px 16px }
+    .pwa-close {
+      position: absolute; top: 3px; right: 3px;
+      width: 44px; height: 44px; padding: 0;
+      display: grid; place-items: center;
+      border: 0; border-radius: 50%; background: transparent;
+      color: var(--text-secondary); cursor: pointer; font: inherit;
+    }
+    .pwa-close:active { transform: scale(.88); background: var(--surface-3) }
+    .pwa-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
 
     /* ── Eval advanced toggle ─────────────────────────────────────── */
     .eval-advanced-toggle {
@@ -607,10 +639,36 @@
     .empty-state p { font-size: 13px; line-height: 1.5; max-width: 300px; margin: 0 auto 16px }
 
     /* ── Responsive ───────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      header { padding-right: 12px; padding-left: 12px }
+      .hdr-row { gap: 8px }
+      .brand { min-width: 0; gap: 7px }
+      .title strong { font-size: 13px; white-space: nowrap }
+      .title span { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+      header .row { gap: 4px; flex-wrap: nowrap }
+    }
     @media (max-width: 380px) {
       .kpi-hero-value { font-size: 42px }
       .pill { padding: 5px 10px; font-size: 11px }
       .pill b { font-size: 12px }
+      #pwaInstallBanner { width: calc(100% - 20px); padding-left: 12px }
+      #pwaInstallBanner .pwa-row { gap: 10px }
+      #pwaInstallBanner .pwa-row img { width: 36px; height: 36px }
+      #pwaInstallBanner .btn { padding-right: 12px; padding-left: 12px }
+    }
+    @media (pointer: coarse) {
+      .btn.sm,
+      .chip,
+      .fl-intel-tab,
+      .admin-share-btn { min-height: 44px }
+      .settings-toggle,
+      .eval-advanced-toggle,
+      .chk,
+      .ac-item { min-height: 44px }
+      .fl-see-all {
+        min-height: 44px; padding: 0 8px; margin: -8px -8px -8px 0;
+        display: inline-flex; align-items: center;
+      }
     }
     @media (hover: hover) {
       .card:hover { border-color: var(--border-focus) }
