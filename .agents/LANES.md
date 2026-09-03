@@ -44,6 +44,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
 | `tests/` | claude | Test harness and assertions. GPT does not edit Claude-owned suites unless explicitly reassigned later. |
+| `tests/lib/harness.mjs` | gpt | **Temporary operator-directed exact-file reassignment on 2026-09-03** for deterministic cold-runner CI startup repair only. Restore normal Claude ownership immediately after the repair merges. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
