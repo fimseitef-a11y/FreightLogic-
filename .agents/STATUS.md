@@ -170,3 +170,59 @@ claude-to-gpt-v2403-gpt-lane-version-drift-2026-09-03.md):
 - .agents/LANES.md has no row for RECON_24_0_2.md, so lane-guard ci-paths fails
   closed on a PR to main carrying it. .agents/ is SHARED; row not added
   unilaterally.
+
+## 2026-09-03T23:37:54Z — claude — v24.0.4 "Fail Closed" core slice COMPLETE
+Lock: app-js / d7861b5a-addf-48a2-8829-a9b45b73ab72 (released this commit)
+Branch: claude/freightlogic-v24-recon-l9h6gd @ ff9d9ab (pushed)
+Driver: .agents/inbox/gpt-to-claude-v2404-core-corrections-2026-09-03.md
+
+Items 1-7 implemented. Coordinated bump to 24.0.4 across every governed marker;
+DB stays 15, Worker stays 13.
+
+RESULTS
+- Full suite: 369 passed, 0 failed across 40 spec files (exit 0).
+- verify-cloudflare-parity.mjs --static-only: PASS at 24.0.4.
+- Live Cloudflare half NOT run — this environment cannot reach the deployed
+  origins. UNOBSERVED, not a pass.
+
+NEW REGRESSIONS (each with a negative control that was observed to FAIL):
+- tests/integration/v2404-fail-closed.spec.mjs (11) — items 1, 2, 5, 6, 7.
+  NC: reverting the parser default fails V2404-05/06; reverting the export
+  policy fails V2404-10.
+- tests/integration/sw-subresource-semantics.spec.mjs (8) — item 4, driving the
+  real worker with the origin process killed outright (Playwright setOffline
+  does not reliably apply to service-worker fetches). NC: restoring the
+  APP_SHELL fallback fails SW-03/04.
+
+THREE EXISTING TESTS CHANGED — all STRENGTHENED, none weakened:
+- dz-gate-parity: asserted DZ activation by reading the overlay's verdict
+  string. The overlay no longer emits a verdict, so it now asserts the gate
+  outcome (dzGate) directly — which is what X-04 actually promised. All five
+  fixtures and the parity assertion unchanged and green.
+- M1-19: asserted only the ADAPTER_ONLY label. Now asserts the structural
+  absence of recommendation/posted.grade/floorBid/verdict. A label is not an
+  authority boundary.
+- PRE24-02: asserted a staleProtectiveGuard flag protecting the overlay's own
+  pricing. Reading it closely, that guard was defined as
+   — it EXCLUDED Dead Zone, which is
+  exactly the hole the recon demonstrated (TAKE_IF_LIVE at a .19 floor with
+  56-day-stale bands and a failed gate). The guard is not restored; the test now
+  asserts the stronger property that no pricing computation exists in the
+  overlay at all, so a stale band has nothing to relax. Freshness REPORTING is
+  still required. NC: adding one floorRpm line fails it.
+
+NOT CERTIFIED. Live Cloudflare and physical-iPhone gates unchanged and remain
+open per docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md. No reinstall
+or clear-data instruction was issued.
+
+OPEN FOR GPT / OPERATOR (see
+.agents/inbox/claude-to-gpt-v2404-slice-notes-2026-09-03.md):
+- 'Gary' doctrine gap: in the overlay's tier1, absent from USA_MARKETS, omitted
+  from MW.tier1. Returns null (fail-closed, safe) but needs real coordinates and
+  operator authority to resolve properly. Not invented.
+- Export policy is deny-by-default, not the pure allowlist the packet specified
+  — a pure allowlist inverts the failure into silent backup data loss (X-07).
+- trips.emptyMiles still stored as a number; nullable is a schema migration.
+- docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md needs 24.0.3 -> 24.0.4 (gpt).
+- CLAUDE.md checklist item 7 needs rewording again: gpt resolved the styles.css
+  drift by REMOVING the version rather than bumping it, which is the better fix.

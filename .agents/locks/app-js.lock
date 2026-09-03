@@ -1,6 +1,0 @@
-owner: claude
-token: d7861b5a-addf-48a2-8829-a9b45b73ab72
-started_utc: 2026-09-03T22:26:56Z
-expected_release_utc: 2026-09-04T03:26:56Z
-paths: app.js, index.html, service-worker.js, manifest.json, sw-bridge.js
-task: v24.0.4 core correction slice per .agents/inbox/gpt-to-claude-v2404-core-corrections-2026-09-03.md items 1-8 (Issue #119). Behavioral fixes: naLookupMarket fail-closed, unknown deadhead preserved on every intake, overlay monetary authority removed, SW subresource semantics, export-safe allowlist, conditional True Profit, 121in cargo length. Full suite + negative controls + single coordinated 24.0.4 bump at the end.

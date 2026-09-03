@@ -211,3 +211,5 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Local workspace note: one local attempt could not execute because this workspace denies the suite's network/live-origin activity. It is not counted as a product/test result.
 
 | 2026-09-03T21:40:30Z | claude | 5f77b69 | v24.0.3 cache-generation freeze | full suite | 350 pass / 0 fail / 38 spec files | parity --static-only PASS; live half UNOBSERVED |
+
+| 2026-09-03T23:37:54Z | claude | ff9d9ab | v24.0.4 "Fail Closed" core slice (items 1-7) | full suite | 369 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.4; live half UNOBSERVED; 3 existing tests strengthened, 0 weakened |
