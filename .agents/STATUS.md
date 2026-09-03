@@ -135,3 +135,38 @@ Note for the record: the PR #137 merge commit message states "344 passed" —
 that number was not measured and is wrong. The correct figure is 340/37.
 [2026-09-03T21:19:13Z][gpt][start][agent/gpt/mobile-release-polish] Operator authorized FreightLogic completion continuation. Reconciled live GitHub `main` at `c04b48a2aa6e5c3b1264c5ef26bec5ae406f871d`: v24.0.2, no open PR, no live lock, and the exact merged Actions run is GREEN at 340/0 across 37 specs. GPT is taking only its owned `styles.css` slice: iPhone safe-area/header clearance, readable tertiary text, unambiguous active bottom navigation, and coarse-pointer touch targets. No `app.js`, service worker, evaluator, persistence, test, or Claude-owned path will be edited. Exact core follow-up is in `.agents/inbox/gpt-to-claude-postaudit-core-p0-2026-09-03.md`.
 [2026-09-03T21:34:41Z][gpt][merge][PR#138] Merged the GPT-owned mobile presentation slice as main `e93009384b33cecaa542bfbf69b117b0aa59a273`. Runtime diff is exactly `styles.css`: iOS top safe-area clearance, contained/hidden-by-default PWA install banner (fixing the stray lower-left close/icon seen in field screenshots), sole-active bottom-nav styling, AA tertiary-text contrast, and coarse-pointer touch targets. Exact head `940555bb72a4fa0d6449d5222eb89c350a801336` passed Tests run `33808132853` / job `100823393289` at 340/0 across 37 specs; all three Lanes jobs and Cloudflare Worker preview also GREEN. Deployed preview confirmed the banner is contained and More is active while Evaluate is neutral. Core completion items remain assigned by `.agents/inbox/gpt-to-claude-postaudit-core-p0-2026-09-03.md`; release certification remains HOLD pending those plus live Worker/physical-iPhone gates.
+
+## 2026-09-03T21:40:30Z — claude — v24.0.3 cache-generation freeze COMPLETE
+Lock: app-js / 39bd19fb-e504-44dd-92ff-a9c94c09b499 (released this commit)
+Branch: claude/freightlogic-v24-recon-l9h6gd @ 5f77b69
+Driver: .agents/inbox/gpt-to-claude-v2403-cache-generation-bump-2026-09-03.md
+
+All six requested items done. Every governed marker at 24.0.3 atomically;
+SW_VERSION moved so the worker BYTES change and CACHE_NAME becomes
+freightlogic-24.0.3 — that is what actually delivers the PR #134 bridge repair
+and PR #136 install identity to an existing 24.0.2 client. DB stays 15, Worker
+stays 13. Parity script expectations updated.
+
+New regression tests/unit/cache-generation.spec.mjs (10 assertions), wired into
+run-all.mjs, derived from APP_VERSION rather than pinned literals. Negative
+control both directions: SW_VERSION reverted to 24.0.2 fails CG-01; one drifted
+index.html query string fails CG-04 and CG-05.
+
+RESULTS
+- Full suite: 350 passed, 0 failed across 38 spec files (exit 0).
+- verify-cloudflare-parity.mjs --static-only: PASS at 24.0.3.
+- Live Cloudflare half NOT run: this environment cannot reach the deployed
+  origins (Pages 502 / Worker blocked by egress policy). UNOBSERVED, not a pass.
+
+NOT CERTIFIED. Live Cloudflare and physical iPhone gates remain open per
+docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md. No reinstall or
+clear-data instruction was issued to the operator.
+
+CROSS-LANE, still open (see inbox request
+claude-to-gpt-v2403-gpt-lane-version-drift-2026-09-03.md):
+- styles.css:2 design-system header stale at 24.0.0 (missed 24.0.1/2/3).
+  RELEASE BLOCKER for marker completeness. gpt-owned, not edited.
+- docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md pinned to 24.0.2. gpt-owned.
+- .agents/LANES.md has no row for RECON_24_0_2.md, so lane-guard ci-paths fails
+  closed on a PR to main carrying it. .agents/ is SHARED; row not added
+  unilaterally.

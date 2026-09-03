@@ -209,3 +209,5 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Classification: deterministic test-fixture time bomb. Both fixtures hard-code 2026-08-03 as the effective invoice date; production's existing 30-day terms rule correctly returns `OVERDUE` on 2026-09-02. No product regression is evidenced by these failures.
 - Rerun: none. An unchanged rerun is not justified; the fixtures require a Claude/test-lane repair followed by the full suite.
 - Local workspace note: one local attempt could not execute because this workspace denies the suite's network/live-origin activity. It is not counted as a product/test result.
+
+| 2026-09-03T21:40:30Z | claude | 5f77b69 | v24.0.3 cache-generation freeze | full suite | 350 pass / 0 fail / 38 spec files | parity --static-only PASS; live half UNOBSERVED |
