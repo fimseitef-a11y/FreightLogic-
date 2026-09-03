@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.2** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.3** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -117,7 +117,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.2';
+const APP_VERSION = '24.0.3';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -234,8 +234,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.2` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.2`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.3` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.3`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -262,7 +262,11 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   4. `manifest.json` `name` field
   5. `?v=` query on `<link rel="manifest">` in `index.html`
   6. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
-  7. Design-system header comment near the top of `index.html`
+  7. Design-system header comment. This **moved to `styles.css`** when the CSS was
+     extracted; there is no design-system comment in `index.html` any more. `styles.css`
+     is **gpt**-owned under `/.agents/LANES.md`, so the core lane must request this bump
+     through `/.agents/inbox/` rather than editing it. Found stale at `24.0.0` during the
+     v24.0.3 recon — it had silently missed 24.0.1, 24.0.2 and 24.0.3.
   8. `VERSION` const and header comment in `midwest-stack-authority.js`
   9. Header comments in `voice-load.js` and `sw-bridge.js`
   10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
@@ -286,11 +290,25 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — a stale/reverted `critical`
       array is a silent regression this checklist wouldn't otherwise catch, since the
       version-string grep below doesn't inspect array contents.
+  15. `midwest-stack-config.json` `appTarget`. Added in v24.0.3 — the recon found it
+      reading `FreightLogic v24.0.0`, two releases behind, because the quick-audit grep
+      below never listed the file. It is now in that grep.
+  16. **`SW_VERSION` must equal `APP_VERSION`.** This is not cosmetic, and it is the
+      reason v24.0.3 exists. A browser installs a new service worker only when the
+      worker script's own BYTES differ; changing `app.js` does not change
+      `service-worker.js`. PR #134 (bridge repair) and PR #136 (install identity) both
+      shipped under an unchanged `24.0.2` `SW_VERSION`, so `CACHE_NAME`
+      (`freightlogic-${SW_VERSION}`) never moved and an existing client had no new cache
+      identity to fetch on any axis — it could keep serving the broken bridge
+      indefinitely. `tests/unit/cache-generation.spec.mjs` now enforces this invariant,
+      along with items 3–6, 11, 12, 14 and 15, so most of this list is machine-checked
+      rather than remembered.
 
   Quick audit — every shipped file should report the new version:
   ```bash
   grep -rno "2[0-9]\.[0-9]\+\.[0-9]\+" app.js index.html manifest.json service-worker.js \
-    midwest-stack-authority.js sw-bridge.js voice-load.js | awk -F: '{print $1" -> "$3}' | sort -u
+    midwest-stack-authority.js sw-bridge.js voice-load.js styles.css midwest-stack-config.json \
+    | awk -F: '{print $1" -> "$3}' | sort -u
   ```
   Historical changelog comments in `app.js` legitimately name older versions — leave those alone.
 
@@ -1382,3 +1400,83 @@ than a cross-lane edit. The GPT lane delivered them in PR #125, reviewed and
 merged from this lane on 2026-09-02; the checklist now reads `24.0.2` throughout
 and the backup contract records `normalizedEvidence` with its protected-checksum
 and revision-aware restore semantics.
+
+---
+
+## v24.0.3 "Cache Generation" — release-identity freeze
+
+No behaviour change and no new features. This release exists so that the two
+repairs already merged under `24.0.2` can actually reach an installed client.
+Driven by `.agents/inbox/gpt-to-claude-v2403-cache-generation-bump-2026-09-03.md`
+(RELEASE BLOCKER, Issue #119).
+
+**The defect.** PR #134 repaired the service-worker update handshake and PR #136
+added the Diagnostics install-identity readout. Both changed `app.js` (and #134
+changed `sw-bridge.js`), and both shipped with every version marker still reading
+`24.0.2` — including `SW_VERSION`. Three separate cache identities therefore stood
+still at once:
+
+- A browser installs a new service worker only when **the worker script's own
+  bytes** differ from the installed copy. Neither PR touched `service-worker.js`,
+  so there was nothing to install.
+- `CACHE_NAME` is `freightlogic-${SW_VERSION}`, so the precached shell kept its
+  name and was reused wholesale.
+- The `?v=` query strings are the only other cache identity the child assets
+  carry, and they were unchanged too.
+
+A client already holding the pre-repair `24.0.2` shell thus had no new identity to
+fetch on any axis, and could keep serving the broken bridge indefinitely. This is
+distinct from the observed iPhone `v23.7.0` wrong-origin investigation — it is a
+release-generation correctness problem for **any** earlier `24.0.2` client.
+
+**The fix.** Every governed marker moves atomically to `24.0.3`: `APP_VERSION`,
+`SW_VERSION` (and therefore `CACHE_NAME`), `ADMIN_UI_TAG`, `MIDWEST_STACK_TAG`,
+the `CORE` and install-blocking `critical` arrays, the `index.html` manifest and
+script `?v=` queries, the `manifest.json` name, the `midwest-stack-authority.js`
+`VERSION` const, every module header comment, and the `EXPECTED` block plus inline
+assertions in `scripts/verify-cloudflare-parity.mjs`.
+
+`DB_VERSION` stays **15** and the Worker stays **v13** — no source semantics
+changed, so neither is touched.
+
+**Two markers the checklist never covered**, both found by the read-only recon in
+`RECON_24_0_2.md` and both stale by more than one release:
+
+- `midwest-stack-config.json` `appTarget` read `FreightLogic v24.0.0`. Fixed here
+  and added to the checklist as item 15.
+- `styles.css`'s design-system header reads `24.0.0`. That file is **gpt**-owned
+  under `/.agents/LANES.md`, so it is **not** fixed here — it is requested through
+  `/.agents/inbox/`. Checklist item 7 is rewritten to say so, since it still
+  pointed at `index.html`, where that comment has not lived since the CSS
+  extraction.
+
+**Regression.** `tests/unit/cache-generation.spec.mjs` (new, 10 assertions) makes
+the invariant machine-checked instead of remembered: `SW_VERSION == APP_VERSION`,
+`CACHE_NAME` derived rather than hardcoded, every `?v=` in both `service-worker.js`
+and `index.html` at the current generation, the exact URLs `index.html` requests
+present verbatim in the SW precache, the `critical` shell current and still
+carrying the X-08/X-10 files, manifest/overlay/header agreement, parity-script
+expectations, `DB_VERSION`/Worker unchanged, and CSP byte-identity across the bump.
+
+Each assertion derives from `APP_VERSION` rather than a pinned literal, so the spec
+keeps working at `24.0.4` without edits. Both invariants were verified by negative
+control — reverting `SW_VERSION` to `24.0.2` fails CG-01, and drifting a single
+`index.html` query string fails CG-04 and CG-05 — so these do not pass vacuously.
+
+**CG-05 is the one worth understanding.** The app-logic branch of the fetch handler
+looks up `cache.match(req)` **without** `{ ignoreSearch: true }`
+(`service-worker.js:139`), while the `isStatic` branch does pass it. So a
+query-string mismatch on a `.js` request is a hard cache miss, and the handler then
+falls back to `cache.match(APP_SHELL)` — returning `index.html`, `Content-Type:
+text/html`, `HTTP 200`, in response to a `<script src>`. The browser refuses to
+execute it and the script silently vanishes, with no 404 and no console error. The
+recon demonstrated this against the shipped worker by killing the origin. Nothing
+is wrong at `24.0.3` because every marker agrees; CG-05 is what keeps it that way.
+
+**Not certified.** Per
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`, live Cloudflare
+verification and the physical iPhone checks remain the open gates and are not
+satisfiable from an automated environment. This release does not change that
+status, and nothing here should be read as instructing the operator to reinstall
+the PWA or clear website data — doing so destroys the local IndexedDB evidence the
+installed-origin investigation still needs.

@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.2 USA ENGINE
+/** FreightLogic v24.0.3 USA ENGINE
+ *  v24.0.3 "Cache Generation": a release-identity freeze, no behaviour change.
+ *          PR #134 (service-worker update handshake) and PR #136 (install
+ *          identity in Diagnostics) both changed app.js and sw-bridge.js but
+ *          left every version marker on 24.0.2 — including SW_VERSION, so the
+ *          service-worker BYTES were unchanged. A browser only installs a new
+ *          worker when the worker script itself differs, so a client already
+ *          holding the pre-repair 24.0.2 shell had no new cache identity to
+ *          fetch: cache-first hits and unchanged ?v= query strings kept it on
+ *          the broken bridge indefinitely. Bumping the generation is what
+ *          actually delivers those two repairs. DB stays v15 and the Worker
+ *          stays v13 — no source semantics changed.
  *  v24.0.2 "Release Integrity" (Issue #119 Batch A + Batch B): the DB upgrade
  *          creates the lifecycle indexes it always claimed to (they were
  *          skipped on every path); a delta cloud push no longer dies in a
@@ -89,7 +100,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.2';
+const APP_VERSION = '24.0.3';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 

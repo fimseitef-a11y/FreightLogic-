@@ -1,26 +1,26 @@
-/* FreightLogic v24.0.2 — Browser Hardened Service Worker */
-const SW_VERSION = '24.0.2';
+/* FreightLogic v24.0.3 — Browser Hardened Service Worker */
+const SW_VERSION = '24.0.3';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=24.0.2"></script>';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.2"></script>';
+const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=24.0.3"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.3"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=24.0.2',
-  './voice-load.js?v=24.0.2',
+  './app.js?v=24.0.3',
+  './voice-load.js?v=24.0.3',
   './styles.css',
-  './admin-driver-ui.js?v=24.0.2',
-  './midwest-stack-authority.js?v=24.0.2',
-  './manifest.json?v=24.0.2',
+  './admin-driver-ui.js?v=24.0.3',
+  './midwest-stack-authority.js?v=24.0.3',
+  './manifest.json?v=24.0.3',
   './midwest-stack-config.json',
   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
   // import works fully offline from the very first install.
   './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=24.0.2'
+  './sw-bridge.js?v=24.0.3'
 ];
 
 function injectBeforeBodyClose(html, tag) {
@@ -54,7 +54,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.2', './voice-load.js?v=24.0.2', './styles.css', './sw-bridge.js?v=24.0.2', './manifest.json?v=24.0.2', './midwest-stack-authority.js?v=24.0.2', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.3', './voice-load.js?v=24.0.3', './styles.css', './sw-bridge.js?v=24.0.3', './manifest.json?v=24.0.3', './midwest-stack-authority.js?v=24.0.3', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
