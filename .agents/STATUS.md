@@ -106,3 +106,30 @@ disagrees with `APP_VERSION`).
 Read-only reporting; no storage, service-worker, or decision behaviour changed.
 `openDiagnosticsPanel` added to `__FL_TESTS` so the 5 regressions drive the real
 panel. A1 remains FAIL pending a device retest on a verified origin.
+
+## 2026-09-02 — claude — merge-restore TOCTOU + strictly-increasing revisions
+
+Claimed and released `lock/app-js`. Merged as PR #137.
+
+1. `mergeRestoreData()` read in one transaction and wrote in another at eight
+   sites (trips, expenses, fuel, the five simple stores, receipts, settings,
+   gpsLogs) — the TOCTOU `docs/DEFERRED.md` logged as uninvestigated. Each read
+   now happens inside the readwrite transaction that writes, matching F-6 and
+   the lifecycle/evidence loops already in that function.
+
+2. Found while CI was red, and the more serious of the two: `upsertTrip`,
+   `updateExpense` and `updateFuel` stamped `updatedAt = Date.now()`. Two writes
+   inside one millisecond left the revision unchanged, so the compare-and-abort
+   accepted a stale write and silently discarded the earlier edit — a lost
+   update on money records, reachable on any fast device. Reproduced with a
+   pinned clock (tab A's $250 correction replaced by tab B's stale $100), then
+   fixed: stamps are now `Math.max(Date.now(), previous + 1)`.
+
+3. Three test-determinism defects fixed on the way: a live NWS fetch racing two
+   evaluations (M3R-07), a Diagnostics helper reading a row before it filled,
+   and a seeded cache the service worker is designed to purge (DXI-04).
+
+Suite: 340 passed, 0 failed across 37 spec files.
+
+Note for the record: the PR #137 merge commit message states "344 passed" —
+that number was not measured and is wrong. The correct figure is 340/37.

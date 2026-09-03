@@ -1,6 +1,0 @@
-owner: claude
-token: 96254acd-9afd-4207-bfd3-6790526b52d5
-started_utc: 2026-09-03T00:34:02Z
-expected_release_utc: 2026-09-03T03:34:02Z
-paths: app.js
-task: close the mergeRestoreData read/write TOCTOU (DEFERRED.md Phase 4) by reading inside the write transaction
