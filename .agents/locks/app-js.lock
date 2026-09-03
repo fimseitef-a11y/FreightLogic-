@@ -1,0 +1,6 @@
+owner: claude
+token: 39bd19fb-e504-44dd-92ff-a9c94c09b499
+started_utc: 2026-09-03T21:02:30Z
+expected_release_utc: 2026-09-04T00:02:30Z
+paths: app.js, index.html, service-worker.js, manifest.json, sw-bridge.js
+task: v24.0.3 cache-generation freeze per .agents/inbox/gpt-to-claude-v2403-cache-generation-bump-2026-09-03.md (RELEASE BLOCKER, Issue #119). Atomic version-marker bump so a pre-repair v24.0.2 client receives the PR #134 bridge repair and PR #136 install-identity readout. Full suite required.
