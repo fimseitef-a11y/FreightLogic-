@@ -204,8 +204,8 @@ THREE EXISTING TESTS CHANGED — all STRENGTHENED, none weakened:
   authority boundary.
 - PRE24-02: asserted a staleProtectiveGuard flag protecting the overlay's own
   pricing. Reading it closely, that guard was defined as
-   — it EXCLUDED Dead Zone, which is
-  exactly the hole the recon demonstrated (TAKE_IF_LIVE at a .19 floor with
+  "overrideStale && mode.id !== 'DEAD_ZONE'" — it EXCLUDED Dead Zone, which is
+  exactly the hole the recon demonstrated (TAKE_IF_LIVE at a $1.19 floor with
   56-day-stale bands and a failed gate). The guard is not restored; the test now
   asserts the stronger property that no pricing computation exists in the
   overlay at all, so a stale band has nothing to relax. Freshness REPORTING is
