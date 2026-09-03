@@ -157,7 +157,7 @@ export async function launchApp({ headless = true, geolocation = null, permissio
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
   const page = await context.newPage();
-  const baseUrl = `http://localhost:${port}`;
+  const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
   // Boot-ready signal must NOT depend on __FL_TESTS — that would hang forever on a
   // genuine (enableTestExports:false) production load once F-5 gates the export.
@@ -186,7 +186,7 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
   const page = await context.newPage();
-  const baseUrl = `http://localhost:${port}`;
+  const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/tests/fixtures/blank.html`, { waitUntil: 'load' });
   return {
     browser, context, page, baseUrl,
