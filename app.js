@@ -2771,7 +2771,15 @@ async function upsertTrip(trip){
     err.serverRecord = beforeData;
     throw err;
   }
-  t.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  t.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.trips.put(t);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
@@ -2886,7 +2894,15 @@ async function updateExpense(exp){
     err.serverRecord = beforeData;
     throw err;
   }
-  e.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  e.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.expenses.put(e);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(e.id), action:'UPDATE_EXPENSE', beforeData, afterData: e, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(e); txn.onerror = ()=> reject(txn.error); });
@@ -2959,7 +2975,15 @@ async function updateFuel(f){
     err.serverRecord = beforeData;
     throw err;
   }
-  x.updatedAt = Date.now();
+  // The revision stamp must STRICTLY INCREASE, not merely be "now".
+  // Date.now() has millisecond resolution, so a create and an edit — or two
+  // edits — landing in the same millisecond leave `updatedAt` unchanged, and
+  // the compare-and-abort above then sees `beforeData.updatedAt ===
+  // expectedUpdatedAt` for a record that HAS moved on. The stale write is
+  // accepted and the earlier edit is silently lost, which is the exact failure
+  // F-6 and M2 exist to prevent. It is reachable on any fast device; a CI
+  // runner hit it for real while a slower sandbox never did.
+  x.updatedAt = Math.max(Date.now(), finiteNum(beforeData?.updatedAt, 0) + 1);
   stores.fuel.put(x);
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: String(x.id), action:'UPDATE_FUEL', beforeData, afterData: x, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(x); txn.onerror = ()=> reject(txn.error); });
