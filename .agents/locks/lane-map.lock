@@ -1,0 +1,6 @@
+owner: gpt
+token: operator-ci-repair-20260903
+started_utc: 2026-09-03T23:45:00Z
+expected_release_utc: 2026-09-04T01:45:00Z
+paths: .agents/LANES.md
+task: Operator-directed temporary exact-file reassignment for deterministic CI harness repair; restore normal ownership after merge.
