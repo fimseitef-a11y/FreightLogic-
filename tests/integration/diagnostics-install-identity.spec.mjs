@@ -32,6 +32,24 @@ async function openDiagnostics(page) {
   }, { timeout: 15000 });
 }
 
+/**
+ * Removes the service worker before a test seeds a versioned cache.
+ *
+ * The SW's `activate` handler deletes every cache except CACHE_NAME,
+ * RECEIPT_CACHE and SHARE_CACHE — so a seeded `freightlogic-<x.y.z>` is exactly
+ * the shape the app is designed to garbage-collect. [DXI-04] seeded one and
+ * then raced that cleanup: it survived on a machine where the SW activated
+ * late, and was purged before the panel read it on a machine where activation
+ * landed inside the test window. Detaching the SW first makes the seeded cache
+ * stable; the panel only enumerates caches, so it needs no worker.
+ */
+async function detachServiceWorker(page) {
+  await page.evaluate(async () => {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+  });
+}
+
 const rowText = (page, id) => page.evaluate(i => document.getElementById(i)?.textContent || '', id);
 const rowColor = (page, id) => page.evaluate(i => document.getElementById(i)?.style.color || '', id);
 
@@ -76,7 +94,8 @@ test('[DXI-04] a cached shell generation that disagrees with the app reads as a 
   const app = await launchApp();
   try {
     // Exactly the A1 signature: a shell cache from an older release sitting
-    // under a newer app build.
+    // under a newer app build. Detach the SW first — see detachServiceWorker().
+    await detachServiceWorker(app.page);
     await app.page.evaluate(async () => { await caches.open('freightlogic-1.2.3'); });
     await openDiagnostics(app.page);
     const txt = await rowText(app.page, 'dxCacheGen');
@@ -91,7 +110,8 @@ test('[DXI-05] the share-target cache is not misread as a shell generation', asy
   try {
     // `freightlogic-share-v2` is a real cache the SW creates for share-target
     // POSTs. A looser match would report it as a bogus generation and cry wolf
-    // on a healthy install.
+    // on a healthy install. Detached for the same determinism reason as above.
+    await detachServiceWorker(app.page);
     await app.page.evaluate(async () => { await caches.open('freightlogic-share-v2'); });
     await openDiagnostics(app.page);
     const txt = await rowText(app.page, 'dxCacheGen');
