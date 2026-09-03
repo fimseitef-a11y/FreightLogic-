@@ -198,6 +198,33 @@ test('[M3R-06] real lane history reaches the evidence sample size and observatio
   eq(h.confidence.market, 'HIGH', 'and the market domain reflects it');
 });
 
+/**
+ * The route weather domain is fed by a LIVE NWS fetch whose result is cached
+ * per route point, and `evaluate()` only waits a fixed 600ms. So the FIRST
+ * evaluation of a route can report UNKNOWN (fetch still in flight) while the
+ * next reports a real observation — which makes any differential test that
+ * evaluates the same route twice liable to see this domain change for a reason
+ * that has nothing to do with the variable under test.
+ *
+ * [M3R-07] failed in CI exactly that way — with-broker UNKNOWN vs no-broker
+ * HIGH — while passing on any machine where the fetch is blocked and both runs
+ * read UNKNOWN. That is why it hid: it only appears where the network works.
+ *
+ * Evaluating until the domain reports the same value twice running settles the
+ * cache first, so the comparison starts from a stable state whichever way the
+ * network behaves.
+ */
+async function settleWeatherDomain(page, route){
+  let last = null;
+  for (let i = 0; i < 8; i++){
+    const r = await evaluate(page, route);
+    const now = r?.confidence?.weatherSafety ?? null;
+    if (last !== null && now === last) return now;
+    last = now;
+  }
+  return last;
+}
+
 test('[M3R-07] with no broker entered the broker domain is UNKNOWN, not a synthetic LOW', async () => {
   await app.page.evaluate(async () => {
     const T = window.__FL_TESTS;
@@ -211,6 +238,8 @@ test('[M3R-07] with no broker entered the broker domain is UNKNOWN, not a synthe
   // that from whatever the other domains are doing on this route — the route
   // weather domain in particular is legitimately LOW in this environment,
   // which is a real fact about the route and not this test's subject.
+  // Settle the live-weather domain before comparing; see settleWeatherDomain().
+  await settleWeatherDomain(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH' });
   const withBroker = await evaluate(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH', broker: 'Acme Logistics' });
   const noBroker  = await evaluate(app.page, { origin: 'Chicago, IL', dest: 'Toledo, OH', broker: '' });
 
