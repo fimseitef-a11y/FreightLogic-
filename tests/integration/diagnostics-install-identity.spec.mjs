@@ -18,9 +18,17 @@ const { test, run } = createSuite('integration/diagnostics-install-identity.spec
 
 async function openDiagnostics(page) {
   await page.evaluate(async () => { await window.__FL_TESTS.openDiagnosticsPanel(); });
+  // Wait for EVERY row these tests read, not just the first one. The panel
+  // fills rows as its async checks complete, and Cached Generation lands after
+  // Origin — waiting only on Origin let a fast machine read '...' out of a row
+  // that had not been populated yet, which is how [DXI-04] failed in CI while
+  // passing locally.
   await page.waitForFunction(() => {
-    const el = document.getElementById('dxOrigin');
-    return el && el.textContent && el.textContent !== '...';
+    const ids = ['dxOrigin', 'dxDisplay', 'dxSwUrl', 'dxScope', 'dxCacheGen'];
+    return ids.every(id => {
+      const el = document.getElementById(id);
+      return el && el.textContent && el.textContent !== '...';
+    });
   }, { timeout: 15000 });
 }
 
