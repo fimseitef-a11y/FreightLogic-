@@ -16,13 +16,47 @@ test('[PRE24-01] normal/preferred RPM floors align with the protective doctrine'
   ok(!/normalFloorRPM:\s*1\.35/.test(app), 'the stale $1.35 normal-floor authority must be gone');
 });
 
-test('[PRE24-02] July static rate bands have an enforceable freshness guard', () => {
+test('[PRE24-02] stale static rate bands cannot influence pricing at all', () => {
+  // v24.0.4 item 3 SUPERSEDES the guard this test used to assert.
+  //
+  // The original property was "a STALE band table must fall back to protective
+  // pricing", enforced by a `staleProtectiveGuard` flag inside the overlay's own
+  // rate ladder. That guard existed because the overlay computed its own
+  // floorRpm/winRpm/askRpm from the band table — and it leaked: the guard
+  // deliberately excluded DEAD_ZONE (`overrideStale && mode.id !== 'DEAD_ZONE'`),
+  // so with the bands 56 days stale the overlay still emitted TAKE_IF_LIVE at a
+  // $1.19 floor, below the $1.25 hard reject, on a load whose DZ gate had failed.
+  //
+  // The overlay no longer prices anything, so there is no longer a pricing path
+  // for a stale band to relax — protection is now structural rather than a flag
+  // that has to remember its own exceptions. That is strictly stronger, so this
+  // test now asserts the absence directly. Freshness REPORTING is still required:
+  // band age is real evidence and must still reach the driver.
   const auth = source('midwest-stack-authority.js');
+
+  // Freshness is still computed and still surfaced as a flag.
   ok(auth.includes('RATE_OVERRIDE_FRESHNESS'), 'freshness thresholds missing');
   ok(auth.includes("rateFreshness.status === 'STALE'"), 'STALE path missing');
-  ok(auth.includes('staleProtectiveGuard'), 'stale bands must fall back to protective pricing');
-  ok(auth.includes("!staleProtectiveGuard && (destRole.role === 'tier1' || destRole.role === 'tier2')"), 'ESCAPE_RECOVERY must not reopen a stale-band floor exception');
-  ok(auth.includes("mode.id !== 'DEAD_ZONE'"), 'explicit DZ gate must remain a separate survival exception');
+  ok(auth.includes("rateFreshness.status === 'AGING'"), 'AGING path missing');
+  ok(/flags\.push\(`Rate override STALE/.test(auth), 'a stale band table must still be reported to the driver as evidence');
+
+  // The stronger property: no pricing computation survives in this file, so a
+  // stale band has nothing to relax. Comments may still DISCUSS these names.
+  const code = auth.split('\n')
+    .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+  for (const sym of ['floorRpm', 'winRpm', 'askRpm', 'floorBid', 'winBid', 'askBid', 'compressedWinRpm', 'staleProtectiveGuard']) {
+    ok(!new RegExp(`\\b${sym}\\b`).test(code),
+      `"${sym}" must not exist in executable overlay code — the overlay owns no pricing, so a stale band cannot influence one`);
+  }
+  ok(!/function gradeFor\b/.test(code), 'the overlay must not carry its own grade ladder');
+  ok(!/\brecommendation\s*:/.test(code), 'the overlay must not return a recommendation object');
+
+  // The Dead Zone gate remains a real, separate survival path — and it is
+  // DELEGATED to the canonical gate in app.js rather than re-implemented here.
+  ok(auth.includes("mode.id === 'DEAD_ZONE'"), 'the explicit DZ survival path must remain');
+  ok(auth.includes('window.isDeadZoneEligible'), 'DZ eligibility must be delegated to the single canonical gate in app.js');
+  ok(auth.includes('dzGate'), 'the gate OUTCOME must still be reported so X-04 parity remains assertable');
 });
 
 test('[PRE24-03] live feeds publish health instead of silently collapsing to null', () => {
