@@ -4,26 +4,23 @@ Ownership is physical-path based. Conceptual ownership does not authorize an edi
 
 This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
 
-> Temporary operator-directed Worker v14 origin repair: exact paths `cloud-backup-worker.js`, `scripts/verify-cloudflare-parity.mjs`, `tests/unit/worker-canonical-absence.spec.mjs`, `tests/unit/cache-generation.spec.mjs`, `CLAUDE.md`, and `.github/workflows/worker-v14-patch.yml` are reassigned to GPT only long enough to repair the production-origin/CORS contract proven by the live v24.0.5 probe. Restore normal ownership immediately after the green merge; the patch workflow itself must never merge to `main`.
-
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
 | `.github/` | claude | CI/release/security workflows. |
-| `.github/workflows/worker-v14-patch.yml` | gpt | Temporary branch-only patch helper; delete before PR/merge. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
 | `.gitignore` | SHARED | Repository-wide behavior. |
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
 | `AGENTS.md` | SHARED | Coordination contract. |
 | `AUDIT_REPORT.md` | claude | Core audit record; GPT may request changes through inbox. |
-| `CLAUDE.md` | gpt | Temporary exact-file reassignment for Worker v14 production-origin reconciliation only. |
+| `CLAUDE.md` | claude | Core architecture/operations context. |
 | `FIELD_TEST_CHECKLIST.md` | gpt | Non-core field-facing documentation; changes that alter test policy require Claude review. |
 | `README.txt` | gpt | General/non-core documentation. |
 | `RECON_24_0_2.md` | claude | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
 | `_headers` | claude | CSP/security/deployment headers. |
 | `admin-driver-ui.js` | gpt | Presentation/admin UI; if a change touches auth/storage semantics, hand off through inbox. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains Claude-owned unless explicitly reassigned. |
-| `cloud-backup-worker.js` | gpt | Temporary exact-file reassignment for Worker v14 production-origin/CORS repair only. |
+| `cloud-backup-worker.js` | claude | Worker/auth/storage/backup core. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
 | `docs/` | gpt | General docs by default. Security/backup/tax/authority contract changes require Claude review; X-12 doc repair may be assigned to Claude because it is an audit finding. |
 | `favicon16.png` | gpt | Visual asset. |
@@ -44,20 +41,17 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `midwest-stack-config.json` | claude | Decision/bid configuration. |
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | claude | Verification/release/tooling scripts. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary exact-file reassignment for real production-origin/Worker v14 verification only. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
 | `tests/` | claude | Test harness and assertions. GPT does not edit Claude-owned suites unless explicitly reassigned later. |
-| `tests/unit/worker-canonical-absence.spec.mjs` | gpt | Temporary exact-file Worker v14 origin/CORS regression coverage. |
-| `tests/unit/cache-generation.spec.mjs` | gpt | Temporary exact-file Worker-version contract update for intentional v14 semantic change. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
 ## Current lane intent after CSS extraction
 
-Claude owns core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and the test harness. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, and non-core documentation. The temporary exact-file Worker-v14 rows above exist only for the operator-directed live-origin repair and do not change normal ownership after that bounded merge.
+Claude owns core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and the test harness. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, and non-core documentation.
 
 The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
 
