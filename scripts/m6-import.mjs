@@ -20,7 +20,7 @@
 //   B9  full source timestamps keep their clock precision.
 // Run:
 //   node scripts/m6-import.mjs <bundle-dir> [out-dir]
-// Emits records-for-import.json, withheld.json, and import-report.md.
+// Emits records-for-import.json, withheld.json, and import-report.json.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';

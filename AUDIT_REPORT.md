@@ -1,5 +1,18 @@
 # FreightLogic — Adversarial Audit Report
 
+> **Scope note, 2026-09-12.** This document covers three audits of repository **source**: the
+> F-series (v23.8.3/v23.8.4), the X-series (v23.9), and — appended at the end — a new **P-series
+> (P-01 … P-07) against the DEPLOYED backup/API Worker**. The P-series contains **the only OPEN
+> findings in this report**, including two live credential exposures and a live violation of the
+> v24.0 decision-authority rule. They are open because the production Worker runs **v7**, seven
+> generations behind repository source. Every one is closed by deploying the existing v14 source;
+> none needs a code change. Read "Findings" below as source-side history, not as the current
+> production posture.
+>
+> Also stale by design: the F-series header below describes v23.8.3 and is left as written, but
+> this report does **not** cover the Issue #119 Batch A/B findings (v24.0.2) or the
+> `RECON_24_0_2.md` findings (v24.0.4 / v24.0.5) — those live in `CLAUDE.md`.
+
 Audited against v23.8.3. F-1…F-6 were fixed within that version; F-7 and F-8 were fixed in
 v23.8.4.
 
@@ -933,3 +946,200 @@ trip." (`:1857`). Confirmed.
 includes midwest-stack-authority.js?v=23.5.1`) predates the current `23.8.4`. This document is
 distinct from `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block (which does track
 `23.8.4` correctly) — the markdown checklist is the one that drifted. Confirmed.
+
+---
+
+## Deployed-Worker audit — P-01 … P-07 (2026-09-12)
+
+**These are the first OPEN findings in this report.** Every F-series and X-series finding above
+concerns repository *source*. This series concerns the *deployed* backup/API Worker at
+`https://freightlogic-backup.fimseitef.workers.dev`, and it is open because the live service does
+not run the repository's source.
+
+**Method.** The deployed script was read through the Cloudflare **control plane**
+(`workers_get_worker_code` for script `freightlogic-backup`, account tag
+`ff7ce16b4a0f4d1b8f99b64c222332f1`, `modified_on 2026-09-12T07:31:05Z`). This matters: the agent
+proxy refuses to tunnel HTTPS to that origin, so every prior investigation could only infer the
+deployed state from HTTP status codes observed by an external probe. Reading the bytes is direct
+evidence and it changes the conclusion.
+
+**Headline.** `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md` records the live
+Worker as "stale or otherwise not the current repository source" and Gate 2 as
+*FAIL / REDEPLOY REQUIRED*, inferred from a `/health` 401 and a wildcard CORS header. Both
+observations were correct. The magnitude was not established: the deployed script's own header
+reads
+
+```
+// FreightLogic Cloud Backup Worker v7 - Multi-User + AI Evaluate + AI Extract + Delta Sync
+```
+
+The live Worker is **v7** — seven generations behind the repository's v14, not one. It predates
+token hashing, the timing-safe admin compare, hourly rate-limit windows, pointer-keyed backup
+rotation, `GET /backup/delta` (X-01), `/health`, and the entire v24.0 canonical-authority
+projection contract. Two of the findings below are credential exposures that are live right now.
+
+| ID | Severity | Area | Status | Summary |
+|---|---|---|---|---|
+| P-01 | **Critical** | Credential storage | **OPEN** | Deployed Worker stores every driver bearer token in KV in plaintext, as both key and value |
+| P-02 | **Critical** | Admin endpoint | **OPEN** | `GET /admin/users` returns each driver's live bearer token in the response body |
+| P-03 | **Critical** | Decision authority | **OPEN** | Deployed `/evaluate` lets the model own verdict and grade, ignoring the client's canonical decision |
+| P-04 | **High** | Data durability | **OPEN** | `GET /backup/delta` does not exist in production — X-01 is live, and pruned deltas are already unrecoverable |
+| P-05 | **High** | Admin auth hardening | **OPEN** | Non-constant-time admin token compare, and no per-IP rate limit on `/admin/` |
+| P-06 | **Medium** | Input validation | **OPEN** | No `flk_` token format validation before the KV lookup |
+| P-07 | **Medium** | CORS / liveness | **OPEN** | `ALLOWED_ORIGIN` is unset in production, so CORS answers `*`; `/health` does not exist |
+
+All seven are fixed in repository source at v14 and are closed by **deploying** it. None requires
+a source change. `scripts/deploy-backup-worker.sh` and
+`scripts/wrangler.backup-worker.jsonc` exist to make that deploy a single guarded command — the
+absence of a safe deploy path was itself the reason this gate stayed open (see DEFERRED D-1 in the
+2026-09-12 ingest reconciliation).
+
+### P-01 — Every driver bearer token is stored in KV in plaintext — OPEN
+
+**Where:** deployed `freightlogic-backup`, `POST /admin/users`:
+
+```js
+const rec = { userId, name, token, createdAt: new Date().toISOString(), active: true };
+await env.BACKUPS.put('token:' + token, JSON.stringify(rec));
+await env.BACKUPS.put('user:' + userId, JSON.stringify(rec));
+```
+
+The raw `flk_…` token is the KV **key** (`token:<token>`) *and* is a field inside both record
+values. Anyone with read access to the `freightlogic-backups` namespace — a Cloudflare dashboard
+session, an API token with KV read, or any future Worker bound to it — can enumerate every
+driver's live bearer token. That token authorises `GET /backup` (the full encrypted snapshot) and
+`DELETE /backup` (destroy all backups for a device).
+
+**Source v14 is correct** (`cloud-backup-worker.js:99-104`): it stores a SHA-256 hash under
+`tokh:<hash>`, omits the raw token from the record, and migrates-then-deletes any legacy plaintext
+key on that token's next use (`:165-181`).
+
+**Residue after the deploy.** Migration is lazy, so a plaintext `token:` key survives until its
+driver next authenticates or that user is revoked. Treat every existing driver token as exposed at
+rest until rotated.
+
+### P-02 — `GET /admin/users` returns every driver's bearer token — OPEN
+
+**Where:** deployed `freightlogic-backup`, `GET /admin/users`:
+
+```js
+const val = await env.BACKUPS.get(k.name);
+if (val) { try { users.push(JSON.parse(val)); } catch {} }
+```
+
+The whole `user:<id>` record is pushed unfiltered, and per P-01 that record contains `token`. The
+admin listing therefore hands back live driver credentials to any caller holding `ADMIN_TOKEN` —
+and `admin-driver-ui.js` renders that response in the browser, so the tokens reach the DOM.
+
+Combined with P-05 (no per-IP rate limit, non-constant-time compare on the same endpoint), this is
+the highest-value target on the service.
+
+**Source v14 is correct** (`cloud-backup-worker.js:121`), and says so explicitly:
+
+```js
+// Never expose driver tokens in the admin listing
+users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
+```
+
+### P-03 — Deployed `/evaluate` is a second decision authority — OPEN
+
+**Where:** deployed `freightlogic-backup`, `POST /evaluate` response:
+
+```js
+verdict:       validateVerdict(parsed.verdict),
+grade:         validateGrade(parsed.grade),
+```
+
+`parsed` is the OpenAI response. The model owns verdict and grade outright, defaulting to `PASS` /
+`C` when it returns something unrecognised. The deployed prompt reinforces it — `"grade": "A | B |
+C | D | E"` is requested as model output — and the deployed handler never reads
+`payload.canonicalDecision` at all.
+
+This is a live violation of the invariant at `CLAUDE.md:22`: *"Cloud Worker `/evaluate` may explain
+or challenge assumptions, but it must project—not recalculate—the canonical decision."* The client
+has been sending a compact canonical decision since v24.0.0; production discards it and substitutes
+a model opinion. A driver reading the AI panel can be shown a `PASS`/`C` that the canonical engine
+never produced, and the v24.0.2 absence contract (`UNAVAILABLE` / grade `?` / null True RPM /
+suppressed bid) cannot survive a Worker that has no concept of it.
+
+**Source v13+ is correct** (`cloud-backup-worker.js:290-292`, `:222`): authority fields are
+projected from `payload.canonicalDecision`, `authority` is pinned to
+`'CLIENT_UNIFIED_DECISION_ENGINE'`, and an `UNAVAILABLE` decision short-circuits before any OpenAI
+call.
+
+### P-04 — `GET /backup/delta` does not exist in production; X-01 is live — OPEN
+
+**Where:** the deployed script has `POST /backup/delta` (writing deltas with a 7-day
+`expirationTtl` and a 20-key cap) and **no** `GET /backup/delta`. Its route table ends at
+`GET /status` and `DELETE /backup`.
+
+X-01 is recorded above as *FIXED — Phase 4*. That is true of source and false of production. Every
+delta the client has synced is write-only on the live service: `cloudPullBackup()` can only ever
+restore the last full snapshot, and any delta already pruned by the 20-key cap or the 7-day TTL is
+**permanently unrecoverable**. This is not a latent defect — it is ongoing data loss, and the
+client-side confirmed-gap detection added in Phase 4 cannot even report it, because the endpoint it
+queries returns 404/401.
+
+Deploying v14 stops further loss. It cannot recover deltas already expired.
+
+### P-05 — Admin compare is not constant-time and has no per-IP rate limit — OPEN
+
+**Where:** deployed `freightlogic-backup`:
+
+```js
+const adminToken = request.headers.get('X-Admin-Token');
+if (!adminToken || adminToken !== env.ADMIN_TOKEN) {
+```
+
+A plain `!==` on a secret, with no rate limit preceding it anywhere in the `/admin/` branch.
+`ADMIN_TOKEN` grants create/list/revoke over every driver account, and per P-02 a successful list
+returns every driver's token.
+
+**Source v14 is correct** (`cloud-backup-worker.js:86-90`): a 20-request per-IP limit keyed on
+`CF-Connecting-IP` runs *before* an HMAC-based `timingSafeEqual` compare.
+
+### P-06 — No token format validation before the KV lookup — OPEN
+
+**Where:** deployed `freightlogic-backup`:
+
+```js
+const tokenRaw = await env.BACKUPS.get('token:' + driverToken);
+```
+
+An arbitrary attacker-supplied header is concatenated into a KV key with no shape check.
+**Source v14 is correct** (`cloud-backup-worker.js:160`): `/^flk_[a-f0-9]{32}$/` is enforced and a
+malformed token is rejected 403 before any KV access.
+
+### P-07 — `ALLOWED_ORIGIN` is unset, so CORS answers `*`; `/health` is absent — OPEN
+
+**Where:** deployed `freightlogic-backup`, first statement of `fetch`:
+
+```js
+const allowedOrigin = env.ALLOWED_ORIGIN || '*';
+```
+
+The 2026-09-12 probe observed `Access-Control-Allow-Origin: *` on both `/health` and
+`OPTIONS /backup`. Given this line, that observation **proves** `ALLOWED_ORIGIN` is unset as a var
+on the live service — so the deploy must set it, not merely ship new code.
+`scripts/wrangler.backup-worker.jsonc` declares it.
+
+The same read also explains the `/health` 401 the addendum recorded as a contract failure: the
+deployed script has **no** `/health` route, so the request falls through to the driver-token gate
+and returns `{"ok":false,"error":"Missing token"}`. The addendum's inference was right; this is the
+mechanism.
+
+### Why v14 is safe to deploy over v7 — verified, not assumed
+
+Checked against the deployed bytes, because a migration that orphans live backups would be worse
+than the findings above:
+
+| v7 artifact in KV | v14 behaviour | Evidence |
+|---|---|---|
+| `…:backup:<ts>` keys, discovered by `list()` | `getPtr()` lazily seeds the pointer from `list({prefix})` on first call and persists it — existing backups are adopted, not orphaned | `cloud-backup-worker.js:564-573` |
+| `token:<plaintext>` keys | read `tokh:<hash>`, fall back to the legacy key, migrate, delete plaintext | `:165-181` |
+| tokens shaped `flk_` + 32 hex | satisfies v14's `/^flk_[a-f0-9]{32}$/` gate | v7 mint: `'flk_' + crypto.randomUUID().replace(/-/g, '')` |
+| user ids shaped `u_` + 12 UUID chars (dashes included) | accepted by v14's `/^u_[a-f0-9-]{8,36}$/i`, and its delete path clears both `tokh:` and legacy `token:` | `:130`, `:142-144` |
+| `ADMIN_TOKEN`, `OPENAI_API_KEY` secrets | service state, not config state — preserved across `wrangler deploy` | — |
+
+The one behavioural change a driver may notice is rate limits moving from per-minute (20 eval /
+10 extract) to per-hour (100 eval / 50 extract) — a net increase in allowance.

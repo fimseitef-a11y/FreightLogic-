@@ -1,0 +1,73 @@
+{
+  // FreightLogic BACKUP/API Worker — dedicated deployment configuration.
+  //
+  // WHY THIS FILE EXISTS
+  // --------------------
+  // The repository root `wrangler.jsonc` deploys the *app/assets* service
+  // `freightlogic-v2` (it carries an `assets.directory` of `.`). It is NOT a
+  // deployment configuration for `cloud-backup-worker.js`, and using it for
+  // that purpose would overwrite the production app with the API Worker.
+  //
+  // Every certification record from 2026-09-02 onward has held the release at
+  // HOLD on gate 2 ("deploy and observe Worker v14") citing the same reason:
+  // the repository exposed no safe standalone deploy path and no KV namespace
+  // identifier, so no deployment could be attempted without guessing bindings.
+  // This file removes that blocker. The namespace id below is the real
+  // production namespace read from the Cloudflare control plane (title
+  // `freightlogic-backups`) — not a guess, not a placeholder.
+  //
+  // DEPLOY WITH `scripts/deploy-backup-worker.sh`, NOT a bare `wrangler deploy`.
+  // The wrapper exists to make the two destructive mistakes impossible:
+  // deploying this script under the app service's name, and deploying the app
+  // service's config over the API Worker.
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Must match the existing production script name EXACTLY. Renaming this
+  // creates a SECOND worker and leaves the live one stale — precisely the
+  // failure mode this file exists to prevent.
+  "name": "freightlogic-backup",
+  "main": "../cloud-backup-worker.js",
+
+  // Matches the root config so the two services cannot diverge on runtime
+  // semantics. `nodejs_compat` is deliberately NOT set: the API Worker uses
+  // only WebCrypto and KV, and the deployed v7 never had it.
+  "compatibility_date": "2025-09-27",
+
+  "observability": { "enabled": true },
+
+  // The API Worker serves JSON only. It must never be given an `assets` block —
+  // that is exactly what makes the root config unsafe here.
+  "workers_dev": true,
+
+  "kv_namespaces": [
+    {
+      // `env.BACKUPS` — 27 call sites in cloud-backup-worker.js.
+      // Production namespace title: `freightlogic-backups`.
+      // This is the only namespace on the account, so there is no ambiguity.
+      "binding": "BACKUPS",
+      "id": "a80b7959b0fa401d87e55c0c62e828a8"
+    }
+  ],
+
+  "vars": {
+    // Worker v14's production-origin/CORS contract. Deployed v7 computes
+    // `env.ALLOWED_ORIGIN || '*'`, and the 2026-09-12 live probe observed
+    // `Access-Control-Allow-Origin: *` — which PROVES this var is currently
+    // unset in production. Setting it is part of the v14 repair, not an
+    // incidental config change.
+    "ALLOWED_ORIGIN": "https://freightlogic-v2.fimseitef.workers.dev"
+
+    // OPENAI_MODEL is intentionally omitted: the Worker already defaults to
+    // `gpt-4.1-mini`, and pinning it here would silently override whatever the
+    // operator may have set in the dashboard.
+  }
+
+  // SECRETS ARE NOT IN THIS FILE AND MUST NOT BE ADDED TO IT.
+  //   ADMIN_TOKEN     — admin endpoint auth
+  //   OPENAI_API_KEY  — /evaluate and /extract
+  // Both already exist on the live service and are PRESERVED across a
+  // `wrangler deploy` (secrets are service state, not config state). Declaring
+  // them here would put credentials in git; passing them on a command line
+  // would put them in shell history. To rotate one, do it separately:
+  //   npx wrangler secret put ADMIN_TOKEN -c scripts/wrangler.backup-worker.jsonc
+}
