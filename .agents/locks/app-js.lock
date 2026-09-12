@@ -1,6 +1,0 @@
-owner: claude
-token: 386a265e-c46e-446a-9eab-e8315412d2d3
-started_utc: 2026-09-12T21:21:21Z
-expected_release_utc: 2026-09-13T00:21:21Z
-paths: app.js
-task: Cloud backup stops after every browser close and says nothing. cloudIsEnabled() returns false once the session ends, so every auto-push no-ops silently; the only surface reporting it is the Diagnostics panel. Make the configured-but-inactive state visible and one-tap recoverable. No change to credential storage. Full suite required before merge.
