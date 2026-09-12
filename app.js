@@ -121,7 +121,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.4';
+const APP_VERSION = '24.0.5';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -462,6 +462,10 @@ function knownNum(v){
   if (typeof v === 'string' && v.trim() === '') return null;
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
+}
+function tripHasKnownDeadhead(trip){
+  const x = knownNum(trip?.emptyMiles);
+  return x !== null && x >= 0 && x <= 300000;
 }
 function posNum(v, def=0, max=1e9){
   const x = finiteNum(v, def);
@@ -2684,7 +2688,7 @@ function normOrderNo(raw){
 
 function newTripTemplate(){
   return { id: crypto.randomUUID?.() || ('trip_' + Math.random().toString(36).slice(2) + Date.now().toString(36)), orderNo:'', customer:'', pickupDate:isoDate(), deliveryDate:isoDate(),
-    invoiceDate:'', dueDate:'', origin:'', destination:'', pay:0, loadedMiles:0, emptyMiles:0,
+    invoiceDate:'', dueDate:'', origin:'', destination:'', pay:0, loadedMiles:0, emptyMiles:null,
     stops:[], // v14.5.0: multi-stop support [{city, date, type:'stop'|'pickup'|'delivery', notes}]
     notes:'', isPaid:false, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],
     // F20: Dead Zone Exit fields
@@ -2710,12 +2714,13 @@ function computeTripReviewReasons(raw){
   const reasons = [];
   const pay = Number(raw?.pay || 0);
   const loaded = Number(raw?.loadedMiles || 0);
-  const empty = Number(raw?.emptyMiles || 0);
-  const total = loaded + empty;
+  const empty = knownNum(raw?.emptyMiles);
+  const total = empty === null ? null : loaded + empty;
   if (!(pay > 0)) reasons.push('Pay must be greater than 0');
-  if (!(total > 0)) reasons.push('Total miles must be greater than 0');
+  if (empty === null) reasons.push('Deadhead miles are unknown');
+  if (total !== null && !(total > 0)) reasons.push('Total miles must be greater than 0');
   if (loaded > 2500) reasons.push('Loaded miles exceed cargo-van sanity threshold');
-  if (empty > 1500) reasons.push('Deadhead exceeds sanity threshold');
+  if (empty !== null && empty > 1500) reasons.push('Deadhead exceeds sanity threshold');
   if (pay > 20000) reasons.push('Revenue exceeds sanity threshold');
   return reasons;
 }
@@ -2733,7 +2738,8 @@ function sanitizeTrip(raw){
   t.destination = clampStr(raw.destination, 60);
   t.pay = posNum(raw.pay, 0, 1000000);
   t.loadedMiles = posNum(raw.loadedMiles, 0, 300000);
-  t.emptyMiles = posNum(raw.emptyMiles, 0, 300000);
+  const deadheadMilesKnown = knownNum(raw.emptyMiles);
+  t.emptyMiles = (deadheadMilesKnown !== null && deadheadMilesKnown >= 0 && deadheadMilesKnown <= 300000) ? deadheadMilesKnown : null;
   // v14.5.0: multi-stop
   t.stops = Array.isArray(raw.stops) ? raw.stops.slice(0, 10).map(sanitizeStop).filter(Boolean) : [];
   t.notes = clampStr(raw.notes, 500);
@@ -3759,7 +3765,7 @@ async function importCSVFile(file){
             destination: cellAt(row, 'Destination','DropCity','To','DestCity','Dest'),
             pay: Number(cellAt(row, 'Pay','Revenue','Rate','LineHaul','Amount','Total').replace(/[$,]/g,'') || 0),
             loadedMiles: Number(cellAt(row, 'LoadedMiles','Loaded','Miles','LoadMiles').replace(/[,]/g,'') || 0),
-            emptyMiles: Number(cellAt(row, 'EmptyMiles','Empty','Deadhead','DeadheadMiles','DH').replace(/[,]/g,'') || 0),
+            emptyMiles: (() => { const v = cellAt(row, 'EmptyMiles','Empty','Deadhead','DeadheadMiles','DH').replace(/[,]/g,'').trim(); return v === '' ? null : Number(v); })(),
             notes: cellAt(row, 'Notes','Note','Comments','Memo'),
             isPaid: ['yes','true','paid','1'].includes(cellAt(row, 'Paid','IsPaid','Status').toLowerCase()),
             paidDate: cellAt(row, 'PaidDate','PayDate','PaymentDate') || null,
@@ -4278,7 +4284,7 @@ function computeBrokerStats(trips, todayIso, windowDays=90){
   const minTs = windowDays > 0 ? (now - (windowDays * 86400000)) : 0;
   const map = new Map();
   for (const t of trips){
-    if (t.needsReview) continue;
+    if (t.needsReview || !tripHasKnownDeadhead(t)) continue;
     const dt = t.pickupDate || t.deliveryDate;
     const ts = new Date(dt || Date.now()).getTime();
     if (ts < minTs) continue;
@@ -4325,7 +4331,7 @@ function laneKeyDisplay(origin, dest){
 function computeLaneStats(trips){
   const map = new Map();
   for (const t of trips){
-    if (t.needsReview) continue;
+    if (t.needsReview || !tripHasKnownDeadhead(t)) continue;
     const key = laneKey(t.origin, t.destination);
     if (!key) continue;
     const pay = Number(t.pay||0);
@@ -4654,7 +4660,7 @@ function _getScoreBaselines(allTrips, allExps){
   const d90 = now - 90 * 86400000;
   const d30 = now - 30 * 86400000;
   const recent = allTrips.filter(t => {
-    if (t.needsReview) return false;
+    if (t.needsReview || !tripHasKnownDeadhead(t)) return false;
     const dt = t.pickupDate || t.deliveryDate;
     return dt && new Date(dt).getTime() >= d90;
   });
@@ -7695,6 +7701,7 @@ const USA_MARKET_ROLES = { anchor: 18, support: 9, feeder: 2, transitional: -6, 
 const USA_MARKETS = {
   // ── Midwest ──
   'chicago':       { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:41.8781, lng:-87.6298 },
+  'gary':          { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:41.5955922, lng:-87.3452279 },
   'indianapolis':  { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:39.7684, lng:-86.1581 },
   'columbus':      { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:39.9612, lng:-82.9988 },
   'detroit':       { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:42.3314, lng:-83.0458 },
@@ -8328,9 +8335,9 @@ const MW = {
   strategicFloorRPM: 1.25,
   longHaulMinRPM: 1.45,
   surgeMinRPM: 1.70,
-  // M1: Level X+ doctrine puts Cincinnati and Toledo in Tier 1. Mirrored in
+  // M1: Level X+ doctrine puts Gary, Cincinnati and Toledo in Tier 1. Mirrored in
   // midwest-stack-authority.js and midwest-stack-config.json.
-  tier1: ['chicago','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
+  tier1: ['chicago','gary','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
   tier2: ['nashville','louisville','st. louis','st louis','stl','dayton','fort wayne','grand rapids','milwaukee','lexington'],
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
   rpmTiers: [
@@ -10681,7 +10688,7 @@ function _mwRenderDecision(out, d){
         origin: origin || '',
         destination: dest || '',
         loadedMiles: loadedMi || 0,
-        emptyMiles: deadMi || 0,
+        emptyMiles: deadMi,
         pay: revenue || 0,
         pickupDate: isoDate(),
         notes: isDZActive
@@ -12149,7 +12156,7 @@ function openTripWizard(existing=null){
   $('#f_pay', body).value = trip.pay || '';
   $('#f_pickup', body).value = trip.pickupDate || isoDate();
   $('#f_loaded', body).value = trip.loadedMiles || '';
-  $('#f_empty', body).value = trip.emptyMiles || '';
+  $('#f_empty', body).value = trip.emptyMiles ?? '';
 
   if (mode==='edit'){
     $('#f_customer', body).value = trip.customer || '';
@@ -12238,7 +12245,7 @@ function openTripWizard(existing=null){
     trip.pay = Number($('#f_pay', body).value || 0);
     trip.pickupDate = $('#f_pickup', body).value || isoDate();
     trip.loadedMiles = Math.max(0, Number($('#f_loaded', body).value || 0));
-    trip.emptyMiles = Math.max(0, Number($('#f_empty', body).value || 0));
+    trip.emptyMiles = knownNum($('#f_empty', body).value);
     if (stepNo >= 2){
       trip.customer = clampStr($('#f_customer', body).value, 80);
       trip.origin = clampStr($('#f_origin', body).value, 60);
@@ -15627,7 +15634,7 @@ async function getBrokerTripIntel(company){
   const norm = company.trim().toLowerCase();
   try {
     const all = await dumpStore('trips');
-    const matches = all.filter(t => (t.customer||'').toLowerCase().includes(norm) || norm.includes((t.customer||'').toLowerCase().slice(0,6)));
+    const matches = all.filter(t => ((t.customer||'').toLowerCase().includes(norm) || norm.includes((t.customer||'').toLowerCase().slice(0,6))) && !t.needsReview && tripHasKnownDeadhead(t));
     if (!matches.length) return null;
     let totalPay = 0, totalMiles = 0, totalDaysToPay = 0, payCount = 0, unpaidCount = 0, wouldRunCount = 0, wouldRunYes = 0;
     for (const t of matches){
@@ -15709,7 +15716,7 @@ function normalizeLane(orig, dest){
 }
 
 async function recordLaneHistory(trip){
-  if (!trip || !trip.origin || !trip.destination) return;
+  if (!trip || !trip.origin || !trip.destination || trip.needsReview || !tripHasKnownDeadhead(trip)) return;
   const pay = Number(trip.pay||0);
   const loaded = Number(trip.loadedMiles||0);
   const empty = Number(trip.emptyMiles||0);
@@ -17233,7 +17240,7 @@ async function getLaneRPMTrend(orig, dest){
     const relevant = all.filter(t => {
       const to = normalizeLanePart(t.origin||'');
       const td = normalizeLanePart(t.destination||'');
-      return to.includes(origNorm.split(',')[0].trim()) && td.includes(destNorm.split(',')[0].trim());
+      return !t.needsReview && tripHasKnownDeadhead(t) && to.includes(origNorm.split(',')[0].trim()) && td.includes(destNorm.split(',')[0].trim());
     });
     if (relevant.length < 3) return null;
     // Group by YYYY-MM

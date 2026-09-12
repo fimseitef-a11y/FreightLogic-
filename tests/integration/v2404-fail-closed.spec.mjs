@@ -72,11 +72,13 @@ test('[V2404-04] a shorter name is never absorbed by a longer one that merely en
     if (!T?.naLookupMarket) return null;
     const m = T.naLookupMarket('Gary');
     const c = T.naLookupMarket('Calgary');
-    return { gary: m ? m.city + '/' + m.zone : null, calgary: c ? c.city + '/' + c.zone : null };
+    return { gary: m ? m.city + '/' + m.zone + '/' + m.country + '/' + m.role : null,
+             garyTier1: !!T.MW?.tier1?.includes('gary'),
+             calgary: c ? c.city + '/' + c.zone : null };
   });
   if (!r) { ok(true, 'lookup not exposed'); return; }
-  ok(r.gary !== 'calgary/ALBERTA',
-    'Gary must never resolve to Calgary/ALBERTA — that scored an Indiana load as a westbound Alberta long-haul');
+  eq(r.gary, 'gary/MIDWEST/US/anchor', 'Gary, Indiana must resolve canonically as a U.S. Midwest anchor');
+  ok(r.garyTier1, 'Gary must be in the canonical Midwest Tier 1 table, matching the operator authority mirror');
   eq(r.calgary, 'calgary/ALBERTA', 'Calgary itself must still resolve exactly');
 });
 
@@ -141,6 +143,45 @@ test('[V2404-07] an explicitly entered 0 deadhead is still a real, graded zero',
   });
   ok(!state.asks, 'an explicit 0 must NOT be treated as missing');
   eq(state.grade, 'A', '$560 / (280 + a verified 0) = $2.00/mi, which is grade A');
+});
+
+// ── v24.0.5: persisted deadhead UNKNOWN must survive every trip write ────────
+
+test('[V2405-01] sanitizeTrip preserves UNKNOWN vs explicit zero deadhead', async () => {
+  const r = await app.page.evaluate(() => {
+    const T = window.__FL_TESTS;
+    const base = { orderNo:'V2405-SAN', pay:500, loadedMiles:250, pickupDate:'2026-09-11', deliveryDate:'2026-09-11' };
+    const pick = (extra) => { const x = T.sanitizeTrip({ ...base, ...extra }); return { emptyMiles:x.emptyMiles, needsReview:x.needsReview, reasons:x.reviewReasons }; };
+    return { missing:pick({}), blank:pick({emptyMiles:'   '}), invalid:pick({emptyMiles:'bogus'}), negative:pick({emptyMiles:-5}), zero:pick({emptyMiles:0}), positive:pick({emptyMiles:25}) };
+  });
+  for (const k of ['missing','blank','invalid','negative']) {
+    eq(r[k].emptyMiles, null, `${k} deadhead must persist as UNKNOWN/null`);
+    ok(r[k].needsReview, `${k} deadhead must mark the trip for review so it cannot enter True RPM history`);
+  }
+  eq(r.zero.emptyMiles, 0, 'an explicit zero deadhead must remain a real zero');
+  ok(!r.zero.reasons.includes('Deadhead miles are unknown'), 'explicit zero must not be labeled unknown');
+  eq(r.positive.emptyMiles, 25, 'a positive known deadhead must survive unchanged');
+});
+
+test('[V2405-02] IDB round-trip never manufactures unknown deadhead as zero', async () => {
+  const r = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const stamp = Date.now();
+    const unknownId = `V2405-U-${stamp}`;
+    const zeroId = `V2405-Z-${stamp}`;
+    const base = { customer:'Integrity Test', pay:500, loadedMiles:250, pickupDate:T.isoDate(), deliveryDate:T.isoDate(), origin:'Chicago, IL', destination:'Detroit, MI' };
+    await T.upsertTrip({ ...base, orderNo:unknownId, emptyMiles:null });
+    await T.upsertTrip({ ...base, orderNo:zeroId, emptyMiles:0 });
+    const rows = await T.dumpStore('trips');
+    const u = rows.find(x => x.orderNo === unknownId);
+    const z = rows.find(x => x.orderNo === zeroId);
+    return { unknown:u && { emptyMiles:u.emptyMiles, needsReview:u.needsReview, reasons:u.reviewReasons }, zero:z && { emptyMiles:z.emptyMiles, needsReview:z.needsReview, reasons:z.reviewReasons } };
+  });
+  ok(r.unknown, 'unknown-deadhead trip must exist after IDB write');
+  eq(r.unknown.emptyMiles, null, 'IDB round-trip must preserve UNKNOWN as null, never fabricate 0');
+  ok(r.unknown.needsReview, 'unknown-deadhead persisted trip must remain quarantined from RPM intelligence');
+  ok(r.zero, 'explicit-zero trip must exist after IDB write');
+  eq(r.zero.emptyMiles, 0, 'IDB round-trip must preserve explicit 0 exactly');
 });
 
 // ── Item 7: vehicle fit reconciled to the operator-confirmed 121in ──────────
