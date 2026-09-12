@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (PR #156 open: parity verifier label/rename) | 2026-09-12 |
-| gpt | Worker v14 origin repair (landed, PR #153); holds `lock/lane-map` until 06:20Z | 2026-09-12 |
+| gpt | Live production Gate 2 recheck; record the still-stale backup Worker and exact next deployment action | 2026-09-12 |
 
 ---
 
