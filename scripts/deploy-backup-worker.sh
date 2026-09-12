@@ -232,8 +232,21 @@ LIVE VERIFICATION PASS — Worker v14 is deployed and answering the v14 contract
 Gate 2 is closed for the unauthenticated surface. Still owed before the
 release can be frozen:
 
-  1. Authenticated smokes with a real (never published) driver token:
-     /evaluate, /extract, POST+GET /backup, POST+GET /backup/delta, restore.
+  1. Authenticated smokes with a real (never published) driver token. Both
+     halves are scripted — run them, do not hand-test:
+
+       FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs
+         /evaluate + /extract authority boundary. Add --paid to include the
+         checks that spend OpenAI quota.
+
+       FL_BACKUP_TOKEN=flk_... node scripts/verify-live-backup.mjs
+         backup / delta / restore round trip. Writes only under a synthetic
+         device id, so operator data is never touched. Its GET /backup/delta
+         check is the one that catches X-01 still being live.
+
+     Both use exit 2 for UNOBSERVED (unreachable origin / no token) and exit 1
+     only for a real contract failure. Never record an exit 2 as a failure.
+
   2. node scripts/verify-cloudflare-parity.mjs  — the full live gate.
   3. A certification-state record superseding the HOLD, naming release and
      rollback SHAs.
