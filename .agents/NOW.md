@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (PR #156 open: parity verifier label/rename) | 2026-09-12 |
+| claude | Pickup-feasibility gate (`app.js` + `index.html`, holds `lock/app-js`) | 2026-09-12 |
 | gpt | Live production Gate 2 recheck; record the still-stale backup Worker and exact next deployment action | 2026-09-12 |
 
 ---
