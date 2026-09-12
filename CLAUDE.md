@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.4** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.5** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -262,17 +262,11 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   4. `manifest.json` `name` field
   5. `?v=` query on `<link rel="manifest">` in `index.html`
   6. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
-  7. ~~Design-system header comment.~~ **RETIRED as of v24.0.4 — nothing to bump.**
-     This item pointed at a comment in `index.html` that has not existed since the CSS
-     extraction, so it guarded a location that could not drift while the real marker in
-     `styles.css` drifted through 24.0.1, 24.0.2 and 24.0.3 unnoticed (found by the
-     v24.0.3 recon). The gpt lane fixed it in PR #138 by **deleting the version from the
-     `styles.css` header** rather than bumping it — `styles.css:2` now reads
-     `FREIGHT LOGIC — DESIGN SYSTEM v3.0 "Command"` with no release number. That is the
-     better fix: a presentation file carrying no version cannot drift, and it removes a
-     cross-lane bump request from every future release. Keep it that way; do not
-     reintroduce a version string here. The quick-audit grep below still lists
-     `styles.css` so a reintroduced version is noticed immediately.
+  7. Design-system header comment. This **moved to `styles.css`** when the CSS was
+     extracted; there is no design-system comment in `index.html` any more. `styles.css`
+     is **gpt**-owned under `/.agents/LANES.md`, so the core lane must request this bump
+     through `/.agents/inbox/` rather than editing it. Found stale at `24.0.0` during the
+     v24.0.3 recon — it had silently missed 24.0.1, 24.0.2 and 24.0.3.
   8. `VERSION` const and header comment in `midwest-stack-authority.js`
   9. Header comments in `voice-load.js` and `sw-bridge.js`
   10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
