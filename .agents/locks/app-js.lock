@@ -1,0 +1,9 @@
+owner: gpt
+token: 6d3a9fd1-2c42-4ef4-91d4-f9c3f0a24b11
+started: 2026-09-11T22:05:00-05:00
+expected_release: 2026-09-12T00:05:00-05:00
+paths:
+  - app.js
+  - tests/
+  - docs/
+task: Finish Gary Tier-1 canonical mapping and preserve persisted trip emptyMiles UNKNOWN-vs-zero semantics, with regressions and exact-release reconciliation.
