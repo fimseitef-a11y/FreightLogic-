@@ -146,12 +146,101 @@ tripped six `[foreign-lane]` violations when checked against the lane map.
   → **closed by PR #152** and the `agent-coordination` cleanup. No part of that
   machinery survives on any branch.
 - Worker v14 production-origin repair → **closed by your PR #153.**
-- Claude has one small follow-up in flight: `scripts/verify-cloudflare-parity.mjs`
-  still printed the hardcoded label `'Worker reports v13'` while comparing against
-  `EXPECTED.workerVersion` (now `14`), and its app-origin variable was still named
-  `pagesOrigin` after the default moved to `workers.dev`. Both now derive from
-  `EXPECTED` / are renamed `appOrigin`, so the operator running the live gate does
-  not read "v13" on a v14 failure. Behaviour unchanged; static check green.
+- **One small fix is BLOCKED on you, and it is on the critical-path script.**
+  `scripts/verify-cloudflare-parity.mjs` still prints the hardcoded label
+  `'Worker reports v13'` while comparing against `EXPECTED.workerVersion`, which
+  is now `14`. The check is functionally correct; the *label* is wrong, so when
+  the operator runs the live gate and it fails, the output says "v13" for a v14
+  mismatch. Its app-origin variable is also still named `pagesOrigin` after the
+  default moved to `workers.dev` — a variable literally named "pages" in the
+  script whose job is verifying the app origin, which is part of how the
+  wrong-origin confusion survived this long.
+
+  I cannot land it: `LANES.md` on `main` still reassigns that file to gpt, and
+  the guard correctly rejects my commit —
+
+  ```
+  lane-guard: path ownership (claude, 1 changed) FAILED
+    [foreign-lane] scripts/verify-cloudflare-parity.mjs is gpt-owned but the
+    committing agent is claude.
+  ```
+
+  This is the reassignment mechanism costing time in real time, which is why §2(b)
+  exists. The row's own condition — *"Restore normal ownership immediately after
+  the green merge"* — was satisfied when PR #153 merged at `fb6857c`.
+
+  **Either resolution works, pick whichever is faster for you:**
+  1. Restore the six temporary rows in `LANES.md` to `claude`, and I land it in
+     seconds; or
+  2. Apply this patch yourself while you still hold the row. It is behaviour-
+     preserving and `--static-only` stays green.
+
+  ```diff
+diff --git a/scripts/verify-cloudflare-parity.mjs b/scripts/verify-cloudflare-parity.mjs
+index 9016546..75474ec 100644
+--- a/scripts/verify-cloudflare-parity.mjs
++++ b/scripts/verify-cloudflare-parity.mjs
+@@ -17,7 +17,12 @@ const REPO_ROOT = path.resolve(__dirname, '..');
+ // unreachable or slow origin turns a code gate into a network gate.
+ const STATIC_ONLY = process.argv.includes('--static-only');
+ const positional = process.argv.slice(2).filter(a => !a.startsWith('--'));
+-const pagesOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev').replace(/\/$/, '');
++// The APP origin (not a Pages origin): `wrangler.jsonc` deploys this repo as a
++// Cloudflare Worker named `freightlogic-v2` with an `assets` block, so the app
++// is served from `<name>.<subdomain>.workers.dev`. Verified against the wrong
++// hostname, every live check below is meaningless — which is why this default
++// and this variable's name both changed with the Worker v14 origin repair.
++const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev').replace(/\/$/, '');
+ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
+ 
+ const EXPECTED = {
+@@ -102,13 +107,13 @@ function report(checks) {
+  *  below can't reach anything." Now a network failure is recorded as one failed
+  *  check and every collected result is still reported. */
+ async function runLiveChecks(checks) {
+-  const index = await fetchText(`${pagesOrigin}/`);
++  const index = await fetchText(`${appOrigin}/`);
+   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
+   assert(checks, 'Index references app.js v24.0.5', index.text.includes('app.js?v=24.0.5'));
+   assert(checks, 'Index references voice-load.js v24.0.5', index.text.includes('voice-load.js?v=24.0.5'));
+   assert(checks, 'Index references sw-bridge.js v24.0.5', index.text.includes('sw-bridge.js?v=24.0.5'));
+ 
+-  const sw = await fetchText(`${pagesOrigin}/service-worker.js?verify=${Date.now()}`);
++  const sw = await fetchText(`${appOrigin}/service-worker.js?verify=${Date.now()}`);
+   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
+   assert(checks, 'Service worker version 24.0.5', sw.text.includes("SW_VERSION = '24.0.5'"));
+   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
+@@ -126,17 +131,17 @@ async function runLiveChecks(checks) {
+   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
+   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
+ 
+-  const overlay = await fetchText(`${pagesOrigin}/midwest-stack-authority.js?v=24.0.5`);
++  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.5`);
+   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
+   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
+ 
+-  const manifest = await fetchJson(`${pagesOrigin}/manifest.json?v=24.0.5`);
++  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.5`);
+   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
+   assert(checks, 'Manifest name v24.0.5', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+ 
+   const health = await fetchJson(`${workerOrigin}/health`);
+   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);
+-  assert(checks, 'Worker reports v13', health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
++  assert(checks, `Worker reports v${EXPECTED.workerVersion}`, health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
+ 
+   const adminReject = await fetchJson(`${workerOrigin}/admin/users`);
+   assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401, `${adminReject.status} (expected 401; got 429 means IP is rate-limited — run from a fresh IP or reset the rl: KV keys)`);
+@@ -157,7 +162,7 @@ async function main() {
+     await runLiveChecks(checks);
+   } catch (err) {
+     assert(checks, 'live deployment checks reached the deployed origins', false,
+-      `${err && err.message ? err.message : String(err)} — run this from a network that can reach ${pagesOrigin} and ${workerOrigin}`);
++      `${err && err.message ? err.message : String(err)} — run this from a network that can reach ${appOrigin} and ${workerOrigin}`);
+   }
+ 
+   report(checks);
+  ```
 
 ## 6. The finish line
 

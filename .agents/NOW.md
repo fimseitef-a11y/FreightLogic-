@@ -16,8 +16,8 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | Parity-script origin-label repair (PR pending); reorganization handoff | 2026-09-12 |
-| gpt | — idle — | — |
+| claude | BLOCKED: parity-script origin-label repair needs `scripts/verify-cloudflare-parity.mjs` restored to claude (see REORG §5). Otherwise idle. | 2026-09-12 |
+| gpt | Worker v14 origin repair (landed, PR #153); holds `lock/lane-map` until 06:20Z | 2026-09-12 |
 
 ---
 
