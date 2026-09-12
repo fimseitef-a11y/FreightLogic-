@@ -23,72 +23,65 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # Worker: v14 is an intentional semantic release because the live probe
-          # proved the actual app origin differs from the stale Pages fallback.
+          PROD = 'https://freightlogic-v2.fimseitef.workers.dev'
+
           p = Path('cloud-backup-worker.js')
           s = p.read_text()
-          s = s.replace(
-              '// FreightLogic Cloud Backup Worker v13 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health',
-              '// FreightLogic Cloud Backup Worker v14 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health\n// v14: production-origin/CORS repair. The live completion probe proved the app is served from\n// https://freightlogic-v2.fimseitef.workers.dev while the old Pages hostname no longer resolves.'
-          , 1)
+          if s.startswith('// FreightLogic Cloud Backup Worker v13'):
+              s = s.replace(
+                  '// FreightLogic Cloud Backup Worker v13 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health',
+                  '// FreightLogic Cloud Backup Worker v14 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health\n// v14: production-origin/CORS repair. The live completion probe proved the app is served from\n// https://freightlogic-v2.fimseitef.workers.dev while the old Pages hostname no longer resolves.', 1)
           old_origins = """const ALLOWED_ORIGINS = new Set([\n  'https://freightlogic.pages.dev',\n  'https://www.freightlogic.pages.dev',\n]);"""
           new_origins = """const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';\nconst ALLOWED_ORIGINS = new Set([\n  PRODUCTION_APP_ORIGIN,\n  // Legacy Pages origins remain accepted during migration, but are no longer\n  // the fallback authority because freightlogic.pages.dev is not the live app.\n  'https://freightlogic.pages.dev',\n  'https://www.freightlogic.pages.dev',\n]);"""
-          if old_origins not in s:
-              raise SystemExit('expected ALLOWED_ORIGINS block not found')
-          s = s.replace(old_origins, new_origins, 1)
+          if old_origins in s:
+              s = s.replace(old_origins, new_origins, 1)
+          elif 'const PRODUCTION_APP_ORIGIN' not in s:
+              raise SystemExit('neither old nor repaired ALLOWED_ORIGINS block found')
           s = s.replace("let allowedOrigin = 'https://freightlogic.pages.dev';", 'let allowedOrigin = PRODUCTION_APP_ORIGIN;', 1)
-          if "return json({ ok: true, version: '13', ts: new Date().toISOString() }, 200, cors);" not in s:
-              raise SystemExit('expected Worker health version not found')
           s = s.replace("return json({ ok: true, version: '13', ts: new Date().toISOString() }, 200, cors);",
                         "return json({ ok: true, version: '14', ts: new Date().toISOString() }, 200, cors);", 1)
+          if "version: '14'" not in s:
+              raise SystemExit('Worker v14 health marker missing')
           p.write_text(s)
 
-          # Live verifier: point default app origin at the service actually built and
-          # deployed by Cloudflare, and require Worker v14.
           p = Path('scripts/verify-cloudflare-parity.mjs')
           s = p.read_text()
-          s = s.replace(
-              'node scripts/verify-cloudflare-parity.mjs https://freightlogic.pages.dev https://freightlogic-backup.fimseitef.workers.dev',
-              'node scripts/verify-cloudflare-parity.mjs https://freightlogic-v2.fimseitef.workers.dev https://freightlogic-backup.fimseitef.workers.dev', 1)
-          s = s.replace("const pagesOrigin = (positional[0] || 'https://freightlogic.pages.dev').replace(/\\\/$/, '');",
-                        "const pagesOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev').replace(/\\\/$/, '');", 1)
+          s = s.replace('https://freightlogic.pages.dev https://freightlogic-backup.fimseitef.workers.dev',
+                        PROD + ' https://freightlogic-backup.fimseitef.workers.dev', 1)
+          s = s.replace("positional[0] || 'https://freightlogic.pages.dev'",
+                        "positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev'", 1)
           s = s.replace('workerVersion: "13"', 'workerVersion: "14"', 1)
+          if "positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev'" not in s:
+              raise SystemExit('real production app origin is not the verifier default')
           p.write_text(s)
 
-          # Worker contract test: v14 + production-origin CORS is explicit.
           p = Path('tests/unit/worker-canonical-absence.spec.mjs')
           s = p.read_text()
           s = s.replace("eq(body.version, '13', 'the authority-absence contract ships as Worker v13');",
                         "eq(body.version, '14', 'the production-origin/CORS repair ships as Worker v14');", 1)
-          anchor = """test('[W-02] an UNAVAILABLE canonical decision is preserved, never turned into REJECT/F/$0.00', async () => {"""
+          anchor = "test('[W-02] an UNAVAILABLE canonical decision is preserved, never turned into REJECT/F/$0.00', async () => {"
           cors_test = """test('[W-01b] production app origin is the default and explicitly allowed by CORS', async () => {\n  const prod = 'https://freightlogic-v2.fimseitef.workers.dev';\n  const env = makeEnv();\n  const defaultRes = await worker.fetch(new Request('https://worker.test/health'), env);\n  eq(defaultRes.headers.get('Access-Control-Allow-Origin'), prod, 'no-Origin fallback targets the real production app');\n\n  const originRes = await worker.fetch(new Request('https://worker.test/health', { headers: { Origin: prod } }), env);\n  eq(originRes.status, 200, 'production-origin health remains unauthenticated');\n  eq(originRes.headers.get('Access-Control-Allow-Origin'), prod, 'production app receives an exact CORS allow-origin');\n});\n\n"""
-          if cors_test not in s:
-              if anchor not in s:
-                  raise SystemExit('worker test insertion anchor not found')
+          if "[W-01b]" not in s:
+              if anchor not in s: raise SystemExit('worker test insertion anchor missing')
               s = s.replace(anchor, cors_test + anchor, 1)
           p.write_text(s)
 
-          # Cache/release contract: the app generation stays v24.0.5; Worker source
-          # semantics intentionally advance 13 -> 14.
           p = Path('tests/unit/cache-generation.spec.mjs')
           s = p.read_text()
           s = s.replace(
-              "// The handoff is explicit: keep DB v15 and Worker v13 unless source semantics\n  // require otherwise. A cache-generation bump is a release-identity change only.",
-              "// DB v15 is unchanged. Worker source semantics intentionally moved 13 -> 14\n  // for the production-origin/CORS repair proven necessary by the live release probe.", 1)
+              '// The handoff is explicit: keep DB v15 and Worker v13 unless source semantics\n  // require otherwise. A cache-generation bump is a release-identity change only.',
+              '// DB v15 is unchanged. Worker source semantics intentionally moved 13 -> 14\n  // for the production-origin/CORS repair proven necessary by the live release probe.', 1)
           s = s.replace("includes('workerVersion: \"13\"')", "includes('workerVersion: \"14\"')", 1)
           s = s.replace("'the expected Worker version must stay 13 — no Worker source semantics changed'",
                         "'the expected Worker version must be 14 — production-origin/CORS semantics changed intentionally'", 1)
           p.write_text(s)
 
-          # Current operating guide: add a concise current Worker identity note without
-          # rewriting historical changelog entries.
           p = Path('CLAUDE.md')
           s = p.read_text()
           marker = '**Stack:** Vanilla JS (IIFE, `\'use strict\'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).'
           note = marker + '\n\n**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v14** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v14 changes the production-origin/CORS contract only; app/PWA remains v24.0.5 and DB remains v15.'
           if '**Current cloud identities:**' not in s:
-              if marker not in s:
-                  raise SystemExit('CLAUDE current-stack marker not found')
+              if marker not in s: raise SystemExit('CLAUDE current-stack marker missing')
               s = s.replace(marker, note, 1)
           p.write_text(s)
           PY
