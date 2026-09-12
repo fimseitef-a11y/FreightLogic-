@@ -69,7 +69,14 @@ async function evaluateLoad(page, { origin, dest, loadedMi, revenue, confirmNoRe
     const r = window.FreightLogicMidwestStack.assessLoad({
       revenue, loadedMiles: loadedMi, deadheadMiles: 0, origin, destination: dest, mode: 'DEAD_ZONE',
     });
-    return { verdict: r.recommendation.verdict, grade: r.posted.grade, trueRpm: r.posted.trueRpm };
+    // v24.0.4 item 3: the overlay no longer emits a verdict or grade — those are
+    // canonical-only now. It reports the GATE OUTCOME instead, which is what X-04
+    // actually promised: that this file and the main evaluator call the same
+    // window.isDeadZoneEligible() and reach the same answer. Asserting the gate
+    // directly is strictly stronger than inferring activation from a verdict
+    // string, and the parity assertion below is unchanged.
+    return { dzEligible: r.dzGate.eligible, gradeCap: r.dzGate.gradeCap,
+             reasons: r.dzGate.reasons, trueRpm: r.posted.trueRpm };
   }, { origin, dest, loadedMi, revenue });
 
   return { mainEvaluator, standalone };
@@ -91,10 +98,12 @@ const FIXTURES = [
 for (const f of FIXTURES) {
   test(`[X-04] ${f.label} — main evaluator and standalone engine agree`, async () => {
     const { mainEvaluator, standalone } = await evaluateLoad(app.page, f);
-    const standaloneActive = standalone.verdict === 'TAKE_IF_LIVE' && standalone.grade === 'C';
-    console.log(`    [evidence] ${f.label}: main.isReallyActive=${mainEvaluator.isReallyActive} (grade "${mainEvaluator.heroGradeEl}") | standalone.verdict=${standalone.verdict} grade=${standalone.grade} trueRpm=${standalone.trueRpm}`);
+    // DZ activation in the standalone engine == the shared gate said eligible,
+    // and (X-04 gate 5) it carries the structural grade cap of C with it.
+    const standaloneActive = standalone.dzEligible === true && standalone.gradeCap === 'C';
+    console.log(`    [evidence] ${f.label}: main.isReallyActive=${mainEvaluator.isReallyActive} (grade "${mainEvaluator.heroGradeEl}") | standalone.dzEligible=${standalone.dzEligible} gradeCap=${standalone.gradeCap} trueRpm=${standalone.trueRpm}`);
     eq(mainEvaluator.isReallyActive, f.expectActive, `main evaluator: expected isReallyActive=${f.expectActive} for ${f.label}`);
-    eq(standaloneActive, f.expectActive, `standalone engine: expected TAKE_IF_LIVE+grade C=${f.expectActive} for ${f.label}, got verdict=${standalone.verdict} grade=${standalone.grade}`);
+    eq(standaloneActive, f.expectActive, `standalone engine: expected gate eligible+gradeCap C=${f.expectActive} for ${f.label}, got eligible=${standalone.dzEligible} gradeCap=${standalone.gradeCap} reasons=${JSON.stringify(standalone.reasons)}`);
     eq(mainEvaluator.isReallyActive, standaloneActive, `PARITY FAILURE for ${f.label}: main evaluator and standalone engine disagree on DZ activation`);
   });
 }

@@ -258,6 +258,18 @@ test('[M1-19] the advisory overlay cannot own canonical verdict or bid', async (
   });
   if (!r){ ok(true, 'overlay not injected in this harness'); return; }
   eq(r.authorityRole, 'ADAPTER_ONLY', 'overlay must declare itself adapter-only');
+  // v24.0.4 item 3: assert the ABSENCE structurally, not just the label. The
+  // overlay used to declare itself ADAPTER_ONLY while returning floorBid/winBid/
+  // askBid and its own verdict, and rendering them directly beneath the canonical
+  // result — a $475 floor and TAKE_IF_LIVE under a canonical REJECT/F. A label is
+  // not an authority boundary; the missing fields are.
+  eq(r.recommendation, undefined, 'the overlay must not return a `recommendation` object at all');
+  eq(r.posted.grade, undefined, 'the overlay must not derive a grade — grade is canonical-only');
+  for (const k of ['floorBid','winBid','askBid','floorRpm','winRpm','askRpm','verdict']){
+    ok(!(k in r), `the overlay must not expose "${k}" anywhere in its result`);
+    ok(!(r.posted && k in r.posted), `the overlay must not expose "${k}" under posted`);
+  }
+  ok(r.market && r.risk, 'market role and risk flags survive — that is the evidence the overlay legitimately adds');
 });
 
 test('[M1-20] the overlay refuses to invent economics from missing facts', async () => {

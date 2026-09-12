@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.3
+/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.4
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '24.0.3';
+  const VERSION = '24.0.4';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({
@@ -140,9 +140,7 @@
   }
   // Presentation-only coercion. Never use for a material fact.
   function finite(value, fallback){ const n = Number(value); return Number.isFinite(n) ? n : (fallback || 0); }
-  function roundMoney(value){ return Math.round(finite(value) / 5) * 5; }
   function round2(value){ return Math.round(finite(value) * 100) / 100; }
-  function money(value){ return '$' + Math.round(finite(value)).toLocaleString(); }
 
   function includesAny(haystack, list){
     const h = cleanText(haystack);
@@ -168,10 +166,11 @@
     return 'coreMidwest';
   }
 
-  function gradeFor(rpm){
-    const item = CONFIG.grades.find(g => rpm >= g.min) || CONFIG.grades[CONFIG.grades.length - 1];
-    return item.grade;
-  }
+  // v24.0.4 item 3: gradeFor() is deleted — it WAS the overlay's independent
+  // grade ladder. CONFIG.grades survives only as a declared doctrine reference
+  // that the parity tests compare against app.js; nothing here derives a grade
+  // from it any more. money()/roundMoney() went with the Floor/Win/Ask pills,
+  // their only consumers.
 
   const MODE_LABEL_MAP = {
     'realistic win': 'REALISTIC_WIN',
@@ -232,9 +231,12 @@
           totalMiles: null, origin: input.origin || input.pickup || '',
           destination: input.destination || input.dest || '', weight: null, stops: null,
         },
-        posted: { trueRpm: null, grade: null },
+        posted: { trueRpm: null },
         trueRpm: null,
-        recommendation: { floorBid: null, winBid: null, askBid: null, floorRpm: null, winRpm: null, askRpm: null, verdict: 'UNAVAILABLE', action: 'Enter revenue, loaded miles and deadhead miles. Blank is not zero.' },
+        // v24.0.4 item 3: no monetary shape here either. The absence case must not
+        // hand a caller a `recommendation` object to read money out of, even nulls.
+        dzGate: { requested: false, eligible: false, gradeCap: null, reasons: [] },
+        action: 'Enter revenue, loaded miles and deadhead miles. Blank is not zero.',
         risk: { flags: ['Missing: ' + unknownFacts.join(', ') + '. The overlay does not estimate material facts.'] },
       };
     }
@@ -270,53 +272,22 @@
     if (/battery|batteries|hazmat|chemical|paint|lithium/i.test(notes + ' ' + input.commodity)) { premium += CONFIG.premiums.hazmatCheck; risk += 0.05; flags.push('Commodity check: confirm non-hazmat / paperwork.'); }
     if (hasWeekendLock(input.pickupDate, input.deliveryDate) || /weekend|holiday|memorial|hold/i.test(notes)) { premium += CONFIG.premiums.weekendOrHolidayLock; risk += 0.08; flags.push('Weekend/holiday lock risk.'); }
 
+    // v24.0.4 item 3: the rate ladder is DELETED, not merely unrendered.
+    //
+    // What stood here computed floorRpm/winRpm/askRpm from this file's own mode
+    // floors (`CONFIG.modes.*.floor/preferred/target`), the July band table and
+    // `regionCompression` multipliers — an independent monetary doctrine. Leaving
+    // it as dead-but-present code would keep the doctrine one wiring change away
+    // from returning, which is the opposite of the authority boundary this
+    // release establishes. app.js owns bid and verdict; this file owns neither.
+    //
+    // Retained: rate-override FRESHNESS, which is genuine evidence about how much
+    // the static band table can still be trusted, and is reported as a flag rather
+    // than used to price anything.
     const rateFreshness = getRateOverrideFreshness();
-    const realisticBand = band.realisticWin;
-    const overrideStale = rateFreshness.status === 'STALE';
-    const staleProtectiveGuard = overrideStale && mode.id !== 'DEAD_ZONE';
-    const compressedWinRpm = ((realisticBand[0] + realisticBand[1]) / 2) * regionOverlay.multiplier;
-    const baseFloor = mode.floor;
-    const baseTarget = mode.target;
-    const protective = CONFIG.modes.PROTECT_FLOOR;
-    let floorRpm = staleProtectiveGuard
-      ? Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, protective.floor)
-      : Math.max(CONFIG.hardStops.absoluteTrueRpmReject, baseFloor, realisticBand[0] * regionOverlay.multiplier);
-    let winRpm = staleProtectiveGuard
-      ? Math.max(mode.preferred, protective.preferred)
-      : Math.max(mode.preferred, compressedWinRpm);
-    let askRpm = (staleProtectiveGuard
-      ? Math.max(baseTarget, protective.target)
-      : Math.max(baseTarget, realisticBand[1] * regionOverlay.multiplier)) + premium;
-    if (rateFreshness.status === 'STALE') flags.push(`Rate override STALE (${rateFreshness.ageDays}d old) — static July bands cannot relax protective pricing; refresh market evidence.`);
+    if (rateFreshness.status === 'STALE') flags.push(`Rate override STALE (${rateFreshness.ageDays}d old) — static July bands are evidence only and cannot be relied on for current pricing.`);
     else if (rateFreshness.status === 'AGING') flags.push(`Rate override AGING (${rateFreshness.ageDays}d old) — use as secondary evidence and verify current market.`);
 
-    if (mode.id === 'PROTECT_FLOOR') {
-      floorRpm = Math.max(1.40, floorRpm);
-      winRpm = Math.max(1.50, winRpm);
-      askRpm = Math.max(1.65, askRpm);
-    }
-    if (mode.id === 'ESCAPE_RECOVERY') {
-      if (!staleProtectiveGuard && (destRole.role === 'tier1' || destRole.role === 'tier2')) floorRpm = Math.max(1.10, Math.min(floorRpm, 1.25));
-      askRpm = Math.max(askRpm, 1.35 + premium);
-    }
-    // X-04: single canonical gate (isDeadZoneEligible, defined in app.js and
-    // exposed on window since both scripts share one page/global scope — see
-    // CLAUDE.md's v23.9 Phase 5 notes) decides whether DEAD_ZONE mode may
-    // lower the floor to survival-mode levels at all. Before this fix,
-    // DEAD_ZONE mode unconditionally lowered floorRpm to the survival floor and let the
-    // normal tier1/tier2 TAKE_IF_LIVE branch below fire — with NO distance-
-    // from-home, distance-saved, or manual-confirmation check whatsoever.
-    // window.flDzGeoCheck (also app.js) supplies the distance numbers this
-    // file has no geo model of its own to compute; #mwDZNoReloadToggle is
-    // the SAME confirmation checkbox the main evaluator uses (shared DOM,
-    // not a separate control) so "manually validated" means the same thing
-    // in both panels.
-    //
-    // Deliberately surgical: when the gate fails, floorRpm/winRpm/askRpm are
-    // simply left at their pre-DEAD_ZONE (generic mode.floor-derived)
-    // values rather than forcing a verdict — so a load that's actually fine
-    // (clears the REAL floor on its own merits) still gets its honest
-    // verdict, and only the lowered-floor privilege itself is withheld.
     let dzGateResult = null;
     if (mode.id === 'DEAD_ZONE') {
       if (typeof window !== 'undefined' && typeof window.isDeadZoneEligible === 'function'){
@@ -334,9 +305,8 @@
         dzGateResult = { eligible: false, gradeCap: 'C', reasons: ['DZ gate check unavailable (app.js not loaded) — treated as ineligible'] };
       }
       if (dzGateResult.eligible){
-        floorRpm = 0.90;
-        winRpm = Math.max(1.00, Math.min(winRpm, 1.15));
-        askRpm = Math.max(1.10, Math.min(askRpm, 1.35));
+        // No floor to lower any more — the gate outcome is reported as `dzGate`
+        // and the canonical evaluator applies the survival floor and grade cap.
         flags.push('Dead-zone mode must be manually validated before acceptance.');
       } else {
         flags.push(...dzGateResult.reasons.map(r => 'DZ gate: ' + r));
@@ -344,30 +314,30 @@
       }
     }
 
-    const floorBid = roundMoney(floorRpm * totalMiles);
-    const winBid = roundMoney(winRpm * totalMiles);
-    const askBid = roundMoney(askRpm * totalMiles);
+    // v24.0.4 item 3: no monetary output and no verdict.
+    //
+    // floorBid/winBid/askBid and the verdict ladder that used to live here were a
+    // SECOND monetary doctrine — this file's own mode floors, grade ladder and
+    // regional compression multipliers, producing money and a TAKE_IF_LIVE that
+    // could and did contradict the canonical decision (True RPM $1.19 -> canonical
+    // "REJECT / F", this file "TAKE_IF_LIVE" at a $475 floor, below the $1.25 hard
+    // reject, with the Dead Zone gate failed). A file labelled ADAPTER_ONLY must
+    // not own money. app.js is the sole owner of grade, verdict, economics and bid.
+    //
+    // The floorRpm/winRpm/askRpm locals above still exist because the DEAD_ZONE
+    // block is what exercises the shared gate; they are no longer returned or
+    // rendered anywhere.
 
-    let verdict = 'NEGOTIATE';
-    if (!totalMiles || !loadedMiles) verdict = 'NEEDS_DATA';
-    else if (trueRpm && trueRpm <= CONFIG.hardStops.absoluteTrueRpmReject) verdict = 'PASS';
-    else if (destRole.role === 'trap' && trueRpm < 1.55 && mode.id !== 'DEAD_ZONE') verdict = 'PASS_PREMIUM_ONLY';
-    else if (trueRpm >= floorRpm && (destRole.role === 'tier1' || destRole.role === 'tier2')) verdict = 'TAKE_IF_LIVE';
-    else if (trueRpm >= winRpm && risk < 0.55) verdict = 'TAKE_IF_LIVE';
-    else if (mode.id === 'ESCAPE_RECOVERY' && trueRpm >= floorRpm && (destRole.role === 'tier1' || destRole.role === 'tier2')) verdict = 'STRATEGIC_ONLY';
-
-    // X-04 gate 5: hard grade cap at C whenever DEAD_ZONE mode actually
-    // activates (gate passed) — never show the raw grade, which is always
-    // 'F' in this RPM range by construction (same reasoning as app.js's F-1
-    // fix: dzFloor/hardRejectRPM bound this range entirely below grade E).
-    const isDzActive = mode.id === 'DEAD_ZONE' && !!(dzGateResult && dzGateResult.eligible);
-    const postedGrade = isDzActive ? (dzGateResult.gradeCap || 'C') : gradeFor(trueRpm);
-
-    const action = verdict === 'PASS' || verdict === 'PASS_PREMIUM_ONLY'
-      ? 'Pass unless broker pays premium and timing is live.'
-      : verdict === 'TAKE_IF_LIVE'
-        ? 'Call/accept only after pickup, delivery, weight, and commodity are confirmed live.'
-        : 'Counter once near the ask, then fall back toward realistic win if the lane improves position.';
+    // The X-04 gate outcome IS still reported, because it is the one thing this
+    // file genuinely contributes: proof that it and the main evaluator called the
+    // SAME canonical window.isDeadZoneEligible() and reached the same answer.
+    // Previously this had to be inferred from the verdict string.
+    const dzGate = mode.id === 'DEAD_ZONE'
+      ? { requested: true,
+          eligible: !!(dzGateResult && dzGateResult.eligible),
+          gradeCap: (dzGateResult && dzGateResult.gradeCap) || null,
+          reasons: (dzGateResult && dzGateResult.reasons) || [] }
+      : { requested: false, eligible: false, gradeCap: null, reasons: [] };
 
     return {
       authorityRole: 'ADAPTER_ONLY',
@@ -376,14 +346,12 @@
       version: VERSION,
       updatedAt: UPDATED_AT,
       input: { revenue, loadedMiles, deadheadMiles, totalMiles, origin, destination, weight, stops },
-      posted: { trueRpm: round2(trueRpm), grade: postedGrade },
+      // trueRpm is a restatement of the canonical formula over the same inputs,
+      // kept for evidence display. No grade is derived from it here.
+      posted: { trueRpm: round2(trueRpm) },
       mode: { id: mode.id, label: mode.label, description: mode.description },
       market: { origin: originRole, destination: destRole, region, regionNote: regionOverlay.note },
-      recommendation: {
-        floorBid, winBid, askBid,
-        floorRpm: round2(floorRpm), winRpm: round2(winRpm), askRpm: round2(askRpm),
-        verdict, action
-      },
+      dzGate,
       risk: { score: Math.min(100, Math.round(risk * 100)), flags },
       override: { effectiveDate: RATE_OVERRIDE_2026_07.effectiveDate, bandNote: band.note }
     };
@@ -400,19 +368,19 @@
     panel.id = 'mwStackAuthorityPanel';
     panel.className = 'card';
     panel.style.marginTop = '12px';
-    panel.innerHTML = '<h3>Bid Strategy · Advisory</h3>' +
-      '<div class="muted" style="font-size:11px;margin-bottom:8px">Canonical decision above is authoritative; this panel is supporting market/bid evidence.</div>' +
-      '<label for="mwBidMode">Bid mode</label>' +
-      '<select id="mwBidMode" aria-label="Midwest Stack bid mode">' +
-      '<option value="REALISTIC_WIN" selected>Realistic Win — compressed board</option>' +
-      '<option value="PROTECT_FLOOR">Protect Floor — business-health pricing</option>' +
-      '<option value="ESCAPE_RECOVERY">Escape / Recovery — position first</option>' +
-      '<option value="DEAD_ZONE">Dead Zone Exit — manual gate only</option>' +
-      '</select>' +
+    // v24.0.4 item 3: the bid-mode selector is gone with the bid ladder it drove.
+    // Leaving a "Bid mode" control that no longer changes any bid would be a
+    // second authority in appearance even after removing it in substance — the
+    // driver would reasonably expect picking a mode to change the recommended
+    // money. Mode selection for the survival path lives in the canonical
+    // evaluator (the Dead Zone gate and its #mwDZNoReloadToggle), which is the
+    // only place it ever had real effect.
+    panel.innerHTML = '<h3>Market Context · Advisory</h3>' +
+      '<div class="muted" style="font-size:11px;margin-bottom:8px">Canonical decision above is authoritative. This panel is market evidence only — it owns no grade, verdict, economics or bid range.</div>' +
       '<div id="mwStackAuthorityResult" style="margin-top:12px"></div>';
     evalOutput.parentNode.insertBefore(panel, evalOutput.nextSibling);
 
-    const ids = ['mwBidMode','mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest','mwLoadNotes'];
+    const ids = ['mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest','mwLoadNotes'];
     ids.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('input', renderUi, { passive: true });
@@ -442,17 +410,28 @@
       box.innerHTML = '<div class="muted" style="font-size:12px">Enter revenue and miles to get realistic bid guidance.</div>';
       return;
     }
+    // v24.0.4 item 3: this panel no longer renders money or a verdict.
+    //
+    // It used to print its own Floor/Win/Ask pills and a "Signal: <verdict>"
+    // line, computed from this file's own mode floors, grade ladder and regional
+    // compression multipliers — a second monetary authority sitting directly
+    // beneath the canonical result, because the panel is inserted as
+    // #mwEvalOutput.nextSibling. The two visibly disagreed: on a Minneapolis ->
+    // Chicago load at True RPM $1.19 the canonical card read "REJECT / F / PASS"
+    // while this panel read "Signal: TAKE_IF_LIVE" with a $475 floor — below the
+    // $1.25 hard reject, on a load whose Dead Zone gate had failed all three of
+    // its checks. A driver reading the screen had two answers and no way to tell
+    // which one was authoritative beyond a one-line disclaimer.
+    //
+    // What survives is the part that was always genuinely additive and that
+    // app.js does not itself compute: destination market role, regional context,
+    // and the risk/premium flags. Those are EVIDENCE. app.js remains the sole
+    // owner of grade, verdict, economics and bid range.
     const flags = result.risk.flags.length ? result.risk.flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') : '';
-    const verdictColor = result.recommendation.verdict === 'TAKE_IF_LIVE' ? 'var(--good)' : (result.recommendation.verdict === 'PASS' || result.recommendation.verdict === 'PASS_PREMIUM_ONLY') ? 'var(--bad)' : 'var(--warn)';
-    box.innerHTML = '<div class="row">' +
-      '<div class="pill"><span class="muted">Floor</span><b>' + money(result.recommendation.floorBid) + '</b></div>' +
-      '<div class="pill"><span class="muted">Win</span><b>' + money(result.recommendation.winBid) + '</b></div>' +
-      '<div class="pill"><span class="muted">Ask</span><b>' + money(result.recommendation.askBid) + '</b></div>' +
-      '</div>' +
-      '<div style="margin-top:10px;font-weight:800;color:' + verdictColor + '">Signal: ' + escapeHtml(result.recommendation.verdict) + '</div>' +
-      '<div class="muted" style="font-size:12px;margin-top:4px">' + escapeHtml(result.recommendation.action) + '</div>' +
-      '<div class="muted" style="font-size:12px;margin-top:8px">→ ' + escapeHtml(result.market.destination.label) + ' · ' + escapeHtml(result.market.region) + ' region</div>' +
-      (flags ? '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0;color:var(--warn)">' + flags + '</ul>' : '');
+    box.innerHTML =
+      '<div class="muted" style="font-size:12px">→ ' + escapeHtml(result.market.destination.label) + ' · ' + escapeHtml(result.market.region) + ' region</div>' +
+      (flags ? '<ul style="font-size:12px;margin:8px 0 0 18px;padding:0;color:var(--warn)">' + flags + '</ul>' : '') +
+      '<div class="muted" style="font-size:11px;margin-top:10px">Market context only. Grade, verdict and bid range come from the canonical decision above.</div>';
   }
 
   function escapeHtml(s){
