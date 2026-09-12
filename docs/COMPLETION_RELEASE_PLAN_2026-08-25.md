@@ -2,9 +2,9 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-12.** The app/PWA candidate remains **FreightLogic v24.0.5 / IndexedDB v15**. A real production probe proved the v24.0.5 app assets are live at `https://freightlogic-v2.fimseitef.workers.dev`, but also proved the separate backup/API Worker deployment is stale: production `/health` returned 401 instead of the repository contract's unauthenticated health response. The bounded source repair therefore advances the backup/API Worker contract to **v14** and aligns its CORS default with the real production app origin. Formal certification remains HOLD until Worker v14 is actually deployed/verified, the real private-history source bundle is reconciled, and the finite physical-iPhone gate passes.
+Current status update: **2026-09-12.** Exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec` is **FreightLogic v24.0.5 / IndexedDB v15 / Worker v14 source**. Its GitHub Actions run passed with **376 tests / 0 failures across 40 spec files**, and every checked production app asset is byte-for-byte identical to that SHA at `https://freightlogic-v2.fimseitef.workers.dev`. A post-merge live recheck still found the separate backup/API Worker stale: `/health` returned 401 `Missing token` and CORS `*`, so Worker v14 has not been deployed there. Formal certification remains HOLD until Worker v14 is deployed/verified, the real private-history source bundle is reconciled, and the finite physical-iPhone gate passes.
 
-Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`.
+Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`.
 
 Vision ingestion and provider-adapter expansion remain approved but non-blocking. Do not enlarge the completion definition to chase new providers, booking, or model features.
 
@@ -77,35 +77,34 @@ Status: **MACHINERY IMPLEMENTED AND SYNTHETIC REGRESSIONS GREEN; PRIVATE REAL-BU
 
 Implemented rules include idempotent/collision-resistant import, conservative linking, per-field provenance, source-timestamp recency, no broker guessing, distinct status classes, DZ exclusion from normal-market calibration, `WON / (WON + LOST)` denominators, and exclusion of unknown RPM/deadhead rather than coercion to zero.
 
-The accessible project/File Library does not contain the raw row-level historical master. A recovered handoff states that a 125-row master once existed but explicitly warns not to reconstruct missing rows from summaries. Therefore the real-bundle gate remains **SOURCE FILE MISSING / NOT RUN** until the actual raw source is recovered or re-exported.
+The repository and supplied project archives do not contain the raw row-level historical master. A recovered handoff states that a 125-row master once existed but explicitly warns not to reconstruct missing rows from summaries. Therefore the real-bundle gate remains **SOURCE FILE MISSING / NOT RUN** until the actual raw source is recovered or re-exported.
 
 ## Milestone 7 — Completion release certification
 
-Status: **APP SOURCE + PRODUCTION APP PARITY READY; WORKER DEPLOYMENT / PRIVATE DATA / IPHONE STILL BLOCKING.**
+Status: **EXACT SOURCE + PRODUCTION APP PARITY PASS; WORKER DEPLOYMENT / PRIVATE DATA / IPHONE STILL BLOCKING.**
 
 ### Automated/source evidence
 
-Before the Worker-v14 repair, the v24.0.5 candidate had:
+Exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec` has:
 
-- 372 passed / 0 failed across 40 spec files;
+- 376 passed / 0 failed across 40 spec files in GitHub Actions run `34678494045`;
 - lane/path/lock CI green;
 - deterministic built-in test server and IndexedDB-ready launch contract;
 - app/PWA/service-worker/cache/manifest generation checks green;
 - static CSP/source parity green;
 - backup/full-delta/restore and local export/import integrity regressions green;
-- no remaining source blocker from the v24.0.3 reconciliation.
-
-The Worker-v14 origin repair must independently re-pass those gates before merge.
+- merged Worker-v14 health/CORS regressions green;
+- operator-measured 54.8-inch wheel-well and 3,000-pound payload regressions green.
 
 ### Production evidence already observed
 
-The 2026-09-12 live probe proved:
+The 2026-09-12 post-merge live recheck proved:
 
 - `freightlogic-v2.fimseitef.workers.dev` is the production app origin;
-- v24.0.5 index/app/voice/SW bridge/service worker/overlay/manifest assets passed the live parity verifier;
+- the checked v24.0.5 index/app/voice/SW bridge/service worker/overlay/config/manifest responses are byte-for-byte identical to exact main candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`;
 - `freightlogic.pages.dev` does not resolve and must not remain the verifier/default production authority;
 - unauthenticated `/admin/users` on the backup Worker returns 401 as required;
-- backup Worker `/health` returns 401 `Missing token` instead of the source contract's unauthenticated health response, proving the deployed backup Worker is stale/different from current source.
+- backup Worker `/health` still returns 401 `Missing token` and CORS `*` after Worker-v14 source merged, proving Worker v14 is not deployed there.
 
 ### Bounded Worker v14 repair
 
@@ -145,12 +144,11 @@ The named release is complete when one named source/runtime candidate has:
 
 ## Execution order from here
 
-1. Merge the bounded Worker-v14 origin repair only after full CI and lane enforcement are green.
-2. Deploy Worker v14 through the actual backup-Worker deployment path without disturbing the `freightlogic-v2` app/assets service or guessing bindings/secrets.
-3. Rerun the live parity and authenticated authority/backup checks.
-4. Recover/re-export the real private M6 source bundle and reconcile it without publishing sensitive raw data.
-5. Run the finite iPhone checks against the same live candidate.
-6. If a gate fails, repair the cause and repeat the affected exact-candidate gates.
-7. When all blocking evidence is PASS, create a new certification-state document that supersedes `COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`, records release/rollback SHAs, and closes Issue #119.
+1. Deploy the merged Worker v14 through the actual backup-Worker deployment path without disturbing the `freightlogic-v2` app/assets service or guessing bindings/secrets.
+2. Rerun live parity and authenticated authority/backup checks.
+3. Recover/re-export the real private M6 source bundle and reconcile it without publishing sensitive raw data.
+4. Run the finite iPhone checks against the same live candidate.
+5. If a gate fails, repair the cause and repeat the affected exact-candidate gates.
+6. When all blocking evidence is PASS, create a new certification-state/addendum document that supersedes `COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`, records release/rollback SHAs, and closes Issue #119.
 
 Do not reorder this sequence merely to add more live sources or convenience features.

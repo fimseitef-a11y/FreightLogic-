@@ -7,9 +7,10 @@ Current candidate:
 - app / PWA / service worker: **24.0.5**;
 - IndexedDB schema: **15**;
 - backup/API Worker source: **14**;
+- exact Git candidate: **`8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`;
 - status: **HOLD**.
 
 Important: `https://freightlogic.pages.dev` was probed on 2026-09-12 and did not resolve. It is a legacy/stale origin, not the production app origin. Do not use it as the default certification target.
@@ -24,7 +25,7 @@ Record:
 - production backup/API Worker origin;
 - rollback SHA.
 
-The 2026-09-12 live probe already observed the v24.0.5 app at `freightlogic-v2.fimseitef.workers.dev` and passed the app/PWA/static checks. Repeat after any later source change.
+The 2026-09-12 post-merge recheck proved the checked production app assets are byte-for-byte identical to exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`. Repeat after any later source change.
 
 ## 2. App / PWA generation
 
@@ -40,7 +41,7 @@ PASS requires production to serve:
 - matching CSP/security headers;
 - no failed JavaScript/static request answered with HTML shell fallback.
 
-The 2026-09-12 production probe passed these checks for v24.0.5.
+The 2026-09-12 production recheck passed these checks for v24.0.5 and exact main candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`.
 
 ## 3. Worker v14 live checks
 
@@ -59,13 +60,15 @@ PASS requires:
 
 ### Current observed Worker state
 
-The 2026-09-12 production probe found:
+The 2026-09-12 post-merge production recheck found:
 
 - `/admin/users` without token -> 401: **PASS**;
 - `/health` -> 401 `Missing token`: **FAIL**;
-- response CORS `*`: inconsistent with current source.
+- `/health` response CORS `*`: **FAIL**;
+- `OPTIONS /backup` from the real app origin -> 204 with CORS `*`: **FAIL**;
+- unauthenticated `/evaluate` -> 401: **PASS**.
 
-That response proves the deployed backup/API Worker is stale/different from the current repository Worker contract. Worker v14 must be deployed through the actual backup-Worker deployment path before this section can pass.
+Those responses prove Worker v14 is not deployed at the backup/API Worker origin. Worker v14 must be deployed through the actual backup-Worker deployment path before this section can pass.
 
 ## 4. Canonical authority smoke
 
