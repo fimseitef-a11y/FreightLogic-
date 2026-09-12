@@ -25,21 +25,22 @@ jobs:
               print(f'\n=== {title} ===')
               for j in range(lo-1, min(hi, len(lines))):
                   print(f'{j+1:05d}: {lines[j]}')
-          show(2680, 2785, 'trip template + sanitizeTrip')
-          for needle in ['function posNum', 'function knownNum', 'emptyMiles', "'chicago':", 'tier1:']:
-              hits=[i for i,l in enumerate(lines) if needle in l]
-              print(f'\n=== {needle!r}: {len(hits)} hits ===')
-              for i in hits[:30]:
-                  print(f'{i+1:05d}: {lines[i]}')
-          p=Path('tests/integration/v2404-fail-closed.spec.mjs')
-          if p.exists():
-              t=p.read_text(encoding='utf-8').splitlines()
-              print(f'\n=== {p} lines={len(t)} ===')
-              for i,line in enumerate(t,1):
-                  print(f'{i:04d}: {line}')
-          print('\n=== tests/run-all.mjs relevant tail ===')
-          r=Path('tests/run-all.mjs').read_text(encoding='utf-8').splitlines()
-          for i,line in enumerate(r,1):
-              if 'v2404' in line.lower() or 'spec.mjs' in line:
-                  print(f'{i:04d}: {line}')
+          for lo,hi,title in [
+              (450,480,'numeric helpers'),
+              (3735,3780,'CSV trip import'),
+              (10645,10705,'F23 intake writer'),
+              (12120,12265,'trip wizard load/save'),
+              (20380,20649,'test exposure tail'),
+          ]:
+              show(lo,hi,title)
+          print('\n=== emptyMiles use sites by containing function ===')
+          for i,line in enumerate(lines):
+              if 'emptyMiles' not in line: continue
+              fn='(top-level)'
+              for j in range(i, max(-1,i-120), -1):
+                  s=lines[j].strip()
+                  if s.startswith('function ') or s.startswith('async function '):
+                      fn=f'{j+1}:{s}'
+                      break
+              print(f'{i+1:05d} | {fn} | {line.strip()}')
           PY
