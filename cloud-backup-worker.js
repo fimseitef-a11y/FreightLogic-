@@ -1,4 +1,6 @@
-// FreightLogic Cloud Backup Worker v13 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v14 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v14: production-origin/CORS repair. The live completion probe proved the app is served from
+// https://freightlogic-v2.fimseitef.workers.dev while the old Pages hostname no longer resolves.
 // v13 (Issue #119 Batch A, item 6): canonical-ABSENCE compatibility. The v12
 // output sanitizers coerced a missing/UNAVAILABLE canonical decision into
 // verdict REJECT and grade F, which manufactured a confident negative answer out
@@ -37,7 +39,11 @@ async function hashToken(token) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
 const ALLOWED_ORIGINS = new Set([
+  PRODUCTION_APP_ORIGIN,
+  // Legacy Pages origins remain accepted during migration, but are no longer
+  // the fallback authority because freightlogic.pages.dev is not the live app.
   'https://freightlogic.pages.dev',
   'https://www.freightlogic.pages.dev',
 ]);
@@ -47,7 +53,7 @@ export default {
     // Strict CORS origin validation — only allow explicitly whitelisted origins
     const configuredOrigin = env.ALLOWED_ORIGIN;
     const requestOrigin = request.headers.get('Origin') || '';
-    let allowedOrigin = 'https://freightlogic.pages.dev';
+    let allowedOrigin = PRODUCTION_APP_ORIGIN;
     if (configuredOrigin && requestOrigin === configuredOrigin) {
       allowedOrigin = configuredOrigin;
     } else if (ALLOWED_ORIGINS.has(requestOrigin)) {
@@ -143,7 +149,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '13', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '14', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token

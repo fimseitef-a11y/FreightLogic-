@@ -6,6 +6,8 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v14** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v14 changes the production-origin/CORS contract only; app/PWA remains v24.0.5 and DB remains v15.
+
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
 **v24.0 authority rule:** `app.js` is the sole deterministic owner of load verdict, grade, economics, and bid range. USA scoring and `midwest-stack-authority.js` are evidence/advisory layers. Cloud Worker `/evaluate` may explain or challenge assumptions, but it must project—not recalculate—the canonical decision.
