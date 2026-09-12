@@ -4,8 +4,6 @@ Ownership is physical-path based. Conceptual ownership does not authorize an edi
 
 This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
 
-> Temporary operator-directed CI repair: `tests/lib/harness.mjs` is reassigned to GPT only long enough to close the launch-readiness race exposed after the v24.0.5 landing. Restore normal Claude ownership immediately after the green repair merge.
-
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
@@ -46,7 +44,6 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/lib/harness.mjs` | gpt | **Temporary exact-file CI-readiness repair; restore to Claude after landing.** |
 | `tests/` | claude | Test harness and assertions. GPT does not edit Claude-owned suites unless explicitly reassigned later. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
@@ -54,7 +51,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 ## Current lane intent after CSS extraction
 
-Claude owns core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and the test harness. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, and non-core documentation. The temporary `tests/lib/harness.mjs` exception above exists only to close the CI readiness race exposed by the v24.0.5 completion pass.
+Claude owns core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and the test harness. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, and non-core documentation.
 
 The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
 
