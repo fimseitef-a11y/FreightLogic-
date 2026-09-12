@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | BLOCKED: parity-script origin-label repair needs `scripts/verify-cloudflare-parity.mjs` restored to claude (see REORG §5). Otherwise idle. | 2026-09-12 |
+| claude | Van-profile reconciliation to operator vehicle truth (`app.js` + `index.html`, holds `lock/app-js`). Parity-script fix still BLOCKED — see REORG §5. | 2026-09-12 |
 | gpt | Worker v14 origin repair (landed, PR #153); holds `lock/lane-map` until 06:20Z | 2026-09-12 |
 
 ---

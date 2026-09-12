@@ -1,0 +1,6 @@
+owner: claude
+token: 7f2c4e18-9a3d-4b6e-8c11-2d5f9e0a7b34
+started_utc: 2026-09-12T06:40:00Z
+expected_release_utc: 2026-09-12T08:10:00Z
+paths: app.js, index.html
+task: Reconcile VAN_PROFILE_DEFAULT to operator-supplied vehicle truth (FreightLogic_Improvement_Data_2026-09-12.json). Adds the wheel-well width constraint, which has no field today, and corrects the payload default that currently sits above the door sticker. Full suite required before merge.
