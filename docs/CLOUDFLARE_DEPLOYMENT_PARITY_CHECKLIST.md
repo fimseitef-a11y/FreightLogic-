@@ -2,18 +2,20 @@
 
 Use this checklist after every FreightLogic repository update.
 
-## Current completion candidate — 2026-09-02
+## Current merged generation — 2026-09-03
 
-The expected completion generation is **FreightLogic v24.0.2 / IndexedDB v15 / Worker v13**. The Batch A/B/C defects and eight exact-candidate blocker corrections tracked in Issue #119 are implemented and covered by regression tests. A later physical A1 check showed the installed iPhone PWA still on **v23.7.0**. PR #134 repaired the independently confirmed v24.0.2 update/reload handshake defect and added a real service-worker handover/exactly-one-reload regression. The exact merged candidate `fc51067c9b9fd6e5df0c73fdd505d4bc2aa07946` has green Playwright and Cloudflare `freightlogic-v2` build checks. Because the observed device is executing the older v23.7.0 bridge, the installed origin and production asset generation must still be verified and the device safely re-tested before certification.
+The current merged generation is **FreightLogic v24.0.3 / IndexedDB v15 / Worker v13**. v24.0.3 is the release-generation/cache-identity advance that followed the v24.0.2 update-handshake repair. It is **not certified**: the installed-origin/live deployment and physical-iPhone gates remain open, and current-source review has produced a newer corrective core slice that must receive its own generation/parity update if selected as the next candidate.
 
-**This document does not certify the release.** The canonical state is `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md` and remains **HOLD** until the exact merged `main` generation is proven live and the finite physical-iPhone checks are performed. Historical HOLD documents remain evidence; a later certification state must explicitly supersede the current HOLD after proof exists.
+**Do not use stale literals from this checklist to certify a newer candidate.** If a later corrective generation merges, advance every app/PWA/service-worker marker in this checklist to that exact final generation before certification; keep DB/Worker values unchanged unless source actually changes them.
 
-Expected generation markers for this candidate:
+**This document does not certify the release.** The canonical state is the newest `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_*.md` record and remains **HOLD** until the exact merged `main` generation is proven live and the finite physical-iPhone checks are performed. Historical HOLD documents remain evidence; a later certification state must explicitly supersede the current HOLD after proof exists.
 
-- App / PWA / service worker: **`24.0.2`**
+Expected generation markers for the current merged generation:
+
+- App / PWA / service worker: **`24.0.3`**
 - IndexedDB schema: **`15`**
 - Cloudflare Worker: **`13`**
-- Rollback source generation: **`07d7e4ae46a8765bd60b21c18a7b920503782ff7`** (last v24.0.1 generation)
+- Rollback source generation: **`07d7e4ae46a8765bd60b21c18a7b920503782ff7`** (last v24.0.1 generation; replace with the exact approved rollback point if a newer candidate is frozen)
 
 ## Goal
 
@@ -24,11 +26,11 @@ Prove that the live Cloudflare deployment is running the same corrected generati
 - Confirm the GitHub `main` SHA being certified is the exact merged release SHA.
 - Open the deployed app in a private/incognito browser session.
 - Confirm `index.html` loads without console syntax errors.
-- Confirm `app.js?v=24.0.2` loads.
-- Confirm `voice-load.js?v=24.0.2` loads.
-- Confirm `sw-bridge.js?v=24.0.2` loads.
-- Confirm `midwest-stack-authority.js?v=24.0.2` loads after service-worker activation.
-- Confirm `manifest.json?v=24.0.2` loads and its visible version/name metadata agrees with the release generation.
+- Confirm `app.js?v=24.0.3` loads.
+- Confirm `voice-load.js?v=24.0.3` loads.
+- Confirm `sw-bridge.js?v=24.0.3` loads.
+- Confirm `midwest-stack-authority.js?v=24.0.3` loads after service-worker activation.
+- Confirm `manifest.json?v=24.0.3` loads and its visible version/name metadata agrees with the release generation.
 - Confirm `vendor/xlsx.full.min.js` loads; there is no CDN fallback.
 - Confirm icons load successfully.
 - Confirm `_headers` security headers are present on the live deployment.
@@ -36,11 +38,11 @@ Prove that the live Cloudflare deployment is running the same corrected generati
 
 ## Service worker checks
 
-- Confirm `service-worker.js` reports `SW_VERSION = '24.0.2'`.
-- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.2` and `vendor/xlsx.full.min.js`.
+- Confirm `service-worker.js` reports `SW_VERSION = '24.0.3'`.
+- Confirm `CORE` includes `midwest-stack-authority.js?v=24.0.3` and `vendor/xlsx.full.min.js`.
 - Confirm the install-blocking critical shell includes the authority overlay and bundled SheetJS.
 - Confirm old caches are removed after activation.
-- Confirm a device on v24.0.1 upgrades to v24.0.2 rather than continuing to serve stale assets.
+- Confirm a device on v24.0.2 upgrades to v24.0.3 rather than continuing to serve stale assets.
 - Confirm offline reload opens the app shell.
 - Confirm Excel import (`.xlsx`) works offline immediately after a fresh install.
 - Confirm the service worker does not cache cross-origin API responses.
@@ -109,7 +111,7 @@ Before final certification, on the **exact candidate head**:
 - lane/path/lock checks are green;
 - `node scripts/m7-certify.mjs --suite` completes its automated gates and correctly refuses certification while canonical HOLD remains current;
 - Worker build is green;
-- `scripts/verify-cloudflare-parity.mjs --static-only` is green using app `24.0.2` and Worker `13`;
+- `scripts/verify-cloudflare-parity.mjs --static-only` is green using app `24.0.3` and Worker `13` for the current merged generation (or the exact newer app generation if one has superseded it);
 - the Cloudflare preview/deployment reports the same exact source commit.
 
 ## Live / field gate — required before changing HOLD

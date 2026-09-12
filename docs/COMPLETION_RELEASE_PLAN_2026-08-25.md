@@ -2,7 +2,9 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-02.** Gate 0 and Milestones 1–6 are implemented on `main`. The initial automated candidate was green at **318 passed / 0 failed across 32 spec files**. Later physical-iPhone evidence failed A1: the installed PWA remained on **v23.7.0**. PR #134 repaired the independently confirmed v24.0.2 service-worker update/reload handshake defect and added a real update/activation/exactly-one-reload regression. The current exact candidate `fc51067c9b9fd6e5df0c73fdd505d4bc2aa07946` has green Playwright and Cloudflare Worker build checks. Because the v23.7.0 bridge already requested updates and reloaded on controller change, the device result still points primarily to installed-origin/production-generation or network delivery. The named completion release remains **ON HOLD** for deployment-origin verification and the remaining live Cloudflare and physical-iPhone certification evidence. The current state is tracked in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`; this roadmap remains the authority for order and scope.
+Current status update: **2026-09-03.** Gate 0 and the planned M1–M6 product foundation are implemented on `main`. The merged source head reviewed for this update is `a1f4775a24fb1a912ebe9d061dd002efd4f1144e`, identified as **FreightLogic v24.0.3 / IndexedDB v15 / Worker v13**. The v24.0.3 freeze recorded **350 passed / 0 failed across 38 spec files** and green static parity, but a post-freeze exact-current-source reconciliation proved additional behavioral defects that the version-only v24.0.3 change did not repair. Therefore v24.0.3 is **not** the final completion candidate. A bounded v24.0.4 core correction slice is in progress under the repository lock protocol. The named completion release remains **ON HOLD** for those proof-backed corrections, deterministic exact-head CI, the off-repo operator-source reconciliation run, live Cloudflare verification, and finite physical-iPhone certification.
+
+Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-03.md`.
 
 Vision ingestion remains an approved but non-blocking track for the named completion release. Provider-adapter expansion remains non-blocking and must not leapfrog the approved sequence.
 
@@ -15,17 +17,19 @@ Vision ingestion remains an approved but non-blocking track for the named comple
 5. Vision ingestion is approved inside Milestone 5, but successful model extraction is not required to freeze the named completion release.
 6. Provider adapters may not leapfrog the sequence `normalized contract → manual/email → vision → provider adapters`.
 7. Green tests do not overrule current-source evidence of an untested correctness defect.
+8. A newly proved defect that violates an existing release invariant is remediation of existing scope, not feature expansion.
 
 ## Current source state
 
-- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-02.md`.
+- Current certification-state authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-03.md`.
+- Execution tracker: GitHub Issue #119. It is not a second roadmap.
 - `docs/OPERATOR_TRUTH.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/OPEN_QUESTIONS.md` are durable Gate-0 sources.
 - `docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md` governs Confidence + Evidence behavior.
 - `docs/V24_2_LOAD_LIFECYCLE_SPEC.md` governs lifecycle identity/state.
-- `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md` is merged and defines the existing M5/M6 requirement that normalized evidence survive reload/backup/export/import with semantics intact.
+- `docs/NORMALIZED_EVIDENCE_DURABILITY_CONTRACT.md` governs normalized-evidence persistence/backup/export/import semantics.
 - `docs/VISION_LOAD_INGEST_CONTRACT.md` governs the non-blocking vision track.
 - `docs/V24_ROADMAP.md` is retired.
-- The Unified Decision Engine remains the sole client authority for verdict, grade, economics, and canonical bid range.
+- The Unified Decision Engine in `app.js` remains the sole client authority for verdict, grade, economics, and canonical bid range.
 - `app.js` remains SHARED/serialized and core runtime behavior remains Claude-owned under `/.agents/LANES.md`.
 - DAT RateView remains dormant/non-authoritative for cargo-van expedite pricing unless explicitly re-authorized.
 - Warp, 123Loadboard, and Direct Freight remain subject to `EVIDENCE_PROVENANCE.md` and verified API/partner authorization rules.
@@ -45,26 +49,41 @@ Rules:
 - Price semantics, mileage semantics, lifecycle state, and source provenance remain explicit.
 - Quote/load/order ID alone is not guaranteed unique and cannot be used as destructive dedup identity.
 - Source-displayed mileage must not be overwritten by inferred/map mileage.
+- Loaded, deadhead/empty, and post-delivery reposition mileage remain separate facts.
 - Provider account access must not be confused with API authorization.
 - New source semantics must be defined before they influence canonical intelligence.
 
-## Current certification blockers
+## Current completion blockers — 2026-09-03
 
-The old pre-M1 defect list is retired because those repairs were implemented through Milestones 1–2. The current release blockers are the proof-backed items in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-08-27.md`, including, at minimum until repaired and re-reviewed:
+The older pre-M1/M3–M6 source-defect lists are historical; Issue #119 Batch A/B work repaired them and the 2026-09-02 certification state closed them. The active blockers are now the following proof-backed items and final evidence gates:
 
-- Worker projection must preserve canonical `UNAVAILABLE`, unknown grade, null True RPM, and suppressed/null bid rather than requiring fabricated numeric completeness.
-- v24.1 evidence wiring/history must reflect actual source provenance, actual lane/broker/vehicle evidence, successful-zero vs no-data semantics, and a persisted compact evaluation snapshot.
-- lifecycle DB-v14 index creation must be correct for fresh/upgraded databases.
-- cloud delta backup must not read lifecycle delta state before initialization.
-- lifecycle/durable evidence must be covered by export integrity checks when exported as protected history.
-- reused external IDs must not cause false lifecycle linking, display, editing, or import deduplication; route/time/internal-source compatibility remains required.
-- normalized M5/M6 evidence must survive persistence, backup, export, import, and restore without losing price/mileage semantics or provenance.
-- M5B requires a real production manual/email-compatible intake caller; a test-exposed helper alone does not satisfy the milestone.
-- M6 historical reconciliation must honor evidence precedence, preserve status classes, use collision-resistant bounded import identity, and weight source observation time rather than import/mutation time.
-- release/app/service-worker/manifest/Worker generation must be reconciled only after the corrected runtime is final.
-- M7 iPhone/offline and live Cloudflare certification remain unverified until executed against the corrected release candidate.
+### Core correctness correction before the next candidate
 
-A blocker leaves this list only after exact-current-source review and the applicable regression/full-suite gate are green.
+- North-American market lookup must reject blank/whitespace/underspecified strings before fuzzy matching; missing/ambiguous locations may not create favorable corridor evidence.
+- Missing deadhead must remain UNKNOWN in **every production intake**, especially Quick Evaluate, trip-draft/parser/inbox paths; explicit numeric `0` must remain distinguishable from missing.
+- The Midwest overlay must be advisory/evidence-only. It may not own a competing grade, verdict, Floor/Win/Ask, `TAKE_IF_LIVE`, or canonical bid range.
+- Service-worker subresource handling must be finite/query-safe and must never return the HTML app shell for failed JavaScript/static-asset requests.
+- Export/portability payload construction must exclude credentials, backup tokens, app-lock secrets, and device-local lockout state from actual local/cloud exports and checksum inputs. Plain SHA-256 is an integrity/corruption check, not authenticated tamper proof.
+- True Profit may not be asserted when operating cost per mile is unavailable; fixed-cost calculations require a defensible mileage denominator and provenance.
+- Vehicle-fit behavior must honor the operator-confirmed **121-inch usable cargo length** unless an explicit operator override with provenance is present.
+- Gary, Indiana must remain Tier 1 as part of the active Chicago/Gary belt doctrine. Canonical/mirror geography must be brought into parity with the active Level X+ authority; source-verified Census representative coordinates have been supplied to the core lane.
+- Trip-store `emptyMiles` zero coercion must be proved safe-by-construction or remediated if any production/import/restore path can turn unknown deadhead into stored numeric `0`. Historical calibration/True RPM may not consume a fabricated zero as verified deadhead.
+
+### Automated/release gate
+
+- The next behavioral candidate must advance governed app/PWA/service-worker identity atomically to at least v24.0.4; DB remains v15 and Worker remains v13 unless their source semantics actually change.
+- Full Playwright/Chromium suite must be green on the exact candidate SHA with negative controls for the new regressions.
+- CI server startup must be deterministic on a cold runner. The current floating `npx http-server` startup path timed out twice before any spec ran on PR #140 and is a tooling-gate defect; red required CI is not to be bypassed.
+- Lane/path/lock checks, static Cloudflare parity, Worker build, backup/export/import integrity, canonical UNKNOWN fixtures, and rollback reference must all be green/current on the exact candidate.
+
+### Evidence gates that remain outside source-only completion
+
+- Real operator historical source bundle rerun remains off-repo and operator-only because the private source files are not committed. Only non-sensitive reconciliation results belong in the public repository.
+- Live production Pages/Worker parity, `/health`, auth-boundary, `/evaluate`, `/extract`, and backup/delta/restore smokes must be observed against the exact final SHA.
+- Finite physical-iPhone checks in `FIELD_TEST_CHECKLIST.md` must pass on the exact final SHA. Prior evidence that the installed PWA was still v23.7.0 remains a real A1 failure until safely re-tested.
+- A later certification-state file may change HOLD only after the proof above exists.
+
+A blocker leaves this list only after exact-current-source review and the applicable regression/full-suite/evidence gate are green.
 
 ## Completion release definition
 
@@ -73,13 +92,13 @@ FreightLogic reaches the named completion release when the cargo-van decision pr
 Required:
 
 - one canonical decision authority;
-- Midwest Stack v11 / Level X+ money, geography, taxonomy, MPG fallback, and UNKNOWN-vs-zero integrity;
+- Midwest Stack v11 / Level X+ money, geography, taxonomy, MPG fallback, cargo-fit, and UNKNOWN-vs-zero integrity;
 - categorical confidence/evidence on material inputs without a second decision engine;
 - stable load lifecycle identity across opportunity, execution, and settlement;
 - durable normalized opportunity evidence with working production manual/email-compatible intake;
 - historical import with provenance and correct lifecycle/calibration denominators;
-- green automated regression suite on the exact release SHA;
-- backup/full-delta/restore/import/export integrity parity;
+- green deterministic automated regression suite on the exact release SHA;
+- backup/full-delta/restore/import/export integrity parity without secret leakage;
 - iPhone/offline field certification;
 - live Cloudflare Pages/Worker parity and authority-boundary verification;
 - named frozen release marker and executable rollback point.
@@ -90,17 +109,18 @@ Not required to freeze the completion release: successful vision-model extractio
 
 Priority: CRITICAL.
 
-Implementation status: **IMPLEMENTED; prior M1 doctrine/money repairs are not current open defects.**
+Implementation status: **IMPLEMENTED; bounded current-source parity corrections are open before final certification.**
 
 Required outcomes remain the regression contract:
 
-- Cincinnati and Toledo Tier 1 across canonical geography/mirrors.
+- Cincinnati, Toledo, and Gary/Chicago-Gary belt Tier-1 doctrine agree across canonical geography and mirrors.
 - Level X+ grade bands: A `>=1.75`, B `1.60–1.74`, C `1.50–1.59`, D `1.40–1.49`, E `1.25–1.39`; ordinary reject `<1.25` outside active DZ.
 - F20/DZ absolute floor exactly `0.90`.
 - Blank/null/non-finite operational mileage/revenue stay UNKNOWN, never zero.
 - Canonical economics/grade/authority become unavailable/provisional when required facts are unknown.
 - Mileage provenance distinguishes `VERIFIED | ESTIMATED | UNKNOWN` and keeps loaded/deadhead/displayed/reposition miles distinct.
 - Approved approximately `17.5 MPG` fallback remains subordinate to an explicit user MPG setting.
+- The operator-confirmed 121-inch usable cargo length is the default fit boundary unless an explicit operator override with provenance exists.
 - Unified Decision Engine remains sole verdict/grade/economics/bid authority; Midwest overlay remains advisory/evidence-only.
 
 Definition of done remains enforced by regression tests and unchanged authority boundaries.
@@ -122,7 +142,7 @@ Required invariant:
 
 Priority: HIGH.
 
-Implementation status: **IMPLEMENTED BUT RE-CERTIFICATION OPEN.**
+Implementation status: **IMPLEMENTED; final exact-candidate re-certification remains open.**
 
 Required behavior:
 
@@ -131,9 +151,9 @@ Required behavior:
 - confidence is descriptive only and cannot alter verdict, grade, True RPM, or canonical bid authority;
 - failed/unavailable sources remain unavailable/LOW rather than becoming zero/no-risk;
 - Worker may explain client-owned labels but may not replace them or require fabricated canonical facts;
-- source provenance must be write-point/observation based rather than inferred from unrelated source-health state;
-- successful zero observations must remain distinguishable from no observation/failure;
-- actual lane/broker/vehicle evidence must reach the confidence path;
+- source provenance is write-point/observation based rather than inferred from unrelated source-health state;
+- successful zero observations remain distinguishable from no observation/failure;
+- actual lane/broker/vehicle evidence reaches the confidence path;
 - persisted evaluations retain a compact secret-free confidence/evidence snapshot while old entries remain readable.
 
 Certification requires exact-current integration tests plus final app/PWA/Worker generation parity.
@@ -142,7 +162,7 @@ Certification requires exact-current integration tests plus final app/PWA/Worker
 
 Priority: HIGH.
 
-Implementation status: **IMPLEMENTED BUT RE-CERTIFICATION OPEN.**
+Implementation status: **IMPLEMENTED; final exact-candidate re-certification remains open.**
 
 Governing contract: `docs/V24_2_LOAD_LIFECYCLE_SPEC.md`.
 
@@ -170,7 +190,7 @@ Non-negotiable rules:
 
 Priority: MEDIUM-HIGH.
 
-Implementation status: **5A NORMALIZATION HELPER IMPLEMENTED BUT DURABILITY OPEN; 5B PRODUCTION MANUAL/EMAIL CALL PATH NOT YET IMPLEMENTED; 5C/5D NON-BLOCKING.**
+Implementation status: **5A DURABLE NORMALIZATION + 5B PRODUCTION MANUAL/EMAIL-COMPATIBLE INTAKE IMPLEMENTED; 5C/5D NON-BLOCKING.**
 
 Approved order:
 
@@ -178,25 +198,23 @@ Approved order:
 
 ### 5A — Normalized opportunity contract
 
-Required:
+Required and implemented foundation:
 
-- one provider-independent normalized shape for manual, email, historical, future vision, and future authorized adapters;
+- one provider-independent normalized shape for manual, email/historical, future vision, and future authorized adapters;
 - provenance distinguishes source type/name, platform, broker/carrier/company where actually known, timestamps/evidence references, price semantic, mileage semantic, health/confidence, and confirmation state;
 - provider evidence remains structurally separate from canonical carrier revenue unless semantics/operator confirmation authorize promotion;
 - unknown remains unknown;
 - external ID alone is not identity;
-- normalized evidence must be durable and auditably linked, not merely returned transiently from a helper;
-- displayed-total mileage, loaded mileage, deadhead mileage, post-delivery reposition mileage, and map estimates must occupy semantically distinct durable fields/evidence rather than a displayed total being stored in a field named `loadedMi`.
+- normalized evidence is durable and auditably linked, not merely returned transiently from a helper;
+- displayed-total mileage, loaded mileage, deadhead mileage, post-delivery reposition mileage, and map estimates occupy semantically distinct durable fields/evidence.
 
-### 5B — Manual/email intake
+### 5B — Manual/email-compatible intake
 
-Current source contains the `intakeOpportunity()` helper, but production-source review found no caller in `app.js`, `voice-load.js`, `admin-driver-ui.js`, `midwest-stack-authority.js`, or `index.html`; current tests call the helper through `window.__FL_TESTS`.
-
-Completion release therefore still requires an actual production call path that normalizes, durably persists, and conservatively lifecycle-links manual/email-compatible evidence while preserving the underlying source reference and offline manual behavior.
+A real production caller is implemented and was covered by the Issue #119 Batch A work. Final certification still requires on-device proof that the shipped path persists provenance/semantics across reload and preserves UNKNOWN-vs-zero behavior.
 
 ### 5C — Vision
 
-Approved track, not a completion-release blocker. Governed by `docs/VISION_LOAD_INGEST_CONTRACT.md`.
+Approved track, **not a completion-release blocker**. Governed by `docs/VISION_LOAD_INGEST_CONTRACT.md`.
 
 When implemented: schema-constrained extraction → deterministic validation → editable draft → explicit operator confirmation → normalized durable intake. No geocoding/hidden route math/bid/verdict/lifecycle inference by the model; no client-side model secret; no delayed overwrite of operator-confirmed data.
 
@@ -208,30 +226,30 @@ Non-blocking. Warp quote evidence retains `SHIPPER_BOOKABLE_PRICE`. 123Loadboard
 
 Priority: MEDIUM-HIGH.
 
-Implementation status: **MACHINERY IMPLEMENTED; REAL-IMPORT/ADAPTER AND DURABILITY RE-CERTIFICATION OPEN.**
+Implementation status: **RECONCILIATION MACHINERY IMPLEMENTED; PRIVATE REAL-BUNDLE RERUN REMAINS OPERATOR-ONLY.**
 
 Inputs remain operator-verified durable source files/evidence; missing row facts may not be reconstructed from AI memory.
 
-Rules:
+Implemented/regression rules remain:
 
 - completed/order history dedups only by an appropriate stable identity proven to represent the same shipment;
 - quote observations never dedup solely by quote ID;
 - later operator-confirmed corrections outrank lower-authority prior values;
 - merged material fields retain auditable provenance;
+- source `Carrier` is not guessed into canonical broker identity;
 - source-displayed mileage/RPM stays semantically distinct from canonical loaded/deadhead/True RPM;
 - quote observations are not completed loads without award/completion evidence;
-- EXPIRED, LOST, CANCELLED, dry-run, live-quote, and other status classes remain distinct;
-- dry runs remain separately represented rather than disappearing into normal-market economics;
+- EXPIRED, LOST, CANCELLED, DRY RUN, live-quote, and other status classes remain distinct;
 - unknown/secondary statuses cannot manufacture award evidence;
 - import fingerprints are bounded, deterministic, collision-resistant, and idempotent;
+- source timestamps retain clock precision and recency uses source observation time rather than import/mutation time;
 - DZ-EXIT remains a separate cohort;
 - ordinary win rate uses `WON / (WON + LOST)`;
 - unknown RPM is excluded, not zero;
 - winning range remains unavailable below the defensible sample floor;
-- recency/sample weighting is deterministic and inspectable;
-- recency must use the source observation timestamp; unknown observation age must not receive full-current weight, and lifecycle import/mutation `updatedAt` must not substitute for market-observation time.
+- recency/sample weighting is deterministic and inspectable.
 
-Raw operator financial/history source CSVs remain outside the public repository unless explicitly authorized. CI uses synthetic fixtures.
+Raw operator financial/history source CSVs remain outside the public repository unless explicitly authorized. CI uses synthetic fixtures. The final real-bundle rerun must be performed against the operator's private source bundle and only non-sensitive reconciliation results recorded publicly.
 
 ## Milestone 7 — Completion release certification
 
@@ -241,17 +259,19 @@ Status: **NOT COMPLETE.**
 
 Automated release-candidate gate:
 
-- full Playwright/Chromium suite green on exact release SHA;
+- full Playwright/Chromium suite green and deterministic on the exact release SHA;
+- lane/path/lock checks green;
 - release/app/SW/manifest/Worker/CSP generation parity green;
 - full + delta backup/restore green;
-- local export/import and integrity checks green for every protected data class;
-- representative Level X+ and UNKNOWN/unavailable fixtures green;
-- no open proof-backed M3–M6 blocker from the certification-state document.
+- local export/import and integrity checks green for every protected data class and secret exclusion;
+- representative Level X+, cargo-fit, market-lookup, and UNKNOWN/unavailable fixtures green;
+- no open proof-backed M1–M6 blocker from the certification-state document.
 
 Field/deployment gate:
 
-- iPhone Safari one-handed decision journey;
+- iPhone Safari one-handed decision journey including Quick Evaluate blank-vs-zero deadhead behavior;
 - offline install/reload/update behavior;
+- production M5B intake durability;
 - representative GPS/background resilience check;
 - live Cloudflare Pages deployment parity;
 - Worker `/health` reachable with expected version/bindings;
@@ -279,13 +299,13 @@ These do not block the completion release unless a newly discovered dependency i
 ## Execution order
 
 0. **Gate 0 — COMPLETE.**
-1. **M1 doctrine/money integrity — IMPLEMENTED; keep regressions green.**
+1. **M1 doctrine/money integrity — IMPLEMENTED; close the bounded v24.0.4 parity/UNKNOWN/cargo-fit corrections and regressions.**
 2. **M2 expense/fuel concurrency — IMPLEMENTED; keep regressions green.**
-3. **M3 Confidence + Evidence — IMPLEMENTED; current-source re-certification repairs required.**
-4. **M4 lifecycle — IMPLEMENTED; current-source re-certification repairs required.**
-5. **M5A normalization helper — IMPLEMENTED but durable evidence incomplete. M5B production manual/email call path — NOT YET IMPLEMENTED. Vision/provider adapters remain non-blocking.**
-6. **M6 historical-import/calibration machinery — IMPLEMENTED; real-import adapter/durability/recency reconciliation required.**
-7. **M7 field + deployment certification — pending corrected release candidate.**
-8. **Freeze completion release only after every release blocker is closed.**
+3. **M3 Confidence + Evidence — IMPLEMENTED; exact final-candidate recertification required.**
+4. **M4 lifecycle — IMPLEMENTED; exact final-candidate recertification required.**
+5. **M5A durable normalization + M5B production intake — IMPLEMENTED; physical durability proof pending. Vision/provider adapters remain non-blocking.**
+6. **M6 historical-import/calibration machinery — IMPLEMENTED; private real operator bundle rerun pending.**
+7. **M7 corrected candidate automated + live + physical certification — pending.**
+8. **Freeze completion release only after every release blocker is closed and a later certification-state record explicitly supersedes HOLD.**
 
 Do not invert this order merely to add more live sources. New data is useful only when canonical math, lifecycle identity, provenance, confidence, ingestion durability, and certification are trustworthy.
