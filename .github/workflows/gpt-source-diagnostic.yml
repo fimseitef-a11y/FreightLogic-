@@ -1,0 +1,49 @@
+name: GPT Source Diagnostic
+
+on:
+  push:
+    branches:
+      - agent/gpt/final-source-integrity
+    paths:
+      - '.github/workflows/gpt-source-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print exact source contexts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app.js')
+          lines = p.read_text(encoding='utf-8').splitlines()
+          needles = [
+              'emptyMiles: posNum',
+              'USA_MARKETS',
+              'const MW',
+              'tier1:',
+              "APP_VERSION =",
+              'function sanitizeTrip',
+              'function usaLookupMarket',
+              'function naLookupMarket',
+          ]
+          print(f'app.js lines={len(lines)}')
+          for needle in needles:
+              hits = [i for i, line in enumerate(lines) if needle in line]
+              print(f'\n=== {needle!r}: hits={len(hits)} ===')
+              for i in hits[:12]:
+                  lo=max(0,i-8); hi=min(len(lines),i+12)
+                  print(f'--- context around line {i+1} ---')
+                  for j in range(lo,hi):
+                      print(f'{j+1:05d}: {lines[j]}')
+          print('\n=== candidate regression files ===')
+          for f in sorted(Path('tests').rglob('*.mjs')):
+              text=f.read_text(encoding='utf-8', errors='replace')
+              if any(n in text for n in ['Gary', 'emptyMiles', 'v2404', 'deadhead']):
+                  print(f)
+          PY
