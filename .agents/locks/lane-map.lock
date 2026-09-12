@@ -1,6 +1,0 @@
-owner: gpt
-token: 5c60cf69-b78e-4852-b691-0d918c2e02f4
-started_utc: 2026-09-12T05:31:00Z
-expected_release_utc: 2026-09-12T06:20:00Z
-paths: .agents/LANES.md
-task: Temporary operator-directed exact-path reassignment to repair the live backup/API Worker production-origin contract, advance Worker v14, align verifier/tests/docs, then restore normal ownership after a green merge.
