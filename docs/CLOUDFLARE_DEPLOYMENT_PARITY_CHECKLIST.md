@@ -1,120 +1,130 @@
 # Cloudflare Deployment Parity Checklist
 
-Purpose: prove that the **production** Cloudflare deployment serves the exact FreightLogic completion candidate. A preview deployment or green repository CI is useful evidence, but neither is production parity.
+Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI or a successful Cloudflare build is not enough by itself.
 
-Current source/runtime candidate:
+Current candidate:
 
-- source/tooling evidence head: `556f5b0141cf658ba76a8ed32105e5bf9258bb20`;
-- app / PWA / service worker generation: **24.0.5**;
+- app / PWA / service worker: **24.0.5**;
 - IndexedDB schema: **15**;
-- Worker generation: **13**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-11.md`;
-- certification status: **HOLD — live production and physical/private evidence remain.**
+- backup/API Worker source: **14**;
+- production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
+- backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`;
+- status: **HOLD**.
 
-The automated source gate is green at **372 passed / 0 failed across 40 spec files**, with lane/path/lock enforcement green. This checklist is therefore about live deployment evidence, not another source-development milestone.
+Important: `https://freightlogic.pages.dev` was probed on 2026-09-12 and did not resolve. It is a legacy/stale origin, not the production app origin. Do not use it as the default certification target.
 
-## 1. Establish the exact deployment
+## 1. Exact app deployment
 
-Record before testing:
+Record:
 
-- GitHub `main` SHA deployed to production;
-- production Pages/app origin;
-- production Worker origin;
-- deployment timestamp/identifier where available;
-- rollback SHA chosen for this candidate.
+- GitHub `main` SHA;
+- Cloudflare production build/version identifier;
+- production app origin;
+- production backup/API Worker origin;
+- rollback SHA.
 
-Do not treat a branch/commit preview URL as production. If production cannot be reached from the verification environment, record the gate as `UNOBSERVED`/`NOT RUN`, not PASS.
+The 2026-09-12 live probe already observed the v24.0.5 app at `freightlogic-v2.fimseitef.workers.dev` and passed the app/PWA/static checks. Repeat after any later source change.
 
-## 2. Pages / PWA generation
+## 2. App / PWA generation
 
-Production must serve the v24.0.5 generation consistently:
+PASS requires production to serve:
 
 - `app.js?v=24.0.5`;
 - `voice-load.js?v=24.0.5`;
 - `sw-bridge.js?v=24.0.5`;
 - `midwest-stack-authority.js?v=24.0.5`;
-- `manifest.json?v=24.0.5` with matching visible version/name metadata;
-- `service-worker.js` declaring `SW_VERSION = '24.0.5'`;
-- bundled `vendor/xlsx.full.min.js` available with no CDN fallback;
-- icons/static assets available;
-- no failed JavaScript/static request answered with the HTML app shell;
-- old app-shell caches retired after normal worker activation/update;
-- offline reopen works after an online install/load.
+- `manifest.json?v=24.0.5` identifying `FreightLogic v24.0.5`;
+- `service-worker.js` with `SW_VERSION = '24.0.5'`;
+- bundled `vendor/xlsx.full.min.js`;
+- matching CSP/security headers;
+- no failed JavaScript/static request answered with HTML shell fallback.
 
-Security checks:
+The 2026-09-12 production probe passed these checks for v24.0.5.
 
-- production `_headers` policy is present;
-- `index.html` CSP meta and deployed CSP header are consistent with the source contract;
-- no unexpected cross-origin API response is cached by the service worker.
+## 3. Worker v14 live checks
 
-## 3. Canonical decision boundary
+Expected backup/API Worker source generation: **14**.
 
-Use non-sensitive fixtures.
+PASS requires:
 
-Pass requires:
+- `GET /health` returns HTTP 200 and JSON with `version: "14"`;
+- no-origin fallback and requests from `https://freightlogic-v2.fimseitef.workers.dev` receive the real production app origin in `Access-Control-Allow-Origin`;
+- unauthorized admin requests are denied;
+- unauthorized driver/evaluate/extract/backup requests are denied;
+- authenticated `/evaluate` preserves canonical available and `UNAVAILABLE` decisions;
+- `/extract`, when enabled, returns bounded evidence only;
+- authenticated full backup, delta backup, and restore smoke paths succeed without changing the data/authority contract;
+- no token or secret is exposed in client-visible output.
 
-- canonical verdict, grade, True RPM/economics, and bid range originate from the client-owned Unified Decision Engine;
-- the Midwest overlay remains advisory only;
-- a complete canonical decision projects through Worker `/evaluate` without a competing recalculation;
-- an incomplete/`UNAVAILABLE` canonical decision stays unavailable: no fabricated `REJECT`, `F`, numeric zero True RPM, or `$0` bid;
-- missing deadhead remains UNKNOWN while explicit `0` remains a known zero;
-- blank/underspecified market text does not fabricate a favorable market/corridor;
-- Gary, Indiana resolves as the intended U.S. Midwest Tier-1 market, not Calgary;
-- default cargo-fit behavior uses the 121-inch usable-length boundary unless an explicit provenance-bearing override exists;
+### Current observed Worker state
+
+The 2026-09-12 production probe found:
+
+- `/admin/users` without token -> 401: **PASS**;
+- `/health` -> 401 `Missing token`: **FAIL**;
+- response CORS `*`: inconsistent with current source.
+
+That response proves the deployed backup/API Worker is stale/different from the current repository Worker contract. Worker v14 must be deployed through the actual backup-Worker deployment path before this section can pass.
+
+## 4. Canonical authority smoke
+
+Use non-sensitive fixtures only.
+
+PASS requires:
+
+- canonical verdict, grade, True RPM/economics, and bid range remain client-owned;
+- Midwest overlay remains advisory;
+- an incomplete canonical decision remains `UNAVAILABLE` with unknown grade, null True RPM, and no invented bid;
+- missing deadhead remains UNKNOWN while explicit `0` remains real zero;
+- blank/underspecified market text cannot manufacture favorable geography;
+- Gary, Indiana stays the intended U.S. Midwest Tier-1 market;
+- 121-inch default cargo boundary remains enforced;
 - precise True Profit is not asserted without defensible cost/mileage inputs.
-
-## 4. Worker v13 live checks
-
-Expected Worker source generation: **13**.
-
-Observe:
-
-- `GET /health` returns healthy status and version `13`;
-- admin routes deny requests without the admin credential;
-- driver/evaluate/extract/backup routes enforce their required auth boundary;
-- authenticated `/evaluate` preserves canonical available and unavailable decisions;
-- `/extract`, when deployed/enabled, returns bounded evidence only and does not invent verdict/bid/lifecycle state;
-- backup/full-delta/restore smoke paths work with the expected authenticated user/device envelope;
-- `OPTIONS`/CORS behavior matches the configured app origin;
-- no token/secret is exposed in client-visible output.
 
 ## 5. Lifecycle / evidence durability
 
-With synthetic records only, verify the deployed app preserves the already-tested source contract:
+With synthetic data:
 
-- manual/email-compatible opportunity intake persists normalized evidence before linkage;
-- provenance, source timestamps, mileage semantics, and price semantics survive reload;
-- external IDs do not become internal identity;
-- non-carrier prices do not become canonical revenue without allowed semantics/operator confirmation;
-- UNKNOWN mileage/deadhead does not become zero;
-- lifecycle state remains conservative unless evidence supports progression;
-- full backup + delta + restore and local export/import preserve lifecycle/evidence without duplication or downgrade;
-- produced portability export excludes tokens, PIN material, and device-local lockout state.
+- manual/email-compatible intake persists normalized evidence before linkage;
+- provenance, source times, mileage semantics, and price semantics survive reload;
+- external IDs never become destructive internal identity;
+- non-carrier prices do not become canonical revenue without allowed evidence;
+- UNKNOWN mileage/deadhead never becomes zero;
+- lifecycle progression remains evidence-backed;
+- full backup + deltas + restore preserve protected records without downgrade/duplication;
+- local export/import preserves lifecycle/evidence and excludes credentials/PIN/lockout state.
 
 ## 6. Automated helpers
 
-Against the exact candidate source:
+Source-side:
 
-- `node tests/run-all.mjs` — must be green;
-- `node scripts/verify-cloudflare-parity.mjs --static-only` — local/static parity only;
-- `node scripts/m7-certify.mjs --suite` — automated preflight/full-suite evidence; while the canonical state is HOLD it must report NOT CERTIFIABLE rather than pretending live/device gates passed;
-- `node scripts/verify-cloudflare-parity.mjs` — live Pages/Worker checks from an environment that can reach the deployed origins;
-- `FL_BACKUP_TOKEN=... node scripts/verify-live-authority.mjs` — free live authority checks where supported; add `--paid` only when explicitly appropriate for quota-spending extract checks.
+- `node tests/run-all.mjs`
+- `node scripts/verify-cloudflare-parity.mjs --static-only`
+- `node scripts/m7-certify.mjs --suite`
 
-A network/proxy inability to reach production is **UNOBSERVED**, not product failure and not PASS.
+Live production, from a network that can reach Cloudflare:
 
-## 7. Production parity result
+- `node scripts/verify-cloudflare-parity.mjs`
 
-Record each item as `PASS`, `FAIL`, or `NOT RUN/UNOBSERVED` with the exact production SHA and evidence.
+The live verifier now defaults to the real app origin `freightlogic-v2.fimseitef.workers.dev` and backup/API Worker origin `freightlogic-backup.fimseitef.workers.dev`.
 
-The live gate is complete only when:
+Authenticated authority checks when a valid non-published driver token is available:
 
-- production is tied to the exact intended `main` candidate;
-- all app/PWA/service-worker markers are v24.0.5;
-- Worker health is version 13;
-- security/auth boundaries pass;
-- canonical available/unavailable authority smokes pass;
-- backup/delta/restore and relevant extraction smokes pass;
-- the result is recorded against the same candidate used for the physical iPhone checklist.
+- `FL_BACKUP_TOKEN=... node scripts/verify-live-authority.mjs`
+- add `--paid` only when explicitly appropriate for quota-spending extraction checks.
 
-Only after this live gate, the private-history reconciliation, and the blocking iPhone checks all pass may a new certification-state record supersede the 2026-09-11 HOLD.
+Network inability is `UNOBSERVED`, not PASS and not product failure.
+
+## 7. Completion rule
+
+Live Cloudflare parity is complete only when the same named candidate has:
+
+- production app/PWA v24.0.5 parity PASS;
+- backup/API Worker v14 `/health` and CORS parity PASS;
+- auth boundaries PASS;
+- canonical `/evaluate`/`/extract` checks PASS where applicable;
+- authenticated backup/delta/restore smoke PASS;
+- rollback evidence recorded.
+
+Only after this live gate, the real private-history reconciliation, and the physical iPhone checklist all pass may a later certification-state document clear HOLD.
