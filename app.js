@@ -3535,6 +3535,8 @@ async function importJSON(file, opts={}){
       // through import — a settings key the app writes but the importer drops
       // is the same class of gap as X-07.
       'vehicleProfiles','activeVehicleId','vanProfile',
+      // Pickup-feasibility planning speed (operator override; see checkPickupFeasibility)
+      'pickupPlanningSpeedMph',
       // Issue #119 Batch A, item 7 — fuel-price provenance
       'fuelPriceProvenance']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
@@ -9782,6 +9784,91 @@ function checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, profile){
   return { fits: violations.length === 0, violations };
 }
 
+/** Planning average for deadhead drive time, mph. A cargo van door-to-door on
+ *  interstates including fuel, traffic and the walk-in at both ends — NOT a
+ *  highway cruise figure. The direction of error matters here: this gate only
+ *  ever BLOCKS, so an optimistic speed lets an unreachable pickup through,
+ *  which is the exact defect it exists to catch. Override per operator with
+ *  settings['pickupPlanningSpeedMph']. */
+const PICKUP_PLANNING_SPEED_MPH = 55;
+
+/** Can this load's pickup physically be reached before its cutoff?
+ *
+ *  Deadhead miles ARE the distance to the pickup, so no new position model is
+ *  needed — `estimateDeadheadFromGPS()` already resolves current position and
+ *  applies the same 1.3x road multiplier used everywhere else. The only fact
+ *  this gate adds is when the pickup window closes.
+ *
+ *  UNKNOWN IS NEVER A BLOCK. This is a deliberate inversion of the fail-closed
+ *  rule that governs money facts, and the reason is that the two failures are
+ *  not symmetric. For revenue or True RPM an unknown must never become a
+ *  confident number, because the cost of a fabricated number is a bad booking.
+ *  Here the gate only ever REMOVES an option, so an unknown must never become a
+ *  refusal: most postings state no cutoff at all, and a load with no stated
+ *  cutoff is not an impossible load. Blocking on absence would make the
+ *  evaluator refuse nearly everything. `checkVanFit()` takes the same posture
+ *  when no dimensions are entered.
+ *
+ *  Returns `known:false` with a machine-readable `reason` when it cannot judge,
+ *  so callers and evidence can record "not assessed" distinctly from "fine". */
+function checkPickupFeasibility({ deadheadMi, pickupByMs, nowMs, speedMph }){
+  const base = { known: false, feasible: null, requiredMin: null, availableMin: null, slackMin: null, deadheadMi: null, speedMph: null };
+  const dh  = knownNum(deadheadMi);
+  const by  = knownNum(pickupByMs);
+  const now = knownNum(nowMs);
+  const mph = knownNum(speedMph);
+
+  if (dh === null)  return { ...base, reason: 'DEADHEAD_UNKNOWN' };
+  if (dh < 0)       return { ...base, reason: 'DEADHEAD_INVALID' };
+  if (by === null)  return { ...base, reason: 'NO_CUTOFF' };
+  if (now === null) return { ...base, reason: 'NO_CLOCK' };
+  if (mph === null || !(mph > 0)) return { ...base, reason: 'NO_SPEED' };
+
+  const availableMin = (by - now) / 60000;
+  const requiredMin  = (dh / mph) * 60;
+  const slackMin     = availableMin - requiredMin;
+  const feasible     = slackMin >= 0;
+
+  return {
+    known: true,
+    feasible,
+    reason: feasible ? 'FEASIBLE' : (availableMin <= 0 ? 'CUTOFF_PASSED' : 'NOT_ENOUGH_TIME'),
+    requiredMin: Math.round(requiredMin),
+    availableMin: Math.round(availableMin),
+    slackMin: Math.round(slackMin),
+    deadheadMi: dh,
+    speedMph: mph,
+  };
+}
+
+/** Renders the blocking "CAN'T MAKE PICKUP" card. Mirrors _renderVanFitBlock:
+ *  the load is refused on physics before any economics are computed, so no
+ *  grade, True RPM or bid is ever shown for a load that cannot be served. */
+function _renderPickupBlock(out, r){
+  const fmtMin = (m) => {
+    const a = Math.abs(m), h = Math.floor(a / 60), mm = Math.round(a % 60);
+    return (h ? `${h}h ${mm}m` : `${mm}m`);
+  };
+  const headline = r.reason === 'CUTOFF_PASSED'
+    ? 'The pickup window has already closed.'
+    : `Short by about ${escapeHtml(fmtMin(r.slackMin))}.`;
+  out.innerHTML = `
+    <div style="border:1px solid var(--bad);border-radius:12px;padding:14px;background:var(--surface-1)">
+      <div style="font-weight:800;color:var(--bad);font-size:16px;margin-bottom:6px">CAN'T MAKE PICKUP</div>
+      <div style="font-size:13px;margin-bottom:10px">${headline}</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border-subtle)">
+        <span>Drive time needed</span><span><b>${escapeHtml(fmtMin(r.requiredMin))}</b> for ${r.deadheadMi} mi @ ${r.speedMph} mph</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0">
+        <span>Time until cutoff</span><span><b style="color:var(--bad)">${escapeHtml(fmtMin(r.availableMin))}</b></span>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:10px">
+        Economics were not computed — a load that cannot be reached has no rate worth grading.
+        Clear the pickup cutoff to evaluate it anyway.
+      </div>
+    </div>`;
+}
+
 /** Renders the blocking "CAN'T TAKE" card in place of the normal evaluator
  *  result — called by mwEvaluateLoad() before any economics computation
  *  when checkVanFit() fails. */
@@ -9870,6 +9957,35 @@ async function mwEvaluateLoad(){
       vanFitState = { checked: true, complete: knownDims === dims.length, knownDims, fits: fit.fits };
       if (!fit.fits){
         _renderVanFitBlock(out, fit.violations);
+        return;
+      }
+    }
+  }
+
+  // ── Physical pickup feasibility (operator dataset, quote 1079840) ──────────
+  // A 225-mile deadhead against a same-day 19:00 cutoff was observed and scored
+  // normally; it could not be reached from where the operator actually was. A
+  // load that cannot be served has no rate worth grading, so this runs with the
+  // van-fit gate, BEFORE any economics — same reason: refuse on physics first.
+  //
+  // Deliberately evaluated only when the operator supplies a cutoff. See
+  // checkPickupFeasibility() for why an unknown here must never become a block.
+  let pickupFeasibility = { known: false, feasible: null, reason: 'NOT_ASSESSED' };
+  {
+    const rawCutoff = ($('#mwPickupBy')?.value || '').trim();
+    if (rawCutoff){
+      // datetime-local has no timezone: the browser parses it in the operator's
+      // own local zone, which is the zone the posting's cutoff was written in.
+      const cutoffMs = new Date(rawCutoff).getTime();
+      const speedMph = posNum(await getSetting('pickupPlanningSpeedMph', null), PICKUP_PLANNING_SPEED_MPH) || PICKUP_PLANNING_SPEED_MPH;
+      pickupFeasibility = checkPickupFeasibility({
+        deadheadMi: deadMi,
+        pickupByMs: Number.isFinite(cutoffMs) ? cutoffMs : null,
+        nowMs: Date.now(),
+        speedMph,
+      });
+      if (pickupFeasibility.known && !pickupFeasibility.feasible){
+        _renderPickupBlock(out, pickupFeasibility);
         return;
       }
     }
@@ -20564,6 +20680,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
+    checkPickupFeasibility, PICKUP_PLANNING_SPEED_MPH,
     // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
     naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
     parseLoadTextEnhanced, parseLoadTextForInbox,

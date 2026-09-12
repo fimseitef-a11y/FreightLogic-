@@ -447,6 +447,86 @@ test('[7D] checkVanFit passes a load comfortably within every dimension and payl
   eq(r.fits, true, 'a load well within every limit must not be blocked: ' + JSON.stringify(r.violations));
 });
 
+// ── Pickup feasibility (operator dataset 2026-09-12) ────────────────────────
+
+const feas = (args) => app.page.evaluate((a) => window.__FL_TESTS.checkPickupFeasibility(a), args);
+const MIN = 60000;
+
+test('[PF-01] an unknown fact is never a block — it reports not-assessed instead', async () => {
+  // This gate only ever REMOVES an option, so it must fire on evidence and never
+  // on the absence of it. Most postings state no cutoff at all; refusing those
+  // would make the evaluator useless. Deliberate inversion of the fail-closed
+  // rule that governs money facts, where an unknown must never become a
+  // confident number.
+  const now = Date.now();
+  const cases = {
+    noCutoff:       { deadheadMi: 200, pickupByMs: null, nowMs: now, speedMph: 55 },
+    unknownDh:      { deadheadMi: null, pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 55 },
+    blankDh:        { deadheadMi: '   ', pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 55 },
+    noClock:        { deadheadMi: 200, pickupByMs: now + 60 * MIN, nowMs: null, speedMph: 55 },
+    zeroSpeed:      { deadheadMi: 200, pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 0 },
+  };
+  for (const [name, args] of Object.entries(cases)) {
+    const r = await feas(args);
+    eq(r.known, false, `${name}: must report not-assessed`);
+    eq(r.feasible, null, `${name}: feasible must be null, never false — an unknown is not a refusal`);
+    ok(typeof r.reason === 'string' && r.reason.length > 0, `${name}: must name why it could not judge`);
+  }
+});
+
+test('[PF-02] a verified zero deadhead is assessed, not treated as unknown', async () => {
+  // The UNKNOWN-vs-explicit-zero distinction this codebase enforces everywhere:
+  // standing at the pickup is a real fact and must still be evaluated.
+  const now = Date.now();
+  const r = await feas({ deadheadMi: 0, pickupByMs: now + 30 * MIN, nowMs: now, speedMph: 55 });
+  eq(r.known, true, 'a verified zero deadhead is a known fact and must be assessed');
+  eq(r.feasible, true, 'zero miles to drive is always reachable while the window is open');
+  eq(r.requiredMin, 0, 'no distance means no drive time');
+});
+
+test('[PF-03] blocks the operator load that could not be reached (quote 1079840)', async () => {
+  // Real observation, 2026-09-04: West Plains MO -> Overland Park KS, 225 mi of
+  // deadhead against a same-day 19:00 cutoff. It scored normally at the time.
+  const now = Date.now();
+  const r = await feas({ deadheadMi: 225, pickupByMs: now + 120 * MIN, nowMs: now, speedMph: 55 });
+  eq(r.known, true, 'both facts are present, so it must be judged');
+  eq(r.feasible, false, '225 mi at 55 mph needs ~245 min and only 120 min remain');
+  eq(r.reason, 'NOT_ENOUGH_TIME', 'the window is still open, it is simply too far');
+  eq(r.requiredMin, 245, 'required drive time must be reported exactly');
+  eq(r.availableMin, 120, 'available time must be reported exactly');
+  ok(r.slackMin < 0, 'slack must be negative on an infeasible pickup: ' + r.slackMin);
+});
+
+test('[PF-04] a cutoff already in the past is distinguished from merely too far', async () => {
+  const now = Date.now();
+  const r = await feas({ deadheadMi: 10, pickupByMs: now - 5 * MIN, nowMs: now, speedMph: 55 });
+  eq(r.feasible, false, 'a closed window cannot be met');
+  eq(r.reason, 'CUTOFF_PASSED', 'a closed window is a different fact from an unreachable distance, and must read as one');
+});
+
+test('[PF-05] the feasible boundary is exact and inclusive', async () => {
+  // 55 mi at 55 mph is exactly 60 minutes. Exactly-enough time must pass.
+  const now = Date.now();
+  const exact = await feas({ deadheadMi: 55, pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 55 });
+  eq(exact.feasible, true, 'exactly enough time must be feasible, not rejected off-by-one');
+  eq(exact.slackMin, 0, 'slack at the boundary is zero');
+
+  const oneLess = await feas({ deadheadMi: 55, pickupByMs: now + 59 * MIN, nowMs: now, speedMph: 55 });
+  eq(oneLess.feasible, false, 'one minute short must be infeasible — the boundary must actually bite');
+});
+
+test('[PF-06] the planning speed is conservative and configurable', async () => {
+  const dflt = await app.page.evaluate(() => window.__FL_TESTS.PICKUP_PLANNING_SPEED_MPH);
+  eq(dflt, 55, 'default planning speed');
+  ok(dflt <= 60, 'the default must not be an optimistic cruise figure: this gate only blocks, so an inflated speed lets an unreachable pickup through');
+  // A slower operator-configured speed must make a marginal load infeasible.
+  const now = Date.now();
+  const at55 = await feas({ deadheadMi: 55, pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 55 });
+  const at45 = await feas({ deadheadMi: 55, pickupByMs: now + 60 * MIN, nowMs: now, speedMph: 45 });
+  eq(at55.feasible, true, 'feasible at the default speed');
+  eq(at45.feasible, false, 'a configured slower speed must actually change the outcome');
+});
+
 export async function runSpec() {
   app = await launchApp();
   try {
