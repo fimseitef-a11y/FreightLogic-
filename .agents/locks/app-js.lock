@@ -1,6 +1,0 @@
-owner: claude
-token: 3b81d5c0-6e4a-41f7-9d2b-8ac03f5e1729
-started_utc: 2026-09-12T06:50:00Z
-expected_release_utc: 2026-09-12T08:30:00Z
-paths: app.js, index.html
-task: Physical pickup-feasibility gate (operator data, quote 1079840). Blocks bidding on a load whose pickup cutoff cannot be reached from the current deadhead distance. Operator-approved. Full suite required before merge.
