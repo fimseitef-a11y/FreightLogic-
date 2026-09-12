@@ -1,366 +1,135 @@
 # FreightLogic Field Test Checklist
 
-Purpose: the finite **Milestone 7 physical-device certification gate** for the named FreightLogic completion release, plus a separate long-horizon resilience watch list.
+Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-03.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-11.md`.
 
-The automated suite must already be green on the exact release-candidate SHA before the blocking device checks below are treated as certification evidence. Do not mark a field check passed from an emulator, desktop browser, AI description, or an old app generation.
+Current candidate: **FreightLogic v24.0.5 / IndexedDB v15 / Worker v13**. The automated/source gate is already green at **372 passed / 0 failed across 40 spec files** with lane/path/lock enforcement green. Do not convert automated evidence into a physical-device PASS.
 
-The merged v24.0.3 generation is **not** the final candidate. Run blocking checks only after the bounded corrective generation is merged, its exact automated gate is green, and the candidate SHA/version are recorded below.
+Before testing, record the exact production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
-## Record before testing
+Use synthetic/non-sensitive records where practical. Do **not** delete the installed PWA or clear Safari website data merely to make an update test pass; those actions can erase local IndexedDB evidence.
 
-For the candidate being tested, record:
+## A1. Safe install / update / launch identity
 
-- candidate Git SHA;
-- live FreightLogic URL/origin;
-- app/PWA version displayed by the candidate;
-- Diagnostics install identity / service-worker generation where exposed;
-- Worker `/health` version reported by the candidate deployment;
-- iPhone model;
-- iOS version;
-- whether testing from Safari tab or installed Home Screen PWA.
+1. Record Diagnostics/install identity before changing anything.
+2. Open the exact production candidate in Safari.
+3. Launch the existing Home Screen app, or install only if it is not already present.
+4. Close/reopen online and verify the candidate generation.
+5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 
-Use non-sensitive synthetic/test entries where possible. Do not put private financial/history source files into screenshots or issue comments. Do **not** delete the installed PWA or clear Safari website data merely to make an update test pass; those actions can erase local IndexedDB evidence.
+PASS requires v24.0.5 to become the active app generation without blank shell, reload loop, startup error, lost local data, or destructive website-data clearing. Prior evidence that the installed app was v23.7.0 remains an unresolved A1 observation until this exact check passes.
 
----
+## A2. Full Evaluate + Quick Evaluate UNKNOWN versus explicit zero
 
-# A. Completion-release blocking device checks
+Use one harmless synthetic load.
 
-These are the representative iPhone/offline/GPS checks required by Milestone 7. They are intentionally finite; the week-long observations later in this file are useful resilience evidence but are not a reason to hold a technically ready release candidate for eight days.
+- With complete facts and explicit deadhead, full Evaluate and Quick Evaluate should produce coherent canonical economics/grade/verdict.
+- Repeat with deadhead blank/unstated in both paths.
+- Repeat with deadhead explicitly `0`.
 
-## A1. Install, launch, reload, and safe update path
+PASS requires missing deadhead to remain UNKNOWN/UNAVAILABLE with no invented numeric True RPM, grade, verdict, or bid; explicit `0` remains a real known zero. Quick Evaluate must not score a load that full Evaluate correctly refuses because deadhead is unknown.
 
-**Steps**
+## A3. Production opportunity intake durability
 
-1. Record Diagnostics/install identity before changing anything on the existing installation.
-2. Open the exact release-candidate production deployment in iPhone Safari.
-3. Add FreightLogic to the Home Screen only if it is not already installed.
-4. Launch from the Home Screen.
-5. Reload/reopen once while online.
-6. Close the app fully, reopen it, and verify the same candidate generation is active.
-7. If this candidate is replacing an older installed generation, use the normal non-destructive update flow and verify it reaches the new generation rather than serving stale cached `app.js`/service-worker assets.
+Create one synthetic manual/email-compatible opportunity through the shipped UI, including provenance and a clearly non-carrier amount semantic where available. Close the app, reopen, and inspect it.
 
-**Pass**
+PASS requires the evidence and provenance to survive reload, non-carrier money not to become canonical revenue, unknown mileage/deadhead to stay unknown, and lifecycle state to remain conservative unless evidence supports progression.
 
-- app opens without startup error;
-- no blank/stuck shell;
-- expected candidate version is visible/diagnosable;
-- existing local data remains present;
-- installed PWA does not remain on an older cache generation after the documented update flow;
-- no repeated reload loop occurs.
+## A4. Offline round trip
 
-**Fail**
-
-- old generation remains active after the documented update path;
-- blank shell, repeated reload loop, startup error, or missing existing local data;
-- update requires destructive website-data clearing to appear successful.
-
----
-
-## A2. Full Evaluate + Quick Evaluate UNKNOWN-vs-zero integrity
-
-Use the same harmless synthetic cargo-van load in both entry points.
-
-**Steps**
-
-1. Enter a normal candidate with all required material facts, including an explicit deadhead value, in the full evaluator and record the result.
-2. Repeat the same complete load through **Quick Evaluate** and confirm the canonical economics/grade/verdict are consistent for the same facts.
-3. In the full evaluator, repeat with deadhead **blank**.
-4. In Quick Evaluate, submit equivalent text with **no deadhead supplied at all**.
-5. Repeat both flows with deadhead explicitly entered as **0**.
-
-**Pass**
-
-- complete equivalent inputs produce coherent canonical decision surfaces;
-- blank/unknown deadhead produces `UNAVAILABLE`/request-for-input behavior in **both** full Evaluate and Quick Evaluate and does not manufacture a numeric True RPM, grade, verdict, or bid;
-- Quick Evaluate does not silently populate a missing deadhead with `0`;
-- explicit `0` remains a known zero and is not treated as blank;
-- Confidence/Evidence remains descriptive and does not replace the canonical verdict/grade/economics/bid.
-
-**Fail**
-
-- blank/missing deadhead becomes zero in either path;
-- Quick Evaluate accepts/scores a load that the full evaluator correctly refuses because deadhead is unknown;
-- unknown load shows fabricated `REJECT`, `F`, `$0.00`, numeric True RPM, or a bid range;
-- AI/Worker/overlay output replaces the client-owned canonical fields.
-
----
-
-## A3. Production manual/email-compatible intake survives reload
-
-**Steps**
-
-1. From the shipped driver-facing intake surface, create one synthetic opportunity manually (or through the shipped email-compatible intake path).
-2. Include an external amount whose semantic is **not carrier payout** (for example a clearly labelled shipper/bookable or target price if the UI supports that semantic).
-3. Save/confirm through the real production path.
-4. Close the app completely and reopen it.
-5. Reopen the opportunity/evidence details.
-
-**Pass**
-
-- opportunity still exists after reload;
-- source/provenance and price/mileage semantics still exist;
-- a non-carrier price has **not** become canonical carrier revenue;
-- unknown deadhead/mileage stays unknown rather than becoming zero;
-- lifecycle state is conservative (normally `SEEN`/equivalent unless explicit evidence justified a later state).
-
-**Fail**
-
-- evidence exists only until reload;
-- source timestamp/provenance disappears;
-- shipper/target/bid money becomes operator revenue;
-- missing mileage becomes zero;
-- intake silently creates `WON`, `DELIVERED`, or `PAID` without evidence.
-
----
-
-## A4. Offline full-use round trip
-
-**Steps**
-
-1. While online, confirm the PWA is fully loaded on the exact candidate.
+1. Load the exact candidate online.
 2. Enable Airplane Mode.
-3. Create/edit representative local data: one synthetic trip/opportunity, one expense or fuel entry, and one lifecycle/status action available in the shipped UI.
-4. Close and reopen FreightLogic while still offline.
-5. Confirm the offline entries remain.
-6. Disable Airplane Mode and reopen once more.
+3. Create/edit representative synthetic local data.
+4. Close/reopen while offline.
+5. Reconnect and reopen again.
 
-**Pass**
+PASS requires offline launch, durable offline saves, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback.
 
-- installed app launches offline;
-- offline saves persist across close/reopen;
-- reconnect does not duplicate, erase, or mutate the offline records;
-- no permanent reconnect/error spinner remains;
-- JavaScript/static assets execute normally rather than receiving the HTML app shell as a fallback.
+## A5. Local export/import + secret exclusion
 
-**Fail**
+Using synthetic data, export the shipped portability payload and restore/import it through the supported path.
 
-- app cannot launch offline after prior installation;
-- data disappears on offline reopen or reconnect;
-- duplicates appear after reconnect;
-- unknown values are silently filled during reconnect;
-- any script/static-resource failure is masked by returning HTML as the asset.
-
----
-
-## A5. Local export/import round trip + secret exclusion
-
-Use synthetic/non-sensitive records.
-
-**Steps**
-
-1. Create or identify a small test set containing at least a trip, expense/fuel item, lifecycle row, and normalized opportunity evidence.
-2. Run the shipped local export/backup action.
-3. Preserve the exported test file.
-4. Inspect the test export only for expected public field names; do not publish real secrets.
-5. Use the shipped import/restore path on a disposable test profile/state or after otherwise making the test safe to restore.
-6. Reopen the restored records.
-
-**Pass**
-
-- protected data classes round-trip intact;
-- lifecycle/evidence semantics and provenance survive;
-- missing deadhead stays missing;
-- backup/API credentials, app-lock PIN/secrets, and device-local lockout state are absent from the produced portability payload;
-- integrity/checksum validation accepts the untouched export and rejects a deliberately corrupted test payload when the UI/tooling exposes that check;
-- UI/docs describe plain SHA-256 as an integrity/corruption check rather than authenticated tamper proof;
-- no duplicate lifecycle/evidence rows are created by an idempotent re-import where the contract says they should dedupe.
-
-**Fail**
-
-- lifecycle/evidence is absent after restore;
-- provenance/semantic fields disappear;
-- unknown mileage becomes zero;
-- any credential/PIN/lockout secret appears in the export;
-- export says success but imported protected data differs materially.
-
----
+PASS requires trips/expense-or-fuel/lifecycle/evidence/provenance to round-trip; UNKNOWN deadhead stays unknown; credentials, backup tokens, PIN material, and device-local lockout state are absent; an untouched protected export validates and a deliberately corrupted synthetic payload is rejected where the integrity check is exposed.
 
 ## A6. Real-device GPS background resilience
 
-**Steps**
+Start a test GPS trip, move a representative distance, background/lock the iPhone for at least 10 minutes, return, and stop/save.
 
-1. Start GPS trip tracking.
-2. Drive/move a representative distance.
-3. Background the app or lock the iPhone for at least 10 minutes during the trip.
-4. Return to FreightLogic.
-5. Complete/stop the test trip.
-
-**Pass**
-
-- trip remains active or resumes through the intended recovery path;
-- mileage is plausible for the movement actually made;
-- any degraded/incomplete tracking state is explicitly labelled rather than shown as confidently precise.
-
-**Fail**
-
-- tracking silently stops with no recovery state;
-- mileage resets to zero or is wildly wrong without warning;
-- orphaned trip cannot be recovered through the shipped path.
-
----
+PASS requires the session to survive or recover through the intended path and mileage to remain plausible or explicitly labelled degraded/incomplete rather than falsely precise.
 
 ## A7. GPS permission loss mid-trip
 
-**Steps**
+Start a test trip, revoke location permission in iOS Settings, return to FreightLogic, and stop/review the trip.
 
-1. Start a test GPS trip.
-2. Revoke location permission in iOS Settings while the trip is active.
-3. Return to FreightLogic and then stop/review the trip.
+PASS requires visible degraded/paused tracking, preserved salvageable trip state, and no suspect precise mileage flowing forward as verified data.
 
-**Pass**
+## A8. Stale-edit conflict on real browser/device
 
-- FreightLogic clearly reports location loss/degraded tracking;
-- mileage is limited to known tracked distance or marked incomplete/estimated;
-- an unreliable figure is not presented as verified precise mileage.
+Open the same synthetic trip/expense/fuel record in two Safari tabs. Save Tab 1, then save the stale Tab 2 form.
 
-**Fail**
+PASS requires the stale write to be rejected or refreshed to the newer record. Tab 1's change must not be silently overwritten.
 
-- permission loss is silent;
-- a suspect precise mileage flows into the trip/tax surface with no provenance warning.
+## A9. Candidate-specific doctrine / geography / cargo-fit / profit sanity
 
----
+Use synthetic values only.
 
-## A8. Stale-edit conflict on a real browser/device
+1. Blank, one-character, and two-character location text must not manufacture a favorable market.
+2. **Gary, IN** must resolve as the intended U.S. Tier-1 Chicago/Gary-belt market, never Calgary/Canada.
+3. A **121 in** cargo length should respect the confirmed default usable-length boundary; **122 in** must not silently fit without an explicit provenance-bearing larger override.
+4. With a defensible operating-cost-per-mile input, inspect True Profit; then remove the input/denominator needed to defend that cost.
 
-This confirms optimistic concurrency behavior outside the test harness.
+PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, 122-inch freight not to fit by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-**Steps**
+# B. Live deployment blockers
 
-1. Open FreightLogic in two Safari tabs/windows using the same local profile.
-2. In Tab 1, open the same existing synthetic trip (or the supported expense/fuel record) and save a change.
-3. Without refreshing Tab 2, save a conflicting edit to that same record.
+Run these against the same production candidate used for A1-A9. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed live procedure.
 
-**Pass**
+## B1. Exact production generation
 
-- stale save is rejected/refreshes to the latest version with a clear conflict message;
-- Tab 1's newer value is not silently overwritten.
+PASS requires production app/PWA/service-worker/manifest assets to identify v24.0.5 and be tied to the intended GitHub `main` candidate. A preview deployment is not production parity.
 
-**Fail**
+## B2. Worker health + auth boundary
 
-- both saves appear successful and the later stale form silently destroys the first edit.
+PASS requires `/health` to report Worker `13`, unauthorized admin/driver requests to be denied, and no secret/token exposure.
 
----
+## B3. Live `/evaluate` authority smoke
 
-## A9. Candidate-specific doctrine, location, cargo-fit, and profit sanity
+PASS requires a complete canonical decision to remain client-owned and an incomplete/`UNAVAILABLE` decision to stay unavailable—no Worker/overlay fabrication of `REJECT`, `F`, zero True RPM, or `$0` bid.
 
-Use synthetic values only. This is a finite regression check for the current completion candidate, not a new feature track.
+## B4. Live `/extract` / backup authority smoke
 
-**Steps**
+Where deployed/enabled, use synthetic data. Extraction must return bounded evidence only; authenticated backup/full-delta/restore must preserve data/authority semantics. A failed/unavailable source must remain explicit.
 
-1. Enter a location that is blank, one character, and two characters where the UI permits it; confirm the app does not infer a favorable market/corridor from underspecified text.
-2. Enter **Gary, IN** and confirm it resolves as a U.S. Tier-1 Chicago/Gary-belt market, not Calgary or an unrelated fuzzy match.
-3. Enter cargo length **121 in** and then **122 in** with otherwise compatible dimensions/weight and no explicit larger operator override.
-4. Inspect the profit/economics surface with a valid operating-cost-per-mile denominator, then repeat after removing the denominator/input needed to establish that cost.
+## B5. Rollback evidence
 
-**Pass**
+Record the approved rollback SHA and verify the rollback procedure is executable, not merely described.
 
-- blank/underspecified market text yields unknown/no favorable corridor contribution;
-- Gary resolves to the intended U.S. market/Tier-1 doctrine;
-- 121 in respects the operator-confirmed usable-length boundary and 122 in is not silently scored as fitting without an explicit provenance-bearing override;
-- True Profit/precise profit is unavailable or explicitly estimated when operating cost per mile lacks a defensible denominator.
+# C. Private-history reconciliation blocker
 
-**Fail**
+Run the current M6 importer/reconciliation machinery against the real private operator bundle outside the public repository.
 
-- blank/one-letter/two-letter text fabricates a real market or favorable corridor;
-- Gary resolves as Calgary/Canada or loses the approved Tier-1 role;
-- freight longer than 121 in is treated as fitting by default;
-- precise True Profit is asserted from an unavailable/invalid cost-per-mile denominator.
+PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, and no collapse of distinct shipments sharing external IDs. Record only non-sensitive reconciliation results publicly.
 
----
+# D. Non-blocking resilience watch list
 
-# B. Live deployment checks
+These observations are valuable after the finite release gate and must not be claimed if their observation window has not elapsed:
 
-These are release blockers too. Record their result against the same exact candidate SHA used for the iPhone tests.
+- 7-8 day cold-storage reopen;
+- deliberate storage-pressure save failure handling;
+- real DST/year-boundary observation.
 
-## B1. Cloudflare generation parity
-
-**Pass requires**
-
-- live Pages/Worker deployment resolves to the expected candidate generation;
-- app/PWA/service-worker/manifest/cache-buster/Worker markers agree with the final selected release generation;
-- no stale preview/branch deployment is mistaken for production.
-
-## B2. Worker health and auth boundary
-
-**Pass requires**
-
-- `/health` reachable and reports the expected Worker generation/bindings;
-- unauthorized admin/driver request returns the expected denial;
-- no secret/token is exposed in response/logging surfaced to the client.
-
-## B3. Live `/evaluate` authority-boundary smoke test
-
-With a non-sensitive fixture:
-
-**Pass requires**
-
-- complete canonical decision can be explained without Worker/overlay recomputing or replacing verdict, grade, True RPM, or bid;
-- incomplete canonical decision preserves `UNAVAILABLE`, unknown grade, `trueRPM=null`, and suppressed/null bid rather than manufacturing `REJECT/F/$0.00`.
-
-## B4. Live `/extract` smoke test
-
-If `/extract` is part of the deployed candidate, use a non-sensitive synthetic fixture.
-
-**Pass requires**
-
-- extraction returns only the bounded evidence shape it is authorized to return;
-- no hidden bid/verdict/lifecycle inference;
-- extraction failure/no-data remains explicit rather than fabricated.
-
-## B5. Rollback point
-
-**Pass requires**
-
-- exact rollback SHA/release is recorded;
-- documented rollback procedure is executable, not merely descriptive.
-
----
-
-# C. Non-blocking long-horizon resilience watch list
-
-These checks are valuable after the finite completion gate. Record failures as follow-up defects, but do not claim they were performed if the observation window has not elapsed.
-
-## C1. 7–8 day cold-storage observation
-
-1. Record current test trip/expense counts.
-2. Leave the installed app unused for 8+ days.
-3. Reopen the Home Screen PWA.
-
-**Watch for:** local data loss, startup failure, stale cache generation, or storage-warning behavior that is misleading on the actual iOS version.
-
-## C2. Storage-pressure save failure
-
-With device storage under deliberate pressure, save a test trip with receipt images.
-
-**Pass expectation:** explicit storage/error handling; no silently half-written operational record.
-
-## C3. DST / clock-boundary observation
-
-Around an actual DST or year boundary, record a trip near the local transition.
-
-**Pass expectation:** intended local calendar date agrees across trip list, money/week buckets, and tax export; lifecycle source timestamps retain their real clock/time-zone meaning where captured.
-
----
+Failures should become follow-up defects, but these long-horizon observations do not expand the finite completion gate.
 
 # Certification record
 
-For the named completion release, record each blocking item as one of:
+For every blocking item use exactly one of:
 
-- `PASS` — personally/actually observed on the exact candidate;
-- `FAIL` — observed defect, include reproduction evidence;
-- `NOT RUN` — never convert this to PASS from inference;
-- `NOT APPLICABLE` — only if the canonical completion plan says the feature is non-blocking/not shipped in this release.
+- `PASS` — actually observed on the exact candidate;
+- `FAIL` — observed defect, with reproduction evidence;
+- `NOT RUN` — not performed; never infer PASS;
+- `NOT APPLICABLE` — only when the canonical completion plan explicitly makes the feature non-blocking/not shipped.
 
-Minimum report for a failure:
+For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-- checklist ID (`A1`, `A2`, etc.);
-- exact candidate SHA/version;
-- iPhone model + iOS version + Safari/Home Screen context;
-- reproduction steps;
-- screenshot when useful;
-- whether local data was lost/changed;
-- whether an export/backup existed before the failure.
-
-The completion release is not certified until all Milestone 7 blocking automated, deployment, and physical-device checks applicable to the candidate are PASS and the current certification-state document has no remaining proof-backed runtime blocker.
+The release remains **HOLD** until the private-history, live-production, and all applicable finite physical-iPhone blockers are PASS and a later certification-state document explicitly supersedes `COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-11.md`.
