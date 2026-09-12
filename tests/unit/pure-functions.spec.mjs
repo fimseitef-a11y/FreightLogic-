@@ -359,15 +359,83 @@ test('[7D] checkVanFit blocks a load that exceeds payload even with no other dim
   eq(r.violations[0].field, 'weight', 'the violation must be reported on the weight field');
 });
 
-test('[7D] checkVanFit blocks a load that fits the cargo box but not the door opening', async () => {
+test('[7D] checkVanFit blocks a load that fits the cargo box but not a narrower opening', async () => {
+  // Derives the binding constraint instead of hardcoding "door". Width has three
+  // independent limits (box interior, door opening, wheel-well pinch) and which
+  // one is narrowest is a property of the profile, not of this test. Pinning it
+  // to "door" made the assertion silently wrong the moment a narrower real
+  // constraint was added — so it now asserts the property that actually matters:
+  // the message names whichever limit genuinely binds.
   const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
-  // Width between the door opening and the (wider) cargo box interior.
-  const midWidth = (profile.doorWidthIn + profile.cargoWidthIn) / 2;
-  ok(midWidth <= profile.cargoWidthIn && midWidth > profile.doorWidthIn, 'test fixture assumption: door opening must be narrower than the cargo box for this profile');
+  const limits = [
+    { v: profile.wheelWellWidthIn, word: 'wheel wells' },
+    { v: profile.doorWidthIn, word: 'door' },
+    { v: profile.cargoWidthIn, word: 'cargo' },
+  ].filter(x => typeof x.v === 'number').sort((a, b) => a.v - b.v);
+  const narrowest = limits[0];
+  ok(narrowest.v < profile.cargoWidthIn,
+    'fixture assumption: some limit must be narrower than the cargo box, or this case cannot exist');
+
+  // Wider than the narrowest limit, but still inside the cargo box.
+  const midWidth = (narrowest.v + profile.cargoWidthIn) / 2;
   const r = await app.page.evaluate(({ profile, midWidth }) => window.__FL_TESTS.checkVanFit({ widthIn: midWidth }, profile), { profile, midWidth });
-  eq(r.fits, false, 'a load that fits the cargo box but not the door opening must still be blocked — it cannot physically be loaded');
+  eq(r.fits, false, 'a load that fits the cargo box but not a narrower opening must still be blocked — it cannot physically be loaded');
   eq(r.violations[0].field, 'width', 'the violation must be reported on the width field');
-  ok(r.violations[0].limitLabel.includes('door'), 'the violation reason must name the door opening, not the cargo box, as the binding constraint: ' + r.violations[0].limitLabel);
+  eq(r.violations[0].limit, narrowest.v,
+    `the violation must cite the NARROWEST limit the load exceeds (${narrowest.v}"), not merely the first one checked; got ${r.violations[0].limit}"`);
+  ok(r.violations[0].limitLabel.includes(narrowest.word),
+    `the reason must name the constraint that actually binds (${narrowest.word}): ` + r.violations[0].limitLabel);
+});
+
+test('[OPS-01] the wheel-well pinch is a real constraint and blocks a load the box and door would both clear', async () => {
+  // Operator-measured: 54.8" between the rear wheel housings. Anything sitting on
+  // the floor has to pass it. Before this existed, a load between the pinch and
+  // the door opening cleared every check and then could not be loaded.
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  eq(profile.wheelWellWidthIn, 54.8, 'the operator-measured wheel-well width must be the default');
+  ok(profile.wheelWellWidthIn < profile.doorWidthIn && profile.wheelWellWidthIn < profile.cargoWidthIn,
+    'the wheel-well pinch must be narrower than both the door and the box, or it cannot be the binding constraint');
+
+  const w = (profile.wheelWellWidthIn + profile.doorWidthIn) / 2; // clears neither pinch, but fits door + box
+  const r = await app.page.evaluate(({ profile, w }) => window.__FL_TESTS.checkVanFit({ widthIn: w }, profile), { profile, w });
+  eq(r.fits, false, `a ${w}" load clears the door (${profile.doorWidthIn}") and box (${profile.cargoWidthIn}") but cannot pass the wheel wells`);
+  ok(r.violations[0].limitLabel.includes('wheel wells'), 'the message must name the wheel wells: ' + r.violations[0].limitLabel);
+});
+
+test('[OPS-02] a profile saved before wheelWellWidthIn existed still evaluates, and does not block on undefined', async () => {
+  // Legacy vanProfile records have six keys. getVanProfile() spreads defaults
+  // first so the field is present in practice, but checkVanFit must not compare
+  // against undefined if it ever receives a profile without it.
+  const r = await app.page.evaluate(() => {
+    const { wheelWellWidthIn, ...legacy } = window.__FL_TESTS.VAN_PROFILE_DEFAULT;
+    return {
+      legacyProfile: legacy,
+      // 58" clears the legacy profile's door (60") and box (65"). With the pinch
+      // field absent it must PASS. If the missing limit were read as undefined or
+      // coerced to 0, this would block instead — that is what this asserts.
+      betweenPinchAndDoor: window.__FL_TESTS.checkVanFit({ widthIn: 58 }, legacy),
+      // Still wider than the legacy door, so a real limit must still bind.
+      overDoor: window.__FL_TESTS.checkVanFit({ widthIn: 62 }, legacy),
+      comfortable: window.__FL_TESTS.checkVanFit({ widthIn: 40 }, legacy),
+    };
+  });
+  ok(!('wheelWellWidthIn' in r.legacyProfile), 'fixture must genuinely lack the field');
+  eq(r.betweenPinchAndDoor.fits, true,
+    'a 58" load clears the legacy door (60") and box (65"), so an ABSENT pinch limit must not block it — a missing limit must be filtered out, never read as undefined or coerced to 0');
+  eq(r.overDoor.fits, false, 'a 62" load still exceeds the legacy 60" door and must be blocked');
+  ok(r.overDoor.violations[0].limitLabel.includes('door'), 'on a legacy profile the door is the narrowest real limit: ' + r.overDoor.violations[0].limitLabel);
+  eq(r.comfortable.fits, true, 'a 40" load must still pass cleanly on a legacy profile');
+});
+
+test('[OPS-03] the payload default sits at the operator limit, not above the door sticker', async () => {
+  // Was 3800 — above even the 3,598 lb door sticker, so the pre-check cleared
+  // loads beyond the manufacturer rating as well as the operator's own limit.
+  const profile = await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT);
+  eq(profile.payloadLbs, 3000, 'default payload must be the operator practical operating limit');
+  ok(profile.payloadLbs < 3598, 'the default must never exceed the door sticker rating of 3,598 lbs');
+  const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ weightLbs: 3200 }, profile), profile);
+  eq(r.fits, false, 'a 3,200 lb load is beyond the operator practical limit and must be blocked');
+  eq(r.violations[0].field, 'weight', 'the violation must be reported on the weight field');
 });
 
 test('[7D] checkVanFit passes a load comfortably within every dimension and payload', async () => {

@@ -25,7 +25,7 @@ test('[7D] a load over payload shows CAN\'T TAKE and never renders economics', a
   await app.page.fill('#mwLoadedMi', '300');
   await app.page.fill('#mwDeadMi', '0'); // M1: blank deadhead is UNKNOWN; this fixture means a verified zero
   await app.page.fill('#mwRevenue', '600');
-  await app.page.fill('#mwLoadWeightLbs', '9000'); // well over the 3800lb default payload
+  await app.page.fill('#mwLoadWeightLbs', '9000'); // well over the 3000lb operator payload limit
   await app.page.dispatchEvent('#mwRevenue', 'input');
   await app.page.waitForTimeout(400);
 
