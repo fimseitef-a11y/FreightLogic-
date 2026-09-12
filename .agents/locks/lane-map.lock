@@ -1,6 +1,0 @@
-owner: gpt
-token: 8778a4d2-80d7-4fc4-b4fc-03b3af110ace
-started_utc: 2026-09-12T05:25:00Z
-expected_release_utc: 2026-09-12T05:50:00Z
-paths: .agents/LANES.md
-task: Temporary operator-directed exact-path reassignment for a branch-only live Cloudflare parity probe workflow. The probe never merges to main; restore/reset immediately after the run.
