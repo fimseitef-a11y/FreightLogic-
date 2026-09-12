@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print exact source contexts
+      - name: Print exact analytics contexts
         shell: bash
         run: |
           python3 - <<'PY'
@@ -26,21 +26,14 @@ jobs:
               for j in range(lo-1, min(hi, len(lines))):
                   print(f'{j+1:05d}: {lines[j]}')
           for lo,hi,title in [
-              (450,480,'numeric helpers'),
-              (3735,3780,'CSV trip import'),
-              (10645,10705,'F23 intake writer'),
-              (12120,12265,'trip wizard load/save'),
-              (20380,20649,'test exposure tail'),
+              (4025,4160,'KPI functions'),
+              (4265,4375,'broker + lane stats'),
+              (4635,4725,'score baselines + load score'),
+              (6065,6160,'command center'),
+              (6315,6380,'trend alerts'),
+              (15610,15750,'broker intel + lane history writer'),
+              (17210,17275,'lane RPM trend'),
+              (18250,18345,'period data'),
           ]:
               show(lo,hi,title)
-          print('\n=== emptyMiles use sites by containing function ===')
-          for i,line in enumerate(lines):
-              if 'emptyMiles' not in line: continue
-              fn='(top-level)'
-              for j in range(i, max(-1,i-120), -1):
-                  s=lines[j].strip()
-                  if s.startswith('function ') or s.startswith('async function '):
-                      fn=f'{j+1}:{s}'
-                      break
-              print(f'{i+1:05d} | {fn} | {line.strip()}')
           PY
