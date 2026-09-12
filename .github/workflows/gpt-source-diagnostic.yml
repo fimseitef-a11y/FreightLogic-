@@ -27,7 +27,7 @@ jobs:
       - name: Run full suite
         run: node tests/run-all.mjs
       - name: Run static deploy parity
-        run: node scripts/verify-cloudflare-parity.mjs --static
+        run: node scripts/verify-cloudflare-parity.mjs --static-only
       - name: Commit tested repair
         run: |
           git config user.name "FreightLogic GPT"
