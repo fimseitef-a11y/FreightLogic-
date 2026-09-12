@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | Pickup-feasibility gate (`app.js` + `index.html`, holds `lock/app-js`) | 2026-09-12 |
-| gpt | — idle — | — |
+| gpt | Reconcile post-PR158 completion docs and deployment preflight evidence | 2026-09-12 |
 
 ---
 
