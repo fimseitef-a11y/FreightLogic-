@@ -2,9 +2,9 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`.
 
-Current candidate: **FreightLogic v24.0.5 / IndexedDB v15 / Worker v14 source**. App/PWA production parity at `https://freightlogic-v2.fimseitef.workers.dev` was observed on 2026-09-12. The backup/API Worker still requires v14 deployment and live re-verification. Do not convert source or live-desktop evidence into a physical-device PASS.
+Current candidate: exact Git SHA `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`, **FreightLogic v24.0.5 / IndexedDB v15 / Worker v14 source**. Exact-byte app/PWA production parity at `https://freightlogic-v2.fimseitef.workers.dev` passed on 2026-09-12. A post-merge recheck proved the backup/API Worker is still stale and requires v14 deployment. Do not convert source or live-desktop evidence into a physical-device PASS.
 
 Before testing, record the exact production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
@@ -77,9 +77,11 @@ Use synthetic values only.
 1. Blank, one-character, and two-character location text must not manufacture a favorable market.
 2. **Gary, IN** must resolve as the intended U.S. Tier-1 Chicago/Gary-belt market, never Calgary/Canada.
 3. A **121 in** cargo length should respect the confirmed default usable-length boundary; **122 in** must not silently fit without an explicit provenance-bearing larger override.
-4. With a defensible operating-cost-per-mile input, inspect True Profit; then remove the input/denominator needed to defend that cost.
+4. A pallet at the floor-level wheel-well pinch must respect the operator-measured **54.8 in** width; **54.9 in** must not silently fit by default.
+5. Cargo at the practical payload boundary must respect **3,000 lb**; **3,001 lb** must not silently fit by default.
+6. With a defensible operating-cost-per-mile input, inspect True Profit; then remove the input/denominator needed to defend that cost.
 
-PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, 122-inch freight not to fit by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
+PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
 # B. Live deployment blockers
 
@@ -87,11 +89,11 @@ Run these against the same production candidate used for A1-A9. See `docs/CLOUDF
 
 ## B1. Exact production app generation
 
-Current evidence: **PASS on 2026-09-12** for `https://freightlogic-v2.fimseitef.workers.dev` serving v24.0.5 app/PWA/service-worker/manifest assets. Repeat if the app source generation changes.
+Current evidence: **PASS on 2026-09-12** for exact Git SHA `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`; the checked v24.0.5 app/PWA/service-worker/manifest assets at `https://freightlogic-v2.fimseitef.workers.dev` match it byte-for-byte. Repeat if the app source changes.
 
 ## B2. Worker health + auth boundary
 
-Current evidence before v14 redeploy: **FAIL** because production `/health` returned 401 `Missing token`, proving the backup/API Worker is stale relative to source.
+Current post-merge evidence before v14 redeploy: **FAIL** because production `/health` returned 401 `Missing token` and CORS `*`, proving Worker v14 is not deployed at the backup/API Worker origin.
 
 PASS requires `/health` to return 200 and report Worker `14`, production-origin CORS to target `https://freightlogic-v2.fimseitef.workers.dev`, unauthorized admin/driver requests to be denied, and no secret/token exposure.
 
@@ -136,4 +138,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD** until Worker v14 is deployed and live-verified, the real private-history reconciliation is run, and all applicable physical-iPhone blockers are PASS. A later certification-state document must explicitly supersede `COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md` before the release is frozen.
+The release remains **HOLD** until Worker v14 is deployed and live-verified, the real private-history reconciliation is run, and all applicable physical-iPhone blockers are PASS. A later certification-state/addendum document must explicitly supersede `COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md` before the release is frozen.
