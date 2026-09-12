@@ -174,6 +174,32 @@ test('[CG-10] index.html and _headers CSP stay byte-identical across the bump', 
     'enforced independently, so a drift silently blocks resources on the live site only.');
 });
 
+test('[CG-11] styles.css carries no release version, so it cannot drift', () => {
+  // Checklist item 7 is RETIRED, and this is what keeps it retired.
+  //
+  // The design-system header used to carry a release number. The version-bump
+  // checklist pointed at index.html — where that comment has not lived since the
+  // CSS extraction — so it guarded a location that could not drift while the real
+  // marker in styles.css silently missed 24.0.1, 24.0.2 and 24.0.3. The gpt lane
+  // fixed it by DELETING the version rather than bumping it (PR #138), which is
+  // the better fix: a presentation file with no version cannot go stale, and it
+  // removes a cross-lane bump request from every future release.
+  //
+  // styles.css is gpt-owned, so the core lane cannot bump it. That is precisely
+  // why this must be an assertion rather than a line in a checklist: if a version
+  // string reappears here, it becomes un-bumpable drift again, and this fails on
+  // the very next release instead of three releases later.
+  const css = read('styles.css');
+  // NB: no leading \b. A version is normally written "v24.0.4", and `v` and `2`
+  // are both word characters, so \b never matches between them — an earlier draft
+  // of this assertion could not fire at all. Caught by its own negative control.
+  const hits = [...css.matchAll(/2[0-9]\.[0-9]+\.[0-9]+/g)].map(m => m[0]);
+  eq(hits.length, 0,
+    `styles.css must carry no release version; found ${JSON.stringify(hits)}. ` +
+    'It is gpt-owned, so a version here cannot be bumped from the core lane and ' +
+    'becomes permanent drift. Describe the design system by name, not by release.');
+});
+
 export async function runSpec() {
   return await run();
 }
