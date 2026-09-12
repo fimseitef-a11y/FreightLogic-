@@ -20,30 +20,26 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('app.js')
-          lines = p.read_text(encoding='utf-8').splitlines()
-          needles = [
-              'emptyMiles: posNum',
-              'USA_MARKETS',
-              'const MW',
-              'tier1:',
-              "APP_VERSION =",
-              'function sanitizeTrip',
-              'function usaLookupMarket',
-              'function naLookupMarket',
-          ]
-          print(f'app.js lines={len(lines)}')
-          for needle in needles:
-              hits = [i for i, line in enumerate(lines) if needle in line]
-              print(f'\n=== {needle!r}: hits={len(hits)} ===')
-              for i in hits[:12]:
-                  lo=max(0,i-8); hi=min(len(lines),i+12)
-                  print(f'--- context around line {i+1} ---')
-                  for j in range(lo,hi):
-                      print(f'{j+1:05d}: {lines[j]}')
-          print('\n=== candidate regression files ===')
-          for f in sorted(Path('tests').rglob('*.mjs')):
-              text=f.read_text(encoding='utf-8', errors='replace')
-              if any(n in text for n in ['Gary', 'emptyMiles', 'v2404', 'deadhead']):
-                  print(f)
+          lines = Path('app.js').read_text(encoding='utf-8').splitlines()
+          def show(lo, hi, title):
+              print(f'\n=== {title} ===')
+              for j in range(lo-1, min(hi, len(lines))):
+                  print(f'{j+1:05d}: {lines[j]}')
+          show(2680, 2785, 'trip template + sanitizeTrip')
+          for needle in ['function posNum', 'function knownNum', 'emptyMiles', "'chicago':", 'tier1:']:
+              hits=[i for i,l in enumerate(lines) if needle in l]
+              print(f'\n=== {needle!r}: {len(hits)} hits ===')
+              for i in hits[:30]:
+                  print(f'{i+1:05d}: {lines[i]}')
+          p=Path('tests/integration/v2404-fail-closed.spec.mjs')
+          if p.exists():
+              t=p.read_text(encoding='utf-8').splitlines()
+              print(f'\n=== {p} lines={len(t)} ===')
+              for i,line in enumerate(t,1):
+                  print(f'{i:04d}: {line}')
+          print('\n=== tests/run-all.mjs relevant tail ===')
+          r=Path('tests/run-all.mjs').read_text(encoding='utf-8').splitlines()
+          for i,line in enumerate(r,1):
+              if 'v2404' in line.lower() or 'spec.mjs' in line:
+                  print(f'{i:04d}: {line}')
           PY
