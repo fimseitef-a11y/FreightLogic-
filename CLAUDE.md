@@ -117,7 +117,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.4';
+const APP_VERSION = '24.0.5';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -234,8 +234,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.4` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.4`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.5` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.5`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -262,11 +262,20 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   4. `manifest.json` `name` field
   5. `?v=` query on `<link rel="manifest">` in `index.html`
   6. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
-  7. Design-system header comment. This **moved to `styles.css`** when the CSS was
-     extracted; there is no design-system comment in `index.html` any more. `styles.css`
-     is **gpt**-owned under `/.agents/LANES.md`, so the core lane must request this bump
-     through `/.agents/inbox/` rather than editing it. Found stale at `24.0.0` during the
-     v24.0.3 recon — it had silently missed 24.0.1, 24.0.2 and 24.0.3.
+  7. ~~Design-system header comment.~~ **RETIRED as of v24.0.4 — nothing to bump.**
+     This item pointed at a comment in `index.html` that has not existed since the CSS
+     extraction, so it guarded a location that could not drift while the real marker in
+     `styles.css` drifted through 24.0.1, 24.0.2 and 24.0.3 unnoticed (found by the
+     v24.0.3 recon). The gpt lane fixed it in PR #138 by **deleting the version from the
+     `styles.css` header** rather than bumping it — `styles.css:2` now reads
+     `FREIGHT LOGIC — DESIGN SYSTEM v3.0 "Command"` with no release number. That is the
+     better fix: a presentation file carrying no version cannot drift, and it removes a
+     cross-lane bump request from every future release. Keep it that way; do not
+     reintroduce a version string here. `tests/unit/cache-generation.spec.mjs` CG-11
+     asserts the absence, so a reintroduced version fails on the very next release
+     rather than three releases later, and the quick-audit grep below still lists
+     `styles.css`. Restored in v24.0.5 after the v24.0.5 landing commit reverted this
+     item to its pre-retirement wording.
   8. `VERSION` const and header comment in `midwest-stack-authority.js`
   9. Header comments in `voice-load.js` and `sw-bridge.js`
   10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
@@ -1590,3 +1599,90 @@ V2404-10, and reverting the SW fallback to `APP_SHELL` fails SW-03/04.
 
 **Still HOLD.** Live Cloudflare and physical-iPhone gates are unchanged and remain
 the operator's. Nothing here instructs a reinstall or a website-data clear.
+
+---
+
+## v24.0.5 "Source Integrity" — the two findings v24.0.4 reported but did not invent
+
+Landed by the gpt lane in PR #146 under a held `app-js` lock and six temporary
+exact-file lane reassignments (since restored in PRs #148/#149). It closes both gaps
+v24.0.4 deliberately **reported rather than fixed**, because each needed a fact the
+core lane could not supply on its own authority: real coordinates for a missing market,
+and a persistence contract for a field the trips schema had always coerced.
+`DB_VERSION` stays **15** and the Worker stays **v13** — neither's semantics changed.
+
+**1 — UNKNOWN deadhead now survives persistence, not just intake.** v24.0.4 fixed the
+four *intake* paths (parser initializer, Quick Evaluate, F23, rendering) so an unstated
+deadhead stopped reading as a verified zero. But the `trips` store itself still coerced
+it on every write, so the distinction was destroyed the moment a load became a trip:
+
+- `newTripTemplate`'s initializer was `emptyMiles: 0` — the same root-cause shape as the
+  parser's, one layer down.
+- `sanitizeTrip()` ran `posNum(raw.emptyMiles, 0, 300000)`, which floors a missing,
+  blank, non-numeric or negative value to `0`. It is now `knownNum()` with an explicit
+  range check and `null` otherwise, and validation emits a real
+  `'Deadhead miles are unknown'` review reason.
+- XLSX import mapped a blank deadhead cell through `Number(… || 0)`; a blank cell is now
+  `null`, a present `0` still a real zero.
+- The trip form read `trip.emptyMiles || ''` (which blanks an explicit `0`) and wrote
+  `Math.max(0, Number(x || 0))` (which invents one). Now `?? ''` and `knownNum()` — the
+  two halves of the same round trip, previously destroying a verified zero in both
+  directions.
+
+**Unknown deadhead is quarantined from history, not silently averaged.** New
+`tripHasKnownDeadhead(trip)` gates every consumer that derives True RPM or lane/broker
+intelligence from stored trips, alongside the existing `needsReview` check. A trip whose
+deadhead was never stated no longer contributes a flattering RPM to a lane average, a
+broker record, or a historical comparison — it is excluded and visible, which is the
+same `knownNum()` doctrine v24.0.1 applied to the canonical decision, now applied to the
+historical evidence that feeds it.
+
+**2 — Gary, Indiana is canonical geography.** v24.0.4 found `'Gary'` resolving to
+`'calgary'` (Alberta) because `'calgary'.endsWith('gary')`, and fixed the *matching* rule
+so it fails closed to `null`. But the underlying table gap was real and was reported
+rather than papered over: `USA_MARKETS` had no Gary at all, and `MW.tier1` omitted it
+while the overlay's `marketRoles.tier1` included it — the two halves of the doctrine
+disagreed. Gary is now in `USA_MARKETS` with real coordinates
+(`41.5955922, -87.3452279`), zone `MIDWEST`, role `anchor`, and in `MW.tier1`, so
+canonical and overlay Tier 1 finally agree.
+
+**Markers.** `APP_VERSION`, `SW_VERSION` (and therefore `CACHE_NAME`), `ADMIN_UI_TAG`,
+`MIDWEST_STACK_TAG`, `CORE`, the install-blocking `critical` array, the `index.html`
+manifest and script `?v=` queries, `manifest.json` `name`, `midwest-stack-config.json`
+`appTarget`, the overlay `VERSION` const, every module header, and the parity script's
+`EXPECTED` block all move together to `24.0.5`.
+
+**Tests.** `tests/integration/v2404-fail-closed.spec.mjs` gained V2405-01 (`sanitizeTrip`
+preserves UNKNOWN vs. explicit zero across missing/blank/invalid/negative/zero/positive)
+and V2405-02 (a real IndexedDB round trip never manufactures `0` from `null`), and its
+Gary assertion (V2404-04) was strengthened from the negative property it could assert
+at the time — `gary !== 'calgary/ALBERTA'`, which passed only because the lookup
+fail-closed to `null` — to the exact positive one now that the market exists:
+`gary === 'gary/MIDWEST/US/anchor'` plus Tier 1 membership. The spec got stronger, not
+weaker, which is the right way to close a reported-not-invented gap. PRs #148/#149
+then repaired an IndexedDB-readiness race in the shared harness and restored normal
+`tests/` ownership. Full suite re-run on `556f5b0` after that harness change, since it
+sits underneath all forty specs: **372 passed, 0 failed across 40 spec files**, up from
+369/40 at v24.0.4 (`ff9d9ab`): V2405-01 and V2405-02 here, plus CG-11 from PR #144. `scripts/verify-cloudflare-parity.mjs --static-only` is green at
+`24.0.5`, and `scripts/m7-certify.mjs` reports 13/13 automated gates clean.
+
+**Documentation debt this release left, closed here.** v24.0.5's own landing commit
+(`eded539`) bumped only CLAUDE.md's Project Overview line, leaving the Key Constants
+`APP_VERSION` and both PWA-section references reading `24.0.4` — checklist item 10 names
+all three sections. It also reverted checklist item 7 to its pre-retirement wording,
+which is factually wrong now: `styles.css` carries no version to bump and CG-11 asserts
+it stays that way. Both are corrected above, along with this section, which the release
+shipped without.
+
+**Still HOLD.** The canonical certification state is
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-03.md` (which supersedes the
+`2026-09-02` document the v24.0.3 and v24.0.4 sections above cite). Its HOLD names two
+things: the proof-backed core corrections, and the live/physical gates. v24.0.4 and
+v24.0.5 are those corrections — whether they discharge that half is a `docs/` (gpt-lane)
+judgement, requested through `/.agents/inbox/`, not something this section may assert.
+The live Cloudflare and physical-iPhone gates are unchanged either way and remain the
+operator's; they are not reachable from an automated environment (the agent proxy
+refuses to tunnel to both deployed origins, re-tested at this release). `m7-certify`
+reports 13/13 automated gates clean at `24.0.5` and `NOT CERTIFIABLE`, which is the
+correct pairing. Nothing here instructs a reinstall or a website-data clear — that would
+destroy the local IndexedDB evidence the installed-origin investigation still needs.
