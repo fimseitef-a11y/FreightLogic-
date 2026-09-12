@@ -151,13 +151,13 @@ test('[CG-08] the parity script expects the current generation', () => {
 });
 
 test('[CG-09] DB version and Worker version are unchanged by a generation freeze', () => {
-  // The handoff is explicit: keep DB v15 and Worker v13 unless source semantics
-  // require otherwise. A cache-generation bump is a release-identity change only.
+  // DB v15 is unchanged. Worker source semantics intentionally moved 13 -> 14
+  // for the production-origin/CORS repair proven necessary by the live release probe.
   const dbm = read('app.js').match(/^const DB_VERSION = (\d+);/m);
   ok(dbm, 'could not read DB_VERSION from app.js');
   eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');
-  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "13"'),
-    'the expected Worker version must stay 13 — no Worker source semantics changed');
+  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "14"'),
+    'the expected Worker version must be 14 — production-origin/CORS semantics changed intentionally');
 });
 
 test('[CG-10] index.html and _headers CSP stay byte-identical across the bump', () => {

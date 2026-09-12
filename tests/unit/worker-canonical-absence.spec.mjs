@@ -55,7 +55,18 @@ test('[W-01] /health reports the bumped Worker version', async () => {
   const res = await worker.fetch(new Request('https://worker.test/health'), makeEnv());
   const body = await res.json();
   eq(res.status, 200, 'health is reachable');
-  eq(body.version, '13', 'the authority-absence contract ships as Worker v13');
+  eq(body.version, '14', 'the production-origin/CORS repair ships as Worker v14');
+});
+
+test('[W-01b] production app origin is the default and explicitly allowed by CORS', async () => {
+  const prod = 'https://freightlogic-v2.fimseitef.workers.dev';
+  const env = makeEnv();
+  const defaultRes = await worker.fetch(new Request('https://worker.test/health'), env);
+  eq(defaultRes.headers.get('Access-Control-Allow-Origin'), prod, 'no-Origin fallback targets the real production app');
+
+  const originRes = await worker.fetch(new Request('https://worker.test/health', { headers: { Origin: prod } }), env);
+  eq(originRes.status, 200, 'production-origin health remains unauthenticated');
+  eq(originRes.headers.get('Access-Control-Allow-Origin'), prod, 'production app receives an exact CORS allow-origin');
 });
 
 test('[W-02] an UNAVAILABLE canonical decision is preserved, never turned into REJECT/F/$0.00', async () => {

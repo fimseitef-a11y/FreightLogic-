@@ -2,7 +2,7 @@
 /* FreightLogic Cloudflare parity verifier
  * No npm dependencies. Requires Node 18+ for global fetch.
  * Usage:
- *   node scripts/verify-cloudflare-parity.mjs https://freightlogic.pages.dev https://freightlogic-backup.fimseitef.workers.dev
+ *   node scripts/verify-cloudflare-parity.mjs https://freightlogic-v2.fimseitef.workers.dev https://freightlogic-backup.fimseitef.workers.dev
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,7 @@ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.wo
 const EXPECTED = {
   serviceWorkerVersion: "24.0.5",
   manifestName: "FreightLogic v24.0.5",
-  workerVersion: "13",
+  workerVersion: "14",
   overlayScript: "midwest-stack-authority.js?v=24.0.5"
 };
 
