@@ -217,3 +217,5 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 | 2026-09-12T04:55:00Z | claude | 556f5b0 | post-#148/#149 harness change re-baseline (docs-only work on top) | full suite | 372 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.5; m7-certify 13/13 automated gates, NOT CERTIFIABLE; live half UNOBSERVED (proxy refuses CONNECT to both deployed origins) |
 
 | 2026-09-12T06:25:00Z | claude | a2a6bc1 | independent verification of Worker v14 production-origin repair (gpt PR #153) | full suite | 373 pass / 0 fail / 40 spec files | parity --static-only PASS at app 24.0.5 / Worker 14; +1 assertion vs 372 baseline (new W-01b CORS test); live half UNOBSERVED — proxy refuses both origins, now GPT's Gate 2 |
+
+| 2026-09-12T06:30:00Z | claude | 39882fa | van-profile reconciliation to operator vehicle truth (PR #155) | full suite | 376 pass / 0 fail / 40 spec files | +3 vs 373 baseline (OPS-01/02/03); negative controls fire both ways; CI playwright-suite green on the merged head; parity --static-only PASS |

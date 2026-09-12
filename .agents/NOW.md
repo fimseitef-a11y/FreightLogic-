@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | Van-profile reconciliation to operator vehicle truth (`app.js` + `index.html`, holds `lock/app-js`). Parity-script fix still BLOCKED — see REORG §5. | 2026-09-12 |
+| claude | — idle — (PR #156 open: parity verifier label/rename) | 2026-09-12 |
 | gpt | Worker v14 origin repair (landed, PR #153); holds `lock/lane-map` until 06:20Z | 2026-09-12 |
 
 ---
