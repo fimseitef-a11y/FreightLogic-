@@ -213,3 +213,5 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 | 2026-09-03T21:40:30Z | claude | 5f77b69 | v24.0.3 cache-generation freeze | full suite | 350 pass / 0 fail / 38 spec files | parity --static-only PASS; live half UNOBSERVED |
 
 | 2026-09-03T23:37:54Z | claude | ff9d9ab | v24.0.4 "Fail Closed" core slice (items 1-7) | full suite | 369 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.4; live half UNOBSERVED; 3 existing tests strengthened, 0 weakened |
+
+| 2026-09-12T04:55:00Z | claude | 556f5b0 | post-#148/#149 harness change re-baseline (docs-only work on top) | full suite | 372 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.5; m7-certify 13/13 automated gates, NOT CERTIFIABLE; live half UNOBSERVED (proxy refuses CONNECT to both deployed origins) |
