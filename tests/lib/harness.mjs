@@ -137,9 +137,30 @@ export async function stopServer() {
   }
 }
 
+async function waitForAppBoot(page, enableTestExports) {
+  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  if (!enableTestExports) return;
+
+  // appMeta can populate before initDB() has assigned the app's shared IndexedDB
+  // handle. Tests that call persistence helpers immediately after launch therefore
+  // used to race `db === null` nondeterministically. Probe the same exported data
+  // path the suite is about to use and only return once it can complete.
+  await page.waitForFunction(async () => {
+    const T = window.__FL_TESTS;
+    if (!T || typeof T.dumpStore !== 'function') return false;
+    try {
+      await T.dumpStore('settings');
+      return true;
+    } catch {
+      return false;
+    }
+  }, { timeout: 15000 });
+}
+
 /**
  * Launches a fresh browser context + page loaded with index.html, and waits
- * for app boot (window.__FL_TESTS present + #appMeta populated).
+ * for app boot. With test exports enabled, readiness includes a successful
+ * IndexedDB-backed test operation so callers cannot race app DB initialization.
  * Returns { browser, context, page, baseUrl, close() }.
  */
 export async function launchApp({ headless = true, geolocation = null, permissions = [], enableTestExports = true } = {}) {
@@ -149,19 +170,16 @@ export async function launchApp({ headless = true, geolocation = null, permissio
     geolocation: geolocation || undefined,
     permissions: geolocation ? ['geolocation', ...permissions] : permissions,
   });
-  // Opt-in to window.__FL_TESTS (app.js:16021-16038, gated on __FL_TESTS_ENABLED as of
-  // the F-5 fix). Defaults to true because most of this suite drives pure functions
-  // through __FL_TESTS; pass enableTestExports:false to test a genuine production load
-  // (this is how tests/integration/fl-tests-exposure.spec.mjs proves/regresses F-5).
+  // Opt-in to window.__FL_TESTS (gated on __FL_TESTS_ENABLED as of the F-5 fix).
+  // Defaults to true because most of this suite drives pure functions through
+  // __FL_TESTS; pass enableTestExports:false to test a genuine production load.
   if (enableTestExports) {
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
   const page = await context.newPage();
   const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
-  // Boot-ready signal must NOT depend on __FL_TESTS — that would hang forever on a
-  // genuine (enableTestExports:false) production load once F-5 gates the export.
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppBoot(page, enableTestExports);
   return {
     browser, context, page, baseUrl,
     close: async () => { await browser.close(); },
@@ -192,7 +210,7 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
     browser, context, page, baseUrl,
     bootApp: async () => {
       await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
-      await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+      await waitForAppBoot(page, enableTestExports);
     },
     close: async () => { await browser.close(); },
   };
@@ -200,12 +218,9 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
 
 /**
  * Suppress the F26 First-Time Setup Wizard, which auto-opens ~800ms after
- * boot on an empty DB (app.js:3390-3397, checkFirstRunSetup) and steals
- * pointer events as a full-screen modal. Call this immediately after
- * launchApp() — before any waitForTimeout()/multi-step UI interaction —
- * in any spec that doesn't itself seed a trip in its first action (seeding
- * a trip also suppresses it, via the same isEmpty check, but not every
- * spec wants to do that as its first step).
+ * boot on an empty DB and steals pointer events as a full-screen modal. Call
+ * this immediately after launchApp() in specs that do not themselves seed a
+ * trip as their first action.
  */
 export async function skipFirstRunWizard(page) {
   await page.evaluate(async () => {
