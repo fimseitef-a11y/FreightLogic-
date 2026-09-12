@@ -17,7 +17,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // unreachable or slow origin turns a code gate into a network gate.
 const STATIC_ONLY = process.argv.includes('--static-only');
 const positional = process.argv.slice(2).filter(a => !a.startsWith('--'));
-const pagesOrigin = (positional[0] || 'https://freightlogic.pages.dev').replace(/\/$/, '');
+const pagesOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.dev').replace(/\/$/, '');
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
