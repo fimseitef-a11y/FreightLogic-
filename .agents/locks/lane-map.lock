@@ -1,6 +1,0 @@
-owner: gpt
-token: c1653935-2432-471a-bd28-35f03bbc470e
-started_utc: 2026-09-12T03:58:00Z
-expected_release_utc: 2026-09-12T06:05:00Z
-paths: .agents/LANES.md
-task: Temporarily reassign only the exact Claude-owned files required to land the already-tested v24.0.5 source-integrity patch, then restore ownership immediately after merge.
