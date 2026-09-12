@@ -33,10 +33,43 @@ node tests/integration/dz-exit-grade-cap.spec.mjs
 Each spec file is independently runnable (`node tests/.../foo.spec.mjs`) and
 exits non-zero if any of its own assertions fail.
 
+### Parallel execution
+
+`run-all.mjs` runs specs in **separate child processes** behind a bounded worker
+pool (`tests/lib/run-one.mjs` is the child entry point). This took the full
+suite from roughly 20 minutes to under 5 — a suite you avoid running is a suite
+that stops catching things.
+
+```bash
+node tests/run-all.mjs                       # parallel, concurrency = min(4, cores)
+FL_TEST_CONCURRENCY=1 node tests/run-all.mjs # serial, for debugging
+```
+
+Process isolation is what makes it safe, and it was verified before the change
+rather than assumed: the shared HTTP server in `harness.mjs` is a **per-process**
+singleton, specs only call `stopServer()` from their own standalone branch (never
+inside `runSpec()`), and `sw-subresource-semantics` — which deliberately kills
+its origin mid-test — already ran a private server and now has a private process
+too. Every spec already launched its own browser.
+
+Output is buffered per spec and printed in **declared** order, so a parallel run
+reads exactly like a serial one. Execution order is not guaranteed; printed order
+is. Slow specs are scheduled first, because with a bounded pool the total can
+never beat the slowest single spec — the run is currently bounded by
+`field-resilience` (~290s), and that time is *inherent*: its F-7 assertions
+exercise real `GeolocationPositionError` streaks, and `watchPosition` only
+re-fires its error callback on the production 15-second timeout. Waiting is the
+thing under test. The runner prints a "Slowest specs" table so this stays a
+visible number rather than folklore.
+
 ### Exit code (X-06, v23.9 Phase 2)
 
 `run-all.mjs` exits **non-zero if any assertion in any spec fails**
-(`process.exit(totalFail ? 1 : 0)`), and CI (`.github/workflows/tests.yml`)
+(`process.exit(totalFail ? 1 : 0)`). Under the parallel runner this covers two
+further cases, both verified against deliberately broken probe specs: a child
+that exits non-zero while reporting no failures is still counted as failed, and
+a spec that **crashes before printing a summary line at all** is counted as a
+failure rather than silently skipped — a suite that did not run is never a pass, and CI (`.github/workflows/tests.yml`)
 blocks merge to `main` on that exit code. This is a change from pre-v23.9
 behavior, worth calling out explicitly: an earlier version of this file
 always exited 0, on the reasoning that several specs were *expected* to fail
