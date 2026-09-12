@@ -215,3 +215,5 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 | 2026-09-03T23:37:54Z | claude | ff9d9ab | v24.0.4 "Fail Closed" core slice (items 1-7) | full suite | 369 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.4; live half UNOBSERVED; 3 existing tests strengthened, 0 weakened |
 
 | 2026-09-12T04:55:00Z | claude | 556f5b0 | post-#148/#149 harness change re-baseline (docs-only work on top) | full suite | 372 pass / 0 fail / 40 spec files | parity --static-only PASS at 24.0.5; m7-certify 13/13 automated gates, NOT CERTIFIABLE; live half UNOBSERVED (proxy refuses CONNECT to both deployed origins) |
+
+| 2026-09-12T06:25:00Z | claude | a2a6bc1 | independent verification of Worker v14 production-origin repair (gpt PR #153) | full suite | 373 pass / 0 fail / 40 spec files | parity --static-only PASS at app 24.0.5 / Worker 14; +1 assertion vs 372 baseline (new W-01b CORS test); live half UNOBSERVED — proxy refuses both origins, now GPT's Gate 2 |
