@@ -6988,6 +6988,7 @@ async function renderInsights(){
     const set = (id, v) => { const el = $(id); if (el) el.value = v; };
     set('#vanCargoLengthIn', vp.cargoLengthIn);
     set('#vanCargoWidthIn', vp.cargoWidthIn);
+    set('#vanWheelWellWidthIn', vp.wheelWellWidthIn);
     set('#vanCargoHeightIn', vp.cargoHeightIn);
     set('#vanDoorWidthIn', vp.doorWidthIn);
     set('#vanDoorHeightIn', vp.doorHeightIn);
@@ -9704,13 +9705,34 @@ function unifiedDecisionForAI(decision){
  *
  *  Still editable in Settings → Van Profile; an explicit operator override wins
  *  and carries its own provenance. Never hardcoded elsewhere. */
+// 2016 Ford Transit-250 148" — reconciled against the operator's own measured
+// figures, not published copy. Published spec has been wrong here twice: the
+// cargo length was 130 until a 176" load was refused at pickup (v24.0.4 item 7,
+// OPERATOR_CORRECTION 2026-08-20), and the two corrections below come from the
+// same source. A number this file gets wrong does not fail loudly — it quietly
+// lets the evaluator grade and bid freight the van cannot physically carry.
 const VAN_PROFILE_DEFAULT = Object.freeze({
   cargoLengthIn: 121,
   cargoWidthIn: 65,
+  // The floor-level pinch between the rear wheel housings, operator-measured at
+  // 54.8". Anything resting on the floor — which is all palletized freight — has
+  // to clear this, and it is narrower than both the box and the door, so it is
+  // usually the constraint that actually binds. It had no field at all before,
+  // so a 55-65" load cleared every check and still could not be loaded.
+  // Kept separate from cargoWidthIn rather than overwriting it: the box really
+  // is wider above the wheel housings, and collapsing two distinct facts into
+  // one number is the failure mode this codebase already rejects for
+  // loaded/deadhead miles and quoted/awarded rates.
+  wheelWellWidthIn: 54.8,
   cargoHeightIn: 56,
   doorWidthIn: 60,
   doorHeightIn: 52,
-  payloadLbs: 3800,
+  // Operator's practical operating limit. The door sticker reads 3,598 lbs and
+  // the heaviest single pallet actually carried was 2,700. The previous default
+  // of 3,800 was above even the sticker, so the pre-check would clear a load
+  // that is both beyond the operator's working limit and over the manufacturer
+  // rating. Configurable in Settings -> Van Profile for a different vehicle.
+  payloadLbs: 3000,
 });
 
 async function getVanProfile(){
@@ -9735,8 +9757,20 @@ function checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, profile){
     violations.push({ field: 'length', loadValue: L, limit: profile.cargoLengthIn, limitLabel: `cargo length ${profile.cargoLengthIn}"` });
   }
   if (W !== null){
-    if (W > profile.cargoWidthIn) violations.push({ field: 'width', loadValue: W, limit: profile.cargoWidthIn, limitLabel: `cargo width ${profile.cargoWidthIn}"` });
-    else if (W > profile.doorWidthIn) violations.push({ field: 'width', loadValue: W, limit: profile.doorWidthIn, limitLabel: `door opening width ${profile.doorWidthIn}"` });
+    // Width has three independent limits and the load must clear ALL of them:
+    // the box interior, the rear door opening, and the floor-level pinch between
+    // the wheel housings. Report whichever one actually BINDS — the narrowest
+    // limit the load exceeds — so the operator is told the real obstacle rather
+    // than whichever happened to be tested first. `wheelWellWidthIn` is filtered
+    // out when absent so a vanProfile saved before this field existed still
+    // evaluates correctly instead of comparing against undefined.
+    const widthLimits = [
+      { limit: profile.wheelWellWidthIn, label: `width between wheel wells ${profile.wheelWellWidthIn}"` },
+      { limit: profile.doorWidthIn,      label: `door opening width ${profile.doorWidthIn}"` },
+      { limit: profile.cargoWidthIn,     label: `cargo width ${profile.cargoWidthIn}"` },
+    ].filter(x => finiteNum(x.limit, null) !== null);
+    const binding = widthLimits.filter(x => W > x.limit).sort((a, b) => a.limit - b.limit)[0];
+    if (binding) violations.push({ field: 'width', loadValue: W, limit: binding.limit, limitLabel: binding.label });
   }
   if (H !== null){
     if (H > profile.cargoHeightIn) violations.push({ field: 'height', loadValue: H, limit: profile.cargoHeightIn, limitLabel: `cargo height ${profile.cargoHeightIn}"` });
@@ -12932,6 +12966,7 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('vanProfile', {
     cargoLengthIn: posNum($('#vanCargoLengthIn')?.value, VAN_PROFILE_DEFAULT.cargoLengthIn),
     cargoWidthIn:  posNum($('#vanCargoWidthIn')?.value,  VAN_PROFILE_DEFAULT.cargoWidthIn),
+    wheelWellWidthIn: posNum($('#vanWheelWellWidthIn')?.value, VAN_PROFILE_DEFAULT.wheelWellWidthIn),
     cargoHeightIn: posNum($('#vanCargoHeightIn')?.value, VAN_PROFILE_DEFAULT.cargoHeightIn),
     doorWidthIn:   posNum($('#vanDoorWidthIn')?.value,   VAN_PROFILE_DEFAULT.doorWidthIn),
     doorHeightIn:  posNum($('#vanDoorHeightIn')?.value,  VAN_PROFILE_DEFAULT.doorHeightIn),
