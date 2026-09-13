@@ -1714,3 +1714,119 @@ refuses to tunnel to both deployed origins, re-tested at this release). `m7-cert
 reports 13/13 automated gates clean at `24.0.5` and `NOT CERTIFIABLE`, which is the
 correct pairing. Nothing here instructs a reinstall or a website-data clear — that would
 destroy the local IndexedDB evidence the installed-origin investigation still needs.
+
+---
+
+## v24.0.6 "Backup You Can Trust" — the silent-backup repair, and gate 2 made runnable
+
+Landed in PR #160 under a held `app-js` lock. `DB_VERSION` stays **15** and the Worker
+stays **v14** — neither's semantics changed.
+
+**1 — Cloud backup was switching itself off after every browser close, silently.**
+The backup token lives in IndexedDB and survives restarts; the encryption passphrase
+lives in `sessionStorage` and does not. `cloudIsEnabled()` requires **both**, so the
+moment a browser session ended every automatic push began no-opping — both
+`visibilitychange` handlers, `cloudScheduleSync()`, and `emergencyAutoBackup()` — and
+every one of those call sites swallows its result with `.catch(()=>{})`.
+
+The only surface in the app that reported this was the Diagnostics panel's `dxCloud`
+row ("Token set, no passphrase"), four taps deep under More → Advanced. So the lived
+behaviour was: close the app, come back the next day, believe you are backed up, and
+not be. For a bookkeeping app whose entire cloud story is disaster recovery, that is
+the worst available failure mode, because it is only discovered at restore time.
+
+- `cloudBackupPaused()` — token present, passphrase absent. Deliberately returns
+  `false` when no token exists: nagging a driver who never enabled cloud backup would
+  train them to dismiss the one banner that matters.
+- `renderCloudPausedBanner()` — called from `renderHome()`, so it cannot be missed the
+  way the Diagnostics row was. It does **not** auto-dismiss, unlike
+  `showCloudSyncBanner()`'s 12-second timeout: an informational "backup found on
+  server" notice may vanish, "you are not being backed up" may not.
+- `openCloudReconnect()` — one field, one tap, and it verifies before claiming success.
+
+**2 — Re-entry friction is solved by the OS keychain, not by persisting the secret.**
+`openCloudReconnect()` renders a real credential form — a `<form>`, a read-only
+`autocomplete="username"` account field carrying `localUserId`, an
+`autocomplete="current-password"` field, and a genuine `type="submit"` — so iOS
+Keychain and other password managers offer to save it once and autofill with Face ID
+thereafter. Three details are load-bearing: the handler binds to the form's **submit**
+event (a password manager keys its save prompt off a real submit and is blind to a
+click handler), the account field is **visible** and read-only (Safari's heuristics
+ignore `display:none` username fields), and the account value is `localUserId` so the
+saved credential is scoped to this install rather than a guessable constant.
+
+The passphrase remains `sessionStorage`-only. See the Credential Storage Rules section
+above, which now records this and says not to undo it. CBP-07 fails if the passphrase
+ever reaches `localStorage` or the settings store, and CBP-08 asserts the whole form
+shape — so the friction can never be resolved later by weakening the encryption, and a
+refactor cannot flatten the modal back into a bare input without CI noticing that
+autofill has stopped working.
+
+**Found while building this:** the first version of the reconnect handler tested
+`cloudPushBackup()`'s return value. That function returns `undefined` on *every* path —
+success, "up to date", both early-outs, and the catch alike — so it would have reported
+success on failure and left a broken credential pair in place. It now compares
+`lastCloudSync` across the call, which the function does advance on success and leaves
+untouched in its catch; the same signal the existing `visibilitychange` handler uses.
+
+**3 — Completion gate 2 is now a button.** `.github/workflows/deploy-backup-worker.yml`
+is **manual dispatch only**, requires typing `DEPLOY`, and runs with
+`permissions: contents: read`. It never triggers on push, comment or schedule — that
+distinction is deliberate, because the v24.0.1 comment-triggered, branch-pushing CI
+repair machinery was removed on purpose and must not return. It runs the preflight, a
+`wrangler --dry-run`, the deploy, then verifies `/health` is 200 reporting version 14,
+that CORS echoes the real app origin rather than `*`, and that unauthenticated
+`/admin/users` and `/evaluate` still return 401. Those four are chosen because the
+deployed v7 fails exactly the first two, so a deploy that did not land cannot report
+success. One-time setup is a single repository secret, `CLOUDFLARE_API_TOKEN`.
+
+**Why this shipped as a version bump.** An `app.js` change alone is undeliverable: a
+browser installs a new service worker only when the worker script's own bytes differ,
+and `CACHE_NAME` is `freightlogic-${SW_VERSION}`. Without the bump every installed PWA
+would keep serving the pre-repair shell from cache. This is the v24.0.3 lesson applied
+rather than relearned.
+
+**Two pieces of standing drift closed in the header while bumping it:**
+- `app.js`'s header block read `v24.0.4` as its top line while `APP_VERSION` was
+  `24.0.5` — the only live version CONFLICT in the tree, and exactly what checklist
+  item 1 exists to catch.
+- v24.0.5 never wrote a header changelog entry at all. Backfilled from what that
+  release actually shipped, rather than relabelling a neighbouring entry — which is the
+  specific failure mode item 1 names.
+
+**Tests.** `tests/integration/cloud-backup-paused.spec.mjs` (8, new). Every
+`chromium.launch()` in the suite now honours an optional `FL_CHROME_PATH` — the two in
+`tests/lib/harness.mjs` plus five specs that launch directly and therefore bypass any
+harness-level launch policy (`sw-subresource-semantics`, `field-resilience` ×3,
+`backup-restore-parity`). Unset, as in CI, the launch options are byte-identical to
+before; CI proved that by returning the same total. Full suite: **384 passed, 0 failed
+across 41 spec files**, run both locally against real headless Chromium and in CI.
+
+**Deployed-Worker findings recorded.** `AUDIT_REPORT.md` gained P-01…P-07 — the first
+OPEN findings in that report. The live backup Worker is **v7**, not v13: it stores every
+driver bearer token in KV in plaintext, returns those tokens from `GET /admin/users`,
+lets the model own verdict and grade in `/evaluate` (a live violation of the v24.0
+authority rule), and has no `GET /backup/delta` at all, so X-01 is active in production
+and pruned deltas are already unrecoverable. All seven close by deploying the v14 source
+that already exists; none needs a code change. The v7 → v14 transition was verified safe
+against the deployed bytes — `getPtr()` lazily seeds from `list({prefix})`, the driver
+path migrates and deletes legacy plaintext token keys, v7's token and user-id formats
+both satisfy v14's validators, and secrets survive a deploy.
+
+**Still HOLD.** Certification is unchanged. Gate 2's source side is complete and the
+deploy is one dispatch away, but it needs a `CLOUDFLARE_API_TOKEN` repository secret
+that only the operator can create. Gate B5 is closed by `scripts/verify-rollback.mjs`,
+which also established that **neither component has a clean rollback target** — the
+Worker's only prior version is v7, so rolling back is a security regression, and rolling
+the app back past `39882fa` raises `payloadLbs` 3000 → 3800 and drops the 54.8"
+wheel-well constraint. Approved policy is fix-forward. The private-history and
+physical-iPhone gates are unchanged and remain the operator's; neither depends on the
+Worker deploy, so both can run in parallel with it.
+
+**Documentation debt this release left, closed here.** v24.0.6's landing commit bumped
+CLAUDE.md's Project Overview, Key Constants and PWA references but shipped no release
+section — the same omission v24.0.5 made, which checklist item 10 does not currently
+catch because it names version *references* rather than a section. This section is that
+correction. `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` still reads `24.0.5`; it is
+gpt-owned under `/.agents/LANES.md` and was requested through `/.agents/inbox/` rather
+than edited across lanes.
