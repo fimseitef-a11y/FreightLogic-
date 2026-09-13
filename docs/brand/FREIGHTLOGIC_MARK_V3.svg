@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#06142f"/>
+      <stop offset="0.65" stop-color="#0b2d5b"/>
+      <stop offset="1" stop-color="#0a4cae"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0.1" y1="0.9" x2="0.9" y2="0.1">
+      <stop offset="0" stop-color="#0b55ea"/>
+      <stop offset="0.55" stop-color="#006bff"/>
+      <stop offset="1" stop-color="#00d2ff"/>
+    </linearGradient>
+    <linearGradient id="fwhite" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eaf7ff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="78%" cy="18%" r="60%">
+      <stop offset="0" stop-color="#00d2ff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#00d2ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <path d="M220 208 Q220 184 244 184 H700 Q726 184 726 210 V294 Q726 320 700 320 H370 V454 H615 Q641 454 641 480 V560 Q641 586 615 586 H370 V816 Q370 842 344 842 H246 Q220 842 220 816 Z" fill="url(#fwhite)"/>
+  <path d="M309 795 C300 668 319 583 389 516 C460 448 536 445 614 426 C697 406 754 356 819 264" fill="none" stroke="#ffffff" stroke-width="128" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M309 795 C300 668 319 583 389 516 C460 448 536 445 614 426 C697 406 754 356 819 264" fill="none" stroke="url(#road)" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M750 229 L882 146 Q905 132 903 161 L897 326 Q896 354 874 337 L823 300 L776 352 Z" fill="#ffffff"/>
+  <path d="M773 232 L865 176 L861 302 L820 273 L789 310 Z" fill="url(#road)"/>
+  <path d="M323 697 C330 625 353 565 400 522 C451 475 500 461 557 451" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-dasharray="34 45"/>
+  <path d="M610 437 C679 423 722 393 762 347" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-dasharray="34 45"/>
+</svg>
