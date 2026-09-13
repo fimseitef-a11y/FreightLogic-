@@ -1,18 +1,18 @@
 # FreightLogic Completion Release — Certification State
 
 Date: 2026-09-13
-Exact source synchronization point: `03c97b64af354fa83fcb15881b320bfdfbf1e20a`
+Exact runtime source synchronization point: `d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`
 Runtime identity: **FreightLogic v24.0.7 / IndexedDB v15 / Worker v15 source**
-Supersedes: `COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md` and `COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-12.md`
-Status: **HOLD — SOURCE ADVANCED; V24.0.7 PRODUCTION PARITY UNOBSERVED; WORKER V15 REDEPLOY/SMOKES REQUIRED; APPROVED STRUCTURAL UI PASS, PRIVATE-HISTORY, AND PHYSICAL-IPHONE EVIDENCE REMAIN**
+Supersedes the stale structural-status wording in this file from the earlier 2026-09-13 synchronization point.
+Status: **HOLD — STRUCTURAL UI PASS COMPLETE; V24.0.7 EXACT PRODUCTION PARITY UNOBSERVED; WORKER V15 REDEPLOY/SMOKES, PRIVATE-HISTORY RECONCILIATION, AND PHYSICAL-IPHONE EVIDENCE REMAIN**
 
-This record exists because the 2026-09-12 certification documents describe v24.0.5 / Worker v14, while current source has advanced to v24.0.7 / Worker v15 and the operator has approved an additional structural UI pass. Historical certification files remain immutable evidence of what was actually observed at the time; their PASS results are not carried forward to a different generation.
+Historical PASS results are evidence for the exact generation on which they were observed. They are not inherited across later source generations or structural changes.
 
 ## 1. Current source state
 
-Current `main` at this synchronization point is `03c97b64af354fa83fcb15881b320bfdfbf1e20a`.
+The current runtime candidate is `d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`.
 
-The current repository declares:
+The repository declares:
 
 - app/PWA/service worker: **24.0.7**;
 - IndexedDB schema: **15**;
@@ -20,66 +20,70 @@ The current repository declares:
 - production app origin: `https://freightlogic-v2.fimseitef.workers.dev`;
 - backup/API Worker origin: `https://freightlogic-backup.fimseitef.workers.dev`.
 
-Two immediately preceding changes are relevant:
+Relevant merged work now includes:
 
-1. PR #164 merged the GPT-owned presentation-only native visual pass as `666e3044fe60f34f2e2e1807c396f639cd1077d5`. It changed only `styles.css`; lane enforcement and the full Playwright workflow were green before merge.
-2. PR #163 merged the Claude-owned deploy-path repair as `03c97b64af354fa83fcb15881b320bfdfbf1e20a`. It removed the remaining hardcoded Worker-v14 preflight literals that had blocked the first v15 deployment attempt; its lane and full-test workflows were green before merge.
+1. PR #164 — GPT-owned native visual/presentation pass in `styles.css`.
+2. PR #163 — Claude-owned Worker-v15 deploy-path repair.
+3. PR #167 — GPT-owned mobile accessibility/readiness cleanup.
+4. PR #168 — the real five-surface structural shell: **Today / Loads / Evaluate / Trips / Money**. It reuses canonical FreightLogic state/renderers, preserves `#omega` as the evaluator route, moves the existing load inbox into a dedicated Loads surface, keeps secondary tools under More, and precaches the structural adapter offline.
 
-This certification synchronization must itself pass the repository's normal Lanes + full Tests workflows before merge, providing a fresh integrated regression gate over the combined current main state.
+PR #168 passed the repository lane checks and full Playwright suite before merge. The post-merge `main` Tests run `34746260152` also completed successfully.
 
 ## 2. App/PWA live status
 
-The last exact-byte production app/PWA parity PASS was observed on 2026-09-12 for **v24.0.5**, not v24.0.7.
+The last exact-byte production app/PWA parity PASS remains the 2026-09-12 observation for **v24.0.5**, not v24.0.7.
 
-Source has since advanced through v24.0.6 and v24.0.7. PR #164 also changed the production presentation asset (`styles.css`). Cloudflare reported a successful branch/commit preview deployment for the PR #164 head, but a preview deployment is not proof that the production app origin serves the exact merged main candidate.
+Cloudflare successfully built/deployed the merged PR #168 `main` commit, with production version identifier `9dfb5ad3-086b-4e11-b3eb-8c09b34eeb52`. That is useful deployment evidence, but a successful build/deploy record is not the same as re-probing every required production byte/header/service-worker invariant.
 
-Therefore current v24.0.7 production app/PWA parity is:
+Therefore current v24.0.7 exact production parity remains:
 
 **NOT RUN / UNOBSERVED.**
 
-Do not relabel the prior v24.0.5 exact-byte PASS as a v24.0.7 PASS.
+The next parity run must include the current structural asset `modern-shell.js` in addition to the existing app/PWA/service-worker/manifest/security checks.
 
 ## 3. Backup/API Worker live status
 
 Worker v14 was successfully deployed on 2026-09-13 before the Worker-v15 source bump.
 
-The first v15 deployment attempt (GitHub Actions run `34741097860`) failed closed during preflight **before `wrangler deploy`** because a redundant guard still required `workerVersion: "14"`. PR #163 documents that the live `freightlogic-backup` Worker remained at the prior v14 deployment after that refused attempt.
+The first v15 deployment attempt (GitHub Actions run `34741097860`) failed closed before `wrangler deploy` because of a stale v14 preflight assertion. PR #163 removed that stale deploy-path pin.
 
-PR #163 removed the stale deploy pin and made the deploy path derive the expected Worker generation from `scripts/verify-cloudflare-parity.mjs`, which now expects Worker **15**.
-
-Therefore current Worker state is:
+No later successful `Deploy Backup Worker` workflow run is recorded after that repair at this synchronization point. Current Worker state is therefore:
 
 - v15 source merged: **PASS**;
-- deploy path no longer blocked by stale v14 literal: **PASS**;
+- deploy-path stale-pin defect: **CLOSED**;
 - live Worker v15 deployment: **NOT RUN / REDEPLOY REQUIRED**;
 - v15 `/health` + production-origin CORS observation: **NOT RUN**;
 - authenticated evaluate/extract/backup/delta/restore/rotation smokes: **NOT RUN**.
 
-The intended deployment boundary remains the manual `Deploy Backup Worker` workflow with explicit `DEPLOY` confirmation. It must not be replaced by an automatic push/comment-triggered or self-pushing workflow.
+The deployment boundary remains the manual `Deploy Backup Worker` workflow with explicit `DEPLOY` confirmation. Do not replace it with an automatic push/comment-triggered or self-pushing workflow.
 
-## 4. Approved structural UI pass is now release scope
+## 4. Structural UI gate
 
-After the v24.0.7 source state, the operator explicitly approved the larger structural UI redesign and instructed the agents to proceed without redundant product approval.
+The previously pending structural UI gate is now **COMPLETE IN SOURCE** at PR #168 / `d2c9a9e`.
 
-The requested source-lane work is recorded in:
+Current primary driver navigation is:
 
-`.agents/inbox/gpt-to-claude-modern-ui-structural-pass-2026-09-13.md`
+- **Today** — canonical Home route;
+- **Loads** — dedicated surface using the existing canonical load inbox/rendering path;
+- **Evaluate** — canonical Omega evaluator (`#omega`);
+- **Trips** — canonical Trips route;
+- **Money** — canonical Money route.
 
-It includes real primary navigation **Today / Loads / Evaluate / Trips / Money**, a dedicated Loads surface using the canonical load inbox/evaluator pipeline, operational Today ordering, answer-first Evaluate, Money consolidation, and coherent Settings.
+Secondary Intel/Stack/settings/utilities remain accessible through More. No second load queue, evaluator, or freight-scoring authority was introduced.
 
-This work is not complete at this certification point. Because it can change shared runtime/shell/version surfaces, **final production parity and physical-iPhone certification must be run after that structural pass lands**, against its resulting exact SHA/generation.
+This closes the source-side structural blocker. It does **not** close production parity or physical-device certification.
 
 ## 5. Private operator-history gate
 
-The original August 27 M6 bundle has now been recovered privately. See `INDEPENDENT_READINESS_2026-09-13.md`: all five inputs pass preflight (216 source rows), and the unchanged adapter produces 149 candidate records deterministically. Raw rows remain outside this public repository.
+The original August 27 M6 bundle has been recovered privately. `INDEPENDENT_READINESS_2026-09-13.md` records that all five inputs pass preflight (216 source rows) and the unchanged adapter produces 149 candidate records deterministically. Raw rows remain outside the public repository.
 
 Status: **BUNDLE RECOVERED / ADAPTER PREPARED / APPLICATION ROUND TRIP AND RECONCILIATION NOT RUN**.
 
-The separate previously described 125-row master is still unavailable. Do not reconstruct it from summaries. The prepared candidates still require an isolated application import/re-export, idempotence verification and conflict review before adoption; this is not Gate C PASS.
+The separate previously described 125-row master remains unavailable and must not be reconstructed from summaries. The prepared candidates still require an isolated application import/re-export, idempotence verification, and conflict review before adoption.
 
 ## 6. Physical iPhone gate
 
-The finite checks in `FIELD_TEST_CHECKLIST.md` have not been run against a final post-structural-pass production candidate.
+The finite checks in `FIELD_TEST_CHECKLIST.md` have not yet been run against the final production candidate.
 
 Status: **NOT RUN**.
 
@@ -87,17 +91,16 @@ Do not delete the installed PWA or clear Safari website data merely to force an 
 
 ## 7. Current shortest valid path to certification
 
-1. Complete the approved structural UI source pass under the existing lock/lane/full-suite rules.
-2. Name the resulting exact final app generation/SHA and verify source tests/lane checks are green.
-3. Deploy the current Worker generation (currently source v15) through the manual backup-Worker workflow if the structural pass does not advance it again.
-4. Run exact production app/PWA/service-worker/manifest/security parity on the same named candidate.
-5. Run Worker health/CORS/auth and authenticated evaluate/extract/backup/delta/restore/rotation smokes on that same candidate.
-6. Run private-history reconciliation from the real raw source bundle.
-7. Run the physical-iPhone checklist on that same production candidate.
-8. Write a later certification state that explicitly supersedes this HOLD and records the final release/fix-forward evidence.
+1. Finish any remaining release-bound presentation assets that are intentionally part of this candidate, then name/freeze the exact final runtime SHA/generation.
+2. Deploy Worker v15 through the manual backup-Worker workflow.
+3. Run exact production app/PWA/service-worker/manifest/security parity on the frozen candidate, including `modern-shell.js`.
+4. Run Worker health/CORS/auth plus authenticated evaluate/extract/backup/delta/restore/rotation smokes.
+5. Run private-history reconciliation from the recovered real raw bundle.
+6. Run the physical-iPhone checklist on the same production candidate.
+7. Write a later certification record that explicitly supersedes this HOLD and records the final fix-forward evidence.
 
 ## Certification rule
 
-Current status remains **HOLD**. No previous PASS is inherited across a source-generation change unless the relevant live/device evidence is re-observed on the exact new candidate.
+Current status remains **HOLD**. The structural source pass is no longer a blocker; the remaining blockers are live deployment/parity, private-history reconciliation, and physical-device evidence.
 
 Controlling sequence: **EVIDENCE -> TEST -> CHALLENGE -> RECONCILE -> CERTIFY -> ADOPT**.

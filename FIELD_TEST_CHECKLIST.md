@@ -4,11 +4,9 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`.
 
-Current source synchronization point: exact Git SHA `03c97b64af354fa83fcb15881b320bfdfbf1e20a`, **FreightLogic v24.0.7 / IndexedDB v15 / Worker v15 source**. The last exact-byte production app/PWA PASS was for v24.0.5 on 2026-09-12; v24.0.7 production parity has not yet been re-observed. Worker v14 was the last confirmed deployed backup/API generation; the first v15 deployment attempt stopped safely before deploy because of a stale preflight pin, now fixed by PR #163. Do not convert source, preview-build, or desktop evidence into a physical-device PASS.
+Current runtime synchronization point: exact Git SHA `d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`, **FreightLogic v24.0.7 / IndexedDB v15 / Worker v15 source**. The source-side structural UI pass is complete and the post-merge `main` Playwright run is green. Cloudflare built/deployed the merged runtime commit, but exact v24.0.7 production byte/header parity has not yet been re-observed. Worker v14 is the last confirmed deployed backup/API generation; Worker v15 still requires the manual deploy plus live smokes. Do not convert source, deployment-build, preview, or desktop evidence into a physical-device PASS.
 
-A further operator-approved structural UI pass is pending in the Claude/source lane. **Do not spend final physical-iPhone certification on an intermediate UI candidate.** Run the blocking A-section only after the structural pass is merged and the exact final production SHA/generation is named.
-
-Before testing, record the exact production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
+Before testing, record the exact frozen production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
 Use synthetic/non-sensitive records where practical. Do **not** delete the installed PWA or clear Safari website data merely to make an update test pass; those actions can erase local IndexedDB evidence.
 
@@ -19,8 +17,9 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 3. Launch the existing Home Screen app, or install only if it is not already present.
 4. Close/reopen online and verify the exact named final candidate generation.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
+6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
-PASS requires the named final candidate generation (currently source v24.0.7, subject to the pending structural pass) to become active without blank shell, reload loop, startup error, lost local data, or destructive website-data clearing. Prior evidence from older installed generations never substitutes for this exact check.
+PASS requires the named final candidate to become active without blank shell, reload loop, startup error, lost local data, or destructive website-data clearing. Loads must render the canonical load inbox, Evaluate must still resolve to the canonical evaluator, and prior evidence from older installed generations never substitutes for this exact check.
 
 ## A2. Full Evaluate + Quick Evaluate UNKNOWN versus explicit zero
 
@@ -44,9 +43,10 @@ PASS requires evidence and provenance to survive reload, non-carrier money not t
 2. Enable Airplane Mode.
 3. Create/edit representative synthetic local data.
 4. Close/reopen while offline.
-5. Reconnect and reopen again.
+5. Navigate through Today, Loads, Evaluate, Trips, and Money while offline.
+6. Reconnect and reopen again.
 
-PASS requires offline launch, durable offline saves, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback.
+PASS requires offline launch, durable offline saves, working structural navigation, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback.
 
 ## A5. Local export/import + secret exclusion
 
@@ -91,13 +91,13 @@ Run these against the same final production candidate used for A1-A9. See `docs/
 
 ## B1. Exact production app generation
 
-Current evidence for **v24.0.7**: **NOT RUN / UNOBSERVED**. The last exact production app/PWA byte-parity PASS was v24.0.5 on 2026-09-12. Source has since advanced and the visual system changed, so that old PASS cannot be carried forward.
+Current evidence for **v24.0.7**: **DEPLOY BUILD SUCCEEDED / EXACT PARITY NOT RUN**. Cloudflare built/deployed runtime commit `d2c9a9e`, but the last exact production app/PWA byte-parity PASS is still v24.0.5 from 2026-09-12.
 
-PASS requires the exact final production SHA/generation, app/PWA/service worker/manifest/static assets, and security policy to match the named source candidate.
+PASS requires the exact final production SHA/generation, app/PWA/service worker/manifest/static assets (including `modern-shell.js`), and security policy to match the named source candidate.
 
 ## B2. Worker health + auth boundary
 
-Current evidence: **v15 source is merged but v15 deployment is not yet observed**. Worker v14 was the last confirmed deployed generation. A v15 deploy run stopped before `wrangler deploy` because of a stale v14 preflight literal; PR #163 fixed that deploy-path defect and merged.
+Current evidence: **v15 source is merged but v15 deployment is not yet observed**. Worker v14 is the last confirmed deployed generation. PR #163 fixed the stale preflight pin that blocked the first v15 attempt.
 
 PASS requires `/health` to return 200 and report Worker `15`, production-origin CORS to target `https://freightlogic-v2.fimseitef.workers.dev`, unauthorized admin/driver requests to be denied, and no secret/token exposure.
 
@@ -115,11 +115,13 @@ Run `node scripts/verify-rollback.mjs` and record the exact source SHA and named
 
 # C. Private-history reconciliation blocker
 
-The raw row-level private master dataset is not currently available in the accessible repository/File Library. Do not reconstruct it from summaries.
+The original August 27 five-file M6 bundle has been recovered privately. Preflight reports 216 source rows and the unchanged adapter deterministically produces 149 candidate records. Raw rows remain outside the public repository.
 
-When the real source bundle is available, first run `node scripts/verify-history-bundle.mjs <private-bundle-dir>`, then the current M6 importer/reconciliation machinery outside the public repository. The exact five-file contract and review steps are in `docs/COMPLETION_HANDOFF_2026-09-12_PR158.md`. Structural preflight alone does not close this gate.
+Status: **BUNDLE RECOVERED / APPLICATION ROUND TRIP + IDEMPOTENCE + CONFLICT REVIEW NOT RUN**.
 
-PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, and no collapse of distinct shipments sharing external IDs. Record only non-sensitive reconciliation results publicly.
+Do not reconstruct the separate unavailable 125-row master from summaries. Run the isolated import/re-export and reconciliation machinery outside the public repository, then record only non-sensitive results publicly.
+
+PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, no collapse of distinct shipments sharing external IDs, deterministic re-import/idempotence, and reviewed conflicts before adoption.
 
 # D. Non-blocking resilience watch list
 
@@ -142,4 +144,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD** until the approved structural UI pass is integrated and re-tested, Worker v15 is deployed and live-verified, the exact final app/PWA generation is production-verified, the real private-history reconciliation is run, and all applicable physical-iPhone blockers are PASS. A later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md` before the release is frozen.
+The release remains **HOLD** until Worker v15 is deployed and live-verified, exact final app/PWA production parity is observed, the recovered private-history bundle is reconciled, and all applicable physical-iPhone blockers are PASS. A later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md` before the release is frozen.
