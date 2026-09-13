@@ -26,10 +26,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.7",
-  manifestName: "FreightLogic v24.0.7",
+  serviceWorkerVersion: "24.0.8",
+  manifestName: "FreightLogic v24.0.8",
   workerVersion: "15",
-  overlayScript: "midwest-stack-authority.js?v=24.0.7"
+  overlayScript: "midwest-stack-authority.js?v=24.0.8"
 };
 
 // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
@@ -109,13 +109,13 @@ function report(checks) {
 async function runLiveChecks(checks) {
   const index = await fetchText(`${appOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
-  assert(checks, 'Index references app.js v24.0.7', index.text.includes('app.js?v=24.0.7'));
-  assert(checks, 'Index references voice-load.js v24.0.7', index.text.includes('voice-load.js?v=24.0.7'));
-  assert(checks, 'Index references sw-bridge.js v24.0.7', index.text.includes('sw-bridge.js?v=24.0.7'));
+  assert(checks, 'Index references app.js v24.0.8', index.text.includes('app.js?v=24.0.8'));
+  assert(checks, 'Index references voice-load.js v24.0.8', index.text.includes('voice-load.js?v=24.0.8'));
+  assert(checks, 'Index references sw-bridge.js v24.0.8', index.text.includes('sw-bridge.js?v=24.0.8'));
 
   const sw = await fetchText(`${appOrigin}/service-worker.js?verify=${Date.now()}`);
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
-  assert(checks, 'Service worker version 24.0.7', sw.text.includes("SW_VERSION = '24.0.7'"));
+  assert(checks, 'Service worker version 24.0.8', sw.text.includes("SW_VERSION = '24.0.8'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
   // X-08/X-10 (v23.9, Amendment 4): the install-blocking `critical` array — not
   // just the broader, non-blocking CORE list — must include both files, or a
@@ -131,13 +131,26 @@ async function runLiveChecks(checks) {
   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
 
-  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.7`);
+  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.8`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
 
-  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.7`);
+  // v24.0.8: the structural navigation adapter is a release-bound asset and was
+  // not covered here. It is requested by sw-bridge.js rather than index.html, so
+  // the index-side `?v=` assertions above cannot see it — a stale import string
+  // would ship an old tab bar with every other marker reporting green.
+  const bridge = await fetchText(`${appOrigin}/sw-bridge.js?v=24.0.8`);
+  assert(checks, 'SW bridge loads', bridge.ok, `${bridge.status}`);
+  assert(checks, 'SW bridge imports modern-shell.js v24.0.8', bridge.text.includes("modern-shell.js?v=24.0.8"));
+
+  const shell = await fetchText(`${appOrigin}/modern-shell.js?v=24.0.8`);
+  assert(checks, 'Modern shell adapter loads', shell.ok, `${shell.status}`);
+  assert(checks, 'Modern shell exposes FreightLogicModernShell', shell.text.includes('window.FreightLogicModernShell'));
+  assert(checks, 'Service worker precaches modern-shell.js v24.0.8', sw.text.includes('modern-shell.js?v=24.0.8'));
+
+  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.8`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
-  assert(checks, 'Manifest name v24.0.7', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+  assert(checks, 'Manifest name v24.0.8', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);

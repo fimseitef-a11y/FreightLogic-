@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.7** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.8** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA remains v24.0.7 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.8 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -17,16 +17,25 @@
 ## File Structure
 
 ```
-index.html                 — Single-page app shell + all CSS (Design System v3.0 "Command",
-                             with v4.0 "Command" component extensions)
-app.js                     — Core application (~830KB, all logic in one IIFE)
+index.html                 — Single-page app shell: every `#view-*` section the canonical
+                             router owns (`views` in app.js is built from this markup at
+                             parse time, so a view added at runtime cannot be routed to)
+styles.css                 — Extracted presentation layer, Design System v3.0 "Command".
+                             gpt-owned; carries no version string by design (CG-11)
+app.js                     — Core application (~1.1MB, all logic in one IIFE). Nothing in it
+                             is a global — other scripts cannot call into it
+modern-shell.js            — Driver-facing structural shell: the Today/Loads/Evaluate/Trips/
+                             Money tab bar and the More entry. Loaded by dynamic import from
+                             sw-bridge.js. Structural ONLY — it owns no route, renderer or
+                             state; tabs are plain hrefs into the canonical hash router
 voice-load.js              — Voice input enhancement module (spoken numbers, interim results)
 admin-driver-ui.js         — Admin driver management UI (injected via service worker)
 midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
                              (injected via service worker, not referenced from index.html)
 sw-bridge.js               — Service worker auto-update bridge (SKIP_WAITING + reload)
 service-worker.js          — PWA offline caching; injects admin-driver-ui.js and
-                             midwest-stack-authority.js into HTML responses
+                             midwest-stack-authority.js into HTML responses; precaches
+                             modern-shell.js in the install-blocking critical shell
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json              — PWA manifest
 midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
@@ -119,7 +128,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.7';
+const APP_VERSION = '24.0.8';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -262,8 +271,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.7` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.7`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.8` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.8`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1845,3 +1854,155 @@ catch because it names version *references* rather than a section. This section 
 correction. `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` still reads `24.0.5`; it is
 gpt-owned under `/.agents/LANES.md` and was requested through `/.agents/inbox/` rather
 than edited across lanes.
+
+---
+
+## v24.0.7 "Rotate Without Loss" — in-place driver token rotation
+
+Worker **v14 → v15**. Rotating a driver's bearer token previously meant creating a new
+driver and revoking the old one, because `POST /admin/users` was the only way to mint a
+token — and it mints a new `userId` too. Every backup is keyed
+`user:<userId>:device:<id>:backup:<ts>`, so a rotation silently orphaned that driver's
+entire backup history: the data stayed in KV and nothing could address it again.
+
+`POST /admin/users/:id/rotate` re-keys in place and keeps the identity, and the admin
+panel gained a Rotate control returning a one-tap invite link. Rotation also deletes any
+legacy v7 plaintext `token:` key immediately, which is what actually finishes the
+P-01/P-02 cleanup that v14 only did lazily on a token's next use. `DB_VERSION` stays
+**15**.
+
+*This section was backfilled in v24.0.8 — v24.0.7's landing commit shipped without one,
+the same omission v24.0.5 and v24.0.6 made. See the checklist note at the end of the
+v24.0.8 section.*
+
+---
+
+## v24.0.8 "Loads Actually Opens" — the structural shell, repaired
+
+PR #168 landed the five-surface driver shell — Today / Loads / Evaluate / Trips /
+Money — and the full suite was green at **392 passed / 0 failed across 42 spec
+files**. It was green because nothing in the suite touched the shell. The Loads
+tab, the central new surface of that pass, was dead on arrival. `DB_VERSION` stays
+**15** and the Worker stays **v15** — neither's semantics changed.
+
+**1 — The Loads tab showed the Today screen.** `modern-shell.js` created
+`#view-loads` itself, at import time. `app.js` builds its `views` map at **parse**
+time from markup that already exists:
+
+```js
+const views = { home:$('#view-home'), trips:$('#view-trips'), … };
+```
+
+so there was no `loads` entry, and `navigate()` resolves an unknown hash to `home`.
+Tapping Loads therefore rendered `view-home` while `#view-loads` — never registered
+with any router — stayed `display:none` for the life of the page. The hash read
+`#loads` and the Loads tab highlighted itself, which is exactly why this looked
+fine: **every signal except the one that matters was already correct.**
+
+The consequence was larger than one empty tab. PR #168 had *relocated*
+`#loadInboxCard` out of `view-omega` into that surface, so the Smart Load Inbox
+(F23) — paste a broker email, score it — became unreachable from anywhere in the
+app.
+
+`#view-loads` is now real markup in `index.html`, so it exists before `views` is
+built; `loads` is a real route with a real renderer (`renderLoadsView()`, beside
+`renderLoadInbox()`); and `#loadInboxCard` has exactly one mount point, which the
+Loads route owns. `_refreshInboxRecentBar()` re-renders the recent-paste bar on
+each visit, because `renderLoadInbox()` short-circuits on `inboxInit` and that bar
+is session state other surfaces write to. `_renderInboxRecent()` now clears its
+container first — it returned early on an empty list, which would have left a
+previous session's entries on screen once it started being re-rendered.
+
+**2 — Three more paths in the adapter could never have run.** `renderLoads()`
+called `window.renderLoadInbox` and `window.renderOmega`; the More button called
+`window.navigate`. `app.js` is one IIFE and exports none of those, so all three
+were permanently `undefined` — and silently: no throw, no console error, the
+`catch` never fired because nothing threw. `currentPrimaryRoute()` queried
+`.view.active`, a class the app has never used (visibility is inline
+`style.display`), and was itself never called.
+
+The adapter is now what its own header claims: it builds the tab bar, moves the
+live `#navUnpaidBadge` node into it rather than minting a second one, adds the More
+entry, and normalizes the two driver-facing aliases (`#today`, `#evaluate`). Tabs
+are plain `href`s and carry the **canonical** route name in `data-nav`, so
+`app.js`'s own `setActiveNav()` drives the highlight — the pre-24.0.8 bar declared
+`data-nav="evaluate"`, a name the router never produces, so the centre tab was
+unhighlighted on every navigation the adapter did not itself perform. No click
+interception, no second router, no `stopImmediatePropagation`.
+
+**3 — The Market Intel surface became unreachable.** The old bar carried an Intel
+tab, and `index.html`'s nav anchor was the **only** link to `#intel` anywhere in the
+app. The shell replaces that `<nav>` wholesale, and `MORE_TILES` had no Intel entry —
+so the route, `renderIntel()`, and all five of its tabs (Overview, Lanes, Reloads,
+Brokers, Tools) stayed perfectly intact and reachable only by typing the hash. A
+`Market Intel` tile in More's PRIMARY section restores it, which is what makes
+"secondary tools remain accessible through More" true rather than assumed. Every
+other route was already covered: `expenses`, `fuel` and `insights` have tiles, and
+`more` has the header control.
+
+**4 — `voice-load.js` threw on every fresh session.**
+
+```js
+try { return JSON.parse(raw); } catch (_) { return fallback; }
+```
+
+`sessionStorage.getItem()` returns `null` for a key never written, and
+`JSON.parse(null)` is **valid JSON** that yields `null` — it does not throw, so the
+catch never ran and the `[]` fallback was never applied. `getDraftStore()` handed
+back `null`, and `loadLatestDraft()` died on `store.length`. That aborted `init()`
+before its first `renderReview()` and before the no-speech-recognition fallback
+could hide the voice button. `safeJSONParse` now validates the **shape**, not just
+the parse. `getCorrectionStore()` had the same latent defect on its write path.
+
+**Why this is a version bump.** All cache-busters were `?v=24.0.7` and `CACHE_NAME`
+is `freightlogic-${SW_VERSION}`. An `app.js` + `index.html` + `modern-shell.js`
+repair landed without bumping would never reach an installed PWA. This is the
+v24.0.3 lesson applied rather than relearned.
+
+**Release-identity coverage for `modern-shell.js`.** It is release-bound but is
+requested by `sw-bridge.js` via dynamic import, **not** by `index.html` — so CG-04
+and CG-05, which read `index.html`, could never see it, and neither could the
+parity script. A stale import string would have shipped the previous generation's
+tab bar with every other marker reporting green. Now covered on every axis:
+`scripts/verify-cloudflare-parity.mjs` fetches the deployed `sw-bridge.js` and
+`modern-shell.js` and asserts the import string, the exposed global, and the
+service-worker precache entry; CG-07's header sweep includes the file; and CG-12
+asserts the bridge import, the precache URL and the install-blocking `critical`
+array all agree. This satisfies the requirement in
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md` §2 that the next parity
+run include `modern-shell.js`.
+
+**CG-13 is the assertion that would have caught the original defect.** It parses
+the tab bar's `href`s and `app.js`'s `views` map and fails if the shell can produce
+a hash the router cannot resolve, or if a mapped view is missing from
+`index.html` — a runtime-injected section being too late by construction. It also
+requires `data-nav` to equal the canonical route name.
+
+**Tests.** `tests/integration/modern-shell-routing.spec.mjs` (12, new) drives the
+real app in Chromium and asserts **computed visibility and rendered content**, not
+the hash or the highlighted tab — both of those were already correct while the
+surface was dead, which is how this shipped green. Plus CG-12/CG-13 static
+assertions. MS-12 asserts reachability structurally — every route the app can
+render must be reachable from the tab bar or a More tile, with no exceptions list —
+so the next navigation change cannot orphan a surface the way this one did.
+
+Every new assertion carries a negative control: reverting the `views` registration
+fails MS-02/03/04/05/06 and CG-13; restoring `data-nav="evaluate"` fails CG-13; a
+stale bridge import fails CG-12; reverting `safeJSONParse` fails MS-10; removing the
+Intel tile fails MS-12. Full suite: **406 passed, 0 failed across 43 spec files**, up
+from 392/42.
+
+**Version-bump checklist, items 7 and 13.** `styles.css` still carries no version
+(CG-11 holds). `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` is gpt-owned under
+`/.agents/LANES.md`; the `24.0.8` bump and the `modern-shell.js` parity line were
+requested through `/.agents/inbox/` rather than edited across lanes. This release
+also backfills the v24.0.7 section CLAUDE.md never got — three consecutive releases
+(24.0.5, 24.0.6, 24.0.7) shipped without one, so checklist item 10 should be read
+as requiring a release *section*, not only bumped version references.
+
+**Still HOLD.** Nothing here touches the live gates. The canonical certification
+state remains `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`: Worker
+v15 redeploy, exact production parity on the frozen candidate, private-history
+reconciliation, and the physical-iPhone checklist are all unchanged and all remain
+the operator's. This release changes what that parity run must target — the frozen
+candidate is now `24.0.8`, and it must include `modern-shell.js`.

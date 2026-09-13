@@ -1,7 +1,22 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.7 USA ENGINE
+/** FreightLogic v24.0.8 USA ENGINE
+ *  v24.0.8 "Loads Actually Opens": the five-surface shell landed in PR #168 with
+ *          its central new surface dead. modern-shell.js created `#view-loads`
+ *          at runtime, but app.js builds its `views` map at parse time — so the
+ *          canonical router had no entry for it, `#loads` fell through to
+ *          `home`, and the driver tapped Loads and got the Today screen with
+ *          the Loads tab highlighted. The Smart Load Inbox had been relocated
+ *          out of Evaluate into that surface, so F23 became unreachable from
+ *          anywhere in the app. `renderLoads()` could not have saved it either:
+ *          it reached for window.renderLoadInbox / window.renderOmega, and the
+ *          More button for window.navigate, none of which exist because app.js
+ *          is one IIFE. `#view-loads` is now real markup in index.html and
+ *          `loads` is a real route with a real renderer; the adapter keeps only
+ *          the tab bar and the More entry. Also: voice-load.js threw a
+ *          TypeError on every fresh session, because JSON.parse(null) is valid
+ *          JSON and its safeJSONParse never reached the catch.
  *  v24.0.7 "Rotate Without Loss": rotating a driver token used to mean
  *          creating a new driver and revoking the old one, because that was
  *          the only way to mint a token. POST /admin/users mints a new
@@ -153,7 +168,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.7';
+const APP_VERSION = '24.0.8';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -5267,7 +5282,7 @@ async function handleShareTarget(){
 }
 
 // ---- Router ----
-const views = { home:$('#view-home'), trips:$('#view-trips'), expenses:$('#view-expenses'),
+const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), expenses:$('#view-expenses'),
   money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
 
 function setActiveNav(name){
@@ -5318,6 +5333,7 @@ async function navigate(){
   setActiveNav(name);
   window.scrollTo({top:0, behavior:'instant'});
   if (name === 'home') await renderHome();
+  if (name === 'loads') await renderLoadsView();
   if (name === 'trips') await renderTrips(true);
   if (name === 'expenses') await renderExpenses(true);
   if (name === 'money') await renderAR();
@@ -7124,6 +7140,13 @@ const MORE_TILES = [
   { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY' },
   { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY' },
+  // v24.0.8: Intel lost its bottom-nav tab when the five-surface shell replaced
+  // the old Home/Trips/Omega/Intel/More bar, and `index.html`'s nav anchor was
+  // the ONLY link to `#intel` anywhere in the app. The route, its renderer and
+  // all five of its tabs stayed intact and became reachable only by typing the
+  // hash. This tile is what makes "secondary tools remain accessible through
+  // More" true rather than assumed.
+  { icon:'🧠', title:'Market Intel', sub:'Lanes, reloads, brokers, tools', hash:'#intel', section:'PRIMARY' },
   { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY' },
   // ADVANCED — hidden behind toggle
   { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED' },
@@ -20460,6 +20483,31 @@ function parseLoadTextForInbox(rawText) {
 
 let _inboxDebounceTimer = null;
 
+// v24.0.8: the Loads route's renderer. PR #168 created `#view-loads` from
+// modern-shell.js AFTER app.js had already built its `views` map, so the
+// canonical router had no entry for it: navigating to `#loads` fell through to
+// `home` and the surface never displayed. `#view-loads` is now real markup in
+// index.html and `loads` is a real route, so the driver-facing Loads tab shows
+// the canonical inbox instead of the Today screen.
+async function renderLoadsView() {
+  const intake = $('#btnLoadsIntake');
+  if (intake && !intake.dataset.bound) {
+    intake.dataset.bound = '1';
+    addManagedListener(intake, 'click', () => { haptic(15); openLoadIntake(); });
+  }
+  await renderLoadInbox();
+  _refreshInboxRecentBar();
+}
+
+// The recent-paste bar is session state that Quick Evaluate and the Home inbox
+// card also write to, so it can be stale by the time the driver opens Loads.
+// renderLoadInbox() builds it once and then short-circuits on `inboxInit`.
+function _refreshInboxRecentBar() {
+  const card = $('#loadInboxCard');
+  const bar = card && card.querySelector('#f23RecentBar');
+  if (bar) _renderInboxRecent(bar, card);
+}
+
 async function renderLoadInbox() {
   const card = $('#loadInboxCard');
   if (!card || card.dataset.inboxInit) return;
@@ -20535,6 +20583,10 @@ function _renderInboxRecent(container, card) {
   if (!container) return;
   try {
     const recents = JSON.parse(sessionStorage.getItem('fl_inbox_recent') || '[]');
+    // v24.0.8: clear first. This is re-rendered on every Loads visit now, so
+    // returning early on an empty list would leave the previous session's
+    // entries on screen after they were cleared.
+    container.innerHTML = '';
     if (!recents.length) return;
     container.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Recent (${recents.length})</div>`;
     recents.slice(0, 5).forEach(item => {

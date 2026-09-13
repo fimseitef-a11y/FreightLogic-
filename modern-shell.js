@@ -1,14 +1,34 @@
-/* FreightLogic v24.0.7 — modern five-surface navigation adapter
+/* FreightLogic v24.0.8 — modern five-surface navigation adapter
  *
- * Structural-only layer. It deliberately reuses FreightLogic's canonical
- * renderers/state instead of introducing a second load queue or evaluator.
+ * Structural-only layer. It reuses FreightLogic's canonical router, renderers
+ * and state instead of introducing a second load queue, evaluator or router.
  * Primary driver surfaces: Today / Loads / Evaluate / Trips / Money.
+ *
+ * v24.0.8 — this file used to carry its own router. It created `#view-loads`
+ * itself, intercepted bottom-nav clicks, and tracked its own active state.
+ * None of it could work: `app.js` builds its `views` map at parse time from
+ * markup that already exists, so a section injected afterwards was never
+ * registered and `#loads` fell through to `home` — the driver tapped Loads and
+ * got the Today screen with the Loads tab highlighted. `renderLoads()` reached
+ * for `window.renderLoadInbox` / `window.renderOmega` and `originalNavigate`
+ * reached for `window.navigate`, none of which exist (app.js is one IIFE), so
+ * every one of those paths was permanently dead.
+ *
+ * `#view-loads` is now real markup in index.html and `loads` is a real route in
+ * app.js. What is genuinely structural — the five-tab bar and the secondary
+ * More entry — is all that is left here, and it routes through plain hrefs and
+ * the canonical hash contract.
  */
 (() => {
   'use strict';
 
-  const PRIMARY_ROUTES = new Set(['home', 'loads', 'evaluate', 'trips', 'money']);
-  const originalNavigate = typeof window.navigate === 'function' ? window.navigate.bind(window) : null;
+  const PRIMARY_ROUTES = new Set(['home', 'loads', 'omega', 'trips', 'money']);
+
+  /** Driver-facing deep-link aliases for the two tabs whose canonical route
+   *  name differs from their label. Normalized to the canonical hash so the
+   *  app's own router never has to know about them. */
+  const ROUTE_ALIASES = { today: 'home', evaluate: 'omega' };
+
   let installed = false;
 
   const icon = {
@@ -19,146 +39,68 @@
   };
 
   function canonicalRoute(route) {
-    if (route === 'today') return 'home';
-    if (route === 'evaluate') return 'omega';
-    return route;
+    const raw = String(route || 'home').replace(/^#/, '');
+    return ROUTE_ALIASES[raw] || raw;
   }
 
-  function driverRoute(hashRoute) {
-    if (hashRoute === 'omega' || hashRoute === 'evaluate') return 'evaluate';
-    if (hashRoute === 'today') return 'home';
-    return hashRoute;
-  }
-
-  function currentPrimaryRoute() {
-    const fromHash = driverRoute(window.location.hash.replace(/^#/, '') || 'home');
-    if (PRIMARY_ROUTES.has(fromHash)) return fromHash;
-    const active = document.querySelector('.view.active');
-    if (!active) return 'home';
-    if (active.id === 'view-omega') return 'evaluate';
-    const route = active.id.replace(/^view-/, '');
-    return PRIMARY_ROUTES.has(route) ? route : null;
-  }
-
-  function setPrimaryActive(route) {
-    const nav = document.querySelector('.bottom .nav');
-    if (!nav) return;
-    nav.querySelectorAll('[data-modern-route]').forEach((link) => {
-      const active = link.dataset.modernRoute === route;
+  /** Mirror of app.js `setActiveNav`, used ONCE at install. app.js performs its
+   *  first route before this adapter loads, so the freshly built tab bar would
+   *  otherwise carry no active state until the driver's first navigation.
+   *  Every later navigation is marked by app.js itself, because these links
+   *  carry canonical `data-nav` values. */
+  function syncActiveFromHash() {
+    const route = canonicalRoute(window.location.hash || 'home');
+    document.querySelectorAll('.bottom .nav [data-nav]').forEach((link) => {
+      const active = link.dataset.nav === route;
       link.classList.toggle('active', active);
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
   }
 
-  function ensureLoadsSurface() {
-    let view = document.getElementById('view-loads');
-    if (!view) {
-      view = document.createElement('section');
-      view.id = 'view-loads';
-      view.className = 'view';
-      view.style.display = 'none';
-      view.setAttribute('aria-label', 'Loads');
-      view.innerHTML = `
-        <div class="card" style="margin-bottom:12px">
-          <div class="fl-card-hdr" style="align-items:flex-start;gap:10px">
-            <div>
-              <h3 style="margin:0 0 4px">Loads</h3>
-              <div class="muted" style="font-size:12px;line-height:1.45">Captured freight waiting for review, evaluation, or action.</div>
-            </div>
-            <button class="btn primary" id="modernLoadIntake" style="padding:8px 12px;white-space:nowrap">＋ Intake</button>
-          </div>
-          <button class="btn" id="modernLoadsRefresh" style="width:100%;margin-top:10px">Refresh loads</button>
-        </div>
-        <div id="modernLoadsSlot"></div>`;
-
-      const trips = document.getElementById('view-trips');
-      const parent = trips && trips.parentNode ? trips.parentNode : document.querySelector('main.app');
-      if (parent) parent.insertBefore(view, trips || null);
-    }
-
-    const slot = view.querySelector('#modernLoadsSlot');
-    const inbox = document.getElementById('loadInboxCard');
-    if (slot && inbox && inbox.parentNode !== slot) slot.appendChild(inbox);
-
-    const intake = view.querySelector('#modernLoadIntake');
-    if (intake && !intake.dataset.bound) {
-      intake.dataset.bound = '1';
-      intake.addEventListener('click', () => {
-        const canonical = document.getElementById('btnLoadIntake');
-        if (canonical) canonical.click();
-      });
-    }
-
-    const refresh = view.querySelector('#modernLoadsRefresh');
-    if (refresh && !refresh.dataset.bound) {
-      refresh.dataset.bound = '1';
-      refresh.addEventListener('click', () => renderLoads());
-    }
-
-    return view;
-  }
-
-  async function renderLoads() {
-    try {
-      if (typeof window.renderLoadInbox === 'function') {
-        await window.renderLoadInbox();
-        return;
-      }
-      // renderOmega() already owns the inbox render call in the canonical app.
-      // Calling it directly is a safe fallback because it updates existing DOM
-      // state without creating a second queue or changing the active route.
-      if (typeof window.renderOmega === 'function') await window.renderOmega();
-    } catch (err) {
-      console.warn('[FL modern shell] Loads render failed:', err);
-    }
-  }
-
   function rebuildPrimaryNav() {
     const nav = document.querySelector('.bottom .nav');
     if (!nav) return;
 
+    // app.js owns this node by id and writes to it from refreshUnpaidBadge().
+    // Move the live element into the new markup rather than minting a second
+    // one, so a count already rendered is not silently discarded.
+    const badge = nav.querySelector('#navUnpaidBadge');
+
+    // `data-nav` values are the CANONICAL route names, so app.js's own
+    // setActiveNav() keeps this bar in sync with no adapter involvement.
+    // `data-modern-route` is the driver-facing label identity.
     nav.innerHTML = `
-      <a href="#home" data-modern-route="home" data-nav="home" aria-label="Today">
+      <a href="#home" data-nav="home" data-modern-route="home" aria-label="Today">
         <div class="ni">${icon.today}</div><div class="nl">Today</div>
       </a>
-      <a href="#loads" data-modern-route="loads" data-nav="loads" aria-label="Loads">
+      <a href="#loads" data-nav="loads" data-modern-route="loads" aria-label="Loads">
         <div class="ni">${icon.loads}</div><div class="nl">Loads</div>
       </a>
-      <a href="#omega" data-modern-route="evaluate" data-nav="evaluate" aria-label="Evaluate load" class="nav-eval-center">
+      <a href="#omega" data-nav="omega" data-modern-route="evaluate" aria-label="Evaluate load" class="nav-eval-center">
         <div class="ni" aria-hidden="true">⚡</div><div class="nl">Evaluate</div>
       </a>
-      <a href="#trips" data-modern-route="trips" data-nav="trips" aria-label="Trips">
-        <div class="ni" style="position:relative">${icon.trips}<span id="navUnpaidBadge" style="display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center"></span></div><div class="nl">Trips</div>
+      <a href="#trips" data-nav="trips" data-modern-route="trips" aria-label="Trips">
+        <div class="ni" data-badge-slot style="position:relative">${icon.trips}</div><div class="nl">Trips</div>
       </a>
-      <a href="#money" data-modern-route="money" data-nav="money" aria-label="Money">
+      <a href="#money" data-nav="money" data-modern-route="money" aria-label="Money">
         <div class="ni">${icon.money}</div><div class="nl">Money</div>
       </a>`;
 
-    nav.addEventListener('click', (event) => {
-      const link = event.target.closest('[data-modern-route]');
-      if (!link || !nav.contains(link)) return;
-      event.preventDefault();
-      // The canonical app may also delegate bottom-nav clicks. This adapter
-      // owns only the five driver-facing taps, then hands routing back through
-      // the canonical hash contract rather than replacing navigate().
-      event.stopImmediatePropagation();
-      modernNavigate(link.dataset.modernRoute).catch((err) => {
-        console.warn('[FL modern shell] Navigation failed:', err);
-      });
-    }, true);
-  }
-
-  function routeThroughCanonicalHash(route) {
-    const canonical = canonicalRoute(route);
-    const nextHash = `#${canonical}`;
-    if (window.location.hash !== nextHash) {
-      window.location.hash = canonical;
-      return true;
+    const slot = nav.querySelector('[data-badge-slot]');
+    if (slot) {
+      if (badge) slot.appendChild(badge);
+      else {
+        const fresh = document.createElement('span');
+        fresh.id = 'navUnpaidBadge';
+        fresh.style.cssText = 'display:none;position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center';
+        slot.appendChild(fresh);
+      }
     }
-    return false;
   }
 
+  /** Intel, settings, admin and the remaining utilities keep their canonical
+   *  `#more` route; only their entry point moves off the tab bar. */
   function addSecondaryMenuAccess() {
     if (document.getElementById('modernMoreBtn')) return;
     const headerActions = document.querySelector('#mainHeader .hdr-row .row');
@@ -170,45 +112,20 @@
     button.setAttribute('aria-label', 'More tools and settings');
     button.title = 'More';
     button.textContent = '•••';
-    button.addEventListener('click', () => {
-      if (!routeThroughCanonicalHash('more') && originalNavigate) {
-        Promise.resolve(originalNavigate()).catch((err) => console.warn('[FL modern shell] More route failed:', err));
-      }
-    });
+    button.addEventListener('click', () => { navigate('more'); });
     headerActions.insertBefore(button, headerActions.firstChild);
   }
 
-  async function modernNavigate(requested) {
-    const route = driverRoute(String(requested || 'home').replace(/^#/, ''));
-    if (route === 'loads') ensureLoadsSurface();
-
-    const changedHash = routeThroughCanonicalHash(route);
-    // A hash-driven router receives the change above through its existing
-    // listener. If the user taps the already-active route, no hashchange fires,
-    // so call canonical navigate() with no arguments — compatible with both
-    // hash-only and argument-tolerant implementations.
-    if (!changedHash && originalNavigate) await originalNavigate();
-
-    if (route === 'loads') await renderLoads();
-    setPrimaryActive(PRIMARY_ROUTES.has(route) ? route : null);
+  /** Deep-link/programmatic entry. Sets the canonical hash and lets the app's
+   *  own hashchange listener do the routing and rendering. */
+  function navigate(requested) {
+    const route = canonicalRoute(requested);
+    if (window.location.hash.replace(/^#/, '') !== route) window.location.hash = route;
   }
 
-  function handleHashRoute() {
-    const raw = window.location.hash.replace(/^#/, '') || 'home';
-
-    // Accept a driver-friendly deep link without asking the canonical router to
-    // render a non-existent `view-evaluate`; normalize once to its real route.
-    if (raw === 'evaluate') {
-      routeThroughCanonicalHash('evaluate');
-      return;
-    }
-
-    const route = driverRoute(raw);
-    if (route === 'loads') {
-      ensureLoadsSurface();
-      renderLoads();
-    }
-    setPrimaryActive(PRIMARY_ROUTES.has(route) ? route : null);
+  function normalizeAliasHash() {
+    const raw = window.location.hash.replace(/^#/, '');
+    if (ROUTE_ALIASES[raw]) window.location.hash = ROUTE_ALIASES[raw];
   }
 
   function install() {
@@ -217,32 +134,24 @@
 
     const home = document.getElementById('view-home');
     if (home) home.setAttribute('aria-label', 'Today');
-    ensureLoadsSurface();
+
     rebuildPrimaryNav();
     addSecondaryMenuAccess();
 
-    // Do not replace window.navigate. The app's existing router remains the
-    // authority for view visibility, render timing, persistence, and side
-    // effects. This layer translates only the driver-facing shell.
-    window.addEventListener('hashchange', handleHashRoute);
-
-    const initial = window.location.hash.replace(/^#/, '') || 'home';
-    if (initial === 'loads') {
-      // app.js performs its first route before this adapter is loaded. A direct
-      // #loads launch therefore needs one canonical rerender now that view-loads
-      // exists; ordinary taps are handled by the hashchange path above.
-      modernNavigate('loads').catch((err) => console.warn('[FL modern shell] Initial Loads route failed:', err));
-    } else {
-      handleHashRoute();
-    }
+    window.addEventListener('hashchange', normalizeAliasHash);
+    normalizeAliasHash();
+    syncActiveFromHash();
   }
 
   window.FreightLogicModernShell = {
     install,
-    navigate: modernNavigate,
-    renderLoads,
-    ensureLoadsSurface
+    navigate,
+    primaryRoutes: () => [...PRIMARY_ROUTES]
   };
 
-  install();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true });
+  } else {
+    install();
+  }
 })();
