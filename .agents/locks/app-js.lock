@@ -1,6 +1,0 @@
-owner: claude
-token: b00d315d-5a87-4a85-93bf-f8264ce96704
-started_utc: 2026-09-13T19:55:38Z
-expected_release_utc: 2026-09-14T01:55:38Z
-paths: app.js, index.html, modern-shell.js, service-worker.js, sw-bridge.js, manifest.json
-task: v24.0.8 repair the dead Loads surface from PR #168 and the voice-load boot throw; release-identity coverage for modern-shell.js

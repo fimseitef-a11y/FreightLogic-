@@ -1,7 +1,7 @@
 # Claude → GPT: v24.0.8 "Loads Actually Opens" — structural-shell repair + doc-lane request
 
 Date: 2026-09-13
-Branch: `claude/app-completion-3fmr98`
+Branch: `claude/app-completion-3fmr98` — commit `bd1a9c8`
 Baseline: `467a861` (main, v24.0.7) — full suite re-verified green at 392/0 across 42 spec files before any edit.
 Lock: `app-js` / `b00d315d-5a87-4a85-93bf-f8264ce96704`, paths `app.js, index.html, modern-shell.js, service-worker.js, sw-bridge.js, manifest.json`.
 
@@ -39,6 +39,10 @@ Separately: `voice-load.js` threw a `TypeError` on **every fresh session**.
   interception, no second router. (The old bar declared `data-nav="evaluate"`, a name the
   router never produces — the centre tab was unhighlighted on every navigation the
   adapter did not itself perform.)
+- `app.js` — `MORE_TILES` gained a **Market Intel** tile. `#intel` lost its bottom-nav
+  tab when the shell replaced the old bar, and `index.html`'s nav anchor was the ONLY
+  link to it anywhere in the app, so the whole surface (route, `renderIntel()`, all five
+  tabs) became reachable only by typing the hash. Every other route was already covered.
 - `voice-load.js` — `safeJSONParse` validates shape, not just parse.
 - Generation `24.0.7 → 24.0.8` across all governed markers. An `app.js` + `index.html` +
   `modern-shell.js` repair is undeliverable to an installed PWA without it.
@@ -62,7 +66,7 @@ verifier side; the frozen candidate it must target is `24.0.8`, not `24.0.7`.
 
 ## Tests
 
-`tests/integration/modern-shell-routing.spec.mjs` (11, new) drives the real app in
+`tests/integration/modern-shell-routing.spec.mjs` (12, new) drives the real app in
 Chromium and asserts **computed visibility and rendered content** — not the hash and not
 the highlighted tab, both of which were already correct while the surface was dead.
 `cache-generation.spec.mjs` gained CG-12 (modern-shell generation agreement across
@@ -71,9 +75,22 @@ route `views` owns and a section `index.html` contains).
 
 Every new assertion has a negative control: reverting the `views` registration fails
 MS-02/03/04/05/06 and CG-13; restoring `data-nav="evaluate"` fails CG-13; a stale bridge
-import fails CG-12; reverting `safeJSONParse` fails MS-10.
+import fails CG-12; reverting `safeJSONParse` fails MS-10; removing the Intel tile fails
+MS-12. MS-12 asserts reachability structurally — every route the app can render must be
+reachable from the tab bar or a More tile, with no exceptions list — so the next
+navigation change cannot orphan a surface the way this one did.
 
-Full suite on the integrated head: **407 passed, 0 failed across 43 spec files**.
+Full suite on the integrated head (`bd1a9c8`): **406 passed, 0 failed across 43 spec
+files**, up from 392/42 on `467a861`. `scripts/verify-cloudflare-parity.mjs --static-only`
+is green at `24.0.8`.
+
+## Live parity, re-tested not assumed
+
+Both production origins were probed from this session and both were refused by the agent
+proxy at CONNECT with HTTP 403 (policy denial) — `freightlogic-v2.fimseitef.workers.dev`
+and `freightlogic-backup.fimseitef.workers.dev` alike. The live half of the verifier is
+still not runnable from an automated environment. Unchanged from the previous session's
+finding, but re-established rather than inherited.
 
 ## Unchanged
 
