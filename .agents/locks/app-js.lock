@@ -1,6 +1,0 @@
-owner: claude
-token: 632a23c3-1337-4ecf-843d-19e23229979d
-started_utc: 2026-09-13T01:30:28Z
-expected_release_utc: 2026-09-13T04:30:28Z
-paths: app.js
-task: Make the cloud-backup reconnect field a real credential form so iOS Keychain and other password managers can offer to save and autofill it with Face ID. Removes typing without the app storing the secret itself. Full suite required before merge.
