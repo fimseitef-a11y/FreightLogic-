@@ -738,13 +738,13 @@
     }
     .fl-nm-icon  { font-size: 18px; flex-shrink: 0; line-height: 1.25 }
     .fl-nm-body  { min-width: 0 }
-    .fl-nm-label { font-size: 10px; font-weight: 700; color: var(--accent); margin-bottom: 3px; letter-spacing: .5px; text-transform: uppercase }
+    .fl-nm-label { font-size: 10px; font-weight: 700; color: var(--accent-text); margin-bottom: 3px; letter-spacing: .5px; text-transform: uppercase }
     .fl-nm-text  { font-size: 13px; color: var(--text-secondary); line-height: 1.45 }
 
     /* ── Card header with action link ────────────────────────────── */
     .fl-card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px }
     .fl-card-hdr h3 { margin: 0 }
-    .fl-see-all { font-size: 12px; color: var(--accent); font-weight: 700; text-decoration: none; flex-shrink: 0 }
+    .fl-see-all { font-size: 12px; color: var(--accent-text); font-weight: 700; text-decoration: none; flex-shrink: 0 }
     .fl-see-all:hover { text-decoration: underline }
 
     /* ── Goal progress badge ──────────────────────────────────────── */
@@ -861,7 +861,7 @@
   --border-focus: rgba(255,255,255,.16);
   --text: #f5f6f7;
   --text-secondary: rgba(245,246,247,.66);
-  --text-tertiary: rgba(245,246,247,.42);
+  --text-tertiary: #9b9fa6; /* readable small labels on every dark surface */
   --accent: #f5b841;
   --accent-dark: #d9a238;
   --accent-muted: rgba(245,184,65,.12);
@@ -897,7 +897,7 @@
   --border-focus: rgba(0,0,0,.16);
   --text: #111214;
   --text-secondary: rgba(17,18,20,.66);
-  --text-tertiary: rgba(17,18,20,.44);
+  --text-tertiary: #616771; /* readable small labels on every light surface */
   --accent: #c88912;
   --accent-dark: #a76f08;
   --accent-muted: rgba(200,137,18,.10);
@@ -905,7 +905,7 @@
   --accent-text: #8b5d07;
   --good: #16833d;
   --bad: #c9342b;
-  --warn: #9a7600;
+  --warn: #806000;
   --shadow: 0 12px 38px rgba(0,0,0,.08);
   --shadow-lg: 0 24px 64px rgba(0,0,0,.14);
 }
@@ -952,7 +952,7 @@ header#mainHeader.scrolled { box-shadow: 0 1px 0 var(--border), 0 12px 36px rgba
 #pillWeekNet, #pillUnpaid { display: none; }
 header#mainHeader .row { align-items: center; gap: 5px; }
 .theme-btn {
-  width: 42px; height: 42px; min-width: 42px; min-height: 42px;
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px;
   border-radius: 50%;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1285,7 +1285,7 @@ label { color: var(--text-secondary); font-size: 12px; font-weight: 620; }
 .nav a .ni { width: 38px; height: 30px; border-radius: 11px; font-size: 20px; }
 .nav a .ni svg { width: 21px; height: 21px; }
 .nav a .nl { font-family: var(--font); font-size: 11px; font-weight: 560; letter-spacing: 0; }
-.nav a.active { color: var(--accent); }
+.nav a.active { color: var(--accent-text); }
 .nav a[data-nav="home"] .nl { font-size: 0; }
 .nav a[data-nav="home"] .nl::after { content: "Today"; font-size: 11px; }
 .nav a[data-nav="intel"] .nl { font-size: 0; }
@@ -1307,14 +1307,14 @@ label { color: var(--text-secondary); font-size: 12px; font-weight: 620; }
   color: #16120a;
   box-shadow: 0 12px 38px rgba(245,184,65,.34), 0 0 0 4px var(--bg);
 }
-.nav a.nav-eval-center.active .nl { color: var(--accent); }
+.nav a.nav-eval-center.active .nl { color: var(--accent-text); }
 
 .toast { bottom: calc(102px + env(safe-area-inset-bottom, 0px)); border: 0; background: var(--surface-3); box-shadow: var(--shadow-lg); }
 #pwaInstallBanner { bottom: calc(102px + env(safe-area-inset-bottom, 0px)); border: 0; box-shadow: var(--shadow-lg); }
 
 .fl-grade-chip { border: 0; border-radius: 11px; font-variant-numeric: tabular-nums; }
 .fl-grade-chip.a { background: var(--good-muted); color: var(--good); }
-.fl-grade-chip.b { background: var(--accent-muted); color: var(--accent); }
+.fl-grade-chip.b { background: var(--accent-muted); color: var(--accent-text); }
 .fl-grade-chip.c { background: var(--warn-muted); color: var(--warn); }
 .fl-grade-chip.d, .fl-grade-chip.e { background: var(--bad-muted); color: var(--bad); }
 
@@ -1346,7 +1346,7 @@ label { color: var(--text-secondary); font-size: 12px; font-weight: 620; }
   header#mainHeader { padding-left: 14px; padding-right: 14px; }
   .title strong { font-size: 17px; }
   .title span { max-width: 128px; }
-  .theme-btn { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
+  .theme-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .card { padding: 18px; }
   #homeKPICard { padding: 20px; }
   #view-omega > .card:first-of-type .grid2 { grid-template-columns: 1fr 1fr; gap: 8px; }
