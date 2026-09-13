@@ -50,7 +50,10 @@ vendor/                    — Bundled third-party scripts committed to the repo
 docs/                      — Deployment parity checklist, source authority, release notes,
                              `BACKUP_CONTRACT.md`, `DEFERRED.md` (v23.9)
 schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
-scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker
+scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker;
+                             `lib/deploy-assets.mjs` is the shared runtime-asset inventory +
+                             `.assetsignore` matcher it and `tests/unit/deploy-asset-coverage.spec.mjs`
+                             both read, so the gate and its regression cannot drift apart
 tests/                     — Playwright suite (real headless Chromium, real IndexedDB).
                              `run-all.mjs` runs everything; see `tests/README.md`
 AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 (v23.8.x) and X-01…X-12 (v23.9)
@@ -2006,3 +2009,78 @@ v15 redeploy, exact production parity on the frozen candidate, private-history
 reconciliation, and the physical-iPhone checklist are all unchanged and all remain
 the operator's. This release changes what that parity run must target — the frozen
 candidate is now `24.0.8`, and it must include `modern-shell.js`.
+
+---
+
+## Deployment asset coverage — the 404 that passed 24/24
+
+Tooling only. No shipped file changed, so no version marker moved and no release
+section is warranted: `APP_VERSION`, `SW_VERSION`, `DB_VERSION` 15 and Worker v15
+are all untouched.
+
+**The defect.** On 2026-09-13, against `c02ed36`, the gpt lane observed
+`scripts/verify-cloudflare-parity.mjs` reporting **24/24 checks PASS** while
+`admin-driver-ui.js` returned **HTTP 404** from the deployed origin. Two
+independent blind spots produced that, and either alone was enough:
+
+1. `.assetsignore` named `admin-driver-ui.js`, so the Cloudflare Workers assets
+   uploader never published it — while `service-worker.js` precached it in `CORE`
+   *and* injected a `<script>` tag for it into every HTML response. Two lists
+   disagreed and nothing compared them. (PR #173 removed the exclusion; nothing
+   stopped it being reintroduced.)
+2. The live parity half fetched a **curated subset** — index, service worker,
+   overlay, bridge, shell, manifest. An asset outside that list could 404 in
+   production with every check green. `admin-driver-ui.js` was outside it, and it
+   is reachable only through the injected tag, so no markup-based check could see
+   it either.
+
+**The repair, in the lane that owns it** (`scripts/`, `tests/` are claude-owned;
+`.assetsignore` is SHARED and was not touched here):
+
+- `scripts/lib/deploy-assets.mjs` (new) is the single inventory. It derives the
+  runtime asset set from the real declarations — SW `CORE`, the install-blocking
+  `critical` array, `ADMIN_UI_TAG`/`MIDWEST_STACK_TAG`, `index.html`'s own
+  same-origin refs, and `sw-bridge.js`'s dynamic import — plus a conservative
+  gitignore-subset `.assetsignore` matcher that names the pattern that decided an
+  exclusion. Both SW arrays mix quoted literals with bare const identifiers, so
+  `APP_SHELL` is resolved rather than skipped (a literals-only scan silently drops
+  `index.html` itself), and comments inside them are stripped before that scan, or
+  CORE's own X-10 note ("no CDN fallback") reads as an unresolvable entry. An
+  identifier that genuinely cannot be resolved is reported as a hard failure, never
+  dropped — a quietly shorter inventory is the same failure shape as the original
+  defect. Current inventory: 23 assets. Both the gate and its regression import
+  this module, deliberately: a second copy would reproduce the defect one level
+  up.
+- `scripts/verify-cloudflare-parity.mjs` gained a local exclusion check (runs
+  under `--static-only`) and a live sweep of **every** declared asset with bounded
+  concurrency. The existing named checks stay — they assert CONTENT (version
+  strings, exposed globals, precache entries), which a 200 does not; the sweep
+  asserts DELIVERY, which is the axis that failed. It also rejects a `200` whose
+  `Content-Type` is `text/html` for a `.js`/`.css`/`.json`/image request: the
+  SPA-fallback shape where the browser refuses to execute the response with no
+  404 and no console error, so the script silently vanishes. No declared asset is
+  ever "optional" here — an optional miss reported as full production parity is
+  the defect restated.
+- `tests/unit/deploy-asset-coverage.spec.mjs` (new, 5) closes the offline half:
+  DAC-01 every requested asset exists on disk; **DAC-02** none is excluded by
+  `.assetsignore`; DAC-03 the reverse direction — `cloud-backup-worker.js`,
+  `wrangler.jsonc`, `CLAUDE.md`, `.git/` must STAY excluded, because
+  `wrangler.jsonc` publishes `assets.directory: "."` and relaxing an entry to
+  clear a 404 would serve the Worker source publicly; DAC-04 the gate still
+  imports and actually CALLS the shared sweep (commented-out code does not
+  satisfy it); DAC-05 pins `admin-driver-ui.js` by name.
+
+**Negative controls, all verified to fire:** re-adding `admin-driver-ui.js` to
+`.assetsignore` fails DAC-02 and DAC-05; a `vendor/` directory entry fails DAC-02;
+an `icon*.png` glob fails DAC-02; dropping the `cloud-backup-worker.js` exclusion
+fails DAC-03; commenting out the sweep call or removing the shared import fails
+DAC-04; a bogus identifier inserted into `CORE` fails DAC-01/02/05 as an
+unparseable declaration rather than shrinking the inventory in silence. The live half was driven against a real local origin: deleting
+`admin-driver-ui.js` reproduces `HTTP 404 (requested by service-worker.js CORE,
+service-worker.js ADMIN_UI_TAG (injected))` and exits 1, and an origin that serves
+`index.html` for a missing `.js` is caught by the content-type check rather than
+passing as 200.
+
+Per the handoff, the suite stays offline: the sweep is in the operator gate, not
+in `tests/run-all.mjs`. A gate that needs the internet is a network gate, not a
+code gate.

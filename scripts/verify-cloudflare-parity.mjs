@@ -7,6 +7,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+// Shared with tests/unit/deploy-asset-coverage.spec.mjs so the release gate and
+// its regression cannot disagree about what the app declares or what the deploy
+// excludes — two lists that disagreed is the defect being closed here.
+import { declaredRuntimeAssets, assetsIgnoreMatcher, expectsNonHtml } from './lib/deploy-assets.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -86,6 +90,30 @@ function checkLocalCspParity(checks) {
   }
 }
 
+/** An asset excluded by `.assetsignore` cannot be deployed at all, so naming the
+ *  offending pattern turns an unexplained production 404 into a one-line
+ *  diagnosis. Purely local, so it runs under `--static-only` too — this is the
+ *  half of the 2026-09-13 defect that was visible without a network at all. */
+function checkLocalAssetExclusions(checks) {
+  try {
+    const { assets, problems } = declaredRuntimeAssets();
+    // A declaration source this module could not parse is reported, never
+    // silently dropped: an empty inventory would otherwise read as "nothing is
+    // broken", which is the shape of the defect being closed.
+    for (const problem of problems) assert(checks, 'runtime asset declarations are parseable', false, problem);
+    const isIgnored = assetsIgnoreMatcher();
+    const blocked = [];
+    for (const [p, { requesters }] of assets) {
+      const { excluded, by } = isIgnored(p);
+      if (excluded) blocked.push(`${p} (pattern "${by}"; requested by ${[...requesters].join(', ')})`);
+    }
+    assert(checks, `No runtime asset is excluded from deployment by .assetsignore (${assets.size} declared)`,
+      blocked.length === 0, blocked.join('; '));
+  } catch (err) {
+    assert(checks, 'local deploy-exclusion check ran', false, err && err.message ? err.message : String(err));
+  }
+}
+
 function report(checks) {
   for (const c of checks) {
     console.log(`${c.pass ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
@@ -158,12 +186,69 @@ async function runLiveChecks(checks) {
 
   const adminReject = await fetchJson(`${workerOrigin}/admin/users`);
   assert(checks, 'Admin endpoint rejects without token', adminReject.status === 401, `${adminReject.status} (expected 401; got 429 means IP is rate-limited — run from a fresh IP or reset the rl: KV keys)`);
+
+  await runAssetCoverageChecks(checks);
+}
+
+/** Fetch EVERY declared runtime asset, not a curated subset.
+ *
+ *  The named checks above are deliberately kept — they assert CONTENT (version
+ *  strings, exposed globals, precache entries), which a mere 200 does not. This
+ *  sweep asserts DELIVERY, which is the axis that failed: `admin-driver-ui.js`
+ *  404'd in production with every content check green, because no check fetched
+ *  it at all. An asset miss here is a parity FAILURE, never an optional skip. */
+async function runAssetCoverageChecks(checks) {
+  const { assets } = declaredRuntimeAssets();
+
+  // Bounded concurrency so a two-dozen-asset sweep does not serialize into
+  // minutes, while staying well clear of anything a rate limiter would notice.
+  const entries = [...assets.entries()];
+  const results = new Map();
+  const CONCURRENCY = 6;
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, entries.length) }, async () => {
+    while (cursor < entries.length) {
+      const [p, meta] = entries[cursor++];
+      try {
+        const res = await liveFetch(`${appOrigin}/${meta.ref}`);
+        // Body is drained so the socket is released; content is not inspected
+        // here beyond its type — the named checks above own content assertions.
+        await res.arrayBuffer().catch(() => {});
+        results.set(p, { status: res.status, ok: res.ok, type: res.headers.get('content-type') || '', meta });
+      } catch (err) {
+        results.set(p, { status: 0, ok: false, type: '', error: err && err.message ? err.message : String(err), meta });
+      }
+    }
+  }));
+
+  const missing = [];
+  const htmlInsteadOfAsset = [];
+  for (const [p, r] of results) {
+    const requesters = [...r.meta.requesters].join(', ');
+    if (!r.ok) {
+      missing.push(`${p} -> ${r.error ? r.error : 'HTTP ' + r.status} (requested by ${requesters})`);
+      continue;
+    }
+    // A 200 carrying text/html for a .js request is the SPA-fallback failure
+    // mode: the browser refuses to execute it, with no 404 and no console
+    // error, so the script silently vanishes. That is a delivery failure that
+    // looks exactly like success to a status-code-only check.
+    if (expectsNonHtml(p) && /text\/html/i.test(r.type)) {
+      htmlInsteadOfAsset.push(`${p} -> HTTP 200 but Content-Type: ${r.type} (requested by ${requesters})`);
+    }
+  }
+
+  assert(checks, `All ${results.size} declared runtime assets load from the app origin`,
+    missing.length === 0, missing.join('; '));
+  assert(checks, 'No runtime asset is served as HTML (SPA-fallback masking a miss)',
+    htmlInsteadOfAsset.length === 0, htmlInsteadOfAsset.join('; '));
 }
 
 async function main() {
   const checks = [];
 
   checkLocalCspParity(checks);
+  checkLocalAssetExclusions(checks);
 
   if (STATIC_ONLY){
     console.log('(--static-only: the live deployment half was not run — it is an operator gate)');
