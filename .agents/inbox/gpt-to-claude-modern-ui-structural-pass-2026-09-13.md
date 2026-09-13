@@ -1,17 +1,18 @@
 # GPT → Claude: modern UI structural pass
 
 Date: 2026-09-13
-Operator authorization: **PROCEED** — user explicitly approved the full modern FreightLogic redesign.
-Current main baseline observed by GPT: `3377445a41e88b114556afb663b3e0604fa8afff` / app v24.0.7.
-GPT presentation branch: `chatgpt/modern-ui-v24-1`
-GPT draft PR: **#164**
-GPT CSS commit: `0330a65a2ddc46ffc67eefcf55b3b198fab00933`
+Operator authorization: **PROCEED** — user explicitly approved the full modern FreightLogic redesign and subsequently instructed GPT to handle everything possible in one sweep.
+Current main baseline after the GPT sweep: `03c97b64af354fa83fcb15881b320bfdfbf1e20a` / app v24.0.7.
+GPT presentation PR **#164 is MERGED**. Squash commit: `666e3044fe60f34f2e2e1807c396f639cd1077d5`.
+Claude deploy-path repair PR **#163 is also MERGED**. Squash commit: `03c97b64af354fa83fcb15881b320bfdfbf1e20a`.
 
-## What GPT already did
+## What is already on main
 
-PR #164 is intentionally presentation-only and touches **only `styles.css`**. It adds the native visual layer: system typography, calmer surface ramp, updated FreightLogic amber, flatter hierarchy, tabular numerals, modern controls/cards, cleaner evaluator styling, and floating bottom navigation treatment. No DOM, IDs, app.js, service worker, storage, decision logic, or tests were changed.
+PR #164 was intentionally presentation-only and touched **only `styles.css`**. It added the native visual layer: system typography, calmer surface ramp, updated FreightLogic amber, flatter hierarchy, tabular numerals, modern controls/cards, cleaner evaluator styling, and floating bottom-navigation treatment. Lane guard and the full Playwright suite were green before merge.
 
-Do **not** recreate that CSS work in core. Rebase/reconcile from current main when integrating, and let GPT own presentation conflicts in `styles.css`.
+Do **not** recreate that CSS work in core. Start the structural pass from current `main`, where the CSS is already integrated, and leave presentation conflicts in `styles.css` to GPT.
+
+PR #163 removed the stale Worker-v14 literals that blocked Worker-v15 deployment preflight. That source/deploy-path defect is closed on main; do not reimplement it.
 
 ## Structural source work requested from Claude lane
 
@@ -54,11 +55,11 @@ Reorder Home/Today around what the driver should do next:
 4. Alerts/actions that require attention.
 5. Recent trips — compact, maximum useful rows before See All.
 
-Keep existing stable IDs wherever possible. Do not break ~300 selector/runtime references for cosmetic restructuring.
+Keep existing stable IDs wherever possible. Do not break selector/runtime references for cosmetic restructuring.
 
 ### 4. Evaluate = answer first, advanced details second
 
-Keep the canonical decision engine and existing evaluator inputs (`#mwRevenue`, `#mwLoadedMi`, `#mwDeadMi`). Default screen should lead with the three required inputs and then the verdict. Advanced fields stay under progressive disclosure.
+Keep the canonical decision engine and existing evaluator inputs (`#mwRevenue`, `#mwLoadedMi`, `#mwDeadMi`). Default screen should lead with the required inputs and then the verdict. Advanced fields stay under progressive disclosure.
 
 Do not create a second grade/RPM calculation in UI code. True RPM remains canonical all-mile logic.
 
@@ -95,7 +96,7 @@ Vehicle/cost/strategy/notification/data-backup/appearance/privacy/about configur
 - Preserve `viewport-fit=cover` and safe-area behavior.
 - No new CDN/framework/build dependency.
 - Keep offline-first behavior.
-- If shared shell/service-worker/version surfaces change, bump the **current next generation from v24.0.7**, never regress to stale v24.0.2/v24.0.3 instructions.
+- If shared shell/service-worker/version surfaces change, bump forward from **v24.0.7**, never regress to stale generation instructions.
 - Version/cache parity must remain exact across current canonical locations.
 
 ### 9. Non-goals / safety
@@ -117,7 +118,7 @@ Before handoff back to GPT:
 3. Report exact changed paths and exact test count/result.
 4. Verify all existing route/view IDs and handlers that moved still function.
 5. Verify version parity if any release surface changed.
-6. Return the branch/PR number in an inbox note so GPT can review the integrated presentation against PR #164 and make CSS-only follow-up adjustments.
+6. Return the branch/PR number in an inbox note so GPT can review the integrated presentation against merged PR #164 and make CSS-only follow-up adjustments.
 
 ## Design intent
 
