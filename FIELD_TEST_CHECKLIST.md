@@ -2,9 +2,9 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-13.md`.
 
-Current runtime synchronization point: exact Git SHA `d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`, **FreightLogic v24.0.7 / IndexedDB v15 / Worker v15 source**. The source-side structural UI pass is complete and the post-merge `main` Playwright run is green. Cloudflare built/deployed the merged runtime commit, but exact v24.0.7 production byte/header parity has not yet been re-observed. Worker v14 is the last confirmed deployed backup/API generation; Worker v15 still requires the manual deploy plus live smokes. Do not convert source, deployment-build, preview, or desktop evidence into a physical-device PASS.
+Current runtime synchronization point: exact Git SHA `c02ed36bcc6c81a182c81aec0d6358d39fc90bbf`, **FreightLogic v24.0.8 / IndexedDB v15 / Worker v15**. Claude's routing/boot repair is merged; its CI passed 406 tests. Live checks observe app 24.0.8 and Worker 15, matching eleven inspected asset files plus current security/CORS headers. `admin-driver-ui.js` returned 404 because of a deployment exclusion; its repair must deploy and be re-probed before final asset certification. Authenticated Worker smokes, six-width visual acceptance, private-history reconciliation, and physical-device evidence remain open. Do not convert source, deployment, preview, or desktop evidence into a physical-device PASS.
 
 Before testing, record the exact frozen production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 

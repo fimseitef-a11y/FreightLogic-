@@ -4,13 +4,13 @@ Purpose: prove that the **production** Cloudflare app and backup/API Worker serv
 
 Current runtime candidate:
 
-- app / PWA / service worker source: **24.0.7**;
+- app / PWA / service worker source: **24.0.8**;
 - IndexedDB schema: **15**;
 - backup/API Worker source: **15**;
-- exact runtime Git candidate: **`d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`**;
+- exact runtime Git candidate: **`c02ed36bcc6c81a182c81aec0d6358d39fc90bbf`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-13.md`;
 - status: **HOLD**.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
@@ -25,27 +25,26 @@ Record:
 - production backup/API Worker origin;
 - rollback/fix-forward reference.
 
-Cloudflare successfully built/deployed merged runtime commit `d2c9a9e`, production version `9dfb5ad3-086b-4e11-b3eb-8c09b34eeb52`. The post-merge main Playwright run `34746260152` completed successfully.
-
-The last **exact-byte** production parity observation, however, is still v24.0.5 from 2026-09-12. Therefore **v24.0.7 exact production parity remains UNOBSERVED until the live verifier/re-probe is run**.
+Live verification on 2026-09-13 after PR #172: 24/24 standard parity checks pass, and eleven checked production assets match source byte for byte. However, `admin-driver-ui.js` returns 404 because `.assetsignore` excludes it. Full asset parity remains blocked until the repair is deployed and re-probed. See the current addendum for exact hashes and CI evidence.
 
 ## 2. App / PWA generation
 
 PASS requires production to serve:
 
-- `app.js?v=24.0.7`;
-- `voice-load.js?v=24.0.7`;
-- `sw-bridge.js?v=24.0.7`;
-- `midwest-stack-authority.js?v=24.0.7`;
-- `manifest.json?v=24.0.7` identifying `FreightLogic v24.0.7`;
-- `service-worker.js` with `SW_VERSION = '24.0.7'`;
+- `app.js?v=24.0.8`;
+- `voice-load.js?v=24.0.8`;
+- `sw-bridge.js?v=24.0.8`;
+- `midwest-stack-authority.js?v=24.0.8`;
+- `manifest.json?v=24.0.8` identifying `FreightLogic v24.0.8`;
+- `service-worker.js` with `SW_VERSION = '24.0.8'`;
+- `admin-driver-ui.js?v=24.0.8` (must not be excluded from deployment);
 - current `modern-shell.js` bytes from the named candidate;
 - bundled `vendor/xlsx.full.min.js`;
 - the current `styles.css` visual layer;
 - matching CSP/security headers;
 - no failed JavaScript/static request answered with an HTML shell fallback.
 
-Do not reuse the v24.0.5 exact-byte PASS as evidence for v24.0.7.
+Do not reuse the v24.0.5 exact-byte PASS as evidence for v24.0.8.
 
 ## 3. Worker v15 live checks
 
@@ -65,14 +64,7 @@ PASS requires:
 
 ### Current observed Worker state
 
-Worker v14 was successfully deployed before the v15 source bump. The first v15 deploy attempt (`34741097860`) was refused before `wrangler deploy` because of a stale hardcoded v14 assertion; PR #163 removed that pin.
-
-At this synchronization point:
-
-- Worker v15 source: **READY IN REPO**;
-- deploy preflight stale-pin defect: **CLOSED**;
-- live Worker v15 deployment: **NOT YET OBSERVED / REDEPLOY REQUIRED**;
-- authenticated v15 backup/evaluate/rotation smokes: **NOT RUN**.
+On 2026-09-13 this session observed Worker v15 at the production origin: health HTTP 200/version 15, exact production-origin CORS on health GET and backup OPTIONS (204), and unauthorized admin HTTP 401. The earlier redeploy requirement is closed. Authenticated evaluate/extract/full-delta-restore/token-rotation checks remain **NOT RUN** because no test token is available.
 
 The manual `Deploy Backup Worker` workflow remains the intended deployment boundary and must remain explicit/manual.
 
@@ -128,7 +120,7 @@ Live production, from a network that can reach Cloudflare:
 
 - `node scripts/verify-cloudflare-parity.mjs`
 
-The live verifier currently expects app/PWA **24.0.7** and Worker **15**.
+The live verifier currently expects app/PWA **24.0.8** and Worker **15**.
 
 Authenticated authority checks when a valid non-published driver token is available:
 

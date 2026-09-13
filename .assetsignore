@@ -5,4 +5,3 @@ wrangler.jsonc
 .assetsignore
 .gitignore
 .git/
-admin-driver-ui.js
