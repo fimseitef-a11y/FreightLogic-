@@ -20,7 +20,8 @@ const CORE = [
   './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=24.0.7'
+  './sw-bridge.js?v=24.0.7',
+  './modern-shell.js?v=24.0.7'
 ];
 
 // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
@@ -67,7 +68,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.7', './voice-load.js?v=24.0.7', './styles.css', './sw-bridge.js?v=24.0.7', './manifest.json?v=24.0.7', './midwest-stack-authority.js?v=24.0.7', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.7', './voice-load.js?v=24.0.7', './styles.css', './sw-bridge.js?v=24.0.7', './modern-shell.js?v=24.0.7', './manifest.json?v=24.0.7', './midwest-stack-authority.js?v=24.0.7', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
