@@ -78,7 +78,8 @@ jobs:
           echo "Token present."
 
       # The same guards a local run would get: right service name, no assets
-      # block, real KV id, no secrets in config, source actually at v14.
+      # block, real KV id, no secrets in config, and source at the generation the
+      # parity verifier declares (derived, never a literal pinned here).
       - name: Preflight (no deploy)
         run: bash scripts/deploy-backup-worker.sh
 
@@ -145,9 +146,12 @@ jobs:
 
       - name: What is still owed
         run: |
+          WANT=$(grep -m1 -oE 'workerVersion: "[0-9]+"' scripts/verify-cloudflare-parity.mjs | grep -oE '[0-9]+')
+          echo
+          echo "Worker v$WANT is deployed and answering the v$WANT contract."
+          # Quoted heredoc below on purpose: the prose is fixed text and must not
+          # be subject to expansion. The one varying value is echoed above it.
           cat <<'DONE'
-
-          Worker v14 is deployed and answering the v14 contract.
 
           ROTATE THE DRIVER TOKENS. The superseded v7 stored every driver bearer
           token in KV in plaintext AND returned them from GET /admin/users.
