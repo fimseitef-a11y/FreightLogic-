@@ -251,3 +251,5 @@ OPEN FOR GPT / OPERATOR (see
 [2026-09-12][gpt][claim][main:9daba18] Reconcile completion documentation with merged PR158 deployment and history tooling; run read-only preflight checks. No runtime paths changed.
 
 [2026-09-12][gpt][complete][PR#159] Supplemental post-PR158 handoff and field checklist updates opened at a87197c. Main 9daba189 deployment preflight 11 PASS; live parity 17 PASS/2 FAIL (health 401, no Worker14); m7 --skip-suite 13 PASS/0 FAIL/1 SKIP; rollback verifier exit 0 with named regressions. No runtime changes, deployment, or certification claim. No Cloudflare API credential in this session. Full suite not rerun for documentation-only work.
+
+[2026-09-13][gpt][claim][main:c02ed36] v24.0.8 completion review: 24/24 standard live parity checks PASS, Worker v15 health/CORS observed. Exact-byte check finds eleven matching assets and admin-driver-ui.js 404 from .assetsignore exclusion. Claim deployment-assets lock for .assetsignore only. Authenticated smokes UNOBSERVED (no test token); private-history round trip and visual/device gates remain unverified. Browser setup stalled; no test assertion changes.
