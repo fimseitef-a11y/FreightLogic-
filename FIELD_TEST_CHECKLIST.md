@@ -107,13 +107,13 @@ Where deployed/enabled, use synthetic data. Extraction must return bounded evide
 
 ## B5. Rollback evidence
 
-Record the approved rollback SHA and verify the rollback procedure is executable, not merely described.
+Run `node scripts/verify-rollback.mjs` and record the exact source SHA and named regressions. PR #158 supplies executable dry-check evidence and a fix-forward recommendation. This is not proof of an actual deployment rollback or operator approval to accept a regression; record those distinctions explicitly.
 
 # C. Private-history reconciliation blocker
 
 The raw row-level private master dataset is not currently available in the accessible repository/File Library. Do not reconstruct it from summaries.
 
-When the real source bundle is available, run the current M6 importer/reconciliation machinery against it outside the public repository.
+When the real source bundle is available, first run `node scripts/verify-history-bundle.mjs <private-bundle-dir>`, then the current M6 importer/reconciliation machinery outside the public repository. The exact five-file contract and review steps are in `docs/COMPLETION_HANDOFF_2026-09-12_PR158.md`. Structural preflight alone does not close this gate.
 
 PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, and no collapse of distinct shipments sharing external IDs. Record only non-sensitive reconciliation results publicly.
 
