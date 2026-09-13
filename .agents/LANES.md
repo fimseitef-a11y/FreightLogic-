@@ -39,6 +39,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `midwest-stack-authority.js` | claude | Decision/bid advisory core and DZ gate integration. |
 | `midwest-stack-config.json` | claude | Decision/bid configuration. |
+| `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | claude | Verification/release/tooling scripts. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
