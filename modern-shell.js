@@ -18,10 +18,21 @@
     money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M16 8.5c-.9-.7-2.1-1-3.5-1-2 0-3.5 1-3.5 2.5 0 3.5 7 1.5 7 5 0 1.5-1.5 2.5-3.5 2.5-1.5 0-2.9-.4-4-1.3M12 5v14"/></svg>'
   };
 
+  function canonicalRoute(route) {
+    if (route === 'today') return 'home';
+    if (route === 'evaluate') return 'omega';
+    return route;
+  }
+
+  function driverRoute(hashRoute) {
+    if (hashRoute === 'omega' || hashRoute === 'evaluate') return 'evaluate';
+    if (hashRoute === 'today') return 'home';
+    return hashRoute;
+  }
+
   function currentPrimaryRoute() {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (hash === 'omega') return 'evaluate';
-    if (PRIMARY_ROUTES.has(hash)) return hash;
+    const fromHash = driverRoute(window.location.hash.replace(/^#/, '') || 'home');
+    if (PRIMARY_ROUTES.has(fromHash)) return fromHash;
     const active = document.querySelector('.view.active');
     if (!active) return 'home';
     if (active.id === 'view-omega') return 'evaluate';
@@ -114,7 +125,7 @@
       <a href="#loads" data-modern-route="loads" data-nav="loads" aria-label="Loads">
         <div class="ni">${icon.loads}</div><div class="nl">Loads</div>
       </a>
-      <a href="#evaluate" data-modern-route="evaluate" data-nav="evaluate" aria-label="Evaluate load" class="nav-eval-center">
+      <a href="#omega" data-modern-route="evaluate" data-nav="evaluate" aria-label="Evaluate load" class="nav-eval-center">
         <div class="ni" aria-hidden="true">⚡</div><div class="nl">Evaluate</div>
       </a>
       <a href="#trips" data-modern-route="trips" data-nav="trips" aria-label="Trips">
@@ -128,14 +139,24 @@
       const link = event.target.closest('[data-modern-route]');
       if (!link || !nav.contains(link)) return;
       event.preventDefault();
-      // The legacy shell may also have a delegated nav handler on this same
-      // container. This adapter is now authoritative for the five top-level
-      // routes, so do not let both routers run for the same tap.
+      // The canonical app may also delegate bottom-nav clicks. This adapter
+      // owns only the five driver-facing taps, then hands routing back through
+      // the canonical hash contract rather than replacing navigate().
       event.stopImmediatePropagation();
-      modernNavigate(link.dataset.modernRoute, link).catch((err) => {
+      modernNavigate(link.dataset.modernRoute).catch((err) => {
         console.warn('[FL modern shell] Navigation failed:', err);
       });
     }, true);
+  }
+
+  function routeThroughCanonicalHash(route) {
+    const canonical = canonicalRoute(route);
+    const nextHash = `#${canonical}`;
+    if (window.location.hash !== nextHash) {
+      window.location.hash = canonical;
+      return true;
+    }
+    return false;
   }
 
   function addSecondaryMenuAccess() {
@@ -150,70 +171,49 @@
     button.title = 'More';
     button.textContent = '•••';
     button.addEventListener('click', () => {
-      if (originalNavigate) originalNavigate('more', button);
+      if (!routeThroughCanonicalHash('more') && originalNavigate) {
+        Promise.resolve(originalNavigate()).catch((err) => console.warn('[FL modern shell] More route failed:', err));
+      }
     });
     headerActions.insertBefore(button, headerActions.firstChild);
   }
 
-  async function modernNavigate(requested, targetEl) {
-    if (!originalNavigate) return;
-    let route = String(requested || 'home').replace(/^#/, '');
-    if (route === 'today') route = 'home';
+  async function modernNavigate(requested) {
+    let route = driverRoute(String(requested || 'home').replace(/^#/, ''));
+    if (route === 'loads') ensureLoadsSurface();
 
-    if (route === 'omega' || route === 'evaluate') {
-      await originalNavigate('omega', targetEl);
-      // Keep the canonical Omega implementation underneath while exposing the
-      // driver-facing route/name. replaceState avoids an omega→evaluate loop.
-      const url = new URL(window.location.href);
-      url.hash = 'evaluate';
-      window.history.replaceState(window.history.state, '', url);
-      setPrimaryActive('evaluate');
-      return;
-    }
+    const changedHash = routeThroughCanonicalHash(route);
+    // A hash-driven router receives the change above through its existing
+    // listener. If the user taps the already-active route, no hashchange fires,
+    // so call canonical navigate() with no arguments — compatible with both
+    // hash-only and argument-tolerant implementations.
+    if (!changedHash && originalNavigate) await originalNavigate();
 
-    if (route === 'loads') {
-      ensureLoadsSurface();
-      await originalNavigate('loads', targetEl);
-      await renderLoads();
-      setPrimaryActive('loads');
-      return;
-    }
-
-    await originalNavigate(route, targetEl);
+    if (route === 'loads') await renderLoads();
     setPrimaryActive(PRIMARY_ROUTES.has(route) ? route : null);
   }
 
   function handleHashRoute() {
-    const route = window.location.hash.replace(/^#/, '');
-    if (route === 'omega' || route === 'evaluate') {
-      const omegaActive = document.getElementById('view-omega')?.classList.contains('active');
-      if (omegaActive && route === 'evaluate') {
-        setPrimaryActive('evaluate');
-        return;
-      }
-      modernNavigate('evaluate').catch((err) => console.warn('[FL modern shell] Evaluate route failed:', err));
+    const raw = window.location.hash.replace(/^#/, '') || 'home';
+
+    // Accept a driver-friendly deep link without asking the canonical router to
+    // render a non-existent `view-evaluate`; normalize once to its real route.
+    if (raw === 'evaluate') {
+      routeThroughCanonicalHash('evaluate');
       return;
     }
+
+    const route = driverRoute(raw);
     if (route === 'loads') {
-      const loadsActive = document.getElementById('view-loads')?.classList.contains('active');
-      if (loadsActive) {
-        setPrimaryActive('loads');
-        renderLoads();
-        return;
-      }
-      modernNavigate('loads').catch((err) => console.warn('[FL modern shell] Loads route failed:', err));
-      return;
+      ensureLoadsSurface();
+      renderLoads();
     }
-    setPrimaryActive(PRIMARY_ROUTES.has(route) ? route : currentPrimaryRoute());
+    setPrimaryActive(PRIMARY_ROUTES.has(route) ? route : null);
   }
 
   function install() {
     if (installed) return;
     installed = true;
-    if (!originalNavigate) {
-      console.warn('[FL modern shell] Canonical navigate() was not available; leaving legacy shell untouched.');
-      return;
-    }
 
     const home = document.getElementById('view-home');
     if (home) home.setAttribute('aria-label', 'Today');
@@ -221,17 +221,11 @@
     rebuildPrimaryNav();
     addSecondaryMenuAccess();
 
-    // Existing quick actions / legacy links that call navigate('omega') now
-    // land on the driver-facing Evaluate route without rewriting their callers.
-    window.navigate = modernNavigate;
+    // Do not replace window.navigate. The app's existing router remains the
+    // authority for view visibility, render timing, persistence, and side
+    // effects. This layer translates only the driver-facing shell.
     window.addEventListener('hashchange', handleHashRoute);
-
-    const initial = window.location.hash.replace(/^#/, '');
-    if (initial === 'omega' || initial === 'evaluate' || initial === 'loads') {
-      handleHashRoute();
-    } else {
-      setPrimaryActive(currentPrimaryRoute());
-    }
+    handleHashRoute();
   }
 
   window.FreightLogicModernShell = {
