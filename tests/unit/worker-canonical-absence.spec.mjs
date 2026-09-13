@@ -10,6 +10,7 @@
 // No network is used: the unavailable decision short-circuits before OpenAI is
 // called, which is itself part of the contract under test.
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSuite, ok, eq } from '../lib/harness.mjs';
 
@@ -51,11 +52,26 @@ async function evaluate(canonicalDecision){
   return { status: res.status, body: await res.json() };
 }
 
-test('[W-01] /health reports the bumped Worker version', async () => {
+test('[W-01] /health reports the version the parity verifier expects', async () => {
+  // DERIVED, not pinned. This asserts source self-consistency: whatever
+  // generation the release machinery expects, the Worker's own /health must
+  // report. Hardcoding the number here made it the FOURTH hand-synced copy of
+  // one value (with the parity verifier, the deploy script and the deploy
+  // workflow), and it went stale on the very next Worker bump — which is how
+  // this assertion was found.
+  //
+  // The accidental-bump guard is a different job and still pinned by hand, in
+  // cache-generation.spec.mjs CG-09: that one exists to make an unintended
+  // Worker change visible during an app-generation bump, so it must NOT derive.
+  const expected = readFileSync(path.join(ROOT, 'scripts/verify-cloudflare-parity.mjs'), 'utf8')
+    .match(/workerVersion:\s*"(\d+)"/)?.[1];
+  ok(expected, 'could not read workerVersion from scripts/verify-cloudflare-parity.mjs');
+
   const res = await worker.fetch(new Request('https://worker.test/health'), makeEnv());
   const body = await res.json();
   eq(res.status, 200, 'health is reachable');
-  eq(body.version, '14', 'the production-origin/CORS repair ships as Worker v14');
+  eq(body.version, expected,
+    `cloud-backup-worker.js /health must report v${expected}, matching the parity verifier`);
 });
 
 test('[W-01b] production app origin is the default and explicitly allowed by CORS', async () => {
