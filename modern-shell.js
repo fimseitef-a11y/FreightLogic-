@@ -179,7 +179,7 @@
   }
 
   async function modernNavigate(requested) {
-    let route = driverRoute(String(requested || 'home').replace(/^#/, ''));
+    const route = driverRoute(String(requested || 'home').replace(/^#/, ''));
     if (route === 'loads') ensureLoadsSurface();
 
     const changedHash = routeThroughCanonicalHash(route);
@@ -225,7 +225,16 @@
     // authority for view visibility, render timing, persistence, and side
     // effects. This layer translates only the driver-facing shell.
     window.addEventListener('hashchange', handleHashRoute);
-    handleHashRoute();
+
+    const initial = window.location.hash.replace(/^#/, '') || 'home';
+    if (initial === 'loads') {
+      // app.js performs its first route before this adapter is loaded. A direct
+      // #loads launch therefore needs one canonical rerender now that view-loads
+      // exists; ordinary taps are handled by the hashchange path above.
+      modernNavigate('loads').catch((err) => console.warn('[FL modern shell] Initial Loads route failed:', err));
+    } else {
+      handleHashRoute();
+    }
   }
 
   window.FreightLogicModernShell = {
