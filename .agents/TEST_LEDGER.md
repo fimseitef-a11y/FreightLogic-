@@ -227,3 +227,10 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - Independent live byte/header probe: eleven files match; admin-driver-ui.js HTTP 404. Product deployment defect, not a red full-suite baseline. PR #173 removes its explicit .assetsignore exclusion.
 - verify-live-authority.mjs: exit 2, UNOBSERVED, missing FL_BACKUP_TOKEN. No authenticated checks, no OpenAI calls, no account data written.
 - Local Chromium installation timed out; browser tool stalled. No local full-suite or six-width run claimed; no tests skipped/rewritten to manufacture a pass. PR #173 own CI result pending.
+
+## 2026-09-13 — PR #173 final integrated gate
+
+- Final source head: 577d552612260000d34ad38881bcc246fdc71e85; base c02ed36bcc6c81a182c81aec0d6358d39fc90bbf; integrated PR ref 5595354a1fcb090ba30a7384b7efa805e0e52015.
+- GitHub Tests run 34784017292, job 103796091494: node tests/run-all.mjs, **406 passed / 0 failed across 43 spec files** (job log total at 21:33:21 UTC).
+- Lanes run 34784017263: success. No failed assertion, quarantine, or safety-net edits. Earlier PR CI was superseded by the final field-checklist documentation synchronization.
+- Merged as d751500eed8c7e4c29dd23e32ed9c21883889fe9. Production restored-admin-asset and controlled-PWA cache verification remain pending; this source/CI result is not a deployment PASS.
