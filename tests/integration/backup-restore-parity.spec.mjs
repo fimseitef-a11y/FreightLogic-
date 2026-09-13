@@ -216,7 +216,7 @@ test('[X-01] a confirmed delta gap (pruned deltas) surfaces a visible partial-re
 // browser pointed at the mock server's combined static+API port instead.
 export async function runSpec() {
   worker = await startMockWorker();
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext();
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();

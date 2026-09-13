@@ -1,7 +1,26 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.4 USA ENGINE
+/** FreightLogic v24.0.6 USA ENGINE
+ *  v24.0.6 "Backup You Can Trust": cloud backup stopped silently after every
+ *          browser close. The token persists in IndexedDB but the passphrase is
+ *          sessionStorage-only, and cloudIsEnabled() requires both — so every
+ *          automatic push began no-opping the moment a session ended, and each
+ *          call site swallowed the result. The only surface reporting it was the
+ *          Diagnostics dxCloud row. Close the app, come back, believe you are
+ *          backed up, and not be. cloudBackupPaused() + renderCloudPausedBanner()
+ *          now make that state visible on Home with a one-tap Resume that does
+ *          NOT auto-dismiss, and openCloudReconnect() is a real credential form
+ *          so the OS keychain can autofill it with Face ID rather than the app
+ *          persisting the secret itself. The passphrase remains session-scoped.
+ *  v24.0.5 "Source Integrity": UNKNOWN deadhead survives persistence, not just
+ *          intake — newTripTemplate/sanitizeTrip/XLSX import/the trip form all
+ *          stopped coercing an unstated deadhead to a verified zero, and
+ *          tripHasKnownDeadhead() quarantines such trips from lane and broker
+ *          history instead of averaging a flattering RPM into it. Gary, Indiana
+ *          became canonical geography (real coordinates, MIDWEST, Tier 1) so the
+ *          canonical table and the overlay finally agree. (This entry was missing
+ *          from the header the release shipped — backfilled here.)
  *  v24.0.4 "Fail Closed": the behavioral half of the RECON_24_0_2.md findings.
  *          An unknown location no longer resolves to a coincidental market —
  *          `''` used to match the first Canadian key (every string contains the
@@ -121,7 +140,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.5';
+const APP_VERSION = '24.0.6';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -5938,6 +5957,11 @@ async function renderSmartTip(state){
 
 async function renderHome(){
   refreshUnpaidBadge().catch(()=>{});
+  // Surface a configured-but-inactive cloud backup on every home render. Cheap
+  // (two reads, and it self-removes once resolved) and it is the only place the
+  // operator reliably passes through, so it cannot be missed the way the
+  // Diagnostics row was.
+  renderCloudPausedBanner().catch(()=>{});
 
   // F26: Driver Command Strip wiring (idempotent — only bind once)
   const dcEval = $('#dcEvaluate');
@@ -15389,6 +15413,141 @@ function cloudSetSyncStatus(type, msg){
   el.innerHTML = (p[type] || '') + escapeHtml(msg);
 }
 
+/** True when cloud backup is CONFIGURED but cannot run: a token is stored
+ *  (IndexedDB, survives restarts) while the passphrase is not (sessionStorage,
+ *  cleared on tab/browser close).
+ *
+ *  This is the state that made cloud backup feel unreliable. `cloudIsEnabled()`
+ *  requires BOTH, so once the session ends every automatic push — the
+ *  visibilitychange handlers, `cloudScheduleSync()`, `emergencyAutoBackup()` —
+ *  silently no-ops. Nothing told the operator. The single surface that reported
+ *  it was the Diagnostics panel's `dxCloud` row ("Token set, no passphrase"),
+ *  four taps deep under More → Advanced.
+ *
+ *  So the failure mode was: close the browser, come back, and believe you are
+ *  backed up while nothing has been written since. For a bookkeeping app whose
+ *  cloud story is disaster recovery, that is the worst possible way to fail.
+ *
+ *  The passphrase deliberately stays session-scoped — it is the key protecting
+ *  the cloud copy from anyone with server-side/KV access, and the credential
+ *  rules forbid persisting it. The fix is to make the gap LOUD and recovery one
+ *  tap, not to weaken the encryption.
+ */
+async function cloudBackupPaused(){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) return false;                       // never configured — not "paused"
+  return !sessionStorage.getItem('fl_cloud_pass'); // configured, but cannot run
+}
+
+/** One tap, back to syncing — ideally with no typing at all.
+ *
+ *  This is a REAL credential form, not a bare input, and that is the whole
+ *  point. A password manager (iOS Keychain, 1Password, the Android/desktop
+ *  equivalents) will only offer to save and later autofill when it can
+ *  recognise a credential: fields inside a `<form>`, a `username` field
+ *  carrying a stable account value, and a `current-password` field. Given that,
+ *  resuming becomes: tap Resume, Face ID, done.
+ *
+ *  This is deliberately how the re-entry friction is removed. The alternative —
+ *  the app persisting the passphrase itself — is forbidden by the credential
+ *  rules in CLAUDE.md, and would be a worse implementation of what the OS
+ *  keychain already does properly: hardware-backed on iOS, and not something
+ *  our IndexedDB export/backup paths could ever leak. The secret stays out of
+ *  the app's own storage; the platform holds it.
+ *
+ *  The username is `localUserId` (a stable `usr_<hex>` minted on first boot),
+ *  so the keychain entry is scoped to this install rather than to a guessable
+ *  constant. It is shown read-only rather than hidden: Safari's heuristics are
+ *  unreliable for `display:none` fields, and a visible account row also tells
+ *  the operator which identity they are unlocking.
+ */
+async function openCloudReconnect(){
+  haptic(20);
+  const acct = (await getSetting('localUserId', '')) || 'freightlogic';
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <form id="cloudReconnectForm" autocomplete="on" style="margin:0">
+      <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
+        Your backup passphrase is kept only for the current session, so it clears
+        when the browser closes. Save it to this device's keychain once and your
+        phone will fill it in from then on.
+      </div>
+      <label class="muted" for="cloudReconnectUser" style="font-size:11px;display:block;margin-bottom:4px">Account</label>
+      <input id="cloudReconnectUser" name="username" type="text" autocomplete="username"
+             value="${escapeHtml(acct)}" readonly
+             style="width:100%;padding:12px;font-size:14px;min-height:44px;opacity:.7" />
+      <label class="muted" for="cloudReconnectPass" style="font-size:11px;display:block;margin:10px 0 4px">Backup passphrase</label>
+      <input id="cloudReconnectPass" name="password" type="password" autocomplete="current-password"
+             placeholder="Backup passphrase" inputmode="text"
+             style="width:100%;padding:14px;font-size:16px;min-height:48px" />
+      <div id="cloudReconnectMsg" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>
+      <button class="btn primary" id="cloudReconnectGo" type="submit"
+              style="width:100%;margin-top:12px;min-height:48px;font-size:15px">Resume syncing</button>
+    </form>`;
+
+  const go = async () => {
+    const el = $('#cloudReconnectPass', body);
+    const msg = $('#cloudReconnectMsg', body);
+    const pass = (el?.value || '').trim();
+    if (pass.length < 8){ if (msg) msg.textContent = 'Passphrase must be at least 8 characters.'; return; }
+    sessionStorage.setItem('fl_cloud_pass', pass);
+    if (msg) msg.textContent = 'Syncing…';
+    // Prove it actually works before claiming success. `cloudPushBackup()`
+    // returns undefined on EVERY path — success, "up to date", early-out and
+    // the catch alike — so its return value cannot be tested. It does advance
+    // `lastCloudSync` on success and leaves it untouched in the catch, so
+    // compare that across the call. Same signal the visibilitychange handler
+    // uses. A wrong passphrase still encrypts and uploads fine (the Worker
+    // never decrypts), so this proves the credential pair is USABLE, not that
+    // the passphrase matches an existing backup — that can only surface on
+    // restore, where cloudPullBackup() already reports "Wrong passphrase".
+    const before = Number(await getSetting('lastCloudSync', 0) || 0);
+    await cloudPushBackup(true).catch(()=>{});
+    const after = Number(await getSetting('lastCloudSync', 0) || 0);
+    const ok = after > before;
+    if (ok){
+      closeModal();
+      toast('Cloud backup resumed');
+      _removeCloudPausedBanner();
+      _updateSyncIndicator('ok', 'Synced');
+      cloudRefreshStatusPanel().catch(()=>{});
+      renderHome().catch(()=>{});
+    } else {
+      sessionStorage.removeItem('fl_cloud_pass');
+      if (msg) msg.textContent = 'Could not sync. Check your connection and try again.';
+    }
+  };
+
+  openModal('☁️ Resume cloud backup', body);
+  setTimeout(()=> $('#cloudReconnectPass', body)?.focus(), 120);
+  // Submit on the FORM, not click on the button. A password manager keys its
+  // "save this password?" prompt off a real submit event; a click handler that
+  // never submits is invisible to it, which would defeat the whole point of
+  // shaping this as a credential form. Enter is handled for free by doing this.
+  $('#cloudReconnectForm', body)?.addEventListener('submit', (e)=>{ e.preventDefault(); go(); });
+}
+
+function _removeCloudPausedBanner(){ $('#cloudPausedBanner')?.remove(); }
+
+/** Persistent, non-auto-dismissing banner. Deliberately unlike
+ *  showCloudSyncBanner(), which self-removes after 12s: an informational
+ *  "backup found" notice can afford to vanish, an "you are not being backed up"
+ *  notice cannot. It stays until the condition is actually resolved. */
+async function renderCloudPausedBanner(){
+  if (!(await cloudBackupPaused())){ _removeCloudPausedBanner(); return; }
+  if ($('#cloudPausedBanner')) return; // already shown; don't stack or re-render
+  const el = document.createElement('div');
+  el.id = 'cloudPausedBanner';
+  el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;' +
+    'background:linear-gradient(135deg,#3a2a1a,#453520);border-bottom:1px solid var(--warn,#f0a500);' +
+    'display:flex;align-items:center;gap:12px;font-size:13px';
+  el.innerHTML = `<div style="flex:1">⚠️ <b style="color:var(--warn,#f0a500)">Cloud backup paused</b> — nothing has been backed up since the app was last closed.</div>
+    <button class="btn sm" id="cloudPausedFix" style="min-height:44px;background:var(--warn,#f0a500);color:#000;border:none;font-weight:700">Resume</button>`;
+  document.body.appendChild(el);
+  $('#cloudPausedFix')?.addEventListener('click', ()=> openCloudReconnect());
+  _updateSyncIndicator('warn', 'Paused');
+}
+
 async function cloudRefreshStatusPanel(){
   const panel = $('#cloudStatusPanel'); const indicator = $('#cloudIndicator');
   const setupSection = $('#cloudSetupSection');
@@ -20501,6 +20660,8 @@ function _startInboxVoice(textarea, card) {
 // context.addInitScript() before navigation when it wants this.
 if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   window.__FL_TESTS = {
+    // Cloud-backup paused state (configured token, session-scoped passphrase gone)
+    cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel,

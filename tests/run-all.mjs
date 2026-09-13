@@ -11,6 +11,7 @@ import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-semantics.spec.mjs';
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
+import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
@@ -55,6 +56,7 @@ const specs = [
   cacheGeneration,
   swSubresourceSemantics,
   v2404FailClosed,
+  cloudBackupPaused,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,

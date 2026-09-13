@@ -74,7 +74,7 @@ async function probe(url) {
 
 test('setup: install the real service worker and let it precache the shell', async () => {
   await startOrigin();
-  browser = await chromium.launch({ args: ['--no-sandbox'] });
+  browser = await chromium.launch({ args: ['--no-sandbox'], ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   ctx = await browser.newContext();
   page = await ctx.newPage();
   await page.goto(BASE + '/index.html', { waitUntil: 'load' });

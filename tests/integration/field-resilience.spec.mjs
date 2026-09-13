@@ -322,7 +322,7 @@ test('[FINDING PHASE-4 / DST] isoDate() resolves the correct local calendar date
   } catch(e) { console.warn('[test]', e); }
 
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext({ timezoneId: 'America/Chicago' });
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();
@@ -349,7 +349,7 @@ test('[FINDING PHASE-4 / DST] isoDate() resolves the correct local calendar date
 
 test('[FINDING PHASE-4 / DST] isoDate() resolves correctly across the Mar 2027 spring-forward transition (the missing 2am-3am hour)', async () => {
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext({ timezoneId: 'America/Chicago' });
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();
@@ -378,7 +378,7 @@ test('[FINDING PHASE-4 / DST] isoDate() resolves correctly across the Mar 2027 s
 
 test('[FINDING PHASE-4 / DST] a trip logged with the app clock faked to the ambiguous fall-back hour lands on the correct date end to end', async () => {
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext({ timezoneId: 'America/Chicago' });
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();

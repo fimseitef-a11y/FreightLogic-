@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.5** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.6** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v14** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v14 changes the production-origin/CORS contract only; app/PWA remains v24.0.5 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v14** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v14 changes the production-origin/CORS contract only; app/PWA remains v24.0.6 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -119,7 +119,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.5';
+const APP_VERSION = '24.0.6';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -166,6 +166,32 @@ This app handles financial data. All security mitigations are intentional and mu
 | Device ID | `localStorage` (`fl_device_id`) | Persists — non-secret identifier |
 
 Do not move the passphrase or admin token back to persistent storage.
+
+**Re-entry friction is solved by the OS keychain, not by persisting the secret.**
+Because `fl_cloud_pass` is session-scoped, it clears on every browser close, and
+`cloudIsEnabled()` requires it — so cloud backup goes inactive on every restart.
+Until v24.0.5 nothing surfaced that except the Diagnostics `dxCloud` row, so
+backups silently stopped and the operator only found out at restore time. Two
+things now handle it, and both must be preserved:
+
+- `cloudBackupPaused()` + `renderCloudPausedBanner()` make the inactive state
+  visible on Home with a one-tap Resume. The banner deliberately does **not**
+  auto-dismiss (unlike `showCloudSyncBanner()`'s 12s timeout) — an informational
+  notice may vanish, "you are not being backed up" may not.
+- `openCloudReconnect()` renders a **real credential form** — `<form>`, a
+  read-only `autocomplete="username"` account field carrying `localUserId`, an
+  `autocomplete="current-password"` field, and a genuine `type="submit"` — so
+  iOS Keychain and other password managers offer to save it once and autofill
+  with Face ID thereafter. That is what removes the typing.
+
+Do not "simplify" that modal back into a bare input with a click handler: a
+password manager keys its save prompt off a real submit event and ignores
+`display:none` username fields, so the autofill silently stops working and the
+operator is back to typing a passphrase on a phone. `tests/integration/
+cloud-backup-paused.spec.mjs` CBP-08 asserts every part of that shape, and
+CBP-07 asserts the passphrase never reaches `localStorage` or the settings
+store — so the friction can never be resolved by weakening the encryption
+instead.
 
 The admin token grants create/list/revoke over **every** driver account, so it is the most
 sensitive credential in the app. Both writers must keep it session-scoped:
@@ -236,8 +262,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.5` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.5`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.6` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.6`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
