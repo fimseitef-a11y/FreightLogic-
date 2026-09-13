@@ -1,0 +1,6 @@
+owner: gpt
+token: 3f9fe201-6d55-4b78-a40e-291fb2aa18dd
+started_utc: 2026-09-13T21:26:25.265Z
+expected_release_utc: 2026-09-13T23:26:25.265Z
+paths: .assetsignore
+task: Restore delivery of service-worker-requested admin-driver-ui.js; verified live 404 caused by explicit exclusion.
