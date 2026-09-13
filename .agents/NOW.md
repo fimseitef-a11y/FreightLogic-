@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — | — |
-| gpt | — idle — | — |
+| gpt | PWA shell visual findings handoff for structural pass | 2026-09-13T06:49:00Z |
 
 ---
 
