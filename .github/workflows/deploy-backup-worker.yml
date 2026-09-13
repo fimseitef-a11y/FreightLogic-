@@ -97,8 +97,17 @@ jobs:
       # Proves the deploy actually took, rather than trusting an exit code.
       # Deployed v7 answers /health with 401 and CORS '*', so both of these
       # failing is the exact signature of "the deploy did not land".
-      - name: Verify /health reports v14
+      # The expected generation is DERIVED from the parity verifier rather than
+      # written here, so a Worker bump touches one file instead of three that
+      # must be kept in sync by hand.
+      - name: Verify /health reports the expected Worker version
         run: |
+          WANT=$(grep -m1 -oE 'workerVersion: "[0-9]+"' scripts/verify-cloudflare-parity.mjs | grep -oE '[0-9]+')
+          if [ -z "$WANT" ]; then
+            echo "::error::could not read workerVersion from scripts/verify-cloudflare-parity.mjs"
+            exit 1
+          fi
+          echo "Expecting Worker v$WANT"
           echo "Waiting for propagation..."
           sleep 10
           code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 30 \
@@ -108,11 +117,11 @@ jobs:
             echo "::error::/health returned $code, expected 200. v7 answers 401 because it has no /health route."
             exit 1
           fi
-          if ! grep -q '"version":"14"' body.txt; then
-            echo "::error::/health did not report version 14."
+          if ! grep -q "\"version\":\"$WANT\"" body.txt; then
+            echo "::error::/health did not report version $WANT."
             exit 1
           fi
-          echo "Worker v14 is live."
+          echo "Worker v$WANT is live."
 
       - name: Verify CORS targets the real app origin
         run: |

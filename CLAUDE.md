@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.6** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.7** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v14** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v14 changes the production-origin/CORS contract only; app/PWA remains v24.0.6 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA remains v24.0.7 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -119,7 +119,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.6';
+const APP_VERSION = '24.0.7';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -262,8 +262,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.6` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.6`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.7` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.7`; caches `sw-bridge.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -1813,9 +1813,24 @@ against the deployed bytes — `getPtr()` lazily seeds from `list({prefix})`, th
 path migrates and deletes legacy plaintext token keys, v7's token and user-id formats
 both satisfy v14's validators, and secrets survive a deploy.
 
-**Still HOLD.** Certification is unchanged. Gate 2's source side is complete and the
-deploy is one dispatch away, but it needs a `CLOUDFLARE_API_TOKEN` repository secret
-that only the operator can create. Gate B5 is closed by `scripts/verify-rollback.mjs`,
+**Gate 2 is CLOSED — Worker v14 deployed and verified 2026-09-13T05:06:45Z.**
+Run `34739479229` deployed it through `.github/workflows/deploy-backup-worker.yml` after
+the operator added the `CLOUDFLARE_API_TOKEN` secret. Verified two independent ways: the
+workflow's live checks against the production origin (`/health` HTTP 200 reporting
+version `14`; CORS echoing `https://freightlogic-v2.fimseitef.workers.dev` rather than
+`*`; unauthenticated `/admin/users` and `/evaluate` both still 401), and the Cloudflare
+control plane showing `freightlogic-backup` `modified_on 2026-09-13T05:06:45Z`, matching
+the deploy step. The dispatch before it (run `34738415856`) is worth keeping in the
+record: it failed at the token guard in 9 seconds without touching anything, which is
+what proved the guard chain works rather than merely being written.
+
+That closes P-01 through P-07 in `AUDIT_REPORT.md` **with one residue**: v14's plaintext
+`token:` cleanup is lazy, deleting each key only when that token is next used or its user
+is revoked. Every driver token minted under v7 must be treated as exposed at rest until
+rotated. Rotation is an operator action, not a deploy side effect.
+
+**Still HOLD.** Certification is unchanged pending the `docs/` lane's judgement, which was
+requested through `/.agents/inbox/`. Gate B5 is closed by `scripts/verify-rollback.mjs`,
 which also established that **neither component has a clean rollback target** — the
 Worker's only prior version is v7, so rolling back is a security regression, and rolling
 the app back past `39882fa` raises `payloadLbs` 3000 → 3800 and drops the 54.8"

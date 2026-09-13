@@ -132,11 +132,19 @@ if [ "$MODE" != "verify" ]; then
 
   # 5. Source must be the version we intend to ship, and must still be the
   #    v14 contract the certification gate names.
+  # Derive the expectation instead of hardcoding it. Two literals that must
+  # agree, updated by hand, is exactly the drift this repo keeps rediscovering
+  # (checklist items 11 and 13 exist because of it). The parity verifier's
+  # EXPECTED block is the single source of truth for the Worker generation, so
+  # read it and assert the source agrees — then a future bump touches one place.
   SRC_VER="$(grep -m1 -oE "version: '[0-9]+'" "$WORKER_SRC" | grep -oE "[0-9]+" || true)"
-  if [ "$SRC_VER" = "14" ]; then
-    pass "source /health reports version 14"
+  WANT_VER="$(grep -m1 -oE 'workerVersion: "[0-9]+"' "$REPO_ROOT/scripts/verify-cloudflare-parity.mjs" | grep -oE '[0-9]+' || true)"
+  if [ -z "$WANT_VER" ]; then
+    fail "could not read workerVersion from verify-cloudflare-parity.mjs"
+  elif [ "$SRC_VER" = "$WANT_VER" ]; then
+    pass "source /health reports version $SRC_VER, matching the parity verifier"
   else
-    fail "source /health version is '${SRC_VER:-none}', expected 14"
+    fail "source /health version is '${SRC_VER:-none}' but the parity verifier expects '$WANT_VER' — bump them together"
   fi
   grep -q "GET /health — unauthenticated liveness check" "$WORKER_SRC" \
     && pass "source keeps /health unauthenticated" \

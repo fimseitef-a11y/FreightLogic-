@@ -1,4 +1,11 @@
-// FreightLogic Cloud Backup Worker v14 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v15 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v15: POST /admin/users/:id/rotate — re-key a driver's token IN PLACE, keeping userId.
+// Before this the only way to change a token was POST /admin/users, which mints a NEW
+// userId; since every backup is keyed user:<userId>:device:<id>:..., rotating that way
+// silently orphaned the driver's entire backup history. Rotating a credential must not
+// cost the data it protects. Rotation also deletes the old hashed key AND any legacy
+// v7 plaintext `token:` key immediately, which is the correct fix for the P-01/P-02
+// residue that v14 only cleared lazily on a token's next use.
 // v14: production-origin/CORS repair. The live completion probe proved the app is served from
 // https://freightlogic-v2.fimseitef.workers.dev while the old Pages hostname no longer resolves.
 // v13 (Issue #119 Batch A, item 6): canonical-ABSENCE compatibility. The v12
@@ -125,6 +132,83 @@ export default {
           return json({ ok: true, users }, 200, cors);
         }
 
+        // POST /admin/users/:id/rotate — v15: re-key a driver's token IN PLACE.
+        //
+        // WHY THIS EXISTS. Before it, the only way to change a token was
+        // POST /admin/users, which mints a new `userId` along with the new
+        // token. Every backup is stored under `user:<userId>:device:<id>:...`,
+        // so a "rotation" done that way silently orphans the driver's entire
+        // backup history: the data stays in KV and nothing can ever address it
+        // again. Rotating a credential should not cost the data it protects.
+        //
+        // This keeps `userId`, `name`, `createdAt` and `backupCount` exactly as
+        // they are, and swaps only the token. Every existing backup and delta
+        // key remains reachable, because none of them are keyed on the token.
+        //
+        // It is also the correct fix for the P-01/P-02 residue: the superseded
+        // v7 stored tokens in KV in PLAINTEXT (as both the `token:<raw>` key and
+        // a `token` field inside the record). v14 clears those only lazily, on
+        // that token's next use. Rotating deletes both the old hashed key and
+        // any legacy plaintext key immediately, and the record it writes back
+        // carries no `token` field at all — so a rotated driver has no plaintext
+        // residue left anywhere, without waiting for a future request.
+        if (request.method === 'POST' && /^\/admin\/users\/[^/]+\/rotate$/.test(path)) {
+          const rotId = path.split('/admin/users/')[1].replace(/\/rotate$/, '');
+          if (!rotId || !/^u_[a-f0-9-]{8,36}$/i.test(rotId)) {
+            return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+          }
+          const rotRaw = await env.BACKUPS.get('user:' + rotId);
+          if (!rotRaw) return json({ ok: false, error: 'Not found' }, 404, cors);
+          let rotRec;
+          try { rotRec = JSON.parse(rotRaw); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
+
+          // Refuse to rotate a revoked account. Re-keying it would quietly
+          // reactivate a driver an operator deliberately turned off.
+          if (!rotRec.active) {
+            return json({ ok: false, error: 'User is revoked. Rotation would silently reactivate it.' }, 409, cors);
+          }
+
+          const oldTokenHash = rotRec.tokenHash;
+          const oldPlaintext = rotRec.token; // present only on v7-era records
+          const newToken = 'flk_' + crypto.randomUUID().replace(/-/g, '');
+          const newTokenHash = await hashToken(newToken);
+
+          // Same identity, new credential. `token` is deliberately never stored.
+          const next = {
+            userId: rotRec.userId,
+            name: rotRec.name,
+            tokenHash: newTokenHash,
+            createdAt: rotRec.createdAt,
+            active: true,
+            backupCount: rotRec.backupCount || 0,
+            rotatedAt: new Date().toISOString(),
+          };
+
+          // Write the new credential and the updated record BEFORE removing the
+          // old one. If this call dies midway the driver keeps working on the
+          // old token, which is recoverable; the reverse would lock them out.
+          await Promise.all([
+            env.BACKUPS.put('tokh:' + newTokenHash, JSON.stringify(next)),
+            env.BACKUPS.put('user:' + rotId, JSON.stringify(next)),
+          ]);
+
+          const cleanup = [];
+          if (oldTokenHash && oldTokenHash !== newTokenHash) cleanup.push(env.BACKUPS.delete('tokh:' + oldTokenHash));
+          if (oldPlaintext) cleanup.push(env.BACKUPS.delete('token:' + oldPlaintext));
+          if (cleanup.length) await Promise.all(cleanup);
+
+          // Same response shape as POST /admin/users, so the client can reuse
+          // its existing invite-link flow unchanged.
+          return json({
+            ok: true,
+            userId: next.userId,
+            name: next.name,
+            token: newToken,
+            rotated: true,
+            legacyPlaintextCleared: !!oldPlaintext,
+          }, 200, cors);
+        }
+
         if (request.method === 'DELETE' && path.startsWith('/admin/users/')) {
           const delId = path.split('/admin/users/')[1];
           if (!delId || !/^u_[a-f0-9-]{8,36}$/i.test(delId)) {
@@ -149,7 +233,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '14', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '15', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token

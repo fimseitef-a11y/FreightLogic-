@@ -1,13 +1,20 @@
 # FreightLogic — Adversarial Audit Report
 
-> **Scope note, 2026-09-12.** This document covers three audits of repository **source**: the
-> F-series (v23.8.3/v23.8.4), the X-series (v23.9), and — appended at the end — a new **P-series
-> (P-01 … P-07) against the DEPLOYED backup/API Worker**. The P-series contains **the only OPEN
-> findings in this report**, including two live credential exposures and a live violation of the
-> v24.0 decision-authority rule. They are open because the production Worker runs **v7**, seven
-> generations behind repository source. Every one is closed by deploying the existing v14 source;
-> none needs a code change. Read "Findings" below as source-side history, not as the current
-> production posture.
+> **Scope note, updated 2026-09-13.** This document covers three audits: the F-series
+> (v23.8.3/v23.8.4) and X-series (v23.9) against repository **source**, and — appended at the
+> end — the **P-series (P-01 … P-07) against the DEPLOYED backup/API Worker**.
+>
+> The P-series were the only OPEN findings this report has ever carried, including two live
+> credential exposures and a live violation of the v24.0 decision-authority rule. They were open
+> because production ran Worker **v7**, seven generations behind source. **All seven closed on
+> 2026-09-13 when v14 was deployed** — no code change was needed, exactly as the findings
+> predicted.
+>
+> **One residue is still open:** v14 deletes each legacy plaintext `token:` key only when that
+> token is next used or its user is revoked, so every driver token minted under v7 remains
+> exposed at rest until rotated. See the banner above the P-series for detail.
+>
+> Read "Findings" below as source-side history, not as the current production posture.
 >
 > Also stale by design: the F-series header below describes v23.8.3 and is left as written, but
 > this report does **not** cover the Issue #119 Batch A/B findings (v24.0.2) or the
@@ -951,9 +958,27 @@ distinct from `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block (which d
 
 ## Deployed-Worker audit — P-01 … P-07 (2026-09-12)
 
-**These are the first OPEN findings in this report.** Every F-series and X-series finding above
+> **RESOLVED 2026-09-13T05:06:45Z — Worker v14 deployed.** All seven closed by deployment;
+> no code change was required, as stated below. Verified two independent ways: the deploying
+> workflow's live checks against the production origin (`/health` HTTP 200 reporting version
+> `14`, CORS echoing the real app origin rather than `*`, unauthenticated `/admin/users` and
+> `/evaluate` both still 401), and the Cloudflare control plane showing `freightlogic-backup`
+> `modified_on 2026-09-13T05:06:45Z`. Deployed by run `34739479229` via
+> `.github/workflows/deploy-backup-worker.yml`.
+>
+> **One residue remains open, and it is P-01/P-02's.** v14's cleanup of the legacy plaintext
+> `token:` keys is lazy — each is deleted only when that token is next used, or when its user
+> is revoked. Every driver token minted under v7 must therefore be treated as **exposed at
+> rest until rotated**, and rotation is an operator action rather than a deploy side effect.
+> Do not read this banner as "the credential exposure is over"; read it as "no new tokens are
+> being written in plaintext, and the old ones are still out there."
+>
+> The finding text below is left exactly as written on 2026-09-12, as evidence of the state
+> that was found. It is not retrofitted to the present tense.
+
+**These were the first OPEN findings in this report.** Every F-series and X-series finding above
 concerns repository *source*. This series concerns the *deployed* backup/API Worker at
-`https://freightlogic-backup.fimseitef.workers.dev`, and it is open because the live service does
+`https://freightlogic-backup.fimseitef.workers.dev`, and it was open because the live service did
 not run the repository's source.
 
 **Method.** The deployed script was read through the Cloudflare **control plane**
@@ -980,13 +1005,13 @@ projection contract. Two of the findings below are credential exposures that are
 
 | ID | Severity | Area | Status | Summary |
 |---|---|---|---|---|
-| P-01 | **Critical** | Credential storage | **OPEN** | Deployed Worker stores every driver bearer token in KV in plaintext, as both key and value |
-| P-02 | **Critical** | Admin endpoint | **OPEN** | `GET /admin/users` returns each driver's live bearer token in the response body |
-| P-03 | **Critical** | Decision authority | **OPEN** | Deployed `/evaluate` lets the model own verdict and grade, ignoring the client's canonical decision |
-| P-04 | **High** | Data durability | **OPEN** | `GET /backup/delta` does not exist in production — X-01 is live, and pruned deltas are already unrecoverable |
-| P-05 | **High** | Admin auth hardening | **OPEN** | Non-constant-time admin token compare, and no per-IP rate limit on `/admin/` |
-| P-06 | **Medium** | Input validation | **OPEN** | No `flk_` token format validation before the KV lookup |
-| P-07 | **Medium** | CORS / liveness | **OPEN** | `ALLOWED_ORIGIN` is unset in production, so CORS answers `*`; `/health` does not exist |
+| P-01 | **Critical** | Credential storage | **CLOSED by deploy** — residue: rotate tokens | Deployed Worker stores every driver bearer token in KV in plaintext, as both key and value |
+| P-02 | **Critical** | Admin endpoint | **CLOSED by deploy** — residue: rotate tokens | `GET /admin/users` returns each driver's live bearer token in the response body |
+| P-03 | **Critical** | Decision authority | **CLOSED by deploy** | Deployed `/evaluate` lets the model own verdict and grade, ignoring the client's canonical decision |
+| P-04 | **High** | Data durability | **CLOSED by deploy** | `GET /backup/delta` does not exist in production — X-01 is live, and pruned deltas are already unrecoverable |
+| P-05 | **High** | Admin auth hardening | **CLOSED by deploy** | Non-constant-time admin token compare, and no per-IP rate limit on `/admin/` |
+| P-06 | **Medium** | Input validation | **CLOSED by deploy** | No `flk_` token format validation before the KV lookup |
+| P-07 | **Medium** | CORS / liveness | **CLOSED by deploy** | `ALLOWED_ORIGIN` is unset in production, so CORS answers `*`; `/health` does not exist |
 
 All seven are fixed in repository source at v14 and are closed by **deploying** it. None requires
 a source change. `scripts/deploy-backup-worker.sh` and

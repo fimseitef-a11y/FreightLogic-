@@ -151,13 +151,22 @@ test('[CG-08] the parity script expects the current generation', () => {
 });
 
 test('[CG-09] DB version and Worker version are unchanged by a generation freeze', () => {
-  // DB v15 is unchanged. Worker source semantics intentionally moved 13 -> 14
-  // for the production-origin/CORS repair proven necessary by the live release probe.
+  // DB v15 is unchanged. The Worker version is PINNED here rather than derived,
+  // deliberately: the point of this assertion is to catch a Worker bump that
+  // rides along accidentally with an app-generation bump. So it must be updated
+  // by hand, and only when the Worker really did change — which forces someone
+  // to state why in this comment.
+  //
+  // Moved 13 -> 14 for the production-origin/CORS repair the live release probe
+  // proved necessary. Moved 14 -> 15 for `POST /admin/users/:id/rotate`: before
+  // it, the only way to re-key a driver was to create a new one, which mints a
+  // new `userId` and orphans that driver's entire backup history, since backups
+  // are keyed `user:<userId>:device:<id>:backup:<ts>`.
   const dbm = read('app.js').match(/^const DB_VERSION = (\d+);/m);
   ok(dbm, 'could not read DB_VERSION from app.js');
   eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');
-  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "14"'),
-    'the expected Worker version must be 14 — production-origin/CORS semantics changed intentionally');
+  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "15"'),
+    'the expected Worker version must be 15 — in-place token rotation changed Worker semantics intentionally');
 });
 
 test('[CG-10] index.html and _headers CSP stay byte-identical across the bump', () => {
