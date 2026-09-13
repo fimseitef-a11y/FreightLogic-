@@ -1813,9 +1813,24 @@ against the deployed bytes — `getPtr()` lazily seeds from `list({prefix})`, th
 path migrates and deletes legacy plaintext token keys, v7's token and user-id formats
 both satisfy v14's validators, and secrets survive a deploy.
 
-**Still HOLD.** Certification is unchanged. Gate 2's source side is complete and the
-deploy is one dispatch away, but it needs a `CLOUDFLARE_API_TOKEN` repository secret
-that only the operator can create. Gate B5 is closed by `scripts/verify-rollback.mjs`,
+**Gate 2 is CLOSED — Worker v14 deployed and verified 2026-09-13T05:06:45Z.**
+Run `34739479229` deployed it through `.github/workflows/deploy-backup-worker.yml` after
+the operator added the `CLOUDFLARE_API_TOKEN` secret. Verified two independent ways: the
+workflow's live checks against the production origin (`/health` HTTP 200 reporting
+version `14`; CORS echoing `https://freightlogic-v2.fimseitef.workers.dev` rather than
+`*`; unauthenticated `/admin/users` and `/evaluate` both still 401), and the Cloudflare
+control plane showing `freightlogic-backup` `modified_on 2026-09-13T05:06:45Z`, matching
+the deploy step. The dispatch before it (run `34738415856`) is worth keeping in the
+record: it failed at the token guard in 9 seconds without touching anything, which is
+what proved the guard chain works rather than merely being written.
+
+That closes P-01 through P-07 in `AUDIT_REPORT.md` **with one residue**: v14's plaintext
+`token:` cleanup is lazy, deleting each key only when that token is next used or its user
+is revoked. Every driver token minted under v7 must be treated as exposed at rest until
+rotated. Rotation is an operator action, not a deploy side effect.
+
+**Still HOLD.** Certification is unchanged pending the `docs/` lane's judgement, which was
+requested through `/.agents/inbox/`. Gate B5 is closed by `scripts/verify-rollback.mjs`,
 which also established that **neither component has a clean rollback target** — the
 Worker's only prior version is v7, so rolling back is a security regression, and rolling
 the app back past `39882fa` raises `payloadLbs` 3000 → 3800 and drops the 54.8"
