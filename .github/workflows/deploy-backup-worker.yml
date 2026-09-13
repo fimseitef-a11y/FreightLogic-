@@ -1,0 +1,154 @@
+name: Deploy Backup Worker
+
+# Completion gate 2 — the last blocking step of the release.
+#
+# WHY THIS EXISTS. The backup/API Worker deploy has been the sole blocker since
+# 2026-09-02. It could only be done from a terminal signed into Cloudflare, which
+# the operator does not have to hand — they work from an iPhone. Every automated
+# environment that has looked at this is also blocked: no Cloudflare credential,
+# and outbound access to api.cloudflare.com is refused. So the step that unblocks
+# the release was the one step nobody could actually perform.
+#
+# GitHub Actions can reach Cloudflare. This turns the deploy into a button:
+# Actions -> Deploy Backup Worker -> Run workflow -> type DEPLOY -> Run.
+# That is doable from a phone browser in about fifteen seconds.
+#
+# WHAT IT IS NOT. This is manual-dispatch ONLY. It never triggers on push, on a
+# comment, or on a schedule, and it never pushes a branch. That distinction is
+# deliberate: CLAUDE.md records that the v24.0.1 comment-triggered, branch-pushing
+# CI repair machinery was removed on purpose and must not come back. An
+# operator-initiated deploy of committed source is a different thing, and the
+# `confirm` input below exists so it cannot happen by a stray tap.
+#
+# ONE-TIME SETUP — you only ever do this once:
+#   1. https://dash.cloudflare.com/profile/api-tokens -> Create Token
+#   2. Use the "Edit Cloudflare Workers" template.
+#   3. Under Account Resources pick your account; under Zone Resources leave the
+#      default. Create the token and COPY it.
+#   4. In this repo: Settings -> Secrets and variables -> Actions -> New
+#      repository secret. Name it exactly CLOUDFLARE_API_TOKEN, paste, save.
+# The account id is already filled in below, so the token is the only thing
+# needed. Never paste the token into an issue, a PR, or a chat.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to confirm (deploys the live backup Worker)'
+        required: true
+        default: ''
+
+# Read-only repo access. This workflow deploys to Cloudflare; it has no reason to
+# write to the repository, and withholding that means a compromised step cannot
+# rewrite the source it just deployed.
+permissions:
+  contents: read
+
+env:
+  # Read from the dashboard URL of the existing services. Not a secret — an
+  # account id alone grants nothing without the token.
+  CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
+  API_ORIGIN: https://freightlogic-backup.fimseitef.workers.dev
+  APP_ORIGIN: https://freightlogic-v2.fimseitef.workers.dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless explicitly confirmed
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Type DEPLOY in the confirm box to run this. Nothing was deployed."
+          exit 1
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Fail early if the token is missing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set. See the one-time setup at the top of this file."
+            exit 1
+          fi
+          echo "Token present."
+
+      # The same guards a local run would get: right service name, no assets
+      # block, real KV id, no secrets in config, source actually at v14.
+      - name: Preflight (no deploy)
+        run: bash scripts/deploy-backup-worker.sh
+
+      # --dry-run resolves the config and bundles the script without uploading,
+      # so a malformed config fails here rather than half-way through a deploy.
+      - name: Inspect the bundle
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc
+
+      # Proves the deploy actually took, rather than trusting an exit code.
+      # Deployed v7 answers /health with 401 and CORS '*', so both of these
+      # failing is the exact signature of "the deploy did not land".
+      - name: Verify /health reports v14
+        run: |
+          echo "Waiting for propagation..."
+          sleep 10
+          code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 30 \
+            -H "Origin: $APP_ORIGIN" "$API_ORIGIN/health")
+          echo "HTTP $code"; cat body.txt; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::/health returned $code, expected 200. v7 answers 401 because it has no /health route."
+            exit 1
+          fi
+          if ! grep -q '"version":"14"' body.txt; then
+            echo "::error::/health did not report version 14."
+            exit 1
+          fi
+          echo "Worker v14 is live."
+
+      - name: Verify CORS targets the real app origin
+        run: |
+          hdr=$(curl -sS -D - -o /dev/null --max-time 30 \
+            -H "Origin: $APP_ORIGIN" "$API_ORIGIN/health" \
+            | grep -i '^access-control-allow-origin:' | tr -d '\r')
+          echo "$hdr"
+          case "$hdr" in
+            *"$APP_ORIGIN"*) echo "CORS correct." ;;
+            *"*"*) echo "::error::CORS is still wildcard — ALLOWED_ORIGIN did not apply (v7 behaviour)."; exit 1 ;;
+            *) echo "::error::Unexpected CORS header: ${hdr:-none}"; exit 1 ;;
+          esac
+
+      - name: Verify the auth boundaries still deny
+        run: |
+          admin=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$API_ORIGIN/admin/users")
+          eval_=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -X POST "$API_ORIGIN/evaluate")
+          echo "unauthenticated /admin/users -> $admin ; /evaluate -> $eval_"
+          [ "$admin" = "401" ] || { echo "::error::/admin/users returned $admin, expected 401"; exit 1; }
+          [ "$eval_" = "401" ] || { echo "::error::/evaluate returned $eval_, expected 401"; exit 1; }
+
+      - name: What is still owed
+        run: |
+          cat <<'DONE'
+
+          Worker v14 is deployed and answering the v14 contract.
+
+          ROTATE THE DRIVER TOKENS. The superseded v7 stored every driver bearer
+          token in KV in plaintext AND returned them from GET /admin/users.
+          Deploying stops new exposure, but the cleanup is lazy — a plaintext key
+          is only removed when that token is next used, or when the user is
+          revoked. Rotate through the admin panel rather than assuming the deploy
+          cleaned up. Never paste a token into an issue or a PR.
+
+          Then, to finish the release:
+            FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs
+            FL_BACKUP_TOKEN=flk_... node scripts/verify-live-backup.mjs
+            node scripts/verify-cloudflare-parity.mjs
+          DONE
