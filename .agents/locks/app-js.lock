@@ -1,6 +1,0 @@
-owner: gpt
-token: 0425ca06-e8c6-4d51-a015-91e15c2d47a1
-started_utc: 2026-09-13T07:31:00Z
-expected_release_utc: 2026-09-13T12:00:00Z
-paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js
-task: Continue the approved modern UI structural pass: real Today/Loads/Evaluate/Trips/Money navigation and shell parity, preserving canonical state and decision logic.
