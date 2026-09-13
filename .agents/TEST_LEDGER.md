@@ -234,3 +234,12 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 - GitHub Tests run 34784017292, job 103796091494: node tests/run-all.mjs, **406 passed / 0 failed across 43 spec files** (job log total at 21:33:21 UTC).
 - Lanes run 34784017263: success. No failed assertion, quarantine, or safety-net edits. Earlier PR CI was superseded by the final field-checklist documentation synchronization.
 - Merged as d751500eed8c7e4c29dd23e32ed9c21883889fe9. Production restored-admin-asset and controlled-PWA cache verification remain pending; this source/CI result is not a deployment PASS.
+
+## 2026-09-13 — deploy-asset coverage (claude/repo-review-9lpj28)
+
+- Head 4018a56, branched from main d751500. Local run against real headless Chromium: **411 passed / 0 failed across 44 spec files**, exit 0.
+- Delta from the 406/43 PR #173 baseline is exactly the new `tests/unit/deploy-asset-coverage.spec.mjs` (+1 spec file, +5 assertions, DAC-01…DAC-05). No existing assertion was changed, skipped, quarantined or weakened.
+- `scripts/verify-cloudflare-parity.mjs --static-only`: PASS, now reporting `No runtime asset is excluded from deployment by .assetsignore (23 declared)` alongside the CSP byte-identity check.
+- Live half NOT run — this lane's proxy still refuses to tunnel to both deployed origins. The sweep was instead driven end-to-end against a real local origin serving the repo: all 23 assets PASS; deleting `admin-driver-ui.js` reproduces `HTTP 404 (requested by service-worker.js CORE, service-worker.js ADMIN_UI_TAG (injected))` and exits 1; an origin serving `index.html` for a missing `.js` is caught by the content-type check rather than passing as 200.
+- Negative controls, all confirmed to fire: `admin-driver-ui.js` re-added to `.assetsignore` (DAC-02, DAC-05); a `vendor/` directory entry (DAC-02); an `icon*.png` glob (DAC-02); the `cloud-backup-worker.js` exclusion removed (DAC-03); the sweep call commented out, and the shared import removed (DAC-04); a bogus identifier in `CORE` (DAC-01/02/05, as an unparseable declaration rather than a silently shorter inventory).
+- No shipped file changed: `APP_VERSION`/`SW_VERSION` 24.0.8, DB 15, Worker v15 all untouched. This is a source/CI result and a tooling change; it is not a deployment PASS and claims nothing about the live gates.
