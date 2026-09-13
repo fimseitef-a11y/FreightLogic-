@@ -70,6 +70,28 @@ APP_SERVICE="freightlogic-v2"
 API_SERVICE="freightlogic-backup"
 APP_ORIGIN="https://freightlogic-v2.fimseitef.workers.dev"
 API_ORIGIN="https://freightlogic-backup.fimseitef.workers.dev"
+PARITY="$REPO_ROOT/scripts/verify-cloudflare-parity.mjs"
+
+# The Worker generation has exactly ONE source of truth: the parity verifier's
+# EXPECTED block. Read it once, here, and let every check below derive from it.
+#
+# This assignment exists because of a real failure, not as tidiness. The v15
+# deploy was refused by this very script while the source, the parity verifier
+# and the workflow all agreed on 15, because a SECOND guard further down still
+# grepped for the literal `workerVersion: "14"`. Converting three of four copies
+# to derive and leaving the fourth is not a partial fix — the remaining literal
+# is still the one that fails the release. One assignment, every reader derives.
+#
+# Note the division of labour: deriving is right HERE, where the job is "deploy
+# whatever generation this checkout declares". It is wrong in
+# tests/unit/cache-generation.spec.mjs CG-09, which pins the Worker version BY
+# HAND on purpose so an unintended Worker bump riding along with an app bump has
+# to be seen and justified by a human. Do not "fix" that one to match this one.
+WANT_VER="$(grep -m1 -oE 'workerVersion: "[0-9]+"' "$PARITY" | grep -oE '[0-9]+' || true)"
+if [ -z "$WANT_VER" ]; then
+  echo "could not read workerVersion from $PARITY — refusing to act blind" >&2
+  exit 1
+fi
 
 MODE="preflight"
 case "${1:-}" in
@@ -138,10 +160,7 @@ if [ "$MODE" != "verify" ]; then
   # EXPECTED block is the single source of truth for the Worker generation, so
   # read it and assert the source agrees — then a future bump touches one place.
   SRC_VER="$(grep -m1 -oE "version: '[0-9]+'" "$WORKER_SRC" | grep -oE "[0-9]+" || true)"
-  WANT_VER="$(grep -m1 -oE 'workerVersion: "[0-9]+"' "$REPO_ROOT/scripts/verify-cloudflare-parity.mjs" | grep -oE '[0-9]+' || true)"
-  if [ -z "$WANT_VER" ]; then
-    fail "could not read workerVersion from verify-cloudflare-parity.mjs"
-  elif [ "$SRC_VER" = "$WANT_VER" ]; then
+  if [ "$SRC_VER" = "$WANT_VER" ]; then
     pass "source /health reports version $SRC_VER, matching the parity verifier"
   else
     fail "source /health version is '${SRC_VER:-none}' but the parity verifier expects '$WANT_VER' — bump them together"
@@ -156,12 +175,11 @@ if [ "$MODE" != "verify" ]; then
     && pass "source projects the canonical decision (v24.0 authority rule)" \
     || fail "source does not project canonical authority"
 
-  # 6. The parity script must already expect what we are about to deploy.
-  if grep -q 'workerVersion: "14"' "$REPO_ROOT/scripts/verify-cloudflare-parity.mjs"; then
-    pass "parity verifier expects Worker 14"
-  else
-    fail "parity verifier does not expect Worker 14 — bump it with the deploy"
-  fi
+  # (The former guard 6 — "parity verifier expects Worker 14" — is gone. It
+  # asserted parity against a hardcoded literal, which is both redundant with
+  # guard 5 above, now that guard 5 reads parity as the source of truth, and the
+  # exact line that refused the v15 deploy. A guard whose only failure mode is
+  # its own staleness is not protecting anything.)
 
   if [ "$FAILED" -ne 0 ]; then
     echo
@@ -213,9 +231,9 @@ HEALTH_CORS="$(curl -sS --max-time 20 -D - -o /dev/null \
   | grep -i '^access-control-allow-origin:' | tr -d '\r' || echo "")"
 
 [ "$HEALTH" = "200" ] && pass "/health HTTP 200" || fail "/health HTTP $HEALTH (v7 answers 401 — it has no /health route)"
-echo "$HEALTH_BODY" | grep -q '"version":"14"' \
-  && pass "/health reports version 14" \
-  || fail "/health body did not report version 14: $HEALTH_BODY"
+echo "$HEALTH_BODY" | grep -q "\"version\":\"$WANT_VER\"" \
+  && pass "/health reports version $WANT_VER" \
+  || fail "/health body did not report version $WANT_VER: $HEALTH_BODY"
 case "$HEALTH_CORS" in
   *"$APP_ORIGIN"*) pass "CORS echoes the production app origin" ;;
   *"*"*)           fail "CORS is still wildcard '*' — ALLOWED_ORIGIN is unset (v7 behaviour)" ;;
@@ -234,8 +252,11 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
+echo "LIVE VERIFICATION PASS — Worker v$WANT_VER is deployed and answering the v$WANT_VER contract."
+# Quoted heredoc, deliberately: the prose below contains backticks
+# (`token:` keys) and a `$`-free but fragile body. An interpolating
+# heredoc would treat those backticks as command substitution.
 cat <<'DONE'
-LIVE VERIFICATION PASS — Worker v14 is deployed and answering the v14 contract.
 
 Gate 2 is closed for the unauthenticated surface. Still owed before the
 release can be frozen:
