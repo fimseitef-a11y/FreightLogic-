@@ -219,3 +219,11 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 | 2026-09-12T06:25:00Z | claude | a2a6bc1 | independent verification of Worker v14 production-origin repair (gpt PR #153) | full suite | 373 pass / 0 fail / 40 spec files | parity --static-only PASS at app 24.0.5 / Worker 14; +1 assertion vs 372 baseline (new W-01b CORS test); live half UNOBSERVED — proxy refuses both origins, now GPT's Gate 2 |
 
 | 2026-09-12T06:30:00Z | claude | 39882fa | van-profile reconciliation to operator vehicle truth (PR #155) | full suite | 376 pass / 0 fail / 40 spec files | +3 vs 373 baseline (OPS-01/02/03); negative controls fire both ways; CI playwright-suite green on the merged head; parity --static-only PASS |
+
+## 2026-09-13 — GPT observes v24.0.8 completion baseline
+
+- Claude source head bd1a9c81c47022b23f9804fbb5ef9274d6969531; PR #172 Tests run 34783435831 / job 103794494149: node tests/run-all.mjs, GitHub Actions Chromium, **406 PASS / 0 FAIL / 43 specs**; verified from completed job logs. No rerun requested.
+- Inspected production/source baseline c02ed36bcc6c81a182c81aec0d6358d39fc90bbf: verify-cloudflare-parity.mjs **24 PASS / 0 FAIL**, exit 0; m7-certify.mjs --skip-suite **13 PASS / 0 FAIL / 1 SKIP**, NOT CERTIFIABLE.
+- Independent live byte/header probe: eleven files match; admin-driver-ui.js HTTP 404. Product deployment defect, not a red full-suite baseline. PR #173 removes its explicit .assetsignore exclusion.
+- verify-live-authority.mjs: exit 2, UNOBSERVED, missing FL_BACKUP_TOKEN. No authenticated checks, no OpenAI calls, no account data written.
+- Local Chromium installation timed out; browser tool stalled. No local full-suite or six-width run claimed; no tests skipped/rewritten to manufacture a pass. PR #173 own CI result pending.
