@@ -33,4 +33,15 @@ These are exact current-source observations, not mockup preferences:
 3. **Manifest shortcuts still use legacy route fragments.** `Add Trip` targets `./#trip` and `Evaluate Load` targets `./#midwest`. Reconcile shortcuts to the final real routing contract when Today/Loads/Evaluate/Trips/Money lands; do not leave shortcuts pointing at obsolete route names.
 4. **Google font network hints/imports remain while v4 presentation overrides the UI to system fonts.** `index.html` still preconnects to Google Fonts and loads Syne + DM Mono. If current source no longer needs either font after the structural pass, removing those requests would reduce startup/network work, but verify all selectors first because CSP/_headers are release-critical and Claude-owned. Treat this as an optimization, not a mandatory redesign blocker.
 
+## Measured contrast findings to avoid propagating into new markup
+
+Using the current v4 color tokens and `--surface-1` / white as the representative card backgrounds:
+
+- dark `--text-tertiary` is about **3.88:1** against `--surface-1`;
+- light `--text-tertiary` is about **2.93:1** against white;
+- light `--accent: #c88912` used as text is about **2.98:1** on white and lower on the gray surfaces;
+- light `--warn: #9a7600` is about **4.23:1** on white.
+
+These are below the 4.5:1 normal/small-text target. Structural source should avoid hard-coding those weaker visual tokens into new small labels; GPT will correct the presentation tokens/selectors in the post-structure CSS reconciliation. `--accent-text` is already the stronger light-theme amber text token and is the safer semantic choice where markup needs to distinguish accent-as-fill from accent-as-text.
+
 When your structural PR is ready, return the branch/PR number and exact full-suite result as requested in the original handoff. GPT will then do the selector/presentation reconciliation against the acceptance contract rather than modifying your runtime logic.
