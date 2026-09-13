@@ -71,11 +71,11 @@ This work is not complete at this certification point. Because it can change sha
 
 ## 5. Private operator-history gate
 
-The real row-level private master dataset is still not present in the accessible public repository. Existing summaries must not be used to reconstruct missing rows.
+The original August 27 M6 bundle has now been recovered privately. See `INDEPENDENT_READINESS_2026-09-13.md`: all five inputs pass preflight (216 source rows), and the unchanged adapter produces 149 candidate records deterministically. Raw rows remain outside this public repository.
 
-Status: **SOURCE FILE MISSING / NOT RUN**.
+Status: **BUNDLE RECOVERED / ADAPTER PREPARED / APPLICATION ROUND TRIP AND RECONCILIATION NOT RUN**.
 
-When the real bundle is available, run `scripts/verify-history-bundle.mjs` first and then the current reconciliation/import machinery outside the public repo. Publish only non-sensitive reconciliation results.
+The separate previously described 125-row master is still unavailable. Do not reconstruct it from summaries. The prepared candidates still require an isolated application import/re-export, idempotence verification and conflict review before adoption; this is not Gate C PASS.
 
 ## 6. Physical iPhone gate
 
