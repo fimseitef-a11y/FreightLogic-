@@ -973,6 +973,30 @@ distinct from `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block (which d
 > Do not read this banner as "the credential exposure is over"; read it as "no new tokens are
 > being written in plaintext, and the old ones are still out there."
 >
+> **Worker v15 deployed 2026-09-13T19:36:13Z — the residue is now closable in one tap, but is
+> not yet closed.** v15 adds `POST /admin/users/:id/rotate`, which re-keys a driver in place:
+> same `userId`, same `name`, same `createdAt`, same `backupCount`, new token. That matters
+> because every backup is stored under `user:<userId>:device:<deviceId>:backup:<ts>` — so the
+> previous way to change a token (create a new driver, revoke the old) minted a new `userId`
+> and silently orphaned that driver's entire backup history in KV, unaddressable forever.
+> Rotation also deletes the legacy plaintext `token:` key **immediately** rather than lazily,
+> which is what actually discharges this residue.
+>
+> Verified the same two independent ways as v14: run `34778178795` against `main`, whose live
+> checks returned `{"ok":true,"version":"15"}` on `/health` (HTTP 200), CORS echoing
+> `https://freightlogic-v2.fimseitef.workers.dev`, and unauthenticated `/admin/users` and
+> `/evaluate` both still 401; plus the Cloudflare control plane showing `freightlogic-backup`
+> `modified_on 2026-09-13T19:36:13.729743Z`, matching the deploy step's own timestamps.
+>
+> The expected-version check is now DERIVED from `scripts/verify-cloudflare-parity.mjs` rather
+> than hardcoded, so this run was read specifically to confirm it printed `Expecting Worker
+> v15` — a derived check that silently reads nothing would pass vacuously no matter what was
+> deployed, which would make this verification worthless precisely when it mattered.
+>
+> **The residue stays OPEN until the operator rotates.** A deployed rotation endpoint is a
+> capability, not an act. Until each v7-era token has actually been rotated, it remains
+> exposed at rest exactly as described above.
+>
 > The finding text below is left exactly as written on 2026-09-12, as evidence of the state
 > that was found. It is not retrofitted to the present tense.
 

@@ -1845,3 +1845,117 @@ catch because it names version *references* rather than a section. This section 
 correction. `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` still reads `24.0.5`; it is
 gpt-owned under `/.agents/LANES.md` and was requested through `/.agents/inbox/` rather
 than edited across lanes.
+
+---
+
+## v24.0.7 "Rotate Without Loss" — Worker v15 in-place token rotation
+
+Landed in PR #162 under a held `app-js` lock, with the deploy-path repair that followed in
+PR #163. `DB_VERSION` stays **15**; the Worker moves **v14 → v15**.
+
+**1 — Rotating a driver's token no longer destroys that driver's backups.** Before v15 the
+only way to change a token was `POST /admin/users`, which mints a new `userId` alongside the
+new token. Every backup is stored under `user:<userId>:device:<deviceId>:backup:<ts>`, so
+"rotating" that way silently orphaned the driver's entire history: the data stayed in KV and
+nothing could ever address it again. Rotating a credential must not cost the data that
+credential protects.
+
+`POST /admin/users/:id/rotate` re-keys in place — same `userId`, `name`, `createdAt` and
+`backupCount`, new token, nothing orphaned. Two ordering decisions are load-bearing and are
+commented at the call site:
+
+- The new credential is written **before** the old one is deleted, so a mid-flight failure
+  leaves the driver working on the old token rather than locked out of their own account.
+- Rotating a **revoked** account is refused with `409`, because re-keying one would silently
+  reactivate a driver the operator deliberately turned off.
+
+**2 — It is what actually finishes the P-01/P-02 cleanup.** Worker v7 stored tokens in KV in
+plaintext; v14 clears each one only lazily, on that token's next use, so a token never used
+again keeps its plaintext copy indefinitely. Rotation deletes it immediately, and the record
+written back carries no `token` field at all.
+
+Client side, an active driver row in the admin panel gains a **🔑 Rotate** control that
+confirms first (the old token dies at once, so the device must re-pair) and then presents the
+new token as a one-tap invite link. The confirm text states that backups are kept, because
+the previous mental model — correctly, before v15 — was that rotation loses them.
+
+**Tests.** `tests/unit/worker-token-rotation.spec.mjs` (8, new), driving the REAL exported
+`fetch` handler against an in-memory KV rather than reimplementing its logic. WTR-07 is the
+one that matters: seed a backup, rotate, read it back with the new token, assert
+byte-identical, and assert the old token now 403s. That fails if anyone reintroduces the
+identity-changing behaviour. WTR-04 initially failed for the *wrong* reason — the fixture
+invented a legacy `userId` containing letters outside `[a-f0-9-]`, which the id validator
+correctly rejects before rotation is attempted; fixed to a real v7-shaped id, with the reason
+recorded in the fixture since it is an easy trap to re-set.
+
+**Why this shipped as a full generation bump.** A `cloud-backup-worker.js` change alone cannot
+reach the admin UI, and an `app.js` change alone cannot reach an installed client: a browser
+installs a new service worker only when the worker script's own bytes differ, and `CACHE_NAME`
+is `freightlogic-${SW_VERSION}`. The v24.0.3 lesson applied rather than relearned.
+
+### The deploy-path drift this release found the hard way (PR #163)
+
+The v15 deploy was **refused by our own preflight** (run `34741097860`), and the log is worth
+keeping:
+
+```
+ok    source /health reports version 15, matching the parity verifier
+FAIL  parity verifier does not expect Worker 14
+```
+
+A derived check and a pinned check, in the same script, twelve lines apart, disagreeing about
+the same file in the same run. PR #162 had converted the expected Worker version to derive
+from `scripts/verify-cloudflare-parity.mjs` in three places and missed a fourth. Converting
+three of four copies is not a partial fix — the remaining literal is still the one that fails
+the release.
+
+The one part that worked as designed: the preflight fails closed **before** `wrangler deploy`,
+so a stale guard cost a run, not a bad rollout. Confirmed independently — the Worker's
+`modified_on` was unchanged by the refused run.
+
+PR #163 hoists `WANT_VER` to a single unconditional read, **deletes** the redundant pinned
+guard rather than re-pinning it (with guard 5 reading parity as the source of truth, a second
+guard asserting parity equals a hardcoded number has no failure mode except its own
+staleness), and derives the live `/health` assertion and both success banners too.
+
+Two things recorded there so a later cleanup does not undo them:
+
+- Deriving is correct in the deploy path, whose job is "deploy whatever generation this
+  checkout declares", and **wrong** in `tests/unit/cache-generation.spec.mjs` CG-09, which
+  pins the Worker version BY HAND so an unintended Worker bump riding along with an
+  app-generation bump has to be seen and justified by a human. Collapsing the two would delete
+  a guard while appearing to modernise it.
+- Making a banner derive meant switching its heredoc from `<<'DONE'` to `<<DONE`, which would
+  have exposed the prose body to the shell — and that body contains backticks (`` `token:` ``)
+  that would then run as command substitution. The heredoc stays quoted; the one varying line
+  is echoed above it.
+
+Verified by negative control in both directions rather than by reading: parity set to `"99"`
+fails with `expects '99'` and deploys nothing; the `workerVersion` key removed entirely exits
+with `refusing to act blind`. The second control is the one that matters — a derived check
+that silently reads nothing passes no matter what, which is exactly the failure this change
+could otherwise have introduced.
+
+**Gate 2 re-closed at v15 — deployed and verified 2026-09-13T19:36:13Z.** Run `34778178795`
+against `main`. Verified two independent ways, as with v14: the workflow's live checks
+(`/health` HTTP 200 returning `{"ok":true,"version":"15"}`; CORS echoing
+`https://freightlogic-v2.fimseitef.workers.dev` rather than `*`; unauthenticated
+`/admin/users` and `/evaluate` both still 401), and the Cloudflare control plane showing
+`freightlogic-backup` `modified_on 2026-09-13T19:36:13.729743Z`. The run's logs were read
+specifically to confirm the now-derived check printed `Expecting Worker v15` — a derived
+check that reads nothing would pass vacuously, which is the failure mode the derivation could
+itself have introduced.
+
+**Tests.** Full suite **392 passed, 0 failed** locally against real headless Chromium, and
+green in CI on both PRs.
+
+**The residue is closable but not closed.** `AUDIT_REPORT.md`'s P-series banner now says this
+precisely: a deployed rotation endpoint is a capability, not an act. Every v7-era driver token
+remains exposed at rest until the operator actually rotates it — one tap at
+More → Admin → 🔑 Rotate.
+
+**Still HOLD.** Certification is unchanged and remains the `docs/` (gpt) lane's judgement,
+requested through `/.agents/inbox/`. The private-history reconciliation and the physical-iPhone
+gates are unchanged and remain the operator's. Nothing here instructs a reinstall or a
+website-data clear — that would destroy the local IndexedDB evidence the installed-origin
+investigation still needs.
