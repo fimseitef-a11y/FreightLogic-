@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (PR open for v24.0.8 loads/intel/boot repair) | 2026-09-13 |
-| gpt | CSS accessibility fixes, read-only live parity, attachment inventory; no structural/runtime edits | 2026-09-13 |
+| gpt | v24.0.8 completion verification; repair excluded admin asset under lock; current certification | 2026-09-13 |
 
 ---
 
