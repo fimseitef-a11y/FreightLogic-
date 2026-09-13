@@ -133,7 +133,7 @@ test('[CG-07] manifest name, overlay VERSION and the module headers all agree', 
   eq(om[1], v, 'midwest-stack-authority.js VERSION must match the app generation');
 
   // Header comment on each shipped module — historically the quietest drift.
-  for (const f of ['service-worker.js', 'sw-bridge.js', 'voice-load.js', 'midwest-stack-authority.js']) {
+  for (const f of ['service-worker.js', 'sw-bridge.js', 'voice-load.js', 'midwest-stack-authority.js', 'modern-shell.js']) {
     const firstLine = read(f).split('\n', 1)[0];
     ok(firstLine.includes(v), `${f} header comment must name v${v}; got: ${firstLine.trim()}`);
   }
@@ -207,6 +207,80 @@ test('[CG-11] styles.css carries no release version, so it cannot drift', () => 
     `styles.css must carry no release version; found ${JSON.stringify(hits)}. ` +
     'It is gpt-owned, so a version here cannot be bumped from the core lane and ' +
     'becomes permanent drift. Describe the design system by name, not by release.');
+});
+
+test('[CG-12] the modern-shell adapter is at the current generation on every axis', () => {
+  // v24.0.8. modern-shell.js is release-bound but is requested by sw-bridge.js
+  // via dynamic import, NOT by index.html — so CG-04 and CG-05, which read
+  // index.html, could never see it. It was precached by the service worker and
+  // referenced by the bridge with nothing asserting the two agreed, which is the
+  // same shape of hole that CG-05 exists to close for the index-side assets.
+  const v = appVersion();
+  const bridge = read('sw-bridge.js');
+  const sw = read('service-worker.js');
+
+  const m = bridge.match(/import\((['"])(\.\/modern-shell\.js\?v=[0-9.]+)\1\)/);
+  ok(m, 'sw-bridge.js must dynamically import ./modern-shell.js with a ?v= generation marker');
+  const imported = m[2];
+  ok(imported.endsWith(`?v=${v}`),
+    `sw-bridge.js imports "${imported}"; expected ?v=${v}. A stale import string loads the ` +
+    'previous generation of the tab bar while every index-side marker reports current.');
+
+  const precached = imported.replace(/^\.\//, '');
+  ok(sw.includes(precached),
+    `service-worker.js must precache the exact URL sw-bridge.js imports ("${precached}")`);
+
+  const critical = sw.match(/const critical = \[([^\]]*)\]/);
+  ok(critical, 'could not locate the install-blocking `critical` array');
+  ok(critical[1].includes(precached),
+    `critical must include ${precached} — the five-surface tab bar is the app's primary ` +
+    'navigation, so a first offline install that completes without it has no way to reach ' +
+    'Loads, Trips or Money.');
+});
+
+test('[CG-13] every primary tab the shell renders is a route the canonical router owns', () => {
+  // v24.0.8, and the whole reason this release exists. PR #168 shipped a Loads
+  // tab whose section was created by modern-shell.js AFTER app.js had already
+  // built its `views` map from existing markup. `views` had no `loads` entry, so
+  // navigate() fell through to `home`: the driver tapped Loads and got the Today
+  // screen with the Loads tab highlighted, and the Smart Load Inbox — relocated
+  // out of Evaluate into that surface — became unreachable from anywhere.
+  //
+  // A hash the tab bar can produce but the router cannot resolve is exactly that
+  // defect, so assert the two sides agree statically. The behavioural proof lives
+  // in integration/modern-shell-routing.spec.mjs.
+  const shell = read('modern-shell.js');
+  const app = read('app.js');
+  const index = read('index.html');
+
+  const hrefs = [...shell.matchAll(/<a href="#([a-z]+)"/g)].map(m => m[1]);
+  ok(hrefs.length === 5, `expected 5 primary tabs in modern-shell.js, found ${hrefs.length}: ${JSON.stringify(hrefs)}`);
+
+  const vm = app.match(/const views = \{([\s\S]*?)\};/);
+  ok(vm, 'could not locate the `views` map in app.js');
+  const routes = [...vm[1].matchAll(/([a-z]+)\s*:\s*\$\('#(view-[a-z-]+)'\)/g)]
+    .reduce((acc, m) => { acc[m[1]] = m[2]; return acc; }, {});
+
+  for (const href of hrefs) {
+    ok(routes[href],
+      `modern-shell.js renders a tab linking to "#${href}" but app.js's views map has no ` +
+      `"${href}" route. navigate() resolves an unknown hash to home, so that tab would ` +
+      'silently show the Today screen while highlighting itself.');
+    ok(index.includes(`id="${routes[href]}"`),
+      `app.js maps route "${href}" to #${routes[href]}, but index.html contains no such ` +
+      'section. A section injected at runtime is too late: `views` is built at parse time.');
+  }
+
+  // Each tab must also carry the CANONICAL route name in data-nav, because that
+  // is what app.js's own setActiveNav() matches on. A driver-facing label in
+  // data-nav (the pre-24.0.8 shape used data-nav="evaluate") leaves the tab
+  // unhighlighted on every navigation the adapter did not itself perform.
+  const navAttrs = [...shell.matchAll(/<a href="#([a-z]+)" data-nav="([a-z]+)"/g)];
+  eq(navAttrs.length, hrefs.length, 'every primary tab must declare data-nav');
+  for (const [, href, nav] of navAttrs) {
+    eq(nav, href, `tab "#${href}" declares data-nav="${nav}"; app.js setActiveNav() matches on the ` +
+      'canonical route name, so these must be the same string');
+  }
 });
 
 export async function runSpec() {

@@ -11,6 +11,7 @@ import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-semantics.spec.mjs';
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
+import { runSpec as modernShellRouting } from './integration/modern-shell-routing.spec.mjs';
 import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
@@ -57,6 +58,7 @@ const specs = [
   cacheGeneration,
   swSubresourceSemantics,
   v2404FailClosed,
+  modernShellRouting,
   cloudBackupPaused,
   workerTokenRotation,
   laneGuard,

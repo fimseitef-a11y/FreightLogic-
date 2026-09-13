@@ -16,7 +16,7 @@
        one in _headers — scripts/verify-cloudflare-parity.mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.7">
+  <link rel="manifest" href="manifest.json?v=24.0.8">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -162,6 +162,22 @@
         <button id="btnLoadCompare"></button>
         <button id="btnQuickEval"></button>
       </div>
+    </section>
+    <section id="view-loads" class="view" style="display:none" aria-label="Loads">
+      <div class="card" style="margin-bottom:12px">
+        <div class="fl-card-hdr" style="align-items:flex-start;gap:10px">
+          <div>
+            <h3 style="margin:0 0 4px">Loads</h3>
+            <div class="muted" style="font-size:12px;line-height:1.45">Captured freight waiting for review, evaluation, or action.</div>
+          </div>
+          <button class="btn primary" id="btnLoadsIntake" style="padding:8px 12px;white-space:nowrap">＋ Intake</button>
+        </div>
+      </div>
+
+      <!-- F23: Smart Load Inbox (populated by renderLoadInbox). This is the
+           canonical inbox mount point — there is exactly one, and the Loads
+           route owns it. -->
+      <div id="loadInboxCard"></div>
     </section>
     <section id="view-trips" class="view" style="display:none" aria-label="Trips">
       <div class="card">
@@ -328,9 +344,6 @@
           📋 Load Intake — Paste, Voice, or Type
         </button>
       </div>
-
-      <!-- F23: Smart Load Inbox (populated by renderLoadInbox) -->
-      <div id="loadInboxCard"></div>
 
       <!-- ── v20: Primary 3-Field Evaluator ── -->
       <div class="card" style="margin-bottom:12px">
@@ -573,8 +586,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.7"></script>
-  <script src="voice-load.js?v=24.0.7"></script>
-  <script src="sw-bridge.js?v=24.0.7"></script>
+  <script src="app.js?v=24.0.8"></script>
+  <script src="voice-load.js?v=24.0.8"></script>
+  <script src="sw-bridge.js?v=24.0.8"></script>
 </body>
 </html>

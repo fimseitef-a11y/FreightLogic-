@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.7 — Voice Load Module */
+/* FreightLogic v24.0.8 — Voice Load Module */
 (() => {
   'use strict';
 
@@ -123,8 +123,21 @@
     };
   }
 
+  // v24.0.8: `sessionStorage.getItem()` returns null for a key that was never
+  // written, and `JSON.parse(null)` is VALID JSON that yields null — it does not
+  // throw, so the catch never ran and the fallback was never applied. Both
+  // callers are array stores, so `getDraftStore()` handed back null on every
+  // fresh session and `loadLatestDraft()` threw on `store.length`, aborting
+  // init() before the first renderReview() and before the
+  // no-speech-recognition fallback could be applied. Validate the SHAPE, not
+  // just the parse.
   function safeJSONParse(raw, fallback) {
-    try { return JSON.parse(raw); } catch (_) { return fallback; }
+    if (typeof raw !== 'string') return fallback;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (_) { return fallback; }
+    if (Array.isArray(fallback)) return Array.isArray(parsed) ? parsed : fallback;
+    if (parsed === null || typeof parsed !== typeof fallback) return fallback;
+    return parsed;
   }
 
   function getDraftStore() {
