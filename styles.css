@@ -753,7 +753,7 @@
       font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid transparent;
     }
     .fl-goal-badge.good  { background: var(--good-muted);   border-color: var(--good-border);   color: var(--good) }
-    .fl-goal-badge.amber { background: var(--accent-muted); border-color: var(--accent-border);  color: var(--accent) }
+    .fl-goal-badge.amber { background: var(--accent-muted); border-color: var(--accent-border);  color: var(--accent-text) }
 
     /* ── Quick action grid ────────────────────────────────────────── */
     .fl-quick-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px }
