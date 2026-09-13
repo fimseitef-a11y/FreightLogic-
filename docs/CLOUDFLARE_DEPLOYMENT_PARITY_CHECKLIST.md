@@ -1,19 +1,19 @@
 # Cloudflare Deployment Parity Checklist
 
-Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI or a successful Cloudflare build is not enough by itself.
+Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful preview build, or a source version bump is not enough by itself.
 
-Current candidate:
+Current source candidate:
 
-- app / PWA / service worker: **24.0.5**;
+- app / PWA / service worker source: **24.0.7**;
 - IndexedDB schema: **15**;
-- backup/API Worker source: **14**;
-- exact Git candidate: **`8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`**;
+- backup/API Worker source: **15**;
+- exact Git source candidate at this synchronization point: **`03c97b64af354fa83fcb15881b320bfdfbf1e20a`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`;
 - status: **HOLD**.
 
-Important: `https://freightlogic.pages.dev` was probed on 2026-09-12 and did not resolve. It is a legacy/stale origin, not the production app origin. Do not use it as the default certification target.
+Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
 
 ## 1. Exact app deployment
 
@@ -23,52 +23,55 @@ Record:
 - Cloudflare production build/version identifier;
 - production app origin;
 - production backup/API Worker origin;
-- rollback SHA.
+- rollback/fix-forward reference.
 
-The 2026-09-12 post-merge recheck proved the checked production app assets are byte-for-byte identical to exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`. Repeat after any later source change.
+The last exact-byte production app parity observation was for v24.0.5 on 2026-09-12. Source has since advanced through v24.0.6 and v24.0.7, including the current native presentation pass. Therefore **v24.0.7 production parity is UNOBSERVED until it is re-probed**. A successful Cloudflare PR/branch preview is useful deployment evidence but is not a substitute for production parity.
 
 ## 2. App / PWA generation
 
 PASS requires production to serve:
 
-- `app.js?v=24.0.5`;
-- `voice-load.js?v=24.0.5`;
-- `sw-bridge.js?v=24.0.5`;
-- `midwest-stack-authority.js?v=24.0.5`;
-- `manifest.json?v=24.0.5` identifying `FreightLogic v24.0.5`;
-- `service-worker.js` with `SW_VERSION = '24.0.5'`;
+- `app.js?v=24.0.7`;
+- `voice-load.js?v=24.0.7`;
+- `sw-bridge.js?v=24.0.7`;
+- `midwest-stack-authority.js?v=24.0.7`;
+- `manifest.json?v=24.0.7` identifying `FreightLogic v24.0.7`;
+- `service-worker.js` with `SW_VERSION = '24.0.7'`;
 - bundled `vendor/xlsx.full.min.js`;
+- the current `styles.css` visual layer;
 - matching CSP/security headers;
-- no failed JavaScript/static request answered with HTML shell fallback.
+- no failed JavaScript/static request answered with an HTML shell fallback.
 
-The 2026-09-12 production recheck passed these checks for v24.0.5 and exact main candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`.
+Do not reuse the v24.0.5 exact-byte PASS as evidence for v24.0.7.
 
-## 3. Worker v14 live checks
+## 3. Worker v15 live checks
 
-Expected backup/API Worker source generation: **14**.
+Expected backup/API Worker source generation: **15**.
 
 PASS requires:
 
-- `GET /health` returns HTTP 200 and JSON with `version: "14"`;
-- no-origin fallback and requests from `https://freightlogic-v2.fimseitef.workers.dev` receive the real production app origin in `Access-Control-Allow-Origin`;
+- `GET /health` returns HTTP 200 and JSON with `version: "15"`;
+- requests from `https://freightlogic-v2.fimseitef.workers.dev` receive that exact origin in `Access-Control-Allow-Origin`;
 - unauthorized admin requests are denied;
 - unauthorized driver/evaluate/extract/backup requests are denied;
 - authenticated `/evaluate` preserves canonical available and `UNAVAILABLE` decisions;
 - `/extract`, when enabled, returns bounded evidence only;
 - authenticated full backup, delta backup, and restore smoke paths succeed without changing the data/authority contract;
-- no token or secret is exposed in client-visible output.
+- no token or secret is exposed in client-visible output;
+- in-place token rotation preserves the existing user identity and backup history.
 
 ### Current observed Worker state
 
-The 2026-09-12 post-merge production recheck found:
+Worker v14 was successfully deployed on 2026-09-13 before the v15 source bump. The later v15 deploy attempt was **refused before `wrangler deploy`** because the deploy preflight still contained a stale hardcoded v14 assertion. PR #163 removed that stale deploy-path pin and merged as `03c97b64af354fa83fcb15881b320bfdfbf1e20a`.
 
-- `/admin/users` without token -> 401: **PASS**;
-- `/health` -> 401 `Missing token`: **FAIL**;
-- `/health` response CORS `*`: **FAIL**;
-- `OPTIONS /backup` from the real app origin -> 204 with CORS `*`: **FAIL**;
-- unauthenticated `/evaluate` -> 401: **PASS**.
+Therefore, at this synchronization point:
 
-Those responses prove Worker v14 is not deployed at the backup/API Worker origin. Worker v14 must be deployed through the actual backup-Worker deployment path before this section can pass.
+- Worker v15 source: **READY IN REPO**;
+- deploy preflight stale-pin defect: **CLOSED**;
+- live Worker v15 deployment: **NOT YET OBSERVED / REDEPLOY REQUIRED**;
+- authenticated v15 backup/evaluate/rotation smokes: **NOT RUN**.
+
+The manual `Deploy Backup Worker` workflow remains the intended deployment boundary. It is intentionally `workflow_dispatch` only and requires the explicit `DEPLOY` confirmation. Do not change it into a push/comment-triggered or self-pushing workflow merely to automate this gate.
 
 ## 4. Canonical authority smoke
 
@@ -83,13 +86,14 @@ PASS requires:
 - blank/underspecified market text cannot manufacture favorable geography;
 - Gary, Indiana stays the intended U.S. Midwest Tier-1 market;
 - 121-inch default cargo boundary remains enforced;
+- 54.8-inch wheel-well width and 3,000-pound practical payload limits remain enforced;
 - precise True Profit is not asserted without defensible cost/mileage inputs.
 
 ## 5. Lifecycle / evidence durability
 
 With synthetic data:
 
-- manual/email-compatible intake persists normalized evidence before linkage;
+- manual/email/notification-compatible intake persists normalized evidence before linkage;
 - provenance, source times, mileage semantics, and price semantics survive reload;
 - external IDs never become destructive internal identity;
 - non-carrier prices do not become canonical revenue without allowed evidence;
@@ -110,24 +114,31 @@ Live production, from a network that can reach Cloudflare:
 
 - `node scripts/verify-cloudflare-parity.mjs`
 
-The live verifier now defaults to the real app origin `freightlogic-v2.fimseitef.workers.dev` and backup/API Worker origin `freightlogic-backup.fimseitef.workers.dev`.
+The live verifier currently expects app/PWA **24.0.7** and Worker **15**, and defaults to the real Workers origins.
 
 Authenticated authority checks when a valid non-published driver token is available:
 
 - `FL_BACKUP_TOKEN=... node scripts/verify-live-authority.mjs`
-- add `--paid` only when explicitly appropriate for quota-spending extraction checks.
+- `FL_BACKUP_TOKEN=... node scripts/verify-live-backup.mjs`
+- add quota-spending extraction checks only when explicitly appropriate.
 
 Network inability is `UNOBSERVED`, not PASS and not product failure.
 
-## 7. Completion rule
+## 7. Approved UI structural pass
 
-Live Cloudflare parity is complete only when the same named candidate has:
+The operator approved a further structural UI pass after v24.0.7: real **Today / Loads / Evaluate / Trips / Money** navigation, dedicated Loads, Today reordering, unified Money, and coherent Settings. That work is handed to the Claude/source lane in `.agents/inbox/gpt-to-claude-modern-ui-structural-pass-2026-09-13.md`.
 
-- production app/PWA v24.0.5 parity PASS;
-- backup/API Worker v14 `/health` and CORS parity PASS;
+Do **not** spend the final physical-device certification on an intermediate layout if that structural pass is still pending. When it lands, update this checklist to the resulting exact generation/SHA and rerun production parity.
+
+## 8. Completion rule
+
+Live Cloudflare parity is complete only when the same named final candidate has:
+
+- exact production app/PWA generation parity PASS;
+- backup/API Worker v15 `/health` and CORS parity PASS;
 - auth boundaries PASS;
 - canonical `/evaluate`/`/extract` checks PASS where applicable;
-- authenticated backup/delta/restore smoke PASS;
-- rollback evidence recorded.
+- authenticated backup/delta/restore/rotation smoke PASS;
+- rollback/fix-forward evidence recorded.
 
-Only after this live gate, the real private-history reconciliation, and the physical iPhone checklist all pass may a later certification-state document clear HOLD.
+Only after this live gate, the real private-history reconciliation, the approved structural UI pass, and the physical iPhone checklist all pass may a later certification-state document clear HOLD.
