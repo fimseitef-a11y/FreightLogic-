@@ -1,7 +1,20 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.6 USA ENGINE
+/** FreightLogic v24.0.7 USA ENGINE
+ *  v24.0.7 "Rotate Without Loss": rotating a driver token used to mean
+ *          creating a new driver and revoking the old one, because that was
+ *          the only way to mint a token. POST /admin/users mints a new
+ *          `userId` too, and every backup is keyed
+ *          `user:<userId>:device:<id>:backup:<ts>` — so a rotation silently
+ *          orphaned that driver's entire backup history. The data stayed in
+ *          KV and nothing could address it again. Worker v15 adds
+ *          POST /admin/users/:id/rotate, which re-keys in place and keeps the
+ *          identity, and the admin panel gains a Rotate control that hands
+ *          back a one-tap invite link. Rotation also deletes any legacy v7
+ *          plaintext `token:` key immediately, which is what actually
+ *          finishes the P-01/P-02 cleanup that v14 only did lazily on a
+ *          token's next use.
  *  v24.0.6 "Backup You Can Trust": cloud backup stopped silently after every
  *          browser close. The token persists in IndexedDB but the passphrase is
  *          sessionStorage-only, and cloudIsEnabled() requires both — so every
@@ -140,7 +153,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.6';
+const APP_VERSION = '24.0.7';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -15632,8 +15645,80 @@ async function cloudAdminLoadUsers(){
     if (!res.ok){ list.innerHTML = res.status === 401 ? '<div class="muted" style="font-size:12px">Wrong admin token</div>' : ''; return; }
     const data = await res.json();
     if (!data.users?.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No drivers yet</div>'; return; }
-    list.innerHTML = data.users.map(function(u){ return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Revoked') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div></div>'; }).join('');
+    list.innerHTML = data.users.map(function(u){
+      // Rotate is offered only for an ACTIVE driver: Worker v15 refuses to
+      // re-key a revoked account (409), because doing so would silently
+      // reactivate a driver the operator deliberately turned off.
+      var rotateBtn = u.active
+        ? '<button class="btn sm" data-rotate="' + escapeHtml(u.userId) + '" data-rotname="' + escapeHtml(u.name) + '" style="min-height:44px;margin-top:8px">🔑 Rotate token</button>'
+        : '';
+      return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Revoked') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div>' + rotateBtn + '</div>';
+    }).join('');
+    list.querySelectorAll('[data-rotate]').forEach(function(btn){
+      btn.addEventListener('click', function(){ cloudAdminRotateToken(btn.dataset.rotate, btn.dataset.rotname); });
+    });
   } catch(e) { list.innerHTML = '<div class="muted" style="font-size:12px">Network error</div>'; }
+}
+
+/** Re-key one driver's token in place (Worker v15 `POST /admin/users/:id/rotate`).
+ *
+ *  Rotation used to mean "create a new driver and revoke the old one", which
+ *  mints a NEW `userId`. Since every backup is keyed
+ *  `user:<userId>:device:<id>:...`, that silently orphaned the driver's whole
+ *  backup history — the data stayed in KV and nothing could address it again.
+ *  This endpoint keeps `userId`, so rotating costs nothing.
+ *
+ *  It is also what actually finishes the P-01/P-02 cleanup: the superseded
+ *  Worker v7 stored tokens in KV in plaintext, and v14 only clears each one
+ *  lazily on that token's next use. Rotating deletes the legacy plaintext key
+ *  immediately.
+ */
+async function cloudAdminRotateToken(userId, name){
+  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_tok') || '').trim();
+  if (!adminToken){ toast('Enter Admin Token', true); return; }
+  if (!userId){ toast('Missing user id', true); return; }
+  haptic(20);
+  // The old token stops working the moment this returns, so the driver must
+  // re-pair. Say that before doing it, not after.
+  if (!confirm('Rotate the token for "' + (name || userId) + '"?\n\nTheir existing backups are kept — the account keeps its identity. But the current token stops working immediately, so that device must open the new invite link to reconnect.')) return;
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users/' + encodeURIComponent(userId) + '/rotate', {
+      method: 'POST', headers: { 'X-Admin-Token': adminToken },
+    }, 15000);
+    const data = await res.json().catch(()=>null);
+    if (!res.ok || !data?.ok){
+      // 409 is the deliberate refusal to re-key a revoked account.
+      toast(res.status === 409 ? 'That driver is revoked — rotation would reactivate them' : (data?.error || 'Rotation failed'), true);
+      return;
+    }
+    toast(data.legacyPlaintextCleared ? 'Token rotated — legacy plaintext key cleared' : 'Token rotated');
+    cloudAdminShowInvite(data.token, data.name || name || 'Driver');
+    cloudAdminLoadUsers();
+  } catch(e){
+    console.warn('[FL] rotate', e);
+    toast('Network error during rotation', true);
+  }
+}
+
+/** Show a freshly minted token as a one-tap setup link.
+ *  The Worker returns a token exactly once, so this never re-fetches it: if the
+ *  operator dismisses this without using it, the fix is to rotate again. */
+function cloudAdminShowInvite(token, name){
+  const link = window.location.origin + window.location.pathname + '#token=' + encodeURIComponent(token);
+  const body = document.createElement('div');
+  body.innerHTML =
+    '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">New token for <b>' + escapeHtml(name) + '</b>. Their backups are untouched — same account, new key.</div>' +
+    '<div class="muted" style="font-size:12px;margin-bottom:10px">Open this link on that driver\'s phone, enter the backup passphrase, tap Connect. This is shown once.</div>' +
+    '<textarea readonly id="adminInviteLink" style="width:100%;min-height:88px;font-size:12px;font-family:ui-monospace,monospace;padding:10px">' + escapeHtml(link) + '</textarea>' +
+    '<button class="btn primary" id="adminInviteCopy" style="width:100%;margin-top:10px;min-height:48px">Copy setup link</button>';
+  openModal('🔑 New token', body);
+  $('#adminInviteCopy', body)?.addEventListener('click', function(){
+    haptic(10);
+    const ta = $('#adminInviteLink', body);
+    try {
+      navigator.clipboard.writeText(link).then(function(){ toast('Setup link copied'); }, function(){ ta?.select(); toast('Select and copy the link above', true); });
+    } catch(_) { ta?.select(); toast('Select and copy the link above', true); }
+  });
 }
 
 function cloudInitUI(){
