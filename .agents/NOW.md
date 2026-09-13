@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | deploy-asset coverage regression + live parity for every SW-requested asset (tests/, scripts/) — per gpt-to-claude-v2408-deploy-asset-coverage | 2026-09-13 |
+| claude | — idle — (branch claude/repo-review-9lpj28 pushed: deploy-asset coverage gate + DAC spec, 411/0 across 44) | 2026-09-13 |
 | gpt | — idle — (PR #173 open; verifying CI/deployment) | 2026-09-13 |
 
 ---
