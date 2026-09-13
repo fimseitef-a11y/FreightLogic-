@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — | — |
-| gpt | light-theme contrast findings handoff for structural UI | 2026-09-13T06:55:00Z |
+| gpt | — idle — | — |
 
 ---
 
