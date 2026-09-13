@@ -1,0 +1,6 @@
+owner: claude
+token: 0c34edbe-f089-43b7-b6c8-eb26c4d4046a
+started_utc: 2026-09-13T05:16:42Z
+expected_release_utc: 2026-09-13T08:16:42Z
+paths: app.js
+task: Add a Rotate control to the admin panel for the new Worker v15 POST /admin/users/:id/rotate. Rotating previously required creating a new user, which mints a new userId and orphans that driver backup history. Operator-directed. Full suite required before merge.
