@@ -1,0 +1,6 @@
+owner: claude
+token: 0037744b-2b31-49e9-8b4b-0b1754eac6c0
+started_utc: 2026-09-13T03:51:01Z
+expected_release_utc: 2026-09-13T06:51:01Z
+paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js
+task: v24.0.6 release-generation bump. The cloud-backup visibility and keychain fixes cannot reach an installed client without a new cache generation. Operator-directed. Full suite required before merge.
