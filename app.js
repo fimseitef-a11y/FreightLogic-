@@ -1,7 +1,26 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.4 USA ENGINE
+/** FreightLogic v24.0.6 USA ENGINE
+ *  v24.0.6 "Backup You Can Trust": cloud backup stopped silently after every
+ *          browser close. The token persists in IndexedDB but the passphrase is
+ *          sessionStorage-only, and cloudIsEnabled() requires both — so every
+ *          automatic push began no-opping the moment a session ended, and each
+ *          call site swallowed the result. The only surface reporting it was the
+ *          Diagnostics dxCloud row. Close the app, come back, believe you are
+ *          backed up, and not be. cloudBackupPaused() + renderCloudPausedBanner()
+ *          now make that state visible on Home with a one-tap Resume that does
+ *          NOT auto-dismiss, and openCloudReconnect() is a real credential form
+ *          so the OS keychain can autofill it with Face ID rather than the app
+ *          persisting the secret itself. The passphrase remains session-scoped.
+ *  v24.0.5 "Source Integrity": UNKNOWN deadhead survives persistence, not just
+ *          intake — newTripTemplate/sanitizeTrip/XLSX import/the trip form all
+ *          stopped coercing an unstated deadhead to a verified zero, and
+ *          tripHasKnownDeadhead() quarantines such trips from lane and broker
+ *          history instead of averaging a flattering RPM into it. Gary, Indiana
+ *          became canonical geography (real coordinates, MIDWEST, Tier 1) so the
+ *          canonical table and the overlay finally agree. (This entry was missing
+ *          from the header the release shipped — backfilled here.)
  *  v24.0.4 "Fail Closed": the behavioral half of the RECON_24_0_2.md findings.
  *          An unknown location no longer resolves to a coincidental market —
  *          `''` used to match the first Canadian key (every string contains the
@@ -121,7 +140,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.5';
+const APP_VERSION = '24.0.6';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 

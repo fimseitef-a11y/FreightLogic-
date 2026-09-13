@@ -26,10 +26,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.5",
-  manifestName: "FreightLogic v24.0.5",
+  serviceWorkerVersion: "24.0.6",
+  manifestName: "FreightLogic v24.0.6",
   workerVersion: "14",
-  overlayScript: "midwest-stack-authority.js?v=24.0.5"
+  overlayScript: "midwest-stack-authority.js?v=24.0.6"
 };
 
 // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
@@ -109,13 +109,13 @@ function report(checks) {
 async function runLiveChecks(checks) {
   const index = await fetchText(`${appOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
-  assert(checks, 'Index references app.js v24.0.5', index.text.includes('app.js?v=24.0.5'));
-  assert(checks, 'Index references voice-load.js v24.0.5', index.text.includes('voice-load.js?v=24.0.5'));
-  assert(checks, 'Index references sw-bridge.js v24.0.5', index.text.includes('sw-bridge.js?v=24.0.5'));
+  assert(checks, 'Index references app.js v24.0.6', index.text.includes('app.js?v=24.0.6'));
+  assert(checks, 'Index references voice-load.js v24.0.6', index.text.includes('voice-load.js?v=24.0.6'));
+  assert(checks, 'Index references sw-bridge.js v24.0.6', index.text.includes('sw-bridge.js?v=24.0.6'));
 
   const sw = await fetchText(`${appOrigin}/service-worker.js?verify=${Date.now()}`);
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
-  assert(checks, 'Service worker version 24.0.5', sw.text.includes("SW_VERSION = '24.0.5'"));
+  assert(checks, 'Service worker version 24.0.6', sw.text.includes("SW_VERSION = '24.0.6'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
   // X-08/X-10 (v23.9, Amendment 4): the install-blocking `critical` array — not
   // just the broader, non-blocking CORE list — must include both files, or a
@@ -131,13 +131,13 @@ async function runLiveChecks(checks) {
   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
 
-  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.5`);
+  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.6`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
 
-  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.5`);
+  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.6`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
-  assert(checks, 'Manifest name v24.0.5', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+  assert(checks, 'Manifest name v24.0.6', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);

@@ -165,7 +165,7 @@ async function waitForAppBoot(page, enableTestExports) {
  */
 export async function launchApp({ headless = true, geolocation = null, permissions = [], enableTestExports = true } = {}) {
   const { port } = await ensureServer();
-  const browser = await chromium.launch({ headless });
+  const browser = await chromium.launch({ headless, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext({
     geolocation: geolocation || undefined,
     permissions: geolocation ? ['geolocation', ...permissions] : permissions,
@@ -198,7 +198,7 @@ export async function launchApp({ headless = true, geolocation = null, permissio
  */
 export async function launchBlank({ headless = true, enableTestExports = true } = {}) {
   const { port } = await ensureServer();
-  const browser = await chromium.launch({ headless });
+  const browser = await chromium.launch({ headless, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext();
   if (enableTestExports) {
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
