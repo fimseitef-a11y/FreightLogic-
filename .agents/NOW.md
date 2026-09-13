@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — | — |
-| gpt | — idle — | — |
+| gpt | full GPT-side completion sweep: merge UI pass, live parity/certification, structural handoff verification | 2026-09-13T06:30:00Z |
 
 ---
 
