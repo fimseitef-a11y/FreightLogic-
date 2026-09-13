@@ -162,4 +162,45 @@ test('[CBP-07] the passphrase is never written to persistent storage', async () 
   } finally { await close(); }
 });
 
+test('[CBP-08] reconnect is a real credential form, so a password manager can autofill it', async () => {
+  const { page, close } = await launchApp();
+  try {
+    await skipFirstRunWizard(page);
+    await setCredState(page, { token: TOKEN, pass: null });
+    await page.evaluate(() => window.__FL_TESTS.openCloudReconnect());
+    await page.waitForSelector('#cloudReconnectForm', { timeout: 5000 });
+
+    // Every one of these is load-bearing for iOS Keychain / 1Password to offer
+    // "save password" and later autofill. Drop any one and the operator is back
+    // to typing a passphrase on a phone, which is the friction this exists to
+    // remove — and the breakage would be invisible in code review.
+    const shape = await page.evaluate(() => {
+      const form = document.getElementById('cloudReconnectForm');
+      const user = document.getElementById('cloudReconnectUser');
+      const pass = document.getElementById('cloudReconnectPass');
+      const btn = document.getElementById('cloudReconnectGo');
+      return {
+        passInsideForm: !!(form && pass && form.contains(pass)),
+        userInsideForm: !!(form && user && form.contains(user)),
+        userAutocomplete: user && user.getAttribute('autocomplete'),
+        passAutocomplete: pass && pass.getAttribute('autocomplete'),
+        passType: pass && pass.getAttribute('type'),
+        userHasValue: !!(user && user.value && user.value.length > 0),
+        submitButton: btn && btn.getAttribute('type'),
+        // display:none username fields are ignored by Safari's heuristics.
+        userVisible: !!(user && user.offsetParent !== null),
+      };
+    });
+
+    ok(shape.passInsideForm, 'the password field must be inside a <form>');
+    ok(shape.userInsideForm, 'the username field must be inside the same <form>');
+    eq(shape.userAutocomplete, 'username', 'account field needs autocomplete="username"');
+    eq(shape.passAutocomplete, 'current-password', 'passphrase needs autocomplete="current-password"');
+    eq(shape.passType, 'password', 'passphrase field must be type=password');
+    ok(shape.userHasValue, 'the account field must carry a stable value to key the saved credential on');
+    eq(shape.submitButton, 'submit', 'the action must be a real submit, not a click handler');
+    ok(shape.userVisible, 'the account field must not be display:none — Safari ignores hidden username fields');
+  } finally { await close(); }
+});
+
 export async function runSpec() { return run(); }

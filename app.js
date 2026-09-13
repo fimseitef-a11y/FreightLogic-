@@ -15420,22 +15420,51 @@ async function cloudBackupPaused(){
   return !sessionStorage.getItem('fl_cloud_pass'); // configured, but cannot run
 }
 
-/** One field, one tap, back to syncing. Reachable from the paused banner and
- *  the sync indicator, so the operator never has to find Settings to recover. */
+/** One tap, back to syncing — ideally with no typing at all.
+ *
+ *  This is a REAL credential form, not a bare input, and that is the whole
+ *  point. A password manager (iOS Keychain, 1Password, the Android/desktop
+ *  equivalents) will only offer to save and later autofill when it can
+ *  recognise a credential: fields inside a `<form>`, a `username` field
+ *  carrying a stable account value, and a `current-password` field. Given that,
+ *  resuming becomes: tap Resume, Face ID, done.
+ *
+ *  This is deliberately how the re-entry friction is removed. The alternative —
+ *  the app persisting the passphrase itself — is forbidden by the credential
+ *  rules in CLAUDE.md, and would be a worse implementation of what the OS
+ *  keychain already does properly: hardware-backed on iOS, and not something
+ *  our IndexedDB export/backup paths could ever leak. The secret stays out of
+ *  the app's own storage; the platform holds it.
+ *
+ *  The username is `localUserId` (a stable `usr_<hex>` minted on first boot),
+ *  so the keychain entry is scoped to this install rather than to a guessable
+ *  constant. It is shown read-only rather than hidden: Safari's heuristics are
+ *  unreliable for `display:none` fields, and a visible account row also tells
+ *  the operator which identity they are unlocking.
+ */
 async function openCloudReconnect(){
   haptic(20);
+  const acct = (await getSetting('localUserId', '')) || 'freightlogic';
   const body = document.createElement('div');
   body.innerHTML = `
-    <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
-      Your backup passphrase is kept only for the current session, so it clears
-      when the browser closes. Enter it to resume syncing.
-    </div>
-    <input id="cloudReconnectPass" type="password" autocomplete="current-password"
-           placeholder="Backup passphrase" inputmode="text"
-           style="width:100%;padding:14px;font-size:16px;min-height:48px" />
-    <div id="cloudReconnectMsg" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>
-    <button class="btn primary" id="cloudReconnectGo"
-            style="width:100%;margin-top:12px;min-height:48px;font-size:15px">Resume syncing</button>`;
+    <form id="cloudReconnectForm" autocomplete="on" style="margin:0">
+      <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
+        Your backup passphrase is kept only for the current session, so it clears
+        when the browser closes. Save it to this device's keychain once and your
+        phone will fill it in from then on.
+      </div>
+      <label class="muted" for="cloudReconnectUser" style="font-size:11px;display:block;margin-bottom:4px">Account</label>
+      <input id="cloudReconnectUser" name="username" type="text" autocomplete="username"
+             value="${escapeHtml(acct)}" readonly
+             style="width:100%;padding:12px;font-size:14px;min-height:44px;opacity:.7" />
+      <label class="muted" for="cloudReconnectPass" style="font-size:11px;display:block;margin:10px 0 4px">Backup passphrase</label>
+      <input id="cloudReconnectPass" name="password" type="password" autocomplete="current-password"
+             placeholder="Backup passphrase" inputmode="text"
+             style="width:100%;padding:14px;font-size:16px;min-height:48px" />
+      <div id="cloudReconnectMsg" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>
+      <button class="btn primary" id="cloudReconnectGo" type="submit"
+              style="width:100%;margin-top:12px;min-height:48px;font-size:15px">Resume syncing</button>
+    </form>`;
 
   const go = async () => {
     const el = $('#cloudReconnectPass', body);
@@ -15472,10 +15501,11 @@ async function openCloudReconnect(){
 
   openModal('☁️ Resume cloud backup', body);
   setTimeout(()=> $('#cloudReconnectPass', body)?.focus(), 120);
-  $('#cloudReconnectGo', body)?.addEventListener('click', go);
-  $('#cloudReconnectPass', body)?.addEventListener('keydown', (e)=>{
-    if (e.key === 'Enter'){ e.preventDefault(); go(); }
-  });
+  // Submit on the FORM, not click on the button. A password manager keys its
+  // "save this password?" prompt off a real submit event; a click handler that
+  // never submits is invisible to it, which would defeat the whole point of
+  // shaping this as a credential form. Enter is handled for free by doing this.
+  $('#cloudReconnectForm', body)?.addEventListener('submit', (e)=>{ e.preventDefault(); go(); });
 }
 
 function _removeCloudPausedBanner(){ $('#cloudPausedBanner')?.remove(); }

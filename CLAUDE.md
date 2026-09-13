@@ -167,6 +167,32 @@ This app handles financial data. All security mitigations are intentional and mu
 
 Do not move the passphrase or admin token back to persistent storage.
 
+**Re-entry friction is solved by the OS keychain, not by persisting the secret.**
+Because `fl_cloud_pass` is session-scoped, it clears on every browser close, and
+`cloudIsEnabled()` requires it — so cloud backup goes inactive on every restart.
+Until v24.0.5 nothing surfaced that except the Diagnostics `dxCloud` row, so
+backups silently stopped and the operator only found out at restore time. Two
+things now handle it, and both must be preserved:
+
+- `cloudBackupPaused()` + `renderCloudPausedBanner()` make the inactive state
+  visible on Home with a one-tap Resume. The banner deliberately does **not**
+  auto-dismiss (unlike `showCloudSyncBanner()`'s 12s timeout) — an informational
+  notice may vanish, "you are not being backed up" may not.
+- `openCloudReconnect()` renders a **real credential form** — `<form>`, a
+  read-only `autocomplete="username"` account field carrying `localUserId`, an
+  `autocomplete="current-password"` field, and a genuine `type="submit"` — so
+  iOS Keychain and other password managers offer to save it once and autofill
+  with Face ID thereafter. That is what removes the typing.
+
+Do not "simplify" that modal back into a bare input with a click handler: a
+password manager keys its save prompt off a real submit event and ignores
+`display:none` username fields, so the autofill silently stops working and the
+operator is back to typing a passphrase on a phone. `tests/integration/
+cloud-backup-paused.spec.mjs` CBP-08 asserts every part of that shape, and
+CBP-07 asserts the passphrase never reaches `localStorage` or the settings
+store — so the friction can never be resolved by weakening the encryption
+instead.
+
 The admin token grants create/list/revoke over **every** driver account, so it is the most
 sensitive credential in the app. Both writers must keep it session-scoped:
 `app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).
