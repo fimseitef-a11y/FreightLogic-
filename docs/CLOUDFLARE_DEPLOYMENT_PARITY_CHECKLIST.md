@@ -1,13 +1,13 @@
 # Cloudflare Deployment Parity Checklist
 
-Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful preview build, or a source version bump is not enough by itself.
+Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful preview/production build, or a source version bump is not enough by itself.
 
-Current source candidate:
+Current runtime candidate:
 
 - app / PWA / service worker source: **24.0.7**;
 - IndexedDB schema: **15**;
 - backup/API Worker source: **15**;
-- exact Git source candidate at this synchronization point: **`03c97b64af354fa83fcb15881b320bfdfbf1e20a`**;
+- exact runtime Git candidate: **`d2c9a9ed25752cb4605c5433a52e2f4eb615e64d`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`;
@@ -19,13 +19,15 @@ Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not 
 
 Record:
 
-- GitHub `main` SHA;
+- GitHub `main` runtime SHA;
 - Cloudflare production build/version identifier;
 - production app origin;
 - production backup/API Worker origin;
 - rollback/fix-forward reference.
 
-The last exact-byte production app parity observation was for v24.0.5 on 2026-09-12. Source has since advanced through v24.0.6 and v24.0.7, including the current native presentation pass. Therefore **v24.0.7 production parity is UNOBSERVED until it is re-probed**. A successful Cloudflare PR/branch preview is useful deployment evidence but is not a substitute for production parity.
+Cloudflare successfully built/deployed merged runtime commit `d2c9a9e`, production version `9dfb5ad3-086b-4e11-b3eb-8c09b34eeb52`. The post-merge main Playwright run `34746260152` completed successfully.
+
+The last **exact-byte** production parity observation, however, is still v24.0.5 from 2026-09-12. Therefore **v24.0.7 exact production parity remains UNOBSERVED until the live verifier/re-probe is run**.
 
 ## 2. App / PWA generation
 
@@ -37,6 +39,7 @@ PASS requires production to serve:
 - `midwest-stack-authority.js?v=24.0.7`;
 - `manifest.json?v=24.0.7` identifying `FreightLogic v24.0.7`;
 - `service-worker.js` with `SW_VERSION = '24.0.7'`;
+- current `modern-shell.js` bytes from the named candidate;
 - bundled `vendor/xlsx.full.min.js`;
 - the current `styles.css` visual layer;
 - matching CSP/security headers;
@@ -62,16 +65,16 @@ PASS requires:
 
 ### Current observed Worker state
 
-Worker v14 was successfully deployed on 2026-09-13 before the v15 source bump. The later v15 deploy attempt was **refused before `wrangler deploy`** because the deploy preflight still contained a stale hardcoded v14 assertion. PR #163 removed that stale deploy-path pin and merged as `03c97b64af354fa83fcb15881b320bfdfbf1e20a`.
+Worker v14 was successfully deployed before the v15 source bump. The first v15 deploy attempt (`34741097860`) was refused before `wrangler deploy` because of a stale hardcoded v14 assertion; PR #163 removed that pin.
 
-Therefore, at this synchronization point:
+At this synchronization point:
 
 - Worker v15 source: **READY IN REPO**;
 - deploy preflight stale-pin defect: **CLOSED**;
 - live Worker v15 deployment: **NOT YET OBSERVED / REDEPLOY REQUIRED**;
 - authenticated v15 backup/evaluate/rotation smokes: **NOT RUN**.
 
-The manual `Deploy Backup Worker` workflow remains the intended deployment boundary. It is intentionally `workflow_dispatch` only and requires the explicit `DEPLOY` confirmation. Do not change it into a push/comment-triggered or self-pushing workflow merely to automate this gate.
+The manual `Deploy Backup Worker` workflow remains the intended deployment boundary and must remain explicit/manual.
 
 ## 4. Canonical authority smoke
 
@@ -89,7 +92,18 @@ PASS requires:
 - 54.8-inch wheel-well width and 3,000-pound practical payload limits remain enforced;
 - precise True Profit is not asserted without defensible cost/mileage inputs.
 
-## 5. Lifecycle / evidence durability
+## 5. Structural shell parity
+
+The structural UI pass is now merged, not pending. Production parity must confirm:
+
+- primary navigation is **Today / Loads / Evaluate / Trips / Money**;
+- Loads uses the existing canonical load inbox/state rather than a second queue;
+- Evaluate still maps to canonical `#omega`;
+- direct `#loads` launch renders correctly;
+- More still exposes the secondary tools/settings surfaces;
+- offline precache contains the structural adapter and the app launches offline without a blank shell.
+
+## 6. Lifecycle / evidence durability
 
 With synthetic data:
 
@@ -102,7 +116,7 @@ With synthetic data:
 - full backup + deltas + restore preserve protected records without downgrade/duplication;
 - local export/import preserves lifecycle/evidence and excludes credentials/PIN/lockout state.
 
-## 6. Automated helpers
+## 7. Automated helpers
 
 Source-side:
 
@@ -114,31 +128,25 @@ Live production, from a network that can reach Cloudflare:
 
 - `node scripts/verify-cloudflare-parity.mjs`
 
-The live verifier currently expects app/PWA **24.0.7** and Worker **15**, and defaults to the real Workers origins.
+The live verifier currently expects app/PWA **24.0.7** and Worker **15**.
 
 Authenticated authority checks when a valid non-published driver token is available:
 
 - `FL_BACKUP_TOKEN=... node scripts/verify-live-authority.mjs`
 - `FL_BACKUP_TOKEN=... node scripts/verify-live-backup.mjs`
-- add quota-spending extraction checks only when explicitly appropriate.
 
 Network inability is `UNOBSERVED`, not PASS and not product failure.
-
-## 7. Approved UI structural pass
-
-The operator approved a further structural UI pass after v24.0.7: real **Today / Loads / Evaluate / Trips / Money** navigation, dedicated Loads, Today reordering, unified Money, and coherent Settings. That work is handed to the Claude/source lane in `.agents/inbox/gpt-to-claude-modern-ui-structural-pass-2026-09-13.md`.
-
-Do **not** spend the final physical-device certification on an intermediate layout if that structural pass is still pending. When it lands, update this checklist to the resulting exact generation/SHA and rerun production parity.
 
 ## 8. Completion rule
 
 Live Cloudflare parity is complete only when the same named final candidate has:
 
 - exact production app/PWA generation parity PASS;
+- structural-shell parity PASS;
 - backup/API Worker v15 `/health` and CORS parity PASS;
 - auth boundaries PASS;
 - canonical `/evaluate`/`/extract` checks PASS where applicable;
 - authenticated backup/delta/restore/rotation smoke PASS;
 - rollback/fix-forward evidence recorded.
 
-Only after this live gate, the real private-history reconciliation, the approved structural UI pass, and the physical iPhone checklist all pass may a later certification-state document clear HOLD.
+Only after this live gate, the real private-history reconciliation, and the physical-iPhone checklist all pass may a later certification-state document clear HOLD.
