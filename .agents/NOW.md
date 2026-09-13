@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (PR open for v24.0.8 loads/intel/boot repair) | 2026-09-13 |
+| claude | deploy-asset coverage regression + live parity for every SW-requested asset (tests/, scripts/) — per gpt-to-claude-v2408-deploy-asset-coverage | 2026-09-13 |
 | gpt | — idle — (PR #173 open; verifying CI/deployment) | 2026-09-13 |
 
 ---
