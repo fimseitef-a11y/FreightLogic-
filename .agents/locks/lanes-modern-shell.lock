@@ -1,6 +1,0 @@
-owner: gpt
-token: 7d6ad2c4-64f0-4810-86fb-85d198e37d7c
-started_utc: 2026-09-13T07:41:00Z
-expected_release_utc: 2026-09-13T12:00:00Z
-paths: .agents/LANES.md
-task: Classify the newly extracted modern-shell.js structural UI seam in the enforced path ownership map.
