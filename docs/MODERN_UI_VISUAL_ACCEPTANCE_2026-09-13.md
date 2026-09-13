@@ -195,12 +195,13 @@ These are release-quality checks, not aesthetic preferences.
 
 ### Current CSS observations to re-check after structural integration
 
-At the v24.0.7 baseline, the presentation seam already provides 16px inputs, safe-area-aware app/header/bottom spacing, focus-visible rules, a floating nav, and system typography. Two items deserve explicit post-structure verification:
+At the v24.0.7 baseline, the presentation seam already provides 16px inputs, safe-area-aware app/header/bottom spacing, focus-visible rules, a floating nav, and system typography. Three items deserve explicit post-structure verification:
 
 - the `@media (max-width: 480px)` theme button currently resolves to **40×40**, below the 44×44 target;
-- the final reduced-motion override is narrow, so verify all decorative/stagger/spinner motion is appropriately disabled or simplified under `prefers-reduced-motion: reduce` without disabling functional progress indicators.
+- the final reduced-motion override is narrow, so verify all decorative/stagger/spinner motion is appropriately disabled or simplified under `prefers-reduced-motion: reduce` without disabling functional progress indicators;
+- the current v4 `--text-tertiary` token is too faint for the 10–12px labels that use it: against `--surface-1`, the effective contrast is approximately **3.88:1 in dark mode** and **2.93:1 in light mode**, below the 4.5:1 target for normal/small text. Increase final tertiary-label contrast rather than relying on the larger primary/secondary text tokens to carry accessibility.
 
-Do not fix either by weakening behavior or hiding state.
+Do not fix any of these by weakening behavior or hiding state.
 
 ## 10. Accessibility
 
