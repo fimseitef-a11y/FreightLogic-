@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — | — |
+| claude | v24.0.8 — repair dead Loads surface (PR #168) + voice-load boot throw; modern-shell release-identity coverage | 2026-09-13 |
 | gpt | CSS accessibility fixes, read-only live parity, attachment inventory; no structural/runtime edits | 2026-09-13 |
 
 ---
