@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — | — |
-| gpt | — idle — | — |
+| gpt | CSS accessibility fixes, read-only live parity, attachment inventory; no structural/runtime edits | 2026-09-13 |
 
 ---
 
