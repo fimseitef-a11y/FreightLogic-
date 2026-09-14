@@ -87,9 +87,10 @@ jobs:
           WORKER_ORIGIN: ${{ inputs.worker_origin }}
         run: |
           set +e
-          # Unquoted expansion is deliberate and safe here: both values are
-          # word-split into at most one argument each, and an empty input must
-          # vanish so the verifier falls back to its own production defaults.
+          # Built as a quoted array so an EMPTY input contributes no argument at
+          # all — the verifier then falls back to its own production defaults —
+          # while a non-empty one stays exactly one argument no matter what it
+          # contains.
           ARGS=()
           [ -n "$APP_ORIGIN" ] && ARGS+=("$APP_ORIGIN")
           [ -n "$WORKER_ORIGIN" ] && ARGS+=("$WORKER_ORIGIN")
@@ -113,7 +114,10 @@ jobs:
             echo "- verifier exit code: \`${{ steps.parity.outputs.exit_code }}\`"
             echo
             echo '```'
-            cat parity.log
+            # The verifier step may have been skipped entirely (a failed
+            # checkout, say). Summarizing is best-effort; the job's own verdict
+            # step is what actually decides pass or fail.
+            cat parity.log 2>/dev/null || echo '(no verifier output was produced)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
