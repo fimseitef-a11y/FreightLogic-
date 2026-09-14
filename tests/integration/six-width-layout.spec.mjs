@@ -138,8 +138,6 @@ test('all six release widths pass five-surface geometry in both theme states', a
         await assertGeometry(page, width, route, 'theme-B');
       }
 
-      // Restore the original theme before the next width so every width observes
-      // the same pair of states in the same order.
       await page.locator('#themeToggle').click();
       await page.waitForTimeout(50);
     }
@@ -175,8 +173,7 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
     ok(motion.length === 0, `reduced-motion still has long/decorative animations: ${JSON.stringify(motion)}`);
 
     await openRoute(page, 'home');
-    const quickTrip = page.locator('#btnQuickTrip');
-    await quickTrip.click();
+    await page.locator('#btnQuickTrip').click();
     await page.waitForTimeout(120);
 
     const dialog = await page.evaluate(() => {
@@ -198,8 +195,8 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
 
     ok(!!dialog, 'Quick Trip must expose a representative modal/sheet/dialog surface');
     ok(dialog.left >= -1 && dialog.right <= 321, `320px modal overflows horizontally: ${JSON.stringify(dialog)}`);
-    ok(dialog.width <= 320 + 1, `320px modal width ${dialog.width}px exceeds viewport`);
-    ok(document !== null, 'placeholder to keep modal geometry assertions grouped');
+    ok(dialog.width <= 321, `320px modal width ${dialog.width}px exceeds viewport`);
+    ok(dialog.top >= -1 && dialog.bottom <= HEIGHT + 1, `320px modal escapes viewport vertically: ${JSON.stringify(dialog)}`);
   } finally {
     await app.close();
   }
