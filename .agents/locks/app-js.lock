@@ -1,7 +1,0 @@
-owner: claude
-token: 2189211a-cb06-4d29-8648-e7be0ac2d7ef
-started_utc: 2026-09-14T00:05:24Z
-expected_release_utc: 2026-09-14T04:05:24Z
-paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js
-task: Physical-pickup feasibility gate — the highest-value reported-not-built item from the 2026-09-12 operator-data pass. Inert until the operator supplies a planning average speed; no invented operator fact. Includes the v24.0.9 release-identity bump required to deliver an app.js change to an installed PWA.
-note: paths widened 2026-09-14T00:5xZ, same owner and token, lock never released. The v24.0.9 release-identity bump necessarily moves the cache-buster markers in manifest.json, service-worker.js, sw-bridge.js and modern-shell.js — CG-01..CG-13 require every marker to move together, so these four cannot be split out of the change that bumps APP_VERSION. Declared here rather than committed under an under-declared lock, per Amendment 1.
