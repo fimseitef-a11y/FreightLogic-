@@ -2,9 +2,9 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-12.** Exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec` is **FreightLogic v24.0.5 / IndexedDB v15 / Worker v14 source**. Its GitHub Actions run passed with **376 tests / 0 failures across 40 spec files**, and every checked production app asset is byte-for-byte identical to that SHA at `https://freightlogic-v2.fimseitef.workers.dev`. A post-merge live recheck still found the separate backup/API Worker stale: `/health` returned 401 `Missing token` and CORS `*`, so Worker v14 has not been deployed there. Formal certification remains HOLD until Worker v14 is deployed/verified, the real private-history source bundle is reconciled, and the finite physical-iPhone gate passes.
+Current status update: **2026-09-14.** Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` is **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15 source**. PR #175 and the independent post-merge `main` run are green; PR #175 recorded **431 tests / 0 failures across 45 spec files**. Cloudflare successfully built/deployed the exact runtime SHA for `freightlogic-v2` (build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`). Source-side deployment coverage now derives the full runtime inventory (23 assets) and specifically proves `admin-driver-ui.js` is requested, present, and deployable. The exact v24.0.9 live all-asset origin sweep is still **UNOBSERVED**, authenticated Worker authority/backup smokes are **NOT RUN**, the recovered private-history bundle still needs the real application round trip/idempotence/conflict review, and six-width + physical-iPhone acceptance remain open. Formal certification remains **HOLD**.
 
-Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`.
+Current certification authority once merged: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
 
 Vision ingestion and provider-adapter expansion remain approved but non-blocking. Do not enlarge the completion definition to chase new providers, booking, or model features.
 
@@ -19,13 +19,16 @@ Vision ingestion and provider-adapter expansion remain approved but non-blocking
 7. Provider-account access is not API/partner authorization.
 8. Raw private operator financial/history source files remain outside the public repository unless explicitly authorized.
 9. Successful vision-model extraction, provider approval, provider booking, and provider-adapter expansion are not required to freeze this completion release.
-10. Live deployment evidence outranks stale deployment assumptions in docs/scripts. A dead hostname or stale Worker must be corrected rather than rationalized as an environment issue once a reachable production probe proves the mismatch.
+10. Live deployment evidence outranks stale deployment assumptions in docs/scripts. A dead hostname, missing runtime asset, or stale Worker must be corrected rather than rationalized once a reachable production probe proves the mismatch.
+11. A successful Cloudflare build/deploy is deployment evidence, not byte/content parity. Exact live-origin verification remains a separate gate.
 
 ## Gate 0 — Operator truth and evidence provenance
 
 Status: **COMPLETE.**
 
 Durable operator-truth, evidence-provenance, and open-question contracts exist. External IDs are not destructive identity; source mileage/price/status semantics remain typed; uncertain facts remain unresolved instead of promoted by inference.
+
+A Canada-rate authority conflict is intentionally retained in `docs/OPEN_QUESTIONS.md`: materially different cross-border numbers exist with different provenance, and no runtime protective floor may be changed by inference until explicit operator correction or stronger primary evidence resolves whether each figure is a floor, target, or market observation.
 
 ## Milestone 1 — Doctrine and money integrity
 
@@ -39,9 +42,11 @@ The current invariant set includes:
 - blank/underspecified markets fail closed;
 - explicit deadhead `0` remains a known zero while missing/invalid deadhead remains UNKNOWN/null through parser, evaluator, persistence, and history;
 - default usable cargo length is 121 inches unless a provenance-bearing operator override exists;
+- operator-measured 54.8-inch wheel-well and 3,000-pound practical payload boundaries are enforced by regression coverage;
 - True Profit/precise economics are unavailable when required cost or mileage denominators are not defensible;
 - advisory Midwest evidence cannot own canonical verdict/grade/bid authority;
-- approved MPG fallback remains subordinate to explicit operator settings.
+- approved MPG fallback remains subordinate to explicit operator settings;
+- v24.0.9 pickup feasibility runs before economics only when the operator supplies enough facts: no default planning speed is invented, unknown deadhead never becomes zero, an unreachable/passed cutoff blocks, and a reachable narrow window is advisory only.
 
 ## Milestone 2 — Expense/fuel concurrency integrity
 
@@ -73,59 +78,69 @@ The shipped foundation preserves provenance, price/mileage semantics, UNKNOWN va
 
 ## Milestone 6 — Historical import + Personal Intelligence calibration
 
-Status: **MACHINERY IMPLEMENTED AND SYNTHETIC REGRESSIONS GREEN; PRIVATE REAL-BUNDLE RERUN BLOCKED ON MISSING RAW SOURCE FILE.**
+Status: **MACHINERY IMPLEMENTED AND SYNTHETIC REGRESSIONS GREEN; PRIVATE SOURCE BUNDLE RECOVERED; REAL APPLICATION ROUND TRIP / IDEMPOTENCE / CONFLICT REVIEW STILL OPEN.**
 
 Implemented rules include idempotent/collision-resistant import, conservative linking, per-field provenance, source-timestamp recency, no broker guessing, distinct status classes, DZ exclusion from normal-market calibration, `WON / (WON + LOST)` denominators, and exclusion of unknown RPM/deadhead rather than coercion to zero.
 
-The repository and supplied project archives do not contain the raw row-level historical master. A recovered handoff states that a 125-row master once existed but explicitly warns not to reconstruct missing rows from summaries. Therefore the real-bundle gate remains **SOURCE FILE MISSING / NOT RUN** until the actual raw source is recovered or re-exported.
+The original August 27 five-file M6 bundle has been recovered privately outside the public repository. Existing preflight evidence reports **216 source rows -> 149 deterministic candidate records** under the unchanged adapter. Those candidates still must pass the actual FreightLogic import -> reload -> export/re-import path, repeated-import/idempotence checks, and source-conflict review before this milestone can be certified on real data.
+
+The separate **125-row master** referenced by an older handoff remains unavailable. Do not reconstruct it from summaries, do not invent missing rows, and do not treat the recovered 216-row bundle as proof that the distinct 125-row master has been found.
 
 ## Milestone 7 — Completion release certification
 
-Status: **EXACT SOURCE + PRODUCTION APP PARITY PASS; WORKER DEPLOYMENT / PRIVATE DATA / IPHONE STILL BLOCKING.**
+Status: **SOURCE/CI + EXACT CLOUDFLARE BUILD GREEN; LIVE ALL-ASSET PARITY / AUTHENTICATED WORKER SMOKES / PRIVATE DATA / VISUAL / IPHONE STILL BLOCKING.**
 
 ### Automated/source evidence
 
-Exact candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec` has:
+Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` has:
 
-- 376 passed / 0 failed across 40 spec files in GitHub Actions run `34678494045`;
+- PR #175 full suite: **431 passed / 0 failed across 45 spec files** in run `34796439138`;
+- post-merge `main` Tests run `34796618850`: **SUCCESS** on the same exact runtime SHA;
 - lane/path/lock CI green;
 - deterministic built-in test server and IndexedDB-ready launch contract;
-- app/PWA/service-worker/cache/manifest generation checks green;
+- app/PWA/service-worker/cache/manifest generation checks green for v24.0.9;
 - static CSP/source parity green;
 - backup/full-delta/restore and local export/import integrity regressions green;
-- merged Worker-v14 health/CORS regressions green;
-- operator-measured 54.8-inch wheel-well and 3,000-pound payload regressions green.
+- Worker-v15 health/CORS regressions green;
+- operator-measured 54.8-inch wheel-well and 3,000-pound payload regressions green;
+- pickup-feasibility regressions protecting unset planning speed, unknown-vs-zero deadhead, unreachable cutoff, reachable cutoff, already-passed cutoff, and tight-window advisory behavior;
+- deployment-asset coverage derived from the runtime declarations rather than a curated subset, currently **23 assets**, including `admin-driver-ui.js`.
 
 ### Production evidence already observed
 
-The 2026-09-12 post-merge live recheck proved:
+Cloudflare's GitHub production check completed **SUCCESS** for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` on service `freightlogic-v2`:
 
-- `freightlogic-v2.fimseitef.workers.dev` is the production app origin;
-- the checked v24.0.5 index/app/voice/SW bridge/service worker/overlay/config/manifest responses are byte-for-byte identical to exact main candidate `8d5b82b8cfaf9d2264d0220d49e598e7ce705eec`;
-- `freightlogic.pages.dev` does not resolve and must not remain the verifier/default production authority;
-- unauthenticated `/admin/users` on the backup Worker returns 401 as required;
-- backup Worker `/health` still returns 401 `Missing token` and CORS `*` after Worker-v14 source merged, proving Worker v14 is not deployed there.
+- build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`;
+- version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`.
 
-### Bounded Worker v14 repair
+That proves Cloudflare accepted/built/deployed the exact candidate. It does **not** prove all 23 runtime assets at the live origin match the source bytes/content. The exact v24.0.9 all-asset live sweep remains **UNOBSERVED** in the current GPT execution environment and must not be inferred from build success.
 
-Worker v14 is not an app feature expansion. It closes the live deployment invariant proved by the probe:
+The backup/API Worker did not change in v24.0.9. On 2026-09-13 Worker v15 was directly observed live with:
 
-- production/default CORS origin = `https://freightlogic-v2.fimseitef.workers.dev`;
-- legacy Pages origins may remain accepted during migration but are not fallback authority;
-- `/health` remains unauthenticated and reports Worker v14;
-- live verifier defaults to the real app origin and requires Worker v14;
-- regression coverage protects production-origin CORS and health/version semantics.
+- `GET /health` HTTP 200 / version 15;
+- exact `https://freightlogic-v2.fimseitef.workers.dev` CORS on health GET;
+- backup preflight OPTIONS HTTP 204 with the exact production origin;
+- unauthorized admin request denied HTTP 401.
 
-`wrangler.jsonc` deploys the separate `freightlogic-v2` app/assets service. It is **not** a safe standalone deployment configuration for `cloud-backup-worker.js`; do not overwrite the app service or guess KV binding identifiers merely to force the Worker gate green.
+This discharges the old Worker-v14/v15 deployment-parity blocker for free health/CORS/auth-boundary probes. It does **not** discharge authenticated authority/backup smokes.
+
+### Deployment-asset defect and repair status
+
+The v24.0.8 audit proved a real deployment blind spot: the old curated parity list could be green while `admin-driver-ui.js` was absent in production. The source exclusion was repaired, and PR #174 introduced a derived complete runtime inventory shared by source deploy-coverage tests and the live verifier. The current source asserts every runtime-requested asset exists and is deployable.
+
+The remaining certification gate is to run the exact live v24.0.9 all-asset sweep and controlled service-worker/offline reload so source coverage is backed by production-origin evidence rather than assumption.
 
 ### Blocking evidence still required
 
-1. **Backup/API Worker deployment parity** — deploy the merged Worker-v14 source through the actual Worker deployment path; then prove `/health` 200/version14, production-origin CORS, auth boundaries, `/evaluate`/`/extract` where applicable, and authenticated backup/delta/restore smokes.
-2. **Private operator-history reconciliation** — recover/re-export the real raw source bundle and run current M6 reconciliation; do not fabricate it from summaries.
-3. **Physical iPhone certification** — finite A1-A9 checks in `FIELD_TEST_CHECKLIST.md` against the same live candidate. Prior v23.7.0 installed-PWA evidence remains unresolved until safely retested.
-4. **Rollback evidence** — record an executable rollback SHA/procedure for the final frozen candidate.
+1. **Exact live v24.0.9 production parity** — run the live verifier from a network that can reach the production Workers origin; prove every derived runtime asset matches/has valid content and reject HTML-shell masquerade for static requests.
+2. **Service-worker / offline production check** — prove the exact v24.0.9 candidate, including the formerly missing admin runtime asset, survives normal update/reload/offline behavior without destructive clearing.
+3. **Authenticated Worker authority + backup checks** — with a dedicated non-published test identity, prove `/evaluate` and `/extract` authority behavior plus full/delta backup, restore, and in-place token rotation without exposing credentials or risking real data.
+4. **Private operator-history reconciliation** — run the recovered M6 source bundle through the actual application round trip, repeated import/idempotence, export/re-import, and source-conflict review. Do not fabricate the separate unavailable 125-row master.
+5. **Six-width visual acceptance** — complete the documented 320/375/390/393/430/440 checks, dark/light, touch targets, and overflow on the same final candidate.
+6. **Physical iPhone certification** — finite A1-A10 checks in `FIELD_TEST_CHECKLIST.md` against the same live candidate, including installed-PWA update/offline behavior and v24.0.9 pickup feasibility.
+7. **Rollback/fix-forward evidence** — record the exact safe rollback/fix-forward procedure and release SHA for the final frozen candidate. Known-regression older builds must not be presented as safe rollback targets merely because they exist.
 
-Do not mark unobserved private/device/authenticated gates PASS by inference. Do not clear Safari website data or delete the installed PWA merely to force an update because that can destroy IndexedDB evidence.
+Do not mark unobserved private/device/authenticated/live-origin gates PASS by inference. Do not clear Safari website data or delete the installed PWA merely to force an update because that can destroy IndexedDB evidence.
 
 ## Completion definition
 
@@ -137,18 +152,21 @@ The named release is complete when one named source/runtime candidate has:
 - historical import/calibration machinery plus real private-bundle reconciliation proof;
 - deterministic green automated suite and repository governance;
 - backup/restore/import/export integrity with secret exclusion;
-- live production app parity;
-- live Worker-v14 parity and authority/backup smokes;
+- exact live production app/all-asset parity and controlled service-worker/offline behavior;
+- live Worker-v15 health/CORS plus authenticated authority/backup smokes;
+- six-width visual acceptance;
 - finite physical-iPhone field checks;
-- approved release and rollback SHAs recorded in a superseding certification-state document.
+- approved release and rollback/fix-forward SHAs/procedure recorded in a superseding certification-state document.
 
 ## Execution order from here
 
-1. Deploy the merged Worker v14 through the actual backup-Worker deployment path without disturbing the `freightlogic-v2` app/assets service or guessing bindings/secrets.
-2. Rerun live parity and authenticated authority/backup checks.
-3. Recover/re-export the real private M6 source bundle and reconcile it without publishing sensitive raw data.
-4. Run the finite iPhone checks against the same live candidate.
-5. If a gate fails, repair the cause and repeat the affected exact-candidate gates.
-6. When all blocking evidence is PASS, create a new certification-state/addendum document that supersedes `COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md`, records release/rollback SHAs, and closes Issue #119.
+1. Run exact v24.0.9 all-asset production parity and controlled service-worker/offline reload from an environment that can reach the Workers production origin.
+2. Run authenticated Worker authority/backup/restore/rotation smokes using a dedicated non-published test identity.
+3. Run the recovered private M6 bundle through actual application reconciliation and review conflicts/idempotence without publishing sensitive raw data.
+4. Complete six-width visual acceptance on the same candidate.
+5. Run the finite physical-iPhone A1-A10 checks on the same candidate.
+6. Record the safe rollback/fix-forward reference for the final frozen release.
+7. If a gate fails, repair the cause and repeat the affected exact-candidate gates.
+8. When all blocking evidence is PASS, create a new certification-state/addendum document that supersedes the current HOLD authority, records release/rollback evidence, and closes Issue #119.
 
 Do not reorder this sequence merely to add more live sources or convenience features.
