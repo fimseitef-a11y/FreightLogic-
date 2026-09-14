@@ -1,0 +1,189 @@
+name: One-shot Worker same-ms key repair
+
+on:
+  push:
+    branches:
+      - agent/gpt/worker-same-ms-key-fix
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/gpt/worker-same-ms-key-fix
+          fetch-depth: 0
+
+      - name: Apply bounded Worker and regression repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          worker = Path('cloud-backup-worker.js')
+          s = worker.read_text()
+
+          old = """async function hashToken(token) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+          }
+
+          const PRODUCTION_APP_ORIGIN"""
+          new = """async function hashToken(token) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+          }
+
+          // Keep the timestamp first so lexical order remains chronological, but add a
+          // per-write nonce so two backup requests created in the same millisecond can
+          // never overwrite each other in KV. crypto.randomUUID() is already required by
+          // this Worker for user/token creation, so this adds no new platform dependency.
+          function storageKeySuffix() {
+            const ts = new Date().toISOString().replace(/[:.]/g, '-');
+            const nonce = crypto.randomUUID().replace(/-/g, '');
+            return ts + '~' + nonce;
+          }
+
+          const PRODUCTION_APP_ORIGIN"""
+          if old not in s:
+              raise SystemExit('hashToken insertion anchor not found exactly once')
+          s = s.replace(old, new, 1)
+
+          old_backup = """        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                  const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;"""
+          new_backup = """        const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + storageKeySuffix();"""
+          if s.count(old_backup) != 1:
+              raise SystemExit(f'backup timestamp anchor count={s.count(old_backup)}')
+          s = s.replace(old_backup, new_backup, 1)
+
+          old_delta = """        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                  const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;"""
+          new_delta = """        const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + storageKeySuffix();"""
+          if s.count(old_delta) != 1:
+              raise SystemExit(f'delta timestamp anchor count={s.count(old_delta)}')
+          s = s.replace(old_delta, new_delta, 1)
+
+          old_parser = """// A delta key's trailing segment is `new Date().toISOString().replace(/[:.]/g,'-')`
+          // — lexically sortable in the same relative order as the original ISO
+          // timestamps (the transform is injective and monotonic for same-length
+          // strings), but not directly Date-parseable. Reconstruct a real ISO string
+          // for the client rather than exposing the mangled form.
+          function deltaTsFromKey(key) {
+            const raw = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+            // raw shape: YYYY-MM-DDTHH-MM-SS-mmmZ
+            const m = raw.match(/^(\\d{4}-\\d{2}-\\d{2})T(\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z$/);
+            if (!m) return raw; // fall back to the raw sortable string if the shape ever changes
+            return `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`;
+          }"""
+          new_parser = """// Delta keys begin with `new Date().toISOString().replace(/[:.]/g,'-')` and
+          // now carry `~<nonce>` after that timestamp. The timestamp stays first so
+          // lexical sorting preserves chronological order, while the nonce prevents
+          // same-millisecond writes from sharing a KV key. Legacy timestamp-only keys
+          // remain parseable during migration/restore.
+          function deltaTsFromKey(key) {
+            const rawWithNonce = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+            const raw = rawWithNonce.split('~', 1)[0];
+            // raw timestamp shape: YYYY-MM-DDTHH-MM-SS-mmmZ
+            const m = raw.match(/^(\\d{4}-\\d{2}-\\d{2})T(\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z$/);
+            if (!m) return raw; // fall back to the raw sortable timestamp if the shape ever changes
+            return `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`;
+          }"""
+          if s.count(old_parser) != 1:
+              raise SystemExit(f'delta parser anchor count={s.count(old_parser)}')
+          s = s.replace(old_parser, new_parser, 1)
+          worker.write_text(s)
+
+          test = Path('tests/unit/worker-pointer-race.spec.mjs')
+          t = test.read_text()
+
+          marker = """function driverReq(pathname, method, token, device, body) {
+            const headers = {
+              'X-Backup-Token': token,
+              'X-Device-Id': device,
+            };
+            if (body !== undefined) headers['Content-Type'] = 'application/json';
+            return new Request('https://worker.test' + pathname, { method, headers, body });
+          }
+          """
+          helper = marker + """
+          function freezeClock(iso = '2026-09-14T07:40:00.123Z') {
+            const RealDate = globalThis.Date;
+            const fixedMs = RealDate.parse(iso);
+            class FrozenDate extends RealDate {
+              constructor(...args) { super(...(args.length ? args : [fixedMs])); }
+              static now() { return fixedMs; }
+            }
+            globalThis.Date = FrozenDate;
+            return () => { globalThis.Date = RealDate; };
+          }
+          """
+          if t.count(marker) != 1:
+              raise SystemExit(f'test helper anchor count={t.count(marker)}')
+          t = t.replace(marker, helper, 1)
+
+          loop_delta = """  for (const payload of payloads) {
+              const res = await worker.fetch(driverReq('/backup/delta', 'POST', driver.token, device, payload), env);
+              eq(res.status, 200, `delta POST must succeed, got ${res.status}`);
+            }
+          """
+          loop_delta_new = """  const restoreClock = freezeClock();
+            try {
+              for (const payload of payloads) {
+                const res = await worker.fetch(driverReq('/backup/delta', 'POST', driver.token, device, payload), env);
+                eq(res.status, 200, `delta POST must succeed, got ${res.status}`);
+              }
+            } finally {
+              restoreClock();
+            }
+          """
+          if t.count(loop_delta) != 1:
+              raise SystemExit(f'delta test loop anchor count={t.count(loop_delta)}')
+          t = t.replace(loop_delta, loop_delta_new, 1)
+
+          loop_full = """  for (const payload of payloads) {
+              const res = await worker.fetch(driverReq('/backup', 'POST', driver.token, device, payload), env);
+              eq(res.status, 200, `backup POST must succeed, got ${res.status}`);
+            }
+          """
+          loop_full_new = """  const restoreClock = freezeClock();
+            try {
+              for (const payload of payloads) {
+                const res = await worker.fetch(driverReq('/backup', 'POST', driver.token, device, payload), env);
+                eq(res.status, 200, `backup POST must succeed, got ${res.status}`);
+              }
+            } finally {
+              restoreClock();
+            }
+          """
+          if t.count(loop_full) != 1:
+              raise SystemExit(f'full test loop anchor count={t.count(loop_full)}')
+          t = t.replace(loop_full, loop_full_new, 1)
+
+          t = t.replace(
+              "test('[WPR-01] first delta write is indexed exactly once when list() already sees it'",
+              "test('[WPR-01] first delta writes stay unique under a frozen same-millisecond clock while list() already sees them'",
+              1,
+          )
+          t = t.replace(
+              "test('[WPR-02] first full-backup write is also indexed exactly once'",
+              "test('[WPR-02] full-backup writes stay unique under a frozen same-millisecond clock'",
+              1,
+          )
+          test.write_text(t)
+          PY
+
+          node --check cloud-backup-worker.js
+          git diff --check
+
+          # Remove this bootstrap workflow from the final branch diff before committing.
+          git rm .github/workflows/zz-agent-same-ms-worker-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cloud-backup-worker.js tests/unit/worker-pointer-race.spec.mjs
+          git commit -m '[gpt] Prevent same-millisecond backup key collisions'
+          git push origin HEAD:agent/gpt/worker-same-ms-key-fix
