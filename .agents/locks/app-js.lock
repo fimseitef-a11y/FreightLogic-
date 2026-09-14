@@ -1,0 +1,6 @@
+owner: claude
+token: 2189211a-cb06-4d29-8648-e7be0ac2d7ef
+started_utc: 2026-09-14T00:05:24Z
+expected_release_utc: 2026-09-14T04:05:24Z
+paths: app.js, index.html
+task: Physical-pickup feasibility gate — the highest-value reported-not-built item from the 2026-09-12 operator-data pass. Inert until the operator supplies a planning average speed; no invented operator fact. Includes the v24.0.9 release-identity bump required to deliver an app.js change to an installed PWA.
