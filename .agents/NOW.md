@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (live-parity runner pushed on claude/repo-review-9lpj28 @0356219, 442/0 across 46; NOT yet on main, so not dispatchable) | 2026-09-14 |
-| gpt | operator-directed completion takeover: reassign remaining release tooling, repair rollback/six-width gates, obtain live parity evidence, certify what is observable | 2026-09-14 |
+| gpt | final certification gates: six-width Playwright acceptance, rollback verifier v24.0.9/Worker15 repair, automatic read-only live parity on main | 2026-09-14 |
 
 ---
 
