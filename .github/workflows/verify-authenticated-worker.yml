@@ -1,20 +1,19 @@
 name: Verify Authenticated Worker
 
 # One-time production certification for authenticated Worker contracts.
-# Runs automatically only when this workflow file itself lands on main; it can
-# also be re-run manually later. It never uses operator data or a real driver
+# Runs after a successful, explicitly dispatched backup Worker deployment or
+# by manual dispatch. It never uses operator data or a real driver
 # credential. The existing Cloudflare deployment token is used only to seed an
 # expiring synthetic driver record in the production KV namespace, after which
 # the committed authority and backup verifiers exercise the deployed Worker.
 # Cleanup is best-effort on every exit and identity keys also carry a TTL.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/verify-authenticated-worker.yml'
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Deploy Backup Worker']
+    branches: [main]
+    types: [completed]
 
 permissions:
   contents: read
@@ -26,11 +25,18 @@ env:
 
 jobs:
   authenticated-worker:
+    # Only the approved main-branch deploy can trigger this privileged smoke.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_dispatch' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-node@v6
         with:

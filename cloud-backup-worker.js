@@ -1,4 +1,6 @@
-// FreightLogic Cloud Backup Worker v15 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v16 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v16: validate/project model-free canonical decisions before requiring an OpenAI key.
+// Missing AI configuration must not break canonical absence or request validation.
 // v15: POST /admin/users/:id/rotate — re-key a driver's token IN PLACE, keeping userId.
 // Before this the only way to change a token was POST /admin/users, which mints a NEW
 // userId; since every backup is keyed user:<userId>:device:<id>:..., rotating that way
@@ -233,7 +235,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '15', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '16', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -287,10 +289,6 @@ export default {
           return json({ ok: false, error: `AI evaluation limit reached (100/hr). Resets in ~${resetMins} min. Your local score is still accurate.` }, 429, cors);
         }
 
-        if (!env.OPENAI_API_KEY) {
-          return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
-        }
-
         const clEval = parseInt(request.headers.get('Content-Length') || '0', 10);
         if (clEval > 64 * 1024) {
           return json({ ok: false, error: 'Request too large' }, 413, cors);
@@ -329,6 +327,12 @@ export default {
         if (!payload.canonicalDecision?.authority?.verdict || !payload.canonicalDecision?.authority?.grade ||
             !Number.isFinite(Number(payload.canonicalDecision?.economics?.trueRPM)) || !payload.canonicalDecision?.bid?.range) {
           return json({ ok: false, error: 'Canonical client decision, economics, and bid range are required for AI review. Local evaluation remains authoritative.' }, 400, cors);
+        }
+
+        // Only a complete canonical decision needs the model. Keep this after
+        // request validation and the model-free absence projection above.
+        if (!env.OPENAI_API_KEY) {
+          return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
         }
 
         const model = env.OPENAI_MODEL || 'gpt-4.1-mini';

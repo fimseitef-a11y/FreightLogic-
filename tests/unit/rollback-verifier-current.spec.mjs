@@ -11,16 +11,17 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SCRIPT = path.join(ROOT, 'scripts/verify-rollback.mjs');
 const source = readFileSync(SCRIPT, 'utf8');
 
-test('B5 verifier is pinned to v24.0.9 runtime candidate and Worker v15', () => {
+test('B5 verifier is pinned to v24.0.9 runtime candidate and Worker v16', () => {
   ok(source.includes("5446b097fe8791f3d7c79b5a5833a0930ee83cf2"), 'exact v24.0.9 runtime SHA must be named');
   ok(source.includes("EXPECTED_APP_VERSION = '24.0.9'"), 'app generation must be v24.0.9');
-  ok(source.includes("EXPECTED_WORKER_VERSION = '15'"), 'Worker generation must be v15');
+  ok(source.includes("EXPECTED_WORKER_VERSION = '16'"), 'Worker generation must be v16');
 });
 
 test('stale production candidate / Worker-v14 expectations cannot return', () => {
   ok(!source.includes('8d5b82b8cfaf9d2264d0220d49e598e7ce705eec'), 'old production candidate must not be authoritative');
   ok(!source.includes("srcWorkerVer === '14'"), 'Worker v14 must not be treated as current');
   ok(!source.includes('expected 14'), 'no current expectation may name Worker v14');
+  ok(!source.includes("EXPECTED_WORKER_VERSION = '15'"), 'the superseded authority-order defect must not be a current Worker target');
 });
 
 test('B5 verifier executes successfully and records fix-forward-only policy', () => {

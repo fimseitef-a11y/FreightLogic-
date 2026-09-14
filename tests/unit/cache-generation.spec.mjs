@@ -162,11 +162,13 @@ test('[CG-09] DB version and Worker version are unchanged by a generation freeze
   // it, the only way to re-key a driver was to create a new one, which mints a
   // new `userId` and orphans that driver's entire backup history, since backups
   // are keyed `user:<userId>:device:<id>:backup:<ts>`.
+  // Moved 15 -> 16 for the live-observed authority-order defect: model-free
+  // canonical absence and request validation must work without an OpenAI key.
   const dbm = read('app.js').match(/^const DB_VERSION = (\d+);/m);
   ok(dbm, 'could not read DB_VERSION from app.js');
   eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');
-  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "15"'),
-    'the expected Worker version must be 15 — in-place token rotation changed Worker semantics intentionally');
+  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "16"'),
+    'the expected Worker version must be 16 — the authority-order repair intentionally changes Worker semantics');
 });
 
 test('[CG-10] index.html and _headers CSP stay byte-identical across the bump', () => {

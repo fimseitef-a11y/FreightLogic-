@@ -5,7 +5,7 @@
  * Read-only by design: no checkout, revert, push, deploy, secret read or network
  * request. The gate verifies the frozen v24.0.9 runtime candidate, proves the
  * immediately previous app generation is NOT a safe rollback because it lacks
- * the pickup-feasibility safety gate, verifies Worker v15 is the current source,
+ * the pickup-feasibility safety gate, verifies Worker v16 is the current source,
  * and verifies an executable fix-forward deployment path exists.
  *
  * A PASS therefore does NOT claim that an older build is safe. It proves the
@@ -23,7 +23,7 @@ const RELEASE_CANDIDATE = '5446b097fe8791f3d7c79b5a5833a0930ee83cf2';
 const PREVIOUS_APP_CANDIDATE = 'a7b72592eb28fe073a65d28d9bcd61109e3ef026';
 const EXPECTED_APP_VERSION = '24.0.9';
 const PREVIOUS_APP_VERSION = '24.0.8';
-const EXPECTED_WORKER_VERSION = '15';
+const EXPECTED_WORKER_VERSION = '16';
 
 function git(args, { allowFail = false } = {}) {
   try {
