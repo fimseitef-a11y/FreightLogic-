@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.8** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.9** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.8 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.9 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -131,7 +131,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.8';
+const APP_VERSION = '24.0.9';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -274,8 +274,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.8` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.8`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.9` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.9`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -2084,3 +2084,109 @@ passing as 200.
 Per the handoff, the suite stays offline: the sweep is in the operator gate, not
 in `tests/run-all.mjs`. A gate that needs the internet is a network gate, not a
 code gate.
+
+---
+
+## v24.0.9 "Can You Even Get There" — the pickup you cannot reach
+
+Closes the highest-value item from the 2026-09-12 operator-data pass, which was
+reported rather than built at the time because it needed a fact this lane could
+not supply on its own authority. `DB_VERSION` stays **15** and the Worker stays
+**v15** — neither's semantics changed.
+
+**The defect.** The evaluator had no notion of time at all. It would grade,
+price and recommend a bid on a load whose pickup had already closed, or that sat
+further away in deadhead than the remaining window allowed. The operator dataset
+contained a real instance — quote 1079840, a **225-mile deadhead against a 19:00
+cutoff** — and nothing in the app detected it. Every other gate in the evaluator
+asks whether the load is *worth* taking; none asked whether it can be taken at
+all. Dimensional feasibility had been covered since 7D; temporal feasibility had
+not been covered at all.
+
+**The gate.** `checkPickupFeasibility()` runs immediately after the 7D
+dimensional gate and **before any economics**, mirroring it exactly: it blocks
+with a "CAN'T TAKE" card in place of the normal result, and is otherwise
+silent. A load with no cutoff entered is not blocked — most postings state none,
+and this is a safety net, not a requirement. Ordering is pinned by PF-07: a load
+failing both gates reports the dimensional conflict, because `checkVanFit()`
+runs first.
+
+**Why there is no default speed, and why that is the whole design.** Converting
+deadhead miles into drive time needs an average speed, and that is an operator
+fact this repository has no authority to invent. `VAN_PROFILE_DEFAULT` is the
+cautionary precedent: its published-brochure cargo length was wrong by nine
+inches against the operator's own measurement, and every load between 122" and
+130" scored as *fitting* for freight the van could not carry (fixed in v24.0.4).
+A guessed speed fails the same way, except the failure is worse — it would
+**reject** loads the driver could actually make, and a false CAN'T TAKE is
+invisible, because the driver never learns what they turned down.
+
+So `settings['planningAvgMph']` has **no default** and the gate is inert until
+the operator sets it — the same shape as the EIA fuel feed, which returns `null`
+early without `settings['eiaApiKey']` rather than inventing a price. The
+consequence worth stating plainly: **this release cannot change the verdict on
+any load scored the way loads are scored today.** It only becomes able to block
+anything after the operator supplies one number they alone know.
+
+**UNKNOWN discipline, applied throughout** — the same `knownNum()` doctrine
+v24.0.1 applied to the canonical decision:
+- Planning speed unset, or stored out of the 5–85 mph sanity range, returns
+  `applicable: false` / `PLANNING_SPEED_UNSET`. An out-of-range value is **not
+  clamped** into range: substituting a bound would run the gate on a number the
+  operator never chose, which is the blank-deadhead-means-zero defect wearing a
+  different hat. A typed `655` disables the check; it does not become `85`.
+- No cutoff → `NO_CUTOFF_SUPPLIED`. Unparseable cutoff → `CUTOFF_UNPARSEABLE`.
+- An **unstated** deadhead → `DEADHEAD_UNKNOWN`, never zero. Treating blank as
+  zero would make every distant load look instantly reachable.
+- An **explicit** `0` deadhead is a verified fact (the driver is at the pickup):
+  zero drive time, still applicable, reachable.
+- An inapplicable check never reports `reachable` at all — it is not a pass.
+
+**Advisory, not authority.** A reachable-but-narrow window (under 30 minutes of
+slack) sets `tight` and fires a toast. It never blocks, and it deliberately does
+not touch verdict, grade, True RPM or the canonical bid range — so it is a toast
+rather than anything rendered into the authoritative result card. The block card
+itself prints every number that produced it, the operator's own planning speed
+included, so a CAN'T TAKE is never a verdict the driver has to argue with.
+
+**Surfaces.** `#mwPickupCutoff` (a `datetime-local`, optional) in the evaluator's
+More Details, beside the 7D dimension fields. Settings gains a **Trip Planning**
+section whose copy states outright that there is no default on purpose and that
+the check stays off until the operator sets a figure. An empty or out-of-range
+entry **clears** the setting rather than storing a fallback.
+
+`planningAvgMph` is added to `ALLOWED_SETTINGS_KEYS` in the same change that
+introduces it — a settings key the app writes but the importer drops is the X-07
+class of gap, and this is the third time that list has needed a retrofit.
+
+**Why this is a version bump.** All cache-busters were `?v=24.0.8` and
+`CACHE_NAME` is `freightlogic-${SW_VERSION}`. An `app.js` + `index.html` change
+landed without bumping would never reach an installed PWA. This is the v24.0.3
+lesson applied rather than relearned; CG-01 enforces `SW_VERSION == APP_VERSION`
+and all 13 CG assertions are green at `24.0.9`.
+
+**Tests.** `tests/integration/pickup-feasibility.spec.mjs` (8, new) drives the
+real evaluator UI in Chromium and asserts **computed content**, not internal
+state. `tests/unit/pure-functions.spec.mjs` gained 10 `[PF]` cases covering the
+UNKNOWN matrix above. Cutoffs are computed relative to `Date.now()` inside the
+page rather than pinned to a literal, so this spec cannot become the date
+time-bomb recorded in `gpt-to-claude-v2402-date-fixture-timebomb-2026-09-02.md`.
+
+Negative controls, all verified to fire: making `getPlanningAvgMph()` fall back
+to `55` fails PF-01 and the `getPlanningAvgMph` unit case; treating an unstated
+deadhead as `0` fails the UNKNOWN-deadhead case; dropping the range check so an
+out-of-range speed clamps fails the out-of-range case; and neutralizing the
+block so economics render for an unreachable pickup fails PF-02/03/05.
+
+**Deliberately not built, and why.** The `tight` flag is computed and returned
+but is only surfaced as a toast — rendering it inside the result card, and
+carrying pickup feasibility into `buildEvaluationEvidence()`, both belong with
+the v24.1 Confidence + Evidence contract rather than being bolted on here. The
+parsers (F23/F27) do not yet populate `#mwPickupCutoff`; manual entry is the v1
+surface, exactly as the 7D dimension fields shipped.
+
+**Still HOLD.** Nothing here touches the live gates. The canonical certification
+state remains `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`, and
+this release changes what its parity run must target — the candidate is now
+`24.0.9`. `docs/` is gpt-owned under `/.agents/LANES.md`, so the checklist bump
+was requested through `/.agents/inbox/` rather than edited across lanes.

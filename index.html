@@ -16,7 +16,7 @@
        one in _headers — scripts/verify-cloudflare-parity.mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.8">
+  <link rel="manifest" href="manifest.json?v=24.0.9">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -280,6 +280,13 @@
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<div class="settings-section-head"><span class="settings-section-icon">⏱️</span>Trip Planning <span class="muted" style="font-size:10px;font-weight:400">(pickup-feasibility pre-check)</span></div>
+<div class="muted" style="font-size:11px;margin-bottom:8px">Your realistic door-to-door average, including fuel and rest stops — not a speed limit. It is used only to work out whether a deadhead fits before a pickup cutoff. <b>There is no default on purpose:</b> a guessed speed would reject loads you could actually make, so this check stays switched off until you set your own figure. Leave it blank to keep it off.</div>
+<div class="grid2" style="gap:10px">
+<div><label>Planning average speed (mph)</label><input id="planningAvgMph" type="number" step="1" min="5" max="85" placeholder="off — not set" /></div>
+</div>
+
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
 <div class="grid2" style="gap:10px">
@@ -410,6 +417,15 @@
               <input id="mwLoadHeightIn" inputmode="numeric" placeholder="H in" aria-label="Load height (inches)" />
               <input id="mwLoadWeightLbs" inputmode="numeric" placeholder="lbs" aria-label="Load weight (lbs)" />
             </div>
+          </div>
+          <!-- v24.0.9: physical-pickup feasibility. Optional, and inert until a
+               planning average speed is set in Settings - Trip Planning. When
+               both are present, a pickup the deadhead cannot reach in time
+               blocks scoring with "CAN'T TAKE" before any economics, the same
+               way the 7D dimensional check does. See checkPickupFeasibility(). -->
+          <div class="field"><label>Pickup cutoff <span class="muted" style="font-size:10px;font-weight:400">(optional — needs a planning speed in Settings)</span></label>
+            <input id="mwPickupCutoff" type="datetime-local" aria-label="Latest pickup date and time" />
+            <div class="muted" style="font-size:11px;margin-top:2px">Latest you can still be loaded. Leave blank to score on economics alone.</div>
           </div>
           <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
           <div class="field">
@@ -586,8 +602,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.8"></script>
-  <script src="voice-load.js?v=24.0.8"></script>
-  <script src="sw-bridge.js?v=24.0.8"></script>
+  <script src="app.js?v=24.0.9"></script>
+  <script src="voice-load.js?v=24.0.9"></script>
+  <script src="sw-bridge.js?v=24.0.9"></script>
 </body>
 </html>
