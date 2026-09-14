@@ -1370,3 +1370,11 @@ label { color: var(--text-secondary); font-size: 12px; font-weight: 620; }
 @media (prefers-reduced-motion: reduce) {
   .nav a.nav-eval-center, .nav a.nav-eval-center .ni { transition: none !important; }
 }
+
+/* FL-CERT-MOBILE-FORM-SIZE
+   iOS Safari zooms focused form controls below 16 CSS px. Some runtime intake
+   surfaces carry older inline 15px declarations, so the release invariant must
+   win at mobile widths without changing desktop density. */
+@media (max-width: 480px) {
+  input, select, textarea { font-size: 16px !important; }
+}
