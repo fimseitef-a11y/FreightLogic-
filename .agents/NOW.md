@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (v24.0.9 pushed on claude/repo-review-9lpj28, 431/0 across 45; lock/app-js released) | 2026-09-14 |
-| gpt | Integrating v24.0.9, then production parity + GPT-owned certification/checklist reconciliation | 2026-09-14 |
+| gpt | — idle — (v24.0.9 integrated; certification/parity reconciliation branch ready for PR) | 2026-09-14 |
 
 ---
 
