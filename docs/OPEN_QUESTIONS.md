@@ -1,7 +1,7 @@
 # FreightLogic Open Questions
 
-Version: 1.3.0
-Snapshot date: 2026-08-26
+Version: 1.4.0
+Snapshot date: 2026-09-14
 Owner lane: GPT (`docs/`)
 Status: operator confirmation queue
 
@@ -77,6 +77,10 @@ Use one of these dispositions when resolved:
 33. **CONFIRMED — 2026-08-26 — Milestone 1 MPG fallback parity.** The operator explicitly approved reconciling the stale `MW.mpg: 16.5` fallback/source label with the operator-confirmed approximately **17.5 MPG loaded baseline** already recorded in `OPERATOR_TRUTH.md`. This is authorized as a narrowly bounded Milestone-1 source-of-truth parity repair, not a new feature. Required implementation behavior: the fallback/comment must no longer contradict Gate 0, while an explicit user vehicle-MPG setting remains higher priority and must continue to override the fallback. Claude/core lane owns the runtime/test implementation under the normal `app.js` lock and full-suite rules.
 
 These resolved items remain here as an audit trail rather than being deleted.
+
+## Cross-border rate authority questions
+
+34. **Canada protective-rate authority:** current durable project material carries materially different Canada numbers with different provenance. One policy narrative carries roughly **US→Canada $1.69 True-RPM floor / $1.75–$2.25 target** and **Canada→US $1.25–$1.55**, while a separate broker-relay/market narrative carries materially lower ranges and is not established here as an operator-approved protective floor. The recovered evidence does not prove that both sources have equal authority or even describe the same concept (protective floor versus target versus market observation). **Do not change FreightLogic’s Canada pricing/floors from either narrative by inference.** Resolve only from an explicit operator correction or stronger primary evidence that identifies which figures are active and what each figure means.
 
 ## Resolution discipline
 

@@ -2,9 +2,9 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-13.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
 
-Current runtime synchronization point: exact Git SHA `c02ed36bcc6c81a182c81aec0d6358d39fc90bbf`, **FreightLogic v24.0.8 / IndexedDB v15 / Worker v15**. Claude's routing/boot repair is merged; its CI passed 406 tests. Live checks observe app 24.0.8 and Worker 15, matching eleven inspected asset files plus current security/CORS headers. `admin-driver-ui.js` returned 404 because of a deployment exclusion; its repair must deploy and be re-probed before final asset certification. Authenticated Worker smokes, six-width visual acceptance, private-history reconciliation, and physical-device evidence remain open. Do not convert source, deployment, preview, or desktop evidence into a physical-device PASS.
+Current runtime synchronization point: exact Git SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`, **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**. PR #175 integrated the pickup-feasibility gate and its PR suite passed **431 tests / 0 failures across 45 spec files**. Cloudflare successfully built/deployed this exact SHA for `freightlogic-v2` (build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`). The source deployment inventory now covers every declared runtime asset and no longer excludes `admin-driver-ui.js`. The exact v24.0.9 live all-asset parity sweep, authenticated Worker smokes, six-width visual acceptance, private-history reconciliation, and physical-device evidence remain open. Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
 Before testing, record the exact frozen production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
@@ -15,7 +15,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify the exact named final candidate generation.
+4. Close/reopen online and verify **24.0.9** is active on exact candidate SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -46,7 +46,7 @@ PASS requires evidence and provenance to survive reload, non-carrier money not t
 5. Navigate through Today, Loads, Evaluate, Trips, and Money while offline.
 6. Reconnect and reopen again.
 
-PASS requires offline launch, durable offline saves, working structural navigation, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback.
+PASS requires offline launch, durable offline saves, working structural navigation, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback. `admin-driver-ui.js` must also be available after the normal online prime; the old v24.0.8 production 404 may not be treated as current evidence.
 
 ## A5. Local export/import + secret exclusion
 
@@ -85,29 +85,50 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
+## A10. v24.0.9 pickup-feasibility gate
+
+Use a synthetic load with an optional pickup cutoff.
+
+1. Leave Trip Planning average speed unset and create an obviously impossible pickup window.
+2. Confirm the app does **not** invent a speed or a reachability verdict; ordinary economics remain unchanged by the new gate when speed is unset.
+3. Set an explicit realistic planning average speed in Settings.
+4. With known deadhead and an unreachable cutoff, Evaluate must show **CAN'T TAKE** before economics.
+5. Move the cutoff to a comfortably reachable time and confirm normal economics return.
+6. Clear deadhead entirely and verify UNKNOWN deadhead does not become zero or a false reachable result.
+7. Enter explicit deadhead `0` and verify it is treated as real zero distance.
+8. Create a reachable but under-30-minute-slack case and verify it is advisory/tight only; it must not independently alter grade/verdict/bid authority.
+
+PASS requires the exact v24.0.9 fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
+
 # B. Live deployment blockers
 
-Run these against the same final production candidate used for A1-A9. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
+Run these against the same final production candidate used for A1-A10. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
 ## B1. Exact production app generation
 
-Current evidence for **v24.0.7**: **DEPLOY BUILD SUCCEEDED / EXACT PARITY NOT RUN**. Cloudflare built/deployed runtime commit `d2c9a9e`, but the last exact production app/PWA byte-parity PASS is still v24.0.5 from 2026-09-12.
+Current evidence for **v24.0.9**: **PRODUCTION BUILD SUCCEEDED / EXACT LIVE ALL-ASSET PARITY NOT RUN**. Cloudflare's GitHub check succeeded for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`, build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`. Source-side deployment coverage derives 23 runtime assets and confirms none is excluded from deploy, including `admin-driver-ui.js`.
 
-PASS requires the exact final production SHA/generation, app/PWA/service worker/manifest/static assets (including `modern-shell.js`), and security policy to match the named source candidate.
+PASS still requires the live production origin to match the exact final SHA/generation across every derived runtime asset, app/PWA/service worker/manifest/static assets, `modern-shell.js`, and security policy. A Cloudflare build success does not prove byte/content parity by itself.
 
 ## B2. Worker health + auth boundary
 
-Current evidence: **v15 source is merged but v15 deployment is not yet observed**. Worker v14 is the last confirmed deployed generation. PR #163 fixed the stale preflight pin that blocked the first v15 attempt.
+Current evidence: **Worker v15 LIVE FREE CHECKS PASSED ON 2026-09-13 / AUTHENTICATED CHECKS NOT RUN**. Worker source did not change in v24.0.9.
 
-PASS requires `/health` to return 200 and report Worker `15`, production-origin CORS to target `https://freightlogic-v2.fimseitef.workers.dev`, unauthorized admin/driver requests to be denied, and no secret/token exposure.
+Observed free checks: `/health` HTTP 200/version 15; production-origin CORS exact; backup OPTIONS HTTP 204; unauthorized admin denied HTTP 401.
+
+PASS for final certification additionally requires authenticated authority/backup boundaries with a dedicated non-published test identity and no secret exposure.
 
 ## B3. Live `/evaluate` authority smoke
 
-After Worker v15 is deployed, PASS requires a complete canonical decision to remain client-owned and an incomplete/`UNAVAILABLE` decision to stay unavailable—no Worker/overlay fabrication of `REJECT`, `F`, zero True RPM, or `$0` bid.
+PASS requires a complete canonical decision to remain client-owned and an incomplete/`UNAVAILABLE` decision to stay unavailable—no Worker/overlay fabrication of `REJECT`, `F`, zero True RPM, or `$0` bid.
+
+Status: **NOT RUN authenticated**.
 
 ## B4. Live `/extract` / backup / rotation authority smoke
 
 Where deployed/enabled, use synthetic data. Extraction must return bounded evidence only; authenticated backup/full-delta/restore must preserve data/authority semantics. In-place token rotation must keep the same user identity and existing backup history while invalidating the old token. A failed/unavailable source must remain explicit.
+
+Status: **NOT RUN authenticated**.
 
 ## B5. Rollback / fix-forward evidence
 
@@ -144,4 +165,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD** until Worker v15 is deployed and live-verified, exact final app/PWA production parity is observed, the recovered private-history bundle is reconciled, and all applicable physical-iPhone blockers are PASS. A later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md` before the release is frozen.
+The release remains **HOLD** until exact v24.0.9 live production all-asset parity is observed, authenticated Worker authority/backup smokes pass, the recovered private-history bundle is reconciled, six-width visual acceptance passes, and all applicable physical-iPhone blockers are PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md` before the release is frozen.
