@@ -41,12 +41,14 @@ test('[LPR-02] the workflow is read-only and takes no secrets', () => {
   const wf = read(WORKFLOW);
   ok(/^permissions:\s*\n\s+contents:\s*read\s*$/m.test(wf),
     'permissions must be exactly `contents: read` — a verification job must not be able to write');
-  ok(!/secrets\./.test(wf),
-    'this is the UNAUTHENTICATED sweep: it must not reference any secret. Authenticated smokes stay separate.');
-  const body = wf.replace(/^\s*#.*$/gm, '');
+  // Comments are allowed to explain that the workflow uses no secrets. What is
+  // forbidden is an executable GitHub Actions secret expression/binding.
+  const executable = wf.replace(/^\s*#.*$/gm, '');
+  ok(!/\$\{\{\s*secrets\./.test(executable),
+    'this is the UNAUTHENTICATED sweep: executable workflow text must not reference any secret. Authenticated smokes stay separate.');
   for (const forbidden of [/\bwrangler\b/i, /\bgit\s+push\b/i, /\bgit\s+commit\b/i,
                            /wrangler-action/i, /peter-evans\/create-pull-request/i]) {
-    ok(!forbidden.test(body),
+    ok(!forbidden.test(executable),
       `the workflow body must not run ${forbidden} — on FAILURE it reports, never repairs or deploys`);
   }
 });
