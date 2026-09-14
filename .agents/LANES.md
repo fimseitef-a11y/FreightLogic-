@@ -44,6 +44,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | gpt | **Temporary operator-directed completion takeover (2026-09-14)** limited to release/certification tooling; core runtime scripts remain behavior-preserving and must not change app authority. |
+| `scripts/verify-cloudflare-parity.mjs` | claude | **Operator-approved exact-file reassignment (2026-09-14)**, narrower than the `scripts/` takeover row above and therefore winning by longest-match. Release-generation markers only: `tests/unit/cache-generation.spec.mjs` CG-08 derives this file's `EXPECTED` block from `APP_VERSION`, so the marker bump cannot be split from the app bump and a version bump was otherwise impossible without a cross-lane edit. `workerVersion` stays the gpt lane's to move. Returns with the `scripts/` row when the takeover ends. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |

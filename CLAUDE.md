@@ -2333,6 +2333,20 @@ overwritten to prefer this lane's copy. The claude-lane duplicates
 were deleted rather than landed alongside, because two specs asserting the same
 contract is how the two copies drift apart.
 
+**One exact-file lane reassignment, operator-approved.** The generation bump
+needs `scripts/verify-cloudflare-parity.mjs`, which the takeover row hands to
+gpt — and CG-08 derives that file's `EXPECTED` block from `APP_VERSION`, so the
+marker bump cannot be split from the app bump. Lanes CI correctly rejected the
+cross-lane edit. `.agents/LANES.md` now carries an exact-file row giving that one
+file to claude; it is narrower than the `scripts/` row and wins by longest-match,
+so the rest of `scripts/` and all of `tests/` stay with gpt, and `workerVersion`
+stays theirs to move. It returns with the `scripts/` row when the takeover ends.
+Claimed under `claude-lanes-parity-file-reassign`, after reaping gpt's
+`gpt-worker-v16-authority-hotfix` lock — stale since 09:40Z against a 17:13Z
+reap, covering work already merged to `main` — and logging that reap in
+`.agents/STATUS.md` per the protocol, rather than treating a grantless lock as
+ignorable.
+
 **Three findings from the discarded work are worth keeping even though the code
 is not**, and are offered to the gpt lane through `/.agents/inbox/` rather than
 forced across the lane boundary:
