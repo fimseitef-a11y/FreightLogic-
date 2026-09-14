@@ -3,13 +3,24 @@
  * FreightLogic — rollback / fix-forward evidence generator (completion gate B5).
  *
  * Read-only by design: no checkout, revert, push, deploy, secret read or network
- * request. The gate verifies the frozen v24.0.9 runtime candidate, proves the
- * immediately previous app generation is NOT a safe rollback because it lacks
- * the pickup-feasibility safety gate, verifies Worker v16 is the current source,
- * and verifies an executable fix-forward deployment path exists.
+ * request. The gate identifies the current runtime candidate, identifies the
+ * immediately previous app generation, proves whether rolling back to it would
+ * regress a named safety gate, confirms the repository Worker source and the
+ * live-parity verifier agree on one Worker generation, and confirms an
+ * executable fix-forward deployment path exists.
  *
- * A PASS therefore does NOT claim that an older build is safe. It proves the
- * opposite and records the approved recovery policy: FIX FORWARD.
+ * A PASS does NOT claim that an older build is safe. Nothing here can ever
+ * produce a "safe rollback target" — the approved recovery policy is FIX
+ * FORWARD, and an older build is disqualified either by a proven safety-gate
+ * regression or, absent that proof, by not being approved at all.
+ *
+ * NOTHING IN THIS FILE IS PINNED TO A RELEASE. Earlier revisions hardcoded the
+ * candidate SHA, the app generation and the Worker generation, so the gate went
+ * stale on every release and reported PASS while describing a superseded
+ * candidate — a green check for the wrong release, which is the exact failure
+ * class this repository keeps rediscovering. Every fact below is derived from
+ * the tree and from git history at run time, so this gate cannot drift out of
+ * date and needs no per-release edit.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -19,11 +30,16 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const RELEASE_CANDIDATE = '5446b097fe8791f3d7c79b5a5833a0930ee83cf2';
-const PREVIOUS_APP_CANDIDATE = 'a7b72592eb28fe073a65d28d9bcd61109e3ef026';
-const EXPECTED_APP_VERSION = '24.0.9';
-const PREVIOUS_APP_VERSION = '24.0.8';
-const EXPECTED_WORKER_VERSION = '16';
+// Safety gates that must never silently disappear by going backwards. Each is a
+// source identifier introduced by a release whose whole point was refusing to
+// price or grade something the app could not honestly price or grade. A previous
+// generation missing any of them is a PROVEN unsafe rollback target.
+const SAFETY_INVARIANTS = [
+  ['checkPickupFeasibility', 'pickup-time feasibility gate (v24.0.9) — prevents pricing a pickup that cannot be reached'],
+  ['checkVanFit', 'dimensional/payload pre-check (v23.9 7D) — prevents grading freight the van cannot carry'],
+  ['isDeadZoneEligible', 'canonical Dead Zone activation gate (X-04) — prevents survival-floor pricing without the gate'],
+  ['knownNum', 'UNKNOWN-is-not-zero money discipline (v24.0.1) — prevents a verdict derived from absent facts'],
+];
 
 function git(args, { allowFail = false } = {}) {
   try {
@@ -65,69 +81,108 @@ const pass = (msg) => console.log(`  PASS  ${msg}`);
 const fail = (msg) => { failures++; console.log(`  FAIL  ${msg}`); };
 const note = (msg) => console.log(`  NOTE  ${msg}`);
 
+/* ------------------------------------------------- derive the candidate */
+
+const workingApp = read('app.js');
+const workingSw = read('service-worker.js');
+const worker = read('cloud-backup-worker.js');
+
+const APP_VERSION = appVersion(workingApp);
+const WORKER_VERSION = workerVersion(worker);
+const HEAD = git(['rev-parse', 'HEAD']);
+
 console.log('== FreightLogic rollback / fix-forward evidence (B5) ==');
-console.log(`release candidate: ${RELEASE_CANDIDATE}`);
-console.log(`app generation:    v${EXPECTED_APP_VERSION}`);
-console.log(`Worker generation: v${EXPECTED_WORKER_VERSION}\n`);
+if (!APP_VERSION) {
+  fail('app.js does not declare a readable APP_VERSION — the candidate cannot be identified');
+}
+if (!WORKER_VERSION) {
+  fail('cloud-backup-worker.js does not declare a readable Worker generation');
+}
+console.log(`release candidate: ${HEAD}`);
+console.log(`app generation:    v${APP_VERSION ?? '?'}`);
+console.log(`Worker generation: v${WORKER_VERSION ?? '?'}\n`);
 
-const head = git(['rev-parse', 'HEAD']);
-pass(`HEAD resolves: ${head.slice(0, 12)}`);
+pass(`HEAD resolves: ${HEAD.slice(0, 12)}`);
 
-const candidate = git(['rev-parse', '--verify', `${RELEASE_CANDIDATE}^{commit}`], { allowFail: true });
-if (!candidate) {
-  fail(`release candidate ${RELEASE_CANDIDATE} is not present in this clone`);
-} else {
-  pass('frozen v24.0.9 release candidate exists');
-  const ancestor = git(['merge-base', '--is-ancestor', RELEASE_CANDIDATE, head], { allowFail: true }) !== null;
-  ancestor ? pass('release candidate is an ancestor of HEAD') : fail('release candidate is not an ancestor of HEAD');
+swVersion(workingSw) === APP_VERSION
+  ? pass(`candidate service worker identifies v${APP_VERSION} (SW_VERSION == APP_VERSION)`)
+  : fail(`candidate service-worker.js is v${swVersion(workingSw) ?? 'unreadable'}, expected v${APP_VERSION}`);
 
-  const app = show(RELEASE_CANDIDATE, 'app.js');
-  const sw = show(RELEASE_CANDIDATE, 'service-worker.js');
-  appVersion(app) === EXPECTED_APP_VERSION
-    ? pass(`release app.js identifies v${EXPECTED_APP_VERSION}`)
-    : fail(`release app.js version is ${appVersion(app) ?? 'unreadable'}, expected ${EXPECTED_APP_VERSION}`);
-  swVersion(sw) === EXPECTED_APP_VERSION
-    ? pass(`release service worker identifies v${EXPECTED_APP_VERSION}`)
-    : fail(`release service-worker.js version is ${swVersion(sw) ?? 'unreadable'}, expected ${EXPECTED_APP_VERSION}`);
-  app.includes('checkPickupFeasibility')
-    ? pass('release candidate contains the pickup-feasibility safety gate')
-    : fail('release candidate is missing checkPickupFeasibility');
+for (const [ident, why] of SAFETY_INVARIANTS) {
+  workingApp.includes(ident)
+    ? pass(`candidate contains ${ident} — ${why.split(' — ')[0]}`)
+    : fail(`candidate is MISSING the ${ident} safety gate (${why})`);
 }
 
+/* --------------------------------------- derive the previous generation */
+
 console.log('\n-- previous app generation --');
-const previous = git(['rev-parse', '--verify', `${PREVIOUS_APP_CANDIDATE}^{commit}`], { allowFail: true });
-if (!previous) {
-  fail(`previous app candidate ${PREVIOUS_APP_CANDIDATE} is not present in this clone`);
+
+// The commit that introduced this generation's APP_VERSION; its first parent is
+// the tip of the generation before it. Falls back to walking app.js history if
+// the marker was introduced inside a merge commit.
+function findPreviousGenerationTip() {
+  const introducing = git(
+    ['log', '--format=%H', '-S', `const APP_VERSION = '${APP_VERSION}';`, '--', 'app.js'],
+    { allowFail: true },
+  );
+  const introduced = introducing ? introducing.split('\n').filter(Boolean).pop() : null;
+  if (introduced) {
+    const parent = git(['rev-parse', '--verify', `${introduced}^`], { allowFail: true });
+    if (parent && appVersion(show(parent, 'app.js')) && appVersion(show(parent, 'app.js')) !== APP_VERSION) {
+      return parent;
+    }
+  }
+  const history = (git(['log', '--format=%H', '-n', '400', '--', 'app.js'], { allowFail: true }) || '')
+    .split('\n').filter(Boolean);
+  for (const sha of history) {
+    const v = appVersion(show(sha, 'app.js'));
+    if (v && v !== APP_VERSION) return sha;
+  }
+  return null;
+}
+
+const previousTip = findPreviousGenerationTip();
+let previousVersion = null;
+
+if (!previousTip) {
+  fail('no previous app generation is reachable in this clone — rollback evidence cannot be produced');
 } else {
-  const ancestor = git(['merge-base', '--is-ancestor', PREVIOUS_APP_CANDIDATE, RELEASE_CANDIDATE], { allowFail: true }) !== null;
-  ancestor ? pass('v24.0.8 candidate is a true ancestor of v24.0.9') : fail('named v24.0.8 candidate is not an ancestor of v24.0.9');
+  const oldApp = show(previousTip, 'app.js');
+  const oldSw = show(previousTip, 'service-worker.js');
+  previousVersion = appVersion(oldApp);
 
-  const oldApp = show(PREVIOUS_APP_CANDIDATE, 'app.js');
-  const oldSw = show(PREVIOUS_APP_CANDIDATE, 'service-worker.js');
-  appVersion(oldApp) === PREVIOUS_APP_VERSION
-    ? pass(`previous app identifies v${PREVIOUS_APP_VERSION}`)
-    : fail(`previous app version is ${appVersion(oldApp) ?? 'unreadable'}, expected ${PREVIOUS_APP_VERSION}`);
-  swVersion(oldSw) === PREVIOUS_APP_VERSION
-    ? pass(`previous service worker identifies v${PREVIOUS_APP_VERSION}`)
-    : fail(`previous service-worker version is ${swVersion(oldSw) ?? 'unreadable'}, expected ${PREVIOUS_APP_VERSION}`);
+  pass(`previous generation derived from history: ${previousTip.slice(0, 12)} (v${previousVersion ?? '?'})`);
 
-  if (!oldApp.includes('checkPickupFeasibility')) {
-    pass('v24.0.8 demonstrably lacks the pickup-feasibility gate — rollback is UNSAFE');
+  git(['merge-base', '--is-ancestor', previousTip, HEAD], { allowFail: true }) !== null
+    ? pass(`v${previousVersion} candidate is a true ancestor of v${APP_VERSION}`)
+    : fail(`derived v${previousVersion} candidate is not an ancestor of HEAD`);
+
+  swVersion(oldSw) === previousVersion
+    ? pass(`previous service worker identifies v${previousVersion}`)
+    : fail(`previous service-worker is v${swVersion(oldSw) ?? 'unreadable'}, expected v${previousVersion}`);
+
+  const regressions = SAFETY_INVARIANTS.filter(([ident]) => !oldApp.includes(ident));
+  if (regressions.length) {
+    for (const [ident, why] of regressions) {
+      pass(`v${previousVersion} demonstrably lacks ${ident} — ${why}`);
+    }
+    pass(`v${previousVersion} is a PROVEN UNSAFE rollback target (${regressions.length} safety gate(s) absent)`);
   } else {
-    fail('v24.0.8 unexpectedly contains checkPickupFeasibility; reassess rollback safety');
+    note(`v${previousVersion} retains every named safety gate; no safety-gate regression is PROVEN for it.`);
+    note('That is not an approval. No older build is an approved rollback target, and absence of proof is not proof of safety.');
   }
 }
 
+/* ------------------------------------------------ Worker / recovery path */
+
 console.log('\n-- Worker / recovery path --');
-const worker = read('cloud-backup-worker.js');
-workerVersion(worker) === EXPECTED_WORKER_VERSION
-  ? pass(`repository Worker source is v${EXPECTED_WORKER_VERSION}`)
-  : fail(`repository Worker source is v${workerVersion(worker) ?? '?'}, expected v${EXPECTED_WORKER_VERSION}`);
+pass(`repository Worker source is v${WORKER_VERSION}`);
 
 const parity = read('scripts/verify-cloudflare-parity.mjs');
-parity.includes(`workerVersion: "${EXPECTED_WORKER_VERSION}"`)
-  ? pass(`live-parity verifier expects Worker v${EXPECTED_WORKER_VERSION}`)
-  : fail(`live-parity verifier is not aligned to Worker v${EXPECTED_WORKER_VERSION}`);
+parity.includes(`workerVersion: "${WORKER_VERSION}"`)
+  ? pass(`live-parity verifier expects the same Worker generation (v${WORKER_VERSION})`)
+  : fail(`live-parity verifier is not aligned to the repository Worker source (v${WORKER_VERSION})`);
 
 const deployWorkflow = read('.github/workflows/deploy-backup-worker.yml');
 const fixForwardReady = [
@@ -140,20 +195,22 @@ fixForwardReady
   ? pass('manual Worker fix-forward workflow is present with deploy + post-deploy verification')
   : fail('Worker fix-forward workflow is incomplete or unreadable');
 
+/* ------------------------------------------------ approved recovery policy */
+
 console.log('\n-- approved recovery policy --');
 note('APP: no older app SHA is approved as a safe rollback target.');
-note('v24.0.8 is specifically disqualified because it reintroduces pricing of unreachable pickups.');
+if (previousVersion) {
+  note(`v${previousVersion} is the only adjacent candidate and it is not approved.`);
+}
 note('WORKER: no older Worker deployment is approved as a safe rollback target.');
 note('Default for both components: FIX FORWARD from committed, tested source; then rerun parity/authority/backup gates.');
 
 console.log('\n== B5 verdict ==');
 if (failures) {
-  console.log(`FAILURE — ${failures} verification check(s) failed. Do not certify B5.`);
+  console.log(`FAIL — ${failures} check(s) failed. Rollback/fix-forward evidence is NOT established.`);
   process.exit(1);
 }
-
 console.log('PASS — current candidate identity and the fix-forward procedure are verified.');
-console.log(`Final runtime candidate: ${RELEASE_CANDIDATE}`);
+console.log(`Final runtime candidate: ${HEAD}`);
 console.log('Safe rollback target: NONE PROVEN.');
 console.log('Approved recovery action: FIX FORWARD.');
-process.exit(0);

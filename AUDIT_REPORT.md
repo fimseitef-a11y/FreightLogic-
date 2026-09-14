@@ -14,6 +14,11 @@
 > token is next used or its user is revoked, so every driver token minted under v7 remains
 > exposed at rest until rotated. See the banner above the P-series for detail.
 >
+> **New, 2026-09-14: W-01 is OPEN in production.** Appended at the very end of this report —
+> backup and delta keys collided inside one millisecond, so the second write silently destroyed
+> the first. Fixed in source at Worker **v17**; production still serves **v16**, so the finding
+> is live until that deploy is dispatched.
+>
 > Read "Findings" below as source-side history, not as the current production posture.
 >
 > Also stale by design: the F-series header below describes v23.8.3 and is left as written, but
@@ -1168,3 +1173,45 @@ than the findings above:
 
 The one behavioural change a driver may notice is rate limits moving from per-minute (20 eval /
 10 extract) to per-hour (100 eval / 50 extract) — a net increase in allowance.
+
+---
+
+## W-01 — Backup and delta keys collide inside one millisecond, destroying a backup — CONFIRMED, FIXED (Worker v17)
+
+**Severity: High.** Silent data loss in the backup component itself.
+
+**Where.** `cloud-backup-worker.js`, `POST /backup` and `POST /backup/delta`.
+
+**What.** The KV key is `user:<userId>:device:<id>:(backup|delta):<ts>`, where
+`<ts>` was `new Date().toISOString().replace(/[:.]/g,'-')` — millisecond
+precision. KV keys are unique. Two writes in the same millisecond therefore
+produced the same key: the second `put()` overwrote the first, the pointer
+recorded one key where two writes had occurred, and one backup or delta ceased to
+exist. Both requests returned `200`.
+
+**Reachable by ordinary use.** `cloudPushBackup()` followed immediately by a delta,
+or two deltas back to back, land inside one millisecond on any sufficiently fast
+client. Nothing in the client, the Worker or any gate reports it.
+
+**Reproduction.** `tests/unit/worker-pointer-race.spec.mjs` WPR-01/WPR-02 (merged
+with the v16 pointer-race repair) began failing on `main` when run on a host fast
+enough to co-locate their two writes: `exactly two deltas must be returned, got 1`
+and `full-backup pointer must contain exactly two keys — actual: 1`. Full suite on
+`main` at `10430bf`: **451 passed, 2 failed across 49 spec files.** The spec was
+correct; CI had been passing it on timing luck.
+
+**Fix.** `nextBackupTs()` — a module-scope monotonic clock that never returns a
+millisecond already handed out in this isolate. The key shape is deliberately
+unchanged, because `deltaTsFromKey()` parses it back into a real ISO instant and
+`getPtr()`'s lexical sort is chronological only while the transform stays monotonic
+for same-length strings.
+
+**Regression.** WPR-03 freezes `Date.now()` and drives four deltas through the real
+Worker inside one frozen millisecond: four unique keys, lexical order equal to
+chronological order, all four payloads readable, key shape still parseable. Negative
+control verified: reverting the clock fails WPR-03 while WPR-01/02 pass — the
+original defect's exact signature.
+
+**Status.** Fixed in source at Worker v17. **Not deployed** — production serves v16,
+so this finding is live in production until
+`.github/workflows/deploy-backup-worker.yml` is dispatched with `DEPLOY`.
