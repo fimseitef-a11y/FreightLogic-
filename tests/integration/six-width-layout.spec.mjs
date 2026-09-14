@@ -172,8 +172,13 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
     });
     ok(motion.length === 0, `reduced-motion still has long/decorative animations: ${JSON.stringify(motion)}`);
 
-    await openRoute(page, 'home');
-    await page.locator('#btnQuickTrip').click();
+    // Use the Trips page's always-visible Add Trip action. The Today quick-trip
+    // button is intentionally hidden for some empty/new-user states, so it is a
+    // poor geometry probe even though the modal it eventually opens is valid.
+    await openRoute(page, 'trips');
+    const addTrip = page.locator('#btnTripAdd');
+    await addTrip.waitFor({ state: 'visible', timeout: 10000 });
+    await addTrip.click();
     await page.waitForTimeout(120);
 
     const dialog = await page.evaluate(() => {
@@ -193,7 +198,7 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
     });
 
-    ok(!!dialog, 'Quick Trip must expose a representative modal/sheet/dialog surface');
+    ok(!!dialog, 'Add Trip must expose a representative modal/sheet/dialog surface');
     ok(dialog.left >= -1 && dialog.right <= 321, `320px modal overflows horizontally: ${JSON.stringify(dialog)}`);
     ok(dialog.width <= 321, `320px modal width ${dialog.width}px exceeds viewport`);
     ok(dialog.top >= -1 && dialog.bottom <= HEIGHT + 1, `320px modal escapes viewport vertically: ${JSON.stringify(dialog)}`);
