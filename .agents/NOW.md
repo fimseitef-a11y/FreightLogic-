@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (live-parity runner pushed on claude/repo-review-9lpj28 @0356219, 442/0 across 46; NOT yet on main, so not dispatchable) | 2026-09-14 |
+| claude | CLAUDE.md accuracy pass: Worker v15->v16 in Project Overview, live-parity section now misdescribes its own workflow (claude-owned doc only) | 2026-09-14 |
 | gpt | — idle — (PR #186 open: exact-path takeover for live-observed Worker v16 authority-order hotfix) | 2026-09-14 |
 
 ---
