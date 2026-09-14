@@ -1,3 +1,5 @@
+// Final certification marker: this user-authored commit intentionally triggers
+// the complete suite after the one-shot stylesheet repair commit from Actions.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
