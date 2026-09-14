@@ -14,10 +14,10 @@
 > token is next used or its user is revoked, so every driver token minted under v7 remains
 > exposed at rest until rotated. See the banner above the P-series for detail.
 >
-> **New, 2026-09-14: W-01 is OPEN in production.** Appended at the very end of this report —
+> **New, 2026-09-14: W-01 — CLOSED by deploy.** Appended at the very end of this report —
 > backup and delta keys collided inside one millisecond, so the second write silently destroyed
-> the first. Fixed in source at Worker **v17**; production still serves **v16**, so the finding
-> is live until that deploy is dispatched.
+> the first. Fixed at Worker **v17** and deployed the same day (run `34884719806`); production
+> `/health` now reports `17`.
 >
 > Read "Findings" below as source-side history, not as the current production posture.
 >
@@ -1212,6 +1212,14 @@ chronological order, all four payloads readable, key shape still parseable. Nega
 control verified: reverting the clock fails WPR-03 while WPR-01/02 pass — the
 original defect's exact signature.
 
-**Status.** Fixed in source at Worker v17. **Not deployed** — production serves v16,
-so this finding is live in production until
-`.github/workflows/deploy-backup-worker.yml` is dispatched with `DEPLOY`.
+**Status. CLOSED.** Fixed at Worker v17 and deployed to production 2026-09-14T19:05Z
+(run `34884719806`, from `main` @ `d58bfbe`, `DEPLOY`-confirmed dispatch of
+`.github/workflows/deploy-backup-worker.yml`). Production `/health` reports
+`{"ok":true,"version":"17"}`; the auto-triggered authenticated smoke (run
+`34884786623`) and a live parity re-dispatch (run `34885000070`) both PASS against
+the deployed Worker.
+
+**Residue:** backups or deltas already lost to a same-millisecond collision before
+this deploy are not recoverable — the losing write was never stored. Nothing in the
+data identifies them, because a collision leaves one valid key rather than a
+corrupt one.
