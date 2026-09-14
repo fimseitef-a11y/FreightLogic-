@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.9 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v16** at `https://freightlogic-backup.fimseitef.workers.dev`. v15 added in-place token rotation; **v16** moves the `OPENAI_API_KEY` guard in `POST /evaluate` to *after* request validation and canonical-absence projection, so a canonically UNAVAILABLE or malformed decision takes its model-free authority path instead of returning HTTP 500 `AI evaluation not configured` — auth and rate limits still run ahead of both. App/PWA is v24.0.9 and DB remains v15. Source repair is not deployment: production status lives in the current certification record, not here.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2207,13 +2207,28 @@ repo's agent proxies refuse to tunnel to the deployed `workers.dev` origins, and
 the operator works from a phone. GitHub-hosted runners have ordinary outbound
 access, so the observation that was impossible everywhere else is a button there.
 
-`.github/workflows/verify-live-parity.yml` — `workflow_dispatch` only,
-`permissions: contents: read`, no secrets, Node 22, no npm install (the verifier
-is plain Node with global `fetch`). It records the exact SHA under verification,
-runs the real verifier with no `--static-only` shortcut, writes the full log to
-the job summary, and on anything but PASS it stops and reports. It never deploys
-and never writes to the repository: auto-repairing production from a verification
-job is the branch-pushing CI machinery this file records as removed on purpose.
+`.github/workflows/verify-live-parity.yml` — `permissions: contents: read`, no
+secrets, Node 22, no npm install (the verifier is plain Node with global
+`fetch`). It records the exact SHA under verification, runs the real verifier
+with no `--static-only` shortcut, writes the full log to the job summary, and on
+anything but PASS it stops and reports. It never deploys and never writes to the
+repository: auto-repairing production from a verification job is the
+branch-pushing CI machinery this file records as removed on purpose.
+
+**Triggers — corrected 2026-09-14.** It shipped `workflow_dispatch`-only, and an
+earlier revision of this section still says so. Under the operator-directed
+completion takeover the gpt lane added `push: branches: [main]`, so main is now
+observed automatically on every merge, and LPR-01 was rewritten to require both
+triggers rather than forbid the push. The prohibition that mattered is intact and
+still asserted: no `pull_request`, `issue_comment`, `schedule`,
+`repository_dispatch` or `workflow_run` trigger, because those are the shapes the
+removed comment-triggered repair machinery took. Worth knowing what the change
+costs: an automatic run makes main's checks depend on an external origin, so an
+UNOBSERVED verdict now shows as a red X on main for a network reason rather than
+a code one. That is survivable because this job is separate from `tests.yml` and
+blocks nothing, and because UNOBSERVED is a distinct verdict rather than a claimed
+failure — which is exactly why the three-outcome split below had to exist before
+an automatic trigger was safe to add.
 
 **The part that actually mattered: three outcomes, not two.** The request assumed
 PASS / FAILURE / UNOBSERVED already existed. They did not — an unreachable origin
@@ -2247,23 +2262,48 @@ itself. Three properties keep it honest:
 - **`--static-only` can never be UNOBSERVED.** It deliberately never attempts the
   live half, so every offline developer run stays a clean PASS.
 
-**Tests.** `tests/unit/live-parity-runner.spec.mjs` (new, 10). LPR-05…LPR-10
-**spawn the real verifier** and assert its real exit code rather than grepping
-the source for the strings that would produce one: `--static-only` → 0;
+**The workflow spliced dispatch inputs into a shell.** Found reviewing my own
+work, not reported. `${{ inputs.app_origin }}` sat inside a `run:` block, and
+Actions substitutes that into the script TEXT before the shell parses it — so a
+dispatched value becomes shell source and quoting at the use site is no defence.
+Only a user with write access can dispatch, which bounds it, but "only trusted
+people can reach it" is the reasoning that leaves an injection in place until the
+trust boundary moves, and untrusted input is handled carefully everywhere else
+here (CSP, `escapeHtml`, `csvSafeCell`, session-scoped tokens). Both inputs now
+bind through `env:` and the verifier is invoked with a quoted argument array:
+verified in a real shell that an empty input contributes zero arguments (so the
+verifier keeps its own production defaults) and `x; touch /tmp/PWNED` stays one
+literal argument with no file created.
+
+**Tests.** `tests/unit/live-parity-runner.spec.mjs` (11). LPR-05…LPR-10 **spawn
+the real verifier** and assert its real exit code rather than grepping the source
+for the strings that would produce one: `--static-only` → 0;
 `https://unreachable.invalid` (RFC 2606, deterministic offline) → 2; a local
 server that 404s everything → 1; a local server that answers once and then
-destroys every connection → 1. LPR-01…LPR-04 pin the workflow's shape.
+destroys every connection → 1. LPR-01…LPR-04 pin the workflow's shape, and LPR-11
+forbids `${{ inputs… }}` or `${{ github.event… }}` on any non-comment line except
+an `env:` binding.
 
 Negative controls, all verified to fire: collapsing UNOBSERVED back into FAILURE
-fails LPR-06/08; adding a `push:` trigger fails LPR-01; `contents: write` fails
-LPR-02; and dropping the "a response arrived" record fails LPR-10.
+fails LPR-06/08; `contents: write` fails LPR-02; dropping the "a response
+arrived" record fails LPR-10; and restoring the direct interpolation fails
+LPR-11. (The `push:`-trigger control listed here originally is gone by design —
+LPR-01 now requires that trigger; see the note above.)
 
-That last one is worth keeping in the record. It did **not** fire against the
-first two verdict tests — an all-404 origin produces no transport errors, so the
-verdict was already correct there by a different route. Only the *partial* case
-(answers once, then dies) actually depends on that record, and the control stayed
-silent until a test for it existed. A negative control that does not fire is the
-finding, not a formality.
+**Two negative controls were silent before they were real, and that is the part
+worth keeping.** A control that does not fire is the finding, not a formality —
+it means the test asserts less than it claims.
+
+1. Dropping the "a response arrived" record failed nothing against the first two
+   verdict tests: an all-404 origin produces no transport errors, so the verdict
+   was already correct there by a different route. Only the *partial* case — an
+   origin that answers once, then dies — depends on that record, and the control
+   stayed silent until LPR-10 existed.
+2. LPR-11's first implementation parsed `run:` blocks with a lazy regex that
+   truncated every block to its first line, so it inspected almost nothing and
+   restoring the injection did **not** fail it. Rewritten to check per line, the
+   control fires. This is why LPR-11 checks lines rather than blocks, and the
+   comment there says so.
 
 `runVerifier()` is deliberately async: the synchronous form blocks this process's
 event loop, so the in-process HTTP server in LPR-09/10 could never accept the
