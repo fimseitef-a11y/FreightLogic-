@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (branch claude/repo-review-9lpj28 pushed: deploy-asset coverage gate + DAC spec, 411/0 across 44) | 2026-09-13 |
+| claude | v24.0.9 pickup-feasibility gate (lock/app-js held; app.js + index.html + release bump + tests) | 2026-09-14 |
 | gpt | — idle — (PR #173 open; verifying CI/deployment) | 2026-09-13 |
 
 ---
