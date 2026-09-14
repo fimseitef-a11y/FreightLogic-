@@ -1,7 +1,20 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.9 USA ENGINE
+/** FreightLogic v24.0.10 USA ENGINE
+ *  v24.0.10 "Sixteen Pixels": the new six-width layout gate
+ *          (tests/integration/six-width-layout.spec.mjs) measured every visible
+ *          evaluator field at 320/375/390/393/430/440 CSS px and found two that
+ *          resolve to 13px — the Currency select and the bid-mode selector, both
+ *          inline-styled in index.html and both behind "More Details", which is
+ *          why no earlier pass saw them. iOS Safari zooms the viewport when a
+ *          form control under 16px takes focus, so tapping Currency threw the
+ *          driver out of the load they were pricing. Both are 16px now. The
+ *          generation bump is the deliverable half: CACHE_NAME is
+ *          `freightlogic-${SW_VERSION}`, so an index.html fix shipped without it
+ *          would never reach an installed PWA — the v24.0.3 lesson applied
+ *          rather than relearned. No decision, economics or persistence
+ *          behaviour changed; DB stays 15 and the Worker is untouched.
  *  v24.0.9 "Can You Even Get There": until now the evaluator had no notion of
  *          time. It would grade, price and recommend a bid on a load whose
  *          pickup had already closed, or that sat further away in deadhead
@@ -183,7 +196,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.9';
+const APP_VERSION = '24.0.10';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
