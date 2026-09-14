@@ -41,11 +41,15 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `midwest-stack-config.json` | claude | Decision/bid configuration. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
+| `scripts/verify-rollback.mjs` | gpt | Operator-directed 2026-09-14 completion takeover: B5 read-only rollback/fix-forward evidence only. Broader `scripts/` ownership remains Claude. |
 | `scripts/` | claude | Verification/release/tooling scripts. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | claude | Test harness and assertions. GPT does not edit Claude-owned suites unless explicitly reassigned later. |
+| `tests/run-all.mjs` | gpt | Operator-directed 2026-09-14 completion takeover: wire the two exact release-gate regressions below into the aggregate suite. |
+| `tests/unit/rollback-verifier-current.spec.mjs` | gpt | Operator-directed 2026-09-14 completion takeover: current B5 verifier regression only. |
+| `tests/integration/six-width-layout.spec.mjs` | gpt | Operator-directed 2026-09-14 completion takeover: browser geometry acceptance only. |
+| `tests/` | claude | Test harness and assertions. GPT does not edit other Claude-owned suites unless explicitly reassigned later. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
@@ -56,12 +60,16 @@ Claude owns core implementation, audit remediation, security/storage/decision lo
 
 The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
 
+### Operator-directed completion takeover — 2026-09-14
+
+The operator explicitly directed GPT to take over and complete the app. That approval is implemented narrowly rather than as a wholesale core-lane transfer: only `scripts/verify-rollback.mjs`, `tests/run-all.mjs`, `tests/unit/rollback-verifier-current.spec.mjs`, and `tests/integration/six-width-layout.spec.mjs` are GPT-owned for the remaining v24.0.9 release-evidence gates. `app.js`, Worker/auth/storage code, the service worker, `.github/`, and every other script/test remain under their existing ownership/lock rules.
+
 ## Enforcement
 
 This map is enforced mechanically, not by recollection:
 
 - `scripts/lane-guard.mjs` parses **this file** as the single source of truth. There is no generated copy to drift from it.
-- `.githooks/pre-commit` rejects a staged change to a foreign lane, and a staged change to a `SHARED` path with no held lock covering it. Enable per clone: `git config core.hooksPath .githooks` and `git config freightlogic.agent <claude|gpt>`.
+- `.githooks/pre-commit` rejects a staged change to a foreign lane, and a staged change to a `SHARED` path with no held lock covering that path. Enable per clone: `git config core.hooksPath .githooks` and `git config freightlogic.agent <claude|gpt>`.
 - `.github/workflows/lanes.yml` re-checks path ownership and commit prefixes on every PR to `main`. The hook is fast feedback and is bypassable; CI is the boundary.
 - A path with **no row in this table** fails closed. Adding a file means adding its row.
 - A lock past `expected_release_utc` + 2h is reported as **stale** and grants nothing — to its holder either. It is never auto-stolen; reap it deliberately per `/AGENTS.md`.
