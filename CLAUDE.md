@@ -2547,3 +2547,132 @@ Full suite after this sweep, run locally against real headless Chromium:
 **457 passed, 0 failed across 49 spec files** — up from 451/2 on `main`, which is
 the W-01 repair (+1 new assertion, 2 restored) plus the six rewritten B5
 assertions. Nothing was skipped, quarantined or weakened.
+
+---
+
+## Completion sweep, second round — the last two gates, and one lane
+
+Tooling, governance and documentation. No shipped file changed: `APP_VERSION`
+and `SW_VERSION` stay `24.0.10`, `DB_VERSION` 15, Worker v17.
+
+### The repository is one lane now
+
+`.agents/LANES.md` had a 2026-09-14 paragraph handing `.github/`, `scripts/`,
+`tests/` and `cloud-backup-worker.js` to the gpt lane "while Claude is idle,"
+ending "after Issue #119 is closed **or** when the takeover is explicitly
+ended." The operator ended it explicitly, and every non-`SHARED` path is now
+`claude`. The four exact-file rows that had been carved out of the takeover are
+deleted rather than kept — their parent rows own them again, and a redundant
+narrower row is just another thing to go stale.
+
+**What did not change is the more important half.** `SHARED` is still `SHARED`:
+`app.js` still needs `lock/app-js` and a full suite, and so do `index.html`,
+`service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json` and the
+protocol surface. That serialization was never about two *agents* — it is a
+1.1MB single-IIFE file where two concurrent editors lose work whoever they are,
+and release-critical files where a silent concurrent edit ships a broken
+generation. Commit-prefix discipline, the full-suite gate and release-marker
+discipline are untouched. A path with no row still fails closed, and
+`tests/unit/lane-guard.spec.mjs` still passes 19/19 against the rewritten map.
+
+Restoring the split is a pure revert of the consolidation. Nothing in
+`scripts/lane-guard.mjs` encodes a two-agent assumption, and it reads the table
+rather than a generated copy, so the split can come back without touching code.
+
+### Gate 2 — production service-worker / offline behaviour
+
+The completion plan's second blocking item asked to "prove the exact candidate,
+including the formerly missing admin runtime asset, survives normal
+update/reload/offline behavior without destructive clearing." Nothing in the
+repository could do that: `verify-cloudflare-parity.mjs` fetches each declared
+asset and asserts status and content, which proves **delivery**, not what a
+browser does after installing the deployed worker.
+
+`scripts/verify-production-sw.mjs` + `.github/workflows/verify-production-sw.yml`
+(read-only, no secrets, manual dispatch plus every push to `main`) close it.
+Against production, in order: the worker installs and activates; the page is
+controlled after one reload; `admin-driver-ui.js` and `midwest-stack-authority.js`
+are injected **and actually fetchable as script**; all 23 declared assets are in
+the precache under the current generation; the driver shell renders with no
+uncaught errors; with the network verifiably down a subresource miss returns
+`504 text/plain` rather than the HTML shell while a drifted `?v=` on a known
+asset self-heals; the cached shell is a complete current-generation document;
+and exactly one generation cache survives.
+
+**Three things this gate had to learn the hard way, all worth keeping:**
+
+1. **Offline emulation lapses across a navigation.** `context.setOffline()` is
+   documented as unreliable for service-worker fetches, and CDP
+   `Network.emulateNetworkConditions` is scoped to the target it is sent to — a
+   service worker is a separate target, and it *restarts* on navigation. The
+   same uncached path returned the worker's offline marker before a reload and a
+   live origin 404 immediately after one. Re-applying the emulation and
+   re-attaching a fresh CDP session were both tried; neither carries over. So
+   every offline claim is re-proved at the moment it is made, and the one claim
+   that cannot be — the offline **navigation** itself — is stated as not
+   observed rather than implied. That is checklist item A4, on a device.
+2. **The offline-effectiveness probe had to catch the defect too.** The probe
+   reads the worker's own `X-FL-Offline: 1` marker, which a worker carrying the
+   pre-v24.0.4 defect never emits — so a *broken* worker read as "offline
+   emulation did not take" and skipped the very check that catches it. Observed,
+   not theorised: reintroducing the defect in a mirrored origin turned the gate
+   UNOBSERVED instead of FAILURE. The probe now also inspects the body: a 200
+   HTML answer for a path that has never existed **is** the masquerade, in any
+   network state.
+3. **`freightlogic-share-v2` is not a stale generation.** The first
+   single-generation assertion counted every `freightlogic-*` cache and failed
+   on SHARE_CACHE, which is supposed to be there. Only version-shaped names are
+   generations.
+
+Negative controls, all verified to fire: an unreachable origin → UNOBSERVED
+(exit 2); an origin with `admin-driver-ui.js` deleted → FAILURE on two
+independent axes (injected-but-404, and missing from the precache), reproducing
+the 2026-09-13 defect exactly; a mirrored origin with the pre-v24.0.4
+`offlineFailure` reverted to the app shell → FAILURE on the masquerade. A
+healthy origin still passes 16/16.
+
+`tests/unit/production-sw-gate.spec.mjs` (7, new) pins the workflow's authority
+(read-only, no secrets, no deploy path, dispatch input never reaching the shell),
+the three-verdict semantics, and each assertion that exists because a real defect
+once got past a green check.
+
+### The certification record now matches the candidate
+
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` supersedes the
+2026-09-14 addendum and is the certification authority. Five of that addendum's
+seven blocking items are closed by actual observed runs (live all-asset parity,
+production service worker, authenticated Worker authority + backup, six-width
+visual acceptance, rollback/fix-forward), plus W-01 — a data-loss defect nobody
+had listed, because nobody knew it was there.
+
+`FIELD_TEST_CHECKLIST.md` was **two generations stale**, reading `24.0.9` /
+Worker `v15` while production served `24.0.10` / `v17`. That is not cosmetic: a
+tester would have confirmed the wrong build and recorded a PASS for a candidate
+that is not the one being certified. It now carries the current generations, its
+B-section records what was actually observed, it gained **B6** for the new
+production service-worker gate, and it deliberately **no longer carries its own
+copy of the candidate SHA** — it reads it from the certification document, which
+is the same anti-drift move as the derived B5 gate.
+
+`scripts/m7-certify.mjs`'s live-gate list said `PENDING` with a local command,
+which is still true of any local invocation and is why it stays `PENDING` — a
+local run observes nothing live, and saying otherwise is the inference that
+runner exists to refuse. It now names the GitHub workflow for each, and includes
+the new production service-worker gate.
+
+### Still HOLD, and now precisely two things
+
+- **Private-history reconciliation.** The five raw M6 files are not in this
+  repository and have not been mounted in any session. The instrument is
+  committed and ready; only the data is missing. Reconstructing the bundle from
+  summaries would test the summary, not the source, which is the one thing this
+  gate exists to catch.
+- **Physical iPhone A1-A10.** Safe-area insets, the software keyboard,
+  background GPS across a real lock/unlock, iOS permission revocation mid-trip,
+  installed-PWA update behaviour, and a genuine Airplane Mode round trip —
+  including the offline navigation gate 2 declines to claim.
+
+Everything else that could be observed from an automated environment has been,
+on the live production origin, at this exact generation.
+
+Full suite: **464 passed, 0 failed across 50 spec files** (from 457/49).

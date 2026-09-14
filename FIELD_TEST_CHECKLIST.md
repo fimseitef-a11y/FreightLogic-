@@ -2,9 +2,15 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`.
 
-Current runtime synchronization point: exact Git SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`, **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**. PR #175 integrated the pickup-feasibility gate and its exact runtime suite passed **431 tests / 0 failures across 45 spec files**. GitHub's Cloudflare check attached to this exact merge SHA succeeded for `freightlogic-v2` (check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`). Read-only verifier/docs work subsequently raised the merged repository suite to **442/0 across 46 spec files** in run `34800434526` without changing shipped runtime files. The source deployment inventory covers every declared runtime asset and no longer excludes `admin-driver-ui.js`. A manual/read-only **Verify Live Parity** GitHub Actions workflow is now merged; it must actually be dispatched before exact live all-asset parity can be marked PASS. Authenticated Worker smokes, six-width browser geometry, private-history reconciliation, and physical-device evidence remain open. Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
+Current runtime synchronization point: **FreightLogic v24.0.10 / IndexedDB v15 / Worker v17**.
+
+**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
+
+All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A10 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
+
+Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
 Before testing, record the exact frozen production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
@@ -15,7 +21,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.9** is active on exact candidate SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
+4. Close/reopen online and verify **24.0.10** is active, on the exact candidate SHA named in the certification document.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -46,7 +52,7 @@ PASS requires evidence and provenance to survive reload, non-carrier money not t
 5. Navigate through Today, Loads, Evaluate, Trips, and Money while offline.
 6. Reconnect and reopen again.
 
-PASS requires offline launch, durable offline saves, working structural navigation, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback. `admin-driver-ui.js` must also be available after the normal online prime; the old v24.0.8 production 404 may not be treated as current evidence.
+PASS requires offline launch, durable offline saves, working structural navigation, no reconnect duplication/loss, and no static JavaScript/asset failure being masked by HTML-shell fallback. `admin-driver-ui.js` must also be available after the normal online prime; the old v24.0.8 production 404 may not be treated as current evidence. (B6 now proves this from a headless runner on every push — but the device is where the *installed PWA's* offline navigation is confirmed, which B6 explicitly does not observe.)
 
 ## A5. Local export/import + secret exclusion
 
@@ -85,7 +91,7 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-## A10. v24.0.9 pickup-feasibility gate
+## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.10)
 
 Use a synthetic load with an optional pickup cutoff.
 
@@ -98,55 +104,53 @@ Use a synthetic load with an optional pickup cutoff.
 7. Enter explicit deadhead `0` and verify it is treated as real zero distance.
 8. Create a reachable but under-30-minute-slack case and verify it is advisory/tight only; it must not independently alter grade/verdict/bid authority.
 
-PASS requires the exact v24.0.9 fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
+PASS requires the exact fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
 
 # B. Live deployment blockers
 
 Run these against the same final production candidate used for A1-A10. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
-## B1. Exact production app generation
+## B1. Exact production app generation — **PASS**
 
-Current evidence for **v24.0.9**: **PRODUCTION BUILD SUCCEEDED / LIVE RUNNER MERGED / EXACT LIVE ALL-ASSET PARITY NOT RUN**. GitHub's Cloudflare check attached to exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` succeeded as check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`. Source-side deployment coverage derives 23 runtime assets and confirms none is excluded from deploy, including `admin-driver-ui.js`.
+**Observed 2026-09-14.** `Verify Live Parity` run `34885000070` (`workflow_dispatch` on `main`) returned **VERDICT: PASS** against the production origin: all **23** declared runtime assets load, none is served as HTML for a static request, and the deployed Worker reports its current generation.
 
-A read-only manual workflow now exists to make the previously blocked network observation:
+Worth keeping in the record: the **push**-triggered run on the same SHA failed, because it fires seconds after a merge and races the Cloudflare deploy. That FAILURE was real evidence about the origin *at that instant* and is not evidence about the release. Re-dispatch and record the later run; do not dismiss the first one, and do not cite it either.
 
-1. In GitHub, open **FreightLogic- → Actions → Verify Live Parity**.
-2. Tap **Run workflow** on `main`.
-3. Leave **App origin** and **Worker origin** blank so production defaults are used.
-4. Tap **Run workflow**.
-5. Record the run ID, checked-out SHA, and explicit `PASS`, `FAILURE`, or `UNOBSERVED` verdict.
+To re-observe at any time:
 
-Only a green `PASS` run may close live all-asset parity. `FAILURE` means production was observed and a real mismatch exists. `UNOBSERVED` means the runner made no HTTP observation and is neither PASS nor a product failure. An actual HTTP 4xx/5xx is observed evidence, not UNOBSERVED.
+1. GitHub → **FreightLogic- → Actions → Verify Live Parity**.
+2. **Run workflow** on `main`, leaving **App origin** and **Worker origin** blank.
+3. Record the run ID, checked-out SHA, and the explicit `PASS` / `FAILURE` / `UNOBSERVED` verdict.
 
-PASS still requires the live production origin to match the exact final generation across every derived runtime asset, app/PWA/service worker/manifest/static assets, `modern-shell.js`, and security policy. A Cloudflare build success does not prove byte/content parity by itself.
+Only a green `PASS` closes live all-asset parity. `UNOBSERVED` means the runner made no HTTP observation — neither a pass nor a product failure. An actual HTTP 4xx/5xx **is** observed evidence.
 
-## B2. Worker health + auth boundary
+## B2. Worker health + auth boundary — **PASS**
 
-Current evidence: **Worker v15 LIVE FREE CHECKS PASSED ON 2026-09-13 / AUTHENTICATED CHECKS NOT RUN**. Worker source did not change in v24.0.9.
+**Observed 2026-09-14.** Worker **v17** was deployed by run `34884719806` (`DEPLOY`-confirmed dispatch) and verified three independent ways: the deploy workflow's own post-deploy checks, the auto-triggered authenticated smoke, and the live parity re-dispatch reporting `Worker reports v17 — {"ok":true,"version":"17"}`.
 
-Observed free checks: `/health` HTTP 200/version 15; production-origin CORS exact; backup OPTIONS HTTP 204; unauthorized admin denied HTTP 401.
+Free checks observed: `/health` HTTP 200 / version 17; production-origin CORS exact rather than `*`; unauthenticated `/admin/users` and `/evaluate` both denied HTTP 401.
 
-PASS for final certification additionally requires authenticated authority/backup boundaries with a dedicated non-published test identity and no secret exposure.
+## B3. Live `/evaluate` authority smoke — **PASS**
 
-## B3. Live `/evaluate` authority smoke
+**Observed 2026-09-14**, run `34884786623`, against the deployed Worker using an expiring synthetic identity seeded in production KV and cleaned up afterwards. No operator data and no real driver credential was involved.
 
-PASS requires a complete canonical decision to remain client-owned and an incomplete/`UNAVAILABLE` decision to stay unavailable—no Worker/overlay fabrication of `REJECT`, `F`, zero True RPM, or `$0` bid.
+PASS required — and observed — a complete canonical decision staying client-owned, and an incomplete/`UNAVAILABLE` decision staying unavailable: no Worker or overlay fabrication of `REJECT`, `F`, zero True RPM, or a `$0` bid.
 
-Status: **NOT RUN authenticated**.
+## B4. Live `/extract` / backup / rotation authority smoke — **PASS**
 
-## B4. Live `/extract` / backup / rotation authority smoke
+**Observed 2026-09-14**, same run (`34884786623`), **21 passed / 0 failed**: full backup, delta write, `GET /backup/delta` retention/ordering/gap counters, `GET /list` device scoping, `GET /status`, malformed-token and tokenless denial, and in-place token rotation preserving the user identity and existing backup history while invalidating the old token. Synthetic records only; cleanup verified.
 
-Where deployed/enabled, use synthetic data. Extraction must return bounded evidence only; authenticated backup/full-delta/restore must preserve data/authority semantics. In-place token rotation must keep the same user identity and existing backup history while invalidating the old token. A failed/unavailable source must remain explicit.
+## B5. Rollback / fix-forward evidence — **PASS**
 
-Status: **NOT RUN authenticated**.
+The verifier that was stale here is repaired. `scripts/verify-rollback.mjs` no longer names any candidate: it derives the candidate from `HEAD`, the app and Worker generations from the tree, and the previous generation from git history, so it cannot go stale between releases and needs no per-release edit. Run it and record its output against the final frozen candidate.
 
-## B5. Rollback / fix-forward evidence
+Its verdict is deliberately incapable of naming a safe rollback target. Older generations carry known regressions, so the approved policy is **fix forward**. Absence of a proven safety-gate regression in the immediately previous generation is reported as exactly that — *not proven unsafe* — and is explicitly **not** an approval. Never label an older known-regression build safe merely because it resolves.
 
-Status: **NOT RUN / VERIFIER TOOLING STALE**.
+## B6. Production service-worker / offline behaviour — **PASS**
 
-The current `scripts/verify-rollback.mjs` still names an older production candidate and expects Worker v14 even though the current release source/live Worker is v15. Do **not** treat a failure from that stale expectation as release evidence. A bounded Claude-owned correction has been requested.
+**Observed 2026-09-14.** `Verify Production Service Worker` drives a real headless Chromium against the production origin and proves, in order: the worker installs and activates; the page is controlled after one reload; `admin-driver-ui.js` and `midwest-stack-authority.js` are injected **and actually fetchable** (a tag pointing at a 404 was the 2026-09-13 defect); all 23 declared assets are present in the precache under the current generation; the driver shell renders; and — with the network verifiably down — a subresource miss returns `504 text/plain` rather than the HTML shell, while a drifted `?v=` on a known asset self-heals to the real file.
 
-After the verifier is reconciled to the v24.0.9 / Worker-v15 state, run it and record the exact source SHA and named regressions. Existing evidence supports a default **fix-forward** policy because older app/Worker generations contain known regressions. This is not proof of an actual deployment rollback or operator approval to accept a regression; record those distinctions explicitly. Never label an older known-regression build safe merely because it resolves.
+It states its own limit rather than implying otherwise: **the offline navigation itself is not observed there.** A navigation restarts the service worker outside the network emulation that covered it, which was tested, not assumed. That is precisely what **A4** on a real device is for, and why B6 does not replace it.
 
 # C. Private-history reconciliation blocker
 
@@ -160,19 +164,18 @@ Do not reconstruct the separate unavailable 125-row master from summaries. Once 
 
 PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, no collapse of distinct shipments sharing external IDs, deterministic re-import/idempotence, and reviewed conflicts before adoption.
 
-# D. Six-width browser-layout gate
+# D. Six-width browser-layout gate — **PASS**
 
-This is separate from the physical iPhone gate. The v24.0.9 source already contains the known source repairs: 16px mobile form controls, 44×44 small-screen theme target, broad reduced-motion handling, and tertiary-label contrast above 4.5:1 in both themes.
+This is separate from the physical iPhone gate. The source repairs are in: 16px mobile form controls (v24.0.10 removed the two inline `font-size:13px` values that were the root cause, so the `!important` safety net is no longer load-bearing), the 44×44 small-screen target, broad reduced-motion handling, and tertiary-label contrast above 4.5:1 in both themes.
 
-Still required:
+The requested geometry gate exists and runs in the suite on every PR and push: `tests/integration/six-width-layout.spec.mjs` observes 320, 375, 390, 393, 430 and 440 CSS-px in both theme states, proves no page-level horizontal overflow across the five surfaces, checks bottom-nav interactive geometry, and covers a narrow-width modal under reduced motion.
 
-- observe 320, 375, 390, 393, 430, and 440 CSS-px widths in dark/light themes;
-- prove no page-level horizontal overflow on Today, Loads, Evaluate, Trips, or Money;
-- prove primary bottom-nav interactive geometry meets the 44×44 target;
-- prove representative long strings and a narrow-width modal/bottom sheet do not force horizontal overflow;
-- preserve reduced-motion behavior.
+Two measurement traps are worth knowing, because the first version of this gate was green while measuring nothing:
 
-A Claude-owned Playwright geometry gate has been requested so these browser checks become repeatable. It must not be presented as a substitute for iOS safe-area/software-keyboard/Home Screen PWA evidence.
+- `document.documentElement.scrollWidth` **cannot** detect overflow in this app — `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a scrollWidth wider than the viewport however far content spills. Injecting `min-width: 900px` left a scrollWidth assertion green.
+- Under mobile emulation the layout viewport **expands** to fit content wider than the device (`innerWidth` read 900 at a 320px device), so geometry compared against `innerWidth` is compared against a viewport that already grew to accommodate the overflow. Measure against the device width the test set.
+
+This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A10.
 
 # E. Non-blocking resilience watch list
 

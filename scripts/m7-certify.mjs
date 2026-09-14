@@ -170,11 +170,18 @@ console.log(`  Source: ${releaseState.source ? 'docs/' + releaseState.source : '
 for (const c of checks) console.log(`  ${c.state.padEnd(4)}  ${c.name}${c.detail ? '  — ' + c.detail : ''}`);
 console.log(`${'-'.repeat(72)}\n  AUTOMATED GATES: ${counts.PASS} passed, ${counts.FAIL} failed, ${counts.SKIP} not run\n`);
 
-console.log(`LIVE DEPLOYMENT GATES (need network reach to the deployed origins):`);
+// These are PENDING *in this invocation* — a local run observes nothing live, and
+// saying otherwise would be the inference this runner exists to refuse. They are
+// no longer blocked, though: each is a GitHub workflow now, because GitHub-hosted
+// runners can reach the deployed origins and this repository's agent proxies
+// cannot. Where each has actually been observed is recorded in the canonical
+// certification document, which is the only place a live PASS may be claimed.
+console.log(`LIVE DEPLOYMENT GATES (not observable from this process — dispatch on GitHub, then record in the certification document):`);
 for (const [g, cmd] of [
-  ['Live Cloudflare Pages + Worker parity', 'node scripts/verify-cloudflare-parity.mjs  (from a network reaching the deployed origins)'],
-  ['Worker /health + unauthorized-admin denial', 'covered by verify-cloudflare-parity.mjs above (it checks /health, the Worker version, and a tokenless /admin/users)'],
-  ['Live /evaluate + /extract authority smoke', 'FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs --paid   (omit --paid to run only the checks that spend no OpenAI quota; exit 2 = UNOBSERVED, not a failure)'],
+  ['Live Cloudflare Pages + Worker parity', 'Actions → Verify Live Parity → Run workflow on main (leave origins blank). Or locally, with network reach: node scripts/verify-cloudflare-parity.mjs'],
+  ['Worker /health + unauthorized-admin denial', 'covered by Verify Live Parity above (it checks /health, the Worker version, and a tokenless /admin/users)'],
+  ['Production service worker: install / reload / injection / precache / offline', 'Actions → Verify Production Service Worker → Run workflow on main. Or locally: node scripts/verify-production-sw.mjs  (needs Playwright + network reach)'],
+  ['Live /evaluate + /extract + backup/rotation authority smoke', 'Actions → Verify Authenticated Worker → Run workflow on main (seeds an expiring synthetic identity, cleans up). Or locally: FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs --paid   (omit --paid to skip OpenAI quota; exit 2 = UNOBSERVED, not a failure)'],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 console.log(`\nPHYSICAL DEVICE GATES (need the operator's iPhone — see FIELD_TEST_CHECKLIST.md):`);

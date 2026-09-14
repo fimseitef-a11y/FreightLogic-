@@ -1,0 +1,116 @@
+name: Verify Production Service Worker
+
+# Completion-plan blocking evidence item 2: prove the exact deployed candidate
+# survives service-worker install, reload, injection, precache and network loss.
+#
+# WHY A SECOND LIVE WORKFLOW. Verify Live Parity fetches each declared asset and
+# asserts status and content — that is DELIVERY. It cannot prove that a browser,
+# having installed the deployed worker, then behaves correctly when the network
+# goes away. That is the behaviour a driver depends on in a dead zone, and the
+# axis this app has actually failed on before (v24.0.4: a `?v=` mismatch made the
+# worker answer a `<script src>` with index.html, HTTP 200, text/html — the
+# browser silently refuses to execute it, no 404, no console error).
+#
+# TRIGGERS. Manual dispatch, plus every push to main so a merged release produces
+# its own SHA-bound evidence. Neither grants write or deploy authority.
+#
+# WHAT IT IS NOT. It never deploys, never writes to the repository, and uses no
+# secrets. `permissions: contents: read` is intentional. It drives a fresh,
+# throwaway CI browser profile: the completion plan's warning about destroying
+# IndexedDB evidence is about the operator's own device, and nothing here can
+# reach it.
+#
+# THREE OUTCOMES, NOT TWO — the same doctrine as the parity runner:
+#   PASS       exit 0  — live evidence observed, everything agreed
+#   FAILURE    exit 1  — real evidence of a mismatch
+#   UNOBSERVED exit 2  — origin unreachable, or offline could not be demonstrated
+# Both FAILURE and UNOBSERVED fail the job. A green run is the only outcome that
+# may be cited as live production service-worker evidence.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      app_origin:
+        description: 'App origin to verify (blank = the script default)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  production-sw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Pinned, not floating — the same reproducibility rule tests.yml states.
+      - name: Install Playwright + Chromium
+        run: |
+          npm install -g playwright@1.62.1
+          npx playwright install --with-deps chromium
+
+      - name: Symlink playwright into node_modules
+        # FreightLogic intentionally has no package.json. Node's ESM resolver
+        # will not use NODE_PATH, so mirror the documented local setup.
+        run: |
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
+
+      - name: Record the exact source being verified
+        run: |
+          {
+            echo "commit: $(git rev-parse HEAD)"
+            echo "app:    $(grep -m1 -oE \"APP_VERSION = '[0-9.]+'\" app.js)"
+            echo "sw:     $(grep -m1 -oE \"SW_VERSION = '[0-9.]+'\" service-worker.js)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the production service-worker gate
+        id: gate
+        # Inputs reach the script as an argv element via the environment, never
+        # through shell interpolation into the command line.
+        env:
+          APP_ORIGIN: ${{ github.event.inputs.app_origin }}
+        run: |
+          set +e
+          node scripts/verify-production-sw.mjs ${APP_ORIGIN:+"$APP_ORIGIN"} 2>&1 | tee sw.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "verdict=PASS" >> "$GITHUB_OUTPUT" ;;
+            2) echo "verdict=UNOBSERVED" >> "$GITHUB_OUTPUT" ;;
+            *) echo "verdict=FAILURE" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Production service worker — ${{ steps.gate.outputs.verdict }}"
+            echo
+            echo "- commit: \`$(git rev-parse HEAD)\`"
+            echo "- event: \`${{ github.event_name }}\`"
+            echo "- gate exit code: \`${{ steps.gate.outputs.exit_code }}\`"
+            echo
+            echo '```'
+            cat sw.log 2>/dev/null || echo '(no gate output was produced)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the job on FAILURE or UNOBSERVED
+        if: steps.gate.outputs.verdict != 'PASS'
+        run: |
+          echo "::error::Production service-worker verdict: ${{ steps.gate.outputs.verdict }} (exit ${{ steps.gate.outputs.exit_code }})"
+          if [ "${{ steps.gate.outputs.verdict }}" = "UNOBSERVED" ]; then
+            echo "::error::Nothing was demonstrated. This is NOT evidence that production is wrong — and it is not evidence that it is right. Nothing may be certified from this run."
+          else
+            echo "::error::Live evidence of a service-worker defect. Report the exact failing check above; do not deploy or auto-fix from this workflow."
+          fi
+          exit 1
