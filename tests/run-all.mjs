@@ -11,9 +11,11 @@ import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
 import { runSpec as liveParityRunner } from './unit/live-parity-runner.spec.mjs';
+import { runSpec as rollbackVerifier } from './unit/rollback-verifier.spec.mjs';
 import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-semantics.spec.mjs';
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
 import { runSpec as modernShellRouting } from './integration/modern-shell-routing.spec.mjs';
+import { runSpec as sixWidthLayout } from './integration/six-width-layout.spec.mjs';
 import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
@@ -61,9 +63,11 @@ const specs = [
   cacheGeneration,
   deployAssetCoverage,
   liveParityRunner,
+  rollbackVerifier,
   swSubresourceSemantics,
   v2404FailClosed,
   modernShellRouting,
+  sixWidthLayout,
   cloudBackupPaused,
   workerTokenRotation,
   laneGuard,
@@ -119,11 +123,4 @@ if (failing.length) {
   console.log('\nFailing:');
   for (const f of failing) console.log('  - ' + f);
 }
-// X-06 (v23.9 Phase 2): every finding this suite covers is now FIXED (see
-// AUDIT_REPORT.md) — there is no longer a legitimate reason for a spec in
-// this suite to fail, so the aggregate exit code is a real signal CI can
-// gate on. A prior version of this file always exited 0 on the reasoning
-// that several specs were EXPECTED to fail (they proved still-open bugs);
-// that reasoning no longer holds now that this suite only ships fixes with
-// passing assertions — see tests/README.md's "Exit code" section.
 process.exit(totalFail ? 1 : 0);
