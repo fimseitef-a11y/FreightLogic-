@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (live-parity runner pushed on claude/repo-review-9lpj28 @0356219, 442/0 across 46; NOT yet on main, so not dispatchable) | 2026-09-14 |
-| gpt | PR #180 visual acceptance contract sync to frozen v24.0.9 source; docs only | 2026-09-14 |
+| gpt | — idle — (PR #180 merged; GPT-owned v24.0.9 certification/visual/field docs reconciled) | 2026-09-14 |
 
 ---
 
