@@ -2,9 +2,9 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`.
 
-Current runtime synchronization point: exact Git SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`, **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**. PR #175 integrated the pickup-feasibility gate and its exact runtime suite passed **431 tests / 0 failures across 45 spec files**. GitHub's Cloudflare check attached to this exact merge SHA succeeded for `freightlogic-v2` (check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`). Read-only verifier/docs work subsequently raised the merged repository suite to **442/0 across 46 spec files** in run `34800434526` without changing shipped runtime files. The source deployment inventory covers every declared runtime asset and no longer excludes `admin-driver-ui.js`. A manual/read-only **Verify Live Parity** GitHub Actions workflow is now merged; it must actually be dispatched before exact live all-asset parity can be marked PASS. Authenticated Worker smokes, six-width browser geometry, private-history reconciliation, and physical-device evidence remain open. Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
+Current runtime synchronization point: exact Git SHA `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`, **FreightLogic v24.0.10 / IndexedDB v15 / Worker v17**, merged PR #193. Exact main suite [34884711942](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884711942) passed **457/0 across 49 specs**. Live parity [34885000070](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34885000070) passed for the expected generations and all 23 declared runtime assets. Authenticated run [34884786623](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884786623) recorded **5 authority passes / 3 NOT RUN**, plus **21 synthetic backup passes / 0 failures**. The existing six-width browser spec passed **2/0**; its mobile-coverage follow-ups remain open. Paid authority probes, token rotation, installed-app restore, real private-history reconciliation, standalone recovery evidence, and physical-device checks are not certified by these runs. Source, network, desktop, and older-generation evidence never substitutes for a physical-device PASS.
 
 Before testing, record the exact frozen production Git SHA/origin, displayed app generation, Diagnostics/service-worker identity, Worker `/health` generation, iPhone model, iOS version, and whether the test is in Safari or the installed Home Screen PWA.
 
@@ -15,7 +15,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.9** is active on exact candidate SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
+4. Close/reopen online and verify **24.0.10** is active on exact candidate SHA `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -98,7 +98,7 @@ Use a synthetic load with an optional pickup cutoff.
 7. Enter explicit deadhead `0` and verify it is treated as real zero distance.
 8. Create a reachable but under-30-minute-slack case and verify it is advisory/tight only; it must not independently alter grade/verdict/bid authority.
 
-PASS requires the exact v24.0.9 fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
+PASS requires the v24.0.9 pickup-feasibility behavior above to remain intact on the named v24.0.10 candidate. A guessed/clamped/default planning speed is a failure.
 
 # B. Live deployment blockers
 
@@ -106,55 +106,45 @@ Run these against the same final production candidate used for A1-A10. See `docs
 
 ## B1. Exact production app generation
 
-Current evidence for **v24.0.9**: **PRODUCTION BUILD SUCCEEDED / LIVE RUNNER MERGED / EXACT LIVE ALL-ASSET PARITY NOT RUN**. GitHub's Cloudflare check attached to exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` succeeded as check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`. Source-side deployment coverage derives 23 runtime assets and confirms none is excluded from deploy, including `admin-driver-ui.js`.
+Current verifier evidence: **PASS** for **v24.0.10 / Worker v17** at `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`, [run 34885000070](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34885000070). All 23 declared assets loaded and no static request returned an HTML shell. The earlier immediate push run 34884711957 failed before this successful post-deploy observation.
 
-A read-only manual workflow now exists to make the previously blocked network observation:
+For a subsequent runtime candidate, open **Actions → Verify Live Parity → Run workflow** on `main`, leave both origin inputs blank, and preserve the checked-out SHA and explicit PASS / FAILURE / UNOBSERVED verdict. The workflow also runs automatically on pushes to main; it does not deploy.
 
-1. In GitHub, open **FreightLogic- → Actions → Verify Live Parity**.
-2. Tap **Run workflow** on `main`.
-3. Leave **App origin** and **Worker origin** blank so production defaults are used.
-4. Tap **Run workflow**.
-5. Record the run ID, checked-out SHA, and explicit `PASS`, `FAILURE`, or `UNOBSERVED` verdict.
-
-Only a green `PASS` run may close live all-asset parity. `FAILURE` means production was observed and a real mismatch exists. `UNOBSERVED` means the runner made no HTTP observation and is neither PASS nor a product failure. An actual HTTP 4xx/5xx is observed evidence, not UNOBSERVED.
-
-PASS still requires the live production origin to match the exact final generation across every derived runtime asset, app/PWA/service worker/manifest/static assets, `modern-shell.js`, and security policy. A Cloudflare build success does not prove byte/content parity by itself.
+The verifier's result is generation/delivery/content evidence, not a cryptographic comparison of all live bytes. It does not prove the installed service worker has updated, preserved local data, or launched offline; those remain A1/A4 observations.
 
 ## B2. Worker health + auth boundary
 
-Current evidence: **Worker v15 LIVE FREE CHECKS PASSED ON 2026-09-13 / AUTHENTICATED CHECKS NOT RUN**. Worker source did not change in v24.0.9.
+Current evidence: **Worker v17 DEPLOYED AND OBSERVED**. Deployment run 34884719806 observed health version 17, followed by parity PASS in run 34885000070. Authenticated run 34884786623 verified the model-free authority and synthetic backup checks listed in the certification record.
 
-Observed free checks: `/health` HTTP 200/version 15; production-origin CORS exact; backup OPTIONS HTTP 204; unauthorized admin denied HTTP 401.
-
-PASS for final certification additionally requires authenticated authority/backup boundaries with a dedicated non-published test identity and no secret exposure.
+Final certification still requires the applicable unrun authority/rotation/restore checks with a dedicated non-published test identity. Overall workflow SUCCESS does not certify skipped probes.
 
 ## B3. Live `/evaluate` authority smoke
 
 PASS requires a complete canonical decision to remain client-owned and an incomplete/`UNAVAILABLE` decision to stay unavailable—no Worker/overlay fabrication of `REJECT`, `F`, zero True RPM, or `$0` bid.
 
-Status: **NOT RUN authenticated**.
+Status: **MODEL-FREE PROBES PASS (5/0); PAID COMPLETE-DECISION AND REJECT/F PROBES NOT RUN** in run 34884786623.
 
 ## B4. Live `/extract` / backup / rotation authority smoke
 
-Where deployed/enabled, use synthetic data. Extraction must return bounded evidence only; authenticated backup/full-delta/restore must preserve data/authority semantics. In-place token rotation must keep the same user identity and existing backup history while invalidating the old token. A failed/unavailable source must remain explicit.
+Where deployed/enabled, use synthetic data. Extraction must return bounded evidence only; authenticated full/delta backup and restore must preserve data/authority semantics. In-place token rotation must keep user identity and history while invalidating the old token.
 
-Status: **NOT RUN authenticated**.
+Status: **SYNTHETIC SNAPSHOT/DELTA CONTRACTS PASS (21/0)** in run 34884786623. **Paid extraction, token rotation, and installed-app restore are NOT RUN in that evidence.** The 21 passes prove byte-exact snapshot/delta retrieval, ordering, counters, scoped listing, auth boundaries, and cleanup; they are not a device restoration or rotation test.
 
 ## B5. Rollback / fix-forward evidence
 
-Status: **NOT RUN / VERIFIER TOOLING STALE**.
+Status: **TOOLING REPAIRED; STANDALONE FINAL EVIDENCE NOT RUN IN THIS DOCUMENTATION PASS**.
 
-The current `scripts/verify-rollback.mjs` still names an older production candidate and expects Worker v14 even though the current release source/live Worker is v15. Do **not** treat a failure from that stale expectation as release evidence. A bounded Claude-owned correction has been requested.
+PR #193 made `scripts/verify-rollback.mjs` derive HEAD, app/Worker generation and previous app generation instead of pinning stale literals. Its six regressions passed in exact main run 34884711942.
 
-After the verifier is reconciled to the v24.0.9 / Worker-v15 state, run it and record the exact source SHA and named regressions. Existing evidence supports a default **fix-forward** policy because older app/Worker generations contain known regressions. This is not proof of an actual deployment rollback or operator approval to accept a regression; record those distinctions explicitly. Never label an older known-regression build safe merely because it resolves.
+Run the read-only verifier with repository history available and record its candidate SHA/output and the final recovery procedure. Default policy remains **FIX FORWARD**; regression success or a verifier PASS never approves an older known-regression release as a safe rollback.
 
 # C. Private-history reconciliation blocker
 
 The original August 27 five-file M6 bundle was recovered privately in prior evidence. Preflight reports 216 source rows and the unchanged adapter deterministically produces 149 candidate records. Raw rows remain outside the public repository.
 
-Status: **BUNDLE PREVIOUSLY RECOVERED / RAW FILES NOT AVAILABLE IN CURRENT SESSION / APPLICATION ROUND TRIP + IDEMPOTENCE + CONFLICT REVIEW NOT RUN**.
+Status: **BUNDLE PREVIOUSLY RECOVERED / APPLICATION ROUND TRIP + IDEMPOTENCE + CONFLICT REVIEW STILL UNVERIFIED**.
 
-The current execution session does not have the five raw files mounted, and filename searches across the accessible File Library, Dropbox, and Google Drive found no copy. Do not reconstruct the bundle from chat summaries merely to make this gate pass.
+This documentation pass did not access or reconcile the original private files. Earlier recovery/preflight evidence alone does not prove application round-trip success. Do not reconstruct the bundle from summaries.
 
 Do not reconstruct the separate unavailable 125-row master from summaries. Once the actual raw M6 files are regained, run the isolated import/re-export and reconciliation machinery outside the public repository, then record only non-sensitive results publicly.
 
@@ -162,17 +152,11 @@ PASS requires no invented broker identity, no unsupported WON/completed promotio
 
 # D. Six-width browser-layout gate
 
-This is separate from the physical iPhone gate. The v24.0.9 source already contains the known source repairs: 16px mobile form controls, 44×44 small-screen theme target, broad reduced-motion handling, and tertiary-label contrast above 4.5:1 in both themes.
+Observed: **EXISTING BROWSER SPEC PASS, 2/0**, in main run 34884711942 at the named v24.0.10 candidate. It covers 320/375/390/393/430/440, both theme states, five surfaces, navigation/control geometry, a long-content probe, reduced motion, and a 320px modal.
 
-Still required:
+The implementation uses the default desktop `launchApp()` context. The handoff in `claude-to-gpt-v24010-merge-reconcile-2026-09-14.md` records remaining coarse-pointer, clipped-overflow and expanded-evaluator-field coverage issues. Keep those follow-ups open; the current PASS does not certify coverage the test does not exercise.
 
-- observe 320, 375, 390, 393, 430, and 440 CSS-px widths in dark/light themes;
-- prove no page-level horizontal overflow on Today, Loads, Evaluate, Trips, or Money;
-- prove primary bottom-nav interactive geometry meets the 44×44 target;
-- prove representative long strings and a narrow-width modal/bottom sheet do not force horizontal overflow;
-- preserve reduced-motion behavior.
-
-A Claude-owned Playwright geometry gate has been requested so these browser checks become repeatable. It must not be presented as a substitute for iOS safe-area/software-keyboard/Home Screen PWA evidence.
+The existing acceptance requirements remain: no page-level horizontal overflow, 44×44 primary touch targets, 16px visible mobile form controls, long-string/modal containment, and reduced-motion behavior across the six widths. iOS safe-area, software-keyboard and Home Screen PWA behavior remain physical-iPhone observations.
 
 # E. Non-blocking resilience watch list
 
@@ -195,4 +179,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD** until exact v24.0.9 live production all-asset parity is observed, authenticated Worker authority/backup smokes pass, the real private-history bundle is reconciled, six-width browser-layout acceptance passes, truthful rollback/fix-forward evidence is recorded, and all applicable physical-iPhone blockers are PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md` before the release is frozen.
+The release remains **HOLD**. Current CI, live parity and bounded synthetic checks are recorded in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`; applicable unrun authority/rotation/app-restore checks, real private-history reconciliation, complete mobile acceptance, standalone recovery evidence and physical-iPhone blockers must still be observed on the same final candidate. Only a later certification record may clear HOLD.

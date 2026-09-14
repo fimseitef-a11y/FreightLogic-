@@ -2,20 +2,18 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-Current runtime candidate:
+Current runtime candidate (evidence observed 2026-09-14):
 
-- app / PWA / service worker source: **24.0.9**;
+- app / PWA / service worker: **24.0.10**;
 - IndexedDB schema: **15**;
-- backup/API Worker source: **15**;
-- exact runtime Git candidate: **`5446b097fe8791f3d7c79b5a5833a0930ee83cf2`** (merged PR #175);
-- current repository `main` after read-only tooling/docs integration: **`a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`** (merged PR #180);
+- backup/API Worker source and observed deployment: **17**;
+- exact runtime/source candidate: **`d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`** (merged PR #193);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- GitHub-attached Cloudflare build check for the exact runtime Git SHA: **SUCCESS**, check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
-- version-specific preview for that check: **`https://7582ec81-freightlogic-v2.fimseitef.workers.dev`**;
-- current merged source/tooling suite: **442 passed / 0 failed across 46 spec files** in main run `34800434526`;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`;
-- status: **HOLD**.
+- exact merged-main suite: **457 passed / 0 failed across 49 spec files**, [run 34884711942](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884711942);
+- live parity: **PASS**, [run 34885000070](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34885000070), app24.0.10 / Worker17 / all 23 declared assets;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`;
+- status: **HOLD** for the remaining gates recorded there.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
 
@@ -32,19 +30,19 @@ Record:
 
 ### Current source/deploy evidence
 
-For v24.0.9, GitHub's Cloudflare check attached to runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed successfully as check run `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`. The earlier checklist draft named a different build/version pair; re-reading the exact SHA's check-runs showed that pair was not the check currently attached to `5446b097...`, so the release record now uses only the directly observable SHA-bound metadata. Subsequent PRs #177 through #180 changed verification tooling/tests/docs only; they did not change shipped runtime files or the app/PWA/cache generation. Build evidence is **not** a substitute for a live origin parity run.
+PR #192 delivered app/PWA v24.0.10. PR #193 then integrated Worker v17 and the derived rollback verifier at the named candidate. [Deploy Backup Worker 34884719806](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884719806) completed successfully and its post-deploy health response reported version 17.
 
-The prior v24.0.8 admin-script defect is repaired in source: `.assetsignore` no longer excludes `admin-driver-ui.js`, and the deploy-asset regression gate derives the complete runtime inventory and asserts that every requested runtime asset exists and is deployable. The current derived source inventory is 23 assets. A full live-green parity run must fetch **every derived runtime asset**, not a curated subset, and must reject an HTML shell returned with HTTP 200 for a JavaScript/CSS/JSON/image request.
+[Verify Live Parity 34885000070](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34885000070) checked out `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0` and recorded **VERDICT: PASS** at 19:07:58Z: the expected app generation, Worker17, all **23 declared runtime assets**, and no HTML-shell response masking a static asset. The earlier push-triggered run 34884711957 failed before this successful post-deploy observation.
 
-PR #177 added a repository-hosted, **manual-only and read-only** GitHub Actions runner named **Verify Live Parity**. It executes the real `scripts/verify-cloudflare-parity.mjs` from a GitHub-hosted runner, uses no secrets, performs no deploy/repository write, and preserves three explicit outcomes:
+The inventory is derived from runtime declarations. PASS proves the verifier's marker, delivery, content-type/fallback and source/security checks; it is not a cryptographic comparison of every live asset against source bytes, nor an installed-PWA offline test.
 
-- `PASS` / exit 0 — live checks were observed and passed;
-- `FAILURE` / exit 1 — the origin was observed and one or more parity checks failed;
-- `UNOBSERVED` / exit 2 — no HTTP observation could be made because of transport/network unreachability.
+**Verify Live Parity** is read-only and currently runs on both pushes to `main` and manual dispatch. It uses no secrets and performs no deploy/repository write. Its outcomes remain:
 
-HTTP error responses such as 404/500 count as **observed failures**, not UNOBSERVED. A static/source defect also outranks network unreachability and remains FAILURE.
+- `PASS` / exit 0 — the checks ran and passed;
+- `FAILURE` / exit 1 — an observed mismatch or source defect;
+- `UNOBSERVED` / exit 2 — no HTTP observation was possible.
 
-The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** until an actual **Verify Live Parity** workflow run is dispatched and its result is recorded. Do not infer PASS from Cloudflare build success or from the verifier's static-only tests.
+An HTTP 404/500 is observed evidence. A source defect outranks network unreachability. A push-triggered run can precede Cloudflare deployment; retain that result and record a new observation after deployment.
 
 ### Manual dispatch procedure
 
@@ -57,48 +55,44 @@ From the repository UI:
 5. Run the workflow.
 6. Record the run ID, checked-out SHA, `VERDICT: PASS|FAILURE|UNOBSERVED`, derived runtime-asset count, and any failed checks.
 
-Do not add a push/comment/schedule trigger merely to avoid this explicit release-gate action.
+The existing push trigger supplements this manual procedure; neither trigger deploys the Worker.
 
 ## 2. App / PWA generation
 
 PASS requires production to serve:
 
-- `app.js?v=24.0.9`;
-- `voice-load.js?v=24.0.9`;
-- `sw-bridge.js?v=24.0.9`;
-- `midwest-stack-authority.js?v=24.0.9`;
-- `manifest.json?v=24.0.9` identifying `FreightLogic v24.0.9`;
-- `service-worker.js` with `SW_VERSION = '24.0.9'`;
-- `admin-driver-ui.js?v=24.0.9` and every other asset derived by the runtime inventory;
-- current `modern-shell.js` bytes from the named runtime candidate;
-- bundled `vendor/xlsx.full.min.js`;
-- the current `styles.css` visual layer;
-- matching CSP/security headers;
-- no failed JavaScript/static request answered with an HTML shell fallback.
+- `app.js?v=24.0.10`, `voice-load.js?v=24.0.10`, and `sw-bridge.js?v=24.0.10`;
+- `midwest-stack-authority.js?v=24.0.10` and `admin-driver-ui.js?v=24.0.10`;
+- `manifest.json?v=24.0.10` naming `FreightLogic v24.0.10`;
+- `service-worker.js` with `SW_VERSION = '24.0.10'`;
+- current `modern-shell.js`, `styles.css`, bundled `vendor/xlsx.full.min.js`, and every other derived runtime asset;
+- matching CSP/security policy and no HTML shell masking a static request failure.
 
-Do not reuse the v24.0.5 or v24.0.8 production observations as exact-generation evidence for v24.0.9.
+Current verifier outcome: **PASS**, run 34885000070. Older-generation observations do not replace evidence for this candidate. Device-controlled update/offline behavior remains a separate check.
 
-## 3. Worker v15 live checks
+## 3. Worker v17 live checks
 
-Expected backup/API Worker source generation: **15**.
+Expected backup/API Worker generation: **17**.
 
 PASS requires:
 
-- `GET /health` returns HTTP 200 and JSON with `version: "15"`;
-- requests from `https://freightlogic-v2.fimseitef.workers.dev` receive that exact origin in `Access-Control-Allow-Origin`;
-- unauthorized admin requests are denied;
-- unauthorized driver/evaluate/extract/backup requests are denied;
-- authenticated `/evaluate` preserves canonical available and `UNAVAILABLE` decisions;
-- `/extract`, when enabled, returns bounded evidence only;
-- authenticated full backup, delta backup, and restore smoke paths succeed without changing the data/authority contract;
-- no token or secret is exposed in client-visible output;
-- in-place token rotation preserves the existing user identity and backup history.
+- `GET /health` HTTP 200 with `version: "17"`;
+- exact production-origin CORS;
+- denied unauthorized admin/driver/evaluate/extract/backup requests;
+- canonical available and UNAVAILABLE decisions preserved by authenticated `/evaluate`;
+- bounded `/extract` evidence where enabled;
+- authenticated full/delta backup and restore preserving data/authority semantics;
+- no secret exposure;
+- in-place token rotation preserving user identity/history and invalidating the old token.
 
 ### Current observed Worker state
 
-On 2026-09-13 Worker v15 was observed at the production origin: health HTTP 200/version 15, exact production-origin CORS on health GET and backup OPTIONS (204), and unauthorized admin HTTP 401. Worker source/generation did not change in v24.0.9, so no Worker redeploy is required by the app-generation bump.
+Deployment run 34884719806 observed health version 17; parity run 34885000070 subsequently passed. Authenticated run [34884786623](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884786623), on the same candidate, recorded:
 
-Authenticated evaluate/extract/full-delta-restore/token-rotation checks remain **NOT RUN** because no dedicated non-published test token is available in this session. The manual `Deploy Backup Worker` workflow remains the intended deployment boundary and must remain explicit/manual.
+- **5 authority passes, 0 failures, 3 NOT RUN**: the paid complete-decision, REJECT/F, and extraction probes were explicitly skipped;
+- **21 synthetic backup passes, 0 failures, 0 skipped**: byte-exact snapshot/delta retrieval, ordering, counters, scoped listing, unauthorized denial, and cleanup.
+
+These results do not prove paid-model behavior, token rotation, or restore through the installed app UI. Those applicable checks retain their open status. The Worker deployment boundary remains the explicit/manual **Deploy Backup Worker** workflow.
 
 ## 4. Canonical authority smoke
 
@@ -151,34 +145,28 @@ Source-side:
 - `node scripts/verify-cloudflare-parity.mjs --static-only`
 - `node scripts/m7-certify.mjs --suite`
 
-Current repository baseline after PRs #177 through #180:
+Current exact candidate baseline:
 
-- main SHA `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`;
-- run `34800434526`;
-- **442 passed / 0 failed across 46 spec files**;
-- includes 11 dedicated live-parity-runner assertions.
+- SHA `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`;
+- Tests run **34884711942**;
+- **457 passed / 0 failed across 49 spec files**.
 
-Live production, from a network that can reach Cloudflare:
+For a new live observation use **Actions → Verify Live Parity → Run workflow** with blank optional origins, or `node scripts/verify-cloudflare-parity.mjs`. The current source expects app/PWA **24.0.10**, Worker **17**, and all derived runtime assets.
 
-- preferred: **Actions → Verify Live Parity → Run workflow** with blank optional origins;
-- equivalent CLI: `node scripts/verify-cloudflare-parity.mjs`.
-
-The live verifier derives the current app generation from source and is expected to verify app/PWA **24.0.9**, Worker **15**, and every declared runtime asset. The current source inventory is 23 assets; the inventory is derived rather than maintained as a hand-written list.
-
-Authenticated authority checks when a valid non-published driver token is available:
+Authenticated helpers use a valid non-published test identity:
 
 - `FL_BACKUP_TOKEN=... node scripts/verify-live-authority.mjs`
 - `FL_BACKUP_TOKEN=... node scripts/verify-live-backup.mjs`
 
-Network inability is `UNOBSERVED`, not PASS and not product failure. Any actual HTTP response makes the target observed and therefore eligible for PASS or FAILURE.
+Record explicit NOT RUN results as well as passes. Neither an overall workflow SUCCESS nor a free-mode authority pass proves a probe that was skipped.
 
 ## 8. Rollback / fix-forward evidence
 
-The final release must record a truthful rollback/fix-forward artifact. As of this checklist revision, `scripts/verify-rollback.mjs` is **not yet valid final B5 evidence** because its current source still carries an older hard-coded production candidate and a stale Worker-v14 expectation. Current release source/live Worker generation is v15.
+PR #193 repaired `scripts/verify-rollback.mjs`: the candidate derives from HEAD, app/Worker versions from source, and the previous app generation from history. Its six regressions passed in run 34884711942. The old Worker-v14/v15 hard-coded-expectation description is obsolete.
 
-A bounded Claude-owned tooling correction has been requested. Until that correction is integrated and observed, B5 remains **NOT RUN / TOOLING STALE** rather than a false failure caused by an obsolete expectation.
+Standalone final B5 evidence remains **NOT RUN in this documentation pass**. Run the read-only verifier with repository history available and preserve output naming the final release SHA. Tooling regression success alone is not that standalone evidence.
 
-No older build may be labelled a safe rollback merely because it exists. Known-regression older generations require explicit defect disclosure; the default policy remains fix-forward unless a genuinely safe rollback target is proved.
+Default recovery policy remains **FIX FORWARD**. A verifier PASS does not approve an older app/Worker release as a safe rollback target.
 
 ## 9. Completion rule
 
@@ -187,10 +175,10 @@ Live Cloudflare parity is complete only when the same named final candidate has:
 - exact production app/PWA generation parity PASS;
 - all derived runtime assets fetched successfully from the production origin, with no HTML-shell masquerade;
 - structural-shell parity PASS;
-- backup/API Worker v15 `/health` and CORS parity PASS;
+- backup/API Worker v17 `/health` and CORS parity PASS;
 - auth boundaries PASS;
 - canonical `/evaluate`/`/extract` checks PASS where applicable;
 - authenticated backup/delta/restore/rotation smoke PASS;
 - truthful rollback/fix-forward evidence recorded.
 
-Only after this live gate, the real private-history reconciliation, six-width visual acceptance, and the physical-iPhone checklist all pass may a later certification-state document clear HOLD.
+The observed passing rows and remaining scope are recorded in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`. Only after the applicable live authority/rotation/restore checks, real private-history reconciliation, complete mobile acceptance, physical-iPhone checklist, and final recovery evidence pass may a later certification record clear HOLD.

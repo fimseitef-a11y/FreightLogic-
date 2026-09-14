@@ -2,9 +2,9 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-14.** Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` is **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15 source**. The exact runtime suite is green at **431/0 across 45 spec files**. Read-only release tooling/docs subsequently advanced repository `main` to `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6` (merged PR #180) without changing shipped runtime files; current merged `main` suite `34800434526` is green at **442/0 across 46 spec files**. GitHub's Cloudflare check attached to the exact runtime merge SHA is successful for `freightlogic-v2` (check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`). Source-side deployment coverage derives the full runtime inventory (23 assets) and specifically proves `admin-driver-ui.js` is requested, present, and deployable. A manual/read-only **Verify Live Parity** GitHub Actions runner is now merged and ready, but the exact v24.0.9 live all-asset origin sweep is still **NOT RUN / UNOBSERVED** until that workflow is actually dispatched. Authenticated Worker authority/backup smokes are **NOT RUN**, the recovered private-history bundle still needs the real application round trip/idempotence/conflict review, six-width + physical-iPhone acceptance remain open, and the rollback verifier itself needs a bounded v24.0.9/Worker-v15 tooling correction before it can supply final B5 evidence. Formal certification remains **HOLD**.
+Current status update: **2026-09-14, after PR #193.** Named candidate `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0` is **FreightLogic v24.0.10 / IndexedDB v15 / Worker v17**. Exact merged-main Tests [34884711942](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884711942) passed **457/0 across 49 spec files**. Worker deployment [34884719806](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884719806) succeeded; live parity [34885000070](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34885000070) passed for app24.0.10 / Worker17 and all 23 declared runtime assets. Authenticated run [34884786623](https://github.com/fimseitef-a11y/FreightLogic-/actions/runs/34884786623) recorded **5 authority passes / 3 NOT RUN** and **21 synthetic backup passes / 0 failures**. Three paid-model probes, token rotation, real private-history reconciliation, complete mobile/device acceptance, and standalone final B5 evidence remain unverified by those runs. Formal certification remains **HOLD**.
 
-Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
+Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`. The earlier September 14 v24.0.9 addendum is historical and is explicitly superseded.
 
 Vision ingestion and provider-adapter expansion remain approved but non-blocking. Do not enlarge the completion definition to chase new providers, booking, or model features.
 
@@ -85,76 +85,46 @@ Implemented rules include idempotent/collision-resistant import, conservative li
 
 The original August 27 five-file M6 bundle was recovered privately in an earlier session. Existing preflight evidence reports **216 source rows -> 149 deterministic candidate records** under the unchanged adapter. Those candidates still must pass the actual FreightLogic import -> reload -> export/re-import path, repeated-import/idempotence checks, and source-conflict review before this milestone can be certified on real data.
 
-The raw five files are not mounted in the current execution session; searches of the connected File Library, Dropbox, and Google Drive under the recorded bundle/source filenames found no copy. Therefore the application round trip remains NOT RUN rather than being reconstructed from summaries.
+The private bundle was not accessed or reconciled in this documentation pass. Earlier recovery/preflight evidence is preserved, but no actual application round-trip result is present in the reviewed certification evidence. Keep this gate NOT RUN until the original private source files complete the required path; do not reconstruct rows from summaries.
 
 The separate **125-row master** referenced by an older handoff remains unavailable. Do not reconstruct it from summaries, do not invent missing rows, and do not treat the recovered 216-row bundle as proof that the distinct 125-row master has been found.
 
 ## Milestone 7 — Completion release certification
 
-Status: **SOURCE/CI + EXACT CLOUDFLARE BUILD + LIVE-RUNNER TOOLING GREEN; ACTUAL LIVE PARITY / AUTHENTICATED WORKER SMOKES / PRIVATE DATA / VISUAL / IPHONE / FINAL ROLLBACK EVIDENCE STILL BLOCKING.**
+Status: **EXACT MERGED CI, LIVE PARITY, AND SYNTHETIC BACKUP CHECKS PASS; REMAINING AUTHORITY / ROTATION / PRIVATE DATA / MOBILE / IPHONE / FINAL RECOVERY EVIDENCE OPEN.**
 
-### Automated/source evidence
+### Exact observed evidence
 
-Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` has:
+All current rows below name `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`:
 
-- PR #175 full suite: **431 passed / 0 failed across 45 spec files** in run `34796439138`;
-- post-merge runtime `main` Tests run `34796618850`: **SUCCESS** on the same exact runtime SHA;
-- lane/path/lock CI green;
-- deterministic built-in test server and IndexedDB-ready launch contract;
-- app/PWA/service-worker/cache/manifest generation checks green for v24.0.9;
-- static CSP/source parity green;
-- backup/full-delta/restore and local export/import integrity regressions green;
-- Worker-v15 health/CORS regressions green;
-- operator-measured 54.8-inch wheel-well and 3,000-pound payload regressions green;
-- pickup-feasibility regressions protecting unset planning speed, unknown-vs-zero deadhead, unreachable cutoff, reachable cutoff, already-passed cutoff, and tight-window advisory behavior;
-- deployment-asset coverage derived from the runtime declarations rather than a curated subset, currently **23 assets**, including `admin-driver-ui.js`.
+- Tests **34884711942**: **457 passed / 0 failed across 49 spec files**.
+- Six-width browser spec: **2/0**; Worker key regression: **3/0**, including frozen-clock WPR-03; rollback-verifier regressions: **6/0**.
+- Deploy Backup Worker **34884719806**: SUCCESS, post-deploy health version **17**.
+- Verify Live Parity **34885000070**: **PASS**, app24.0.10 / Worker17, all **23 declared assets** fetched, no static asset masked by an HTML shell.
+- Verify Authenticated Worker **34884786623**: **5 authority passes, 0 failures, 3 NOT RUN**; **21 synthetic backup passes, 0 failures, 0 skipped**.
 
-Current read-only tooling/docs `main` additionally has:
+The three unrun authority probes are paid complete-decision projection, paid REJECT/F projection, and paid extraction. The backup helper verifies snapshot/delta retrieval and ordering, not in-place token rotation or restore through the installed app UI.
 
-- PR #177 merged: manual/read-only **Verify Live Parity** workflow plus PASS/FAILURE/UNOBSERVED semantics and 11 dedicated runner assertions;
-- PR #178 merged: backup-contract parity through v24.0.9 including durable optional `planningAvgMph` and absent-means-absent behavior;
-- PRs #179 and #180 merged: certification/visual/field documentation reconciliation only;
-- Tests run `34800434526`: **442 passed / 0 failed across 46 spec files** on merged `main` `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`.
+The existing six-width spec passes in desktop Chromium at 320/375/390/393/430/440, with both themes and five surfaces. Claude's recorded coarse-pointer, clipped-overflow, and expanded-field coverage follow-ups remain open. Its two passing tests must not be represented as full mobile acceptance or physical-iPhone certification.
 
-### Production evidence already observed
+The parity verifier checks markers, asset delivery, content type/fallback behavior, and source/security invariants. It does not hash-compare every live asset against the repository. An installed service worker's update/offline behavior still needs direct observation.
 
-GitHub's Cloudflare check attached to exact runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed **SUCCESS** on service `freightlogic-v2`:
+### Source changes and prior observations
 
-- check run `103831029587`;
-- build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`;
-- version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
-- preview `https://7582ec81-freightlogic-v2.fimseitef.workers.dev`.
+PR #192 supplies the v24.0.10 cache generation and evaluator field-size repair. PR #193 supplies Worker v17's same-millisecond key repair, a rollback verifier that derives its candidate/generations, and matching regressions. They are merged; no parallel implementation is required for those handoffs.
 
-An earlier certification draft named a different build/version pair. Re-reading the exact runtime SHA's GitHub check-runs did not support that attribution, so the canonical plan now records only the directly observable SHA-bound check above.
-
-That proves Cloudflare accepted/built/deployed a tree associated with the exact candidate. It does **not** prove all 23 runtime assets at the live production origin match the source bytes/content. The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** until the merged GitHub Actions runner is actually dispatched.
-
-The backup/API Worker did not change in v24.0.9. On 2026-09-13 Worker v15 was directly observed live with:
-
-- `GET /health` HTTP 200 / version 15;
-- exact `https://freightlogic-v2.fimseitef.workers.dev` CORS on health GET;
-- backup preflight OPTIONS HTTP 204 with the exact production origin;
-- unauthorized admin request denied HTTP 401.
-
-This discharges the old Worker-v14/v15 deployment-parity blocker for free health/CORS/auth-boundary probes. It does **not** discharge authenticated authority/backup smokes.
-
-### Deployment-asset defect and repair status
-
-The v24.0.8 audit proved a real deployment blind spot: the old curated parity list could be green while `admin-driver-ui.js` was absent in production. The source exclusion was repaired, and PR #174 introduced a derived complete runtime inventory shared by source deploy-coverage tests and the live verifier. PR #177 then made that live verifier runnable from GitHub's network without deployment privileges or secrets.
-
-The next gate is observation, not more parity-runner engineering: dispatch **Actions -> Verify Live Parity -> Run workflow** on `main`, leave both optional origins blank, and record the actual verdict. PASS closes the all-asset network observation; FAILURE names a real mismatch to fix; UNOBSERVED makes no product claim.
+The older `10430bf` test run **34874397656** was **452/1**, with CBP-03 failing. The new exact-candidate 457/0 baseline supersedes that result without claiming a diagnosis of CBP-03. The immediate v17 push parity run **34884711957** also failed before the successful post-deploy observation. These historical results remain linked in the current certification state.
 
 ### Blocking evidence still required
 
-1. **Exact live v24.0.9 production parity** — dispatch the merged **Verify Live Parity** workflow; prove every derived runtime asset matches/has valid content and reject HTML-shell masquerade for static requests.
-2. **Service-worker / offline production check** — prove the exact v24.0.9 candidate, including the formerly missing admin runtime asset, survives normal update/reload/offline behavior without destructive clearing.
-3. **Authenticated Worker authority + backup checks** — with a dedicated non-published test identity, prove `/evaluate` and `/extract` authority behavior plus full/delta backup, restore, and in-place token rotation without exposing credentials or risking real data.
-4. **Private operator-history reconciliation** — run the recovered M6 source bundle through the actual application round trip, repeated import/idempotence, export/re-import, and source-conflict review. Do not fabricate the separate unavailable 125-row master.
-5. **Six-width visual acceptance** — complete the documented 320/375/390/393/430/440 checks, dark/light, touch targets, and overflow on the same final candidate.
-6. **Physical iPhone certification** — finite A1-A10 checks in `FIELD_TEST_CHECKLIST.md` against the same live candidate, including installed-PWA update/offline behavior and v24.0.9 pickup feasibility.
-7. **Rollback/fix-forward evidence** — repair the stale `scripts/verify-rollback.mjs` candidate/Worker-v14 assumptions, then record the exact safe fix-forward/rollback evidence for the final frozen candidate. Known-regression older builds must not be presented as safe rollback targets merely because they exist.
+1. **Service-worker / offline production behavior** — observe the named candidate's normal installed-PWA update, launch, persistence and offline navigation without destructive clearing.
+2. **Remaining live authority / rotation / app restore checks** — complete the applicable B3/B4 probes, preserve explicit paid-probe NOT RUN states until observed, and prove in-place token rotation and installed-app restoration.
+3. **Private operator-history reconciliation** — original M6 bundle through actual import/reload/export/re-import, idempotence and source-conflict review; never fabricate the separate unavailable 125-row master.
+4. **Complete mobile acceptance** — close the existing six-width coverage follow-ups; retain the observed desktop browser spec PASS as bounded evidence.
+5. **Physical iPhone certification** — A1–A10 and applicable B checks against the same live candidate, including v24.0.9 pickup behavior retained in v24.0.10.
+6. **Final rollback/fix-forward evidence** — the derived verifier is integrated and regression-tested; preserve its standalone output for the final candidate and the recovery procedure. No older release is approved as a safe rollback.
 
-Do not mark unobserved private/device/authenticated/live-origin gates PASS by inference. Do not clear Safari website data or delete the installed PWA merely to force an update because that can destroy IndexedDB evidence.
+Do not mark an unrun private/device/paid-model/rotation check PASS from an overall successful workflow. Do not clear Safari website data or delete the installed PWA to force an update.
 
 ## Completion definition
 
@@ -167,21 +137,20 @@ The named release is complete when one named source/runtime candidate has:
 - deterministic green automated suite and repository governance;
 - backup/restore/import/export integrity with secret exclusion;
 - exact live production app/all-asset parity and controlled service-worker/offline behavior;
-- live Worker-v15 health/CORS plus authenticated authority/backup smokes;
+- live Worker-v17 health/CORS plus the applicable authenticated authority/backup/rotation checks;
 - six-width visual acceptance;
 - finite physical-iPhone field checks;
 - truthful release and rollback/fix-forward SHAs/procedure recorded in a superseding certification-state document.
 
 ## Execution order from here
 
-1. Dispatch **Verify Live Parity** on current `main` with both optional origin inputs blank and record PASS / FAILURE / UNOBSERVED.
-2. Repair and run the stale rollback verifier so B5 evidence is about v24.0.9 / Worker v15 rather than an obsolete candidate.
-3. Run authenticated Worker authority/backup/restore/rotation smokes using a dedicated non-published test identity.
-4. Run the recovered private M6 bundle through actual application reconciliation and review conflicts/idempotence without publishing sensitive raw data.
-5. Complete six-width visual acceptance on the same candidate.
-6. Run the finite physical-iPhone A1-A10 checks on the same candidate.
-7. Record the safe rollback/fix-forward reference for the final frozen release.
-8. If a gate fails, repair the cause and repeat the affected exact-candidate gates.
-9. When all blocking evidence is PASS, create a new certification-state/addendum document that supersedes the current HOLD authority, records release/rollback evidence, and closes Issue #119.
+1. Retain the verified exact-candidate CI, app/Worker parity, and synthetic backup results in the current certification record. Re-observe affected gates if runtime changes.
+2. Finish the applicable live authority/rotation and app-level restore checks using a dedicated non-published test identity.
+3. Run the original private M6 bundle through the real application reconciliation path; publish only non-sensitive outcomes.
+4. Close the existing mobile-layout coverage follow-ups and perform physical-iPhone A1–A10 on the same candidate.
+5. Preserve standalone output from the repaired read-only rollback verifier, naming the final SHA and FIX FORWARD procedure.
+6. If a gate fails, repair the cause in its owning lane and repeat the affected exact-candidate checks.
+7. Clear HOLD only in a superseding certification record after all existing required evidence passes; then close Issue #119.
 
-Do not reorder this sequence merely to add more live sources or convenience features.
+Do not expand this finite release into new providers, booking, model features, or branding.
+
