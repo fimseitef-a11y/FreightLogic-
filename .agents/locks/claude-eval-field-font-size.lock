@@ -1,6 +1,6 @@
 owner: claude
 token: 2d68d9a1-bd2b-4b32-a5a7-09882220df5b
-started_utc: 2026-09-14T13:33:19Z
-expected_release_utc: 2026-09-14T16:33:19Z
-paths: index.html
-task: raise mwCurrency/mwModeSelector inline font-size to 16px — six-width gate found a real iOS focus-zoom defect on the evaluator
+started_utc: 2026-09-14T13:59:40Z
+expected_release_utc: 2026-09-14T16:59:40Z
+paths: index.html, app.js, service-worker.js, manifest.json, sw-bridge.js, modern-shell.js
+task: v24.0.10 — raise mwCurrency/mwModeSelector to 16px (real iOS focus-zoom defect found by the new six-width gate) and bump the cache generation so the fix can reach an installed PWA
