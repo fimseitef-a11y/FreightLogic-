@@ -57,7 +57,18 @@ function driverReq(pathname, method, token, device, body) {
   return new Request('https://worker.test' + pathname, { method, headers, body });
 }
 
-test('[WPR-01] first delta write is indexed exactly once when list() already sees it', async () => {
+function freezeClock(iso = '2026-09-14T07:40:00.123Z') {
+  const RealDate = globalThis.Date;
+  const fixedMs = RealDate.parse(iso);
+  class FrozenDate extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [fixedMs])); }
+    static now() { return fixedMs; }
+  }
+  globalThis.Date = FrozenDate;
+  return () => { globalThis.Date = RealDate; };
+}
+
+test('[WPR-01] first delta writes stay unique under a frozen same-millisecond clock while list() already sees them', async () => {
   const kv = makeKV();
   const worker = await loadWorker();
   const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
@@ -65,9 +76,14 @@ test('[WPR-01] first delta write is indexed exactly once when list() already see
   const device = 'ptr-race-delta';
   const payloads = [1, 2].map(seq => JSON.stringify({ kind: 'delta', seq, filler: 'x'.repeat(32) }));
 
-  for (const payload of payloads) {
-    const res = await worker.fetch(driverReq('/backup/delta', 'POST', driver.token, device, payload), env);
-    eq(res.status, 200, `delta POST must succeed, got ${res.status}`);
+  const restoreClock = freezeClock();
+  try {
+    for (const payload of payloads) {
+      const res = await worker.fetch(driverReq('/backup/delta', 'POST', driver.token, device, payload), env);
+      eq(res.status, 200, `delta POST must succeed, got ${res.status}`);
+    }
+  } finally {
+    restoreClock();
   }
 
   const res = await worker.fetch(driverReq('/backup/delta', 'GET', driver.token, device), env);
@@ -86,7 +102,7 @@ test('[WPR-01] first delta write is indexed exactly once when list() already see
   eq(new Set(ptr.keys).size, 2, 'delta pointer must not contain duplicate keys');
 });
 
-test('[WPR-02] first full-backup write is also indexed exactly once', async () => {
+test('[WPR-02] full-backup writes stay unique under a frozen same-millisecond clock', async () => {
   const kv = makeKV();
   const worker = await loadWorker();
   const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
@@ -97,9 +113,14 @@ test('[WPR-02] first full-backup write is also indexed exactly once', async () =
     JSON.stringify({ kind: 'full', seq: 2, filler: 'b'.repeat(32) }),
   ];
 
-  for (const payload of payloads) {
-    const res = await worker.fetch(driverReq('/backup', 'POST', driver.token, device, payload), env);
-    eq(res.status, 200, `backup POST must succeed, got ${res.status}`);
+  const restoreClock = freezeClock();
+  try {
+    for (const payload of payloads) {
+      const res = await worker.fetch(driverReq('/backup', 'POST', driver.token, device, payload), env);
+      eq(res.status, 200, `backup POST must succeed, got ${res.status}`);
+    }
+  } finally {
+    restoreClock();
   }
 
   const ptr = JSON.parse(await kv.get(`user:${driver.userId}:device:${device}:bptr`));

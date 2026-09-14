@@ -48,6 +48,16 @@ async function hashToken(token) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Keep the timestamp first so lexical order remains chronological, but add a
+// per-write nonce so two backup requests created in the same millisecond can
+// never overwrite each other in KV. crypto.randomUUID() is already required by
+// this Worker for user/token creation, so this adds no new platform dependency.
+function storageKeySuffix() {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  return ts + '~' + nonce;
+}
+
 const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
 const ALLOWED_ORIGINS = new Set([
   PRODUCTION_APP_ORIGIN,
@@ -491,8 +501,7 @@ export default {
         if (payload.length > 5 * 1024 * 1024) {
           return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
         }
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
+        const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + storageKeySuffix();
 
         // Write backup data and read pointer in parallel. On a first write,
         // Cloudflare KV may expose the just-written key to getPtr()'s lazy
@@ -533,8 +542,7 @@ export default {
         if (payload.length > 2 * 1024 * 1024) {
           return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
         }
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
+        const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + storageKeySuffix();
 
         // Write delta and read pointer in parallel. getPtr() can discover this
         // same key during a first-write migration, so only count/append it when
@@ -697,16 +705,17 @@ async function getPtr(env, userId, deviceId, type) {
   return ptr;
 }
 
-// A delta key's trailing segment is `new Date().toISOString().replace(/[:.]/g,'-')`
-// — lexically sortable in the same relative order as the original ISO
-// timestamps (the transform is injective and monotonic for same-length
-// strings), but not directly Date-parseable. Reconstruct a real ISO string
-// for the client rather than exposing the mangled form.
+// Delta keys begin with `new Date().toISOString().replace(/[:.]/g,'-')` and
+// now carry `~<nonce>` after that timestamp. The timestamp stays first so
+// lexical sorting preserves chronological order, while the nonce prevents
+// same-millisecond writes from sharing a KV key. Legacy timestamp-only keys
+// remain parseable during migration/restore.
 function deltaTsFromKey(key) {
-  const raw = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
-  // raw shape: YYYY-MM-DDTHH-MM-SS-mmmZ
+  const rawWithNonce = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+  const raw = rawWithNonce.split('~', 1)[0];
+  // raw timestamp shape: YYYY-MM-DDTHH-MM-SS-mmmZ
   const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
-  if (!m) return raw; // fall back to the raw sortable string if the shape ever changes
+  if (!m) return raw; // fall back to the raw sortable timestamp if the shape ever changes
   return `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`;
 }
 
