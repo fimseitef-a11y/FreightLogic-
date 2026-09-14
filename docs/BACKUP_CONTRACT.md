@@ -2,6 +2,8 @@
 
 Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
+Current application contract: **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**.
+
 ## Rule
 
 **Every persisted store or settings field uploaded by `cloudPushBackup()` must be restorable by `mergeRestoreData()`.** Credentials are the only documented exception. Any release that adds a durable store/field must update this document, push/export coverage, merge/restore coverage, integrity coverage when protected, and regression tests in the same release.
@@ -17,7 +19,7 @@ Cloud backup and `exportJSON()` exclude these secret settings:
 
 No backup/import path may re-introduce them from an export payload.
 
-## Store-level contract — v24.0.2 / DB v15
+## Store-level contract — current through v24.0.9 / DB v15
 
 | Store | Full backup | Delta backup | Restored | Contract |
 |---|---:|---:|---:|---|
@@ -57,9 +59,9 @@ For competing lifecycle copies, an older delta/import must not roll a newer conf
 
 A legacy payload with no `loadLifecycle` key is valid legacy input and is not corruption.
 
-## `normalizedEvidence` contract — v24.0.2 / DB v15
+## `normalizedEvidence` contract — current through v24.0.9 / DB v15
 
-`normalizedEvidence` is the durable evidence layer introduced by the release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
+`normalizedEvidence` is the durable evidence layer introduced by the v24.0.2 release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
 
 | Property | Value |
 |---|---|
@@ -108,7 +110,7 @@ A pre-v15 payload with no `normalizedEvidence` key is valid legacy input and is 
 
 ## Protected export integrity
 
-v24.0.2 retains the legacy `checksumFull` compatibility path for older exports and adds/uses `checksumProtected` for current protected data. Current-generation integrity coverage includes at least:
+v24.0.2 introduced/retained the legacy `checksumFull` compatibility path and the current `checksumProtected` coverage. v24.0.9 keeps that contract unchanged. Current-generation integrity coverage includes at least:
 
 - `loadLifecycle`;
 - `normalizedEvidence`;
@@ -141,8 +143,9 @@ The settings store is generic; current durable keys include, among others:
 | `insuranceMigrationBackupKeys` | retained migration snapshot index |
 | `insuranceMigrationBackup_<timestamp>` | pre-mutation insurance category snapshots |
 | `vanProfile` | configurable cargo dimensions/payload used by fit checks |
+| `planningAvgMph` | optional operator-set pickup-planning average speed for v24.0.9 feasibility checks; valid runtime range 5–85 mph. There is deliberately no default. Missing/cleared means the gate is inapplicable and restore/import must never invent or clamp a value. |
 
-These keys are covered through the settings-store backup/restore path; no separate store is required. Secret exclusions above still apply.
+These keys are covered through the settings-store backup/restore path; no separate store is required. `planningAvgMph` is also explicitly admitted by the local JSON import allow-list introduced with v24.0.9, so export/import may preserve a real operator-set value while an absent value stays absent. Secret exclusions above still apply.
 
 ## Expense field carried by this contract
 
@@ -150,10 +153,11 @@ These keys are covered through the settings-store backup/restore path; no separa
 
 ## Verification
 
-The release suite must continue to exercise the real shared paths, not helper-only substitutes. For v24.0.2 that includes:
+The release suite must continue to exercise the real shared paths, not helper-only substitutes. For the current v24.0.9 / DB v15 candidate that includes:
 
 - full backup → delta(s) → wipe → restore;
 - settings, receipts metadata, gpsLogs, lifecycle, and normalized-evidence preservation;
+- preservation of explicit durable settings such as `planningAvgMph` without manufacturing missing settings;
 - confirmed delta-gap warning behavior;
 - zero-change delta push;
 - stale lifecycle/evidence downgrade protection;
@@ -164,4 +168,4 @@ The release suite must continue to exercise the real shared paths, not helper-on
 - lifecycle/evidence protected-checksum mutation detection;
 - legacy payload compatibility with absent lifecycle/evidence sections.
 
-Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.2 release-integrity/blocker specs, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
+Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.x release-integrity/blocker specs, the v24.0.9 pickup-feasibility/UNKNOWN-setting coverage, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
