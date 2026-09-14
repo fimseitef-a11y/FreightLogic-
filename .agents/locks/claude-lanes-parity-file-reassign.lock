@@ -1,0 +1,6 @@
+owner: claude
+token: 4fb20929-fc93-46f4-90d1-a29a3a3964cc
+started_utc: 2026-09-14T17:13:42Z
+expected_release_utc: 2026-09-14T19:13:42Z
+paths: .agents/LANES.md
+task: operator-approved exact-file reassignment of scripts/verify-cloudflare-parity.mjs to claude so the v24.0.10 generation bump can complete; rest of scripts/ and all of tests/ stay with gpt
