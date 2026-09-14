@@ -267,3 +267,14 @@ Historical note only, **not a current baseline**: v24.0.0 release commit `5dddef
 ## 2026-09-14 — gpt completion continuation
 - Baseline c383c6dfb80316c97a12f086fbe483036a06f811: node tests/run-all.mjs, Node 24.19.0 / Playwright 1.62.1. ENVIRONMENT BLOCK: Chromium headless-shell executable missing; no assertions executed. Exact preceding main and governance PR GitHub full suites are green. One controlled baseline retry authorized after installing the pinned browser; no source change as part of diagnosis.
 - Same SHA: node scripts/verify-history-bundle.mjs <private bundle>: PASS, 216 rows / five files / zero blocking problems / zero warnings. No source cells published.
+
+## 2026-09-14 — GPT read-only verification for Claude's release-documentation handoff
+
+All entries below are reviews of existing GitHub Actions logs, not new local executions or reruns.
+
+- Historical candidate `10430bffc0da0648930f0cc940cf3d56983275ef`, Tests run `34874397656`, `node tests/run-all.mjs`, GitHub-hosted Node 22 / Playwright Chromium: **452 passed, 1 failed across 49 specs**. Failure: `integration/cloud-backup-paused.spec.mjs` CBP-03; WPR-01/02 passed in this run. No remediation or rerun performed by the documentation pass.
+- Current source candidate `d58bfbea3b6f5d0ebc100795d1320c033a1a5bc0`, Tests run `34884711942`, same full-suite command/environment: **457 passed, 0 failed across 49 specs**. Included six-width2/0, worker-pointer-race3/0, rollback-verifier-current6/0. Does not establish a diagnosis of the preceding CBP-03 failure.
+- Same candidate, Verify Live Parity `34885000070`, `node scripts/verify-cloudflare-parity.mjs`, production defaults on GitHub-hosted Node22: **VERDICT PASS**, all23 declared runtime assets load, no HTML fallback, app/PWA24.0.10 and Worker17. Reviewed post-deploy observation; no new dispatch. The preceding push run `34884711957` was FAILURE; both records retained.
+- Same candidate, Deploy Backup Worker `34884719806`: reviewed SUCCESS and post-deploy health17 at19:05:33Z. This pass did not deploy.
+- Same candidate, Verify Authenticated Worker `34884786623`, `verify-live-authority.mjs` and `verify-live-backup.mjs` under dedicated synthetic identity: authority **5 PASS / 0 FAIL / 3 NOT RUN** (paid complete/REJECT projection and extraction); backup **21 PASS / 0 FAIL / 0 SKIP**. Token rotation and installed-app restore are not proved by this run. No credentials or raw fixtures copied.
+- Documentation commit `df794a440a5522bc48eb5b1a6b34cbb9363b0c64`, draft PR195: text checks PASS (candidate/version/evidence references, internal document paths, balanced fences, no trailing whitespace, physical A2–A9 unchanged, exactly four GPT-owned documentation paths). Lanes path-ownership/commit-prefix/lock-trailer observed PASS. No local full suite for documentation-only changes; automatic PR suite in progress when reviewed.
