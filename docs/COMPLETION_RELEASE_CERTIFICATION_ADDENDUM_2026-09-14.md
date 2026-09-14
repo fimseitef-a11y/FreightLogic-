@@ -45,7 +45,9 @@ The new optional pickup-cutoff field and Trip Planning speed setting therefore d
 
 PR #175 full Playwright run **34796439138** completed successfully with **431 passed, 0 failed across 45 spec files**. The lane/ownership workflow also completed successfully. The run includes the new pickup-feasibility unit/integration matrix, deployment-asset coverage, cache-generation parity, service-worker update/offline behavior, lifecycle/evidence/import/backup authority checks, and the existing completion-release regression suite.
 
-A successful test run is source evidence, not live-origin evidence.
+After merge, the independent `main` push test run **34796618850** against exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` also completed **SUCCESS**. This closes the source/integration CI gate on both the PR candidate and the merged `main` candidate.
+
+Successful test runs are source evidence, not live-origin evidence.
 
 ### 4. Cloudflare built the exact merged candidate successfully
 
@@ -74,6 +76,7 @@ The earlier requirement to redeploy Worker v15 remains discharged. Authenticated
 - [x] v24.0.9 source integrated through PR #175.
 - [x] PR #175 lane/ownership gate passed.
 - [x] PR #175 full suite passed: **431/0 across 45 specs**.
+- [x] Merged-`main` test run 34796618850 passed on exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
 - [x] Cloudflare production build succeeded for exact merged `main` SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
 - [x] Source deployment inventory covers every declared runtime asset and no longer excludes `admin-driver-ui.js`.
 - [x] Worker v15 health/CORS/unauthorized-admin free checks were observed on 2026-09-13 and Worker source is unchanged.
@@ -97,7 +100,7 @@ No valid dedicated test driver token is available in this session. Therefore aut
 
 ## Canada-floor conflict is not silently resolved
 
-The repository currently contains two materially different Canada rate narratives: a June broker relay with lower observed/quoted ranges and later policy material carrying a substantially higher U.S.→Canada protective floor/target. Current recovered context does not prove that both figures have the same authority. No Canada protective floor is changed in v24.0.9. The conflict belongs in `docs/OPEN_QUESTIONS.md` until an explicit operator correction or primary authority resolves it.
+The repository currently contains materially different Canada rate narratives with different provenance. Current recovered context does not prove that they have the same authority or describe the same thing (protective floor, target, or market observation). No Canada protective floor is changed in v24.0.9. The conflict is recorded as item 34 in `docs/OPEN_QUESTIONS.md` and may be resolved only by explicit operator correction or stronger primary evidence.
 
 ## Administrative cleanup
 
