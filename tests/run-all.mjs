@@ -10,6 +10,7 @@ import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
+import { runSpec as liveParityRunner } from './unit/live-parity-runner.spec.mjs';
 import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-semantics.spec.mjs';
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
 import { runSpec as modernShellRouting } from './integration/modern-shell-routing.spec.mjs';
@@ -59,6 +60,7 @@ const specs = [
   releaseHygiene,
   cacheGeneration,
   deployAssetCoverage,
+  liveParityRunner,
   swSubresourceSemantics,
   v2404FailClosed,
   modernShellRouting,

@@ -2167,7 +2167,7 @@ and all 13 CG assertions are green at `24.0.9`.
 
 **Tests.** `tests/integration/pickup-feasibility.spec.mjs` (8, new) drives the
 real evaluator UI in Chromium and asserts **computed content**, not internal
-state. `tests/unit/pure-functions.spec.mjs` gained 10 `[PF]` cases covering the
+state. `tests/unit/pure-functions.spec.mjs` gained 12 `[PF]` cases covering the
 UNKNOWN matrix above. Cutoffs are computed relative to `Date.now()` inside the
 page rather than pinned to a literal, so this spec cannot become the date
 time-bomb recorded in `gpt-to-claude-v2402-date-fixture-timebomb-2026-09-02.md`.
@@ -2190,3 +2190,89 @@ state remains `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-13.md`, and
 this release changes what its parity run must target — the candidate is now
 `24.0.9`. `docs/` is gpt-owned under `/.agents/LANES.md`, so the checklist bump
 was requested through `/.agents/inbox/` rather than edited across lanes.
+
+---
+
+## Live-parity runner — closing the observation gap, and UNOBSERVED as a real outcome
+
+Tooling only. No shipped file changed, so no version marker moved: `APP_VERSION`
+and `SW_VERSION` stay `24.0.9`, `DB_VERSION` 15, Worker v15. Requested by the gpt
+lane in `.agents/inbox/gpt-to-claude-live-parity-runner-2026-09-14.md`; `.github/`
+and `scripts/` are claude-owned, so it was built rather than handed back.
+
+**The gap.** The live half of `scripts/verify-cloudflare-parity.mjs` had been
+UNOBSERVED for the whole v24.0.x line — not because anyone doubted it, but
+because no environment that could run it could also reach production. This
+repo's agent proxies refuse to tunnel to the deployed `workers.dev` origins, and
+the operator works from a phone. GitHub-hosted runners have ordinary outbound
+access, so the observation that was impossible everywhere else is a button there.
+
+`.github/workflows/verify-live-parity.yml` — `workflow_dispatch` only,
+`permissions: contents: read`, no secrets, Node 22, no npm install (the verifier
+is plain Node with global `fetch`). It records the exact SHA under verification,
+runs the real verifier with no `--static-only` shortcut, writes the full log to
+the job summary, and on anything but PASS it stops and reports. It never deploys
+and never writes to the repository: auto-repairing production from a verification
+job is the branch-pushing CI machinery this file records as removed on purpose.
+
+**The part that actually mattered: three outcomes, not two.** The request assumed
+PASS / FAILURE / UNOBSERVED already existed. They did not — an unreachable origin
+was recorded as one more failed check, indistinguishable from a real mismatch.
+That conflation is dangerous in both directions: a network outage gets written
+into a certification record as evidence that production is broken, and — worse —
+a run that observed nothing can be cited as though it had looked. `report()` now
+ends in an explicit verdict:
+
+| Verdict | Exit | Means |
+|---|---|---|
+| `PASS` | 0 | live evidence observed, everything agreed |
+| `FAILURE` | 1 | real evidence of a mismatch, or a static check failed |
+| `UNOBSERVED` | 2 | origins not reachable; **no** parity claim in either direction |
+
+This is the same UNKNOWN-is-not-a-value doctrine v24.0.1 applied to the canonical
+decision and v24.0.9 applied to the pickup gate, applied to the release gate
+itself. Three properties keep it honest:
+
+- **Exit 2 is still non-zero**, so `deploy-backup-worker.yml`,
+  `scripts/deploy-backup-worker.sh` and `m7-certify` all keep failing closed
+  exactly as before. An unobserved gate is not a passed gate.
+- **A static failure outranks unreachability.** The CSP and asset-exclusion
+  checks need no network, so their failure is evidence regardless — reporting
+  UNOBSERVED while `index.html` and `_headers` genuinely disagree would hide a
+  source defect behind a network excuse.
+- **Any HTTP response at all counts as observation**, including a 404 or a 500.
+  Unreachability means *zero* responses and at least one transport error. An
+  origin that is up and serving 404s is a failed deploy — the exact 2026-09-13
+  defect — and must read as FAILURE, not as "couldn't look".
+- **`--static-only` can never be UNOBSERVED.** It deliberately never attempts the
+  live half, so every offline developer run stays a clean PASS.
+
+**Tests.** `tests/unit/live-parity-runner.spec.mjs` (new, 10). LPR-05…LPR-10
+**spawn the real verifier** and assert its real exit code rather than grepping
+the source for the strings that would produce one: `--static-only` → 0;
+`https://unreachable.invalid` (RFC 2606, deterministic offline) → 2; a local
+server that 404s everything → 1; a local server that answers once and then
+destroys every connection → 1. LPR-01…LPR-04 pin the workflow's shape.
+
+Negative controls, all verified to fire: collapsing UNOBSERVED back into FAILURE
+fails LPR-06/08; adding a `push:` trigger fails LPR-01; `contents: write` fails
+LPR-02; and dropping the "a response arrived" record fails LPR-10.
+
+That last one is worth keeping in the record. It did **not** fire against the
+first two verdict tests — an all-404 origin produces no transport errors, so the
+verdict was already correct there by a different route. Only the *partial* case
+(answers once, then dies) actually depends on that record, and the control stayed
+silent until a test for it existed. A negative control that does not fire is the
+finding, not a formality.
+
+`runVerifier()` is deliberately async: the synchronous form blocks this process's
+event loop, so the in-process HTTP server in LPR-09/10 could never accept the
+connection and the verifier timed out against a server that was, from its own
+side, perfectly up — reporting UNOBSERVED and making a test-harness deadlock look
+like a product defect.
+
+**What this does not close.** Authenticated `/evaluate`, `/extract`,
+backup/restore and token-rotation smokes are a separate gate needing a dedicated
+non-published test identity, and are deliberately not in this workflow. A PASS
+here is live evidence for the unauthenticated app/static/Worker-health sweep and
+nothing more.
