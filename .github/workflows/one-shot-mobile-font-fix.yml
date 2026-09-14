@@ -32,15 +32,15 @@ jobs:
             echo 'Mobile form-size invariant already present.'
           else
             cat >> styles.css <<'CSS'
-
-/* FL-CERT-MOBILE-FORM-SIZE
-   iOS Safari zooms focused form controls below 16 CSS px. Some runtime intake
-   surfaces carry older inline 15px declarations, so the release invariant must
-   win at mobile widths without changing desktop density. */
-@media (max-width: 480px) {
-  input, select, textarea { font-size: 16px !important; }
-}
-CSS
+          
+          /* FL-CERT-MOBILE-FORM-SIZE
+             iOS Safari zooms focused form controls below 16 CSS px. Some runtime intake
+             surfaces carry older inline 15px declarations, so the release invariant must
+             win at mobile widths without changing desktop density. */
+          @media (max-width: 480px) {
+            input, select, textarea { font-size: 16px !important; }
+          }
+          CSS
           fi
           git rm .github/workflows/one-shot-mobile-font-fix.yml
           git config user.name 'github-actions[bot]'
