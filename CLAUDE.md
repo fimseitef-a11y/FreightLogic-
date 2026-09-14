@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v17** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file) and is **not yet deployed** — production is still serving v16. App/PWA is v24.0.10 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA is v24.0.10 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2448,9 +2448,14 @@ reads the generation out of `cloud-backup-worker.js` and asserts the header, the
 `/health` response and the parity gate all name the same number — the invariant
 rather than the value, so a future Worker bump needs no edit here.
 
-**NOT DEPLOYED.** Production is still serving v16. The repair reaches a driver only
-through a `DEPLOY`-confirmed dispatch of `.github/workflows/deploy-backup-worker.yml`,
-which is an operator action by design.
+**DEPLOYED 2026-09-14T19:05Z.** Run `34884719806` deployed v17 from `main` @ `d58bfbe`
+through the `DEPLOY`-confirmed dispatch of
+`.github/workflows/deploy-backup-worker.yml`. Verified three independent ways:
+the workflow's own post-deploy checks, the auto-triggered authenticated smoke
+(run `34884786623`, PASS against the deployed Worker), and a live parity
+re-dispatch (run `34885000070`) reporting
+`Worker reports v17 — {"ok":true,"version":"17"}` with all 23 runtime assets
+loading and none served as HTML.
 
 ---
 
@@ -2535,7 +2540,8 @@ credential is involved.
   summaries — that is the whole point of the gate.
 - **Physical iPhone Safari + installed-PWA checks**, including the pickup-feasibility
   surface. Operator-only, and `FIELD_TEST_CHECKLIST.md` remains the instrument.
-- **Worker v17 deployment.** `DEPLOY`-confirmed dispatch, deliberately manual.
+*(Worker v17 deployment was the third open item here and is now closed — see the
+v17 section above.)*
 
 Full suite after this sweep, run locally against real headless Chromium:
 **457 passed, 0 failed across 49 spec files** — up from 451/2 on `main`, which is
