@@ -1,10 +1,10 @@
-/* FreightLogic v24.0.8 — modern five-surface navigation adapter
+/* FreightLogic v24.0.9 — modern five-surface navigation adapter
  *
  * Structural-only layer. It reuses FreightLogic's canonical router, renderers
  * and state instead of introducing a second load queue, evaluator or router.
  * Primary driver surfaces: Today / Loads / Evaluate / Trips / Money.
  *
- * v24.0.8 — this file used to carry its own router. It created `#view-loads`
+ * v24.0.9 — this file used to carry its own router. It created `#view-loads`
  * itself, intercepted bottom-nav clicks, and tracked its own active state.
  * None of it could work: `app.js` builds its `views` map at parse time from
  * markup that already exists, so a section injected afterwards was never

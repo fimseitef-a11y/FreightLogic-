@@ -353,6 +353,111 @@ test('[7D] checkVanFit blocks a load that exceeds cargo length', async () => {
   eq(r.violations[0].field, 'length', 'the violation must be reported on the length field');
 });
 
+// ── v24.0.9: physical-pickup feasibility ───────────────────────────────────
+// The doctrine under test is UNKNOWN-is-not-a-pass: every missing material fact
+// must produce `applicable:false` with a named reason, never a cheerful
+// `reachable:true`. A load is only ever blocked on facts the operator supplied.
+const PF = async (args) => app.page.evaluate((a) => window.__FL_TESTS.checkPickupFeasibility(a), args);
+const NOW = 1_780_000_000_000; // fixed instant; every case is relative to it
+
+test('[PF] no planning speed set — inapplicable, never a pass and never a block', async () => {
+  const r = await PF({ deadheadMi: 225, cutoffMs: NOW + 20 * 60000, nowMs: NOW, planningMph: null });
+  eq(r.applicable, false, 'with no operator speed the gate must be inert');
+  eq(r.reason, 'PLANNING_SPEED_UNSET', 'the reason must name the missing fact');
+  eq(r.reachable, undefined, 'an inapplicable check must not report reachability at all');
+});
+
+test('[PF] no cutoff supplied — inapplicable (most postings state none)', async () => {
+  const r = await PF({ deadheadMi: 225, cutoffMs: null, nowMs: NOW, planningMph: 55 });
+  eq(r.applicable, false, 'a load with no stated cutoff must not be blocked');
+  eq(r.reason, 'NO_CUTOFF_SUPPLIED');
+});
+
+test('[PF] UNKNOWN deadhead is not zero deadhead', async () => {
+  // The M1 rule, applied here: a blank deadhead must not read as "already at
+  // the pickup", which would make every distant load look instantly reachable.
+  const r = await PF({ deadheadMi: null, cutoffMs: NOW + 20 * 60000, nowMs: NOW, planningMph: 55 });
+  eq(r.applicable, false, 'an unstated deadhead must make the check inapplicable');
+  eq(r.reason, 'DEADHEAD_UNKNOWN');
+});
+
+test('[PF] a VERIFIED zero deadhead stays applicable and is reachable', async () => {
+  const r = await PF({ deadheadMi: 0, cutoffMs: NOW + 20 * 60000, nowMs: NOW, planningMph: 55 });
+  eq(r.applicable, true, 'an explicit 0 is a real fact — the driver is at the pickup');
+  eq(r.reachable, true, 'zero drive time against a future cutoff is reachable');
+  eq(r.driveMinutes, 0);
+});
+
+test('[PF] the operator case: 225mi deadhead against a 20-minute window is unreachable', async () => {
+  const r = await PF({ deadheadMi: 225, cutoffMs: NOW + 20 * 60000, nowMs: NOW, planningMph: 55 });
+  eq(r.applicable, true);
+  eq(r.reachable, false, '225mi at 55mph needs ~245 minutes; 20 were available');
+  ok(Math.round(r.driveMinutes) === 245, `expected ~245 drive minutes, got ${r.driveMinutes}`);
+  ok(r.slackMinutes < 0, 'slack must be negative on an unreachable pickup');
+});
+
+test('[PF] an elapsed cutoff is unreachable and flagged as passed', async () => {
+  const r = await PF({ deadheadMi: 5, cutoffMs: NOW - 60 * 60000, nowMs: NOW, planningMph: 55 });
+  eq(r.applicable, true);
+  eq(r.reachable, false, 'a closed window cannot be met even from five miles away');
+  eq(r.cutoffPassed, true, 'an elapsed cutoff must be distinguishable from a distance shortfall');
+});
+
+test('[PF] a comfortable window is reachable and not tight', async () => {
+  const r = await PF({ deadheadMi: 100, cutoffMs: NOW + 10 * 3600000, nowMs: NOW, planningMph: 50 });
+  eq(r.reachable, true);
+  eq(r.tight, false, '8 hours of slack is not tight');
+});
+
+test('[PF] a reachable-but-narrow window is flagged tight, and tight is never a block', async () => {
+  // 100mi at 50mph = 120 min; 135 min available leaves 15 min of slack.
+  const r = await PF({ deadheadMi: 100, cutoffMs: NOW + 135 * 60000, nowMs: NOW, planningMph: 50 });
+  eq(r.reachable, true, 'tight is still reachable — it must never block');
+  eq(r.tight, true, '15 minutes of slack is below the 30-minute advisory threshold');
+});
+
+test('[PF] a missing clock reports its own reason, not a borrowed one', async () => {
+  // NO_CLOCK rather than NO_CUTOFF: a reason string that names the wrong missing
+  // fact sends the next reader looking in the wrong place.
+  const r = await PF({ deadheadMi: 100, cutoffMs: NOW + 60 * 60000, nowMs: null, planningMph: 50 });
+  eq(r.applicable, false);
+  eq(r.reason, 'NO_CLOCK');
+});
+
+test('[PF] a cutoff exactly now is not reported as already passed', async () => {
+  // Zero slack closes the window AT this instant; reporting reachable AND
+  // cutoffPassed together would be self-contradictory.
+  const r = await PF({ deadheadMi: 0, cutoffMs: NOW, nowMs: NOW, planningMph: 50 });
+  eq(r.reachable, true, 'zero deadhead against a cutoff exactly now is still met');
+  eq(r.cutoffPassed, false, 'the window has not passed until it is behind us');
+});
+
+test('[PF] an out-of-range planning speed goes inert rather than clamping', async () => {
+  for (const mph of [0, 1, 655, -40]) {
+    const r = await PF({ deadheadMi: 225, cutoffMs: NOW + 20 * 60000, nowMs: NOW, planningMph: mph });
+    eq(r.applicable, false, `planningMph ${mph} must disable the gate, not clamp into range`);
+    eq(r.reason, 'PLANNING_SPEED_UNSET');
+  }
+});
+
+test('[PF] getPlanningAvgMph returns null when unset and rejects an out-of-range stored value', async () => {
+  const r = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const out = {};
+    await T.setSetting('planningAvgMph', null);
+    out.unset = await T.getPlanningAvgMph();
+    await T.setSetting('planningAvgMph', 655);
+    out.tooHigh = await T.getPlanningAvgMph();
+    await T.setSetting('planningAvgMph', 55);
+    out.valid = await T.getPlanningAvgMph();
+    await T.setSetting('planningAvgMph', null);
+    return out;
+  });
+  eq(r.unset, null, 'unset must be null, never a default speed');
+  eq(r.tooHigh, null, 'a stored out-of-range value must read as unset, not be clamped');
+  eq(r.valid, 55, 'a valid operator figure is returned exactly');
+});
+
 test('[7D] checkVanFit blocks a load that exceeds payload even with no other dimensions given', async () => {
   const r = await app.page.evaluate((profile) => window.__FL_TESTS.checkVanFit({ weightLbs: profile.payloadLbs + 500 }, profile), await app.page.evaluate(() => window.__FL_TESTS.VAN_PROFILE_DEFAULT));
   eq(r.fits, false, 'a load 500lbs over payload must be blocked');

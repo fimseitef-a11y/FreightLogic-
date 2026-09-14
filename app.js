@@ -1,7 +1,22 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.8 USA ENGINE
+/** FreightLogic v24.0.9 USA ENGINE
+ *  v24.0.9 "Can You Even Get There": until now the evaluator had no notion of
+ *          time. It would grade, price and recommend a bid on a load whose
+ *          pickup had already closed, or that sat further away in deadhead
+ *          than the remaining window allowed — the 2026-09-12 operator dataset
+ *          contained a real instance, a 225-mile deadhead against a 19:00
+ *          cutoff, and nothing detected it. checkPickupFeasibility() now runs
+ *          immediately after the 7D dimensional gate and before any economics,
+ *          blocking an unreachable pickup with "CAN'T TAKE" rather than
+ *          pricing freight that cannot be served. There is deliberately NO
+ *          default average speed: converting deadhead into drive time needs an
+ *          operator fact, and VAN_PROFILE_DEFAULT is the cautionary precedent
+ *          for guessing one. The gate stays inert until the operator sets
+ *          settings['planningAvgMph'], the same shape as the EIA feed being
+ *          inert without its key — so it cannot change the verdict on any load
+ *          scored the way loads are scored today.
  *  v24.0.8 "Loads Actually Opens": the five-surface shell landed in PR #168 with
  *          its central new surface dead. modern-shell.js created `#view-loads`
  *          at runtime, but app.js builds its `views` map at parse time — so the
@@ -168,7 +183,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.8';
+const APP_VERSION = '24.0.9';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3583,7 +3598,11 @@ async function importJSON(file, opts={}){
       // is the same class of gap as X-07.
       'vehicleProfiles','activeVehicleId','vanProfile',
       // Issue #119 Batch A, item 7 — fuel-price provenance
-      'fuelPriceProvenance']);
+      'fuelPriceProvenance',
+      // v24.0.9 — planning average speed for the pickup-feasibility gate. A
+      // settings key the app writes but the importer drops is the X-07 class
+      // of gap, so it is allowed through at the same time it is introduced.
+      'planningAvgMph']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     const isAllowedSettingsKey = k => {
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
@@ -7047,6 +7066,12 @@ async function renderInsights(){
     set('#vanDoorHeightIn', vp.doorHeightIn);
     set('#vanPayloadLbs', vp.payloadLbs);
   }
+  // v24.0.9: planning average speed for the pickup-feasibility gate. Blank is
+  // the correct resting state — the gate stays inert rather than guessing.
+  {
+    const el = $('#planningAvgMph');
+    if (el){ const v = knownNum(await getSetting('planningAvgMph', null)); el.value = v === null ? '' : v; }
+  }
   // DAT API settings
   const datEnabled = await getSetting('datApiEnabled', 'off') || 'off';
   const datEl = $('#datApiEnabled');
@@ -9862,6 +9887,130 @@ function _renderVanFitBlock(out, violations){
     <div class="muted" style="font-size:11px;margin-top:10px">Update your van's real dimensions any time in Settings → Van Profile.</div>`;
 }
 
+/* ── Physical-pickup feasibility (v24.0.9) ───────────────────────────────────
+ *
+ * A load you cannot physically reach before its pickup cutoff is not a pricing
+ * question. Until now the evaluator had no notion of time at all: it would
+ * grade, price and recommend a bid on a load whose pickup had already closed,
+ * or that sat further away in deadhead than the remaining window allowed. The
+ * 2026-09-12 operator dataset contained a real instance — a 225-mile deadhead
+ * against a 19:00 cutoff — and nothing in the app detected it.
+ *
+ * This gate mirrors 7D `checkVanFit()` exactly: it runs BEFORE any economics,
+ * blocks with "CAN'T TAKE" when the load is impossible, and is otherwise
+ * silent. A load with no cutoff entered is not blocked — most postings do not
+ * state one, and this is a safety net, not a requirement.
+ *
+ * WHY THERE IS NO DEFAULT SPEED. Converting deadhead miles into drive time
+ * needs an average speed, and that is an operator fact this repository has no
+ * authority to invent. `VAN_PROFILE_DEFAULT` is the cautionary precedent: its
+ * published-brochure cargo length was wrong by nine inches against the
+ * operator's own measurement, and every load between 122" and 130" scored as
+ * fitting for freight the van could not carry. A guessed speed would fail the
+ * same way, except it would REJECT loads the driver could actually make.
+ *
+ * So `settings['planningAvgMph']` has no default and the gate is inert until
+ * the operator supplies it — the same shape as the EIA feed, which returns
+ * null early without `settings['eiaApiKey']` rather than inventing a fuel
+ * price. Unset is reported as UNSET, never as "reachable" and never as a
+ * speed of zero. */
+const PICKUP_FEASIBILITY = Object.freeze({
+  UNSET: 'PLANNING_SPEED_UNSET',
+  NO_CUTOFF: 'NO_CUTOFF_SUPPLIED',
+  DEADHEAD_UNKNOWN: 'DEADHEAD_UNKNOWN',
+  CUTOFF_UNPARSEABLE: 'CUTOFF_UNPARSEABLE',
+  NO_CLOCK: 'NO_CLOCK',
+  // Sanity bounds on the operator-supplied figure. These reject a typo, they
+  // do NOT substitute a value: outside the range the gate goes inert (UNSET)
+  // rather than silently clamping to a number the operator never chose.
+  MIN_MPH: 5,
+  MAX_MPH: 85,
+  // Slack below which a reachable pickup is still reported as tight. Advisory
+  // only — it never blocks and never touches verdict, grade or bid.
+  TIGHT_SLACK_MIN: 30,
+});
+
+/** The operator's own planning average speed, or null when they have not set
+ *  one. Never falls back to a constant — see the note above. */
+async function getPlanningAvgMph(){
+  const raw = knownNum(await getSetting('planningAvgMph', null));
+  if (raw === null) return null;
+  if (raw < PICKUP_FEASIBILITY.MIN_MPH || raw > PICKUP_FEASIBILITY.MAX_MPH) return null;
+  return raw;
+}
+
+/** Pure. Can the driver physically reach this pickup before it closes?
+ *
+ *  Returns `{ applicable:false, reason }` whenever any material fact is
+ *  missing — an inapplicable check is never reported as a pass. When it does
+ *  apply, `reachable` is the answer and `tight` flags a reachable-but-narrow
+ *  window for advisory use only.
+ *
+ *  A deadhead of exactly 0 is a VERIFIED zero (the driver is already at the
+ *  pickup), so it yields zero drive time and stays applicable — distinguishing
+ *  that from an unstated deadhead is the same M1/knownNum doctrine the
+ *  canonical decision layer follows. */
+function checkPickupFeasibility({ deadheadMi, cutoffMs, nowMs, planningMph }){
+  const mph = knownNum(planningMph);
+  if (mph === null || mph < PICKUP_FEASIBILITY.MIN_MPH || mph > PICKUP_FEASIBILITY.MAX_MPH){
+    return { applicable: false, reason: PICKUP_FEASIBILITY.UNSET };
+  }
+  // knownNum() already rejects NaN/Infinity, so an absent, blank or unparseable
+  // cutoff all arrive here as null. CUTOFF_UNPARSEABLE is reported by the CALLER,
+  // which is the only layer that can tell a malformed entry from an empty field.
+  const cutoff = knownNum(cutoffMs);
+  if (cutoff === null) return { applicable: false, reason: PICKUP_FEASIBILITY.NO_CUTOFF };
+  const dh = knownNum(deadheadMi);
+  if (dh === null || dh < 0) return { applicable: false, reason: PICKUP_FEASIBILITY.DEADHEAD_UNKNOWN };
+  const now = knownNum(nowMs);
+  if (now === null) return { applicable: false, reason: PICKUP_FEASIBILITY.NO_CLOCK };
+
+  const driveMinutes = (dh / mph) * 60;
+  const availableMinutes = (cutoff - now) / 60000;
+  const slackMinutes = availableMinutes - driveMinutes;
+  return {
+    applicable: true,
+    reachable: slackMinutes >= 0,
+    tight: slackMinutes >= 0 && slackMinutes < PICKUP_FEASIBILITY.TIGHT_SLACK_MIN,
+    driveMinutes, availableMinutes, slackMinutes,
+    deadheadMi: dh, planningMph: mph,
+    cutoffPassed: availableMinutes < 0,
+  };
+}
+
+function _fmtMinutes(mins){
+  const m = Math.max(0, Math.round(Math.abs(mins)));
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+
+/** Renders the blocking "CAN'T TAKE" card for an unreachable pickup, in place
+ *  of the normal evaluator result — called before any economics computation.
+ *  Every number that produced the verdict is shown, including the operator's
+ *  own planning speed, so the block is never a mystery the driver has to
+ *  argue with. */
+function _renderPickupBlock(out, r){
+  const rows = [
+    ['Deadhead to pickup', `${r.deadheadMi} mi`],
+    ['At your planning speed', `${r.planningMph} mph`],
+    ['Drive time needed', _fmtMinutes(r.driveMinutes)],
+    [r.cutoffPassed ? 'Cutoff passed' : 'Time until cutoff',
+      r.cutoffPassed ? _fmtMinutes(r.availableMinutes) + ' ago' : _fmtMinutes(r.availableMinutes)],
+    ['Short by', _fmtMinutes(r.slackMinutes)],
+  ].map(([k, v]) =>
+    `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border-subtle)">
+      <span>${escapeHtml(k)}</span><span><b>${escapeHtml(String(v))}</b></span>
+    </div>`).join('');
+  out.innerHTML = `
+    <div class="fl-eval-hero" style="text-align:center;padding:20px 0">
+      <div class="fl-eval-grade" style="color:var(--bad);font-size:40px;font-weight:800">✕</div>
+      <div style="font-size:18px;font-weight:800;color:var(--bad);margin-top:4px">CAN'T TAKE — cannot reach the pickup in time</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${r.cutoffPassed ? 'The pickup window has already closed.' : 'The deadhead does not fit the remaining window.'} Economics were not evaluated.</div>
+    </div>
+    <div style="margin-top:8px">${rows}</div>
+    <div class="muted" style="font-size:11px;margin-top:10px">Based on the planning average speed you set in Settings → Trip Planning. Clear the pickup cutoff field to score this load on economics alone.</div>`;
+}
+
 async function mwIsGoingHome(dest) {
   const home = await getSetting('homeLocation', '');
   if (!home) return false;
@@ -9932,6 +10081,39 @@ async function mwEvaluateLoad(){
         _renderVanFitBlock(out, fit.violations);
         return;
       }
+    }
+  }
+
+  // v24.0.9: physical-pickup feasibility — runs immediately after the 7D
+  // dimensional gate and BEFORE any economics, for the same reason: a load the
+  // driver cannot physically reach is not a pricing question, and grading it
+  // produces a confident bid on freight that cannot be served. Inert unless the
+  // operator has set their own planning average speed AND a cutoff is entered,
+  // so this cannot change the verdict on any load scored the way loads are
+  // scored today. See checkPickupFeasibility().
+  let pickupState = { applicable: false, reason: PICKUP_FEASIBILITY.NO_CUTOFF };
+  {
+    const cutoffRaw = ($('#mwPickupCutoff')?.value || '').trim();
+    const cutoffMs = cutoffRaw ? new Date(cutoffRaw).getTime() : null;
+    if (cutoffRaw && !Number.isFinite(cutoffMs)){
+      pickupState = { applicable: false, reason: PICKUP_FEASIBILITY.CUTOFF_UNPARSEABLE };
+    } else {
+      pickupState = checkPickupFeasibility({
+        deadheadMi: deadMi,
+        cutoffMs: Number.isFinite(cutoffMs) ? cutoffMs : null,
+        nowMs: Date.now(),
+        planningMph: await getPlanningAvgMph(),
+      });
+    }
+    if (pickupState.applicable && !pickupState.reachable){
+      _renderPickupBlock(out, pickupState);
+      return;
+    }
+    // Reachable but narrow. Advisory only — it never blocks, and it never
+    // touches verdict, grade, True RPM or the canonical bid range, so it is a
+    // toast rather than anything rendered into the authoritative result card.
+    if (pickupState.applicable && pickupState.tight){
+      toast(`Tight pickup — about ${_fmtMinutes(pickupState.slackMinutes)} of slack at ${pickupState.planningMph} mph.`);
     }
   }
 
@@ -13032,6 +13214,14 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
     doorHeightIn:  posNum($('#vanDoorHeightIn')?.value,  VAN_PROFILE_DEFAULT.doorHeightIn),
     payloadLbs:    posNum($('#vanPayloadLbs')?.value,    VAN_PROFILE_DEFAULT.payloadLbs),
   });
+  // v24.0.9: planning average speed. An empty or out-of-range entry CLEARS the
+  // setting rather than storing a fallback — an inert gate is correct, a gate
+  // running on a number the operator did not choose is not.
+  {
+    const raw = knownNum($('#planningAvgMph')?.value);
+    const ok = raw !== null && raw >= PICKUP_FEASIBILITY.MIN_MPH && raw <= PICKUP_FEASIBILITY.MAX_MPH;
+    await setSetting('planningAvgMph', ok ? raw : null);
+  }
   // DAT API settings
   const datEnabled = $('#datApiEnabled')?.value || 'off';
   await setSetting('datApiEnabled', datEnabled);
@@ -20862,6 +21052,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     normalizeLane, _renderEvalHistory,
     // 7D (v23.9 Phase 7)
     checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
+    // v24.0.9 physical-pickup feasibility
+    checkPickupFeasibility, getPlanningAvgMph, PICKUP_FEASIBILITY,
     // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
     naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
     parseLoadTextEnhanced, parseLoadTextForInbox,
