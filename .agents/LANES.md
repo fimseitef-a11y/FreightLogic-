@@ -4,64 +4,68 @@ Ownership is physical-path based. Conceptual ownership does not authorize an edi
 
 This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
 
-**Operator-directed completion takeover (2026-09-14):** the operator explicitly directed GPT to take over and complete the remaining release work while Claude is idle. For this completion round only, `.github/`, `scripts/`, `tests/`, and `cloud-backup-worker.js` are assigned to GPT so the stale rollback verifier, six-width browser gate, live-parity automation, and the Worker authority-order defect exposed by the authenticated production gate can be finished without bypassing the lane guard. Core app authority remains unchanged: `app.js`, decision-engine sources, service-worker/shared paths, and other core files stay Claude/shared as mapped below. The Worker takeover is narrowly limited to the observed `/evaluate` authority-order hotfix, required generation bump, deployment verification, and certification. After Issue #119 is closed or the takeover is explicitly ended, these temporary rows should be returned to Claude unless the operator directs otherwise.
+**Single-lane consolidation (2026-09-14, operator-directed).** The operator directed the Claude lane to "take over everything and complete the app." The 2026-09-14 GPT completion takeover paragraph this replaces said it ends when Issue #119 closes **or when the takeover is explicitly ended**; this is that explicit end, and it ends the two-lane split with it rather than only the temporary rows. Every non-`SHARED` path below is now `claude`.
+
+This is a change of *who may edit*, and nothing else. `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against two *sessions*, not two agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
+
+**Restoring the split** is a pure revert of this consolidation: set the rows back and reinstate the boundary paragraph. Nothing else in this file or in `scripts/lane-guard.mjs` encodes the two-agent assumption, and the guard reads this table rather than a generated copy, so the split can come back without touching code.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
-| `.github/` | gpt | **Temporary operator-directed completion takeover (2026-09-14)** for release/certification workflows only; return to Claude after Issue #119 closure unless explicitly extended. |
+| `.github/` | claude | Consolidated to the single lane on 2026-09-14; previously a temporary takeover row for release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
 | `.gitignore` | SHARED | Repository-wide behavior. |
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
 | `AGENTS.md` | SHARED | Coordination contract. |
-| `AUDIT_REPORT.md` | claude | Core audit record; GPT may request changes through inbox. |
+| `AUDIT_REPORT.md` | claude | Core audit record; findings are recorded with their reproduction and their live production status. |
 | `CLAUDE.md` | claude | Core architecture/operations context. |
-| `FIELD_TEST_CHECKLIST.md` | gpt | Non-core field-facing documentation; changes that alter test policy require Claude review. |
-| `README.txt` | gpt | General/non-core documentation. |
+| `FIELD_TEST_CHECKLIST.md` | claude | Consolidated to the single lane on 2026-09-14; the physical-iPhone instrument, which is now maintained beside the certification record that cites it. |
+| `README.txt` | claude | Consolidated to the single lane on 2026-09-14; general/non-core documentation. |
 | `RECON_24_0_2.md` | claude | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
 | `_headers` | claude | CSP/security/deployment headers. |
-| `admin-driver-ui.js` | gpt | Presentation/admin UI; if a change touches auth/storage semantics, hand off through inbox. |
+| `admin-driver-ui.js` | claude | Consolidated to the single lane on 2026-09-14; admin UI. Auth/storage semantics here are core: the session-scoped admin token and `purgeLegacyTok()` are load-bearing and documented in CLAUDE.md. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains Claude-owned unless explicitly reassigned. |
-| `cloud-backup-worker.js` | claude | **Operator-directed completion sweep (2026-09-14, second round)** — the operator instructed the Claude lane to finish the release, so the "while Claude is idle" premise of the takeover rows no longer holds for this file. The gpt takeover was explicitly limited to the `/evaluate` authority-order hotfix (Worker v16), which is merged. v17 repairs a DIFFERENT defect outside that limit: backup/delta keys were minted at millisecond precision, so two writes in one millisecond shared a key and the second silently destroyed the first — data loss in the backup component itself, caught by `tests/unit/worker-pointer-race.spec.mjs` failing on `main`. Returns to the gpt takeover scope, or to Claude permanently, when Issue #119 closes. |
+| `cloud-backup-worker.js` | claude | Consolidated to the single lane on 2026-09-14; backup/API Worker source. Worker v17 (monotonic backup/delta key clock) is the current generation. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
-| `docs/` | gpt | General docs by default. Security/backup/tax/authority contract changes require Claude review; X-12 doc repair may be assigned to Claude because it is an audit finding. |
-| `favicon16.png` | gpt | Visual asset. |
-| `favicon32.png` | gpt | Visual asset. |
-| `icon1024.png` | gpt | Visual asset. |
-| `icon120.png` | gpt | Visual asset. |
-| `icon128.png` | gpt | Visual asset. |
-| `icon152.png` | gpt | Visual asset. |
-| `icon167.png` | gpt | Visual asset. |
-| `icon180.png` | gpt | Visual asset. |
-| `icon192.png` | gpt | Visual asset. |
-| `icon256.png` | gpt | Visual asset. |
-| `icon512.png` | gpt | Visual asset. |
-| `icon64.png` | gpt | Visual asset. |
+| `docs/` | claude | Consolidated to the single lane on 2026-09-14; the certification record, the backup/tax/authority contracts, and the completion plan all live here and are now maintained in the same lane as the code they describe. |
+| `favicon16.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `favicon32.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon1024.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon120.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon128.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon152.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon167.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon180.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon192.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon256.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon512.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
+| `icon64.png` | claude | Visual asset. Consolidated to the single lane on 2026-09-14. |
 | `index.html` | SHARED | UI shell + CSP/script ordering; lock before editing. |
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `midwest-stack-authority.js` | claude | Decision/bid advisory core and DZ gate integration. |
 | `midwest-stack-config.json` | claude | Decision/bid configuration. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/` | gpt | **Temporary operator-directed completion takeover (2026-09-14)** limited to release/certification tooling; core runtime scripts remain behavior-preserving and must not change app authority. |
-| `scripts/verify-rollback.mjs` | claude | **Operator-directed completion sweep (2026-09-14, second round)**, narrower than the `scripts/` takeover row above and therefore winning by longest-match. The B5 gate hardcoded its candidate SHA, app generation and Worker generation, so it reported PASS while describing a superseded release — a green check for the wrong candidate. It now derives all three from the tree and from git history and needs no per-release edit, which is why it should not sit in a temporary tooling lane. |
-| `scripts/verify-cloudflare-parity.mjs` | claude | **Operator-approved exact-file reassignment (2026-09-14)**, narrower than the `scripts/` takeover row above and therefore winning by longest-match. Release-generation markers only: `tests/unit/cache-generation.spec.mjs` CG-08 derives this file's `EXPECTED` block from `APP_VERSION`, so the marker bump cannot be split from the app bump and a version bump was otherwise impossible without a cross-lane edit. `workerVersion` stays the gpt lane's to move. Returns with the `scripts/` row when the takeover ends. |
+| `scripts/` | claude | Consolidated to the single lane on 2026-09-14; release/certification tooling and the deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
-| `styles.css` | gpt | Primary extracted presentation stylesheet. GPT may make presentation-only changes here without an `app.js` lock; behavior, data, decision, persistence, auth, or service-worker changes must stay in their owning/shared lanes. |
+| `styles.css` | claude | Consolidated to the single lane on 2026-09-14; the extracted presentation layer. It still carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence, so a reintroduced one fails on the next release. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | gpt | **Temporary operator-directed completion takeover (2026-09-14)** for release/geometry/verifier regressions only; do not weaken or quarantine assertions. |
-| `tests/unit/worker-pointer-race.spec.mjs` | claude | **Operator-directed completion sweep (2026-09-14, second round)**, narrower than the `tests/` takeover row above and therefore winning by longest-match. Carries the WPR-03 regression for the Worker v17 same-millisecond key repair; it moves with `cloud-backup-worker.js`, not with the release-tooling takeover. |
-| `tests/unit/cache-generation.spec.mjs` | claude | **Operator-directed completion sweep (2026-09-14, second round)**, narrower than the `tests/` takeover row above. CG-09 pinned the Worker generation as a literal that had to be hand-edited on every Worker bump; it now derives that number from `cloud-backup-worker.js`, so it moves with the Worker rather than with the tooling takeover. CG-08 already ties this spec to `scripts/verify-cloudflare-parity.mjs`, which is claude's. |
-| `tests/unit/rollback-verifier-current.spec.mjs` | claude | **Operator-directed completion sweep (2026-09-14, second round)**, narrower than the `tests/` takeover row above. Moves with `scripts/verify-rollback.mjs` — the verifier and its regression cannot be split across lanes without one of them going stale. |
+| `tests/` | claude | Consolidated to the single lane on 2026-09-14; the Playwright suite. Assertions may not be weakened or quarantined to make a release green — that rule survives the consolidation intact. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `voice-load.js` | claude | Functional intake/parser behavior. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
-## Current lane intent after CSS extraction
+## Current lane intent after the single-lane consolidation
 
-Claude retains core app implementation, audit remediation, decision logic, `app.js` runtime behavior, and the non-taken-over paths above. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, non-core documentation, and—under the operator-directed 2026-09-14 completion takeover—the remaining release/certification workflow, scripts, tests, plus the narrowly scoped Worker v16 authority-order repair needed to close Issue #119.
+One lane owns every non-`SHARED` path. The interesting question is therefore no longer *who* may edit a file but *what still serializes* — and the answer is unchanged:
 
-The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
+- `app.js` is `SHARED` and needs `lock/app-js` plus a full suite for any edit. That has never been about two agents; it is a 1.1MB single-IIFE file where two concurrent editors lose work whoever they are.
+- The rest of the `SHARED` set (`index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore`) is release-critical or protocol surface, where a silent concurrent edit ships a broken generation.
+
+The CSS seam stays a real physical boundary and is still worth keeping: presentation changes in `styles.css` do not need an `app.js` lock. It does **not** cover UI sections that still live inside `app.js` — those remain `SHARED` until an approved extraction creates more physical paths. That was true under two lanes and is true under one.
+
+`/.agents/inbox/` remains the cross-session handoff channel. With a single lane it is no longer a lane boundary, but it is still where a request that another session must action belongs.
 
 ## Enforcement
 
