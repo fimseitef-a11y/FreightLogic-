@@ -1,17 +1,24 @@
 # FreightLogic Modern UI — Visual Acceptance Contract
 
 Date: 2026-09-13
+Last reconciled: 2026-09-14
 Owner: GPT presentation lane
-Applies after: Claude structural pass requested in `/.agents/inbox/gpt-to-claude-modern-ui-structural-pass-2026-09-13.md`
-Current source baseline when written: `95a13d8af8b535115ae13a09d345a46beacad876` / FreightLogic v24.0.7
+Current runtime candidate: `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` / FreightLogic **v24.0.9**
+Status: **SOURCE REPAIRS PRESENT; SIX-WIDTH BROWSER GEOMETRY + PHYSICAL IPHONE EVIDENCE STILL OPEN**
 
 ## Purpose
 
-This is the visual/interaction finish line for the operator-approved FreightLogic redesign. It does not authorize a second freight engine, new storage model, fake market data, or a rewrite of canonical logic. Claude owns the structural/source pass; GPT owns the presentation seam and final visual reconciliation.
+This is the visual/interaction finish line for the operator-approved FreightLogic redesign. It does not authorize a second freight engine, new storage model, fake market data, or a rewrite of canonical logic. Claude owns structural/runtime source and test harnesses; GPT owns the presentation seam and visual acceptance contract.
 
 The product goal is simple even when the underlying calculations are sophisticated:
 
 > Open FreightLogic → immediately understand the situation → evaluate a load in seconds → know whether to take it → know what to do next → know what the operation is actually earning.
+
+The five-surface structural pass is already merged. This document now distinguishes three evidence classes that must not be conflated:
+
+1. **source/style invariants** that can be read or regression-tested from the candidate;
+2. **browser geometry** that can be measured deterministically at the six release widths;
+3. **physical iPhone/PWA behavior** that requires the actual device and must not be inferred from desktop Chromium.
 
 ## 1. Primary navigation
 
@@ -31,7 +38,7 @@ Acceptance:
 - Settings/admin/data tools are not a sixth persistent bottom tab;
 - Market/Intel is contextual from Today/Loads rather than occupying a primary bottom slot;
 - bottom navigation respects the iPhone home-indicator safe area in Safari and installed-PWA modes;
-- every bottom-tab hit target is at least 44×44 CSS px.
+- every bottom-tab interactive hit target is at least 44×44 CSS px.
 
 ## 2. Today
 
@@ -87,7 +94,7 @@ Default input order:
 3. Deadhead
 4. Origin/destination when useful
 
-Everything else belongs behind progressive disclosure unless it must block a physically unsafe load before economics.
+Everything else belongs behind progressive disclosure unless it must block a physically unsafe/unreachable load before economics. v24.0.9 adds the optional pickup-cutoff / operator planning-speed feasibility gate; it must remain visually secondary when inapplicable and obvious when it blocks an impossible pickup.
 
 Result hierarchy:
 
@@ -102,7 +109,8 @@ Acceptance:
 - answer appears before implementation detail;
 - no second UI-side grade/RPM/bid calculation is introduced;
 - unknown deadhead still blocks false precision;
-- van-fit failure remains visible before profitable-looking economics;
+- no planning-speed default is invented;
+- van-fit or unreachable-pickup failure remains visible before profitable-looking economics;
 - required numeric controls use mobile-friendly input modes and do not trigger iOS page zoom;
 - primary action remains reachable above the software keyboard where practical;
 - advanced disclosure preserves entered values when opened/closed.
@@ -148,7 +156,7 @@ Target groups:
 
 - Vehicle
 - Operating Costs
-- Strategy
+- Strategy / Trip Planning
 - Notifications
 - Data & Backup
 - Appearance
@@ -158,6 +166,7 @@ Target groups:
 Acceptance:
 
 - existing control IDs/handlers are preserved where practical;
+- the optional Trip Planning average speed is understandable as an operator setting, has no invented default, and can be cleared back to inapplicable;
 - advanced/dangerous operations use progressive disclosure;
 - destructive data actions are isolated and clearly labelled;
 - normal settings rows do not use emoji as the primary icon system in the final polish if a consistent icon treatment is available.
@@ -187,21 +196,22 @@ These are release-quality checks, not aesthetic preferences.
 - fixed bottom UI respects `env(safe-area-inset-bottom)`;
 - minimum touch target: **44×44 CSS px** for interactive controls on coarse pointers;
 - text inputs are **16px or larger** on iPhone to prevent focus zoom;
-- no horizontal page scroll at 320, 375, 390, 393, 430, and 440 CSS-px widths;
+- no horizontal page scroll at **320, 375, 390, 393, 430, and 440 CSS-px** widths;
 - modal/bottom-sheet content remains reachable with the software keyboard open;
 - fixed navigation and toasts/banners do not overlap each other or the home indicator;
 - installed-PWA and Safari layouts both remain usable;
 - long route, broker, city, and money strings truncate/wrap without forcing viewport overflow.
 
-### Current CSS observations to re-check after structural integration
+### v24.0.9 source observations already confirmed
 
-At the v24.0.7 baseline, the presentation seam already provides 16px inputs, safe-area-aware app/header/bottom spacing, focus-visible rules, a floating nav, and system typography. Three items deserve explicit post-structure verification:
+The three source defects called out in the original v24.0.7 draft are no longer open source defects:
 
-- the `@media (max-width: 480px)` theme button currently resolves to **40×40**, below the 44×44 target;
-- the final reduced-motion override is narrow, so verify all decorative/stagger/spinner motion is appropriately disabled or simplified under `prefers-reduced-motion: reduce` without disabling functional progress indicators;
-- the current v4 `--text-tertiary` token is too faint for the 10–12px labels that use it: against `--surface-1`, the effective contrast is approximately **3.88:1 in dark mode** and **2.93:1 in light mode**, below the 4.5:1 target for normal/small text. Increase final tertiary-label contrast rather than relying on the larger primary/secondary text tokens to carry accessibility.
+- **mobile form size:** the v5 `input, select, textarea` override resolves to `font-size: 16px` with a 52px minimum height;
+- **theme target:** the `max-width: 480px` rule sets `.theme-btn` to **44×44px minimum**;
+- **reduced motion:** a broad `prefers-reduced-motion: reduce` rule constrains global animation/transition durations and explicitly disables named FAB/spinner animation; the later navigation-specific rule is additive, not the only reduced-motion handling;
+- **tertiary contrast:** current v5 tokens are approximately **5.27:1** for dark `--text-tertiary #8585a5` on dark `--surface-1 #0f1216`, and **6.19:1** for light `#5f5f78` on light `#ffffff`, above the 4.5:1 target for normal text.
 
-Do not fix any of these by weakening behavior or hiding state.
+These are **source observations, not a six-width PASS**. Rendered geometry still has to prove there is no horizontal page overflow, undersized primary navigation target, or long-string/modal containment failure at each release width. Safe-area, software-keyboard, Safari, and installed-PWA behavior remain physical-device evidence.
 
 ## 10. Accessibility
 
@@ -228,21 +238,23 @@ Acceptance:
 - filters/search preserve context when practical;
 - no interaction should require precision tapping while driving/staged roadside use is the expected context.
 
-## 12. Post-Claude GPT reconciliation procedure
+## 12. Current verification procedure
 
-When Claude returns its structural PR:
+The structural and presentation source is already integrated into the v24.0.9 runtime candidate. Completion now proceeds as evidence gathering, not another redesign pass:
 
-1. review changed paths and exact source head before touching CSS;
-2. confirm real Today/Loads/Evaluate/Trips/Money routing, not label-only remapping;
-3. run/inspect the full suite result from that exact structural head;
-4. rebase a GPT presentation branch on the structural source;
-5. patch only presentation selectors needed for the new DOM;
-6. verify the widths and interaction states in sections 1–11;
-7. run the repository full suite again on the integrated presentation PR;
-8. do not certify production or physical iPhone until the same source candidate is deployed.
+1. keep runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` frozen unless an actual defect requires repair;
+2. run the machine-verifiable six-width browser geometry gate at 320/375/390/393/430/440, dark/light, across Today/Loads/Evaluate/Trips/Money;
+3. fail on page-level horizontal overflow, undersized primary interactive targets, <16px mobile inputs, or representative long-string/modal overflow rather than weakening the assertion;
+4. keep iOS safe areas, software keyboard, Safari, and installed-PWA behavior in `FIELD_TEST_CHECKLIST.md` A1-A10;
+5. run the repository full suite after any test/runtime/presentation repair and preserve exact-SHA evidence;
+6. do not certify production or physical iPhone from source/browser evidence alone.
+
+A request for a Claude-owned Playwright six-width geometry gate was staged at `/.agents/inbox/gpt-to-claude-six-width-layout-gate-2026-09-14.md` because `tests/` is Claude-owned.
 
 ## 13. Final visual PASS definition
 
-The visual pass is complete only when the app can be used one-handed on a current iPhone without feeling like a developer dashboard: the next decision is obvious, primary data is readable at a glance, forms do not fight the keyboard, navigation is predictable, and complexity is revealed only when needed.
+The browser-layout portion is PASS only when all six widths are observed without page overflow or target/form geometry violations in the required themes/surfaces. The physical-device portion is PASS only after the same candidate succeeds in Safari and installed-PWA checks on the iPhone, including safe areas and keyboard behavior.
+
+The overall visual pass is complete only when the app can be used one-handed on a current iPhone without feeling like a developer dashboard: the next decision is obvious, primary data is readable at a glance, forms do not fight the keyboard, navigation is predictable, and complexity is revealed only when needed.
 
 Visual polish must never change freight truth. If presentation and canonical data disagree, canonical data wins and the UI is corrected.
