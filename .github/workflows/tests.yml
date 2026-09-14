@@ -7,6 +7,10 @@ name: Tests
 #
 # Pre-v24 integrity gate: keep the browser harness reproducible. Do not use a
 # floating Playwright install here; browser/toolchain changes must be explicit.
+#
+# Completion gate B5 intentionally verifies named historical release commits.
+# A shallow checkout makes those commits disappear and turns a valid rollback
+# audit into `fatal: Needed a single revision`, so CI must retain full history.
 
 on:
   pull_request:
@@ -19,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
