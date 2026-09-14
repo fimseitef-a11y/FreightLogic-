@@ -4,7 +4,7 @@ Ownership is physical-path based. Conceptual ownership does not authorize an edi
 
 This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
 
-**Operator-directed completion takeover (2026-09-14):** the operator explicitly directed GPT to take over and complete the remaining v24.0.9 release work while Claude is idle. For this completion round only, `.github/`, `scripts/`, and `tests/` are assigned to GPT so the stale rollback verifier, six-width browser gate, and live-parity automation can be finished without bypassing the lane guard. Core runtime ownership (`app.js`, Worker/auth/storage/decision code, service worker, and other shared/core paths) is unchanged. After Issue #119 is closed or the takeover is explicitly ended, these three rows should be returned to Claude unless the operator directs otherwise.
+**Operator-directed completion takeover (2026-09-14):** the operator explicitly directed GPT to take over and complete the remaining release work while Claude is idle. For this completion round only, `.github/`, `scripts/`, `tests/`, and `cloud-backup-worker.js` are assigned to GPT so the stale rollback verifier, six-width browser gate, live-parity automation, and the Worker authority-order defect exposed by the authenticated production gate can be finished without bypassing the lane guard. Core app authority remains unchanged: `app.js`, decision-engine sources, service-worker/shared paths, and other core files stay Claude/shared as mapped below. The Worker takeover is narrowly limited to the observed `/evaluate` authority-order hotfix, required generation bump, deployment verification, and certification. After Issue #119 is closed or the takeover is explicitly ended, these temporary rows should be returned to Claude unless the operator directs otherwise.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
@@ -22,7 +22,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `_headers` | claude | CSP/security/deployment headers. |
 | `admin-driver-ui.js` | gpt | Presentation/admin UI; if a change touches auth/storage semantics, hand off through inbox. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains Claude-owned unless explicitly reassigned. |
-| `cloud-backup-worker.js` | claude | Worker/auth/storage/backup core. |
+| `cloud-backup-worker.js` | gpt | **Temporary operator-directed completion takeover (2026-09-14)** limited to the live-observed `/evaluate` authority-order hotfix, Worker generation bump, deployment, and certification; return to Claude after Issue #119 closure. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
 | `docs/` | gpt | General docs by default. Security/backup/tax/authority contract changes require Claude review; X-12 doc repair may be assigned to Claude because it is an audit finding. |
 | `favicon16.png` | gpt | Visual asset. |
@@ -54,7 +54,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 ## Current lane intent after CSS extraction
 
-Claude retains core implementation, audit remediation, security/storage/decision logic, `app.js` runtime behavior, and Worker/runtime authority. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, non-core documentation, and—under the operator-directed 2026-09-14 completion takeover—the remaining release/certification workflow, script, and test-harness work needed to close Issue #119.
+Claude retains core app implementation, audit remediation, decision logic, `app.js` runtime behavior, and the non-taken-over paths above. GPT owns `styles.css`, bounded presentation assets, `admin-driver-ui.js` within its presentation-only boundary, non-core documentation, and—under the operator-directed 2026-09-14 completion takeover—the remaining release/certification workflow, scripts, tests, plus the narrowly scoped Worker v16 authority-order repair needed to close Issue #119.
 
 The CSS seam is the first safe independent application presentation lane. It does **not** authorize GPT to edit conceptual UI sections that still live inside `app.js`; those remain SHARED/serialized and core-owned unless a later approved extraction creates additional physical presentation paths.
 
