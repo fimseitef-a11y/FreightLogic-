@@ -65,11 +65,23 @@ jobs:
           ln -sfn "$(npm root -g)/playwright" node_modules/playwright
 
       - name: Record the exact source being verified
+        # This step exists to pin WHICH candidate the evidence below belongs to,
+        # so it fails closed. The first version used escaped double quotes inside
+        # this run: block; the shell ate them, grep read `=` as a filename, and
+        # the step printed `app:` with nothing after it while still succeeding —
+        # a provenance record that silently recorded no provenance. Single quotes
+        # and an explicit emptiness check.
         run: |
+          app=$(grep -m1 -oE "APP_VERSION = '[0-9.]+'" app.js | grep -oE "[0-9.]+")
+          sw=$(grep -m1 -oE "SW_VERSION = '[0-9.]+'" service-worker.js | grep -oE "[0-9.]+")
+          if [ -z "$app" ] || [ -z "$sw" ]; then
+            echo "::error::Could not read APP_VERSION/SW_VERSION — refusing to record evidence against an unidentified candidate."
+            exit 1
+          fi
           {
             echo "commit: $(git rev-parse HEAD)"
-            echo "app:    $(grep -m1 -oE \"APP_VERSION = '[0-9.]+'\" app.js)"
-            echo "sw:     $(grep -m1 -oE \"SW_VERSION = '[0-9.]+'\" service-worker.js)"
+            echo "app:    $app"
+            echo "sw:     $sw"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run the production service-worker gate
