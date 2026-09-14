@@ -1,0 +1,116 @@
+name: Verify Live Parity
+
+# Read-only live observation of the deployed release. Nothing here deploys,
+# writes, or changes anything.
+#
+# WHY THIS EXISTS. The live half of scripts/verify-cloudflare-parity.mjs has
+# been UNOBSERVED for the whole v24.0.x line, not because anyone doubted it but
+# because no environment that could run it could also reach production: this
+# repo's agent proxies refuse to tunnel to the deployed workers.dev origins, and
+# the operator works from a phone. GitHub-hosted runners have ordinary outbound
+# access and already reach Cloudflare, so the observation that was impossible
+# everywhere else is a button here. Requested by the gpt lane in
+# .agents/inbox/gpt-to-claude-live-parity-runner-2026-09-14.md; .github/ and
+# scripts/ are claude-owned, so it is built rather than requested back.
+#
+# WHAT IT IS NOT. Manual dispatch ONLY — never on push, comment or schedule —
+# and `permissions: contents: read`, so it cannot write to the repository. It
+# needs NO secrets: this is the unauthenticated app/static/Worker-health sweep.
+# Authenticated /evaluate, /extract, backup/restore and token-rotation smokes
+# are a separate gate that needs a dedicated non-published test identity, and
+# they are deliberately not here. It also never deploys or "fixes" anything: on
+# FAILURE it stops and reports, because auto-repairing production from a
+# verification job is exactly the branch-pushing CI machinery CLAUDE.md records
+# as removed on purpose.
+#
+# THREE OUTCOMES, NOT TWO. The verifier distinguishes:
+#   PASS       exit 0  — live evidence observed, everything agreed
+#   FAILURE    exit 1  — real evidence of a mismatch
+#   UNOBSERVED exit 2  — origins unreachable; NO parity claim in either direction
+# UNOBSERVED is the whole point of running this job: a network that cannot reach
+# production must never be recorded as production being wrong, and must never be
+# recorded as production being right either.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_origin:
+        description: 'App origin to verify (blank = the script default)'
+        required: false
+        default: ''
+      worker_origin:
+        description: 'Backup Worker origin to verify (blank = the script default)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  live-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Record the exact source being verified
+        # The SHA is the point: a PASS is only meaningful against a named
+        # candidate, and this is what lets the docs lane cite evidence rather
+        # than infer it.
+        run: |
+          echo "commit:  $(git rev-parse HEAD)"
+          echo "ref:     ${{ github.ref }}"
+          echo "app version markers under verification:"
+          grep -m1 "APP_VERSION = " app.js
+          grep -m1 "SW_VERSION = " service-worker.js
+          grep -m1 -E 'workerVersion: "[0-9]+"' scripts/verify-cloudflare-parity.mjs
+          grep -m1 '"name"' manifest.json
+
+      - name: Run the live parity verifier
+        id: parity
+        # No npm dependencies — the verifier is plain Node 18+ with global fetch.
+        # `set +e` so the three outcomes can be told apart rather than the job
+        # dying on the first non-zero exit; the step re-fails explicitly below.
+        run: |
+          set +e
+          node scripts/verify-cloudflare-parity.mjs \
+            ${{ inputs.app_origin }} ${{ inputs.worker_origin }} 2>&1 | tee parity.log
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+          case "$CODE" in
+            0) echo "verdict=PASS" >> "$GITHUB_OUTPUT" ;;
+            2) echo "verdict=UNOBSERVED" >> "$GITHUB_OUTPUT" ;;
+            *) echo "verdict=FAILURE" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "## Live Cloudflare parity — ${{ steps.parity.outputs.verdict }}"
+            echo
+            echo "- commit: \`$(git rev-parse HEAD)\`"
+            echo "- verifier exit code: \`${{ steps.parity.outputs.exit_code }}\`"
+            echo
+            echo '```'
+            cat parity.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the job on FAILURE or UNOBSERVED
+        # Both are non-zero and both block, but they mean different things and
+        # the summary above says which. A green run is the ONLY thing that may
+        # be cited as live parity evidence.
+        if: steps.parity.outputs.verdict != 'PASS'
+        run: |
+          echo "::error::Live parity verdict: ${{ steps.parity.outputs.verdict }} (exit ${{ steps.parity.outputs.exit_code }})"
+          if [ "${{ steps.parity.outputs.verdict }}" = "UNOBSERVED" ]; then
+            echo "::error::The deployed origins were not reachable from this runner. This is NOT evidence that production is wrong — and it is not evidence that it is right. Nothing may be certified from this run."
+          else
+            echo "::error::Live evidence of a mismatch. Report the exact failing check above; do not deploy or auto-fix from this workflow."
+          fi
+          exit 1

@@ -41,11 +41,21 @@ const EXPECTED = {
 // the pipeline with no verdict. 15 seconds is far longer than any of these
 // static assets or the Worker's /health should ever take.
 const LIVE_FETCH_TIMEOUT_MS = 15000;
-function liveFetch(url) {
-  return fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout ? AbortSignal.timeout(LIVE_FETCH_TIMEOUT_MS) : undefined,
-  });
+async function liveFetch(url) {
+  reachability.attempted = true;
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout ? AbortSignal.timeout(LIVE_FETCH_TIMEOUT_MS) : undefined,
+    });
+    // Any HTTP response at all — including a 404 or a 500 — proves the origin
+    // was reached. Only a transport failure is evidence of unreachability.
+    noteResponse();
+    return res;
+  } catch (err) {
+    noteTransportError();
+    throw err;
+  }
 }
 
 async function fetchText(url) {
@@ -64,6 +74,25 @@ async function fetchJson(url) {
 function assert(checks, name, pass, detail) {
   checks.push({ name, pass: !!pass, detail: detail || '' });
 }
+
+/** Did we actually reach the deployed origins this run?
+ *
+ *  "Could not reach production" and "production is wrong" are different facts,
+ *  and conflating them is how an unreachable network gets recorded as a parity
+ *  failure — or, worse, how a parity claim gets made on no evidence at all. The
+ *  verifier therefore reports three outcomes, not two:
+ *
+ *    PASS       exit 0  — live evidence observed, everything agreed
+ *    FAILURE    exit 1  — real evidence of a mismatch, or a static check failed
+ *    UNOBSERVED exit 2  — the origins were not reachable; NO parity claim either way
+ *
+ *  Exit 2 is still non-zero, so every existing caller (the deploy workflow, the
+ *  deploy script, m7-certify) keeps failing closed exactly as before — this
+ *  only lets a caller that cares tell the two apart. `--static-only` can never
+ *  be UNOBSERVED: it deliberately never attempts the live half. */
+const reachability = { attempted: false, anyResponse: false, transportErrors: 0 };
+function noteTransportError(){ reachability.transportErrors++; }
+function noteResponse(){ reachability.anyResponse = true; }
 
 /** Amendment 5: index.html's <meta http-equiv="Content-Security-Policy"> and
  *  _headers' Content-Security-Policy line must stay byte-identical — a
@@ -114,16 +143,41 @@ function checkLocalAssetExclusions(checks) {
   }
 }
 
+const EXIT = { PASS: 0, FAILURE: 1, UNOBSERVED: 2 };
+
+/** The live half was attempted and NOTHING came back. Not "some checks failed" —
+ *  no HTTP response of any kind was received, so there is no live evidence to
+ *  reason about in either direction. */
+function liveWasUnobserved(){
+  return reachability.attempted && !reachability.anyResponse && reachability.transportErrors > 0;
+}
+
 function report(checks) {
   for (const c of checks) {
     console.log(`${c.pass ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
   }
   const failed = checks.filter(c => !c.pass);
+  const unobserved = liveWasUnobserved();
+
+  // A static failure is real evidence of a defect regardless of the network, so
+  // it outranks unreachability: reporting UNOBSERVED while index.html and
+  // _headers genuinely disagree would hide a source defect behind a network
+  // excuse.
+  const staticFailed = failed.some(c => !/^(Pages index|Index references|Service worker|Midwest Stack|Overlay|SW bridge|Modern shell|Manifest|Worker|Admin endpoint|All \d+ declared|No runtime asset is served|live deployment checks)/.test(c.name));
+
+  if (unobserved && !staticFailed) {
+    console.log(`\nVERDICT: UNOBSERVED — the deployed origins were not reachable from this runner ` +
+      `(${reachability.transportErrors} transport error(s), zero HTTP responses). No parity claim is ` +
+      `made in either direction. Re-run from a network that can reach ${appOrigin} and ${workerOrigin}.`);
+    process.exit(EXIT.UNOBSERVED);
+  }
   if (failed.length) {
     console.error(`\n${failed.length} parity check(s) failed.`);
-    process.exit(1);
+    console.error('VERDICT: FAILURE');
+    process.exit(EXIT.FAILURE);
   }
   console.log('\nAll FreightLogic Cloudflare parity checks passed.');
+  console.log('VERDICT: PASS');
 }
 
 /** The live half needs to reach the deployed Pages origin and Worker. When it
