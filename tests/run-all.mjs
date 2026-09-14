@@ -18,6 +18,7 @@ import { runSpec as modernShellRouting } from './integration/modern-shell-routin
 import { runSpec as sixWidthLayout } from './integration/six-width-layout.spec.mjs';
 import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spec.mjs';
+import { runSpec as workerPointerRace } from './unit/worker-pointer-race.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
@@ -70,6 +71,7 @@ const specs = [
   sixWidthLayout,
   cloudBackupPaused,
   workerTokenRotation,
+  workerPointerRace,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,
