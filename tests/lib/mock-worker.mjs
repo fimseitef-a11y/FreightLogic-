@@ -14,7 +14,7 @@
 // crypto.subtle in the browser, this server never sees plaintext), and real
 // IndexedDB. Only the Cloudflare KV storage layer itself is swapped for an
 // in-memory Map, mirroring cloud-backup-worker.js's own key scheme
-// (user:<id>:device:<id>:backup:<ts> / :delta:<ts>) and pruning rules
+// (user:<id>:device:<id>:backup:<ts>~<nonce> / :delta:<ts>~<nonce>) and pruning rules
 // (keep last 3 full backups, keep last 20 deltas) closely enough that the
 // client code being tested can't tell the difference from its own request/
 // response contract.
@@ -61,8 +61,14 @@ export function startMockWorker() {
     return raw ? JSON.parse(raw) : { keys: [], count: 0, totalCreated: 0 };
   }
   function savePtr(deviceId, type, ptr) { kv.set(ptrKey(deviceId, type), JSON.stringify(ptr)); }
+  function storageKeySuffix() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const nonce = crypto.randomUUID().replace(/-/g, '');
+    return ts + '~' + nonce;
+  }
   function deltaTsFromKey(key) {
-    const raw = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+    const rawWithNonce = key.slice(key.lastIndexOf(':delta:') + ':delta:'.length);
+    const raw = rawWithNonce.split('~', 1)[0];
     const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/);
     return m ? `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z` : raw;
   }
@@ -125,8 +131,7 @@ export function startMockWorker() {
     });
 
     if (req.method === 'POST' && p === '/backup') {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const key = `user:${USER_ID}:device:${deviceId}:backup:${ts}`;
+      const key = `user:${USER_ID}:device:${deviceId}:backup:${storageKeySuffix()}`;
       kv.set(key, body);
       const ptr = getPtr(deviceId, 'b');
       ptr.keys.push(key);
@@ -137,8 +142,7 @@ export function startMockWorker() {
     }
 
     if (req.method === 'POST' && p === '/backup/delta') {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const key = `user:${USER_ID}:device:${deviceId}:delta:${ts}`;
+      const key = `user:${USER_ID}:device:${deviceId}:delta:${storageKeySuffix()}`;
       kv.set(key, body);
       const ptr = getPtr(deviceId, 'd');
       ptr.totalCreated = (ptr.totalCreated || ptr.keys.length) + 1;

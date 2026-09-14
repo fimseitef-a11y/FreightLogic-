@@ -665,7 +665,11 @@ export default {
 
 function normalizePtr(ptr, type) {
   const rawKeys = Array.isArray(ptr?.keys) ? ptr.keys.filter(k => typeof k === 'string') : [];
-  const keys = [...new Set(rawKeys)].sort();
+  // Persisted pointers are already append-ordered by successful writes. De-dupe
+  // without sorting so two unique writes in the same millisecond keep their
+  // actual request order even though their nonce suffixes are random. First-time
+  // lazy discovery still sorts list() results below for legacy/migration state.
+  const keys = [...new Set(rawKeys)];
   const duplicateCount = Math.max(0, rawKeys.length - keys.length);
   const next = { ...(ptr && typeof ptr === 'object' ? ptr : {}), keys, count: keys.length };
   if (type === 'd') {
