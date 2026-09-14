@@ -1,16 +1,17 @@
 # Cloudflare Deployment Parity Checklist
 
-Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful preview/production build, or a source version bump is not enough by itself.
+Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
 Current runtime candidate:
 
-- app / PWA / service worker source: **24.0.8**;
+- app / PWA / service worker source: **24.0.9**;
 - IndexedDB schema: **15**;
 - backup/API Worker source: **15**;
-- exact runtime Git candidate: **`c02ed36bcc6c81a182c81aec0d6358d39fc90bbf`**;
+- exact runtime Git candidate: **`5446b097fe8791f3d7c79b5a5833a0930ee83cf2`** (merged PR #175);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-13.md`;
+- Cloudflare production build for this exact Git SHA: **SUCCESS**, build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md` once merged;
 - status: **HOLD**.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
@@ -25,26 +26,32 @@ Record:
 - production backup/API Worker origin;
 - rollback/fix-forward reference.
 
-Live verification on 2026-09-13 after PR #172: 24/24 standard parity checks pass, and eleven checked production assets match source byte for byte. However, `admin-driver-ui.js` returns 404 because `.assetsignore` excludes it. Full asset parity remains blocked until the repair is deployed and re-probed. See the current addendum for exact hashes and CI evidence.
+### Current source/deploy evidence
+
+For v24.0.9, GitHub/Cloudflare reports a successful production Workers build for exact `main` SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`. That is deployment-build evidence only; it is **not** a substitute for a live origin parity run.
+
+The prior v24.0.8 admin-script defect is repaired in source: `.assetsignore` no longer excludes `admin-driver-ui.js`, and the deploy-asset regression gate now derives the complete runtime inventory and asserts that every requested runtime asset exists and is deployable. The current derived source inventory is 23 assets. A full live-green parity run must fetch **every derived runtime asset**, not a curated subset, and must reject an HTML shell returned with HTTP 200 for a JavaScript/CSS/JSON/image request.
+
+The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** in this GPT session because the available network path cannot reach the production Workers origin directly. Do not infer PASS from the successful Cloudflare build.
 
 ## 2. App / PWA generation
 
 PASS requires production to serve:
 
-- `app.js?v=24.0.8`;
-- `voice-load.js?v=24.0.8`;
-- `sw-bridge.js?v=24.0.8`;
-- `midwest-stack-authority.js?v=24.0.8`;
-- `manifest.json?v=24.0.8` identifying `FreightLogic v24.0.8`;
-- `service-worker.js` with `SW_VERSION = '24.0.8'`;
-- `admin-driver-ui.js?v=24.0.8` (must not be excluded from deployment);
+- `app.js?v=24.0.9`;
+- `voice-load.js?v=24.0.9`;
+- `sw-bridge.js?v=24.0.9`;
+- `midwest-stack-authority.js?v=24.0.9`;
+- `manifest.json?v=24.0.9` identifying `FreightLogic v24.0.9`;
+- `service-worker.js` with `SW_VERSION = '24.0.9'`;
+- `admin-driver-ui.js?v=24.0.9` and every other asset derived by the runtime inventory;
 - current `modern-shell.js` bytes from the named candidate;
 - bundled `vendor/xlsx.full.min.js`;
 - the current `styles.css` visual layer;
 - matching CSP/security headers;
 - no failed JavaScript/static request answered with an HTML shell fallback.
 
-Do not reuse the v24.0.5 exact-byte PASS as evidence for v24.0.8.
+Do not reuse the v24.0.5 or v24.0.8 production observations as exact-generation evidence for v24.0.9.
 
 ## 3. Worker v15 live checks
 
@@ -64,9 +71,9 @@ PASS requires:
 
 ### Current observed Worker state
 
-On 2026-09-13 this session observed Worker v15 at the production origin: health HTTP 200/version 15, exact production-origin CORS on health GET and backup OPTIONS (204), and unauthorized admin HTTP 401. The earlier redeploy requirement is closed. Authenticated evaluate/extract/full-delta-restore/token-rotation checks remain **NOT RUN** because no test token is available.
+On 2026-09-13 Worker v15 was observed at the production origin: health HTTP 200/version 15, exact production-origin CORS on health GET and backup OPTIONS (204), and unauthorized admin HTTP 401. Worker source/generation did not change in v24.0.9, so no Worker redeploy is required by the app-generation bump.
 
-The manual `Deploy Backup Worker` workflow remains the intended deployment boundary and must remain explicit/manual.
+Authenticated evaluate/extract/full-delta-restore/token-rotation checks remain **NOT RUN** because no dedicated non-published test token is available in this session. The manual `Deploy Backup Worker` workflow remains the intended deployment boundary and must remain explicit/manual.
 
 ## 4. Canonical authority smoke
 
@@ -82,18 +89,20 @@ PASS requires:
 - Gary, Indiana stays the intended U.S. Midwest Tier-1 market;
 - 121-inch default cargo boundary remains enforced;
 - 54.8-inch wheel-well width and 3,000-pound practical payload limits remain enforced;
-- precise True Profit is not asserted without defensible cost/mileage inputs.
+- precise True Profit is not asserted without defensible cost/mileage inputs;
+- v24.0.9 pickup feasibility remains fail-closed: no planning speed means no invented reachability verdict; unknown deadhead never becomes zero; once an operator planning speed and pickup cutoff are supplied, an unreachable pickup blocks before economics.
 
 ## 5. Structural shell parity
 
-The structural UI pass is now merged, not pending. Production parity must confirm:
+Production parity must confirm:
 
 - primary navigation is **Today / Loads / Evaluate / Trips / Money**;
 - Loads uses the existing canonical load inbox/state rather than a second queue;
 - Evaluate still maps to canonical `#omega`;
 - direct `#loads` launch renders correctly;
 - More still exposes the secondary tools/settings surfaces;
-- offline precache contains the structural adapter and the app launches offline without a blank shell.
+- offline precache contains the structural adapter and the app launches offline without a blank shell;
+- the Trip Planning setting and optional pickup-cutoff field introduced in v24.0.9 are present without changing the default decision when planning speed is unset.
 
 ## 6. Lifecycle / evidence durability
 
@@ -120,7 +129,7 @@ Live production, from a network that can reach Cloudflare:
 
 - `node scripts/verify-cloudflare-parity.mjs`
 
-The live verifier currently expects app/PWA **24.0.8** and Worker **15**.
+The live verifier now derives the current app generation from source and is expected to verify app/PWA **24.0.9**, Worker **15**, and every declared runtime asset. The current source inventory is 23 assets; the inventory is derived rather than maintained as a hand-written list.
 
 Authenticated authority checks when a valid non-published driver token is available:
 
@@ -134,6 +143,7 @@ Network inability is `UNOBSERVED`, not PASS and not product failure.
 Live Cloudflare parity is complete only when the same named final candidate has:
 
 - exact production app/PWA generation parity PASS;
+- all derived runtime assets fetched successfully from the production origin, with no HTML-shell masquerade;
 - structural-shell parity PASS;
 - backup/API Worker v15 `/health` and CORS parity PASS;
 - auth boundaries PASS;
