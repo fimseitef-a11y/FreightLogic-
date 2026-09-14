@@ -1,4 +1,14 @@
-// FreightLogic Cloud Backup Worker v16 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v17 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v17: backup/delta keys are minted from a MONOTONIC clock. The key was
+// `new Date().toISOString()` at millisecond precision, so two writes landing in the
+// same millisecond produced the SAME key: the second put() silently overwrote the
+// first, the pointer recorded one key instead of two, and one backup or delta was
+// lost with every gate still reporting success. That is data loss in the component
+// whose entire purpose is disaster recovery. nextBackupTs() never returns a value it
+// has already returned in this isolate, which keeps keys unique and keeps their
+// lexical order identical to their chronological order — the property getPtr()'s
+// sort and deltaTsFromKey() both depend on. The key SHAPE is unchanged, so existing
+// keys, pointers and the client's chronological restore are untouched.
 // v16: validate/project model-free canonical decisions before requiring an OpenAI key.
 // Missing AI configuration must not break canonical absence or request validation.
 // v15: POST /admin/users/:id/rotate — re-key a driver's token IN PLACE, keeping userId.
@@ -235,7 +245,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '16', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '17', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -491,7 +501,7 @@ export default {
         if (payload.length > 5 * 1024 * 1024) {
           return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
         }
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
 
         // Write backup data and read pointer in parallel. On a first write,
@@ -533,7 +543,7 @@ export default {
         if (payload.length > 2 * 1024 * 1024) {
           return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
         }
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
 
         // Write delta and read pointer in parallel. getPtr() can discover this
@@ -642,6 +652,27 @@ export default {
     }
   }
 };
+
+// ─── Monotonic key clock ──────────────────────────────────────────────────────
+//
+// Backup and delta keys end in a millisecond-precision timestamp, and KV keys are
+// unique: two writes in the same millisecond collide, and the loser is gone. A
+// client pushing a delta right after a full backup, or two deltas back to back,
+// does exactly that on any machine fast enough. This clock never hands out the
+// same millisecond twice within an isolate, so sequential writes always get
+// distinct, correctly-ordered keys.
+//
+// It deliberately does not add a random suffix: the key shape
+// `YYYY-MM-DDTHH-MM-SS-mmmZ` is what deltaTsFromKey() parses back into a real ISO
+// instant for the client, and what makes a plain lexical sort chronological.
+let _lastKeyMs = 0;
+
+function nextBackupTs() {
+  let ms = Date.now();
+  if (ms <= _lastKeyMs) ms = _lastKeyMs + 1;
+  _lastKeyMs = ms;
+  return new Date(ms).toISOString().replace(/[:.]/g, '-');
+}
 
 // ─── Backup/delta pointer helpers ─────────────────────────────────────────────
 //

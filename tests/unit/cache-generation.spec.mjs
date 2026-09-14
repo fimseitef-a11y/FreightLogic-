@@ -164,11 +164,24 @@ test('[CG-09] DB version and Worker version are unchanged by a generation freeze
   // are keyed `user:<userId>:device:<id>:backup:<ts>`.
   // Moved 15 -> 16 for the live-observed authority-order defect: model-free
   // canonical absence and request validation must work without an OpenAI key.
+  // Moved 16 -> 17 because backup/delta keys were minted at millisecond
+  // precision, so two writes in one millisecond shared a key and the second
+  // silently destroyed the first.
+  //
+  // This no longer pins a Worker NUMBER. It pins the INVARIANT: the Worker
+  // source and the parity gate must name one generation. A literal here had to
+  // be hand-edited on every Worker bump, which is the same remembered-marker
+  // drift the rest of this spec exists to eliminate.
   const dbm = read('app.js').match(/^const DB_VERSION = (\d+);/m);
   ok(dbm, 'could not read DB_VERSION from app.js');
   eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');
-  ok(read('scripts/verify-cloudflare-parity.mjs').includes('workerVersion: "16"'),
-    'the expected Worker version must be 16 — the authority-order repair intentionally changes Worker semantics');
+  const workerSrc = read('cloud-backup-worker.js');
+  const srcWorker = workerSrc.match(/Cloud Backup Worker v(\d+)/)?.[1];
+  const healthWorker = workerSrc.match(/version:\s*'(\d+)'/)?.[1];
+  const parityWorker = read('scripts/verify-cloudflare-parity.mjs').match(/workerVersion:\s*"(\d+)"/)?.[1];
+  ok(srcWorker, 'could not read the Worker generation from the cloud-backup-worker.js header');
+  eq(healthWorker, srcWorker, 'GET /health must report the same generation the Worker header declares');
+  eq(parityWorker, srcWorker, 'the parity gate must expect the Worker generation actually in the source');
 });
 
 test('[CG-10] index.html and _headers CSP stay byte-identical across the bump', () => {

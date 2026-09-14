@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v16** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carries the authority-order hotfix and the backup pointer-discovery race fix; app/PWA is v24.0.10 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v17** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file) and is **not yet deployed** — production is still serving v16. App/PWA is v24.0.10 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2387,3 +2387,157 @@ unchanged.
 
 This release is itself the argument for that document: both lanes spent a session
 building the same two deliverables because neither knew the other had started.
+
+---
+
+## Worker v17 "Same Millisecond" — the backup key that overwrote the backup before it
+
+Worker **v16 → v17**. `DB_VERSION` stays **15** and the app/PWA stays **24.0.10** —
+no app source changed, so no cache generation moves.
+
+**The defect.** A backup or delta key is
+`user:<userId>:device:<id>:(backup|delta):<ts>`, and `<ts>` was
+`new Date().toISOString()` — millisecond precision. KV keys are unique, so two
+writes landing in the same millisecond produced the **same key**: the second
+`put()` silently overwrote the first, the pointer recorded one key where two
+writes had happened, and one backup or delta was gone. Every gate still reported
+success, because from the Worker's point of view both requests returned `200`.
+
+That is data loss in the one component whose entire purpose is disaster
+recovery, and it is reachable by ordinary use: `cloudPushBackup()` followed
+immediately by a delta, or two deltas back to back, land inside one millisecond
+on any machine fast enough.
+
+**How it surfaced.** `tests/unit/worker-pointer-race.spec.mjs` (WPR-01/WPR-02,
+merged with the v16 pointer-race fix in PR #190) began failing on `main` —
+**451 passed, 2 failed across 49 spec files** — when run on a host fast enough to
+put both of its writes in one millisecond. CI had been passing it by timing luck.
+The spec was right and the Worker was wrong; nothing about the spec was relaxed.
+
+**The fix.** `nextBackupTs()` — a module-scope monotonic clock that never returns
+a millisecond it has already returned in this isolate. Both write sites use it.
+
+- The key **shape** is unchanged (`YYYY-MM-DDTHH-MM-SS-mmmZ`), which matters
+  twice over: `deltaTsFromKey()` parses it back into a real ISO instant for the
+  client, and `getPtr()`'s plain lexical `sort()` is only chronological because
+  the transform is monotonic for same-length strings. A random suffix would have
+  broken both, so there deliberately is not one.
+- Existing keys, pointers and the client's chronological restore are untouched.
+- Cross-isolate same-millisecond writes from one device remain theoretically
+  possible. They are not made worse: the pointer append is already idempotent
+  (`ptr.keys.includes(key)`), and a client serializes its own pushes. The
+  realistic, deterministic, single-isolate case is what is closed here.
+
+**Tests.** WPR-03 (new) freezes `Date.now()` and drives four deltas through the
+real Worker inside one frozen millisecond, asserting four unique keys, lexical
+order still equal to chronological order, all four payloads readable, and the key
+shape still parseable. This is the assertion that cannot pass by timing luck —
+WPR-01/02 depend on the host being fast, WPR-03 depends on nothing.
+
+Negative control, verified to fire: reverting `nextBackupTs()` to
+`new Date().toISOString()` fails WPR-03 while WPR-01/02 **pass** — which is
+precisely the original defect's signature and the reason it survived CI.
+
+**Version markers.** Only two Worker markers exist and both moved: the
+`cloud-backup-worker.js` header and `GET /health`'s reported `version`.
+`scripts/verify-cloudflare-parity.mjs`'s `workerVersion` pin moved to `"17"`.
+Everything else already derives the number (`scripts/deploy-backup-worker.sh`,
+both deploy/verify workflows, `tests/unit/worker-canonical-absence.spec.mjs`).
+`tests/unit/cache-generation.spec.mjs` CG-09 **stopped pinning a literal**: it now
+reads the generation out of `cloud-backup-worker.js` and asserts the header, the
+`/health` response and the parity gate all name the same number — the invariant
+rather than the value, so a future Worker bump needs no edit here.
+
+**NOT DEPLOYED.** Production is still serving v16. The repair reaches a driver only
+through a `DEPLOY`-confirmed dispatch of `.github/workflows/deploy-backup-worker.yml`,
+which is an operator action by design.
+
+---
+
+## B5 rollback gate — derived, not pinned
+
+Tooling only. No shipped file changed.
+
+`scripts/verify-rollback.mjs` hardcoded its candidate SHA
+(`5446b097…`), its app generation (`24.0.9`) and its Worker generation (`16`). At
+`24.0.10` it therefore reported a clean **PASS** while describing a superseded
+candidate — a green gate for the wrong release, which is the same failure class as
+the stale `?v=` markers, the stale parity checklist and the stale
+`midwest-stack-config.json` `appTarget` this file already records three times over.
+The gate needed a hand edit every release, and the release it was meant to certify
+is exactly when nobody remembers to make it.
+
+Every fact is now derived at run time:
+
+- the candidate is `HEAD`, and its generation is read from `app.js`;
+- the Worker generation is read from `cloud-backup-worker.js`;
+- the **previous** generation is found from history — the commit that introduced
+  the current `APP_VERSION` (`git log -S`), then its first parent — with a walk of
+  `app.js` history as a fallback if that marker ever lands inside a merge.
+
+The safety-gate comparison is generalized with it. It previously hardcoded
+`checkPickupFeasibility` and **failed** if the previous generation also contained
+it — which is what a same-feature adjacent release always looks like. It now checks
+a named list (`checkPickupFeasibility`, `checkVanFit`, `isDeadZoneEligible`,
+`knownNum`), reports each one missing from the predecessor as proof that rolling
+back is unsafe, and when the predecessor retains all of them says so honestly:
+**no regression is proven, and that is not an approval.** No path through this
+script can produce a safe rollback target; the policy stays FIX FORWARD.
+
+`tests/unit/rollback-verifier-current.spec.mjs` was rewritten to match (RBV-01…06).
+It asserted the pinned literals before, so it needed the same per-release edit and
+would have gone stale in lockstep with the thing it guards. RBV-01 now fails if a
+40-hex SHA or an `EXPECTED_*_VERSION` literal is reintroduced into the code; the
+rest assert the derivation against the tree the spec is actually running on, so it
+stays correct at the next release with no edit.
+
+Negative controls, all verified to fire: a bogus identifier in `SAFETY_INVARIANTS`
+exits 1; reintroducing `EXPECTED_APP_VERSION = '24.0.10'` fails RBV-01; pointing
+the parity-alignment check at a different Worker generation fails the gate.
+
+---
+
+## Completion sweep 2026-09-14 — live gates observed
+
+Three certification gates that had stood open as **NOT RUN / UNOBSERVED** were
+actually run in this session, from GitHub-hosted runners (the only environment in
+this project that can reach the deployed origins).
+
+| Gate | Result | Evidence |
+|---|---|---|
+| All-asset live Cloudflare parity | **PASS** | run `34882621810`, `workflow_dispatch` on `main` @ `10430bf` |
+| Authenticated Worker contracts | **PASS** | run `34882777324`, 21 passed / 0 failed against the deployed Worker |
+| Six-width visual acceptance (320/375/390/393/430/440, both themes) | **PASS** | `integration/six-width-layout.spec.mjs`, 2/0 |
+
+The parity run is worth recording in full, because the **push**-triggered run on the
+same SHA (`34874397592`) had **failed** eleven seconds after the v24.0.10 merge:
+`sw-bridge` import, service-worker precache and manifest name all still read
+`24.0.9` because Cloudflare had not finished deploying yet. The re-dispatch is the
+first observation of v24.0.10 actually being served. Both runs agree that all **23**
+declared runtime assets load and none is served as HTML, and that the deployed
+Worker reports v16.
+
+A push-triggered parity run that fires immediately after a merge will keep racing
+the Cloudflare deploy this way. Its FAILURE is real evidence about the origin *at
+that instant* and must not be dismissed, but it is not evidence about the release —
+re-dispatch and record the later run.
+
+The authenticated run seeds an expiring synthetic driver identity in production KV,
+exercises full backup, delta write, `GET /backup/delta` retention/ordering/gap
+counters, `GET /list` scoping, `GET /status`, malformed-token and tokenless denial,
+and in-place token rotation, then cleans up. No operator data and no real driver
+credential is involved.
+
+**Still open, and genuinely not reachable from here:**
+
+- **Private-history reconciliation.** The recovered August 27 M6 bundle is not in
+  the repository and not mounted in this session. Not reconstructable from
+  summaries — that is the whole point of the gate.
+- **Physical iPhone Safari + installed-PWA checks**, including the pickup-feasibility
+  surface. Operator-only, and `FIELD_TEST_CHECKLIST.md` remains the instrument.
+- **Worker v17 deployment.** `DEPLOY`-confirmed dispatch, deliberately manual.
+
+Full suite after this sweep, run locally against real headless Chromium:
+**457 passed, 0 failed across 49 spec files** — up from 451/2 on `main`, which is
+the W-01 repair (+1 new assertion, 2 restored) plus the six rewritten B5
+assertions. Nothing was skipped, quarantined or weakened.
