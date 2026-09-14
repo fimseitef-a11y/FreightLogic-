@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.10 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v16** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carries the authority-order hotfix and the backup pointer-discovery race fix; app/PWA is v24.0.10 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2279,161 +2279,87 @@ nothing more.
 
 ---
 
-## v24.0.10 "Sixteen Pixels" — the field that threw you out of the load
+## v24.0.10 "Sixteen Pixels" — the root cause behind the mobile form-size fix
 
-Closes both open claude-lane requests from 2026-09-14 and ships the one real
-defect they found. `DB_VERSION` stays **15** and the Worker is untouched —
-neither's semantics changed.
+A cache generation so that the mobile form-size repair can actually reach an
+installed client, plus the root-cause half of that repair. `DB_VERSION` stays
+**15** and the Worker stays **v16** — neither's semantics changed.
 
-**The defect, and how it stayed hidden.** iOS Safari zooms the viewport when a
-form control whose computed `font-size` is under 16px takes focus. Two controls
-on the evaluator were inline-styled `font-size:13px` in `index.html`: the
-Currency select (`#mwCurrency`, and USD/CAD is not decorative on an app whose
-doctrine includes border loads) and the bid-mode selector (`#mwModeSelector`).
-Tapping either threw the driver out of the load they were pricing. Both are
-`16px` now; nothing else about them changed.
+**Two lanes fixed the same defect in parallel, and both halves are kept.** iOS
+Safari zooms the viewport when a form control whose computed `font-size` is under
+16px takes focus, which on the evaluator threw the driver out of the load they
+were pricing.
+
+- The **gpt lane** shipped the safety net (`b445ccc`, `styles.css`):
+  `@media (max-width: 480px) { input, select, textarea { font-size: 16px !important } }`.
+  It covers every control at mobile widths and needs no knowledge of which ones
+  are wrong.
+- This release removes the **root cause** for the two that actually were wrong.
+  `#mwCurrency` (USD/CAD — not decorative on an app whose doctrine includes
+  border loads) and `#mwModeSelector` carried inline `font-size:13px` in
+  `index.html`. Inline styles beat a stylesheet rule without `!important`, so the
+  net was load-bearing; with the source values corrected it no longer has to be,
+  and the two fields are also correct above 480px, where the net does not apply.
 
 They survived every prior pass because they sit behind the **"More Details"**
 toggle. Collapsed, the evaluator exposes three fields — revenue, loaded,
 deadhead — and all three were already ≥16px. The other 33, including origin,
 destination, broker, the 7D dimension fields and the v24.0.9 pickup cutoff, were
-never measured by anything. The first version of SWL-04 had the same blind spot
-and passed; its negative control is what exposed it (see below).
+not being measured.
 
-**Why this is a version bump.** All cache-busters were `?v=24.0.9` and
-`CACHE_NAME` is `freightlogic-${SW_VERSION}`. An `index.html` fix landed without
-bumping would never reach an installed PWA — the v24.0.3 lesson applied rather
-than relearned. Every governed marker moves together to `24.0.10`;
-`scripts/verify-cloudflare-parity.mjs --static-only` is green and all 13 CG
-assertions pass.
+**Why this is a version bump, and why it was the blocking half.** All
+cache-busters were `?v=24.0.9` and `CACHE_NAME` is `freightlogic-${SW_VERSION}`.
+`styles.css` carries no `?v=` of its own — it is cached under the
+version-derived `CACHE_NAME` via the service worker's `CORE` list — so **neither**
+lane's fix could reach an installed PWA while the generation stood still. The
+gpt-lane CSS repair landed at `24.0.9` and was undeliverable for the same reason
+the `index.html` change would have been. Every governed marker now moves together
+to `24.0.10`; `scripts/verify-cloudflare-parity.mjs --static-only` is green,
+all 13 CG assertions pass, and `workerVersion` stays `"16"`.
 
-### Six-width browser-layout gate (`tests/integration/six-width-layout.spec.mjs`)
+### Parallel-work collision, recorded rather than hidden
 
-Requested in `.agents/inbox/gpt-to-claude-six-width-layout-gate-2026-09-14.md`:
-the release gate listed six-width visual acceptance as wholly manual, while the
-parts that are real rendered geometry are measurable. Eight assertions at
-**320 / 375 / 390 / 393 / 430 / 440 CSS px**, in a real coarse-pointer mobile
-context (`isMobile` + `hasTouch`, because styles.css has a `@media (pointer:
-coarse)` block that raises several controls to 44px — asserting touch targets in
-a desktop context would assert against rules that never applied):
+`.agents/LANES.md` on `main` records a **temporary operator-directed takeover of
+`scripts/` and `tests/` by the gpt lane (2026-09-14)**. Both lanes were asked for
+the same two 2026-09-14 inbox items and both built them, so this branch arrived
+with four conflicts against `main`, including an **add/add** on
+`tests/integration/six-width-layout.spec.mjs`.
 
-| ID | What it measures |
-|---|---|
-| SWL-01 | no page-level horizontal overflow on Today/Loads/Evaluate/Trips/Money, both themes |
-| SWL-02 | every bottom-nav control ≥44×44, centre Evaluate by its real anchor box |
-| SWL-03 | `#themeToggle` and `#modernMoreBtn` ≥44×44 at the ≤480 widths |
-| SWL-04 | every visible evaluator field ≥16px, with "More Details" expanded |
-| SWL-05 | long route/broker/money strings, seeded through `upsertTrip`, force no overflow |
-| SWL-06 | a real modal stays inside the viewport at 320px; close control reachable and ≥44×44 |
-| SWL-07 | under reduced motion nothing decorative is left looping indefinitely |
-| SWL-08 | `--text-tertiary` on `--surface-1` clears 4.5:1 in both themes |
+Resolution: `main`'s versions were taken for every file in the lane gpt currently
+holds — `scripts/verify-rollback.mjs`, `scripts/verify-cloudflare-parity.mjs`,
+`tests/run-all.mjs` and the six-width spec. Their merged work stands; nothing was
+overwritten to prefer this lane's copy. The claude-lane duplicates
+(`tests/unit/rollback-verifier.spec.mjs` and `scripts/lib/release-candidate.mjs`)
+were deleted rather than landed alongside, because two specs asserting the same
+contract is how the two copies drift apart.
 
-This does **not** replace physical-iPhone A1–A10. Safari safe-area insets, the
-software keyboard and Home Screen PWA behavior stay device evidence; SWL-06 is
-layout containment and says nothing about a keyboard. There are no pixel-golden
-screenshots — those churn on harmless rendering differences and then get muted.
+**Three findings from the discarded work are worth keeping even though the code
+is not**, and are offered to the gpt lane through `/.agents/inbox/` rather than
+forced across the lane boundary:
 
-**Two vacuous assertions, both caught by their own negative controls.** Worth
-recording, because in each case the test was green against a deliberately broken
-app:
+1. **`document.documentElement.scrollWidth` cannot detect overflow in this app.**
+   `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a
+   scrollWidth wider than the viewport however far content spills. Injecting
+   `.app { min-width: 900px !important }` left a scrollWidth-based assertion
+   green. The surviving spec's `innerWidth === width` assertion is the one doing
+   the real work there; its `rootScrollWidth`/`bodyScrollWidth` checks cannot
+   fail.
+2. **Under mobile emulation the layout viewport expands** to fit content wider
+   than the device — `window.innerWidth` reported 900 at a 320px device — so any
+   geometry compared against `innerWidth` is compared against a viewport that has
+   already grown to accommodate the overflow. Measure against the device width the
+   test set.
+3. **A `@media (pointer: coarse)` block raises several controls to 44px.** A spec
+   that boots a desktop context asserts touch-target minimums against rules that
+   never applied to it.
 
-1. SWL-01/05 first measured `document.documentElement.scrollWidth`. `styles.css`
-   sets `body { overflow-x: hidden }`, so the page can never report a scrollWidth
-   wider than the viewport however far content spills — injecting
-   `.app { min-width: 900px !important }` left both tests green. `overflow-x:
-   hidden` does not make spilled content harmless, it makes it **unreachable**,
-   so the measurement is now geometric: visible boxes that cross the viewport
-   edge, skipping anything inside an ancestor that clips or scrolls horizontally.
-2. The rewrite was *still* vacuous, for a second reason. Under mobile emulation
-   the layout viewport **expands** to fit content wider than the device, so
-   `window.innerWidth` reported 900 at a 320px device and boxes were being
-   compared against a viewport that had already grown to accommodate them. It now
-   measures against the device width the test set, and treats that expansion as
-   overflow in its own right.
-
-### Rollback verifier reconciled to the current release
-
-Requested in `.agents/inbox/gpt-to-claude-v2409-rollback-verifier-2026-09-14.md`.
-`scripts/verify-rollback.mjs` carried `PRODUCTION_CANDIDATE = '8d5b82b8…'` (an
-obsolete candidate) and `if (srcWorkerVer === '14')` while the release was at
-v24.0.9 / Worker v15 — so running it failed for the wrong reason, which is the
-one thing a release gate may never do.
-
-**Nothing in it is a pinned release literal any more.** Both are derived, through
-the new shared `scripts/lib/release-candidate.mjs` that the gate and its
-regression both import — a second copy in the test would drift from the copy in
-the gate and each would report green about the other's blind spot, which is the
-2026-09-13 deploy-coverage defect one level up:
-
-- the **candidate** from the three living release authorities (the parity
-  checklist, `FIELD_TEST_CHECKLIST.md`, the completion plan), requiring unanimity
-  and refusing to guess otherwise. Dated `CERTIFICATION_STATE`/`ADDENDUM` files
-  are deliberately not read: they correctly name the candidate that was current
-  when written, so reading them manufactures a disagreement out of documents
-  doing their job. A proximity bound keeps the repository `main` head, named on
-  the same markdown line, out of the reading.
-- the **Worker generation** from `scripts/verify-cloudflare-parity.mjs`'s
-  `EXPECTED` block — the single declaration `scripts/deploy-backup-worker.sh`
-  already derives from. (CG-09 still pins it by hand on purpose; do not "fix"
-  that one to match.)
-
-**Two further defects found while rebuilding it**, both of which had been
-shipping as B5 evidence:
-
-1. **The revert-cleanliness check was vacuous.** `merge-tree --write-tree
-   <parent> <HEAD>` lets git pick the merge base, and since the parent is an
-   ancestor of HEAD that base *is* the parent — so the "merge" was a fast-forward
-   that returned HEAD's own tree, byte-identical, and could not report a conflict
-   under any circumstance. It had been printing "applies cleanly". It is now the
-   real three-way merge (`--merge-base=<commit being reverted>`).
-2. **A genuine conflict was reported as a missing tool.** `merge-tree` exits 1
-   for "conflicts found", and the `allowFail` wrapper collapsed every non-zero
-   exit into the same `null` as a missing binary — so a real conflict read as
-   "needs git >= 2.38". Exit status is now preserved and distinguished.
-
-**What it now proves rather than asserts.** Rollback targets are ordered
-nearest-first (`a7b7259` v24.0.8 → `c02ed36` → `5821e8a` v24.0.5 → `ff9d9ab`
-v24.0.4), each inheriting every regression below it, and **every named regression
-carries a probe against that SHA's own bytes** — prose in a release artifact goes
-stale silently, which is the whole defect being fixed, so a claim that stops
-being true now fails the gate. It also compares the 23 declared runtime assets
-between the certified candidate and HEAD, distinguishing drift *within* one
-generation (a release blocker: the change cannot reach an installed PWA) from
-drift *across* generations (the release record is merely stale).
-
-v7 remains explicitly unsafe as a rollback target and **FIX FORWARD** remains the
-approved default.
-
-### Tests
-
-`tests/unit/rollback-verifier.spec.mjs` (11) and
-`tests/integration/six-width-layout.spec.mjs` (8), both wired into
-`tests/run-all.mjs` (RBV grew to 11 with the drift-generation assertion below).
-RBV-08 builds a purpose-made three-commit repository rather
-than relying on this one's history, so it is deterministic and survives CI's
-shallow checkout (`actions/checkout@v6` defaults to depth 1) — and RBV-09 asserts
-the gate **fails closed** in exactly that shallow clone rather than inventing
-evidence.
-
-Every assertion carries a verified negative control. Two of them did not fire on
-first attempt and both were the finding, not a formality: the vacuous overflow
-measurements above, and `--merge-base` being asserted with a bare
-`/--merge-base=/` match that the gate's own comment and warning text satisfied
-even after the flag was deleted from the call.
-
-Full suite: **461 passed, 0 failed across 48 spec files** (was 442/46), re-run
-against the committed bump. (The commit message for `cba9311` says 460 — that
-total was taken before RBV-11 was added; 461 is the verified figure.)
-
-### Still HOLD
-
-Nothing here touches the live gates. This release changes what the parity run
-must target — the candidate is now `24.0.10`, and the release documents still
-name the `24.0.9` candidate `5446b097…`, which the rollback verifier now reports
-as a stale record rather than a contradiction. `docs/` and
-`FIELD_TEST_CHECKLIST.md` are gpt-owned under `/.agents/LANES.md`, so
-recertification against this generation is requested through `/.agents/inbox/`
-rather than edited across lanes.
+Also recorded: opening `FreightLogic_v18` from a test with no explicit version
+creates it **at version 1**, so `app.js`'s `if (old < 1)` block — the only place
+`trips`, `expenses` and `fuel` are created — is skipped on the upgrade to 15. The
+database comes up at v15 with those three stores missing and every other one
+present. That is not reachable in production (a real v1 database is created *by*
+that block) and `app.js` was deliberately not changed for it, but it will bite any
+future spec that seeds settings directly and then writes a trip.
 
 ### Agent relay protocol
 
@@ -2444,3 +2370,6 @@ without waiting to be asked. It is explicit that a handover changes **who is
 typing and nothing else** — lane ownership, the `app.js`/SHARED lock protocol,
 commit prefixes, the full-suite gate and release-marker discipline all survive it
 unchanged.
+
+This release is itself the argument for that document: both lanes spent a session
+building the same two deliverables because neither knew the other had started.

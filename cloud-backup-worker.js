@@ -1,4 +1,6 @@
-// FreightLogic Cloud Backup Worker v15 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v16 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v16: validate/project model-free canonical decisions before requiring an OpenAI key.
+// Missing AI configuration must not break canonical absence or request validation.
 // v15: POST /admin/users/:id/rotate — re-key a driver's token IN PLACE, keeping userId.
 // Before this the only way to change a token was POST /admin/users, which mints a NEW
 // userId; since every backup is keyed user:<userId>:device:<id>:..., rotating that way
@@ -233,7 +235,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '15', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '16', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -287,10 +289,6 @@ export default {
           return json({ ok: false, error: `AI evaluation limit reached (100/hr). Resets in ~${resetMins} min. Your local score is still accurate.` }, 429, cors);
         }
 
-        if (!env.OPENAI_API_KEY) {
-          return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
-        }
-
         const clEval = parseInt(request.headers.get('Content-Length') || '0', 10);
         if (clEval > 64 * 1024) {
           return json({ ok: false, error: 'Request too large' }, 413, cors);
@@ -329,6 +327,12 @@ export default {
         if (!payload.canonicalDecision?.authority?.verdict || !payload.canonicalDecision?.authority?.grade ||
             !Number.isFinite(Number(payload.canonicalDecision?.economics?.trueRPM)) || !payload.canonicalDecision?.bid?.range) {
           return json({ ok: false, error: 'Canonical client decision, economics, and bid range are required for AI review. Local evaluation remains authoritative.' }, 400, cors);
+        }
+
+        // Only a complete canonical decision needs the model. Keep this after
+        // request validation and the model-free absence projection above.
+        if (!env.OPENAI_API_KEY) {
+          return json({ ok: false, error: 'AI evaluation not configured on server.' }, 500, cors);
         }
 
         const model = env.OPENAI_MODEL || 'gpt-4.1-mini';
@@ -490,13 +494,15 @@ export default {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
 
-        // Write backup data and read pointer in parallel (saves one round-trip)
+        // Write backup data and read pointer in parallel. On a first write,
+        // Cloudflare KV may expose the just-written key to getPtr()'s lazy
+        // list() before Promise.all settles, so appending must be idempotent.
         const [, ptr] = await Promise.all([
           env.BACKUPS.put(key, payload),
           getPtr(env, driverUserId, deviceId, 'b')
         ]);
 
-        ptr.keys.push(key);
+        if (!ptr.keys.includes(key)) ptr.keys.push(key);
         const ptrOps = [];
         if (ptr.keys.length > 3) {
           const toDelete = ptr.keys.splice(0, ptr.keys.length - 3);
@@ -530,7 +536,9 @@ export default {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
 
-        // Write delta and read pointer in parallel
+        // Write delta and read pointer in parallel. getPtr() can discover this
+        // same key during a first-write migration, so only count/append it when
+        // it was not already indexed by that discovery.
         const [, ptr] = await Promise.all([
           env.BACKUPS.put(key, payload, { expirationTtl: 7 * 24 * 3600 }),
           getPtr(env, driverUserId, deviceId, 'd')
@@ -547,8 +555,16 @@ export default {
         // already happened before this field existed — acceptable since it
         // only affects the accuracy of the gap warning for pre-existing
         // pointers going forward, not correctness of the restore itself.
-        ptr.totalCreated = (ptr.totalCreated || ptr.keys.length) + 1;
-        ptr.keys.push(key);
+        const alreadyIndexed = ptr.keys.includes(key);
+        const currentTotal = Number.isFinite(Number(ptr.totalCreated))
+          ? Number(ptr.totalCreated)
+          : ptr.keys.length;
+        if (!alreadyIndexed) {
+          ptr.keys.push(key);
+          ptr.totalCreated = currentTotal + 1;
+        } else {
+          ptr.totalCreated = Math.max(currentTotal, ptr.keys.length);
+        }
         if (ptr.keys.length > 20) {
           const toDelete = ptr.keys.splice(0, ptr.keys.length - 20);
           ptr.count = ptr.keys.length;
@@ -639,16 +655,39 @@ export default {
 // On first access the pointer is absent; we run a one-time list() to migrate
 // existing keys and then persist the pointer so future calls skip the list.
 
+function normalizePtr(ptr, type) {
+  const rawKeys = Array.isArray(ptr?.keys) ? ptr.keys.filter(k => typeof k === 'string') : [];
+  const keys = [...new Set(rawKeys)].sort();
+  const duplicateCount = Math.max(0, rawKeys.length - keys.length);
+  const next = { ...(ptr && typeof ptr === 'object' ? ptr : {}), keys, count: keys.length };
+  if (type === 'd') {
+    const rawTotal = Number(next.totalCreated);
+    const repairedTotal = Number.isFinite(rawTotal)
+      ? Math.max(0, rawTotal - duplicateCount)
+      : keys.length;
+    next.totalCreated = Math.max(keys.length, repairedTotal);
+  }
+  return next;
+}
+
 async function getPtr(env, userId, deviceId, type) {
   const ptrKey = 'user:' + userId + ':device:' + deviceId + ':' + type + 'ptr';
   const raw = await env.BACKUPS.get(ptrKey);
   if (raw) {
-    try { return JSON.parse(raw); } catch {}
+    try {
+      const ptr = normalizePtr(JSON.parse(raw), type);
+      const normalized = JSON.stringify(ptr);
+      // Self-heal pointers written by the pre-fix race. For delta pointers,
+      // normalizePtr also removes the duplicate-induced inflation from
+      // totalCreated while preserving any real historical prune gap.
+      if (normalized !== raw) await env.BACKUPS.put(ptrKey, normalized);
+      return ptr;
+    } catch {}
   }
   // First-time: lazily migrate existing keys from a list (runs once per user+device+type)
   const prefix = 'user:' + userId + ':device:' + deviceId + ':' + (type === 'b' ? 'backup:' : 'delta:');
   const list = await env.BACKUPS.list({ prefix });
-  const keys = list.keys.map(k => k.name).sort();
+  const keys = [...new Set(list.keys.map(k => k.name))].sort();
   const ptr = { keys, count: keys.length };
   if (type === 'd') ptr.totalCreated = keys.length; // best-effort seed — see totalCreated comment at the POST /backup/delta handler
   if (keys.length > 0) {
@@ -844,6 +883,9 @@ function unknownFactsReason(decision){
     : 'The local engine reported required facts as missing.';
 }
 function canonicalTrueRpmLabel(decision){
+  if (isCanonicalUnavailable(decision)) {
+    return 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
+  }
   const rpm = Number(decision?.economics?.trueRPM);
   if (decision?.economics?.trueRPM === null || decision?.economics?.trueRPM === undefined) return 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
   return Number.isFinite(rpm) ? `$${rpm.toFixed(2)} / true mile` : 'UNAVAILABLE — True RPM cannot be computed from the facts provided';

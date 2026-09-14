@@ -3,35 +3,34 @@ name: Verify Live Parity
 # Read-only live observation of the deployed release. Nothing here deploys,
 # writes, or changes anything.
 #
-# WHY THIS EXISTS. The live half of scripts/verify-cloudflare-parity.mjs has
-# been UNOBSERVED for the whole v24.0.x line, not because anyone doubted it but
-# because no environment that could run it could also reach production: this
-# repo's agent proxies refuse to tunnel to the deployed workers.dev origins, and
-# the operator works from a phone. GitHub-hosted runners have ordinary outbound
-# access and already reach Cloudflare, so the observation that was impossible
-# everywhere else is a button here. Requested by the gpt lane in
-# .agents/inbox/gpt-to-claude-live-parity-runner-2026-09-14.md; .github/ and
-# scripts/ are claude-owned, so it is built rather than requested back.
+# WHY THIS EXISTS. The live half of scripts/verify-cloudflare-parity.mjs had
+# been UNOBSERVED because the agent environments that could inspect the repo
+# could not also reach the deployed workers.dev origins. GitHub-hosted runners
+# have ordinary outbound access and already reach Cloudflare, so they own this
+# network observation.
 #
-# WHAT IT IS NOT. Manual dispatch ONLY — never on push, comment or schedule —
-# and `permissions: contents: read`, so it cannot write to the repository. It
-# needs NO secrets: this is the unauthenticated app/static/Worker-health sweep.
-# Authenticated /evaluate, /extract, backup/restore and token-rotation smokes
-# are a separate gate that needs a dedicated non-published test identity, and
-# they are deliberately not here. It also never deploys or "fixes" anything: on
-# FAILURE it stops and reports, because auto-repairing production from a
-# verification job is exactly the branch-pushing CI machinery CLAUDE.md records
-# as removed on purpose.
+# TRIGGERS. Every push to main runs the verifier automatically, which means a
+# merged release/certification change produces its own SHA-bound parity evidence
+# without requiring an operator to find a GitHub Actions button. Manual dispatch
+# remains available for deliberate re-observation or alternate origins. Neither
+# trigger grants write/deploy authority.
+#
+# WHAT IT IS NOT. This workflow never deploys, never repairs production, never
+# writes to the repository, and uses no secrets. `permissions: contents: read`
+# is intentional. Authenticated /evaluate, /extract, backup/restore and token
+# rotation remain a separate gate requiring a dedicated non-published identity.
 #
 # THREE OUTCOMES, NOT TWO. The verifier distinguishes:
 #   PASS       exit 0  — live evidence observed, everything agreed
 #   FAILURE    exit 1  — real evidence of a mismatch
 #   UNOBSERVED exit 2  — origins unreachable; NO parity claim in either direction
-# UNOBSERVED is the whole point of running this job: a network that cannot reach
-# production must never be recorded as production being wrong, and must never be
-# recorded as production being right either.
+# Both FAILURE and UNOBSERVED fail the job. A green run is therefore the only
+# outcome that may be cited as live production parity evidence.
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       app_origin:
@@ -57,12 +56,10 @@ jobs:
           node-version: '22'
 
       - name: Record the exact source being verified
-        # The SHA is the point: a PASS is only meaningful against a named
-        # candidate, and this is what lets the docs lane cite evidence rather
-        # than infer it.
         run: |
           echo "commit:  $(git rev-parse HEAD)"
           echo "ref:     ${{ github.ref }}"
+          echo "event:   ${{ github.event_name }}"
           echo "app version markers under verification:"
           grep -m1 "APP_VERSION = " app.js
           grep -m1 "SW_VERSION = " service-worker.js
@@ -71,26 +68,14 @@ jobs:
 
       - name: Run the live parity verifier
         id: parity
-        # No npm dependencies — the verifier is plain Node 18+ with global fetch.
-        # `set +e` so the three outcomes can be told apart rather than the job
-        # dying on the first non-zero exit; the step re-fails explicitly below.
-        #
-        # The dispatch inputs go through `env:` and are quoted in the shell,
-        # NEVER interpolated as `${{ inputs.x }}` inside `run:`. Direct
-        # interpolation splices attacker-chosen text into the shell before the
-        # shell ever sees it, so quoting at the use site cannot help; only
-        # someone with write access can dispatch this, but "only trusted people
-        # can reach it" is the same reasoning that leaves an injection in place
-        # until the trust boundary moves.
+        # Dispatch inputs are bound through env and quoted in the shell, never
+        # interpolated into shell source. On a push event the inputs context is
+        # empty, so ARGS stays empty and the verifier uses production defaults.
         env:
           APP_ORIGIN: ${{ inputs.app_origin }}
           WORKER_ORIGIN: ${{ inputs.worker_origin }}
         run: |
           set +e
-          # Built as a quoted array so an EMPTY input contributes no argument at
-          # all — the verifier then falls back to its own production defaults —
-          # while a non-empty one stays exactly one argument no matter what it
-          # contains.
           ARGS=()
           [ -n "$APP_ORIGIN" ] && ARGS+=("$APP_ORIGIN")
           [ -n "$WORKER_ORIGIN" ] && ARGS+=("$WORKER_ORIGIN")
@@ -111,20 +96,15 @@ jobs:
             echo "## Live Cloudflare parity — ${{ steps.parity.outputs.verdict }}"
             echo
             echo "- commit: \`$(git rev-parse HEAD)\`"
+            echo "- event: \`${{ github.event_name }}\`"
             echo "- verifier exit code: \`${{ steps.parity.outputs.exit_code }}\`"
             echo
             echo '```'
-            # The verifier step may have been skipped entirely (a failed
-            # checkout, say). Summarizing is best-effort; the job's own verdict
-            # step is what actually decides pass or fail.
             cat parity.log 2>/dev/null || echo '(no verifier output was produced)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail the job on FAILURE or UNOBSERVED
-        # Both are non-zero and both block, but they mean different things and
-        # the summary above says which. A green run is the ONLY thing that may
-        # be cited as live parity evidence.
         if: steps.parity.outputs.verdict != 'PASS'
         run: |
           echo "::error::Live parity verdict: ${{ steps.parity.outputs.verdict }} (exit ${{ steps.parity.outputs.exit_code }})"

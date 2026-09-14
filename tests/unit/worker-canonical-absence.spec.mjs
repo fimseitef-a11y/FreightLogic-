@@ -23,10 +23,10 @@ const worker = (await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.
 // Minimal KV stand-in: enough for token auth + the rate-limit counter. The
 // Worker's own storage layer is external infrastructure, not the logic under
 // test (same rationale as tests/lib/mock-worker.mjs).
-function makeEnv(){
+function makeEnv({ configured = false } = {}){
   const store = new Map();
   return {
-    OPENAI_API_KEY: 'test-key-not-used-on-the-absence-path',
+    ...(configured ? { OPENAI_API_KEY: 'test-key-not-used-outside-the-mocked-model-path' } : {}),
     ALLOWED_ORIGIN: 'http://localhost',
     BACKUPS: {
       async get(key){
@@ -42,13 +42,13 @@ function makeEnv(){
 
 const TOKEN = 'flk_' + '0'.repeat(32);
 
-async function evaluate(canonicalDecision){
+async function evaluate(canonicalDecision, options){
   const req = new Request('https://worker.test/evaluate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Backup-Token': TOKEN, 'X-Device-Id': 'test-device' },
     body: JSON.stringify({ canonicalDecision }),
   });
-  const res = await worker.fetch(req, makeEnv());
+  const res = await worker.fetch(req, makeEnv(options));
   return { status: res.status, body: await res.json() };
 }
 
@@ -150,7 +150,7 @@ test('[W-05] a real REJECT and a real F still project verbatim', async () => {
     authority: { verdict: 'REJECT', grade: 'F', reason: 'below the $1.40 normal floor' },
     economics: { available: true, trueRPM: 1.02, totalMi: 400, deadMi: 40 },
     bid: { suppressed: false, range: { minimum: { amount: 560, rpm: 1.40 } } },
-  })); } finally { globalThis.fetch = realFetch; }
+  }, { configured: true })); } finally { globalThis.fetch = realFetch; }
 
   eq(body.ok, true, 'a complete decision is reviewed, not short-circuited as absent');
   eq(body.ai.verdict, 'REJECT', 'a real REJECT projects verbatim — the model cannot upgrade it');
@@ -158,6 +158,63 @@ test('[W-05] a real REJECT and a real F still project verbatim', async () => {
   ok(/\$1\.02 \/ true mile/.test(body.ai.trueRpmBand), 'the True RPM band comes from canonical economics, not the model');
   ok(/Minimum \$560/.test(body.ai.bidAdvice), 'the bid advice comes from the canonical range, not the model');
   ok(!/9,?999/.test(body.ai.bidAdvice + body.ai.trueRpmBand), "the model's competing figures are discarded");
+});
+
+test('[W-06] factsComplete:false wins without AI configuration and never calls a model', async () => {
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('unexpected model request'); };
+  try {
+    const { status, body } = await evaluate({
+      factsComplete: false,
+      authority: { verdict: 'ACCEPT', grade: 'A' },
+      economics: { available: true, trueRPM: 2.1 },
+      bid: { range: { minimum: { amount: 500, rpm: 1.4 } } },
+    });
+    eq(status, 200, 'the model-free path works with no OpenAI key');
+    eq(body.ai.verdict, 'UNAVAILABLE', 'missing facts outrank contradictory ACCEPT');
+    eq(body.ai.grade, '?', 'unknown grade is preserved');
+    ok(/^UNAVAILABLE/.test(String(body.ai.trueRpmBand)),
+      'factsComplete:false suppresses a contradictory numeric True RPM');
+    ok(!/\$\s*2\.10/.test(String(body.ai.trueRpmBand)),
+      'factsComplete:false never leaks the contradictory $2.10 True RPM');
+    eq(body.model, null, 'no model is used');
+    eq(calls, 0, 'no outbound request is attempted');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('[W-07] a complete decision still requires AI configuration', async () => {
+  const { status, body } = await evaluate({
+    factsComplete: true,
+    authority: { verdict: 'ACCEPT', grade: 'B' },
+    economics: { available: true, trueRPM: 1.72 },
+    bid: { range: { minimum: { amount: 560, rpm: 1.4 } } },
+  });
+  eq(status, 500, 'a real model request fails closed without a key');
+  eq(body.ok, false, 'AI configuration failure is explicit');
+  ok(/not configured/.test(body.error), 'configuration remains required on the paid path');
+});
+
+test('[W-08] malformed JSON and oversized requests are rejected before AI configuration', async () => {
+  for (const [body, extraHeaders, expected] of [
+    ['{', {}, 400],
+    ['{}', { 'Content-Length': String(65537) }, 413],
+  ]) {
+    const res = await worker.fetch(new Request('https://worker.test/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Backup-Token': TOKEN, ...extraHeaders },
+      body,
+    }), makeEnv());
+    eq(res.status, expected, 'request validation must not depend on an AI key');
+  }
+});
+
+test('[W-09] canonical absence still requires driver authentication', async () => {
+  const res = await worker.fetch(new Request('https://worker.test/evaluate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ canonicalDecision: { factsComplete: false } }),
+  }), makeEnv());
+  eq(res.status, 401, 'the model-free path does not bypass driver authentication');
 });
 
 export async function runSpec(){ return await run(); }
