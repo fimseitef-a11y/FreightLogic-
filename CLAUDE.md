@@ -2408,7 +2408,8 @@ approved default.
 
 `tests/unit/rollback-verifier.spec.mjs` (11) and
 `tests/integration/six-width-layout.spec.mjs` (8), both wired into
-`tests/run-all.mjs`. RBV-08 builds a purpose-made three-commit repository rather
+`tests/run-all.mjs` (RBV grew to 11 with the drift-generation assertion below).
+RBV-08 builds a purpose-made three-commit repository rather
 than relying on this one's history, so it is deterministic and survives CI's
 shallow checkout (`actions/checkout@v6` defaults to depth 1) — and RBV-09 asserts
 the gate **fails closed** in exactly that shallow clone rather than inventing
@@ -2420,8 +2421,9 @@ measurements above, and `--merge-base` being asserted with a bare
 `/--merge-base=/` match that the gate's own comment and warning text satisfied
 even after the flag was deleted from the call.
 
-Full suite at the time of writing: **460 passed, 0 failed across 48 spec files**
-(was 442/46), re-run after the bump.
+Full suite: **461 passed, 0 failed across 48 spec files** (was 442/46), re-run
+against the committed bump. (The commit message for `cba9311` says 460 — that
+total was taken before RBV-11 was added; 461 is the verified figure.)
 
 ### Still HOLD
 
