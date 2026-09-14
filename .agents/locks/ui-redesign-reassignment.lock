@@ -1,6 +1,0 @@
-owner: gpt
-token: 7d8f9f62-6a18-4df4-8c0b-3a53e3e82e4a
-started_utc: 2026-09-14T23:27:00Z
-expected_release_utc: 2026-09-14T23:47:00Z
-paths: .agents/LANES.md
-task: Reassign the presentation-only styles.css lane to GPT for the operator-directed reference UI redesign.
