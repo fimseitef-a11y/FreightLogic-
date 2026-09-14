@@ -1,6 +1,0 @@
-owner: gpt
-token: ac160fd6-5c28-4a19-87a0-724f41137063
-started_utc: 2026-09-14T04:46:18Z
-expected_release_utc: 2026-09-14T06:46:18Z
-paths: .agents/LANES.md
-task: operator-directed takeover of the remaining v24.0.9 release tooling gates with exact-path ownership reassignment only
