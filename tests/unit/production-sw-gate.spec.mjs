@@ -80,6 +80,18 @@ test('[PSW-07] the gate is non-destructive and says what it did not observe', ()
   ok(/FIELD_TEST_CHECKLIST/.test(gate), 'it must point at where that evidence does come from');
 });
 
+test('[PSW-08] the provenance step fails closed instead of recording nothing', () => {
+  // The first production run recorded `app:` with nothing after it: escaped
+  // double quotes inside the run: block were eaten by the shell, grep read `=`
+  // as a filename, and the step still exited 0. A step whose only job is naming
+  // WHICH candidate the evidence belongs to must never succeed having named none.
+  const step = wf.slice(wf.indexOf('Record the exact source being verified'), wf.indexOf('Run the production service-worker gate'));
+  ok(!/\\"/.test(step), 'no escaped double quotes — that is what broke it the first time');
+  ok(/if \[ -z "\$app" \] \|\| \[ -z "\$sw" \]; then/.test(step),
+    'the step must check that it actually read both versions');
+  ok(/exit 1/.test(step), 'an unidentified candidate must fail the job, not be recorded as blank');
+});
+
 export async function runSpec() { return run(); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await runSpec();

@@ -13,7 +13,7 @@ This document is the certification authority. Every earlier state and addendum d
 - backup/API Worker: **17**, deployed and live
 - Production app origin: `https://freightlogic-v2.fimseitef.workers.dev`
 - Production backup/API Worker origin: `https://freightlogic-backup.fimseitef.workers.dev`
-- Runtime candidate SHA: recorded in the **Candidate SHA** section below.
+- Runtime candidate SHA: **`fb4fe119cced5bc938bd13d3c2aa877ad92cc308`** (see **Candidate SHA** below)
 
 ## What changed since the 2026-09-14 addendum
 
@@ -26,6 +26,8 @@ That addendum listed seven blocking items, of which it could close none by obser
 The push-triggered run on the same SHA **failed**, eleven seconds after the merge, because it races the Cloudflare deploy. That FAILURE is real evidence about the origin at that instant and is not evidence about the release. This will recur on every merge: re-dispatch and record the later run. Do not dismiss the first one and do not cite it.
 
 ### 2. Production service-worker / offline behaviour — **PASS**
+
+**Observed 2026-09-14**, run `34895654786` on `main` @ `fb4fe119cced5bc938bd13d3c2aa877ad92cc308`, **16 checks, 0 failures**, VERDICT: PASS against the production origin. Notably it observed `admin-driver-ui.js is injected AND fetchable as script — HTTP 200 (text/javascript)`, which is the 2026-09-13 defect confirmed closed in production rather than only in source.
 
 New gate: `scripts/verify-production-sw.mjs`, run by `.github/workflows/verify-production-sw.yml` (read-only, no secrets, manual dispatch plus every push to `main`). It drives a real headless Chromium against production and proves, in order:
 
@@ -69,7 +71,7 @@ Fixed at Worker **v17** with a monotonic key clock, deployed by run `34884719806
 ## Current blocking checklist
 
 - [x] Exact live all-asset production parity — run `34885000070`, PASS.
-- [x] Production service-worker / offline behaviour — new gate, PASS.
+- [x] Production service-worker / offline behaviour — run `34895654786`, 16/0, PASS.
 - [x] Authenticated Worker authority + backup/restore/rotation — run `34884786623`, PASS.
 - [x] Six-width visual acceptance — `six-width-layout.spec.mjs`, PASS.
 - [x] Rollback / fix-forward evidence — derived verifier, PASS.
@@ -92,8 +94,8 @@ Neither is a reason to hold the other work. Both can be run in parallel with any
 
 The runtime candidate is the `main` commit that carries this document. Record it here when this lands and confirm it against Diagnostics on the device before running A1-A10:
 
-- `main` at the time of writing: `a3477b1720be40e5bd69de0a9711152e7047f5e3`
-- the candidate SHA for A1-A10 is the merge commit that lands this file; read it from `git log -1 main` or from the Actions run that verified it.
+- **Runtime candidate SHA: `fb4fe119cced5bc938bd13d3c2aa877ad92cc308`** — the `main` commit against which live all-asset parity, the production service-worker gate, and the authenticated Worker smokes were all observed. Confirm it against Diagnostics on the device before running A1-A10.
+- Later `main` commits that change only documentation or verification tooling do not create a new runtime candidate, because they do not change a shipped file or the cache generation. If a shipped file changes, this section must be updated and the live gates re-observed.
 
 `FIELD_TEST_CHECKLIST.md` deliberately no longer carries its own copy of this SHA. It had gone two generations stale — reading `24.0.9` / Worker `v15` while production served `24.0.10` / `v17` — which would have had a tester confirm the wrong build and record a PASS for a candidate that is not the one being certified.
 
