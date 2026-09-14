@@ -2,7 +2,7 @@
 
 Status: **active finite completion plan and the only roadmap file on `main`.**
 
-Current status update: **2026-09-14.** Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` is **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15 source**. The exact runtime suite is green at **431/0 across 45 spec files**. Read-only release tooling/docs subsequently advanced repository `main` to `578acaeec1c67e25bad2e58967d81138186dae5f` without changing shipped runtime files; current `main` suite `34799469734` is green at **442/0 across 46 spec files**. Cloudflare successfully built/deployed the exact runtime SHA for `freightlogic-v2` (build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`). Source-side deployment coverage derives the full runtime inventory (23 assets) and specifically proves `admin-driver-ui.js` is requested, present, and deployable. A manual/read-only **Verify Live Parity** GitHub Actions runner is now merged and ready, but the exact v24.0.9 live all-asset origin sweep is still **NOT RUN / UNOBSERVED** until that workflow is actually dispatched. Authenticated Worker authority/backup smokes are **NOT RUN**, the recovered private-history bundle still needs the real application round trip/idempotence/conflict review, six-width + physical-iPhone acceptance remain open, and the rollback verifier itself needs a bounded v24.0.9/Worker-v15 tooling correction before it can supply final B5 evidence. Formal certification remains **HOLD**.
+Current status update: **2026-09-14.** Exact runtime candidate `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` is **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15 source**. The exact runtime suite is green at **431/0 across 45 spec files**. Read-only release tooling/docs subsequently advanced repository `main` to `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6` (merged PR #180) without changing shipped runtime files; current merged `main` suite `34800434526` is green at **442/0 across 46 spec files**. GitHub's Cloudflare check attached to the exact runtime merge SHA is successful for `freightlogic-v2` (check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`). Source-side deployment coverage derives the full runtime inventory (23 assets) and specifically proves `admin-driver-ui.js` is requested, present, and deployable. A manual/read-only **Verify Live Parity** GitHub Actions runner is now merged and ready, but the exact v24.0.9 live all-asset origin sweep is still **NOT RUN / UNOBSERVED** until that workflow is actually dispatched. Authenticated Worker authority/backup smokes are **NOT RUN**, the recovered private-history bundle still needs the real application round trip/idempotence/conflict review, six-width + physical-iPhone acceptance remain open, and the rollback verifier itself needs a bounded v24.0.9/Worker-v15 tooling correction before it can supply final B5 evidence. Formal certification remains **HOLD**.
 
 Current certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`.
 
@@ -113,16 +113,21 @@ Current read-only tooling/docs `main` additionally has:
 
 - PR #177 merged: manual/read-only **Verify Live Parity** workflow plus PASS/FAILURE/UNOBSERVED semantics and 11 dedicated runner assertions;
 - PR #178 merged: backup-contract parity through v24.0.9 including durable optional `planningAvgMph` and absent-means-absent behavior;
-- Tests run `34799469734`: **442 passed / 0 failed across 46 spec files**.
+- PRs #179 and #180 merged: certification/visual/field documentation reconciliation only;
+- Tests run `34800434526`: **442 passed / 0 failed across 46 spec files** on merged `main` `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`.
 
 ### Production evidence already observed
 
-Cloudflare's GitHub production check completed **SUCCESS** for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` on service `freightlogic-v2`:
+GitHub's Cloudflare check attached to exact runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed **SUCCESS** on service `freightlogic-v2`:
 
-- build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`;
-- version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`.
+- check run `103831029587`;
+- build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`;
+- version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
+- preview `https://7582ec81-freightlogic-v2.fimseitef.workers.dev`.
 
-That proves Cloudflare accepted/built/deployed the exact candidate. It does **not** prove all 23 runtime assets at the live origin match the source bytes/content. The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** until the merged GitHub Actions runner is actually dispatched.
+An earlier certification draft named a different build/version pair. Re-reading the exact runtime SHA's GitHub check-runs did not support that attribution, so the canonical plan now records only the directly observable SHA-bound check above.
+
+That proves Cloudflare accepted/built/deployed a tree associated with the exact candidate. It does **not** prove all 23 runtime assets at the live production origin match the source bytes/content. The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** until the merged GitHub Actions runner is actually dispatched.
 
 The backup/API Worker did not change in v24.0.9. On 2026-09-13 Worker v15 was directly observed live with:
 

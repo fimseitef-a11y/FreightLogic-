@@ -8,11 +8,12 @@ Current runtime candidate:
 - IndexedDB schema: **15**;
 - backup/API Worker source: **15**;
 - exact runtime Git candidate: **`5446b097fe8791f3d7c79b5a5833a0930ee83cf2`** (merged PR #175);
-- current repository `main` after read-only tooling/docs integration: **`578acaeec1c67e25bad2e58967d81138186dae5f`**;
+- current repository `main` after read-only tooling/docs integration: **`a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`** (merged PR #180);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- Cloudflare production build for the exact runtime Git SHA: **SUCCESS**, build `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`, version `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`;
-- current post-tooling source suite: **442 passed / 0 failed across 46 spec files** in main run `34799469734`;
+- GitHub-attached Cloudflare build check for the exact runtime Git SHA: **SUCCESS**, check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
+- version-specific preview for that check: **`https://7582ec81-freightlogic-v2.fimseitef.workers.dev`**;
+- current merged source/tooling suite: **442 passed / 0 failed across 46 spec files** in main run `34800434526`;
 - certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`;
 - status: **HOLD**.
 
@@ -31,7 +32,7 @@ Record:
 
 ### Current source/deploy evidence
 
-For v24.0.9, GitHub/Cloudflare reports a successful production Workers build for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`. Subsequent PRs #177 and #178 changed verification tooling/tests/docs only; they did not change shipped runtime files or the app/PWA/cache generation. That build evidence is **not** a substitute for a live origin parity run.
+For v24.0.9, GitHub's Cloudflare check attached to runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed successfully as check run `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`. The earlier checklist draft named a different build/version pair; re-reading the exact SHA's check-runs showed that pair was not the check currently attached to `5446b097...`, so the release record now uses only the directly observable SHA-bound metadata. Subsequent PRs #177 through #180 changed verification tooling/tests/docs only; they did not change shipped runtime files or the app/PWA/cache generation. Build evidence is **not** a substitute for a live origin parity run.
 
 The prior v24.0.8 admin-script defect is repaired in source: `.assetsignore` no longer excludes `admin-driver-ui.js`, and the deploy-asset regression gate derives the complete runtime inventory and asserts that every requested runtime asset exists and is deployable. The current derived source inventory is 23 assets. A full live-green parity run must fetch **every derived runtime asset**, not a curated subset, and must reject an HTML shell returned with HTTP 200 for a JavaScript/CSS/JSON/image request.
 
@@ -150,10 +151,10 @@ Source-side:
 - `node scripts/verify-cloudflare-parity.mjs --static-only`
 - `node scripts/m7-certify.mjs --suite`
 
-Current repository baseline after PRs #177/#178:
+Current repository baseline after PRs #177 through #180:
 
-- main SHA `578acaeec1c67e25bad2e58967d81138186dae5f`;
-- run `34799469734`;
+- main SHA `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`;
+- run `34800434526`;
 - **442 passed / 0 failed across 46 spec files**;
 - includes 11 dedicated live-parity-runner assertions.
 

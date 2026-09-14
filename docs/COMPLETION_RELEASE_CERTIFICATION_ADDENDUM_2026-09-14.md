@@ -7,14 +7,14 @@ Status: **HOLD — v24.0.9 SOURCE + PRODUCTION BUILD ARE GREEN; LIVE PARITY RUNN
 ## Exact candidate
 
 - Runtime Git SHA: `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` (merged PR #175).
-- Current repository `main` after tooling/docs integration: `578acaeec1c67e25bad2e58967d81138186dae5f`.
+- Current repository `main` after tooling/docs integration: `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6` (merged PR #180).
 - FreightLogic app/PWA/service-worker generation: **24.0.9**.
 - IndexedDB schema: **15**.
 - backup/API Worker source generation: **15**.
 - Production app origin: `https://freightlogic-v2.fimseitef.workers.dev`.
 - Production backup/API Worker origin: `https://freightlogic-backup.fimseitef.workers.dev`.
 
-PRs #177 and #178 changed verifier/workflow/tests/docs only; they did not change shipped runtime files or the v24.0.9 app/PWA/cache generation. This document remains the current certification authority. The September 13 state/addendum documents are historical evidence and must not be read as the current candidate.
+PRs #177 through #180 changed verifier/workflow/tests/docs only; they did not change shipped runtime files or the v24.0.9 app/PWA/cache generation. This document remains the current certification authority. The September 13 state/addendum documents are historical evidence and must not be read as the current candidate.
 
 ## What changed after the September 13 addendum
 
@@ -46,7 +46,7 @@ The optional pickup-cutoff field and Trip Planning speed setting therefore do no
 
 PR #175 full Playwright run `34796439138` completed successfully with **431 passed, 0 failed across 45 spec files** on the exact runtime candidate. After merge, `main` run `34796618850` also completed SUCCESS on that runtime SHA.
 
-PR #177 then added the read-only live-parity runner and explicit PASS/FAILURE/UNOBSERVED verifier semantics. PR #178 updated the backup contract only. Current `main` run `34799469734` completed **442 passed, 0 failed across 46 spec files**. The added `unit/live-parity-runner.spec.mjs` contributes 11 assertions covering:
+PR #177 then added the read-only live-parity runner and explicit PASS/FAILURE/UNOBSERVED verifier semantics. PR #178 updated the backup contract only; PRs #179 and #180 reconciled release/visual/field documentation only. Current merged `main` run `34800434526` completed successfully with **442 passed, 0 failed across 46 spec files**. The added `unit/live-parity-runner.spec.mjs` contributes 11 assertions covering:
 
 - manual-dispatch-only workflow policy;
 - `contents: read` and no secret use;
@@ -62,14 +62,16 @@ Successful test runs are source/tooling evidence, not live-origin evidence.
 
 ### 4. Cloudflare built the exact runtime candidate successfully
 
-Cloudflare's GitHub check for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed **SUCCESS** for production service `freightlogic-v2`:
+GitHub's Cloudflare check attached to exact runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed **SUCCESS** for service `freightlogic-v2`:
 
-- Build ID: `8caa3ac9-511f-4d9d-835f-cf6ba916cca7`
-- Version ID: `ba1edf4d-f9c5-4836-a1b8-e2be1d0f6b0f`
+- check-run ID: `103831029587`;
+- Build ID: `d66b1b47-9ca6-4736-994a-ff02fc6f5490`;
+- Version ID: `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
+- version-specific preview: `https://7582ec81-freightlogic-v2.fimseitef.workers.dev`.
 
-Subsequent tooling/docs `main` builds also succeeded, but they do not create a new FreightLogic runtime generation because the shipped runtime files did not change.
+The earlier certification draft recorded a different Cloudflare build/version pair. Re-reading GitHub's check-runs for the exact runtime SHA proved that pair was not the check currently attached to `5446b097...`, so this addendum now records only the directly observable SHA-bound check above. Subsequent tooling/docs builds also succeeded, but they do not create a new FreightLogic runtime generation because the shipped runtime files did not change.
 
-A successful Cloudflare build proves that Cloudflare accepted/deployed the source tree; it does **not** substitute for a live all-asset origin comparison.
+A successful Cloudflare build proves that Cloudflare accepted/deployed a tree associated with the exact candidate; it does **not** substitute for a live all-asset origin comparison.
 
 ### 5. A production-network runner now exists, but its result is still unobserved
 
@@ -94,11 +96,11 @@ The earlier requirement to redeploy Worker v15 remains discharged. Authenticated
 - [x] PR #175 lane/ownership gate passed.
 - [x] Exact runtime suite passed: **431/0 across 45 specs**.
 - [x] Merged-runtime `main` test run `34796618850` passed on exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
-- [x] Cloudflare production build succeeded for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2`.
+- [x] GitHub's Cloudflare build check succeeded for exact runtime SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` (check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`).
 - [x] Source deployment inventory covers every declared runtime asset and no longer excludes `admin-driver-ui.js`.
 - [x] Worker v15 health/CORS/unauthorized-admin free checks were observed on 2026-09-13 and Worker source is unchanged.
 - [x] Manual/read-only **Verify Live Parity** workflow merged through PR #177 with explicit PASS/FAILURE/UNOBSERVED semantics.
-- [x] Current post-tooling `main` suite passed: **442/0 across 46 specs** in run `34799469734`.
+- [x] Current post-tooling/docs `main` suite passed: **442/0 across 46 specs** in run `34800434526`.
 - [x] Backup contract reconciled through v24.0.9, including optional `planningAvgMph`, via PR #178.
 - [ ] Dispatch **Verify Live Parity** on `main` with blank optional origins and record the actual live verdict, runtime-asset count, and any failed checks.
 - [ ] Verify service-worker-controlled reload/offline cache behavior on the exact v24.0.9 production candidate, including the previously missing admin script.
@@ -134,7 +136,8 @@ The repository contains materially different Canada rate narratives with differe
 - PR #171 was closed unmerged as superseded.
 - PR #170, the non-blocking brand-source staging PR, was closed unmerged on 2026-09-14 and deferred until after completion certification. Its branch remains available for future post-release branding work; runtime icons/cache generation were deliberately not changed during the certification freeze.
 - PRs #177 and #178 are merged and are tooling/docs only.
+- PRs #179 and #180 are merged and are documentation-only; neither changed the frozen v24.0.9 runtime generation.
 
 ## Final rule
 
-FreightLogic remains **HOLD**. Source completeness, green CI, a successful Cloudflare production build, and a correctly engineered live-parity runner are necessary but insufficient. The hold may be cleared only by a later authoritative certification document after actual live parity, controlled service-worker/offline production behavior, authenticated authority/backup smokes, real private-history reconciliation, six-width visual acceptance, physical-iPhone/PWA evidence, and truthful rollback/fix-forward evidence are all observed on one named final candidate.
+FreightLogic remains **HOLD**. Source completeness, green CI, a successful SHA-bound Cloudflare build, and a correctly engineered live-parity runner are necessary but insufficient. The hold may be cleared only by a later authoritative certification document after actual live parity, controlled service-worker/offline production behavior, authenticated authority/backup smokes, real private-history reconciliation, six-width visual acceptance, physical-iPhone/PWA evidence, and truthful rollback/fix-forward evidence are all observed on one named final candidate.
