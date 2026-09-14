@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | v24.0.9 pickup-feasibility gate (lock/app-js held; app.js + index.html + release bump + tests) | 2026-09-14 |
+| claude | — idle — (v24.0.9 pushed on claude/repo-review-9lpj28, 431/0 across 45; lock/app-js released) | 2026-09-14 |
 | gpt | — idle — (PR #173 open; verifying CI/deployment) | 2026-09-13 |
 
 ---
