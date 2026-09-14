@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (live-parity runner pushed on claude/repo-review-9lpj28 @0356219, 442/0 across 46; NOT yet on main, so not dispatchable) | 2026-09-14 |
-| gpt | operator-directed Worker v16 hotfix: repair `/evaluate` authority ordering found by live synthetic auth gate, deploy, and recertify production | 2026-09-14 |
+| gpt | — idle — (PR #186 open: exact-path takeover for live-observed Worker v16 authority-order hotfix) | 2026-09-14 |
 
 ---
 
