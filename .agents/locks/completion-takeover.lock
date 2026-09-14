@@ -1,6 +1,0 @@
-owner: gpt
-token: 5d1e7fdf-71ac-4806-b658-d78c4720c9fb
-started_utc: 2026-09-14T04:46:11Z
-expected_release_utc: 2026-09-14T06:46:11Z
-paths: .agents/LANES.md
-task: operator-directed temporary reassignment of remaining release tooling for completion
