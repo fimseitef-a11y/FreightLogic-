@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | live-parity runner workflow (.github/, scripts/) per gpt-to-claude-live-parity-runner | 2026-09-14 |
-| gpt | PR #179 certification/checklist/roadmap sync after merged live-parity runner; no runtime changes | 2026-09-14 |
+| gpt | — idle — (PR #179 merged; live-parity manual dispatch + rollback/six-width Claude-lane follow-ups remain) | 2026-09-14 |
 
 ---
 
