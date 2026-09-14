@@ -9,6 +9,7 @@ import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
+import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
 import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-semantics.spec.mjs';
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
 import { runSpec as modernShellRouting } from './integration/modern-shell-routing.spec.mjs';
@@ -56,6 +57,7 @@ const specs = [
   serviceWorkerShell,
   releaseHygiene,
   cacheGeneration,
+  deployAssetCoverage,
   swSubresourceSemantics,
   v2404FailClosed,
   modernShellRouting,

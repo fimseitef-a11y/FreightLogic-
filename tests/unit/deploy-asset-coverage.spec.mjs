@@ -1,0 +1,164 @@
+// v24.0.9 — deployment asset coverage. Static, no browser needed.
+//
+// Why this spec exists. On 2026-09-13, against main c02ed36, the live half of
+// `scripts/verify-cloudflare-parity.mjs` reported 24/24 checks PASS while
+// `admin-driver-ui.js` returned HTTP 404 from the deployed origin. Two
+// independent gaps produced that:
+//
+//   1. `.assetsignore` (the Cloudflare Workers static-assets exclusion list)
+//      named `admin-driver-ui.js`, so the file was never uploaded — while
+//      `service-worker.js` precached it in CORE and INJECTED a <script> tag for
+//      it into every HTML response. The repository asked for a file the
+//      deployment had been told not to publish, and nothing compared the two
+//      lists.
+//   2. The live parity checks fetched a hand-picked subset of assets (index,
+//      service worker, overlay, bridge, shell, manifest). An asset outside that
+//      subset can 404 in production with every check still green.
+//
+// Gap 1 is what this spec closes, statically and offline: every asset the app
+// requests at runtime must exist on disk AND survive the exclusion rules. Gap 2
+// is closed in the live half of the parity script, which now fetches every
+// declared runtime asset rather than a curated handful. Both are needed — the
+// exclusion list can be correct while a deploy is stale, and a deploy can be
+// current while the exclusion list silently drops a file.
+//
+// The inventory and the exclusion matcher live in `scripts/lib/deploy-assets.mjs`
+// and are shared with the parity gate itself, deliberately: duplicating them
+// here would reproduce the defect one level up — two lists that can drift, each
+// reporting green about the other's blind spot.
+//
+// Deliberately offline: per the deploy-asset-coverage handoff, network checks
+// stay out of normal suite execution. A gate that needs the internet is a
+// network gate, not a code gate.
+import { existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { createSuite, ok, eq } from '../lib/harness.mjs';
+import {
+  REPO_ROOT,
+  declaredRuntimeAssets,
+  assetsIgnoreMatcher,
+} from '../../scripts/lib/deploy-assets.mjs';
+
+const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const { test, run } = createSuite('unit/deploy-asset-coverage.spec.mjs');
+
+/** The inventory, with any unparseable declaration source surfaced as a hard
+ *  failure rather than a quietly smaller list. */
+function inventory() {
+  const { assets, problems } = declaredRuntimeAssets();
+  eq(problems.length, 0, 'could not parse a runtime asset declaration source: ' + problems.join('; '));
+  return assets;
+}
+const isExcluded = (p) => assetsIgnoreMatcher()(p);
+
+test('[DAC-01] every asset the app requests at runtime exists in the repository', () => {
+  const assets = inventory();
+  ok(assets.size >= 20, `expected the runtime asset inventory to be substantial, found ${assets.size}`);
+  const missing = [];
+  for (const [p, { requesters }] of assets) {
+    if (!existsSync(path.join(REPO_ROOT, p))) missing.push(`${p} (requested by ${[...requesters].join(', ')})`);
+  }
+  eq(missing.length, 0,
+    'these assets are requested at runtime but do not exist on disk:\n  ' + missing.join('\n  '));
+});
+
+test('[DAC-02] no runtime asset is excluded from deployment by .assetsignore', () => {
+  // THE REGRESSION. admin-driver-ui.js was in service-worker.js CORE, injected
+  // into every HTML response, and named in .assetsignore — so the deployed
+  // origin returned 404 for a script the worker precaches and the page loads,
+  // while the parity script (which never fetched it) reported full green.
+  const assets = inventory();
+  const blocked = [];
+  for (const [p, { requesters }] of assets) {
+    const { excluded, by } = isExcluded(p);
+    if (excluded) blocked.push(`${p} — excluded by .assetsignore pattern "${by}", but requested by ${[...requesters].join(', ')}`);
+  }
+  eq(blocked.length, 0,
+    'these assets would never reach the deployed origin:\n  ' + blocked.join('\n  ') +
+    '\nEither remove the .assetsignore entry or stop requesting the asset. A file the ' +
+    'service worker precaches and injects, but the deploy excludes, is a silent 404 in ' +
+    'production that no version-marker check can see.');
+});
+
+test('[DAC-03] .assetsignore still withholds the server-side and repository-only files', () => {
+  // The other direction. .assetsignore is not merely inert config: it is what
+  // keeps the Worker SOURCE off the public app origin. `assets.directory` in
+  // wrangler.jsonc is `.` — the whole repository — so anything not excluded is
+  // published verbatim at the app origin. Relaxing an entry here to clear a 404
+  // is the wrong repair, and this asserts nobody does it by accident.
+  const mustStayExcluded = [
+    'cloud-backup-worker.js', // the backup Worker's source, including its auth middleware
+    'wrangler.jsonc',         // deployment configuration
+    'CLAUDE.md',              // internal architecture/operations context
+    '.assetsignore',
+    '.gitignore',
+  ];
+  for (const f of mustStayExcluded) {
+    const { excluded } = isExcluded(f);
+    ok(excluded, `${f} must stay excluded from the deployed assets — wrangler.jsonc publishes the ` +
+      'entire repository directory, so an un-excluded file is served publicly at the app origin');
+  }
+  ok(isExcluded('.git/config').excluded,
+    '.git/ must stay excluded — its contents are the full repository history');
+});
+
+test('[DAC-04] the live parity gate sweeps every declared runtime asset, from the same inventory', () => {
+  // Gap 2. The live half used to fetch a curated subset — index, service worker,
+  // overlay, bridge, shell, manifest — so an asset outside it could 404 with
+  // every check green, which is exactly what happened. It must now derive its
+  // fetch list from THIS module, not from a second list of its own: two
+  // inventories that can drift is the defect one level up.
+  const script = read('scripts/verify-cloudflare-parity.mjs');
+  // Commented-out code must not satisfy any of these: a call that is present
+  // only inside a `//` comment reports nothing at runtime, and a check that
+  // accepts it is exactly as blind as the gate it is guarding.
+  const live = script.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  ok(/from\s+'\.\/lib\/deploy-assets\.mjs'/.test(live),
+    'scripts/verify-cloudflare-parity.mjs must import its asset inventory from ' +
+    'scripts/lib/deploy-assets.mjs — the same module this spec reads — so the release gate ' +
+    'and its regression cannot disagree about what the app declares');
+  for (const fn of ['declaredRuntimeAssets', 'assetsIgnoreMatcher', 'expectsNonHtml']) {
+    ok(live.includes(fn), `the verifier must use ${fn}() from the shared inventory`);
+  }
+  // Importing it is not enough: it has to be used on the LIVE path, or the
+  // sweep is dead code and production misses stay invisible.
+  ok(/async function runAssetCoverageChecks/.test(live),
+    'the verifier must run a live asset-coverage sweep (runAssetCoverageChecks), not just ' +
+    'import the inventory. A local-only check cannot see a stale deploy.');
+  ok(/^\s*await runAssetCoverageChecks\(checks\);/m.test(live),
+    'runAssetCoverageChecks must actually be CALLED from runLiveChecks — an uncalled sweep ' +
+    'reports nothing and every check still passes');
+  // And an asset miss must fail the gate rather than be tolerated as optional.
+  ok(!/optional/i.test(live.slice(live.indexOf('async function runAssetCoverageChecks'))),
+    'the live sweep must not treat any declared asset as optional — an optional miss reported ' +
+    'as full production parity is the 2026-09-13 defect restated');
+});
+
+test('[DAC-05] admin-driver-ui.js specifically is requested, present, and deployable', () => {
+  // The named finding, asserted by name. DAC-01/02 are general and would catch a
+  // recurrence, but this one pins the exact file so a regression report reads as
+  // the same defect rather than a generic inventory failure.
+  const assets = inventory();
+  const entry = assets.get('admin-driver-ui.js');
+  const requesters = entry && entry.requesters;
+  ok(requesters, 'admin-driver-ui.js is no longer in the runtime asset inventory — if it was ' +
+    'genuinely retired, remove it from service-worker.js CORE and its injected <script> tag too');
+  ok([...requesters].some(r => r.includes('ADMIN_UI_TAG')),
+    'admin-driver-ui.js must still be reached through the injected ADMIN_UI_TAG; that injection ' +
+    'is why the 404 was invisible to every markup-based check');
+  ok(existsSync(path.join(REPO_ROOT, 'admin-driver-ui.js')), 'admin-driver-ui.js is missing from the repository');
+  const { excluded, by } = isExcluded('admin-driver-ui.js');
+  ok(!excluded, `admin-driver-ui.js is excluded by .assetsignore pattern "${by}" — this is the ` +
+    '2026-09-13 production 404 exactly, reintroduced');
+});
+
+export async function runSpec() {
+  return await run();
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const r = await runSpec();
+  process.exit(r.fail > 0 ? 1 : 0);
+}
