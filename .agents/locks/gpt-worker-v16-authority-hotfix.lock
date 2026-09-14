@@ -1,6 +1,0 @@
-owner: gpt
-token: 6b2db1b6-b17f-47be-99f2-cd6b71f9811a
-started_utc: 2026-09-14T05:40:00Z
-expected_release_utc: 2026-09-14T07:40:00Z
-paths: .agents/LANES.md
-task: operator-directed takeover of cloud-backup-worker.js for production authority-order hotfix and Worker v16 certification
