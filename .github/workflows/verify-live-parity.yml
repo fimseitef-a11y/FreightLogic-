@@ -74,10 +74,26 @@ jobs:
         # No npm dependencies — the verifier is plain Node 18+ with global fetch.
         # `set +e` so the three outcomes can be told apart rather than the job
         # dying on the first non-zero exit; the step re-fails explicitly below.
+        #
+        # The dispatch inputs go through `env:` and are quoted in the shell,
+        # NEVER interpolated as `${{ inputs.x }}` inside `run:`. Direct
+        # interpolation splices attacker-chosen text into the shell before the
+        # shell ever sees it, so quoting at the use site cannot help; only
+        # someone with write access can dispatch this, but "only trusted people
+        # can reach it" is the same reasoning that leaves an injection in place
+        # until the trust boundary moves.
+        env:
+          APP_ORIGIN: ${{ inputs.app_origin }}
+          WORKER_ORIGIN: ${{ inputs.worker_origin }}
         run: |
           set +e
-          node scripts/verify-cloudflare-parity.mjs \
-            ${{ inputs.app_origin }} ${{ inputs.worker_origin }} 2>&1 | tee parity.log
+          # Unquoted expansion is deliberate and safe here: both values are
+          # word-split into at most one argument each, and an empty input must
+          # vanish so the verifier falls back to its own production defaults.
+          ARGS=()
+          [ -n "$APP_ORIGIN" ] && ARGS+=("$APP_ORIGIN")
+          [ -n "$WORKER_ORIGIN" ] && ARGS+=("$WORKER_ORIGIN")
+          node scripts/verify-cloudflare-parity.mjs "${ARGS[@]}" 2>&1 | tee parity.log
           CODE=${PIPESTATUS[0]}
           set -e
           echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"

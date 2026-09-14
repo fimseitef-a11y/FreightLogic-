@@ -77,6 +77,37 @@ test('[LPR-02] the workflow is read-only and takes no secrets', () => {
   }
 });
 
+test('[LPR-11] dispatch inputs never reach a shell through ${{ }} interpolation', () => {
+  // GitHub Actions script injection. `${{ inputs.x }}` inside a `run:` block is
+  // substituted into the script TEXT before the shell parses it, so the input
+  // becomes shell source and quoting at the use site cannot help. Untrusted
+  // input is handled carefully everywhere else in this repository (CSP,
+  // escapeHtml, csvSafeCell, token scoping); a release gate should not be the
+  // one place it is waved off because only maintainers can dispatch.
+  //
+  // Checked per LINE rather than by parsing run: blocks — a block-matching regex
+  // silently truncated here and the negative control stopped firing, which is
+  // precisely the "test that cannot fail" this suite exists to avoid.
+  const wf = read(WORKFLOW);
+  const offenders = wf
+    .split('\n')
+    .filter(l => !/^\s*#/.test(l))                      // comments are not executed
+    .filter(l => /\$\{\{\s*(inputs|github\.event)\b/.test(l))
+    // The ONLY legitimate place is an `env:` binding: `NAME: ${{ inputs.x }}`.
+    .filter(l => !/^\s+[A-Z_][A-Z0-9_]*:\s*\$\{\{\s*inputs\.[a-z_]+\s*\}\}\s*$/.test(l));
+
+  eq(offenders.length, 0,
+    'these lines splice dispatch-controlled text straight into the job:\n  ' +
+    offenders.join('\n  ') +
+    '\nBind them through env: and reference the quoted shell variable instead.');
+
+  ok(/^\s+env:\s*$/m.test(wf) && /APP_ORIGIN: \$\{\{ inputs\.app_origin \}\}/.test(wf),
+    'the origin inputs must be bound through env:');
+  ok(/"\$\{ARGS\[@\]\}"/.test(wf),
+    'the verifier must be invoked with a quoted argument array, so an empty input contributes ' +
+    'no argument and a hostile one stays a single literal argument');
+});
+
 test('[LPR-03] the workflow runs the real verifier, not a curated substitute', () => {
   const wf = read(WORKFLOW);
   ok(/node scripts\/verify-cloudflare-parity\.mjs/.test(wf),
