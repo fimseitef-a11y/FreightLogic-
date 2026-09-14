@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.9 — Voice Load Module */
+/* FreightLogic v24.0.10 — Voice Load Module */
 (() => {
   'use strict';
 
@@ -123,7 +123,7 @@
     };
   }
 
-  // v24.0.9: `sessionStorage.getItem()` returns null for a key that was never
+  // v24.0.10: `sessionStorage.getItem()` returns null for a key that was never
   // written, and `JSON.parse(null)` is VALID JSON that yields null — it does not
   // throw, so the catch never ran and the fallback was never applied. Both
   // callers are array stores, so `getDraftStore()` handed back null on every

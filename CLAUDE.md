@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.9** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.10** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v15** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v15 adds in-place token rotation; app/PWA is v24.0.9 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API source is Worker **v16** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carries the authority-order hotfix and the backup pointer-discovery race fix; app/PWA is v24.0.10 and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -131,7 +131,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.9';
+const APP_VERSION = '24.0.10';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -274,8 +274,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.9` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.9`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.10` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.10`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -2276,3 +2276,114 @@ backup/restore and token-rotation smokes are a separate gate needing a dedicated
 non-published test identity, and are deliberately not in this workflow. A PASS
 here is live evidence for the unauthenticated app/static/Worker-health sweep and
 nothing more.
+
+---
+
+## v24.0.10 "Sixteen Pixels" — the root cause behind the mobile form-size fix
+
+A cache generation so that the mobile form-size repair can actually reach an
+installed client, plus the root-cause half of that repair. `DB_VERSION` stays
+**15** and the Worker stays **v16** — neither's semantics changed.
+
+**Two lanes fixed the same defect in parallel, and both halves are kept.** iOS
+Safari zooms the viewport when a form control whose computed `font-size` is under
+16px takes focus, which on the evaluator threw the driver out of the load they
+were pricing.
+
+- The **gpt lane** shipped the safety net (`b445ccc`, `styles.css`):
+  `@media (max-width: 480px) { input, select, textarea { font-size: 16px !important } }`.
+  It covers every control at mobile widths and needs no knowledge of which ones
+  are wrong.
+- This release removes the **root cause** for the two that actually were wrong.
+  `#mwCurrency` (USD/CAD — not decorative on an app whose doctrine includes
+  border loads) and `#mwModeSelector` carried inline `font-size:13px` in
+  `index.html`. Inline styles beat a stylesheet rule without `!important`, so the
+  net was load-bearing; with the source values corrected it no longer has to be,
+  and the two fields are also correct above 480px, where the net does not apply.
+
+They survived every prior pass because they sit behind the **"More Details"**
+toggle. Collapsed, the evaluator exposes three fields — revenue, loaded,
+deadhead — and all three were already ≥16px. The other 33, including origin,
+destination, broker, the 7D dimension fields and the v24.0.9 pickup cutoff, were
+not being measured.
+
+**Why this is a version bump, and why it was the blocking half.** All
+cache-busters were `?v=24.0.9` and `CACHE_NAME` is `freightlogic-${SW_VERSION}`.
+`styles.css` carries no `?v=` of its own — it is cached under the
+version-derived `CACHE_NAME` via the service worker's `CORE` list — so **neither**
+lane's fix could reach an installed PWA while the generation stood still. The
+gpt-lane CSS repair landed at `24.0.9` and was undeliverable for the same reason
+the `index.html` change would have been. Every governed marker now moves together
+to `24.0.10`; `scripts/verify-cloudflare-parity.mjs --static-only` is green,
+all 13 CG assertions pass, and `workerVersion` stays `"16"`.
+
+### Parallel-work collision, recorded rather than hidden
+
+`.agents/LANES.md` on `main` records a **temporary operator-directed takeover of
+`scripts/` and `tests/` by the gpt lane (2026-09-14)**. Both lanes were asked for
+the same two 2026-09-14 inbox items and both built them, so this branch arrived
+with four conflicts against `main`, including an **add/add** on
+`tests/integration/six-width-layout.spec.mjs`.
+
+Resolution: `main`'s versions were taken for every file in the lane gpt currently
+holds — `scripts/verify-rollback.mjs`, `scripts/verify-cloudflare-parity.mjs`,
+`tests/run-all.mjs` and the six-width spec. Their merged work stands; nothing was
+overwritten to prefer this lane's copy. The claude-lane duplicates
+(`tests/unit/rollback-verifier.spec.mjs` and `scripts/lib/release-candidate.mjs`)
+were deleted rather than landed alongside, because two specs asserting the same
+contract is how the two copies drift apart.
+
+**One exact-file lane reassignment, operator-approved.** The generation bump
+needs `scripts/verify-cloudflare-parity.mjs`, which the takeover row hands to
+gpt — and CG-08 derives that file's `EXPECTED` block from `APP_VERSION`, so the
+marker bump cannot be split from the app bump. Lanes CI correctly rejected the
+cross-lane edit. `.agents/LANES.md` now carries an exact-file row giving that one
+file to claude; it is narrower than the `scripts/` row and wins by longest-match,
+so the rest of `scripts/` and all of `tests/` stay with gpt, and `workerVersion`
+stays theirs to move. It returns with the `scripts/` row when the takeover ends.
+Claimed under `claude-lanes-parity-file-reassign`, after reaping gpt's
+`gpt-worker-v16-authority-hotfix` lock — stale since 09:40Z against a 17:13Z
+reap, covering work already merged to `main` — and logging that reap in
+`.agents/STATUS.md` per the protocol, rather than treating a grantless lock as
+ignorable.
+
+**Three findings from the discarded work are worth keeping even though the code
+is not**, and are offered to the gpt lane through `/.agents/inbox/` rather than
+forced across the lane boundary:
+
+1. **`document.documentElement.scrollWidth` cannot detect overflow in this app.**
+   `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a
+   scrollWidth wider than the viewport however far content spills. Injecting
+   `.app { min-width: 900px !important }` left a scrollWidth-based assertion
+   green. The surviving spec's `innerWidth === width` assertion is the one doing
+   the real work there; its `rootScrollWidth`/`bodyScrollWidth` checks cannot
+   fail.
+2. **Under mobile emulation the layout viewport expands** to fit content wider
+   than the device — `window.innerWidth` reported 900 at a 320px device — so any
+   geometry compared against `innerWidth` is compared against a viewport that has
+   already grown to accommodate the overflow. Measure against the device width the
+   test set.
+3. **A `@media (pointer: coarse)` block raises several controls to 44px.** A spec
+   that boots a desktop context asserts touch-target minimums against rules that
+   never applied to it.
+
+Also recorded: opening `FreightLogic_v18` from a test with no explicit version
+creates it **at version 1**, so `app.js`'s `if (old < 1)` block — the only place
+`trips`, `expenses` and `fuel` are created — is skipped on the upgrade to 15. The
+database comes up at v15 with those three stores missing and every other one
+present. That is not reachable in production (a real v1 database is created *by*
+that block) and `app.js` was deliberately not changed for it, but it will bite any
+future spec that seeds settings directly and then writes a trip.
+
+### Agent relay protocol
+
+`.agents/RELAY_PROTOCOL.md` (new) records the owner's standing instruction that
+work alternates between the two agents at a usage limit: whichever agent stops
+because it is out of usage hands off, and the other picks the in-flight work up
+without waiting to be asked. It is explicit that a handover changes **who is
+typing and nothing else** — lane ownership, the `app.js`/SHARED lock protocol,
+commit prefixes, the full-suite gate and release-marker discipline all survive it
+unchanged.
+
+This release is itself the argument for that document: both lanes spent a session
+building the same two deliverables because neither knew the other had started.
