@@ -1,0 +1,6 @@
+owner: gpt
+token: 5bc20a56-a564-4638-94cc-a090eb5c1a33
+started_utc: 2026-09-14T19:06:28.507Z
+expected_release_utc: 2026-09-14T20:06:28.507Z
+paths: .agents/NOW.md, .agents/STATUS.md, .agents/TEST_LEDGER.md, docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md, FIELD_TEST_CHECKLIST.md, docs/COMPLETION_RELEASE_PLAN_2026-08-25.md, docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md
+task: Apply Claude's v24.0.10 documentation handoff on an isolated GPT branch; preserve HOLD and exact observed CI/live evidence; no runtime or Claude-branch edits.
