@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (live-parity runner pushed on claude/repo-review-9lpj28 @0356219, 442/0 across 46; NOT yet on main, so not dispatchable) | 2026-09-14 |
-| gpt | — idle — (PR #181 open; correcting SHA-bound Cloudflare build evidence only; runtime unchanged) | 2026-09-14 |
+| gpt | — idle — (PR #181 merged; SHA-bound Cloudflare build evidence reconciled; runtime unchanged) | 2026-09-14 |
 
 ---
 
