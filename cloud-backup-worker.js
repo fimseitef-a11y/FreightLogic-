@@ -848,6 +848,9 @@ function unknownFactsReason(decision){
     : 'The local engine reported required facts as missing.';
 }
 function canonicalTrueRpmLabel(decision){
+  if (isCanonicalUnavailable(decision)) {
+    return 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
+  }
   const rpm = Number(decision?.economics?.trueRPM);
   if (decision?.economics?.trueRPM === null || decision?.economics?.trueRPM === undefined) return 'UNAVAILABLE — True RPM cannot be computed from the facts provided';
   return Number.isFinite(rpm) ? `$${rpm.toFixed(2)} / true mile` : 'UNAVAILABLE — True RPM cannot be computed from the facts provided';

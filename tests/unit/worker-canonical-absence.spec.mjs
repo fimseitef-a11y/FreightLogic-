@@ -174,6 +174,10 @@ test('[W-06] factsComplete:false wins without AI configuration and never calls a
     eq(status, 200, 'the model-free path works with no OpenAI key');
     eq(body.ai.verdict, 'UNAVAILABLE', 'missing facts outrank contradictory ACCEPT');
     eq(body.ai.grade, '?', 'unknown grade is preserved');
+    ok(/^UNAVAILABLE/.test(String(body.ai.trueRpmBand)),
+      'factsComplete:false suppresses a contradictory numeric True RPM');
+    ok(!/\$\s*2\.10/.test(String(body.ai.trueRpmBand)),
+      'factsComplete:false never leaks the contradictory $2.10 True RPM');
     eq(body.model, null, 'no model is used');
     eq(calls, 0, 'no outbound request is attempted');
   } finally { globalThis.fetch = realFetch; }
