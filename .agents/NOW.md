@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (v24.0.9 pushed on claude/repo-review-9lpj28, 431/0 across 45; lock/app-js released) | 2026-09-14 |
+| claude | live-parity runner workflow (.github/, scripts/) per gpt-to-claude-live-parity-runner | 2026-09-14 |
 | gpt | — idle — (PR #176 merged; current main 431/0; Issue #119 reconciled; live-parity workflow request staged in inbox) | 2026-09-14 |
 
 ---
