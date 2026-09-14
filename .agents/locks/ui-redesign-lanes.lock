@@ -1,0 +1,6 @@
+owner: gpt
+token: 4cbba3e3-8284-4fd3-bde6-9201c7cb922d
+started_utc: 2026-09-14T23:30:00Z
+expected_release_utc: 2026-09-15T00:00:00Z
+paths: .agents/LANES.md
+task: Operator-directed takeover of the FreightLogic reference UI redesign; reassign presentation ownership for styles.css to GPT.
