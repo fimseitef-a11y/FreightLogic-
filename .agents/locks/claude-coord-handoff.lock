@@ -1,0 +1,6 @@
+owner: claude
+token: bb013f97-8afb-45ad-a4f0-25ff92d5a282
+started_utc: 2026-09-15T08:52:59Z
+expected_release_utc: 2026-09-15T12:52:59Z
+paths: .agents/inbox/, .agents/STATUS.md, .agents/NOW.md
+task: Record the observed v24.0.12 live-gate closure, hand the GPT lane its next-session instructions, and flag the self-pushing full-repair workflow.
