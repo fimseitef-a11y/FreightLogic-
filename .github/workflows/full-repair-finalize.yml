@@ -1,4 +1,4 @@
-name: FreightLogic v24.0.14 one-sweep finalizer
+name: FreightLogic v24.0.14 release-record finalizer
 
 on:
   push:
@@ -6,226 +6,111 @@ on:
       - agent/gpt/full-repair-takeover
 
 permissions:
-  actions: read
   contents: write
 
 jobs:
-  finalize:
+  finalize-records:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out governed repair baseline
+      - name: Check out exact tested candidate
         uses: actions/checkout@v6
         with:
-          ref: agent/gpt/full-repair-v24.0.14
+          ref: fe63a88c96f772e45bd39ec443961991afa9298e
           fetch-depth: 0
 
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      - name: Assert exact baseline
+      - name: Correct only release/governance records
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = '63c2743700053d9794f45236b9b2d2e68c1e264a'
-          test "$(git rev-parse origin/main)" = '801b2aa800fe7472fa9db867aba112a70ebdd016'
-
-      - name: Apply validated v24.0.14 runtime repair
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/f4407b8ace9dc67906cf4448ffeef4e84ea11023" --jq .content | tr -d '\n' | base64 -d > /tmp/original-full-repair.yml
-          git fetch --no-tags origin ee3e7bf97491f8309f18c3ff003ee4a612cf6727 3197b016a63021c20c24572dd8cd0b286f470579
-          git show ee3e7bf97491f8309f18c3ff003ee4a612cf6727:tests/integration/full-repair-regressions.spec.mjs > /tmp/full-repair-regressions-fixed.mjs
-          git show 3197b016a63021c20c24572dd8cd0b286f470579:.github/workflows/full-repair-once.yml > /tmp/validated-builder.yml
-          python - <<'PY'
-          from pathlib import Path
-          import base64, re
-          s = Path('/tmp/validated-builder.yml').read_text()
-          a = s.find("printf '%s' \\")
-          b = s.find('| base64 -d > /tmp/patch-v24.0.14.py', a)
-          if a < 0 or b < 0:
-              raise SystemExit('validated repair payload boundaries missing')
-          parts = re.findall(r"^\s*'([A-Za-z0-9+/=]+)'", s[a:b], re.M)
-          if not parts:
-              raise SystemExit('validated repair payload chunks missing')
-          Path('/tmp/patch-v24.0.14.py').write_bytes(base64.b64decode(''.join(parts)))
-          PY
-          python -m py_compile /tmp/patch-v24.0.14.py
-          python /tmp/patch-v24.0.14.py
-
-      - name: Merge approved PR 206 presentation delta
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin 4f2daf22819feb8d7aeba40324e53ce971f22418 40ee119ad3f8bc42e02c6e81ed4682bb6162f333
-          git show 4f2daf22819feb8d7aeba40324e53ce971f22418:styles.css > /tmp/styles-base.css
-          git show 40ee119ad3f8bc42e02c6e81ed4682bb6162f333:styles.css > /tmp/styles-gpt.css
-          cp styles.css /tmp/styles-current.css
-          git merge-file -p /tmp/styles-current.css /tmp/styles-base.css /tmp/styles-gpt.css > /tmp/styles-merged.css
-          cp /tmp/styles-merged.css styles.css
-
-      - name: Adapt legacy regression fixtures to DB16 and Worker v19
-        shell: bash
-        run: |
-          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'fe63a88c96f772e45bd39ec443961991afa9298e'
           python - <<'PY'
           from pathlib import Path
 
-          def replace_exact(path, old, new, count=1):
-              p = Path(path)
-              s = p.read_text()
-              actual = s.count(old)
-              if actual != count:
-                  raise SystemExit(f'{path}: expected {count} occurrences, found {actual}: {old[:80]!r}')
-              p.write_text(s.replace(old, new))
+          def one(path, old, new):
+              p=Path(path); s=p.read_text()
+              n=s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{path}: expected one exact match, found {n}: {old[:100]!r}')
+              p.write_text(s.replace(old,new))
 
-          lanes = Path('.agents/LANES.md')
-          s = lanes.read_text()
-          anchor = "| `tests/integration/full-repair-regressions.spec.mjs` | gpt | Temporary regressions for the bounded post-PR-210 repair. |\n"
-          additions = """| `tests/integration/omega-economics.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |\n| `tests/integration/tax-export-csv-corruption.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |\n| `tests/integration/toctou-concurrent-edit.spec.mjs` | gpt | Temporary DB16 fixture adapter; concurrency assertions unchanged. |\n| `tests/integration/field-resilience.spec.mjs` | gpt | Temporary DB16 fixture adapter; resilience assertions unchanged. |\n| `tests/integration/backup-restore-parity.spec.mjs` | gpt | Temporary DB16 fixture adapter; restore-parity assertions unchanged. |\n| `tests/unit/worker-invite-claim.spec.mjs` | gpt | Temporary Worker v19 health-generation assertion update; onboarding assertions unchanged. |\n"""
-          if additions not in s:
-              if s.count(anchor) != 1:
-                  raise SystemExit('LANES anchor missing/ambiguous')
-              lanes.write_text(s.replace(anchor, anchor + additions))
+          p=Path('CLAUDE.md'); s=p.read_text()
+          s=s.replace('physical iPhone A1-A11 and authentic M6 remain open.', 'physical iPhone A1-A12 and authentic M6 remain open.')
 
-          replace_exact(
-              'tests/integration/omega-economics.spec.mjs',
-              "    const tx=db.transaction('trips','readwrite'), store=tx.objectStore('trips');",
-              "    const storeName=db.objectStoreNames.contains('tripRecords')?'tripRecords':'trips';\n    const tx=db.transaction(storeName,'readwrite'), store=tx.objectStore(storeName);"
-          )
+          old="""**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Worker v18 and app v24.0.13 are SOURCE-ONLY — neither is deployed and neither has been observed live.** Production currently serves Worker **v17** (the monotonic backup/delta key clock, deployed 2026-09-14T19:05Z, run `34884719806`) and app generation **24.0.12** (deployed and observed live 2026-09-15 — live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`). v24.0.13 adds zero-token driver onboarding and needs BOTH a Worker deploy and an app deploy, in that order: the app's invite and claim flows call `POST /admin/invites` and `POST /claim`, which do not exist on v17, so shipping the app first leaves the owner an Invite button that 404s. DB remains v15."""
+          new="""**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints."""
+          if s.count(old)!=1: raise SystemExit('CLAUDE current-cloud paragraph anchor mismatch')
+          s=s.replace(old,new)
 
-          replace_exact(
-              'tests/integration/tax-export-csv-corruption.spec.mjs',
-              "        const txn = db.transaction('trips', 'readwrite');\n        txn.objectStore('trips').put(t);",
-              "        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';\n        const txn = db.transaction(storeName, 'readwrite');\n        txn.objectStore(storeName).put(t);"
-          )
+          s=s.replace('7. **IndexedDB layer** — `initDB` (v12 schema),', '7. **IndexedDB layer** — `initDB` (current DB16 schema),')
+          s=s.replace('8. **Data stores:** `trips`, `expenses`,', '8. **Data stores:** logical `trips` (DB16 maps to `tripRecords`), `expenses`,')
+          s=s.replace("### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — keyPath: `orderNo`", "### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`\n- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present")
 
-          replace_exact(
-              'tests/integration/toctou-concurrent-edit.spec.mjs',
-              "        const txn = db.transaction('trips', 'readwrite');\n        txn.objectStore('trips').put(t);",
-              "        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';\n        const txn = db.transaction(storeName, 'readwrite');\n        txn.objectStore(storeName).put(t);"
-          )
-          replace_exact(
-              'tests/integration/toctou-concurrent-edit.spec.mjs',
-              "        const txn = db.transaction('trips', 'readonly');\n        const getReq = txn.objectStore('trips').get(orderNo);",
-              "        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';\n        const txn = db.transaction(storeName, 'readonly');\n        const store = txn.objectStore(storeName);\n        const getReq = storeName === 'tripRecords' ? store.index('orderNo').get(orderNo) : store.get(orderNo);"
-          )
+          old="""### DB migration
+On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
+`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
+`legacyMigrated` in settings, and never runs again. The old DB is not deleted."""
+          new="""### DB migration
+On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
+`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
+`legacyMigrated` in settings, and never runs again. The old DB is not deleted.
+DB16 additionally creates `tripRecords` with stable internal `id` identity and a
+non-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.
+The legacy `trips` store is deliberately retained for rollback; external order
+numbers are evidence/lookup values, never authoritative record identity. Migrated
+rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN."""
+          if s.count(old)!=1: raise SystemExit('CLAUDE migration block anchor mismatch')
+          s=s.replace(old,new)
 
-          replace_exact(
-              'tests/integration/field-resilience.spec.mjs',
-              "      const txn = db.transaction(storeName, 'readonly');\n      const cReq = txn.objectStore(storeName).count();",
-              "      const physical = storeName === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : storeName;\n      const txn = db.transaction(physical, 'readonly');\n      const cReq = txn.objectStore(physical).count();"
-          )
-          replace_exact(
-              'tests/integration/field-resilience.spec.mjs',
-              "      const txn = db.transaction('trips', 'readonly');\n      const gReq = txn.objectStore('trips').get(orderNo);",
-              "      const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';\n      const txn = db.transaction(storeName, 'readonly');\n      const store = txn.objectStore(storeName);\n      const gReq = storeName === 'tripRecords' ? store.index('orderNo').get(orderNo) : store.get(orderNo);",
-              count=2
-          )
+          s=s.replace("const APP_VERSION = '24.0.13';\nconst DB_VERSION = 15;", "const APP_VERSION = '24.0.14';\nconst DB_VERSION = 16;")
 
-          replace_exact(
-              'tests/integration/backup-restore-parity.spec.mjs',
-              "          const txn = db.transaction(name, 'readonly');\n          const getAll = txn.objectStore(name).getAll();",
-              "          const physical = name === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : name;\n          const txn = db.transaction(physical, 'readonly');\n          const getAll = txn.objectStore(physical).getAll();"
-          )
-          replace_exact(
-              'tests/integration/backup-restore-parity.spec.mjs',
-              "        const txn = db.transaction(names, 'readwrite');\n        for (const n of names) txn.objectStore(n).clear();",
-              "        const physicalNames = names.map(n => n === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : n);\n        const txn = db.transaction(physicalNames, 'readwrite');\n        for (const n of physicalNames) txn.objectStore(n).clear();"
-          )
-          replace_exact(
-              'tests/integration/backup-restore-parity.spec.mjs',
-              "        const txn = db.transaction(storeName, 'readwrite');\n        txn.objectStore(storeName).put(record);",
-              "        const physical = storeName === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : storeName;\n        const txn = db.transaction(physical, 'readwrite');\n        txn.objectStore(physical).put(record);"
-          )
+          s=s.replace("| Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |", "| Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |")
+          s=s.replace("| Admin token | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close |", "| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |")
 
-          p = Path('tests/unit/worker-invite-claim.spec.mjs')
-          s = p.read_text()
-          old = "test('[WIC-15] /claim requires NO backup token, and /health reports v18', async () => {"
-          new = "test('[WIC-15] /claim requires NO backup token, and /health reports v19', async () => {"
-          if s.count(old) != 1:
-              raise SystemExit('WIC-15 title anchor missing')
-          s = s.replace(old, new)
-          old = "  eq(String(health.version), '18', `health should report v18, got ${health.version}`);"
-          new = "  eq(String(health.version), '19', `health should report v19, got ${health.version}`);"
-          if s.count(old) != 1:
-              raise SystemExit('WIC-15 assertion anchor missing')
-          p.write_text(s.replace(old, new))
+          old="""The admin token grants create/list/revoke over **every** driver account, so it is the most
+sensitive credential in the app. Both writers must keep it session-scoped:
+`app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).
+`admin-driver-ui.js` also runs `purgeLegacyTok()` on every load, which migrates any token
+left in `localStorage` by a pre-23.8.0 build into `sessionStorage` and deletes the on-disk
+copy. Do not remove that purge until enough releases have passed that no stale copies remain."""
+          new="""The admin token grants create/list/revoke over **every** driver account, so it is the most
+sensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin
+material session-scoped; persistence is allowed only as AES-GCM ciphertext in
+`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only
+after the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down
+from the legacy admin-driver flow and its legacy-token purge is delete-only: stale
+plaintext localStorage credentials must never be promoted back into a live session."""
+          if s.count(old)!=1: raise SystemExit('CLAUDE credential paragraph anchor mismatch')
+          s=s.replace(old,new)
+          p.write_text(s)
+
+          p=Path('.agents/LANES.md'); s=p.read_text()
+          if 'A1–A11' not in s: raise SystemExit('LANES A1-A11 anchor missing')
+          s=s.replace('A1–A11','A1–A12')
+          p.write_text(s)
           PY
           git diff --check
+          grep -q "APP_VERSION = '24.0.14'" CLAUDE.md
+          grep -q 'DB_VERSION = 16' CLAUDE.md
+          grep -q 'tripRecords' CLAUDE.md
+          grep -q 'A1-A12' CLAUDE.md
+          ! grep -q 'A1–A11' .agents/LANES.md
+          grep -q 'A1–A12' .agents/LANES.md
 
-      - name: Install Playwright and Chromium
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install -g playwright@1.62.1
-          mkdir -p node_modules
-          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-          npx playwright install --with-deps chromium
-
-      - name: Static and targeted gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check app.js
-          node --check service-worker.js
-          node --check cloud-backup-worker.js
-          node --check sw-bridge.js
-          node --check modern-shell.js
-          node --check tests/run-all.mjs
-          grep -q "const APP_VERSION = '24.0.14'" app.js
-          grep -q "const DB_VERSION = 16" app.js
-          grep -q "const SW_VERSION = '24.0.14'" service-worker.js
-          grep -q 'Cloud Backup Worker v19' cloud-backup-worker.js
-          grep -q "version: '19'" cloud-backup-worker.js
-          ! grep -q "'X-Filename': file.name" service-worker.js
-          node tests/integration/full-repair-regressions.spec.mjs
-          node tests/integration/omega-economics.spec.mjs
-          node tests/unit/worker-invite-claim.spec.mjs
-          node tests/integration/tax-export-csv-corruption.spec.mjs
-          node tests/integration/toctou-concurrent-edit.spec.mjs
-          node tests/integration/field-resilience.spec.mjs
-          node tests/integration/backup-restore-parity.spec.mjs
-          node scripts/verify-cloudflare-parity.mjs --static-only
-
-      - name: Full regression suite
-        run: node tests/run-all.mjs
-
-      - name: Publish immutable candidate objects without moving refs
-        id: objects
+      - name: Publish amended immutable commit without moving refs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          repair_ref='refs/heads/agent/gpt/full-repair-v24.0.14'
-          before_refs=$(git ls-remote origin refs/heads/main "$repair_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
-          repair_head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/agent/gpt/full-repair-v24.0.14" --jq .object.sha)
-          test "$repair_head" = '63c2743700053d9794f45236b9b2d2e68c1e264a'
-          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${repair_head}" --jq .tree.sha)
-          paths=(
-            .agents/LANES.md
-            app.js cloud-backup-worker.js service-worker.js sw-bridge.js modern-shell.js
-            index.html manifest.json voice-load.js midwest-stack-authority.js midwest-stack-config.json
-            scripts/verify-cloudflare-parity.mjs styles.css CLAUDE.md FIELD_TEST_CHECKLIST.md
-            docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md docs/BACKUP_CONTRACT.md
-            tests/run-all.mjs tests/unit/cache-generation.spec.mjs tests/unit/worker-token-rotation.spec.mjs
-            tests/unit/worker-invite-claim.spec.mjs tests/integration/full-repair-regressions.spec.mjs
-            tests/integration/omega-economics.spec.mjs tests/integration/tax-export-csv-corruption.spec.mjs
-            tests/integration/toctou-concurrent-edit.spec.mjs tests/integration/field-resilience.spec.mjs
-            tests/integration/backup-restore-parity.spec.mjs
-          )
+          parent='fe63a88c96f772e45bd39ec443961991afa9298e'
+          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${parent}" --jq .tree.sha)
           printf '{"base_tree":"%s","tree":[' "$base_tree" > /tmp/tree.json
           first=1
-          : > /tmp/blob-map.txt
-          for path in "${paths[@]}"; do
+          : > /tmp/map.txt
+          for path in CLAUDE.md .agents/LANES.md; do
             base64 -w0 "$path" | jq -Rs '{content: ., encoding:"base64"}' > /tmp/blob.json
             sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/blobs" --input /tmp/blob.json --jq .sha)
-            printf '%s %s\n' "$path" "$sha" >> /tmp/blob-map.txt
+            printf '%s %s\n' "$path" "$sha" >> /tmp/map.txt
             if [ "$first" -eq 0 ]; then printf ',' >> /tmp/tree.json; fi
             first=0
             jq -nc --arg path "$path" --arg sha "$sha" '{path:$path,mode:"100644",type:"blob",sha:$sha}' | tr -d '\n' >> /tmp/tree.json
@@ -233,20 +118,9 @@ jobs:
           printf ']}' >> /tmp/tree.json
           tree_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input /tmp/tree.json --jq .sha)
           jq -nc \
-            --arg message $'[gpt] apply post-210 full repair v24.0.14\n\nPreserve PR #210 zero-token onboarding while adding DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-target filename hardening, Worker v19 proactive legacy-token cleanup, regression coverage, and the approved PR #206 presentation delta. Legacy regression fixtures are migrated to the stable trip store without weakening their assertions. Physical iPhone A1-A12 and authentic M6 remain open certification gates.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
-            --arg tree "$tree_sha" --arg parent "$repair_head" \
+            --arg message $'[gpt] correct v24.0.14 source and certification records\n\nAlign CLAUDE.md and temporary lane text with the tested candidate: app v24.0.14, DB16 tripRecords stable identity, Worker v19, zero-token admin credential semantics, production still v24.0.12/Worker17 until deploy, and physical iPhone gate A1-A12. Runtime blobs are unchanged.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
+            --arg tree "$tree_sha" --arg parent "$parent" \
             '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
           commit_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" --input /tmp/commit.json --jq .sha)
-          printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$repair_head" >> /tmp/blob-map.txt
-          after_refs=$(git ls-remote origin refs/heads/main "$repair_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
-          test "$before_refs" = "$after_refs"
-          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
-          cat /tmp/blob-map.txt
-
-      - name: Upload candidate object map
-        uses: actions/upload-artifact@v4
-        with:
-          name: freightlogic-v24.0.14-final-candidate
-          if-no-files-found: error
-          retention-days: 1
-          path: /tmp/blob-map.txt
+          printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$parent" >> /tmp/map.txt
+          cat /tmp/map.txt
