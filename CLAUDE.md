@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.10** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.12** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA is v24.0.10 and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA source is v24.0.12 (**not yet deployed** — production serves v24.0.11) and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -131,7 +131,7 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.10';
+const APP_VERSION = '24.0.12';
 const DB_VERSION = 15;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -274,8 +274,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.10` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.10`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.12` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.12`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -350,8 +350,11 @@ Current rates are in the `IRS` constant at the top of `app.js`.
       (`freightlogic-${SW_VERSION}`) never moved and an existing client had no new cache
       identity to fetch on any axis — it could keep serving the broken bridge
       indefinitely. `tests/unit/cache-generation.spec.mjs` now enforces this invariant,
-      along with items 3–6, 11, 12, 14 and 15, so most of this list is machine-checked
-      rather than remembered.
+      along with items 3–6, 11, 12 and 14, so most of this list is machine-checked
+      rather than remembered. **Item 15 was named here but was never actually
+      checked** — nothing read `midwest-stack-config.json`'s `appTarget`, and it
+      drifted again at v24.0.11 exactly as it had at v24.0.3. `CG-14` closes that;
+      the claim is true now, and was not before.
 
   Quick audit — every shipped file should report the new version:
   ```bash
@@ -2676,3 +2679,129 @@ Everything else that could be observed from an automated environment has been,
 on the live production origin, at this exact generation.
 
 Full suite: **464 passed, 0 failed across 50 spec files** (from 457/49).
+
+---
+
+## v24.0.11 "Exact Economics" — the OMEGA continuation
+
+Landed as `fb408a0` (PR #200) under a held `lock/app-js`. `DB_VERSION` stays **15**
+and the Worker stays **v17** — neither's semantics changed.
+
+**What the release itself did.** Unknown mileage now suppresses whole-period RPM and
+all-miles rather than summing an unstated deadhead as a verified zero, and suppresses
+per-load score and counter-offer the same way. `deriveUnifiedEconomics()` validates
+mileage and cost inputs and compares **unrounded** True RPM, leaving rounding to
+display, so a just-below-floor RPM can no longer round up across a protective
+threshold. Density classification uses complete city identity with supported state
+qualifiers, so Calgary stops reading as Gary and Daytona Beach as Dayton. The weekly
+report's temporal-dead-zone crash and its mismatched week-key inverse are repaired.
+`scripts/verify-release-generation.mjs` joins the suite: agreement among version
+markers is insufficient if deployed bytes changed under a reused generation.
+
+### The settings cache made an absent MPG look like a verified zero
+
+The continuation was correct and still failed CI at **455 passed / 25 failed**. All
+25 came from one **pre-existing** defect it merely exposed.
+
+`getSetting(key, fallback)` cached `fallback` under `key` when the record was
+**absent**, so the *first* reader's default silently became the app-wide value for
+every later reader passing a different one. Home's KPI card reads
+`getSetting('vehicleMpg', 0)` on every render and runs before the evaluator's
+`getSetting('vehicleMpg', MW.mpg)`. For an operator who had simply never entered an
+MPG, that cached a `0` nobody supplied — and canonical economics is **right** to
+refuse `mpg <= 0`. An ordinary, complete, perfectly gradeable load therefore rendered
+**no grade at all**. That is a production defect, not a test artefact, and the
+validation was not relaxed to clear it. `getSetting` now returns the caller's own
+fallback and caches only what the store actually held.
+
+That single fix accounted for 22 of the 25: `m3-real-evidence-wiring` (11),
+`dz-exit-grade-cap` (4), `dz-gate-parity` (3), `pickup-feasibility` (3),
+`van-fit-precheck` (1) and `V2404-07` (1) were the same blanked grade seen from six
+directions. The last three were two invalid assertions in the new spec, corrected in
+the spec: `OI-06` passed the whole CSV **string** to `parseCSVLines(lines)`, which
+takes an **array of lines**, so `for...of` iterated *characters* and every parsed row
+was one character wide; `OI-11` asserted `naLookupMarket('Boston')`, and Boston is in
+no market table.
+
+**Live parity is OBSERVED at this generation**, not inferred: run `34929870640` on
+`fb408a0` reports index/`app.js`/`voice-load.js`/`sw-bridge.js`/`modern-shell.js`/
+service worker/manifest all at `24.0.11`, Worker `/health` v17, all **23** declared
+runtime assets loading and none served as HTML, `VERDICT: PASS`. The production
+service-worker gate (`34929870633`) and the suite (`34929870661`) are green on the
+same SHA. Full suite at `fb408a0`: **481 passed, 0 failed across 52 spec files**.
+
+---
+
+## v24.0.12 "Delivery Generation" — a test that passed with the defect reinstated
+
+**No runtime behaviour changes.** `app.js` gains exactly two test-only exports;
+`DB_VERSION` stays **15** and the Worker stays **v17**.
+
+### OI-11 passed with the defect reinstated
+
+Worth recording on its own, because it is the failure mode this suite exists to
+catch. After `OI-11` was repaired by dropping Boston, it asserted four names —
+Dayton, Edmonton, Gary, Calgary — through `naLookupMarket`. **Every one of them still
+resolves under the OLD, defective normalizer**, so the test guarding the
+market-identity fix could not fail on it. Verified by negative control: reverting
+*both* separator fixes in `usaNormCity`/`caNormCity` left the whole spec at **13
+passed / 0 failed**.
+
+Two independent routes around it. `Dayton` normalizes through `usaNormCity`, where no
+US state is spelled `on`, so the Canadian normalizer's bug never touches it.
+`Edmonton` → `'edmont'` under the old rule, and the fuzzy pass accepts
+`key.startsWith(norm)`, so `'edmonton'.startsWith('edmont')` still matches. A
+lookup-based assertion can only reach names that are *in* a table, and those are
+exactly the names that survive the bug.
+
+`OI-11` now asserts `usaNormCity`/`caNormCity` **directly** — the unit the separator
+rule actually lives in — over `Boston` and `Tacoma` (in no table; `'bost'` and
+`'taco'` under the old rule) alongside the four table names, and separately proves
+the rule was **narrowed rather than disabled** by requiring a genuinely
+separator-qualified state or province to still be stripped, by comma and by space.
+Both normalizers are exposed on `__FL_TESTS` for this. `OI-14` adds the end-to-end
+half the seam-level `OI-13` does not cover: delete `vehicleMpg`, reload to empty the
+cache, render Home, then evaluate an ordinary load and require a real letter grade —
+the actual production sequence that cost 22 assertions.
+
+Negative controls, all verified to fire: reverting either normalizer separator fix
+fails `OI-11` (it did **not** before this change); reverting the `getSetting` repair
+fails `OI-13` and `OI-14`.
+
+### Two markers the release left stale
+
+- `midwest-stack-config.json` `appTarget` read `FreightLogic v24.0.10`. This is
+  checklist **item 15**, which item 16 has claimed since v24.0.3 is machine-checked.
+  It was not — nothing read the field; the parity script checks only that the service
+  worker *caches* the file, which a stale `appTarget` passes happily. So it drifted
+  again, one release after being written down as covered. **`CG-14`** now asserts it
+  against `APP_VERSION`, and item 16's wording is corrected.
+- `CLAUDE.md` itself shipped `fb408a0` with all three governed locations still at
+  `24.0.10` and no release section at all — checklist item 10, and the fourth time
+  this file has recorded that omission about itself. This section is that correction.
+
+### Why an inert change still moved the generation
+
+The two `__FL_TESTS` exports are gated behind `window.__FL_TESTS_ENABLED` and do
+nothing in production — and they still required a generation bump, because they change
+`app.js`'s deployed **bytes**. `scripts/verify-release-generation.mjs` RG-03 caught
+this commit doing exactly that under a reused `24.0.11`, which is the gate working as
+designed: `CACHE_NAME` is `freightlogic-${SW_VERSION}` and the `?v=` query is the only
+other identity a child asset carries, so an installed client holding the `24.0.11`
+shell would never fetch the changed file. "Inert in production" is an argument about
+behaviour, not about delivery, and the generation rule is about delivery. This is the
+v24.0.3 lesson applied rather than relearned, and every governed marker moved together.
+
+### Deployment status — stated plainly
+
+**v24.0.12 is source-only. It has not been deployed and has not been observed live.**
+The live evidence in the v24.0.11 section above is evidence for **v24.0.11**, which is
+what production serves. When v24.0.12 deploys, the parity run must be re-dispatched
+against it; a push-triggered run that fires immediately after the merge will race the
+Cloudflare deploy, so record the later run.
+
+Full suite: **483 passed, 0 failed across 52 spec files** — `fb408a0`'s 481 plus
+`OI-14` and `CG-14`.
+
+**Still HOLD.** Physical iPhone A1–A10 and M6 raw-data certification remain OPEN, and
+nothing in this release touches either.

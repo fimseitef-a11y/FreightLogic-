@@ -4,10 +4,10 @@ Purpose: prove that the **production** Cloudflare app and backup/API Worker serv
 
 Current runtime candidate:
 
-- app / PWA / service worker source: **24.0.9**;
+- app / PWA / service worker source: **24.0.12** (repository; **not deployed** — production serves **24.0.11**);
 - IndexedDB schema: **15**;
-- backup/API Worker source: **15**;
-- exact runtime Git candidate: **`5446b097fe8791f3d7c79b5a5833a0930ee83cf2`** (merged PR #175);
+- backup/API Worker source: **17**;
+- exact runtime Git candidate: **`fb408a0a8635d89ee0ed44a471ca11ef032a71a5`** (merged PR #200);
 - current repository `main` after read-only tooling/docs integration: **`a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`** (merged PR #180);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
@@ -31,6 +31,28 @@ Record:
 - rollback/fix-forward reference.
 
 ### Current source/deploy evidence
+
+**v24.0.11 live parity is OBSERVED, not inferred.** Run `34929870640` (Verify Live
+Parity, attempt 2) on `fb408a0a8635d89ee0ed44a471ca11ef032a71a5` reports the Pages
+index and its `app.js`, `voice-load.js` and `sw-bridge.js` references at `24.0.11`,
+the service worker at `24.0.11`, `sw-bridge` importing `modern-shell.js` `24.0.11`
+and the worker precaching it, the manifest name at `24.0.11`, Worker `/health`
+returning `{"ok":true,"version":"17"}`, all **23** declared runtime assets loading
+from the app origin, and none served as HTML. `VERDICT: PASS`. The production
+service-worker gate (`34929870633`) and the full suite (`34929870661`) are green on
+the same SHA.
+
+**v24.0.12 has NOT been observed live.** The run above is evidence for 24.0.11, the
+generation production serves. 24.0.12 advances the generation for a two-line test-only
+export in `app.js` (RG-03 requires a new generation for any changed deployed byte, even
+an inert one), and its parity run must be re-dispatched after it deploys. A
+push-triggered run that fires immediately after a merge races the Cloudflare deploy; the
+later run is the one to record.
+
+This entry records generations and directly observed run evidence only. It is **not**
+a certification: physical iPhone A1-A10 and section C private-history reconciliation
+remain open, and neither is reachable from a hosted runner.
+
 
 For v24.0.9, GitHub's Cloudflare check attached to runtime merge SHA `5446b097fe8791f3d7c79b5a5833a0930ee83cf2` completed successfully as check run `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`. The earlier checklist draft named a different build/version pair; re-reading the exact SHA's check-runs showed that pair was not the check currently attached to `5446b097...`, so the release record now uses only the directly observable SHA-bound metadata. Subsequent PRs #177 through #180 changed verification tooling/tests/docs only; they did not change shipped runtime files or the app/PWA/cache generation. Build evidence is **not** a substitute for a live origin parity run.
 

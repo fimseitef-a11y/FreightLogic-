@@ -1,7 +1,15 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.11 USA ENGINE
+/** FreightLogic v24.0.12 USA ENGINE
+ *  v24.0.12 "Delivery Generation": no runtime behaviour change. app.js gains two
+ *          test-only exports (usaNormCity/caNormCity) so the place-normalizer
+ *          separator rule can be asserted on the unit it lives in — OI-11 had been
+ *          passing with BOTH separator fixes reverted, because every name it
+ *          checked reaches a market table by another route. A changed deployed
+ *          byte needs a new generation even when it is inert in production; that
+ *          is what verify-release-generation.mjs RG-03 enforces, and it caught
+ *          this commit. DB 15 / Worker 17.
  *  v24.0.11 "Exact Economics": OMEGA continuation — preserve unknown mileage,
  *          compare unrounded RPM, validate costs and distance, prevent market
  *          name collisions, and repair weekly report dates/export. DB 15 / Worker 17.
@@ -199,7 +207,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.11';
+const APP_VERSION = '24.0.12';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -21132,6 +21140,11 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     checkPickupFeasibility, getPlanningAvgMph, PICKUP_FEASIBILITY,
     // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
     naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
+    // The place normalizers are the unit the separator rule actually lives in.
+    // Asserting it through a market lookup proves nothing: every name in a table
+    // still resolves under the OLD rule via the fuzzy pass or the other country's
+    // normalizer, so a lookup-based test passes with the defect reinstated.
+    usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
     isSettingExportSafe, exportSafeSettings,
   };

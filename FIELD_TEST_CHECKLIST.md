@@ -4,9 +4,9 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`.
 
-Current runtime synchronization point: **FreightLogic v24.0.10 / IndexedDB v15 / Worker v17**.
+Current runtime synchronization point: **production serves FreightLogic v24.0.11 / IndexedDB v15 / Worker v17**; repository source is **v24.0.12**, which is **not deployed**. Test against what the device actually reports, and record which of the two you tested — they are not interchangeable.
 
-**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
+**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11 — the app moved and this file did not — so treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
 
 All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A10 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
 
