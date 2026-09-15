@@ -1,0 +1,315 @@
+name: OMEGA Infinity Resume
+
+on:
+  push:
+    branches: [gpt/omega-infinity-resume-2026-09-14]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: gpt/omega-infinity-resume-2026-09-14
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Apply exact-source OMEGA repairs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(p): return Path(p).read_text()
+          def write(p, s): Path(p).write_text(s)
+          def once(p, old, new, label):
+              s = read(p)
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 anchor in {p}, found {n}')
+              write(p, s.replace(old, new, 1))
+
+          # 1) Unified economics: fail closed at the pure boundary for missing/invalid
+          # MPG and negative miles, and preserve full True-RPM precision for authority.
+          once('app.js',
+          """  const unknownFacts = [];
+          if (loadedMiK === null) unknownFacts.push('loadedMi');
+          if (deadMiK === null) unknownFacts.push('deadMi');
+          if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');
+          if (unknownFacts.length){""",
+          """  const mpgK = knownNum(f.mpg);
+          const unknownFacts = [];
+          if (loadedMiK === null || loadedMiK < 0) unknownFacts.push('loadedMi');
+          if (deadMiK === null || deadMiK < 0) unknownFacts.push('deadMi');
+          if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');
+          if (mpgK === null || mpgK <= 0) unknownFacts.push('mpg');
+          if (unknownFacts.length){""", 'economics fail-closed facts')
+
+          once('app.js', "  const mpg = Number(f.mpg || 0);", "  const mpg = mpgK;", 'economics mpg')
+          once('app.js',
+          """  const trueRPM = totalMi > 0 ? roundCents(effectiveRevenue / totalMi) : 0;
+          const loadedRPM = loadedMi > 0 ? roundCents(effectiveRevenue / loadedMi) : 0;""",
+          """  // Decision authority consumes full precision. Round only at presentation/export boundaries.
+          const trueRPM = totalMi > 0 ? (effectiveRevenue / totalMi) : 0;
+          const loadedRPM = loadedMi > 0 ? (effectiveRevenue / loadedMi) : 0;""", 'economics precision')
+
+          # 2) Unknown deadhead must remain unknown on secondary score/export surfaces.
+          once('app.js',
+          """  const rows = [header, ...trips.map(t => {
+            const all = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
+            const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '0';
+            const stopsStr = Array.isArray(t.stops) ? t.stops.map(s => `${s.city||''}(${s.type||'stop'})`).join('; ') : '';
+            return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, t.emptyMiles, all, rpm, t.isPaid?'Yes':'No', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
+          })];""",
+          """  const rows = [header, ...trips.map(t => {
+            const loadedK = knownNum(t.loadedMiles);
+            const emptyK = knownNum(t.emptyMiles);
+            const all = loadedK !== null && emptyK !== null ? loadedK + emptyK : null;
+            const rpm = all !== null && all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '';
+            const stopsStr = Array.isArray(t.stops) ? t.stops.map(s => `${s.city||''}(${s.type||'stop'})`).join('; ') : '';
+            return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, emptyK === null ? '' : emptyK, all === null ? '' : all, rpm, t.isPaid?'Yes':'No', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
+          })];""", 'trip csv unknown deadhead')
+
+          once('app.js',
+          """function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
+            const pay = Number(trip.pay || 0);""",
+          """function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
+            // A score requires verified all-miles. UNKNOWN deadhead is not zero.
+            if (!tripHasKnownDeadhead(trip)) return null;
+            const pay = Number(trip.pay || 0);""", 'load score unknown deadhead')
+
+          once('app.js',
+          """function renderLiveScore(container, tripData, allTrips, allExps){
+            if (!container) return;
+            const pay = Number(tripData.pay || 0);""",
+          """function renderLiveScore(container, tripData, allTrips, allExps){
+            if (!container) return;
+            if (!tripHasKnownDeadhead(tripData)) { container.innerHTML = ''; return; }
+            const pay = Number(tripData.pay || 0);""", 'live score unknown deadhead')
+
+          # Trip rows: do not fabricate an all-mile RPM while deadhead is unknown.
+          once('app.js',
+          """  const pay = fmtMoney(t.pay||0);
+            const miles = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
+            const rpm = miles>0 ? (Number(t.pay||0)/miles) : 0;""",
+          """  const pay = fmtMoney(t.pay||0);
+            const hasKnownDeadhead = tripHasKnownDeadhead(t);
+            const miles = hasKnownDeadhead ? (Number(t.loadedMiles||0) + Number(t.emptyMiles||0)) : null;
+            const rpm = miles !== null && miles > 0 ? (Number(t.pay||0)/miles) : 0;""", 'trip row unknown deadhead')
+
+          # Secondary score aggregates: unknown-deadhead trips cannot enter the average.
+          s = read('app.js')
+          s = s.replace("""    for (const t of recent30){
+                const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+                if (mi <= 0) continue;""",
+          """    for (const t of recent30){
+                if (!tripHasKnownDeadhead(t)) continue;
+                const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+                if (mi <= 0) continue;""", 1)
+          s = s.replace("""      const l = Number(t.loadedMiles||0), e = Number(t.emptyMiles||0);
+                wkLoaded += l; wkAll += l + e;
+                if (l + e > 0){""",
+          """      const l = Number(t.loadedMiles||0);
+                const hasKnownDeadhead = tripHasKnownDeadhead(t);
+                const e = hasKnownDeadhead ? Number(t.emptyMiles||0) : 0;
+                wkLoaded += l;
+                if (hasKnownDeadhead) wkAll += l + e;
+                if (hasKnownDeadhead && l + e > 0){""", 1)
+          write('app.js', s)
+
+          # 3) Whole-phrase market matching: Gary must not match Calgary.
+          once('midwest-stack-authority.js',
+          """  function includesAny(haystack, list){
+            const h = cleanText(haystack);
+            return list.some(x => h.includes(cleanText(x)));
+          }""",
+          """  function includesAny(haystack, list){
+            const h = cleanText(haystack);
+            if (!h) return false;
+            const padded = ` ${h} `;
+            return list.some(x => {
+              const needle = cleanText(x);
+              return !!needle && padded.includes(` ${needle} `);
+            });
+          }""", 'overlay whole-phrase market matching')
+
+          once('app.js',
+          """function mwNormCity(s){
+            return (s || '').trim().toLowerCase().replace(/[^a-z\\s.]/g,'');
+          }
+
+          function mwGeoCheck(origin, dest){""",
+          """function mwNormCity(s){
+            return (s || '').trim().toLowerCase().replace(/[^a-z\\s.]/g,'');
+          }
+          function mwCityMatches(place, market){
+            const city = mwNormCity(place).replace(/\\s+/g, ' ');
+            const key = mwNormCity(market).replace(/\\s+/g, ' ');
+            return !!city && !!key && (` ${city} `).includes(` ${key} `);
+          }
+
+          function mwGeoCheck(origin, dest){""", 'app whole-phrase helper')
+
+          once('app.js',
+          """  const oT1 = MW.tier1.some(c => o.includes(c));
+            const dT1 = MW.tier1.some(c => d.includes(c));
+            const oT2 = MW.tier2.some(c => o.includes(c));
+            const dT2 = MW.tier2.some(c => d.includes(c));""",
+          """  const oT1 = MW.tier1.some(c => mwCityMatches(o, c));
+            const dT1 = MW.tier1.some(c => mwCityMatches(d, c));
+            const oT2 = MW.tier2.some(c => mwCityMatches(o, c));
+            const dT2 = MW.tier2.some(c => mwCityMatches(d, c));""", 'mwGeoCheck whole-phrase matching')
+
+          once('app.js',
+          """    const t1 = MW.tier1.some(c => city.includes(c));
+              const t2 = MW.tier2.some(c => city.includes(c));
+              const avoid = MW.avoid.some(c => city.includes(c));""",
+          """    const t1 = MW.tier1.some(c => mwCityMatches(city, c));
+              const t2 = MW.tier2.some(c => mwCityMatches(city, c));
+              const avoid = MW.avoid.some(c => mwCityMatches(city, c));""", 'home advisor whole-phrase matching')
+
+          # 4) Regression tests: full-precision threshold + pure-boundary fail-closed.
+          econ = read('tests/integration/v24-economics-bid.spec.mjs')
+          anchor = "\nexport async function runSpec(){\n"
+          if econ.count(anchor) != 1: raise SystemExit('economics test anchor drift')
+          tests = r'''
+          test('[V24-C08] grade authority consumes full True-RPM precision before presentation rounding', async () => {
+            const r = await app.page.evaluate(() => {
+              const T = window.__FL_TESTS;
+              const e = T.deriveUnifiedEconomics({ revenue:559.99, effectiveRevenue:559.99, loadedMi:400, deadMi:0, mpg:17.5, fuelPrice:4, opCPM:0.40, borderAdminCost:0 });
+              const g = T.deriveUnifiedGrade(e.trueRPM);
+              return { rpm:e.trueRPM, grade:g.grade };
+            });
+            ok(r.rpm < 1.40, '$559.99 / 400 is 1.399975 and must remain below the $1.40 threshold internally');
+            ok(Math.abs(r.rpm - 1.399975) < 1e-12, 'canonical economics must retain calculation precision');
+            eq(r.grade, 'E', 'rounding to 1.40 before authority would incorrectly promote this load to grade D');
+          });
+
+          test('[V24-C09] pure economics boundary fails closed on missing MPG and negative miles', async () => {
+            const r = await app.page.evaluate(() => {
+              const T = window.__FL_TESTS;
+              const base = { revenue:500, effectiveRevenue:500, loadedMi:80, deadMi:20, fuelPrice:4, opCPM:0.40, borderAdminCost:0 };
+              const missingMpg = T.deriveUnifiedEconomics({ ...base, mpg:null });
+              const negLoaded = T.deriveUnifiedEconomics({ ...base, mpg:20, loadedMi:-1 });
+              const negDead = T.deriveUnifiedEconomics({ ...base, mpg:20, deadMi:-1 });
+              return { missingMpg, negLoaded, negDead };
+            });
+            eq(r.missingMpg.available, false, 'missing MPG cannot silently become zero fuel cost');
+            ok(r.missingMpg.unknownFacts.includes('mpg'), 'missing MPG must be named');
+            eq(r.negLoaded.available, false, 'negative loaded miles are invalid, not zero');
+            ok(r.negLoaded.unknownFacts.includes('loadedMi'), 'negative loaded miles must be named');
+            eq(r.negDead.available, false, 'negative deadhead miles are invalid, not zero');
+            ok(r.negDead.unknownFacts.includes('deadMi'), 'negative deadhead miles must be named');
+          });
+          '''
+          write('tests/integration/v24-economics-bid.spec.mjs', econ.replace(anchor, '\n' + tests + anchor, 1))
+
+          fail = read('tests/integration/v2404-fail-closed.spec.mjs')
+          anchor = "\nexport async function runSpec(){"
+          if fail.count(anchor) != 1: raise SystemExit('fail-closed test anchor drift')
+          tests = r'''
+          test('[OMEGA-01] secondary load score refuses UNKNOWN deadhead but accepts explicit zero', async () => {
+            const r = await app.page.evaluate(() => {
+              const T = window.__FL_TESTS;
+              const base = { orderNo:'OMEGA-SCORE', pay:500, loadedMiles:250, pickupDate:T.isoDate(), deliveryDate:T.isoDate() };
+              return {
+                unknown: T.computeLoadScore({ ...base, emptyMiles:null }, [], []),
+                zero: T.computeLoadScore({ ...base, emptyMiles:0 }, [], []),
+              };
+            });
+            eq(r.unknown, null, 'UNKNOWN deadhead must not receive a fabricated score/True RPM');
+            ok(r.zero && Number.isFinite(r.zero.rpm), 'explicit zero deadhead remains scoreable');
+          });
+
+          test('[OMEGA-02] Calgary cannot collide with Gary in either advisory market classifier', async () => {
+            const r = await app.page.evaluate(() => {
+              const overlay = window.FreightLogicMidwestStack;
+              const T = window.__FL_TESTS;
+              return {
+                overlayGary: overlay?.classifyMarket('Gary, IN')?.role,
+                overlayCalgary: overlay?.classifyMarket('Calgary, AB')?.role,
+                appGary: T.mwGeoCheck('Chicago, IL', 'Gary, IN').destDensity,
+                appCalgary: T.mwGeoCheck('Chicago, IL', 'Calgary, AB').destDensity,
+              };
+            });
+            eq(r.overlayGary, 'tier1', 'Gary remains Tier 1');
+            ok(r.overlayCalgary !== 'tier1', 'Calgary must not match the Gary token in advisory overlay');
+            eq(r.appGary, 'Tier 1', 'Gary remains Tier 1 in app advisory geo check');
+            ok(r.appCalgary !== 'Tier 1', 'Calgary must not match Gary in app advisory geo check');
+          });
+          '''
+          write('tests/integration/v2404-fail-closed.spec.mjs', fail.replace(anchor, '\n' + tests + anchor, 1))
+
+          # Static CSV regression is intentionally source-derived: exportTripsCSV is UI-bound
+          # and not part of __FL_TESTS, but this guards the exact prior coercion from returning.
+          uni = read('tests/unit/v24-unified-decision.spec.mjs')
+          anchor = "\nexport async function runSpec(){ return await run(); }\n"
+          if uni.count(anchor) != 1: raise SystemExit('unit test anchor drift')
+          tests = r'''
+          test('[OMEGA-03] trip CSV export preserves UNKNOWN deadhead/all-miles/RPM', () => {
+            const app = source('app.js');
+            const start = app.indexOf('async function exportTripsCSV()');
+            const end = app.indexOf('async function exportExpensesCSV()', start);
+            ok(start >= 0 && end > start, 'could not isolate exportTripsCSV');
+            const fn = app.slice(start, end);
+            ok(!fn.includes('Number(t.emptyMiles||0)'), 'CSV export must never coerce UNKNOWN deadhead to 0');
+            ok(fn.includes("emptyK === null ? '' : emptyK"), 'UNKNOWN deadhead must export as blank');
+            ok(fn.includes("all === null ? '' : all"), 'all-miles must stay blank while deadhead is unknown');
+          });
+          '''
+          write('tests/unit/v24-unified-decision.spec.mjs', uni.replace(anchor, '\n' + tests + anchor, 1))
+
+          # 5) Runtime-byte changes get a new generation. Keep every governed marker synced.
+          old, new = '24.0.10', '24.0.11'
+          governed = [
+            'app.js','index.html','manifest.json','service-worker.js','sw-bridge.js',
+            'voice-load.js','midwest-stack-authority.js','modern-shell.js',
+            'scripts/verify-cloudflare-parity.mjs'
+          ]
+          for p in governed:
+              s = read(p)
+              count = s.count(old)
+              if count == 0: raise SystemExit(f'{p}: no {old} generation marker found')
+              write(p, s.replace(old, new))
+
+          # Update only the live project identity statements in CLAUDE.md, not historical notes.
+          s = read('CLAUDE.md')
+          s = s.replace('**FreightLogic v24.0.10**', '**FreightLogic v24.0.11**', 1)
+          s = s.replace('App/PWA is v24.0.10 and DB remains v15.', 'App/PWA is v24.0.11 and DB remains v15.', 1)
+          write('CLAUDE.md', s)
+
+          # This one-shot workflow must not remain in the product tree or retrigger itself.
+          Path('.github/workflows/omega-infinity-resume.yml').unlink()
+          PY
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install -g playwright@1.62.1
+          npx playwright install --with-deps chromium
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
+
+      - name: Run full exact-branch suite
+        run: node tests/run-all.mjs
+
+      - name: Verify release markers and targeted source invariants
+        run: |
+          node --check app.js
+          node --check midwest-stack-authority.js
+          grep -q "const APP_VERSION = '24.0.11';" app.js
+          grep -q "const SW_VERSION = '24.0.11';" service-worker.js
+          ! grep -q "Number(t.emptyMiles||0)" <(sed -n '/async function exportTripsCSV/,/async function exportExpensesCSV/p' app.js)
+
+      - name: Commit proven repairs
+        run: |
+          git config user.name "FreightLogic GPT Audit"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "[gpt] Repair OMEGA economics deadhead and market invariants"
+          git push origin HEAD:gpt/omega-infinity-resume-2026-09-14
