@@ -10,7 +10,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**. The task did not close physical iPhone A1–A11 or M6 raw-data certification, and nothing here does.
 
-**Full-repair takeover resumed (2026-09-15, operator-directed).** The operator explicitly directed GPT to finish every remaining repo instruction now. This is the previously authorized bounded repair/certification task, resumed after the earlier GPT session hit its usage limit. It covers only the confirmed first-use cloud-admin race, trip identity/import data loss, payment-state UNKNOWN coercion, invented profit/hour speed, share-target filename hardening, verified legacy-token cleanup gaps, and the release/test/docs files required to prove and ship those fixes. The unsafe self-pushing `.github/workflows/full-repair-once.yml` mechanism is explicitly excluded: the repair must land through a normal reviewed PR. These exceptions expire when the reviewed full-repair PR lands. Physical iPhone A1–A11 and authentic M6 remain open evidence gates.
+**Full-repair takeover resumed (2026-09-15, operator-directed).** The operator explicitly directed GPT to finish every remaining repo instruction now. This is the previously authorized bounded repair/certification task, resumed after the earlier GPT session hit its usage limit. It covers only the confirmed first-use cloud-admin race, trip identity/import data loss, payment-state UNKNOWN coercion, invented profit/hour speed, share-target filename hardening, verified legacy-token cleanup gaps, and the release/test/docs files required to prove and ship those fixes. The unsafe self-pushing `.github/workflows/full-repair-once.yml` mechanism is explicitly excluded from the reviewed change: the repair must land through a normal reviewed PR. These exceptions expire when the reviewed full-repair PR lands. Physical iPhone A1–A11 and authentic M6 remain open evidence gates.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
@@ -27,6 +27,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `CLAUDE.md` | gpt | Temporary release/evidence documentation exception. |
 | `FIELD_TEST_CHECKLIST.md` | gpt | Temporary release/evidence documentation exception; A1–A11 stay open. |
 | `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary parity-evidence documentation exception. |
+| `docs/BACKUP_CONTRACT.md` | gpt | Temporary DB16 stable-identity migration/restore contract amendment. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
 | `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
@@ -34,16 +35,12 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
 | `AGENTS.md` | SHARED | Coordination contract. |
 | `AUDIT_REPORT.md` | claude | Core audit record; findings are recorded with their reproduction and their live production status. |
-| `CLAUDE.md` | claude | Core architecture/operations context except the exact temporary row above. |
-| `FIELD_TEST_CHECKLIST.md` | claude | Physical-iPhone verification instrument except the exact temporary row above. |
 | `README.txt` | claude | General/non-core documentation. |
 | `RECON_24_0_2.md` | claude | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
 | `_headers` | claude | CSP/security/deployment headers. |
-| `admin-driver-ui.js` | claude | Admin UI except the exact temporary row above. Auth/storage semantics here are core. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires a covering lock and full suite.** |
-| `cloud-backup-worker.js` | claude | Backup/API Worker source except the exact temporary row above. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan. |
-| `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation except the exact temporary row above. |
+| `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation except the exact temporary rows above. |
 | `favicon16.png` | claude | Visual asset. |
 | `favicon32.png` | claude | Visual asset. |
 | `icon1024.png` | claude | Visual asset. |
@@ -58,8 +55,6 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `icon64.png` | claude | Visual asset. |
 | `index.html` | SHARED | UI shell + CSP/script ordering; lock before editing. |
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
-| `midwest-stack-authority.js` | claude | Decision/bid advisory core and DZ gate integration except the exact temporary marker-only row above. |
-| `midwest-stack-config.json` | claude | Decision/bid configuration except the exact temporary marker-only row above. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Lock before editing. |
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory except the exact temporary row above. |
@@ -68,7 +63,6 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
 | `tests/` | claude | Playwright suite except the exact temporary rows above. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
-| `voice-load.js` | claude | Functional intake/parser behavior except the exact temporary marker-only row above. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
 ## Current lane intent
