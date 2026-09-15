@@ -4,10 +4,10 @@ Purpose: prove that the **production** Cloudflare app and backup/API Worker serv
 
 Current runtime candidate:
 
-- app / PWA / service worker source: **24.0.12** (repository; **not deployed** — production serves **24.0.11**);
+- app / PWA / service worker source: **24.0.12**, deployed and observed live 2026-09-15;
 - IndexedDB schema: **15**;
 - backup/API Worker source: **17**;
-- exact runtime Git candidate: **`fb408a0a8635d89ee0ed44a471ca11ef032a71a5`** (merged PR #200);
+- exact runtime Git candidate: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** (merged PR #202);
 - current repository `main` after read-only tooling/docs integration: **`a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`** (merged PR #180);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
@@ -42,12 +42,21 @@ from the app origin, and none served as HTML. `VERDICT: PASS`. The production
 service-worker gate (`34929870633`) and the full suite (`34929870661`) are green on
 the same SHA.
 
-**v24.0.12 has NOT been observed live.** The run above is evidence for 24.0.11, the
-generation production serves. 24.0.12 advances the generation for a two-line test-only
-export in `app.js` (RG-03 requires a new generation for any changed deployed byte, even
-an inert one), and its parity run must be re-dispatched after it deploys. A
-push-triggered run that fires immediately after a merge races the Cloudflare deploy; the
-later run is the one to record.
+**v24.0.12 IS observed live.** Run `34939229143` (`workflow_dispatch`, on
+`4f2daf22819feb8d7aeba40324e53ce971f22418`) reports the Pages index and its `app.js`,
+`voice-load.js` and `sw-bridge.js` references at `24.0.12`, the service worker at
+`24.0.12`, `sw-bridge` importing `modern-shell.js` `24.0.12` and the worker precaching
+it, the manifest name at `24.0.12`, Worker `/health` returning
+`{"ok":true,"version":"17"}`, all **23** declared runtime assets loading, and none served
+as HTML. `VERDICT: PASS`. The production service-worker gate (`34939417958`) and the full
+suite on `main` (`34938834977`, 483/0) are green on the same SHA.
+
+**Both push-triggered runs on that merge commit FAILED first, and that is the expected
+race, not a defect.** `34938834929` failed nine seconds after the merge with eight checks
+still reading `24.0.11` — `Manifest name v24.0.12 — FreightLogic v24.0.11` among them —
+and `34938834924` failed the same way. A post-merge push run races the Cloudflare deploy.
+Its failure is real evidence about the origin at that instant and must not be dismissed,
+but it is not evidence about the release: re-dispatch, and record the later run.
 
 This entry records generations and directly observed run evidence only. It is **not**
 a certification: physical iPhone A1-A10 and section C private-history reconciliation

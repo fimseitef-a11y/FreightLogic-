@@ -4,7 +4,7 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.11 / IndexedDB v15 / Worker v17**; repository source is **v24.0.12**, which is **not deployed**. Test against what the device actually reports, and record which of the two you tested — they are not interchangeable.
+Current runtime synchronization point: **FreightLogic v24.0.12 / IndexedDB v15 / Worker v17**, deployed and observed live on 2026-09-15 (parity run `34939229143`, production service worker `34939417958`). Confirm these three on the device itself before testing — an installed PWA can still be serving an older shell until it updates, and a PASS recorded against the wrong generation certifies nothing.
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11 — the app moved and this file did not — so treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
 

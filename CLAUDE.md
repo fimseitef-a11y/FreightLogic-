@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA source is v24.0.12 (**not yet deployed** — production serves v24.0.11) and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA is v24.0.12, **deployed and live** (observed 2026-09-15, run `34939229143`), and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2792,13 +2792,25 @@ shell would never fetch the changed file. "Inert in production" is an argument a
 behaviour, not about delivery, and the generation rule is about delivery. This is the
 v24.0.3 lesson applied rather than relearned, and every governed marker moved together.
 
-### Deployment status — stated plainly
+### Deployment status — OBSERVED
 
-**v24.0.12 is source-only. It has not been deployed and has not been observed live.**
-The live evidence in the v24.0.11 section above is evidence for **v24.0.11**, which is
-what production serves. When v24.0.12 deploys, the parity run must be re-dispatched
-against it; a push-triggered run that fires immediately after the merge will race the
-Cloudflare deploy, so record the later run.
+Merged as `4f2daf2` and **deployed; live parity and the production service worker are
+both observed green at this generation**, not inferred:
+
+| Gate | Run | Result |
+|---|---|---|
+| Live Cloudflare parity | `34939229143` (`workflow_dispatch`) | **PASS** — index/`app.js`/`voice-load.js`/`sw-bridge.js`/`modern-shell.js`/service worker/manifest all `24.0.12`, Worker `/health` v17, all **23** declared assets load, none served as HTML |
+| Production service worker | `34939417958` (`workflow_dispatch`) | **SUCCESS** |
+| Full suite on `main` | `34938834977` (push) | **SUCCESS** — 483/0 across 52 specs |
+
+**The push-triggered runs on the merge commit both FAILED, and that is not a defect.**
+`34938834929` (parity) failed **nine seconds** after the merge with eight checks reading
+`24.0.11`, `Manifest name v24.0.12 — FreightLogic v24.0.11` among them, and
+`34938834924` (production SW) failed the same way. Cloudflare had not finished deploying.
+This is the hazard recorded after v24.0.10, reproduced exactly: such a failure is real
+evidence about the origin *at that instant* and must not be waved away, but it is not
+evidence about the release. **Re-dispatch and record the later run** — which is what the
+two runs above are.
 
 Full suite: **483 passed, 0 failed across 52 spec files** — `fb408a0`'s 481 plus
 `OI-14` and `CG-14`.
