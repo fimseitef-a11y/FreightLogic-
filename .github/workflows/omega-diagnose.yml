@@ -1,0 +1,42 @@
+name: OMEGA Anchor Diagnostics
+on:
+  push:
+    branches: [gpt/omega-infinity-resume-2026-09-14]
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: gpt/omega-infinity-resume-2026-09-14
+      - name: Count source anchors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('app.js').read_text(); m=Path('midwest-stack-authority.js').read_text()
+          checks={
+          'economics_unknown':a.count("  const unknownFacts = [];\n  if (loadedMiK === null) unknownFacts.push('loadedMi');\n  if (deadMiK === null) unknownFacts.push('deadMi');\n  if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');\n  if (unknownFacts.length){"),
+          'economics_mpg':a.count("  const mpg = Number(f.mpg || 0);"),
+          'economics_precision':a.count("  const trueRPM = totalMi > 0 ? roundCents(effectiveRevenue / totalMi) : 0;\n  const loadedRPM = loadedMi > 0 ? roundCents(effectiveRevenue / loadedMi) : 0;"),
+          'csv':a.count("  const rows = [header, ...trips.map(t => {\n    const all = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));\n    const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '0';"),
+          'score':a.count("function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){\n  const pay = Number(trip.pay || 0);"),
+          'live_score':a.count("function renderLiveScore(container, tripData, allTrips, allExps){\n  if (!container) return;\n  const pay = Number(tripData.pay || 0);"),
+          'trip_row':a.count("  const pay = fmtMoney(t.pay||0);\n  const miles = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));\n  const rpm = miles>0 ? (Number(t.pay||0)/miles) : 0;"),
+          'overlay_includes':m.count("  function includesAny(haystack, list){\n    const h = cleanText(haystack);\n    return list.some(x => h.includes(cleanText(x)));\n  }"),
+          'mw_norm':a.count("function mwNormCity(s){\n  return (s || '').trim().toLowerCase().replace(/[^a-z\\s.]/g,'');\n}\n\nfunction mwGeoCheck(origin, dest){"),
+          'mw_geo':a.count("  const oT1 = MW.tier1.some(c => o.includes(c));\n  const dT1 = MW.tier1.some(c => d.includes(c));\n  const oT2 = MW.tier2.some(c => o.includes(c));\n  const dT2 = MW.tier2.some(c => d.includes(c));"),
+          'home_advisor':a.count("    const t1 = MW.tier1.some(c => city.includes(c));\n    const t2 = MW.tier2.some(c => city.includes(c));\n    const avoid = MW.avoid.some(c => city.includes(c));")}
+          Path('.agents/omega-anchor-counts.txt').write_text('\n'.join(f'{k}={v}' for k,v in checks.items())+'\n')
+          Path('.github/workflows/omega-diagnose.yml').unlink()
+          Path('.github/workflows/omega-infinity-resume.yml').unlink()
+          PY
+      - name: Save diagnostics
+        run: |
+          git config user.name "FreightLogic GPT Audit"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "[gpt] Record OMEGA anchor diagnostics"
+          git push origin HEAD:gpt/omega-infinity-resume-2026-09-14
