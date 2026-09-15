@@ -121,7 +121,7 @@ PASS requires the exact fail-closed behavior above. A guessed/clamped/default pl
 
 # B. Live deployment blockers
 
-Run these against the same final production candidate used for A1-A10. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
+Run these against the same final production candidate used for A1-A11. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
 ## B1. Exact production app generation — **PASS**
 
@@ -188,7 +188,7 @@ Two measurement traps are worth knowing, because the first version of this gate 
 - `document.documentElement.scrollWidth` **cannot** detect overflow in this app — `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a scrollWidth wider than the viewport however far content spills. Injecting `min-width: 900px` left a scrollWidth assertion green.
 - Under mobile emulation the layout viewport **expands** to fit content wider than the device (`innerWidth` read 900 at a 320px device), so geometry compared against `innerWidth` is compared against a viewport that already grew to accommodate the overflow. Measure against the device width the test set.
 
-This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A10.
+This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A11.
 
 # E. Non-blocking resilience watch list
 
