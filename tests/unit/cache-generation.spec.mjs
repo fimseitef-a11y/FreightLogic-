@@ -298,6 +298,27 @@ test('[CG-13] every primary tab the shell renders is a route the canonical route
   }
 });
 
+test('[CG-14] midwest-stack-config.json appTarget is at the current generation', () => {
+  // Version-bump checklist item 15, which item 16 has claimed since v24.0.3 was
+  // "machine-checked rather than remembered" — along with items 3-6, 11, 12 and
+  // 14. It was NOT: nothing in this spec or verify-cloudflare-parity.mjs read
+  // this field. The parity script checks only that the service worker CACHES the
+  // file, which a stale appTarget passes happily.
+  //
+  // So it drifted exactly as before. It read `FreightLogic v24.0.0` at v24.0.3
+  // (two releases behind, found by the read-only recon, fixed and added to the
+  // checklist as item 15), and it read `FreightLogic v24.0.10` at 24.0.11 — the
+  // same defect, in the same field, one release after being written down as
+  // covered. A checklist item that is documented as enforced but is not is worse
+  // than one that is merely remembered, because it stops anyone from looking.
+  const app = appVersion();
+  const m = read('midwest-stack-config.json').match(/"appTarget"\s*:\s*"FreightLogic v([0-9]+\.[0-9]+\.[0-9]+)"/);
+  ok(m, 'could not read appTarget from midwest-stack-config.json');
+  eq(m[1], app,
+    `midwest-stack-config.json appTarget is v${m ? m[1] : '?'} but APP_VERSION is ${app}. ` +
+    'Checklist item 15 — bump it with every release.');
+});
+
 export async function runSpec() {
   return await run();
 }

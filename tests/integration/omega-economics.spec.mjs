@@ -89,6 +89,29 @@ test('[OI-10] authoritative density rejects city-name collisions and preserves a
 test('[OI-11] place normalization preserves known identities and distinguishes collision pairs',async()=>{
   const r=await app.page.evaluate(()=>{const T=window.__FL_TESTS;return ['Dayton','Edmonton','Gary','Calgary'].map(x=>T.naLookupMarket(x)?.city);});
   eq(r[0],'dayton','Dayton');eq(r[1],'edmonton','Edmonton');eq(r[2],'gary','Gary');eq(r[3],'calgary','Calgary');
+  // THE LOOKUP HALF ABOVE CANNOT FAIL ON THE DEFECT IT GUARDS, which is why the
+  // normalizer half below exists. Verified by negative control: reverting BOTH
+  // separator fixes in usaNormCity/caNormCity leaves this whole spec at 13/0.
+  // Every name in a market table still resolves under the OLD rule — 'Dayton'
+  // via usaNormCity (no US state is spelled 'on'), 'Edmonton' because the fuzzy
+  // pass accepts key.startsWith(norm) so 'edmonton'.startsWith('edmont') still
+  // matches. Only a name that is in NO table can show the letters being eaten,
+  // and a lookup-based assertion can never reach one.
+  const names=['Dayton','Boston','Edmonton','Gary','Calgary','Tacoma'];
+  const norm=await app.page.evaluate(n=>{const T=window.__FL_TESTS;return n.map(x=>[T.usaNormCity(x),T.caNormCity(x)]);},names);
+  for(const [i,name] of names.entries()){
+    eq(norm[i][0],name.toLowerCase(),`usaNormCity keeps ${name} intact`);
+    eq(norm[i][1],name.toLowerCase(),`caNormCity keeps ${name} intact`);
+  }
+  // Under the old rule caNormCity('Boston')->'bost', ('Dayton')->'dayt' and
+  // usaNormCity('Tacoma')->'taco'. Boston and Tacoma are in no market table, so
+  // they are the cases that actually fail when the rule regresses.
+  // And the rule was NARROWED, not disabled: a genuinely separator-qualified
+  // state or province is still stripped, by comma and by space alike.
+  const q=await app.page.evaluate(()=>{const T=window.__FL_TESTS;
+    return [T.usaNormCity('Dayton, OH'),T.usaNormCity('Dayton OH'),T.caNormCity('Toronto, ON'),T.caNormCity('Toronto ON')];});
+  eq(q[0],'dayton','comma-qualified state stripped');eq(q[1],'dayton','space-qualified state stripped');
+  eq(q[2],'toronto','comma-qualified province stripped');eq(q[3],'toronto','space-qualified province stripped');
 });
 test('[OI-13] missing setting fallbacks are caller-local while persisted zero remains authoritative',async()=>{
   const r=await app.page.evaluate(async()=>{const T=window.__FL_TESTS;const first=await T.getSetting('omegaFallbackProbe',0);const second=await T.getSetting('omegaFallbackProbe',17.5);await T.setSetting('omegaFallbackProbe',0);const persisted=await T.getSetting('omegaFallbackProbe',17.5);return [first,second,persisted];});
@@ -103,6 +126,36 @@ test('[OI-12] actual evaluator rejects negative deadhead before rendering a grad
   await app.page.fill('#mwLoadedMi','100');await app.page.fill('#mwRevenue','500');await app.page.fill('#mwDeadMi','-90');
   await app.page.evaluate(()=>window.__FL_TESTS.mwEvaluateLoad());
   const text=await app.page.locator('#mwEvalOutput').textContent();ok(text.includes('Enter deadhead miles'),'negative mileage rejected');
+});
+test('[OI-14] Home reading an unset MPG first cannot blank the evaluator\'s grade',async()=>{
+  // The END-TO-END shape of the fallback-cache defect, and the reason it cost 22
+  // assertions across six specs rather than one. OI-13 covers the seam in
+  // isolation; this covers the actual production sequence, which is what broke:
+  // Home renders before the evaluator and reads getSetting('vehicleMpg', 0), so
+  // an operator who had never entered an MPG had a 0 nobody supplied standing in
+  // canonical economics — which correctly refuses mpg<=0 — and an ordinary,
+  // complete, perfectly gradeable load rendered no grade at all.
+  await app.page.evaluate(async()=>{
+    const db=await window.__FL_TESTS.initDB();
+    const tx=db.transaction('settings','readwrite');
+    tx.objectStore('settings').delete('vehicleMpg');
+    await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error);});
+    db.close();
+  });
+  await app.page.reload({waitUntil:'load'});                         // empties SETTINGS_CACHE
+  await app.page.waitForFunction(()=>!!window.__FL_TESTS);
+  await app.page.evaluate(()=>window.__FL_TESTS.computeQuickKPIs());  // Home reads MPG first
+  await app.page.evaluate(()=>{location.hash='#omega';});
+  await app.page.waitForSelector('#evalAdvToggle');
+  if (!(await app.page.isVisible('#mwOrigin'))) await app.page.click('#evalAdvToggle');
+  await app.page.waitForSelector('#mwDeadMi');
+  await app.page.fill('#mwOrigin','Chicago, IL');await app.page.fill('#mwDest','Detroit, MI');
+  await app.page.fill('#mwLoadedMi','280');await app.page.fill('#mwRevenue','560');await app.page.fill('#mwDeadMi','0');
+  await app.page.evaluate(()=>window.__FL_TESTS.mwEvaluateLoad());
+  const state=await app.page.evaluate(()=>{const out=document.querySelector('#mwEvalOutput');
+    return {text:out?.textContent||'',grade:out?.querySelector('.fl-eval-grade')?.textContent||null};});
+  ok(!state.text.includes('Economics unavailable'),`a complete load must still grade when MPG was never set; got: ${state.text.slice(0,160)}`);
+  ok(state.grade && state.grade!=='✕',`expected a real letter grade, got: ${JSON.stringify(state.grade)}`);
 });
 export async function runSpec(){app=await launchApp();await skipFirstRunWizard(app.page);await app.page.reload({waitUntil:'load'});await app.page.waitForFunction(()=>!!window.__FL_TESTS);try{return await run();}finally{await app.close();}}
 if(process.argv[1]?.endsWith('omega-economics.spec.mjs')){const r=await runSpec();process.exit(r.fail?1:0);}
