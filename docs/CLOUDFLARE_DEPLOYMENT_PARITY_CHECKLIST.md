@@ -4,17 +4,17 @@ Purpose: prove that the **production** Cloudflare app and backup/API Worker serv
 
 Current runtime candidate:
 
-- app / PWA / service worker source: **24.0.12** (repository; **not deployed** — production serves **24.0.11**);
+- app / PWA / service worker: **24.0.12**, **deployed and observed live** 2026-09-15 (repository source and production origin agree);
 - IndexedDB schema: **15**;
-- backup/API Worker source: **17**;
-- exact runtime Git candidate: **`fb408a0a8635d89ee0ed44a471ca11ef032a71a5`** (merged PR #200);
-- current repository `main` after read-only tooling/docs integration: **`a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`** (merged PR #180);
+- backup/API Worker source: **17**, deployed and live;
+- exact runtime Git candidate: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** (merged PR #202);
+- current repository `main`: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** — the same commit as the runtime candidate, because 24.0.12 is the tip;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - GitHub-attached Cloudflare build check for the exact runtime Git SHA: **SUCCESS**, check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
 - version-specific preview for that check: **`https://7582ec81-freightlogic-v2.fimseitef.workers.dev`**;
-- current merged source/tooling suite: **442 passed / 0 failed across 46 spec files** in main run `34800434526`;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md`;
+- current merged source/tooling suite: **483 passed / 0 failed across 52 spec files** in main run `34938834977`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`;
 - status: **HOLD**.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
@@ -42,12 +42,36 @@ from the app origin, and none served as HTML. `VERDICT: PASS`. The production
 service-worker gate (`34929870633`) and the full suite (`34929870661`) are green on
 the same SHA.
 
-**v24.0.12 has NOT been observed live.** The run above is evidence for 24.0.11, the
-generation production serves. 24.0.12 advances the generation for a two-line test-only
-export in `app.js` (RG-03 requires a new generation for any changed deployed byte, even
-an inert one), and its parity run must be re-dispatched after it deploys. A
-push-triggered run that fires immediately after a merge races the Cloudflare deploy; the
-later run is the one to record.
+**v24.0.12 live parity is now OBSERVED.** The paragraph that stood here said 24.0.12 had
+not been observed live and that its parity run must be re-dispatched after it deployed.
+That re-dispatch happened and passed; the paragraph is replaced rather than left standing,
+because a checklist asserting "not deployed" about a generation production is serving is
+worse than one that says nothing.
+
+Run `34939229143` (Verify Live Parity, `workflow_dispatch` on `main` @
+`4f2daf22819feb8d7aeba40324e53ce971f22418`, 2026-09-15T06:56:35Z) reports `sw-bridge`
+importing `modern-shell.js` `24.0.12` with the worker precaching it at that generation,
+the manifest name `FreightLogic v24.0.12`, the overlay and shell each loading and
+exposing their globals, the SW critical shell still carrying `midwest-stack-authority.js`
+and `vendor/xlsx.full.min.js`, Worker `/health` returning `{"ok":true,"version":"17"}`,
+the admin endpoint rejecting an unauthenticated request with 401, all **23** declared
+runtime assets loading from the app origin, and none served as HTML. `VERDICT: PASS`.
+
+The production service-worker gate (`34939417958`, **16 checks / 0 failures**,
+`VERDICT: PASS`) confirms it from the browser side on the same SHA: precache
+`freightlogic-24.0.12` holding all 23 assets, the cached shell requesting `?v=24.0.12`,
+`admin-driver-ui.js` and `midwest-stack-authority.js` injected **and fetchable as
+script** (HTTP 200, `text/javascript`), an offline subresource miss answered `504
+text/plain` rather than the HTML shell, a drifted `?v=` self-healing to the real file,
+and exactly one generation cache surviving. The full suite (`34938834977`) is green on
+the same SHA.
+
+**The push-race recurred and is recorded so it is not mistaken for a release defect.**
+Both workflows also fired on the push at 06:51Z and both FAILED — `34938834929` and
+`34938834924` — about five minutes before the dispatched runs above passed. They
+observed the previous generation still being served while Cloudflare finished deploying.
+Re-dispatch and record the later run; do not dismiss the earlier one and do not cite
+it.
 
 This entry records generations and directly observed run evidence only. It is **not**
 a certification: physical iPhone A1-A10 and section C private-history reconciliation
@@ -66,7 +90,7 @@ PR #177 added a repository-hosted, **manual-only and read-only** GitHub Actions 
 
 HTTP error responses such as 404/500 count as **observed failures**, not UNOBSERVED. A static/source defect also outranks network unreachability and remains FAILURE.
 
-The exact v24.0.9 all-asset live sweep remains **NOT RUN / UNOBSERVED** until an actual **Verify Live Parity** workflow run is dispatched and its result is recorded. Do not infer PASS from Cloudflare build success or from the verifier's static-only tests.
+That NOT RUN / UNOBSERVED state is closed and has been since 2026-09-14: the all-asset live sweep has been dispatched and recorded at every generation from 24.0.10 onward, most recently `34939229143` at 24.0.12 above. The standing rule it carried is unchanged and still binding — do not infer PASS from Cloudflare build success, from a version bump, or from the verifier's static-only tests. Only a dispatched run against the production origin closes this.
 
 ### Manual dispatch procedure
 
@@ -173,19 +197,19 @@ Source-side:
 - `node scripts/verify-cloudflare-parity.mjs --static-only`
 - `node scripts/m7-certify.mjs --suite`
 
-Current repository baseline after PRs #177 through #180:
+Current repository baseline at the 24.0.12 candidate:
 
-- main SHA `a1a5f7dc8fda8472e2dc0b4cd6ad4f2dda62abb6`;
-- run `34800434526`;
-- **442 passed / 0 failed across 46 spec files**;
-- includes 11 dedicated live-parity-runner assertions.
+- main SHA `4f2daf22819feb8d7aeba40324e53ce971f22418`;
+- run `34938834977` (push on `main`), and `34933327774` on the PR head `aaa3569`;
+- **483 passed / 0 failed across 52 spec files**, reproduced locally against real headless Chromium at the same total;
+- includes 11 dedicated live-parity-runner assertions and the 14 cache-generation assertions.
 
 Live production, from a network that can reach Cloudflare:
 
 - preferred: **Actions → Verify Live Parity → Run workflow** with blank optional origins;
 - equivalent CLI: `node scripts/verify-cloudflare-parity.mjs`.
 
-The live verifier derives the current app generation from source and is expected to verify app/PWA **24.0.9**, Worker **15**, and every declared runtime asset. The current source inventory is 23 assets; the inventory is derived rather than maintained as a hand-written list.
+The live verifier derives the current app generation from source, so this line states what it is currently expected to observe rather than a value it reads: app/PWA **24.0.12**, Worker **17**, and every declared runtime asset. Both were confirmed by run `34939229143`. The current source inventory is 23 assets; the inventory is derived rather than maintained as a hand-written list.
 
 Authenticated authority checks when a valid non-published driver token is available:
 
