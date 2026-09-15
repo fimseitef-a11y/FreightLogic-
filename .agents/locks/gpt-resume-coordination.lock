@@ -1,0 +1,6 @@
+owner: gpt
+token: bb13f205-8400-44a7-99b2-4335167e0f85
+started_utc: 2026-09-15T11:44:25Z
+expected_release_utc: 2026-09-15T14:44:25Z
+paths: .agents/NOW.md, .agents/STATUS.md, .agents/TEST_LEDGER.md, .agents/inbox/gpt-resumed-full-repair-2026-09-15.md
+task: Continue operator-authorized paused GPT full-repair task; preserve inherited tokens and normal PR delivery.
