@@ -57,6 +57,18 @@ should either be excluded from `run-all.mjs`'s default run or clearly
 isolated so it doesn't sink an otherwise-green CI gate — do not go back to
 an unconditional `exit(0)` to work around that; that reopens X-06.
 
+**That exclusion now has a mechanism, and it is not optional.** Exclusion used
+to be an unwritten convention with nothing to make it temporary, so a spec
+could sit unrun forever while its finding was quietly forgotten. Add the spec
+to the `QUARANTINE` list in `tests/unit/spec-coverage.spec.mjs` with the
+`AUDIT_REPORT.md` finding id it proves. That gate then holds you to three
+things: the finding must exist and still be marked `OPEN` (SC-02), every other
+spec on disk must really be wired into `run-all.mjs` (SC-01/SC-03), and — the
+one that cannot be satisfied by editing text — **the quarantined spec must
+actually fail** (SC-04). The moment it passes, the fix has landed or the spec
+is vacuous, and CI tells you to wire it in, mark the finding `FIXED`, and drop
+the row, in one commit.
+
 Look at the printed "Failing" list at the end of a `run-all.mjs` run to see
 exactly which assertions are red (each names the finding and file:line it
 proves).

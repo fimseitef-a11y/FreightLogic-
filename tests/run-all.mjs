@@ -61,10 +61,12 @@ import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec
 
 import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mjs';
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
+import { runSpec as specCoverage } from './unit/spec-coverage.spec.mjs';
 
 const specs = [
   omegaEconomics,
   releaseGenerationDiscipline,
+  specCoverage,
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,

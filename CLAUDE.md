@@ -2965,3 +2965,82 @@ denominators (positioning brief, chain analysis, weekly strategy, seasonal intel
 
 **Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN, and
 nothing here touches either.
+
+---
+
+## Spec coverage — a test nobody runs, and the quarantine that never expired
+
+Tests only. No shipped file changed, so no version marker moved: `APP_VERSION` and
+`SW_VERSION` stay `24.0.12`, `DB_VERSION` 15, Worker v17.
+
+**The gap.** `tests/run-all.mjs` enumerates specs through an explicit import list and
+an explicit `specs` array. Nothing compared either to what is on disk. A spec file
+could be added and never run — green forever, asserting nothing. That is the same
+failure this file already records twice: v24.0.8's Loads tab was green because no spec
+touched the shell, and v24.0.12's `OI-11` passed with the defect reinstated. **A spec
+nobody runs is that defect one level up**, and it is harder to see, because there is no
+failing assertion to notice — there is no assertion at all.
+
+The gap became live rather than theoretical when `D-01` landed: its regression asserts
+the correct behaviour and therefore **fails** until `tripRow()` is fixed, so it is
+deliberately outside `run-all.mjs`. `tests/README.md` has always permitted that for a
+logged-but-unfixed finding. Nothing made it **temporary**. A quarantined spec could sit
+unrun indefinitely while its finding was forgotten, and the repository would look
+greener for it.
+
+**The gate.** `tests/unit/spec-coverage.spec.mjs` (new, 4 assertions, wired into
+`run-all.mjs`):
+
+- **SC-01** — every `tests/**/*.spec.mjs` on disk is imported **and** listed in the
+  `specs` array, or is named in the spec's own `QUARANTINE` list. A quarantined spec
+  that is also wired in fails too: the row is stale and must go.
+- **SC-02** — a `QUARANTINE` row must name a finding that `AUDIT_REPORT.md` carries as
+  a heading marked `OPEN` and not `FIXED`/`CLOSED`, and must say why in prose. A
+  quarantine without a recorded finding is an unrun test with an excuse.
+- **SC-03** — the import list and the `specs` array agree exactly, in both directions,
+  with no duplicates. An imported-but-unlisted spec is the silent half of the same
+  defect: a coverage grep finds the filename, and the file still never executes.
+- **SC-04** — **a quarantined spec must actually FAIL.** This is the assertion that
+  makes a quarantine temporary instead of permanent, and it is the only one here that
+  cannot be satisfied by editing a list. It spawns the spec as a real subprocess and
+  requires exit 1. If it passes, either the defect is fixed — wire it in, mark the
+  finding `FIXED`, drop the row, all in one commit — or the spec asserts nothing, which
+  is precisely what `OI-11` was.
+
+SC-04 costs one extra Chromium launch per suite run. That is deliberate: the cheap
+version of this gate is a text check, and a text check is what let `OI-11` pass.
+
+**Negative controls, all four verified to fire:** dropping a wired spec from the
+`specs` array fails SC-01 **and** SC-03 (it becomes both an on-disk orphan and an
+unlisted import); wiring the quarantined spec in fails SC-01's second half; marking
+`D-01` as `FIXED` in `AUDIT_REPORT.md` while its spec is still quarantined fails SC-02
+and names the remedy; importing a spec without listing it fails SC-03. The gate also
+caught **itself** before it was wired in, which is how its own SC-01 was first
+observed failing rather than assumed to work.
+
+Full suite: **493 passed, 0 failed across 54 spec files** (from 489/53) — the four SC
+assertions. The quarantined `trip-row-unknown-deadhead` spec is the 55th file on disk
+and still does not run in the default suite, by design; SC-04 runs it and requires its
+failure.
+
+### A lock can be clock-stale and demonstrably alive at the same time
+
+Observed while deciding whether `D-01` could be fixed in this pass, and worth writing
+down because the near-miss was real. `/AGENTS.md` says a lock past
+`expected_release_utc` + 2h is **stale**: it "grants nothing" and may be reaped
+deliberately. At 17:07Z the gpt lane's `lock/app-js` was four hours past expiry and two
+hours past the reap threshold, so by the clock alone it granted nothing and `app.js`
+was editable.
+
+It was not. `.agents/NOW.md` showed that lane had **resumed** the same full-repair task
+at 11:44Z after a usage limit, explicitly inheriting these locks, and it had claimed a
+fresh coordination lock and reserved an inbox filename it had not yet written. That is
+a live editor mid-task in a 1.1MB single-IIFE file — exactly what the serialization
+exists to protect, and exactly the work a reap would have put at risk.
+
+**Nothing reconciles the two signals.** `scripts/lane-guard.mjs` reads `LANES.md` and
+the lock records; it does not read `NOW.md`, so the liveness evidence that decided this
+call is invisible to the tooling that reports staleness. The rule to apply until that
+changes: **an expired timestamp is a prompt to look for a live holder, never on its own
+a licence to reap.** `.agents/` is SHARED, so the protocol text itself was not edited
+here — this is the claude-lane record of the judgement and the reasoning behind it.
