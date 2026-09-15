@@ -87,7 +87,7 @@ These were observed on the 24.0.10 candidate and nothing since has touched the s
 - [x] Six-width visual acceptance — PASS.
 - [x] Rollback / fix-forward evidence — derived verifier, PASS.
 - [ ] **Private operator-history reconciliation.** The recovered August 27 M6 bundle is not in this repository and has not been mounted in any session that has run so far.
-- [ ] **Physical iPhone certification.** `FIELD_TEST_CHECKLIST.md` A1-A10 against this exact candidate, in Safari and as the installed Home Screen PWA.
+- [ ] **Physical iPhone certification.** `FIELD_TEST_CHECKLIST.md` A1-A11 against this exact candidate, in Safari and as the installed Home Screen PWA.
 
 ## The two remaining gates, and why they are not closable from here
 
@@ -95,13 +95,13 @@ Unchanged from the 2026-09-14 document, and repeated rather than cross-reference
 
 **Private-history reconciliation** requires the five raw M6 files. Preflight evidence says 216 source rows deterministically produce 149 candidate records, but those candidates have never completed the application round trip, the repeated-import idempotence run, or the source-conflict review. The instrument is committed and ready (`scripts/m6-import.mjs`, the adapter, and `batch-b-m6-reconciliation.spec.mjs`); only the data is missing. **Do not reconstruct the bundle from summaries** — a reconstruction would test the summary, not the source, which is the one thing this gate exists to catch. The separate 125-row master is likewise unavailable and must not be synthesized.
 
-**Physical iPhone certification** covers exactly what a headless runner cannot: safe-area insets, the software keyboard, background GPS across a real lock/unlock, iOS permission revocation mid-trip, installed-PWA update behaviour, and a genuine Airplane Mode round trip. A1-A10 are finite and written to be run in one sitting. A4's offline navigation is the specific thing gate 2 above declines to claim.
+**Physical iPhone certification** covers exactly what a headless runner cannot: safe-area insets, the software keyboard, background GPS across a real lock/unlock, iOS permission revocation mid-trip, installed-PWA update behaviour, and a genuine Airplane Mode round trip. A1-A11 are finite and written to be run in one sitting. A4's offline navigation is the specific thing gate 2 above declines to claim.
 
 Neither is a reason to hold the other work. Both can be run in parallel with anything else.
 
 ## Candidate SHA
 
-- **Runtime candidate SHA: `4f2daf22819feb8d7aeba40324e53ce971f22418`** — the `main` commit against which live all-asset parity and the production service-worker gate were both observed at generation 24.0.12. Confirm it against Diagnostics on the device before running A1-A10.
+- **Runtime candidate SHA: `4f2daf22819feb8d7aeba40324e53ce971f22418`** — the `main` commit against which live all-asset parity and the production service-worker gate were both observed at generation 24.0.12. Confirm it against Diagnostics on the device before running A1-A11.
 - Later `main` commits that change only documentation or verification tooling do not create a new runtime candidate, because they do not change a shipped file or the cache generation.
 - **If a shipped file changes, this section must be updated and the live gates re-observed.** That rule is what this document exists to honour: it was written into the 09-14 document, two shipped-file releases went out, and nothing enforced it. The next generation needs a superseding document on the day it deploys, not whenever someone notices.
 
@@ -112,3 +112,11 @@ Neither is a reason to hold the other work. Both can be run in parallel with any
 FreightLogic remains **HOLD**. Source completeness, green CI and a successful Cloudflare build were never sufficient, and still are not. But every gate that can be observed from an automated environment has been observed on the live production origin **at this exact generation** — not inferred, not assumed from a build, and not carried forward from an older candidate except where explicitly named as such in section 5.
 
 The hold may be cleared only by a later authoritative certification document recording real physical-iPhone evidence and real private-history reconciliation on this same named candidate. Do not mark either PASS by inference. Do not clear Safari website data or delete the installed PWA to force an update: that destroys the local IndexedDB evidence the installed-origin investigation still needs.
+
+## Addendum 2026-09-15 — the A-series grew by one
+
+iOS 27 and Safari 27 shipped **2026-09-14**, one day before this candidate's live gates were observed. Safari 27 carries 525 fixes, 30 of them SVG, and WebKit characterises the release as existing features behaving differently — more correctly — than before.
+
+FreightLogic renders hand-built SVG in two surfaces a driver looks at constantly: the F31 Earnings Trends chart (`<rect>` bars, a `<polyline>` overlay, `<text>` labels) and the driver tab-bar icons. **No gate in this repository can see a rendering change there** — the six-width spec asserts overflow and interactive geometry, the production service-worker gate asserts delivery and offline semantics. So `FIELD_TEST_CHECKLIST.md` gains **A11**, an iOS 27 regression pass, and the physical-device gate in this document is now **A1-A11**.
+
+This does not change the candidate, the live evidence, or the HOLD. It widens the device gate, which is the half that was already open. `docs/IOS27_SAFARI27_ASSESSMENT_2026-09-15.md` is the full assessment, including the two Safari 27 APIs evaluated and declined with their inventories, and a correction to the circulating claim that iOS 27 adds Background Sync — it does not.
