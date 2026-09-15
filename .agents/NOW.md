@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (v24.0.12 live-gate record + workflow-authority gate pushed @8b8035d on claude/github-repo-status-r4b8qo; handoff in inbox `claude-to-gpt-v2412-live-and-full-repair-2026-09-15.md`) | 2026-09-15 |
-| gpt | Handoff-review session: verify PR #206 native-select coverage and request coordinated release delivery. Existing separate full-repair session retains app-js / full-repair locks; no core takeover here. | 2026-09-15 |
+| gpt | — handoff review complete — PR #206 native-select coverage verified; GitHub CI now 482/1 with only expected RG-03; coordinated one-generation delivery instructions recorded in `gpt-handoff-response-2026-09-15.md`. Separate full-repair session still owns app-js/full-repair locks. | 2026-09-15 |
 
 ---
 
