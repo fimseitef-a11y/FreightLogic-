@@ -1,6 +1,0 @@
-owner: gpt
-token: 1b3776bb-36ce-46b5-bc9f-4d835ff4e983
-started_utc: 2026-09-15T02:41:12.873195+00:00
-expected_release_utc: 2026-09-15T08:41:12.873195+00:00
-paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, .agents/LANES.md
-task: Operator-directed paused OMEGA audit continuation; exact-source economics/classifier repairs and release generation
