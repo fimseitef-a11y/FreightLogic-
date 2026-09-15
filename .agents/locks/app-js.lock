@@ -1,6 +1,0 @@
-owner: claude
-token: ab49839f-a45c-4526-840f-0ca135a629d2
-started_utc: 2026-09-15T04:39:30Z
-expected_release_utc: 2026-09-15T10:39:30Z
-paths: app.js, .agents/LANES.md, tests/integration/omega-economics.spec.mjs, CLAUDE.md
-task: Operator-directed takeover of the paused OMEGA continuation (PR #200); repair the getSetting absent-value cache seam and the two invalid OMEGA regression assertions, full suite green
