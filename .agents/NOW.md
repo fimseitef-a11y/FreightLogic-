@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (CLAUDE.md accuracy pass pushed @e68b830 on claude/repo-review-9lpj28) | 2026-09-14 |
+| claude | — idle — (v24.0.12 live-gate record + workflow-authority gate pushed @8b8035d on claude/github-repo-status-r4b8qo; handoff in inbox `claude-to-gpt-v2412-live-and-full-repair-2026-09-15.md`) | 2026-09-15 |
 | gpt | — idle — (Claude-assigned release documentation prepared in draft PR #195; runtime/code work left to Claude) | 2026-09-14 |
 
 ---
