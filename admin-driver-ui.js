@@ -139,7 +139,28 @@ function injectAdminTokenUI(){
   }
 }
 
+// v24.0.13: this overlay STANDS DOWN. Everything below builds the raw-token
+// admin UI — it binds #btnAdminCreate to POST /admin/users and renders the
+// returned `flk_` bearer token as a "#token=" setup link to send by message.
+// That is exactly the exposure the invite claim-code flow replaces, and app.js
+// now owns this panel, so leaving it active would silently rebind the Invite
+// button back to the token-minting path it is meant to remove.
+//
+// It stands down DELIBERATELY rather than incidentally. Removing #adminDriverName
+// from index.html already made init()'s element guard below fail, so this file
+// would have no-opped on its own — but "correct because an element happens to be
+// missing" is not a property anyone can rely on while editing the markup, and
+// this repository has a documented history of checks that passed by luck. The
+// explicit return says what is true and why.
+//
+// purgeLegacyTok() deliberately still runs at load (see the bottom of this
+// file): CLAUDE.md requires it until enough releases have passed that no
+// pre-23.8.0 localStorage admin token survives, and standing the UI down must
+// not quietly retire that migration.
+const ADMIN_UI_STANDS_DOWN = true;
+
 function init(){
+  if(ADMIN_UI_STANDS_DOWN)return;
   if(document.body&&document.body.dataset.flAdminUiReady==='1')return;
   if(!$('adminPanel')||!$('btnAdminToggle')||!$('btnAdminCreate')||!$('btnAdminRefresh')||!$('adminDriverName'))return;
 
@@ -180,6 +201,22 @@ function init(){
 
   document.body.dataset.flAdminUiReady='1';
 }
+
+// The legacy-token purge runs at LOAD, unconditionally — not lazily through
+// saveTok/loadTok/getTok, which the stand-down above makes unreachable. CLAUDE.md
+// describes this as running "on every load" and requires it to stay until no
+// pre-23.8.0 localStorage admin token can still exist; standing the UI down must
+// not quietly retire the migration that claim depends on.
+//
+// v24.0.13 makes it DELETE-ONLY. It used to promote a surviving on-disk token
+// into sessionStorage so a 23.8.x session in progress would not break. Admin
+// access is now gated behind the device PIN, and promoting a disk value into a
+// live session credential would walk straight around that gate — so the on-disk
+// copy is now simply removed, which was always the point of the purge. The owner
+// re-enters admin access once, under the PIN, and it is encrypted from then on.
+try{
+  if(localStorage.getItem(TOK_KEY))localStorage.removeItem(TOK_KEY);
+}catch(_){}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 // Fallback: observe DOM for admin elements to appear (SW-injected script may run before elements exist)

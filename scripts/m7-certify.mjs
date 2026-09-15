@@ -191,6 +191,7 @@ for (const [g, cmd] of [
   ['GPS / background / permission-loss resilience', 'manual — start a trip, background the app, revoke location, confirm the session survives'],
   ['Production M5B intake durability check', 'manual — More → Opportunity Intake, save evidence, reload, export, re-import'],
   ['iOS 27 / Safari 27 regression pass (A11)', 'manual — on iOS 27+: F31 SVG chart, tab-bar icons, select zoom-on-focus, persisted storage granted, cloud-backup paused banner (FIELD_TEST_CHECKLIST.md A11)'],
+  ['Zero-token driver onboarding (A12)', 'manual — REQUIRES Worker v18 AND app 24.0.13 deployed, Worker first. Owner sets admin access once under the PIN; invite by iMessage and by Mail; claim in Safari; then ADD TO HOME SCREEN and record whether the token is present or the install is a separate storage partition. If separate, walk the re-claim and confirm the owner still sees ONE driver with their backup count intact (FIELD_TEST_CHECKLIST.md A12)'],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 /* ---- the verdict. Certification requires ALL of: canonical state clear,

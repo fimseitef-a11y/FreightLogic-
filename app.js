@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.12 USA ENGINE
+/** FreightLogic v24.0.13 USA ENGINE
+ *  v24.0.13 "Zero-Token Onboarding": a driver is invited with a single-use claim
+ *          code (Worker v18) instead of being sent a permanent flk_ bearer token,
+ *          so no live credential is left sitting in an inbox or an iMessage thread.
+ *          The code rides the URL FRAGMENT and is stripped before the first await;
+ *          the token is minted at claim time, written once, and never rendered,
+ *          exported or logged. Admin access is entered once, verified before it is
+ *          stored, and kept as AES-GCM ciphertext under the device PIN — the
+ *          decrypted value stays sessionStorage-only, as it always has. The
+ *          raw-token admin paths are removed, which also fixes a duplicate
+ *          cloudAdminShowInvite() declaration that would have shadowed the new
+ *          invite flow. DB 15 / Worker 18.
  *  v24.0.12 "Delivery Generation": no runtime behaviour change. app.js gains two
  *          test-only exports (usaNormCity/caNormCity) so the place-normalizer
  *          separator rule can be asserted on the unit it lives in — OI-11 had been
@@ -207,7 +218,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.12';
+const APP_VERSION = '24.0.13';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3463,6 +3474,13 @@ async function computeExportChecksumProtected(trips, expenses, fuel, settings, l
 // written to close. See the inbox note accompanying this change.
 const SETTINGS_NEVER_EXPORT = Object.freeze(new Set([
   'cloudBackupToken',   // bearer credential for the cloud backup Worker
+  'cloudAdminTokenEnc', // v24.0.13: admin token, encrypted under the device PIN.
+                        // The NAME arm below already withholds it (it contains
+                        // "token"), and it is ciphertext rather than plaintext —
+                        // it is named here anyway because this is the most
+                        // powerful credential in the app (create/list/revoke over
+                        // EVERY driver), and a key that important should not
+                        // depend on a regex nobody re-reads.
   'appLockPin',         // PBKDF2 hash of the device PIN
   'appLockFailCount',   // lockout state — device-local, must not travel
   'appLockLockedUntil', // lockout state — device-local, must not travel
@@ -3625,7 +3643,7 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen',
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
       // v21 new settings keys
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','eiaApiKey','localUserId',
       // v22 F21/F22/F23 onboarding flags
@@ -15896,121 +15914,617 @@ function cloudCheckSetupLink(){
   } catch(e) {}
 }
 
-async function cloudAdminCreateUser(){
-  const adminToken = ($('#adminToken')?.value || '').trim();
-  const name = ($('#adminDriverName')?.value || '').trim();
-  if (!adminToken){ toast('Enter Admin Token', true); return; }
-  if (!name){ toast('Enter driver name', true); return; }
-  const result = $('#adminCreateResult');
-  if (result){ result.style.display = ''; result.innerHTML = '<span class="cloud-sync-spinner"></span> Creating...'; }
-  try {
-    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { method: 'POST', headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 10000);
-    if (res.ok){
-      const data = await res.json();
-      const appUrl = window.location.origin + window.location.pathname;
-      const setupLink = appUrl + '#token=' + encodeURIComponent(data.token);
-      const shareText = 'FreightLogic cloud backup setup:\n\n1. Open: ' + setupLink + '\n2. Pick a passphrase (8+ chars)\n3. Tap Connect\n\nDone!';
-      if (result) {
-        result.innerHTML = '<div class="admin-result-box"><b style="color:var(--good)">✓ ' + escapeHtml(data.name) + ' created!</b><br><br><b>Setup link:</b><div class="ar-token">' + escapeHtml(setupLink) + '</div><button class="admin-share-btn">Share with ' + escapeHtml(data.name) + '</button></div>';
-        const shareBtn = result.querySelector('.admin-share-btn');
-        if (shareBtn) shareBtn.addEventListener('click', () => cloudAdminShare(shareText));
+// ─── v24.0.13 Zero-token driver onboarding ────────────────────────────────────
+//
+// WHAT CHANGED AND WHY. Onboarding a driver used to mean calling
+// POST /admin/users, which returns a permanent `flk_` bearer token, and then
+// getting that token onto the driver's phone — by email or SMS. The credential
+// therefore came to rest in an inbox or an iMessage thread and stayed there
+// forever, readable by anyone who later picked up either device, long after the
+// driver had been onboarded or even revoked.
+//
+// The replacement is an invite CLAIM CODE (Worker v18): 120 bits of randomness,
+// single-purpose, dead in 72 hours, and stored server-side only as a SHA-256
+// hash. The `flk_` token is minted at claim time and handed straight to the
+// claiming device. Nobody ever sees a token — not the driver, not the owner.
+//
+// Three properties are load-bearing and must survive any refactor here:
+//
+//   1. The code travels in the URL FRAGMENT (`#i=`), never the query string.
+//      Browsers do not send fragments to an origin, so the code cannot reach a
+//      Worker log, an access log, or a `Referer` header on the way in.
+//   2. The code is captured into a function-scoped variable and the fragment is
+//      stripped from the URL BEFORE the first `await`. Not after — an await
+//      yields to the event loop, and anything that reads `location.href` in
+//      between (an error reporter, an analytics shim, a screenshot) would
+//      capture a live invite.
+//   3. The token is written once and is never rendered, logged, exported, or
+//      placed in an error message.
+
+const ADMIN_TOKEN_SETTING = 'cloudAdminTokenEnc';
+const CLAIM_MIN_PASS_LEN = 10;
+/** Exactly what b32(15 bytes) produces in the Worker — 24 chars, no padding. */
+const CLAIM_CODE_RE = /^[A-Z2-7]{24}$/;
+
+/** The invite code captured from `#i=` at boot, if any.
+ *  Module-scoped rather than global: `app.js` exports nothing, so this is not
+ *  reachable from another script on the page. Cleared the moment it is spent. */
+let _pendingClaimCode = null;
+
+/* ── Owner: one-time admin setup ─────────────────────────────────────────────
+ *
+ * The admin token grants create/list/revoke over EVERY driver account, so it is
+ * the most sensitive credential this app handles. CLAUDE.md's Credential
+ * Storage Rules have kept it `sessionStorage`-only, which is correct about
+ * plaintext-at-rest and is why the owner has had to retype a 36-character
+ * secret on every browser restart.
+ *
+ * This keeps the session-scoped plaintext rule exactly as it is — the decrypted
+ * token still lives only in `sessionStorage` and still dies with the tab — and
+ * adds an AES-GCM ciphertext at rest, keyed by PBKDF2 over the device PIN
+ * (`cloudEncrypt`, 600k iterations, the same primitive cloud backups use). What
+ * is on disk is not a credential unless you also know the PIN.
+ *
+ * ADMIN ACCESS THEREFORE REQUIRES APP LOCK. That is not incidental: without a
+ * PIN there is no key, and the only way to persist the token would be in the
+ * clear, which is the thing the rule prohibits. Refusing is the honest outcome.
+ */
+
+/** Is an encrypted admin token on disk? Does not decrypt, so it never prompts. */
+async function cloudAdminHasAccess(){
+  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
+  return !!(blob && blob.encrypted && blob.iv && blob.salt);
+}
+
+/** Is App Lock configured with a real PIN? Admin access is gated on this. */
+async function cloudAdminPinAvailable(){
+  const enabled = !!(await getSetting('appLockEnabled', false));
+  const pin = String(await getSetting('appLockPin', '') || '');
+  return !!(enabled && pin);
+}
+
+/** Prompt for the device PIN and resolve with the PIN ITSELF, not a boolean.
+ *
+ *  `requireAppUnlock()` deliberately returns only whether the unlock succeeded
+ *  and discards the PIN, which is right for a gate. Here the PIN is key
+ *  material, so it has to come back. It is held in a local for the duration of
+ *  one decrypt and is never stored anywhere.
+ *
+ *  Resolves `null` on cancel or on a wrong PIN. */
+async function adminPinPrompt(purpose){
+  const stored = String(await getSetting('appLockPin', '') || '');
+  if (!stored) return null;
+  return await new Promise((resolve)=>{
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">' + escapeHtml(purpose || 'Enter your PIN to continue.') + '</div>' +
+      '<label>PIN</label><input id="adminPinEntry" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off" />' +
+      '<div id="adminPinErr" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>' +
+      '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="adminPinGo" style="min-height:48px">Unlock</button><button class="btn" id="adminPinCancel" style="min-height:48px">Cancel</button></div>';
+    openModal('🔐 Confirm it\'s you', body);
+    let settled = false;
+    const finish = (v)=>{ if (settled) return; settled = true; closeModal(); resolve(v); };
+    const go = async ()=>{
+      const val = String($('#adminPinEntry', body)?.value || '');
+      if (!val) return;
+      const match = await verifyPin(stored, val).catch(()=>false);
+      if (!match){
+        const err = $('#adminPinErr', body);
+        if (err){ err.textContent = 'That PIN did not match.'; err.style.color = 'var(--bad)'; }
+        const inp = $('#adminPinEntry', body); if (inp){ inp.value = ''; inp.focus(); }
+        return;
       }
-      if ($('#adminDriverName')) $('#adminDriverName').value = '';
-      sessionStorage.setItem('fl_admin_tok', adminToken);
-      cloudAdminLoadUsers();
-    } else { const e = await res.json().catch(()=>({})); if (result) result.innerHTML = '<div style="color:var(--bad)">' + escapeHtml(e.error || 'Failed') + '</div>'; }
-  } catch(e) { if (result) result.innerHTML = '<div style="color:var(--bad)">Network error</div>'; }
+      finish(val);
+    };
+    $('#adminPinGo', body)?.addEventListener('click', go);
+    $('#adminPinEntry', body)?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); go(); } });
+    $('#adminPinCancel', body)?.addEventListener('click', ()=> finish(null));
+  });
 }
 
-function cloudAdminShare(text){
-  if (navigator.share) navigator.share({ text }).catch(()=>{});
-  else navigator.clipboard.writeText(text).then(()=> toast('Copied')).catch(()=> toast('Copy failed', true));
+/** The admin token for this session, decrypting from disk if needed.
+ *  Returns '' when there is none or the operator cancels — never throws, and
+ *  never puts the token or the reason into a message that could carry it. */
+async function cloudAdminResolveToken(){
+  try {
+    const cached = sessionStorage.getItem('fl_admin_tok');
+    if (cached) return cached;
+  } catch(_) {}
+  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
+  if (!blob || !blob.encrypted) return '';
+  const pin = await adminPinPrompt('Enter your PIN to unlock driver management on this device.');
+  if (!pin) return '';
+  try {
+    const tok = await cloudDecrypt(blob.encrypted, blob.iv, blob.salt, pin);
+    if (!tok) return '';
+    try { sessionStorage.setItem('fl_admin_tok', tok); } catch(_) {}
+    return tok;
+  } catch(_) {
+    // cloudDecrypt's message names the failure mode, not the value. Do not
+    // surface the exception text — an error string is one of the classic ways a
+    // secret escapes into a log.
+    toast('Could not unlock admin access', true);
+    return '';
+  }
 }
 
+/** Verify an admin token against the Worker, then persist it encrypted.
+ *  Persists ONLY on a 200 — a rejected token is never written to disk. */
+async function cloudAdminSaveAccess(){
+  const field = $('#adminToken');
+  const token = (field?.value || '').trim();
+  const state = $('#adminAccessState');
+  if (!token){ toast('Enter the admin token', true); return false; }
+  if (!(await cloudAdminPinAvailable())){
+    toast('Turn on App Lock first — the admin token is stored encrypted under your PIN', true);
+    return false;
+  }
+  if (state) state.innerHTML = '<span class="cloud-sync-spinner"></span> Checking...';
+  let res;
+  try {
+    res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': token } }, 10000);
+  } catch(_) {
+    if (state) state.innerHTML = '<span style="color:var(--bad)">Could not reach the server — nothing saved.</span>';
+    return false;
+  }
+  if (!res.ok){
+    // 401 is the answer that matters: a wrong token must leave no trace on disk.
+    if (state) state.innerHTML = '<span style="color:var(--bad)">' + (res.status === 401 ? 'That token was rejected — nothing saved.' : 'Server returned ' + res.status + ' — nothing saved.') + '</span>';
+    return false;
+  }
+  const pin = await adminPinPrompt('Enter your PIN. It encrypts admin access on this device.');
+  if (!pin){ if (state) state.innerHTML = '<span class="muted">Cancelled — nothing saved.</span>'; return false; }
+  const blob = await cloudEncrypt(token, pin);
+  await setSetting(ADMIN_TOKEN_SETTING, blob);
+  try { sessionStorage.setItem('fl_admin_tok', token); } catch(_) {}
+  // Clear the field immediately. The value is never re-rendered after this.
+  if (field) field.value = '';
+  toast('Admin access saved');
+  await renderAdminAccessState();
+  await cloudAdminLoadUsers();
+  return true;
+}
+
+/** Forget admin access on this device. The Worker is untouched. */
+async function cloudAdminClearAccess(){
+  if (!confirm('Forget admin access on this device?\n\nDriver accounts and their backups are not affected. You can set it up again with the admin token.')) return;
+  await setSetting(ADMIN_TOKEN_SETTING, null);
+  try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+  const list = $('#adminUserList'); if (list) list.innerHTML = '';
+  toast('Admin access cleared');
+  await renderAdminAccessState();
+}
+
+/** Render the empty / configured / needs-App-Lock states of the admin panel.
+ *  The stored token is never written back into the input — the configured state
+ *  shows a confirmation, not a value. */
+async function renderAdminAccessState(){
+  const setup = $('#adminSetupBlock');
+  const state = $('#adminAccessState');
+  const drivers = $('#adminDriversBlock');
+  if (!setup || !state) return;
+  const hasAccess = await cloudAdminHasAccess();
+  const hasPin = await cloudAdminPinAvailable();
+
+  if (hasAccess){
+    setup.style.display = 'none';
+    if (drivers) drivers.style.display = '';
+    state.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+      '<span style="color:var(--good);font-weight:700">Admin access configured ✓</span>' +
+      '<button class="btn sm" id="btnAdminClearAccess" style="font-size:11px;min-height:44px">Clear</button></div>' +
+      '<div class="muted" style="font-size:11px;margin-top:6px">Stored encrypted under your PIN on this device.</div>';
+    $('#btnAdminClearAccess')?.addEventListener('click', ()=>{ haptic(10); cloudAdminClearAccess(); });
+    return;
+  }
+
+  setup.style.display = '';
+  if (drivers) drivers.style.display = 'none';
+  state.innerHTML = hasPin
+    ? '<span class="muted">Not configured on this device.</span>'
+    : '<span style="color:var(--warn)">Turn on App Lock first.</span><div class="muted" style="font-size:11px;margin-top:4px">Admin access is stored encrypted under your PIN, so a PIN has to exist before it can be saved.</div>';
+}
+
+/* ── Owner: Drivers ──────────────────────────────────────────────────────────
+ *
+ * The word "token" appears nowhere on this surface, by design. The owner
+ * invites a person and shares a link; the credential is an implementation
+ * detail they neither see nor handle.
+ */
+
+/** Mint an invite and hand back a shareable link.
+ *
+ *  `existingUserId` is what makes RE-INVITE safe. Passing it binds the invite to
+ *  that account, so claiming it re-keys in place: same driver, same backups,
+ *  fresh token. Omitting it creates a new driver. Getting this wrong is not a
+ *  cosmetic difference — every backup is keyed on `userId`, so a re-invite that
+ *  minted a new one would orphan the driver's entire history while looking like
+ *  it worked. */
+async function cloudAdminInviteDriver(existingUserId, existingName){
+  const adminToken = await cloudAdminResolveToken();
+  if (!adminToken){ toast('Admin access required', true); return; }
+  const isReinvite = !!existingUserId;
+  // A re-invite does not ask for a name: the account already has one, and the
+  // Worker ignores a supplied name for a bound invite so a re-invite cannot
+  // quietly rename the driver.
+  const name = isReinvite
+    ? String(existingName || 'Driver')
+    : String(prompt('Driver name:', '') || '').trim();
+  if (!name) return;
+  if (isReinvite && !confirm('Send a new invite link to "' + name + '"?\n\nTheir account and every backup they have made are kept. Their current device stops backing up as soon as the new link is used, so it has to be the device that opens it.')) return;
+  haptic(20);
+  let data;
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/invites', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(isReinvite ? { name, userId: existingUserId } : { name }),
+    }, 15000);
+    data = await res.json().catch(()=>null);
+    if (!res.ok || !data?.ok){
+      if (res.status === 401){
+        // The saved token has stopped working (rotated at the Worker, most
+        // likely). Drop the session copy so the next attempt re-derives it.
+        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+        toast('Admin access was rejected — set it up again', true);
+        return;
+      }
+      toast(data?.error || 'Could not create the invite', true);
+      return;
+    }
+  } catch(_) {
+    toast('Network error creating the invite', true);
+    return;
+  }
+  cloudAdminShowInvite(data.code, data.name || name, data.expiresAt);
+  cloudAdminLoadUsers();
+}
+
+/** Format an expiry as something a person can act on ("Thu 6:14 PM"). */
+function claimExpiryLabel(iso){
+  try {
+    const d = new Date(iso);
+    if (!isFinite(d.getTime())) return '';
+    return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  } catch(_) { return ''; }
+}
+
+/** Build the invite URL. The code goes in the FRAGMENT so it is never sent to
+ *  any origin — not this app's, and not an intermediary's. */
+function claimInviteLink(code){
+  return window.location.origin + window.location.pathname + '#i=' + encodeURIComponent(code);
+}
+
+/** Share sheet for a fresh invite. Shows the EXPIRY, never the code.
+ *  The code is inside the link because it has to be; it is not displayed as a
+ *  value to be read out, retyped, or screenshotted on its own. */
+function cloudAdminShowInvite(code, name, expiresAt){
+  const link = claimInviteLink(code);
+  const when = claimExpiryLabel(expiresAt);
+  const text = 'You\'re set up on FreightLogic. Open this link on your phone to finish:\n\n' + link + '\n\nPick a passphrase when it asks. The link stops working ' + (when ? 'after ' + when : 'in 72 hours') + '.';
+  const body = document.createElement('div');
+  body.innerHTML =
+    '<div style="font-size:14px;line-height:1.5;margin-bottom:10px">Invite ready for <b>' + escapeHtml(name) + '</b>.</div>' +
+    '<div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:14px">Send them the link. When they open it they pick their own passphrase and the app finishes setup by itself.' +
+    (when ? ' <b>Link works until ' + escapeHtml(when) + '.</b>' : '') + '</div>' +
+    '<button class="btn primary" id="adminInviteShare" style="width:100%;min-height:48px">Share invite link</button>' +
+    '<div id="adminInviteFallback" style="display:none;margin-top:10px">' +
+      '<div class="btn-row"><a class="btn" id="adminInviteSms" style="flex:1;min-height:48px;text-align:center;line-height:32px">Text it</a>' +
+      '<a class="btn" id="adminInviteMail" style="flex:1;min-height:48px;text-align:center;line-height:32px">Email it</a></div>' +
+      '<button class="btn sm" id="adminInviteCopy" style="width:100%;margin-top:8px;min-height:44px;font-size:12px">Copy link</button>' +
+    '</div>';
+  openModal('📨 Invite ' + name, body);
+
+  const showFallback = ()=>{
+    const fb = $('#adminInviteFallback', body);
+    if (fb) fb.style.display = '';
+    const sms = $('#adminInviteSms', body);
+    const mail = $('#adminInviteMail', body);
+    if (sms) sms.href = 'sms:?&body=' + encodeURIComponent(text);
+    if (mail) mail.href = 'mailto:?subject=' + encodeURIComponent('Your FreightLogic setup link') + '&body=' + encodeURIComponent(text);
+  };
+
+  $('#adminInviteShare', body)?.addEventListener('click', function(){
+    haptic(10);
+    if (navigator.share){
+      navigator.share({ title: 'FreightLogic setup', text: text, url: link }).catch(()=> showFallback());
+    } else {
+      showFallback();
+    }
+  });
+  $('#adminInviteCopy', body)?.addEventListener('click', function(){
+    try {
+      navigator.clipboard.writeText(link).then(function(){ toast('Invite link copied'); }, function(){ toast('Copy failed — use Text or Email', true); });
+    } catch(_) { toast('Copy failed — use Text or Email', true); }
+  });
+  if (!navigator.share) showFallback();
+}
+
+/** Revoke a driver. The Worker deactivates the account and deletes the token
+ *  hash, which also kills any invite they are still holding (v18 returns 403
+ *  for a claim against a revoked driver). */
+/** The Drivers list.
+ *
+ *  v24.0.13: the controls are Re-invite and Remove. The word "token" does not
+ *  appear on this surface — the owner manages PEOPLE, and the credential is an
+ *  implementation detail they neither see nor handle. "Re-invite" is the
+ *  rotation path now: the Worker's claim handler re-keys the SAME userId, so a
+ *  driver who changed phones keeps every backup they have ever made.
+ *
+ *  This reads the session copy of the admin token only. It never prompts for a
+ *  PIN, because it is called on panel-open and from refresh — a render must not
+ *  be able to throw a credential prompt at the operator. The prompting entry
+ *  points are the actions (invite, re-invite, remove). */
 async function cloudAdminLoadUsers(){
-  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_tok') || '').trim();
-  const list = $('#adminUserList'); if (!adminToken || !list) return;
+  const list = $('#adminUserList'); if (!list) return;
+  let adminToken = '';
+  try { adminToken = sessionStorage.getItem('fl_admin_tok') || ''; } catch(_) {}
+  if (!adminToken){
+    list.innerHTML = (await cloudAdminHasAccess())
+      ? '<div class="muted" style="font-size:12px">Locked — tap <b>Invite driver</b> and enter your PIN to load the list.</div>'
+      : '';
+    return;
+  }
   list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
   try {
     const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': adminToken } }, 10000);
-    if (!res.ok){ list.innerHTML = res.status === 401 ? '<div class="muted" style="font-size:12px">Wrong admin token</div>' : ''; return; }
+    if (!res.ok){
+      if (res.status === 401){
+        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+        list.innerHTML = '<div class="muted" style="font-size:12px">Admin access was rejected. Clear it and set it up again.</div>';
+      } else { list.innerHTML = '<div class="muted" style="font-size:12px">Server returned ' + res.status + '</div>'; }
+      return;
+    }
     const data = await res.json();
-    if (!data.users?.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No drivers yet</div>'; return; }
+    if (!data.users?.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No drivers yet — tap Invite driver.</div>'; return; }
     list.innerHTML = data.users.map(function(u){
-      // Rotate is offered only for an ACTIVE driver: Worker v15 refuses to
-      // re-key a revoked account (409), because doing so would silently
-      // reactivate a driver the operator deliberately turned off.
-      var rotateBtn = u.active
-        ? '<button class="btn sm" data-rotate="' + escapeHtml(u.userId) + '" data-rotname="' + escapeHtml(u.name) + '" style="min-height:44px;margin-top:8px">🔑 Rotate token</button>'
+      // Re-invite is offered only for an ACTIVE driver: a claim against a
+      // revoked account returns 403, so offering it would be a dead button.
+      var actions = u.active
+        ? '<div class="btn-row" style="margin-top:8px">' +
+            '<button class="btn sm" data-reinvite="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">📨 Re-invite</button>' +
+            '<button class="btn sm" data-revoke="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">Remove</button>' +
+          '</div>'
         : '';
-      return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Revoked') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div>' + rotateBtn + '</div>';
+      return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Removed') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · added ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div>' + actions + '</div>';
     }).join('');
-    list.querySelectorAll('[data-rotate]').forEach(function(btn){
-      btn.addEventListener('click', function(){ cloudAdminRotateToken(btn.dataset.rotate, btn.dataset.rotname); });
+    list.querySelectorAll('[data-reinvite]').forEach(function(btn){
+      btn.addEventListener('click', function(){ cloudAdminInviteDriver(btn.dataset.reinvite, btn.dataset.dname); });
+    });
+    list.querySelectorAll('[data-revoke]').forEach(function(btn){
+      btn.addEventListener('click', function(){ cloudAdminRevokeDriver(btn.dataset.revoke, btn.dataset.dname); });
     });
   } catch(e) { list.innerHTML = '<div class="muted" style="font-size:12px">Network error</div>'; }
 }
 
-/** Re-key one driver's token in place (Worker v15 `POST /admin/users/:id/rotate`).
- *
- *  Rotation used to mean "create a new driver and revoke the old one", which
- *  mints a NEW `userId`. Since every backup is keyed
- *  `user:<userId>:device:<id>:...`, that silently orphaned the driver's whole
- *  backup history — the data stayed in KV and nothing could address it again.
- *  This endpoint keeps `userId`, so rotating costs nothing.
- *
- *  It is also what actually finishes the P-01/P-02 cleanup: the superseded
- *  Worker v7 stored tokens in KV in plaintext, and v14 only clears each one
- *  lazily on that token's next use. Rotating deletes the legacy plaintext key
- *  immediately.
- */
-async function cloudAdminRotateToken(userId, name){
-  const adminToken = ($('#adminToken')?.value || sessionStorage.getItem('fl_admin_tok') || '').trim();
-  if (!adminToken){ toast('Enter Admin Token', true); return; }
-  if (!userId){ toast('Missing user id', true); return; }
+async function cloudAdminRevokeDriver(userId, name){
+  const adminToken = await cloudAdminResolveToken();
+  if (!adminToken){ toast('Admin access required', true); return; }
+  if (!confirm('Remove "' + (name || userId) + '"?\n\nTheir app stops backing up immediately and any invite link they still have stops working. Backups already stored are kept.')) return;
   haptic(20);
-  // The old token stops working the moment this returns, so the driver must
-  // re-pair. Say that before doing it, not after.
-  if (!confirm('Rotate the token for "' + (name || userId) + '"?\n\nTheir existing backups are kept — the account keeps its identity. But the current token stops working immediately, so that device must open the new invite link to reconnect.')) return;
   try {
-    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users/' + encodeURIComponent(userId) + '/rotate', {
-      method: 'POST', headers: { 'X-Admin-Token': adminToken },
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users/' + encodeURIComponent(userId), {
+      method: 'DELETE', headers: { 'X-Admin-Token': adminToken },
     }, 15000);
     const data = await res.json().catch(()=>null);
-    if (!res.ok || !data?.ok){
-      // 409 is the deliberate refusal to re-key a revoked account.
-      toast(res.status === 409 ? 'That driver is revoked — rotation would reactivate them' : (data?.error || 'Rotation failed'), true);
-      return;
-    }
-    toast(data.legacyPlaintextCleared ? 'Token rotated — legacy plaintext key cleared' : 'Token rotated');
-    cloudAdminShowInvite(data.token, data.name || name || 'Driver');
+    if (!res.ok || !data?.ok){ toast(data?.error || 'Could not remove that driver', true); return; }
+    toast('Driver removed');
     cloudAdminLoadUsers();
-  } catch(e){
-    console.warn('[FL] rotate', e);
-    toast('Network error during rotation', true);
+  } catch(_) {
+    toast('Network error', true);
   }
 }
 
-/** Show a freshly minted token as a one-tap setup link.
- *  The Worker returns a token exactly once, so this never re-fetches it: if the
- *  operator dismisses this without using it, the fix is to rotate again. */
-function cloudAdminShowInvite(token, name){
-  const link = window.location.origin + window.location.pathname + '#token=' + encodeURIComponent(token);
-  const body = document.createElement('div');
-  body.innerHTML =
-    '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">New token for <b>' + escapeHtml(name) + '</b>. Their backups are untouched — same account, new key.</div>' +
-    '<div class="muted" style="font-size:12px;margin-bottom:10px">Open this link on that driver\'s phone, enter the backup passphrase, tap Connect. This is shown once.</div>' +
-    '<textarea readonly id="adminInviteLink" style="width:100%;min-height:88px;font-size:12px;font-family:ui-monospace,monospace;padding:10px">' + escapeHtml(link) + '</textarea>' +
-    '<button class="btn primary" id="adminInviteCopy" style="width:100%;margin-top:10px;min-height:48px">Copy setup link</button>';
-  openModal('🔑 New token', body);
-  $('#adminInviteCopy', body)?.addEventListener('click', function(){
-    haptic(10);
-    const ta = $('#adminInviteLink', body);
-    try {
-      navigator.clipboard.writeText(link).then(function(){ toast('Setup link copied'); }, function(){ ta?.select(); toast('Select and copy the link above', true); });
-    } catch(_) { ta?.select(); toast('Select and copy the link above', true); }
-  });
+/* ── Driver: claim ───────────────────────────────────────────────────────────
+ *
+ * The three properties in the header comment are implemented here. Read
+ * `flCaptureClaimCode()` with property 2 in mind: it is synchronous on purpose,
+ * top to bottom, with no `await` anywhere in it.
+ */
+
+/** Capture an invite code from `#i=` and strip it from the URL.
+ *
+ *  MUST be called synchronously, before the first `await` of boot. It is
+ *  synchronous throughout so that between reading `location.hash` and calling
+ *  `history.replaceState` there is no point at which the event loop can run
+ *  anything else — no error reporter, no analytics shim, no screenshot — while
+ *  a live invite code is sitting in the address bar.
+ *
+ *  Returns the code, or null. Never logs it. */
+function flCaptureClaimCode(){
+  try {
+    const frag = String(window.location.hash || '').slice(1);
+    if (!frag.startsWith('i=')) return null;
+    const code = decodeURIComponent(frag.slice(2)).toUpperCase().trim();
+    // Strip FIRST, validate second: even a malformed value should not survive
+    // in the URL, and replaceState cannot throw here in a way that matters.
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(_) {}
+    if (!CLAIM_CODE_RE.test(code)) return null;
+    return code;
+  } catch(_) { return null; }
 }
+
+/** Redeem a code for a token and connect cloud backup under `passphrase`.
+ *  Returns { ok, error } — the token never appears in the return value, and
+ *  never in `error`. */
+async function claimInvite(code, passphrase){
+  let res;
+  try {
+    res = await cloudFetch(CLOUD_WORKER_URL + '/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }, 20000);
+  } catch(_) {
+    return { ok: false, error: 'Could not reach the server. Check your connection and try again.' };
+  }
+  if (res.status === 410) return { ok: false, error: 'This invite has expired or was already used. Ask for a new link.' };
+  if (res.status === 429) return { ok: false, error: 'Too many attempts, try again in an hour.' };
+  if (res.status === 403) return { ok: false, error: 'This account is no longer active. Ask for a new link.' };
+  if (res.status === 400) return { ok: false, error: 'That invite link is not valid.' };
+  let data = null;
+  try { data = await res.json(); } catch(_) {}
+  if (!res.ok || !data?.ok || !data.token) return { ok: false, error: 'Setup failed. Ask for a new link.' };
+
+  // Write once. From here the token is a stored credential and is never read
+  // back into any UI, export, log, or error message.
+  await setSetting('cloudBackupUrl', CLOUD_WORKER_URL);
+  await setSetting('cloudBackupToken', data.token);
+  try { sessionStorage.setItem('fl_cloud_pass', passphrase); } catch(_) {}
+  if (data.name) await setSetting('driverDisplayName', String(data.name).slice(0, 50));
+  await setSetting('lastCloudSync', 0);
+  return { ok: true };
+}
+
+/** Full-screen claim wizard. No app chrome and no nav: a driver opening an
+ *  invite link has nothing in the app yet, and every other surface would be an
+ *  empty distraction from the one thing they need to do.
+ *
+ *  It is a REAL credential form — a `<form>`, a visible read-only
+ *  `autocomplete="username"` field carrying `localUserId`, an
+ *  `autocomplete="new-password"` field, and a genuine `type="submit"` — for the
+ *  same reason `openCloudReconnect()` is (v24.0.6): a password manager keys its
+ *  save prompt off a real submit event and ignores a `display:none` username
+ *  field. The account value MUST match the one `openCloudReconnect()` declares,
+ *  or the credential saved here is not the credential offered back later and the
+ *  driver types a 10+ character passphrase on a phone every time the session
+ *  ends. That is the friction the whole cloud-backup-paused design exists to
+ *  remove, and it is removed by the OS keychain, never by persisting the secret:
+ *  `fl_cloud_pass` stays sessionStorage-only here exactly as it does there. */
+async function openClaimWizard(code){
+  const acct = (await getSetting('localUserId', '')) || 'freightlogic';
+  const host = document.createElement('div');
+  host.id = 'claimWizard';
+  host.setAttribute('role', 'dialog');
+  host.setAttribute('aria-modal', 'true');
+  host.style.cssText = 'position:fixed;inset:0;z-index:12000;background:var(--bg,#0b0d10);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(24px,env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))';
+  host.innerHTML =
+    '<div style="max-width:440px;margin:0 auto">' +
+      '<div style="font-size:26px;font-weight:800;line-height:1.25;margin-bottom:10px">You\'ve been invited to FreightLogic.</div>' +
+      '<div class="muted" style="font-size:14px;line-height:1.6;margin-bottom:22px">Pick a passphrase to encrypt your backups. It never leaves this phone.</div>' +
+      '<form id="claimForm" autocomplete="on">' +
+        '<label for="claimAcct">Account</label>' +
+        '<input id="claimAcct" name="username" type="text" autocomplete="username" readonly value="' + escapeHtml(acct) + '" ' +
+          'style="font-size:16px;opacity:.75" aria-label="Account this passphrase belongs to" />' +
+        '<div class="muted" style="font-size:11px;margin-top:4px;margin-bottom:12px">This device\'s account. Save the passphrase to your keychain when your phone offers — it is how you get back in without typing it again.</div>' +
+        '<label for="claimPass">Passphrase</label>' +
+        '<input id="claimPass" name="new-password" type="password" autocomplete="new-password" placeholder="At least ' + CLAIM_MIN_PASS_LEN + ' characters" style="font-size:16px" />' +
+        '<div class="pass-strength" id="claimStrength"><div class="pass-strength-fill" id="claimStrengthFill"></div></div>' +
+        '<div class="muted" style="font-size:12px;margin-top:4px;min-height:16px" id="claimStrengthLabel"></div>' +
+        '<label for="claimPass2" style="margin-top:14px">Confirm passphrase</label>' +
+        '<input id="claimPass2" name="confirm-password" type="password" autocomplete="new-password" placeholder="Type it again" style="font-size:16px" />' +
+        '<div class="muted" style="font-size:12px;margin-top:4px;min-height:16px" id="claimMatch"></div>' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:18px;font-size:13px;line-height:1.5;cursor:pointer;font-weight:400">' +
+          '<input id="claimAck" type="checkbox" style="width:22px;height:22px;flex:0 0 auto;margin-top:1px" />' +
+          '<span>I\'ve saved this passphrase. It cannot be reset &mdash; if I lose it, my backups can\'t be decrypted.</span>' +
+        '</label>' +
+        '<button class="btn primary" id="claimGo" type="submit" style="width:100%;margin-top:20px;min-height:52px;font-size:16px;font-weight:800" disabled>Continue</button>' +
+        '<div id="claimError" style="margin-top:12px;font-size:13px;line-height:1.5;min-height:18px"></div>' +
+      '</form>' +
+    '</div>';
+  document.body.appendChild(host);
+
+  const pass = $('#claimPass', host);
+  const pass2 = $('#claimPass2', host);
+  const ack = $('#claimAck', host);
+  const go = $('#claimGo', host);
+  const err = $('#claimError', host);
+
+  // Continue stays disabled until all three hold: long enough, confirmed, and
+  // acknowledged. The passphrase is unrecoverable by design, so a driver must
+  // not be able to tap past this on momentum.
+  const refresh = ()=>{
+    const p = pass?.value || '', p2 = pass2?.value || '';
+    const str = cloudPassStrength(p);
+    const fill = $('#claimStrengthFill', host);
+    const label = $('#claimStrengthLabel', host);
+    if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; }
+    if (label){
+      if (!p) label.textContent = '';
+      else if (p.length < CLAIM_MIN_PASS_LEN){ label.textContent = 'At least ' + CLAIM_MIN_PASS_LEN + ' characters'; label.style.color = 'var(--warn)'; }
+      else { label.textContent = str.label; label.style.color = str.color; }
+    }
+    const match = $('#claimMatch', host);
+    const confirmed = !!p2 && p === p2;
+    if (match){
+      if (!p2) match.textContent = '';
+      else if (confirmed){ match.textContent = 'Matches'; match.style.color = 'var(--good)'; }
+      else { match.textContent = 'Does not match yet'; match.style.color = 'var(--warn)'; }
+    }
+    const valid = p.length >= CLAIM_MIN_PASS_LEN && confirmed && !!ack?.checked;
+    if (go) go.disabled = !valid;
+    return valid;
+  };
+  pass?.addEventListener('input', refresh);
+  pass2?.addEventListener('input', refresh);
+  ack?.addEventListener('change', refresh);
+  refresh();
+
+  let inFlight = false;
+  $('#claimForm', host)?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    if (inFlight || !refresh()) return;
+    inFlight = true;
+    if (go){ go.disabled = true; go.textContent = 'Setting up...'; }
+    if (err){ err.textContent = ''; }
+    const result = await claimInvite(code, pass.value);
+    if (!result.ok){
+      inFlight = false;
+      if (go){ go.disabled = false; go.textContent = 'Continue'; }
+      if (err){ err.textContent = result.error; err.style.color = 'var(--bad)'; }
+      return;
+    }
+    host.remove();
+    toast('You\'re connected — backups are on.');
+    try { await cloudPushBackup(true); } catch(_) {}
+    try { await renderHome(); } catch(_) {}
+    maybePromptAddToHomeScreen();
+  });
+
+  setTimeout(()=>{ try { pass?.focus(); } catch(_) {} }, 120);
+}
+
+/** One-time "Add to Home Screen" nudge after a successful claim.
+ *  iOS has no install prompt API, so this is the instruction, shown once. */
+function maybePromptAddToHomeScreen(){
+  try {
+    const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
+    if (standalone) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div style="font-size:14px;line-height:1.6;margin-bottom:10px">Add FreightLogic to your Home Screen so it opens like an app and works offline.</div>' +
+      (isIOS
+        ? '<div class="muted" style="font-size:13px;line-height:1.7">1. Tap the <b>Share</b> button at the bottom of Safari<br>2. Scroll and tap <b>Add to Home Screen</b><br>3. Tap <b>Add</b></div>' +
+          '<div class="muted" style="font-size:12px;line-height:1.5;margin-top:12px">If it asks you to set up again from the Home Screen version, open your invite link there once more — it\'s the same account and nothing is lost.</div>'
+        : '<div class="muted" style="font-size:13px;line-height:1.7">Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.</div>') +
+      '<button class="btn primary" id="claimAhsOk" style="width:100%;margin-top:16px;min-height:48px">Got it</button>';
+    openModal('📲 One more thing', body);
+    $('#claimAhsOk', body)?.addEventListener('click', ()=> closeModal());
+  } catch(_) {}
+}
+
+// v24.0.13 REMOVED: cloudAdminCreateUser(), cloudAdminShare(),
+// cloudAdminRotateToken() and the token-based cloudAdminShowInvite().
+//
+// These were the raw-token onboarding paths. Each one ended by rendering an
+// `flk_` bearer token into the DOM as a "#token=" setup link for the owner to
+// send by message or email — which is precisely the exposure the invite claim
+// code replaces. Leaving them in place would have kept a live second path that
+// still put a permanent credential in an inbox, so the feature would be opt-in
+// rather than true.
+//
+// Removing the old cloudAdminShowInvite() also fixes a real shadowing bug this
+// change would otherwise have shipped. Two top-level declarations of that name
+// stood in the same IIFE scope, so hoisting made the LATER (token-based) one
+// win at EVERY call site — including the new invite flow, which would have
+// silently rendered a token instead of a claim link. That is the same defect
+// v23.8.3 found with two getBrokerIntel() declarations, and CLAUDE.md records
+// it; it is caught here by reading the declarations, not by the symptom.
+//
+// Rotation is not lost: "Re-invite" on the Drivers list issues a fresh claim
+// code, and the Worker re-keys the SAME userId on re-claim, so a rotated driver
+// keeps every backup. POST /admin/users/:id/rotate remains in the Worker for
+// direct API use.
 
 function cloudInitUI(){
   cloudCheckSetupLink();
@@ -16023,8 +16537,14 @@ function cloudInitUI(){
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
-  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
+  // v24.0.13: opening the panel no longer re-populates #adminToken from the
+  // session copy. A configured admin token is never rendered back into an input
+  // — the panel shows "Admin access configured ✓" instead, and the value itself
+  // stays where it is. Putting it back in a field is how a credential ends up in
+  // a screenshot, an autofill store, or a shoulder-surf.
+  $('#btnAdminToggle')?.addEventListener('click', async ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ await renderAdminAccessState(); await cloudAdminLoadUsers(); } });
+  $('#btnAdminSaveAccess')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminSaveAccess(); });
+  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminInviteDriver(null, null); });
   $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
     if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
@@ -21147,17 +21667,40 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
     isSettingExportSafe, exportSafeSettings,
+    // v24.0.13 zero-token onboarding. Exported so the regressions can drive the
+    // REAL admin/claim paths rather than a reimplementation — the claim wizard
+    // and the PIN modal are asserted through the DOM, but "was a rejected token
+    // written to disk" and "does the checksum cover the same array the payload
+    // ships" are only answerable from inside.
+    cloudAdminSaveAccess, cloudAdminResolveToken, cloudAdminLoadUsers,
+    cloudAdminInviteDriver, cloudAdminHasAccess, renderAdminAccessState,
+    flCaptureClaimCode, claimInvite,
   };
 }
 
 // ---- Boot ----
 (async () => {
+  // v24.0.13: capture any `#i=` invite code and strip it from the URL BEFORE the
+  // first await. This is the whole reason the call sits on the very first line
+  // of boot rather than beside the other cloud setup: an await yields to the
+  // event loop, and anything that reads location.href in between would capture a
+  // live invite code. flCaptureClaimCode() is synchronous end to end.
+  _pendingClaimCode = flCaptureClaimCode();
   try{
     $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
     db = await initDB();
     await migrateFromLegacyDB().catch(e => console.warn('[FL] legacy migration error:', e));
     await ensureLocalUserId().catch(()=>{});
     await requireAppUnlock();
+    // v24.0.13: an invite code captured above opens the claim wizard, which
+    // covers the app at z-index 12000 while the rest of boot continues behind
+    // it. The code is spent here and the module-scoped copy is dropped
+    // immediately, so it survives exactly one attempt to use it.
+    if (_pendingClaimCode){
+      const claimCode = _pendingClaimCode;
+      _pendingClaimCode = null;
+      openClaimWizard(claimCode).catch(()=>{ console.warn('[FL] claim wizard failed to open'); });
+    }
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
     if ('serviceWorker' in navigator) {
