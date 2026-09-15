@@ -61,8 +61,10 @@ import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec
 
 import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mjs';
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
+import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
 
 const specs = [
+  fullRepairRegressions,
   omegaEconomics,
   releaseGenerationDiscipline,
   unitPureFunctions,

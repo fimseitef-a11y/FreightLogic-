@@ -1,4 +1,8 @@
-// FreightLogic Cloud Backup Worker v17 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v18 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v18: legacy v7 plaintext-token cleanup is proactive, not only rotation-time.
+// Admin listing scrubs every legacy user record it encounters; lazy driver migration rewrites
+// the matching user record; revoke removes any plaintext field before persisting. No new token
+// is ever stored raw.
 // v17: backup/delta keys are minted from a MONOTONIC clock. The key was
 // `new Date().toISOString()` at millisecond precision, so two writes landing in the
 // same millisecond produced the SAME key: the second put() silently overwrote the
@@ -135,7 +139,22 @@ export default {
           for (const val of vals) {
             if (val) {
               try {
-                const u = JSON.parse(val);
+                let u = JSON.parse(val);
+                // Proactive v7 cleanup: listing drivers is the natural bounded sweep over every
+                // user record. If a legacy raw token survives, migrate it before returning data.
+                if (u.token && u.userId) {
+                  const legacyPlaintext = u.token;
+                  const cleanHash = u.tokenHash || await hashToken(legacyPlaintext);
+                  const clean = Object.assign({}, u, { tokenHash: cleanHash });
+                  delete clean.token;
+                  const cleanupOps = [
+                    env.BACKUPS.put('user:' + u.userId, JSON.stringify(clean)),
+                    env.BACKUPS.delete('token:' + legacyPlaintext),
+                  ];
+                  if (clean.active) cleanupOps.push(env.BACKUPS.put('tokh:' + cleanHash, JSON.stringify(clean)));
+                  await Promise.all(cleanupOps);
+                  u = clean;
+                }
                 // Never expose driver tokens in the admin listing
                 users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
               } catch {}
@@ -231,11 +250,12 @@ export default {
           let parsed;
           try { parsed = JSON.parse(userRec); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
           parsed.active = false;
-          // Deactivate user record and revoke token in parallel
+          const legacyPlaintext = parsed.token;
+          delete parsed.token;
+          // Deactivate user record and revoke token in parallel. Never write a raw token back.
           const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
           if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          // Legacy plaintext key cleanup
-          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));
+          if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));
           await Promise.all(ops);
           return json({ ok: true, revoked: delId }, 200, cors);
         }
@@ -245,7 +265,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '17', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '18', ts: new Date().toISOString() }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -268,10 +288,12 @@ export default {
           if (migRec) {
             migRec.tokenHash = driverTokenHash;
             delete migRec.token;
-            await Promise.all([
+            const migOps = [
               env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
               env.BACKUPS.delete('token:' + driverToken),
-            ]);
+            ];
+            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
+            await Promise.all(migOps);
             tokenRaw = JSON.stringify(migRec);
           }
         }

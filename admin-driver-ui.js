@@ -73,8 +73,15 @@ async function loadUsers(){
     if(!u.length){box.innerHTML='<div class="muted" style="font-size:12px">No drivers yet — add the first one above.</div>';return}
     box.innerHTML=u.map(v=>{
       let s=S(v.name),badge=v.active?'<span class="au-badge active">Active</span>':'<span class="au-badge revoked">Revoked</span>';
-      return`<div class="admin-user" data-u="${X(v.userId||'')}"><div class="au-name">${X(s.n)} ${badge}</div><div class="au-meta">${X((v.createdAt||'').slice(0,10))}</div>${v.active?'<div class="btn-row" style="margin-top:8px"><button class="btn sm danger" data-revoke="1">Remove Access</button></div>':''}</div>`;
+      return`<div class="admin-user" data-u="${X(v.userId||'')}" data-name="${X(s.n)}"><div class="au-name">${X(s.n)} ${badge}</div><div class="au-meta">${Number(v.backupCount||0)} backup(s) · ${X((v.createdAt||'').slice(0,10))}</div>${v.active?'<div class="btn-row" style="margin-top:8px"><button class="btn sm" data-rotate="1">🔑 Rotate Token</button><button class="btn sm danger" data-revoke="1">Remove Access</button></div>':''}</div>`;
     }).join('');
+    box.querySelectorAll('[data-rotate="1"]').forEach(btn=>btn.onclick=async()=>{
+      let row=btn.closest('[data-u]'),id=row?.getAttribute('data-u'),name=row?.getAttribute('data-name')||'Driver';if(!id)return;
+      if(!confirm(`Rotate ${name}'s token? The old token will stop working.`))return;
+      btn.disabled=true;
+      try{let d=await Q('/admin/users/'+encodeURIComponent(id)+'/rotate',{method:'POST',headers:G()});shareInvite(name,d.token);T('Token rotated');H();loadUsers()}
+      catch(e){btn.disabled=false;T(e.message||'Rotate failed',1)}
+    });
     box.querySelectorAll('[data-revoke="1"]').forEach(btn=>btn.onclick=async()=>{
       let id=btn.closest('[data-u]')?.getAttribute('data-u');if(!id)return;
       if(!confirm('Remove this driver\'s access?'))return;
@@ -97,15 +104,15 @@ async function createUser(){
     if(res){
       res.innerHTML=`<div class="admin-result-box" style="background:var(--surface-0);border:1px solid var(--good-border);border-radius:var(--r-sm);padding:12px">
         <div style="font-weight:800;color:var(--good);margin-bottom:8px">✓ ${X(s.n)} added</div>
-        <div class="muted" style="font-size:12px;margin-bottom:10px">Setup link sent — they open it, pick a passphrase, and they're in. No token typing needed.</div>
-        <button class="btn sm" id="btnShareInvite" style="width:100%;font-size:13px">📤 Resend to ${X(s.n)}</button>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">Driver token created. Use it on this device or share a one-tap setup link.</div>
+        <div class="btn-row"><button class="btn sm primary" id="btnUseHere" style="flex:1;font-size:13px">Use on this device</button><button class="btn sm" id="btnShareInvite" style="flex:1;font-size:13px">📤 Share</button></div>
       </div>`;
+      let useBtn=$('btnUseHere');
+      if(useBtn)useBtn.onclick=()=>{let target=$('cloudBackupToken');if(target){target.value=d.token;target.dispatchEvent(new Event('input',{bubbles:true}));target.focus();target.scrollIntoView({behavior:'smooth',block:'center'})}T('Driver token filled — choose your encryption passphrase');H()};
       let shareBtn=$('btnShareInvite');
       if(shareBtn)shareBtn.onclick=()=>{shareInvite(s.n,d.token);H()};
     }
     $('adminDriverName').value='';
-    // Auto-share immediately — no extra tap needed.
-    shareInvite(s.n,d.token);
     T(s.n+' created');H();loadUsers();
     let nameEl=$('adminDriverName');if(nameEl)setTimeout(()=>nameEl.focus(),60);
   }catch(e){
