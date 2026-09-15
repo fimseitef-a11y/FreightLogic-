@@ -4,11 +4,11 @@
 
 **FreightLogic v24.0.14** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A11 and authentic M6 remain open.
+**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A12 and authentic M6 remain open.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Worker v18 and app v24.0.13 are SOURCE-ONLY — neither is deployed and neither has been observed live.** Production currently serves Worker **v17** (the monotonic backup/delta key clock, deployed 2026-09-14T19:05Z, run `34884719806`) and app generation **24.0.12** (deployed and observed live 2026-09-15 — live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`). v24.0.13 adds zero-token driver onboarding and needs BOTH a Worker deploy and an app deploy, in that order: the app's invite and claim flows call `POST /admin/invites` and `POST /claim`, which do not exist on v17, so shipping the app first leaves the owner an Invite button that 404s. DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -84,8 +84,8 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 4. **Storage** — `requestPersistentStorage`, `checkStorageQuota`, ITP/Safari detection
 5. **Navigation** — `openTripNavigation` (Apple Maps on iOS, Google Maps otherwise)
 6. **UI utilities** — `toast`, `openModal`, `closeModal`, `haptic`, autocomplete
-7. **IndexedDB layer** — `initDB` (v12 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
-8. **Data stores:** `trips`, `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
+7. **IndexedDB layer** — `initDB` (current DB16 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
+8. **Data stores:** logical `trips` (DB16 maps to `tripRecords`), `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
 9. **Export/Import** — JSON, CSV, XLSX (trips/expenses/fuel), receipt blobs
 10. **Freight evaluator** — Market Feed, Tomorrow Signal, Strategic Floor A–E scoring; auto-triggers OpenAI analysis via `/evaluate`
 11. **Cloud backup** — encrypt/decrypt, push/pull, user identity, AI evaluate call
@@ -100,8 +100,9 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
 21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
 
-### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)
-- `trips` — keyPath: `orderNo`
+### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)
+- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`
+- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present
 - `expenses` — keyPath: `id`
 - `fuel` — keyPath: `id`
 - `receipts` — keyPath: `tripOrderNo`
@@ -123,6 +124,11 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
 `XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
 `legacyMigrated` in settings, and never runs again. The old DB is not deleted.
+DB16 additionally creates `tripRecords` with stable internal `id` identity and a
+non-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.
+The legacy `trips` store is deliberately retained for rollback; external order
+numbers are evidence/lookup values, never authoritative record identity. Migrated
+rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 
 ### User namespace
 `ensureLocalUserId()` generates a stable `usr_<16hex>` on first boot, stored in
@@ -133,8 +139,8 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.13';
-const DB_VERSION = 15;
+const APP_VERSION = '24.0.14';
+const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
@@ -174,9 +180,9 @@ This app handles financial data. All security mitigations are intentional and mu
 
 | Credential | Storage | Scope |
 |---|---|---|
-| Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |
+| Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |
 | Encryption passphrase | `sessionStorage` (`fl_cloud_pass`) | Cleared on tab/browser close — never written to disk |
-| Admin token | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close |
+| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |
 | Device ID | `localStorage` (`fl_device_id`) | Persists — non-secret identifier |
 
 Do not move the passphrase or admin token back to persistent storage.
@@ -208,11 +214,12 @@ store — so the friction can never be resolved by weakening the encryption
 instead.
 
 The admin token grants create/list/revoke over **every** driver account, so it is the most
-sensitive credential in the app. Both writers must keep it session-scoped:
-`app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).
-`admin-driver-ui.js` also runs `purgeLegacyTok()` on every load, which migrates any token
-left in `localStorage` by a pre-23.8.0 build into `sessionStorage` and deletes the on-disk
-copy. Do not remove that purge until enough releases have passed that no stale copies remain.
+sensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin
+material session-scoped; persistence is allowed only as AES-GCM ciphertext in
+`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only
+after the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down
+from the legacy admin-driver flow and its legacy-token purge is delete-only: stale
+plaintext localStorage credentials must never be promoted back into a live session.
 
 ---
 

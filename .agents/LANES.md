@@ -10,7 +10,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
-**Post-PR-210 full-repair continuation (2026-09-15, operator-directed).** `main` advanced through PR #210 while GPT's reviewed repair PR #209 was in flight. PR #210's zero-token onboarding is authoritative and supersedes the older admin-handler repair; GPT must not restore that old path. The still-confirmed bounded repair is rebased onto current `main` as v24.0.14 / Worker v19: stable internal trip identity (DB16), UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-target filename hardening, proactive cleanup of reachable legacy v7 plaintext-token residue, the already-approved GPT-owned CSS contribution, and only the regression/release/evidence files required to prove and ship those changes. These exact exceptions expire when the reviewed successor PR lands. Physical iPhone A1–A11 and authentic M6 remain open evidence gates.
+**Post-PR-210 full-repair continuation (2026-09-15, operator-directed).** `main` advanced through PR #210 while GPT's reviewed repair PR #209 was in flight. PR #210's zero-token onboarding is authoritative and supersedes the older admin-handler repair; GPT must not restore that old path. The still-confirmed bounded repair is rebased onto current `main` as v24.0.14 / Worker v19: stable internal trip identity (DB16), UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-target filename hardening, proactive cleanup of reachable legacy v7 plaintext-token residue, the already-approved GPT-owned CSS contribution, and only the regression/release/evidence files required to prove and ship those changes. These exact exceptions expire when the reviewed successor PR lands. Physical iPhone A1–A12 and authentic M6 remain open evidence gates.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
@@ -30,7 +30,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `midwest-stack-authority.js` | gpt | Temporary release-marker update only. |
 | `voice-load.js` | gpt | Temporary release-marker update only. |
 | `CLAUDE.md` | gpt | Temporary current-release/evidence documentation exception; preserve zero-token onboarding documentation. |
-| `FIELD_TEST_CHECKLIST.md` | gpt | Temporary release/evidence documentation exception; A1–A11 stay open. |
+| `FIELD_TEST_CHECKLIST.md` | gpt | Temporary release/evidence documentation exception; A1–A12 stay open. |
 | `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary parity-evidence documentation exception. |
 | `docs/BACKUP_CONTRACT.md` | gpt | Temporary DB16 stable-identity migration/restore contract amendment. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
