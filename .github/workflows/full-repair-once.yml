@@ -1,608 +1,94 @@
-name: FreightLogic full repair once
+name: FreightLogic full repair artifact
 
 on:
   push:
-    branches: [agent/gpt/full-repair-takeover]
+    branches:
+      - agent/gpt/full-repair-takeover
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair:
-    if: ${{ !contains(github.event.head_commit.message, '[gpt] apply full-repair patch') }}
+  build-repair-artifact:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out exact repair staging branch
+        uses: actions/checkout@v6
         with:
           ref: agent/gpt/full-repair-takeover
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Apply exact-source repairs
+
+      - name: Extract and apply prior exact repair payload locally
         shell: bash
         run: |
+          set -euo pipefail
+          git show HEAD^:.github/workflows/full-repair-once.yml > /tmp/original-full-repair.yml
           python - <<'PY'
           from pathlib import Path
-          import re, json
 
-          def read(p): return Path(p).read_text()
-          def write(p,s): Path(p).write_text(s)
-          def rep(p, old, new, n=None):
-              s=read(p); c=s.count(old)
-              if n is not None and c != n: raise SystemExit(f'{p}: expected {n} occurrences, found {c}: {old[:80]!r}')
-              if c == 0: raise SystemExit(f'{p}: pattern not found: {old[:100]!r}')
-              write(p, s.replace(old,new) if n is None else s.replace(old,new,n))
-          def sub(p, pattern, repl, n=1, flags=0):
-              s=read(p); out,c=re.subn(pattern,repl,s,count=n,flags=flags)
-              if c != n: raise SystemExit(f'{p}: regex expected {n}, got {c}: {pattern[:100]!r}')
-              write(p,out)
-
-          # ── App generation + DB schema ──────────────────────────────
-          p='app.js'; s=read(p)
-          if "const APP_VERSION = '24.0.12';" not in s: raise SystemExit('unexpected APP_VERSION')
-          s=s.replace('/** FreightLogic v24.0.12 USA ENGINE', '/** FreightLogic v24.0.13 USA ENGINE',1)
-          marker=' *  v24.0.12 "Delivery Generation":'
-          note=(' *  v24.0.13 "First Real Use": field-observed repair generation. Trips move to an internal\n'
-                ' *          stable-id store (DB 16) so blank/reused external order numbers cannot overwrite\n'
-                ' *          history; payment UNKNOWN stays unknown; Profit/Hour uses only the operator-set\n'
-                ' *          planning speed; first-use cloud admin has one event owner; share filenames are\n'
-                ' *          header-safe. Cloud Worker v18 proactively scrubs legacy v7 plaintext-token\n'
-                ' *          residue. Physical iPhone A1-A10 and authentic M6 remain certification gates.\n')
-          if marker not in s: raise SystemExit('release header marker missing')
-          s=s.replace(marker,note+marker,1)
-          s=s.replace("const APP_VERSION = '24.0.12';", "const APP_VERSION = '24.0.13';",1)
-          s=s.replace('const DB_VERSION = 15;', 'const DB_VERSION = 16;',1)
-
-          # New trips have an explicit known unpaid state; imported absence stays UNKNOWN.
-          old="notes:'', isPaid:false, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],"
-          new="notes:'', isPaid:false, paymentStatusKnown:true, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],"
-          if old not in s: raise SystemExit('newTripTemplate payment marker missing')
-          s=s.replace(old,new,1)
-          old='  t.isPaid = !!raw.isPaid;'
-          new=("  const hasPaidFlag = Object.prototype.hasOwnProperty.call(raw || {}, 'isPaid') && typeof raw.isPaid === 'boolean';\n"
-               "  t.isPaid = hasPaidFlag ? raw.isPaid : false;\n"
-               "  t.paymentStatusKnown = typeof raw.paymentStatusKnown === 'boolean' ? raw.paymentStatusKnown : hasPaidFlag;")
-          if old not in s: raise SystemExit('sanitizeTrip paid coercion marker missing')
-          s=s.replace(old,new,1)
-          old="  if (pay > 20000) reasons.push('Revenue exceeds sanity threshold');\n  return reasons;"
-          new="  if (pay > 20000) reasons.push('Revenue exceeds sanity threshold');\n  if (raw?.paymentStatusKnown === false) reasons.push('Payment status is unknown');\n  return reasons;"
-          if old not in s: raise SystemExit('review reason marker missing')
-          s=s.replace(old,new,1)
-
-          # DB16: stable internal trip identity. Keep the old store untouched for rollback,
-          # but route all logical `trips` transactions to tripRecords once it exists.
-          old="      if (old < 15) { ensureStore(EVIDENCE_STORE, { keyPath:'evidenceId' }); }\n      ensureIndexes(EVIDENCE_STORE, ["
-          new="""      if (old < 15) { ensureStore(EVIDENCE_STORE, { keyPath:'evidenceId' }); }
-      // v16: `orderNo` is external evidence, not identity. The legacy store keyed by
-      // orderNo silently overwrote blank/reused numbers (observed 13 -> 12 on first import).
-      // Preserve it for rollback, but migrate every surviving row to stable internal `id`.
-      if (old < 16) {
-        ensureStore('tripRecords', { keyPath:'id' });
-        ensureIndexes('tripRecords', [
-          ['pickupDate','pickupDate'], ['created','created'], ['customer','customer'],
-          ['orderNo','orderNo',{ unique:false }]
-        ]);
-        if (d.objectStoreNames.contains('trips')) {
-          const legacyTrips = e.target.transaction.objectStore('trips');
-          const stableTrips = e.target.transaction.objectStore('tripRecords');
-          const curReq = legacyTrips.openCursor();
-          curReq.onsuccess = (ev) => {
-            const cur = ev.target.result;
-            if (!cur) return;
-            const rec = Object.assign({}, cur.value || {});
-            if (!rec.id) rec.id = crypto.randomUUID?.() || ('trip_' + Math.random().toString(36).slice(2) + Date.now().toString(36));
-            // Pre-v16 rows have no way to prove whether false was explicit or a sanitizer fallback.
-            // Fail closed: UNKNOWN until the operator marks paid/unpaid.
-            if (typeof rec.paymentStatusKnown !== 'boolean') rec.paymentStatusKnown = false;
-            stableTrips.put(rec);
-            cur.continue();
-          };
-        }
-      }
-      ensureIndexes('tripRecords', [
-        ['pickupDate','pickupDate'], ['created','created'], ['customer','customer'],
-        ['orderNo','orderNo',{ unique:false }]
-      ]);
-      ensureIndexes(EVIDENCE_STORE, ["""
-          if old not in s: raise SystemExit('DB15 evidence marker missing')
-          s=s.replace(old,new,1)
-
-          old="""function tx(storeNames, mode='readonly'){
-  const t = db.transaction(storeNames, mode);
-  const stores = {};
-  for (const n of (Array.isArray(storeNames)? storeNames:[storeNames])) stores[n] = t.objectStore(n);
-  return { t, stores };
-}"""
-          new="""function tx(storeNames, mode='readonly'){
-  const logical = Array.isArray(storeNames) ? storeNames : [storeNames];
-  const physicalFor = (n) => (n === 'trips' && db.objectStoreNames.contains('tripRecords')) ? 'tripRecords' : n;
-  const physical = [...new Set(logical.map(physicalFor))];
-  const t = db.transaction(physical, mode);
-  const stores = {};
-  for (const n of logical) stores[n] = t.objectStore(physicalFor(n));
-  return { t, stores };
-}"""
-          if old not in s: raise SystemExit('tx function marker missing')
-          s=s.replace(old,new,1)
-
-          old="    for (const rec of records){ try{ stores[storeName].put(rec); }catch{} }"
-          new="    for (const rec of records){ try{ stores[storeName].put(storeName === 'trips' ? sanitizeTrip(rec) : rec); }catch{} }"
-          if old not in s: raise SystemExit('legacy migration put marker missing')
-          s=s.replace(old,new,1)
-
-          old="""async function tripExists(orderNo){
-  const {stores} = tx('trips');
-  return !!(await idbReq(stores.trips.get(orderNo)));
-}"""
-          new="""function tripPaymentKnown(t){ return !!t && t.paymentStatusKnown === true && typeof t.isPaid === 'boolean'; }
-function tripIsPaid(t){ return tripPaymentKnown(t) && t.isPaid === true; }
-function tripIsUnpaid(t){ return tripPaymentKnown(t) && t.isPaid === false; }
-async function findTripsByOrderNo(orderNo, limit=10){
-  const key = normOrderNo(orderNo);
-  if (!key) return [];
-  const {stores} = tx('trips');
-  if (!stores.trips.indexNames.contains('orderNo')) return [];
-  return (await idbReq(stores.trips.index('orderNo').getAll(IDBKeyRange.only(key), limit))) || [];
-}
-async function tripExists(orderNo){ return (await findTripsByOrderNo(orderNo, 1)).length > 0; }"""
-          if old not in s: raise SystemExit('tripExists marker missing')
-          s=s.replace(old,new,1)
-
-          # Stable-id CRUD and restore reconciliation.
-          if 'stores.trips.get(t.orderNo)' not in s: raise SystemExit('upsert orderNo lookup missing')
-          s=s.replace('stores.trips.get(t.orderNo)', 'stores.trips.get(t.id)',1)
-          old="""async function deleteTrip(orderNo){
-  // TOCTOU-safe: read + write in single readwrite transaction
-  const {t:txn, stores} = tx(['trips','receipts','auditLog'],'readwrite');
-  let beforeData = null;
-  try{ beforeData = await idbReq(stores.trips.get(orderNo)); }catch(e){ console.warn(\"[FL]\", e); }
-  stores.trips.delete(orderNo);
-  try{ stores.receipts.delete(orderNo); }catch(e){ console.warn(\"[FL]\", e); }
-  stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: orderNo, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
-  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(true); txn.onerror = ()=> reject(txn.error); });
-}"""
-          new="""async function deleteTrip(tripId){
-  // Stable-id delete. External order numbers are not unique identities.
-  const {t:txn, stores} = tx(['trips','receipts','auditLog'],'readwrite');
-  let beforeData = null;
-  try{ beforeData = await idbReq(stores.trips.get(tripId)); }catch(e){ console.warn(\"[FL]\", e); }
-  stores.trips.delete(tripId);
-  try{ if (beforeData?.orderNo) stores.receipts.delete(beforeData.orderNo); }catch(e){ console.warn(\"[FL]\", e); }
-  stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: tripId, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
-  return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(true); txn.onerror = ()=> reject(txn.error); });
-}"""
-          if old not in s: raise SystemExit('deleteTrip marker missing')
-          s=s.replace(old,new,1)
-          s=s.replace('deleteTrip(t.orderNo)', 'deleteTrip(t.id)')
-          s=s.replace('deleteTrip(trip.orderNo)', 'deleteTrip(trip.id)')
-
-          old="""    if (mode==='add' && await tripExists(orderNo)){
-      hint.textContent = 'Order # already exists. You can edit the existing trip instead.';
-      const existingTrip = await idbReq(tx('trips').stores.trips.get(orderNo)).catch(()=>null);
-      const openIt = confirm('Order # already exists. Open the existing trip instead of creating a duplicate?');
-      if (openIt && existingTrip){ setTimeout(()=> openTripWizard(existingTrip), 0); closeModal(); }
-      return false;
-    }"""
-          new="""    if (mode==='add' && await tripExists(orderNo)){
-      // External order numbers can be reused by different brokers/loads. Warn, do not merge identities.
-      hint.textContent = 'Order # already exists — allowed if this is a distinct load.';
-    }"""
-          if old not in s: raise SystemExit('duplicate order blocker marker missing')
-          s=s.replace(old,new,1)
-
-          if 'const inTrips = arr(parsed.trips);' not in s: raise SystemExit('merge restore trips marker missing')
-          s=s.replace('const inTrips = arr(parsed.trips);', 'const inTrips = arr(parsed.trips).map(x => sanitizeTrip(x));',1)
-          if 'ws.trips.get(incoming.orderNo)' not in s: raise SystemExit('merge restore order lookup missing')
-          s=s.replace('ws.trips.get(incoming.orderNo)', 'ws.trips.get(incoming.id)',1)
-
-          # CSV import: blank Paid is UNKNOWN rather than false/unpaid.
-          paid_line="            isPaid: ['yes','true','paid','1'].includes(cellAt(row, 'Paid','IsPaid','Status').toLowerCase()),"
-          paid_new=paid_line+"\n            paymentStatusKnown: cellAt(row, 'Paid','IsPaid','Status').trim() !== '',"
-          if paid_line not in s: raise SystemExit('CSV paid marker missing')
-          s=s.replace(paid_line,paid_new,1)
-
-          # CSV export preserves UNKNOWN as blank.
-          old="t.isPaid?'Yes':'No', t.paidDate||''"
-          new="tripPaymentKnown(t) ? (t.isPaid?'Yes':'No') : '', t.paidDate||''"
-          if old not in s: raise SystemExit('CSV export paid marker missing')
-          s=s.replace(old,new,1)
-
-          # Financial/AR paths: only explicit unpaid contributes to receivables/risk.
-          s=s.replace('if (!cur.value.isPaid && !cur.value.needsReview)', 'if (tripIsUnpaid(cur.value) && !cur.value.needsReview)')
-          s=s.replace('if (!cur.value.isPaid) out.push(cur.value);', 'if (tripIsUnpaid(cur.value)) out.push(cur.value);')
-          s=s.replace('if (!t.isPaid) unpaid += pay;', 'if (tripIsUnpaid(t)) unpaid += pay;')
-          s=s.replace('if (!t.isPaid) rec.unpaid += pay;', 'if (tripIsUnpaid(t)) rec.unpaid += pay;')
-          s=s.replace('brokerTrips.filter(t => !t.isPaid)', 'brokerTrips.filter(t => tripIsUnpaid(t))')
-          s=s.replace('return !t.isPaid && refDate', 'return tripIsUnpaid(t) && refDate')
-          s=s.replace('if (!t.isPaid) unpaidCount++;', 'if (tripIsUnpaid(t)) unpaidCount++;')
-          old="""  for (const t of validTrips) {
-    const pay = Number(t.pay || 0);
-    totalEver += pay;
-    if (!t.isPaid) { unpaidAmt += pay; unpaidCount++; } else { totalPaid += pay; }
-  }"""
-          new="""  for (const t of validTrips) {
-    if (!tripPaymentKnown(t)) continue;
-    const pay = Number(t.pay || 0);
-    totalEver += pay;
-    if (tripIsUnpaid(t)) { unpaidAmt += pay; unpaidCount++; } else if (tripIsPaid(t)) { totalPaid += pay; }
-  }"""
-          if old not in s: raise SystemExit('money collected loop marker missing')
-          s=s.replace(old,new,1)
-
-          # Any explicit paid/unpaid user action establishes status knowledge.
-          s=s.replace("t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;", "t.isPaid = !t.isPaid; t.paymentStatusKnown = true; t.paidDate = t.isPaid ? isoDate() : null;")
-          s=s.replace("t.isPaid = true; t.paidDate = isoDate();", "t.isPaid = true; t.paymentStatusKnown = true; t.paidDate = isoDate();")
-
-          # Profit/hour: never invent a 50-mph denominator. Use only the same explicit
-          # planning speed already required by pickup-feasibility logic.
-          old="""  const estHours = totalMi > 0 ? Math.max(1, Math.round(totalMi / 50)) : 1;
-  const profitPerHour = roundCents(trueProfit / estHours);"""
-          new="""  const avgMphK = knownNum(f.avgMph);
-  const avgMph = (avgMphK !== null && avgMphK >= PICKUP_FEASIBILITY.MIN_MPH && avgMphK <= PICKUP_FEASIBILITY.MAX_MPH) ? avgMphK : null;
-  const estHours = avgMph === null ? null : roundCents(totalMi / avgMph);
-  const profitPerHour = estHours && estHours > 0 ? roundCents(trueProfit / estHours) : null;"""
-          if old not in s: raise SystemExit('50 mph economics marker missing')
-          s=s.replace(old,new,1)
-          old="""  const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
-  const borderAdminCost"""
-          new="""  const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
-  const planningAvgMph = await getPlanningAvgMph();
-  const borderAdminCost"""
-          if old not in s: raise SystemExit('evaluator settings marker missing')
-          s=s.replace(old,new,1)
-          old="""    revenue, effectiveRevenue, loadedMi, deadMi,
-    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost,
-  });"""
-          new="""    revenue, effectiveRevenue, loadedMi, deadMi,
-    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost, avgMph: planningAvgMph,
-  });"""
-          if s.count(old) != 1: raise SystemExit(f'economics call marker count {s.count(old)}')
-          s=s.replace(old,new,1)
-          old='$${profitPerHour.toFixed(0)}'
-          new="${profitPerHour === null ? '—' : ('$' + profitPerHour.toFixed(0))}"
-          if old not in s: raise SystemExit('profit/hour render marker missing')
-          s=s.replace(old,new,1)
-
-          # First-use admin: when the injected module owns the controls, do not bind
-          # a second legacy click handler after async boot completes.
-          old="""  $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ var saved = sessionStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
-  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
-  $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });"""
-          new="""  // The service-worker-injected admin-driver-ui module clones these controls and owns
-  // their events. Async boot used to bind a second handler afterward, so one tap opened
-  // and immediately re-closed the panel on iPhone. Legacy bindings remain only when the
-  // enhancement module is genuinely absent (e.g. the first uncontrolled navigation).
-  if (document.body?.dataset.flAdminUiReady !== '1') {
-    $('#btnAdminToggle')?.addEventListener('click', ()=>{ var p = $('#adminPanel'); if (!p) return; var open = p.style.display === 'none'; p.style.display = open ? '' : 'none'; if (open){ var saved = sessionStorage.getItem('fl_admin_tok'); if (saved){ var el = $('#adminToken'); if (el && !el.value) el.value = saved; } cloudAdminLoadUsers(); } });
-    $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminCreateUser(); });
-    $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
-  }"""
-          if old not in s: raise SystemExit('legacy admin bindings marker missing')
-          s=s.replace(old,new,1)
-
-          # Export helpers for regression tests.
-          old='    sanitizeTrip, sanitizeExpense, sanitizeFuel,'
-          new='    sanitizeTrip, sanitizeExpense, sanitizeFuel, tripPaymentKnown, tripIsPaid, tripIsUnpaid, findTripsByOrderNo,'
-          if old not in s: raise SystemExit('test export sanitizer marker missing')
-          s=s.replace(old,new,1)
-          write(p,s)
-
-          # ── Service worker: safe shared filename + generation ──────────
-          p='service-worker.js'; s=read(p)
-          s=s.replace('v24.0.12', 'v24.0.13',1).replace("const SW_VERSION = '24.0.12';", "const SW_VERSION = '24.0.13';",1)
-          s=s.replace('?v=24.0.12','?v=24.0.13')
-          old="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': file.name } }));"""
-          new="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
-            // Shared filenames are attacker-controlled input. Header values may not carry CR/LF
-            // or other control bytes; bound the value as well so metadata cannot become a storage sink.
-            const safeFilename = String(file.name || `shared-file-${i}`)
-              .replace(/[\\u0000-\\u001F\\u007F]/g, '_').slice(0, 180) || `shared-file-${i}`;
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': safeFilename } }));"""
-          if old not in s: raise SystemExit('share filename marker missing')
-          s=s.replace(old,new,1)
-          write(p,s)
-
-          # ── Admin module: one owner + feature parity + easy self-setup ──
-          p='admin-driver-ui.js'; s=read(p)
-          old="""      return`<div class=\"admin-user\" data-u=\"${X(v.userId||'')}\"><div class=\"au-name\">${X(s.n)} ${badge}</div><div class=\"au-meta\">${X((v.createdAt||'').slice(0,10))}</div>${v.active?'<div class=\"btn-row\" style=\"margin-top:8px\"><button class=\"btn sm danger\" data-revoke=\"1\">Remove Access</button></div>':''}</div>`;"""
-          new="""      return`<div class=\"admin-user\" data-u=\"${X(v.userId||'')}\" data-name=\"${X(s.n)}\"><div class=\"au-name\">${X(s.n)} ${badge}</div><div class=\"au-meta\">${Number(v.backupCount||0)} backup(s) · ${X((v.createdAt||'').slice(0,10))}</div>${v.active?'<div class=\"btn-row\" style=\"margin-top:8px\"><button class=\"btn sm\" data-rotate=\"1\">🔑 Rotate Token</button><button class=\"btn sm danger\" data-revoke=\"1\">Remove Access</button></div>':''}</div>`;"""
-          if old not in s: raise SystemExit('admin list row marker missing')
-          s=s.replace(old,new,1)
-          needle="""    box.querySelectorAll('[data-revoke=\"1\"]').forEach(btn=>btn.onclick=async()=>{"""
-          insert="""    box.querySelectorAll('[data-rotate=\"1\"]').forEach(btn=>btn.onclick=async()=>{
-      let row=btn.closest('[data-u]'),id=row?.getAttribute('data-u'),name=row?.getAttribute('data-name')||'Driver';if(!id)return;
-      if(!confirm(`Rotate ${name}'s token? The old token will stop working.`))return;
-      btn.disabled=true;
-      try{let d=await Q('/admin/users/'+encodeURIComponent(id)+'/rotate',{method:'POST',headers:G()});shareInvite(name,d.token);T('Token rotated');H();loadUsers()}
-      catch(e){btn.disabled=false;T(e.message||'Rotate failed',1)}
-    });
-    box.querySelectorAll('[data-revoke=\"1\"]').forEach(btn=>btn.onclick=async()=>{"""
-          if needle not in s: raise SystemExit('admin revoke binding marker missing')
-          s=s.replace(needle,insert,1)
-          old="""        <div class=\"muted\" style=\"font-size:12px;margin-bottom:10px\">Setup link sent — they open it, pick a passphrase, and they're in. No token typing needed.</div>
-        <button class=\"btn sm\" id=\"btnShareInvite\" style=\"width:100%;font-size:13px\">📤 Resend to ${X(s.n)}</button>"""
-          new="""        <div class=\"muted\" style=\"font-size:12px;margin-bottom:10px\">Driver token created. Use it on this device or share a one-tap setup link.</div>
-        <div class=\"btn-row\"><button class=\"btn sm primary\" id=\"btnUseHere\" style=\"flex:1;font-size:13px\">Use on this device</button><button class=\"btn sm\" id=\"btnShareInvite\" style=\"flex:1;font-size:13px\">📤 Share</button></div>"""
-          if old not in s: raise SystemExit('admin create result marker missing')
-          s=s.replace(old,new,1)
-          old="""      let shareBtn=$('btnShareInvite');
-      if(shareBtn)shareBtn.onclick=()=>{shareInvite(s.n,d.token);H()};
-    }
-    $('adminDriverName').value='';
-    // Auto-share immediately — no extra tap needed.
-    shareInvite(s.n,d.token);"""
-          new="""      let useBtn=$('btnUseHere');
-      if(useBtn)useBtn.onclick=()=>{let target=$('cloudBackupToken');if(target){target.value=d.token;target.dispatchEvent(new Event('input',{bubbles:true}));target.focus();target.scrollIntoView({behavior:'smooth',block:'center'})}T('Driver token filled — choose your encryption passphrase');H()};
-      let shareBtn=$('btnShareInvite');
-      if(shareBtn)shareBtn.onclick=()=>{shareInvite(s.n,d.token);H()};
-    }
-    $('adminDriverName').value='';"""
-          if old not in s: raise SystemExit('admin auto-share marker missing')
-          s=s.replace(old,new,1)
-          write(p,s)
-
-          # ── Worker v18: proactively scrub every reachable v7 plaintext token ──
-          p='cloud-backup-worker.js'; s=read(p)
-          s=s.replace('// FreightLogic Cloud Backup Worker v17', '// FreightLogic Cloud Backup Worker v18',1)
-          hdr='// v17: backup/delta keys are minted from a MONOTONIC clock.'
-          if hdr not in s: raise SystemExit('worker v17 header marker missing')
-          s=s.replace(hdr,"// v18: legacy v7 plaintext-token cleanup is proactive, not only rotation-time.\n// Admin listing scrubs every legacy user record it encounters; lazy driver migration rewrites\n// the matching user record; revoke removes any plaintext field before persisting. No new token\n// is ever stored raw.\n"+hdr,1)
-          old="""                const u = JSON.parse(val);
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
-          new="""                let u = JSON.parse(val);
-                // Proactive v7 cleanup: listing drivers is the natural bounded sweep over every
-                // user record. If a legacy raw token survives, migrate it before returning data.
-                if (u.token && u.userId) {
-                  const legacyPlaintext = u.token;
-                  const cleanHash = u.tokenHash || await hashToken(legacyPlaintext);
-                  const clean = Object.assign({}, u, { tokenHash: cleanHash });
-                  delete clean.token;
-                  const cleanupOps = [
-                    env.BACKUPS.put('user:' + u.userId, JSON.stringify(clean)),
-                    env.BACKUPS.delete('token:' + legacyPlaintext),
-                  ];
-                  if (clean.active) cleanupOps.push(env.BACKUPS.put('tokh:' + cleanHash, JSON.stringify(clean)));
-                  await Promise.all(cleanupOps);
-                  u = clean;
-                }
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
-          if old not in s: raise SystemExit('worker admin list marker missing')
-          s=s.replace(old,new,1)
-          old="""            await Promise.all([
-              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
-              env.BACKUPS.delete('token:' + driverToken),
-            ]);
-            tokenRaw = JSON.stringify(migRec);"""
-          new="""            const migOps = [
-              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
-              env.BACKUPS.delete('token:' + driverToken),
-            ];
-            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
-            await Promise.all(migOps);
-            tokenRaw = JSON.stringify(migRec);"""
-          if old not in s: raise SystemExit('worker lazy migration marker missing')
-          s=s.replace(old,new,1)
-          old="""          parsed.active = false;
-          // Deactivate user record and revoke token in parallel
-          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
-          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          // Legacy plaintext key cleanup
-          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));"""
-          new="""          parsed.active = false;
-          const legacyPlaintext = parsed.token;
-          delete parsed.token;
-          // Deactivate user record and revoke token in parallel. Never write a raw token back.
-          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
-          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));"""
-          if old not in s: raise SystemExit('worker revoke marker missing')
-          s=s.replace(old,new,1)
-          s=s.replace("version: '17'", "version: '18'",1)
-          write(p,s)
-
-          # ── Release markers ──────────────────────────────────────────
-          for p in ['sw-bridge.js','modern-shell.js','voice-load.js','midwest-stack-authority.js']:
-              s=read(p).replace('24.0.12','24.0.13')
-              write(p,s)
-          p='index.html'; write(p,read(p).replace('?v=24.0.12','?v=24.0.13'))
-          p='manifest.json'; s=read(p); s=s.replace('FreightLogic v24.0.12','FreightLogic v24.0.13'); write(p,s)
-          p='midwest-stack-config.json'; s=read(p); s=s.replace('FreightLogic v24.0.12','FreightLogic v24.0.13'); write(p,s)
-          p='scripts/verify-cloudflare-parity.mjs'; s=read(p).replace('24.0.12','24.0.13').replace('workerVersion: "17"','workerVersion: "18"'); write(p,s)
-
-          # DB generation invariant.
-          p='tests/unit/cache-generation.spec.mjs'; s=read(p)
-          s=s.replace("eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');",
-                      "eq(dbm[1], '16', 'DB_VERSION must be 16 — v24.0.13 migrates trips from external order-number identity to stable internal ids');")
-          write(p,s)
-
-          # Worker token regression: lazy use, admin sweep, and revoke must scrub BOTH key and user-record field.
-          p='tests/unit/worker-token-rotation.spec.mjs'; s=read(p)
-          anchor='\nexport async function runSpec() { return run(); }\n'
-          if anchor not in s: raise SystemExit('worker test export anchor missing')
-          tests=r'''
-
-test('[WTR-09] lazy legacy authentication rewrites the user record without plaintext', async () => {
-  const worker = await loadWorker();
-  const token = 'flk_' + 'abcd1234'.repeat(4);
-  const userId = 'u_3f2a1b4c-5d6';
-  const rec = { userId, name:'Legacy Lazy', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
-  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
-  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
-  const res = await worker.fetch(new Request('https://worker.test/backup', { method:'GET', headers:{'X-Backup-Token':token,'X-Device-Id':'devA'} }), env);
-  eq(res.status, 404, 'valid migrated token reaches backup lookup (no backup exists)');
-  eq(await kv.get('token:'+token), null, 'plaintext key deleted');
-  const clean = JSON.parse(await kv.get('user:'+userId));
-  eq(clean.token, undefined, 'user record plaintext field deleted');
-  ok(clean.tokenHash, 'user record gains tokenHash');
-});
-
-test('[WTR-10] admin listing proactively sweeps dormant v7 plaintext residue', async () => {
-  const worker = await loadWorker();
-  const token = 'flk_' + '1234abcd'.repeat(4);
-  const userId = 'u_4f3e2d1c-6b7';
-  const rec = { userId, name:'Dormant Legacy', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
-  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
-  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
-  const res = await worker.fetch(adminReq('/admin/users','GET'), env);
-  eq(res.status, 200, 'admin listing succeeds');
-  eq(await kv.get('token:'+token), null, 'dormant plaintext key deleted by sweep');
-  const clean = JSON.parse(await kv.get('user:'+userId));
-  eq(clean.token, undefined, 'dormant user record no longer contains plaintext');
-  ok(clean.tokenHash, 'dormant account remains usable through hashed credential');
-});
-
-test('[WTR-11] revoking a legacy account never writes its plaintext token back', async () => {
-  const worker = await loadWorker();
-  const token = 'flk_' + 'aabbccdd'.repeat(4);
-  const userId = 'u_5e4d3c2b-7a8';
-  const rec = { userId, name:'Legacy Revoke', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
-  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
-  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
-  const res = await worker.fetch(adminReq('/admin/users/'+userId,'DELETE'), env);
-  eq(res.status, 200, 'legacy revoke succeeds');
-  eq(await kv.get('token:'+token), null, 'plaintext key deleted');
-  const clean = JSON.parse(await kv.get('user:'+userId));
-  eq(clean.token, undefined, 'revoked user record carries no plaintext token');
-  eq(clean.active, false, 'account remains revoked');
-});
-'''
-          s=s.replace(anchor,tests+anchor,1); write(p,s)
-
-          # Full-repair browser regressions.
-          Path('tests/integration/full-repair-regressions.spec.mjs').write_text(r'''import { createSuite, ok, eq, startServer, newPage, stopServer } from '../lib/harness.mjs';
-
-const { test, run } = createSuite('integration/full-repair-regressions.spec.mjs');
-let page;
-async function boot(){
-  if (page) return page;
-  const base = await startServer();
-  page = await newPage({ testsEnabled:true });
-  await page.goto(base + '/#home');
-  await page.waitForFunction(() => !!window.__FL_TESTS);
-  return page;
-}
-
-test('[FR-01] Profit/Hour is UNKNOWN without operator planning speed and real with it', async () => {
-  const p=await boot();
-  const r=await p.evaluate(() => {
-    const f=window.__FL_TESTS.deriveUnifiedEconomics;
-    const base={revenue:1000,effectiveRevenue:1000,loadedMi:500,deadMi:0,mpg:20,fuelPrice:4,opCPM:0.2,borderAdminCost:0};
-    return [f(base),f({...base,avgMph:50})];
-  });
-  eq(r[0].available,true); eq(r[0].estHours,null); eq(r[0].profitPerHour,null);
-  eq(r[1].estHours,10); ok(Number.isFinite(r[1].profitPerHour),'explicit speed produces profit/hour');
-});
-
-test('[FR-02] payment absence stays UNKNOWN while explicit false/true stay authoritative', async () => {
-  const p=await boot();
-  const r=await p.evaluate(() => {
-    const T=window.__FL_TESTS;
-    const u=T.sanitizeTrip({id:'u1',orderNo:'A',pay:100,loadedMiles:10,emptyMiles:0});
-    const n=T.sanitizeTrip({id:'u2',orderNo:'B',pay:100,loadedMiles:10,emptyMiles:0,isPaid:false});
-    const y=T.sanitizeTrip({id:'u3',orderNo:'C',pay:100,loadedMiles:10,emptyMiles:0,isPaid:true});
-    return {u,n,y,uu:T.tripIsUnpaid(u),nu:T.tripIsUnpaid(n),yp:T.tripIsPaid(y)};
-  });
-  eq(r.u.paymentStatusKnown,false); eq(r.uu,false);
-  eq(r.n.paymentStatusKnown,true); eq(r.nu,true);
-  eq(r.y.paymentStatusKnown,true); eq(r.yp,true);
-});
-
-test('[FR-03] DB16 tripRecords uses stable id and permits two blank/reused order numbers', async () => {
-  const p=await boot();
-  const r=await p.evaluate(async () => {
-    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('FreightLogic_v18');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-    const store=db.transaction('tripRecords','readwrite').objectStore('tripRecords');
-    const kp=store.keyPath, unique=store.index('orderNo').unique;
-    store.put({id:'fr-blank-1',orderNo:'',created:1,pickupDate:'2026-01-01',customer:'A'});
-    store.put({id:'fr-blank-2',orderNo:'',created:2,pickupDate:'2026-01-02',customer:'B'});
-    await new Promise((resolve,reject)=>{store.transaction.oncomplete=resolve;store.transaction.onerror=()=>reject(store.transaction.error)});
-    const tx=db.transaction('tripRecords','readonly'), s=tx.objectStore('tripRecords');
-    const all=await new Promise((resolve,reject)=>{const q=s.index('orderNo').getAll(IDBKeyRange.only(''));q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-    db.close(); return {kp,unique,count:all.filter(x=>x.id.startsWith('fr-blank-')).length};
-  });
-  eq(r.kp,'id'); eq(r.unique,false); eq(r.count,2);
-});
-
-test('[FR-04] controlled-PWA admin module owns Manage Drivers without double-toggle race', async () => {
-  const p=await boot();
-  await p.addScriptTag({url:'/admin-driver-ui.js?v=24.0.13'});
-  await p.waitForFunction(() => document.body.dataset.flAdminUiReady === '1');
-  const r=await p.evaluate(() => {
-    const b=document.getElementById('btnAdminToggle'),panel=document.getElementById('adminPanel');
-    panel.style.display='none'; b.click();
-    return {display:panel.style.display, ready:document.body.dataset.flAdminUiReady};
-  });
-  eq(r.ready,'1'); ok(r.display !== 'none','one tap leaves admin panel open');
-});
-
-test('[FR-05] service worker sanitizes attacker-controlled shared filenames before X-Filename', async () => {
-  const txt=await (await fetch('/service-worker.js')).text();
-  ok(txt.includes('safeFilename'),'safe filename variable exists');
-  ok(txt.includes("replace(/[\\u0000-\\u001F\\u007F]/g, '_')"),'control bytes are stripped');
-  ok(!txt.includes("'X-Filename': file.name"),'raw file.name is never written to header');
-});
-
-export async function runSpec(){ const r=await run(); try{await page?.close()}catch{}; return r; }
-''')
-
-          p='tests/run-all.mjs'; s=read(p)
-          imp="import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';\n"
-          if imp not in s:
-              s=s.replace("import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';\n",
-                          "import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';\n"+imp,1)
-          if '  fullRepairRegressions,' not in s:
-              s=s.replace('const specs = [\n', 'const specs = [\n  fullRepairRegressions,\n',1)
-          write(p,s)
-
-          # Documentation current-marker refresh only; preserve historical release notes.
-          for p in ['CLAUDE.md','FIELD_TEST_CHECKLIST.md','docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md']:
-              if Path(p).exists():
-                  s=read(p)
-                  # Replace only current/top-level 24.0.12 references near the beginning and explicit candidate labels.
-                  s=s.replace('FreightLogic v24.0.12','FreightLogic v24.0.13')
-                  s=s.replace('candidate v24.0.12','candidate v24.0.13')
-                  s=s.replace('Candidate: v24.0.12','Candidate: v24.0.13')
-                  write(p,s)
-
-          # Final invariants before test execution.
-          assert "const APP_VERSION = '24.0.13';" in read('app.js')
-          assert "const DB_VERSION = 16;" in read('app.js')
-          assert "const SW_VERSION = '24.0.13';" in read('service-worker.js')
-          assert "Worker v18" in read('cloud-backup-worker.js')
-          assert "version: '18'" in read('cloud-backup-worker.js')
+          src = Path('/tmp/original-full-repair.yml').read_text()
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "          PY\n\n      - name: Static syntax and release gates"
+          start = src.find(start_marker)
+          if start < 0:
+              raise SystemExit('prior repair payload start marker not found')
+          start += len(start_marker)
+          end = src.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('prior repair payload end marker not found')
+          lines = src[start:end].splitlines()
+          dedented = []
+          for line in lines:
+              if line.startswith('          '):
+                  line = line[10:]
+              dedented.append(line)
+          Path('/tmp/full-repair.py').write_text('\n'.join(dedented) + '\n')
           PY
+          python /tmp/full-repair.py
 
-      - name: Static syntax and release gates
+      - name: Static syntax and repair invariants
+        shell: bash
         run: |
+          set -euo pipefail
           node --check app.js
           node --check service-worker.js
           node --check admin-driver-ui.js
           node --check cloud-backup-worker.js
           node tests/unit/cache-generation.spec.mjs
           node tests/unit/worker-token-rotation.spec.mjs
-          node tests/unit/release-generation-discipline.spec.mjs
           node scripts/verify-cloudflare-parity.mjs --static-only
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -gt 0
+          git diff --name-only
 
-      - name: Install Chromium
-        run: |
-          npm install -g playwright@1.62.1
-          npx playwright install --with-deps chromium
-          mkdir -p node_modules
-          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
-
-      - name: Full regression suite
-        run: node tests/run-all.mjs
-
-      - name: Remove one-shot workflow and commit exact repair
-        shell: bash
-        run: |
-          rm .github/workflows/full-repair-once.yml
-          git config user.name "FreightLogic GPT Repair"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "[gpt] apply full-repair patch" -m "Field-observed first-use cloud admin, stable trip identity DB16, payment UNKNOWN semantics, explicit-speed Profit/Hour, share-target filename hardening, proactive legacy-token cleanup Worker v18, and v24.0.13 release generation." -m "FL-Lock: app-js/1ce16d0f-d134-4f59-9fef-8f78f250ad3a"
-          git push origin HEAD:agent/gpt/full-repair-takeover
+      - name: Upload patched source for normal reviewed PR
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightlogic-reviewed-full-repair
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            app.js
+            admin-driver-ui.js
+            cloud-backup-worker.js
+            service-worker.js
+            sw-bridge.js
+            modern-shell.js
+            index.html
+            manifest.json
+            voice-load.js
+            midwest-stack-authority.js
+            midwest-stack-config.json
+            scripts/verify-cloudflare-parity.mjs
+            tests/unit/cache-generation.spec.mjs
+            tests/unit/worker-token-rotation.spec.mjs
+            tests/integration/full-repair-regressions.spec.mjs
+            tests/run-all.mjs
+            CLAUDE.md
+            FIELD_TEST_CHECKLIST.md
+            docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md
