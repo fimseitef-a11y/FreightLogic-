@@ -1,13 +1,13 @@
-name: FreightLogic full repair object builder
+name: FreightLogic v24.0.14 repair object builder
 
 on:
   push:
     branches:
       - agent/gpt/full-repair-takeover
 
-# The only repository write operations below create immutable Git objects.
-# No refs endpoint is called and no git push is permitted. Branch refs are
-# captured before/after and the job fails unless they remain byte-identical.
+# This transport may create immutable Git blobs/trees/commit objects only.
+# It never updates refs and never runs git push. The reviewed branch is moved
+# later through the GitHub connector only after this builder is green.
 permissions:
   actions: read
   contents: write
@@ -16,78 +16,317 @@ jobs:
   build-repair-objects:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out staging repository
+      - name: Check out clean post-PR-210 repair branch
         uses: actions/checkout@v6
         with:
-          ref: agent/gpt/full-repair-takeover
-          fetch-depth: 1
+          ref: agent/gpt/full-repair-v24.0.14
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
           node-version: '22'
 
-      - name: Download exact green repair artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: freightlogic-reviewed-full-repair
-          path: /tmp/repair
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: 35030535679
-
-      - name: Materialize repaired source
+      - name: Assert exact repair baseline
         shell: bash
         run: |
           set -euo pipefail
-          cp -a /tmp/repair/. .
+          test "$(git rev-parse HEAD)" = '63c2743700053d9794f45236b9b2d2e68c1e264a'
+          test "$(git rev-parse origin/main)" = '801b2aa800fe7472fa9db867aba112a70ebdd016'
+
+      - name: Adapt the already-reviewed repair to the zero-token baseline
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/f4407b8ace9dc67906cf4448ffeef4e84ea11023" --jq .content | tr -d '\n' | base64 -d > /tmp/original-full-repair.yml
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path('/tmp/original-full-repair.yml').read_text()
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "          PY\n\n      - name: Static syntax and release gates"
+          a = src.find(start_marker)
+          b = src.find(end_marker, a + len(start_marker))
+          if a < 0 or b < 0:
+              raise SystemExit('could not extract original reviewed patcher')
+          lines = src[a + len(start_marker):b].splitlines()
+          patcher = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+
+          # Advance the old 24.0.12->24.0.13 / Worker17->18 patcher one generation
+          # without ever conflating its source and target literals.
+          patcher = patcher.replace('24.0.13', '__APP_TARGET__').replace('24.0.12', '24.0.13').replace('__APP_TARGET__', '24.0.14')
+          patcher = patcher.replace('Worker v18', '__WORKER_TARGET__').replace('Worker v17', 'Worker v18').replace('__WORKER_TARGET__', 'Worker v19')
+          patcher = patcher.replace("version: '18'", "version: '__WORKER_TARGET_NUM__'").replace("version: '17'", "version: '18'").replace("version: '__WORKER_TARGET_NUM__'", "version: '19'")
+          patcher = patcher.replace('workerVersion: "18"', 'workerVersion: "__WORKER_TARGET_NUM__"').replace('workerVersion: "17"', 'workerVersion: "18"').replace('workerVersion: "__WORKER_TARGET_NUM__"', 'workerVersion: "19"')
+
+          # PR #210 changed the v24.0.13 release-note title. Replace the brittle
+          # old header matcher with a generation-agnostic current-baseline check.
+          start = patcher.find("p='app.js'; s=read(p)")
+          end = patcher.find('# New trips have an explicit known unpaid state', start)
+          if start < 0 or end < 0:
+              raise SystemExit('app release-header patcher boundaries missing')
+          app_header = '''p='app.js'; s=read(p)\nif "const APP_VERSION = '24.0.13';" not in s: raise SystemExit('unexpected APP_VERSION')\nif "const DB_VERSION = 15;" not in s: raise SystemExit('unexpected DB_VERSION')\ns=s.replace('/** FreightLogic v24.0.13', '/** FreightLogic v24.0.14',1)\nrelease_note=(\" *  v24.0.14 \\\"Post-Onboarding Full Repair\\\": stable internal trip IDs (DB16), UNKNOWN payment\\n\"\n              \" *          semantics, explicit-speed-only Profit/Hour, header-safe shared filenames, and\\n\"\n              \" *          Worker v19 proactive legacy-token cleanup. PR #210 zero-token invite/claim\\n\"\n              \" *          onboarding remains authoritative. A1-A11 and authentic M6 remain open gates.\\n\")\nfirst_release=s.find(' *  v24.0.13')\nif first_release >= 0: s=s[:first_release]+release_note+s[first_release:]\ns=s.replace(\"const APP_VERSION = '24.0.13';\", \"const APP_VERSION = '24.0.14';\",1)\ns=s.replace('const DB_VERSION = 15;', 'const DB_VERSION = 16;',1)\n\n'''
+          patcher = patcher[:start] + app_header + patcher[end:]
+
+          # The old first-use admin race repair is superseded by PR #210's app-owned
+          # zero-token onboarding. Do not resurrect legacy admin event/token behavior.
+          start = patcher.find('# First-use admin:')
+          end = patcher.find('# Export helpers for regression tests.', start)
+          if start < 0 or end < 0:
+              raise SystemExit('superseded app-admin patch boundaries missing')
+          patcher = patcher[:start] + patcher[end:]
+
+          # Current v24.0.13 worker source is exact and still writes raw file.name.
+          start = patcher.find('# ── Service worker: safe shared filename + generation')
+          end = patcher.find('# ── Worker v19:', start)
+          if start < 0 or end < 0:
+              raise SystemExit('service/worker patch boundaries missing')
+          service_patch = r'''# ── Service worker: safe shared filename + generation ──────────
+p='service-worker.js'; s=read(p)
+if "const SW_VERSION = '24.0.13';" not in s: raise SystemExit('unexpected SW_VERSION')
+s=s.replace('/* FreightLogic v24.0.13', '/* FreightLogic v24.0.14',1)
+s=s.replace("const SW_VERSION = '24.0.13';", "const SW_VERSION = '24.0.14';",1)
+s=s.replace('?v=24.0.13','?v=24.0.14')
+old="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
+            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': file.name } }));"""
+new="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
+            // Shared filenames are attacker-controlled input. Header values may not carry
+            // control bytes; bound the value so metadata cannot become a header/storage sink.
+            const safeFilename = String(file.name || `shared-file-${i}`)
+              .replace(/[\\u0000-\\u001F\\u007F]/g, '_').slice(0, 180) || `shared-file-${i}`;
+            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': safeFilename } }));"""
+if old not in s: raise SystemExit('share filename marker missing')
+s=s.replace(old,new,1)
+write(p,s)
+
+'''
+          patcher = patcher[:start] + service_patch + patcher[end:]
+
+          # Replace the transformed old Worker section with a v19 extension of the
+          # actual PR #210 Worker v18 invite/claim architecture.
+          start = patcher.find('# ── Worker v19:')
+          end = patcher.find('# ── Release markers', start)
+          if start < 0 or end < 0:
+              raise SystemExit('worker patch boundaries missing')
+          worker_patch = r'''# ── Worker v19: proactive v7 plaintext cleanup, preserving v18 invite/claim ──
+p='cloud-backup-worker.js'; s=read(p)
+if '// FreightLogic Cloud Backup Worker v18' not in s: raise SystemExit('unexpected Worker source generation')
+s=s.replace('// FreightLogic Cloud Backup Worker v18', '// FreightLogic Cloud Backup Worker v19',1)
+hdr='// v18: ZERO-TOKEN DRIVER ONBOARDING.'
+if hdr not in s: raise SystemExit('Worker v18 onboarding header missing')
+note=("// v19: PROACTIVE LEGACY TOKEN SCRUB. Admin listing migrates every reachable v7\\n"
+      "// plaintext user record to tokenHash-only storage, lazy driver auth rewrites the matching\\n"
+      "// user record as well as its token index, and revoke never persists a raw token field.\\n")
+s=s.replace(hdr,note+hdr,1)
+old="""                const u = JSON.parse(val);
+                // Never expose driver tokens in the admin listing
+                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
+new="""                let u = JSON.parse(val);
+                // Bounded proactive v7 cleanup while admin listing already walks every user.
+                if (u.token && u.userId) {
+                  const legacyPlaintext = u.token;
+                  const cleanHash = u.tokenHash || await hashToken(legacyPlaintext);
+                  const clean = Object.assign({}, u, { tokenHash: cleanHash });
+                  delete clean.token;
+                  const cleanupOps = [
+                    env.BACKUPS.put('user:' + u.userId, JSON.stringify(clean)),
+                    env.BACKUPS.delete('token:' + legacyPlaintext),
+                  ];
+                  if (clean.active) cleanupOps.push(env.BACKUPS.put('tokh:' + cleanHash, JSON.stringify(clean)));
+                  await Promise.all(cleanupOps);
+                  u = clean;
+                }
+                // Never expose driver tokens in the admin listing
+                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
+if old not in s: raise SystemExit('Worker admin-list cleanup marker missing')
+s=s.replace(old,new,1)
+old="""            await Promise.all([
+              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
+              env.BACKUPS.delete('token:' + driverToken),
+            ]);
+            tokenRaw = JSON.stringify(migRec);"""
+new="""            const migOps = [
+              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
+              env.BACKUPS.delete('token:' + driverToken),
+            ];
+            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
+            await Promise.all(migOps);
+            tokenRaw = JSON.stringify(migRec);"""
+if old not in s: raise SystemExit('Worker lazy-migration cleanup marker missing')
+s=s.replace(old,new,1)
+old="""          parsed.active = false;
+          // Deactivate user record and revoke token in parallel
+          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
+          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
+          // Legacy plaintext key cleanup
+          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));"""
+new="""          parsed.active = false;
+          const legacyPlaintext = parsed.token;
+          delete parsed.token;
+          // Deactivate the user without ever writing a raw credential back to KV.
+          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
+          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
+          if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));"""
+if old not in s: raise SystemExit('Worker revoke cleanup marker missing')
+s=s.replace(old,new,1)
+s=s.replace("version: '18'", "version: '19'",1)
+write(p,s)
+
+'''
+          patcher = patcher[:start] + worker_patch + patcher[end:]
+
+          # Replace the old browser regression file with the corrected repository
+          # harness contract and only the repairs that still exist after PR #210.
+          start = patcher.find('# Full-repair browser regressions.')
+          end = patcher.find("p='tests/run-all.mjs';", start)
+          if start < 0 or end < 0:
+              raise SystemExit('browser regression patch boundaries missing')
+          browser_patch = r'''# Full-repair browser regressions on the repository's actual harness.
+Path('tests/integration/full-repair-regressions.spec.mjs').write_text(r''' + "'''" + r'''import { createSuite, ok, eq, launchApp, skipFirstRunWizard } from '../lib/harness.mjs';
+
+const { test, run } = createSuite('integration/full-repair-regressions.spec.mjs');
+let app;
+async function boot(){
+  if (app) return app.page;
+  app = await launchApp();
+  await skipFirstRunWizard(app.page);
+  await app.page.reload({ waitUntil:'load' });
+  await app.page.waitForFunction(() => !!window.__FL_TESTS);
+  return app.page;
+}
+
+test('[FR-01] Profit/Hour is UNKNOWN without operator planning speed and real with it', async () => {
+  const p=await boot();
+  const r=await p.evaluate(() => {
+    const f=window.__FL_TESTS.deriveUnifiedEconomics;
+    const base={revenue:1000,effectiveRevenue:1000,loadedMi:500,deadMi:0,mpg:20,fuelPrice:4,opCPM:0.2,borderAdminCost:0};
+    return [f(base),f({...base,avgMph:50})];
+  });
+  eq(r[0].available,true); eq(r[0].estHours,null); eq(r[0].profitPerHour,null);
+  eq(r[1].estHours,10); ok(Number.isFinite(r[1].profitPerHour),'explicit speed produces profit/hour');
+});
+
+test('[FR-02] payment absence stays UNKNOWN while explicit false/true stay authoritative', async () => {
+  const p=await boot();
+  const r=await p.evaluate(() => {
+    const T=window.__FL_TESTS;
+    const u=T.sanitizeTrip({id:'u1',orderNo:'A',pay:100,loadedMiles:10,emptyMiles:0});
+    const n=T.sanitizeTrip({id:'u2',orderNo:'B',pay:100,loadedMiles:10,emptyMiles:0,isPaid:false});
+    const y=T.sanitizeTrip({id:'u3',orderNo:'C',pay:100,loadedMiles:10,emptyMiles:0,isPaid:true});
+    return {u,n,y,uu:T.tripIsUnpaid(u),nu:T.tripIsUnpaid(n),yp:T.tripIsPaid(y)};
+  });
+  eq(r.u.paymentStatusKnown,false); eq(r.uu,false);
+  eq(r.n.paymentStatusKnown,true); eq(r.nu,true);
+  eq(r.y.paymentStatusKnown,true); eq(r.yp,true);
+});
+
+test('[FR-03] DB16 tripRecords uses stable id and permits two blank/reused order numbers', async () => {
+  const p=await boot();
+  const r=await p.evaluate(async () => {
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('FreightLogic_v18');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+    const txn=db.transaction('tripRecords','readwrite');
+    const store=txn.objectStore('tripRecords');
+    const kp=store.keyPath, unique=store.index('orderNo').unique;
+    store.put({id:'fr-blank-1',orderNo:'',created:1,pickupDate:'2026-01-01',customer:'A'});
+    store.put({id:'fr-blank-2',orderNo:'',created:2,pickupDate:'2026-01-02',customer:'B'});
+    await new Promise((resolve,reject)=>{txn.oncomplete=resolve;txn.onerror=()=>reject(txn.error)});
+    const tx=db.transaction('tripRecords','readonly'), s=tx.objectStore('tripRecords');
+    const all=await new Promise((resolve,reject)=>{const q=s.index('orderNo').getAll(IDBKeyRange.only(''));q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
+    db.close(); return {kp,unique,count:all.filter(x=>x.id.startsWith('fr-blank-')).length};
+  });
+  eq(r.kp,'id'); eq(r.unique,false); eq(r.count,2);
+});
+
+test('[FR-04] service worker sanitizes attacker-controlled shared filenames before X-Filename', async () => {
+  const p=await boot();
+  const txt=await p.evaluate(async () => await (await fetch('/service-worker.js')).text());
+  ok(txt.includes('safeFilename'),'safe filename variable exists');
+  ok(txt.includes("replace(/[\\u0000-\\u001F\\u007F]/g, '_')"),'control bytes are stripped');
+  ok(!txt.includes("'X-Filename': file.name"),'raw file.name is never written to header');
+});
+
+export async function runSpec(){
+  try{return await run();}
+  finally{if(app){await app.close(); app=null;}}
+}
+''' + "'''" + r''')
+
+'''
+          patcher = patcher[:start] + browser_patch + patcher[end:]
+
+          # Preserve PR #210's documentation as history. Advance only explicit
+          # current-candidate labels and add a concise successor note.
+          start = patcher.find('# Documentation current-marker refresh only')
+          end = patcher.find('# Final invariants before test execution.', start)
+          if start < 0 or end < 0:
+              raise SystemExit('documentation patch boundaries missing')
+          docs_patch = '''# Documentation: advance current labels without rewriting v24.0.13 history.\np='CLAUDE.md'; s=read(p)\ns=s.replace('**FreightLogic v24.0.13**','**FreightLogic v24.0.14**',1)\nanchor='**Stack:** Vanilla JS'\nnote=(\"**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A11 and authentic M6 remain open.\\n\\n\")\nif note not in s and anchor in s: s=s.replace(anchor,note+anchor,1)\nwrite(p,s)\nfor p in ['FIELD_TEST_CHECKLIST.md','docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md']:\n    if Path(p).exists():\n        s=read(p)\n        s=s.replace('Candidate: v24.0.13','Candidate: v24.0.14',1)\n        s=s.replace('candidate v24.0.13','candidate v24.0.14',1)\n        write(p,s)\np='docs/BACKUP_CONTRACT.md'\nif Path(p).exists():\n    s=read(p)\n    note=''' + '"""' + '''\n\n## DB16 stable trip identity (v24.0.14 repair candidate)\n\n`orderNo` is external evidence, not a unique internal identity. DB16 keeps the legacy `trips` store for rollback but routes logical trip operations to `tripRecords`, keyed by stable internal `id`, with a non-unique `orderNo` index. Pre-DB16 rows whose paid/unpaid provenance cannot be proven migrate with payment status UNKNOWN until the operator explicitly marks them.\n''' + '"""' + '''\n    if '## DB16 stable trip identity (v24.0.14 repair candidate)' not in s: s+=note\n    write(p,s)\n\n'''
+          patcher = patcher[:start] + docs_patch + patcher[end:]
+
+          Path('/tmp/full-repair-v24.0.14.py').write_text(patcher)
+          PY
+          python /tmp/full-repair-v24.0.14.py
+
+      - name: Merge approved PR 206 CSS onto PR 210 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 4f2daf22819feb8d7aeba40324e53ce971f22418 40ee119ad3f8bc42e02c6e81ed4682bb6162f333
+          git show 4f2daf22819feb8d7aeba40324e53ce971f22418:styles.css > /tmp/styles-base.css
+          git show 40ee119ad3f8bc42e02c6e81ed4682bb6162f333:styles.css > /tmp/styles-gpt.css
+          cp styles.css /tmp/styles-current.css
+          if ! git merge-file -p /tmp/styles-current.css /tmp/styles-base.css /tmp/styles-gpt.css > /tmp/styles-merged.css; then
+            echo 'Approved PR #206 CSS conflicts with the post-PR-210 baseline; refusing to guess.' >&2
+            exit 1
+          fi
+          cp /tmp/styles-merged.css styles.css
+
+      - name: Static repair invariants
+        shell: bash
+        run: |
+          set -euo pipefail
           node --check app.js
           node --check service-worker.js
-          node --check admin-driver-ui.js
           node --check cloud-backup-worker.js
-          grep -q "const APP_VERSION = '24.0.13'" app.js
-          grep -q "const DB_VERSION = 16" app.js
-          grep -q "paymentStatusKnown" app.js
-          grep -q "safeFilename" service-worker.js
-          grep -q "Cloud Backup Worker v18" cloud-backup-worker.js
-          grep -q "FR-05" tests/integration/full-repair-regressions.spec.mjs
-
-      - name: Three-way merge post-baseline docs and runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin 4f2daf22819feb8d7aeba40324e53ce971f22418
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-          for path in CLAUDE.md FIELD_TEST_CHECKLIST.md docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md tests/run-all.mjs; do
-            git show 4f2daf22819feb8d7aeba40324e53ce971f22418:"$path" > /tmp/base
-            git show origin/main:"$path" > /tmp/current
-            cp "$path" /tmp/repaired
-            if ! git merge-file -p /tmp/current /tmp/base /tmp/repaired > /tmp/merged; then
-              echo "Three-way merge conflict in $path" >&2
-              exit 1
-            fi
-            cp /tmp/merged "$path"
-          done
-
-      - name: Validate repaired and merged source
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check app.js
-          node --check service-worker.js
-          node --check admin-driver-ui.js
-          node --check cloud-backup-worker.js
+          node --check sw-bridge.js
+          node --check modern-shell.js
+          node --check voice-load.js
+          node --check midwest-stack-authority.js
           node --check tests/run-all.mjs
-          grep -q "const APP_VERSION = '24.0.13'" app.js
+          grep -q "const APP_VERSION = '24.0.14'" app.js
           grep -q "const DB_VERSION = 16" app.js
-          grep -q "paymentStatusKnown" app.js
-          grep -q "safeFilename" service-worker.js
-          grep -q "Cloud Backup Worker v18" cloud-backup-worker.js
-          grep -q "legacyPlaintext" cloud-backup-worker.js
-          grep -q "fullRepairRegressions" tests/run-all.mjs
-          grep -q "workflowAuthority" tests/run-all.mjs
-          grep -q "FR-05" tests/integration/full-repair-regressions.spec.mjs
+          grep -q 'paymentStatusKnown' app.js
+          ! grep -q 'Math.round(totalMi / 50)' app.js
+          grep -q "const SW_VERSION = '24.0.14'" service-worker.js
+          grep -q 'safeFilename' service-worker.js
+          ! grep -q "'X-Filename': file.name" service-worker.js
+          grep -q 'Cloud Backup Worker v19' cloud-backup-worker.js
+          grep -q "version: '19'" cloud-backup-worker.js
+          grep -q 'POST /admin/invites' cloud-backup-worker.js
+          grep -q 'POST /claim' cloud-backup-worker.js
+          grep -q 'legacyPlaintext' cloud-backup-worker.js
+          grep -q 'fullRepairRegressions' tests/run-all.mjs
+          grep -q 'zeroTokenOnboarding' tests/run-all.mjs
+          grep -q 'workerInviteClaim' tests/run-all.mjs
+          grep -q 'FR-04' tests/integration/full-repair-regressions.spec.mjs
+          node tests/unit/cache-generation.spec.mjs
+          node tests/unit/worker-token-rotation.spec.mjs
+          node scripts/verify-cloudflare-parity.mjs --static-only
           git diff --check
+
+      - name: Install Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g playwright@1.62.1
+          npx playwright install --with-deps chromium
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
+
+      - name: Full regression suite
+        run: node tests/run-all.mjs
 
       - name: Publish immutable objects, never refs
         id: objects
@@ -96,18 +335,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          reviewed_ref='refs/heads/agent/gpt/full-repair-reviewed'
-          before_refs=$(git ls-remote origin refs/heads/main "$reviewed_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
-          reviewed_head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/agent/gpt/full-repair-reviewed" --jq .object.sha)
-          test "$reviewed_head" = '5352df1723ce2f573ae5aab85bf6581398a951ce'
-          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${reviewed_head}" --jq .tree.sha)
+          repair_ref='refs/heads/agent/gpt/full-repair-v24.0.14'
+          before_refs=$(git ls-remote origin refs/heads/main "$repair_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
+          repair_head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/agent/gpt/full-repair-v24.0.14" --jq .object.sha)
+          test "$repair_head" = '63c2743700053d9794f45236b9b2d2e68c1e264a'
+          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${repair_head}" --jq .tree.sha)
 
           paths=(
-            app.js admin-driver-ui.js cloud-backup-worker.js service-worker.js sw-bridge.js modern-shell.js
+            app.js cloud-backup-worker.js service-worker.js sw-bridge.js modern-shell.js
             index.html manifest.json voice-load.js midwest-stack-authority.js midwest-stack-config.json
             scripts/verify-cloudflare-parity.mjs tests/unit/cache-generation.spec.mjs
             tests/unit/worker-token-rotation.spec.mjs tests/integration/full-repair-regressions.spec.mjs
-            tests/run-all.mjs CLAUDE.md FIELD_TEST_CHECKLIST.md docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md
+            tests/run-all.mjs styles.css CLAUDE.md FIELD_TEST_CHECKLIST.md
+            docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md docs/BACKUP_CONTRACT.md
           )
           printf '{"base_tree":"%s","tree":[' "$base_tree" > /tmp/tree.json
           first=1
@@ -123,41 +363,21 @@ jobs:
           printf ']}' >> /tmp/tree.json
           tree_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input /tmp/tree.json --jq .sha)
           jq -nc \
-            --arg message $'[gpt] apply reviewed full repair v24.0.13\n\nStable trip identity/DB16 migration; UNKNOWN payment semantics; no invented Profit/Hour speed; first-use admin ownership; Worker v18 legacy-token cleanup; share-target filename hardening; regression coverage; current-main certification docs preserved by three-way merge.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
-            --arg tree "$tree_sha" --arg parent "$reviewed_head" \
+            --arg message $'[gpt] apply post-210 full repair v24.0.14\n\nPreserve PR #210 zero-token onboarding while adding DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, v24.0.14 share-target hardening, Worker v19 proactive legacy-token cleanup, regression coverage, and the approved PR #206 presentation delta. Physical iPhone A1-A11 and authentic M6 remain open certification gates.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
+            --arg tree "$tree_sha" --arg parent "$repair_head" \
             '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
           commit_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" --input /tmp/commit.json --jq .sha)
-          printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$reviewed_head" >> /tmp/blob-map.txt
+          printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$repair_head" >> /tmp/blob-map.txt
 
-          after_refs=$(git ls-remote origin refs/heads/main "$reviewed_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
+          after_refs=$(git ls-remote origin refs/heads/main "$repair_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
           test "$before_refs" = "$after_refs"
           echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
           cat /tmp/blob-map.txt
 
-      - name: Upload object map and merged source
+      - name: Upload object map
         uses: actions/upload-artifact@v4
         with:
-          name: freightlogic-reviewed-full-repair-objects
+          name: freightlogic-v24.0.14-repair-objects
           if-no-files-found: error
           retention-days: 1
-          path: |
-            /tmp/blob-map.txt
-            app.js
-            admin-driver-ui.js
-            cloud-backup-worker.js
-            service-worker.js
-            sw-bridge.js
-            modern-shell.js
-            index.html
-            manifest.json
-            voice-load.js
-            midwest-stack-authority.js
-            midwest-stack-config.json
-            scripts/verify-cloudflare-parity.mjs
-            tests/unit/cache-generation.spec.mjs
-            tests/unit/worker-token-rotation.spec.mjs
-            tests/integration/full-repair-regressions.spec.mjs
-            tests/run-all.mjs
-            CLAUDE.md
-            FIELD_TEST_CHECKLIST.md
-            docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md
+          path: /tmp/blob-map.txt
