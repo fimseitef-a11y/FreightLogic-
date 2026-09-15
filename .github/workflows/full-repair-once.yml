@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: agent/gpt/full-repair-takeover
-          fetch-depth: 3
+          fetch-depth: 1
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -27,10 +27,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show HEAD^^:.github/workflows/full-repair-once.yml > /tmp/original-full-repair.yml
+          git fetch --no-tags --depth=1 origin 0a2ee08d6ae255715203b887ca739546fee8d004
+          git show 0a2ee08d6ae255715203b887ca739546fee8d004:.github/workflows/full-repair-once.yml > /tmp/original-full-repair.yml
           python - <<'PY'
           from pathlib import Path
-          import re
 
           src = Path('/tmp/original-full-repair.yml').read_text()
           start_marker = "          python - <<'PY'\n"
@@ -46,16 +46,13 @@ jobs:
           dedented = [line[10:] if line.startswith('          ') else line for line in lines]
           patcher = '\n'.join(dedented) + '\n'
 
-          # The staged payload had one brittle literal matcher in the share-target block.
-          # Replace only that patcher section with an equivalent source transform that
-          # matches the exact v24.0.12 worker currently in the staging branch.
-          start_tag = '          # ── Service worker: safe shared filename + generation ──────────'
-          end_tag = '          # ── Admin module: one owner + feature parity + easy self-setup ──'
+          start_tag = '# ── Service worker: safe shared filename + generation ──────────'
+          end_tag = '# ── Admin module: one owner + feature parity + easy self-setup ──'
           a = patcher.find(start_tag)
           b = patcher.find(end_tag)
           if a < 0 or b < 0 or b <= a:
               raise SystemExit('service-worker patcher section markers missing')
-          replacement = r'''          # ── Service worker: safe shared filename + generation ──────────
+          replacement = r'''# ── Service worker: safe shared filename + generation ──────────
           p='service-worker.js'; s=read(p)
           if "const SW_VERSION = '24.0.12';" not in s: raise SystemExit('unexpected SW_VERSION')
           s=s.replace('/* FreightLogic v24.0.12 — Browser Hardened Service Worker */', '/* FreightLogic v24.0.13 — Browser Hardened Service Worker */',1)
