@@ -1,0 +1,6 @@
+owner: gpt
+token: a428ef8f-955b-4888-9690-0285d889260d
+started_utc: 2026-09-15T22:05:00Z
+expected_release_utc: 2026-09-16T03:05:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json, .agents/LANES.md
+task: Resume operator-directed reviewed full-repair takeover on current main; apply verified repair as a normal PR and integrate the pending GPT-owned CSS contribution into one coordinated release generation.
