@@ -74,7 +74,7 @@ Re-dispatch and record the later run; do not dismiss the earlier one and do not 
 it.
 
 This entry records generations and directly observed run evidence only. It is **not**
-a certification: physical iPhone A1-A10 and section C private-history reconciliation
+a certification: physical iPhone A1-A11 and section C private-history reconciliation
 remain open, and neither is reachable from a hosted runner.
 
 

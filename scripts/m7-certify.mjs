@@ -190,6 +190,7 @@ for (const [g, cmd] of [
   ['Offline install / reload / update', 'manual — airplane mode: install PWA, reload, confirm update-on-reconnect'],
   ['GPS / background / permission-loss resilience', 'manual — start a trip, background the app, revoke location, confirm the session survives'],
   ['Production M5B intake durability check', 'manual — More → Opportunity Intake, save evidence, reload, export, re-import'],
+  ['iOS 27 / Safari 27 regression pass (A11)', 'manual — on iOS 27+: F31 SVG chart, tab-bar icons, select zoom-on-focus, persisted storage granted, cloud-backup paused banner (FIELD_TEST_CHECKLIST.md A11)'],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 /* ---- the verdict. Certification requires ALL of: canonical state clear,

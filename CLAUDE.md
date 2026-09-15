@@ -2901,3 +2901,61 @@ Removing it from that branch is the owning lane's, requested through `/.agents/i
 rather than edited across lanes.
 
 Full suite: **489 passed, 0 failed across 53 spec files** (from 483/52).
+
+---
+
+## iOS 27 / Safari 27 assessment — the device gate is A1-A11
+
+Documentation and tooling only. No shipped file changed, so no version marker moved:
+`APP_VERSION` and `SW_VERSION` stay `24.0.12`, `DB_VERSION` 15, Worker v17. The
+runtime candidate is still `4f2daf2`.
+
+iOS 27 and Safari 27 shipped 2026-09-14, one day before v24.0.12's live gates were
+observed. `docs/IOS27_SAFARI27_ASSESSMENT_2026-09-15.md` is the full assessment,
+checked against primary WebKit/Apple sources **and** against this repository's code.
+Its outcomes, so they are not re-litigated:
+
+| Safari 27 item | Outcome |
+|---|---|
+| Customizable `<select>` (`appearance: base-select`) | **Adopt**, in flight as PR #206 (gpt lane, `styles.css`). 29 selects, not 16: 13 are built inside `app.js` via `innerHTML`, so selectors must be structural. The v24.0.10 ≥16px rule stays load-bearing. |
+| Scroll anchoring | **Free.** `overflow-anchor` appears nowhere; nothing to add. |
+| Service Worker Static Routing | **NOT YET APPLICABLE.** The fetch handler already returns early for non-GET and cross-origin, so every class a static route would target already bypasses the worker; a rejected `addRoutes` inside `install` is an install-abort path and the only gate that would catch it runs against production. |
+| ReadableStream improvements | **Available, no code.** Every large-payload path ends at an API that needs the whole buffer (SheetJS, `checksumFull`, `crypto.subtle`, Blob receipts). |
+| Background Sync | **Still absent.** The circulating claim that iOS 27 adds it is false; `cloudBackupPaused()` / `openCloudReconnect()` remain the correct design. |
+
+**The finding that widened the gate.** Safari 27 carries 525 fixes, 30 of them SVG, and
+WebKit frames the release as existing features behaving *differently — more
+correctly*. FreightLogic renders hand-built SVG in the F31 Earnings Trends chart and the
+driver tab-bar icons, and no gate in this repository asserts pixels. So
+`FIELD_TEST_CHECKLIST.md` gained **A11** (chart, tab-bar icons, select zoom-on-focus,
+scroll anchoring, persisted-storage grant, cloud-backup paused banner), and the
+physical-iPhone gate is **A1-A11** everywhere: the certification state document, the
+field checklist's section-B and section-D cross-references, the parity checklist, and
+`scripts/m7-certify.mjs`'s physical-device list. Earlier sections of this file that say
+A1-A10 were accurate when written and are left as history.
+
+**PR #206 cannot land alone, by design.** It changes `styles.css`, a declared runtime
+asset, with no generation bump, and `RG-03` correctly fails it. Every marker file for the
+bump is SHARED or claude-owned. The gpt lane's disposition
+(`gpt-handoff-response-2026-09-15.md` on `agent-coordination`) is **one** coordinated
+generation together with its full-repair pass, which as of this writing holds
+`lock/app-js` over every SHARED runtime file. Do not land a separate v24.0.13 for the
+CSS alone; two lanes must not each claim a generation.
+
+**Reported, not fixed — one residue of the gpt money-integrity packet.**
+`gpt-omega-infinity-money-integrity-2026-09-15.md` named four secondary surfaces
+where an unknown deadhead still entered a denominator as zero. v24.0.11 closed
+three: `exportTripsCSV()` now reads `tripAllMiles()` (OI-06), `computeLoadScore()`
+returns `available: false` (OI-04), and `renderLiveScore()` defers to it. The fourth,
+`tripRow()` (`app.js`, `function tripRow`), still computes
+`Number(t.loadedMiles||0) + Number(t.emptyMiles||0)` and renders the result as a
+`$/mi` figure with a letter grade chip, in both compact and full modes. A trip whose
+deadhead was never stated therefore shows a loaded-only RPM dressed as True RPM on the
+Home recent-trips list and the Trips page. No `OI-*` assertion covers `tripRow`. It is
+recorded here rather than fixed because `app.js` is under the gpt lane's
+`lock/app-js` for the full-repair pass; it belongs in that pass or the next held lock,
+with a regression that renders a trip with `emptyMiles: null` and asserts `—` / `?`
+rather than a number, alongside an explicit-zero control.
+
+**Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN, and
+nothing here touches either.
