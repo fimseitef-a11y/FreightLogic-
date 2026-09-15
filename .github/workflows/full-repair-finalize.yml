@@ -37,6 +37,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/f4407b8ace9dc67906cf4448ffeef4e84ea11023" --jq .content | tr -d '\n' | base64 -d > /tmp/original-full-repair.yml
           git fetch --no-tags origin ee3e7bf97491f8309f18c3ff003ee4a612cf6727 3197b016a63021c20c24572dd8cd0b286f470579
           git show ee3e7bf97491f8309f18c3ff003ee4a612cf6727:tests/integration/full-repair-regressions.spec.mjs > /tmp/full-repair-regressions-fixed.mjs
           git show 3197b016a63021c20c24572dd8cd0b286f470579:.github/workflows/full-repair-once.yml > /tmp/validated-builder.yml
