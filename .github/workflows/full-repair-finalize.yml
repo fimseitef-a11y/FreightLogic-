@@ -18,75 +18,43 @@ jobs:
           ref: fe63a88c96f772e45bd39ec443961991afa9298e
           fetch-depth: 0
 
-      - name: Correct only release/governance records
+      - name: Correct release and governance records
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = 'fe63a88c96f772e45bd39ec443961991afa9298e'
           python - <<'PY'
           from pathlib import Path
-
-          def one(path, old, new):
-              p=Path(path); s=p.read_text()
-              n=s.count(old)
-              if n != 1:
-                  raise SystemExit(f'{path}: expected one exact match, found {n}: {old[:100]!r}')
-              p.write_text(s.replace(old,new))
-
           p=Path('CLAUDE.md'); s=p.read_text()
           s=s.replace('physical iPhone A1-A11 and authentic M6 remain open.', 'physical iPhone A1-A12 and authentic M6 remain open.')
-
-          old="""**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Worker v18 and app v24.0.13 are SOURCE-ONLY — neither is deployed and neither has been observed live.** Production currently serves Worker **v17** (the monotonic backup/delta key clock, deployed 2026-09-14T19:05Z, run `34884719806`) and app generation **24.0.12** (deployed and observed live 2026-09-15 — live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`). v24.0.13 adds zero-token driver onboarding and needs BOTH a Worker deploy and an app deploy, in that order: the app's invite and claim flows call `POST /admin/invites` and `POST /claim`, which do not exist on v17, so shipping the app first leaves the owner an Invite button that 404s. DB remains v15."""
-          new="""**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints."""
-          if s.count(old)!=1: raise SystemExit('CLAUDE current-cloud paragraph anchor mismatch')
+          old="**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Worker v18 and app v24.0.13 are SOURCE-ONLY — neither is deployed and neither has been observed live.** Production currently serves Worker **v17** (the monotonic backup/delta key clock, deployed 2026-09-14T19:05Z, run `34884719806`) and app generation **24.0.12** (deployed and observed live 2026-09-15 — live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`). v24.0.13 adds zero-token driver onboarding and needs BOTH a Worker deploy and an app deploy, in that order: the app's invite and claim flows call `POST /admin/invites` and `POST /claim`, which do not exist on v17, so shipping the app first leaves the owner an Invite button that 404s. DB remains v15."
+          new="**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints."
+          if s.count(old)!=1: raise SystemExit('current cloud paragraph mismatch')
           s=s.replace(old,new)
-
           s=s.replace('7. **IndexedDB layer** — `initDB` (v12 schema),', '7. **IndexedDB layer** — `initDB` (current DB16 schema),')
           s=s.replace('8. **Data stores:** `trips`, `expenses`,', '8. **Data stores:** logical `trips` (DB16 maps to `tripRecords`), `expenses`,')
-          s=s.replace("### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — keyPath: `orderNo`", "### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`\n- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present")
-
-          old="""### DB migration
-On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
-`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
-`legacyMigrated` in settings, and never runs again. The old DB is not deleted."""
-          new="""### DB migration
-On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
-`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
-`legacyMigrated` in settings, and never runs again. The old DB is not deleted.
-DB16 additionally creates `tripRecords` with stable internal `id` identity and a
-non-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.
-The legacy `trips` store is deliberately retained for rollback; external order
-numbers are evidence/lookup values, never authoritative record identity. Migrated
-rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN."""
-          if s.count(old)!=1: raise SystemExit('CLAUDE migration block anchor mismatch')
+          old="### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — keyPath: `orderNo`"
+          new="### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)\n- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`\n- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present"
+          if s.count(old)!=1: raise SystemExit('schema block mismatch')
           s=s.replace(old,new)
-
-          s=s.replace("const APP_VERSION = '24.0.13';\nconst DB_VERSION = 15;", "const APP_VERSION = '24.0.14';\nconst DB_VERSION = 16;")
-
-          s=s.replace("| Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |", "| Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |")
-          s=s.replace("| Admin token | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close |", "| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |")
-
-          old="""The admin token grants create/list/revoke over **every** driver account, so it is the most
-sensitive credential in the app. Both writers must keep it session-scoped:
-`app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).
-`admin-driver-ui.js` also runs `purgeLegacyTok()` on every load, which migrates any token
-left in `localStorage` by a pre-23.8.0 build into `sessionStorage` and deletes the on-disk
-copy. Do not remove that purge until enough releases have passed that no stale copies remain."""
-          new="""The admin token grants create/list/revoke over **every** driver account, so it is the most
-sensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin
-material session-scoped; persistence is allowed only as AES-GCM ciphertext in
-`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only
-after the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down
-from the legacy admin-driver flow and its legacy-token purge is delete-only: stale
-plaintext localStorage credentials must never be promoted back into a live session."""
-          if s.count(old)!=1: raise SystemExit('CLAUDE credential paragraph anchor mismatch')
+          old="### DB migration\nOn first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens\n`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records\n`legacyMigrated` in settings, and never runs again. The old DB is not deleted."
+          new="### DB migration\nOn first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens\n`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records\n`legacyMigrated` in settings, and never runs again. The old DB is not deleted.\nDB16 additionally creates `tripRecords` with stable internal `id` identity and a\nnon-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.\nThe legacy `trips` store is deliberately retained for rollback; external order\nnumbers are evidence/lookup values, never authoritative record identity. Migrated\nrows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN."
+          if s.count(old)!=1: raise SystemExit('migration block mismatch')
+          s=s.replace(old,new)
+          old="const APP_VERSION = '24.0.13';\nconst DB_VERSION = 15;"
+          new="const APP_VERSION = '24.0.14';\nconst DB_VERSION = 16;"
+          if s.count(old)!=1: raise SystemExit('constants block mismatch')
+          s=s.replace(old,new)
+          s=s.replace('| Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |', '| Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |')
+          s=s.replace('| Admin token | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close |', "| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |")
+          old="The admin token grants create/list/revoke over **every** driver account, so it is the most\nsensitive credential in the app. Both writers must keep it session-scoped:\n`app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).\n`admin-driver-ui.js` also runs `purgeLegacyTok()` on every load, which migrates any token\nleft in `localStorage` by a pre-23.8.0 build into `sessionStorage` and deletes the on-disk\ncopy. Do not remove that purge until enough releases have passed that no stale copies remain."
+          new="The admin token grants create/list/revoke over **every** driver account, so it is the most\nsensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin\nmaterial session-scoped; persistence is allowed only as AES-GCM ciphertext in\n`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only\nafter the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down\nfrom the legacy admin-driver flow and its legacy-token purge is delete-only: stale\nplaintext localStorage credentials must never be promoted back into a live session."
+          if s.count(old)!=1: raise SystemExit('credential block mismatch')
           s=s.replace(old,new)
           p.write_text(s)
-
           p=Path('.agents/LANES.md'); s=p.read_text()
           if 'A1–A11' not in s: raise SystemExit('LANES A1-A11 anchor missing')
-          s=s.replace('A1–A11','A1–A12')
-          p.write_text(s)
+          p.write_text(s.replace('A1–A11','A1–A12'))
           PY
           git diff --check
           grep -q "APP_VERSION = '24.0.14'" CLAUDE.md
@@ -117,10 +85,7 @@ plaintext localStorage credentials must never be promoted back into a live sessi
           done
           printf ']}' >> /tmp/tree.json
           tree_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input /tmp/tree.json --jq .sha)
-          jq -nc \
-            --arg message $'[gpt] correct v24.0.14 source and certification records\n\nAlign CLAUDE.md and temporary lane text with the tested candidate: app v24.0.14, DB16 tripRecords stable identity, Worker v19, zero-token admin credential semantics, production still v24.0.12/Worker17 until deploy, and physical iPhone gate A1-A12. Runtime blobs are unchanged.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
-            --arg tree "$tree_sha" --arg parent "$parent" \
-            '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
+          jq -nc --arg message $'[gpt] correct v24.0.14 source and certification records\n\nAlign CLAUDE.md and temporary lane text with app v24.0.14, DB16, Worker v19, zero-token admin credential semantics, production v24.0.12/Worker17 until deploy, and physical iPhone A1-A12. Runtime blobs are unchanged.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' --arg tree "$tree_sha" --arg parent "$parent" '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
           commit_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" --input /tmp/commit.json --jq .sha)
           printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$parent" >> /tmp/map.txt
           cat /tmp/map.txt
