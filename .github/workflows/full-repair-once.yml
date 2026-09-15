@@ -5,17 +5,18 @@ on:
     branches:
       - agent/gpt/full-repair-takeover
 
-# Write is required only for Git's immutable blob/tree/commit object endpoints.
-# This workflow never calls a refs endpoint, never runs git push, and asserts
-# that main, the reviewed branch, and the staging branch refs do not change.
+# The only repository write operations below create immutable Git objects.
+# No refs endpoint is called and no git push is permitted. Branch refs are
+# captured before/after and the job fails unless they remain byte-identical.
 permissions:
+  actions: read
   contents: write
 
 jobs:
   build-repair-objects:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out exact repair staging branch
+      - name: Check out staging repository
         uses: actions/checkout@v6
         with:
           ref: agent/gpt/full-repair-takeover
@@ -26,55 +27,30 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Extract and apply prior exact repair payload locally
+      - name: Download exact green repair artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: freightlogic-reviewed-full-repair
+          path: /tmp/repair
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 35030535679
+
+      - name: Materialize repaired source
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin 0a2ee08d6ae255715203b887ca739546fee8d004
-          git show 0a2ee08d6ae255715203b887ca739546fee8d004:.github/workflows/full-repair-once.yml > /tmp/original-full-repair.yml
-          python - <<'PY'
-          from pathlib import Path
-          import base64
-
-          src = Path('/tmp/original-full-repair.yml').read_text()
-          start_marker = "          python - <<'PY'\n"
-          end_marker = "          PY\n\n      - name: Static syntax and release gates"
-          start = src.find(start_marker)
-          if start < 0:
-              raise SystemExit('prior repair payload start marker not found')
-          start += len(start_marker)
-          end = src.find(end_marker, start)
-          if end < 0:
-              raise SystemExit('prior repair payload end marker not found')
-          lines = src[start:end].splitlines()
-          dedented = [line[10:] if line.startswith('          ') else line for line in lines]
-          patcher = '\n'.join(dedented) + '\n'
-
-          sw_start = '# ── Service worker: safe shared filename + generation ──────────'
-          sw_end = '# ── Admin module: one owner + feature parity + easy self-setup ──'
-          a = patcher.find(sw_start); b = patcher.find(sw_end)
-          if a < 0 or b < 0 or b <= a:
-              raise SystemExit('service-worker patcher section markers missing')
-          sw_b64 = 'IyDilIDilIAgU2VydmljZSB3b3JrZXI6IHNhZmUgc2hhcmVkIGZpbGVuYW1lICsgZ2VuZXJhdGlvbiDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKcD0nc2VydmljZS13b3JrZXIuanMnOyBzPXJlYWQocCkKaWYgImNvbnN0IFNXX1ZFUlNJT04gPSAnMjQuMC4xMic7IiBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgndW5leHBlY3RlZCBTV19WRVJTSU9OJykKcz1zLnJlcGxhY2UoJy8qIEZyZWlnaHRMb2dpYyB2MjQuMC4xMiDigJQgQnJvd3NlciBIYXJkZW5lZCBTZXJ2aWNlIFdvcmtlciAqLycsICcvKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMg4oCUIEJyb3dzZXIgSGFyZGVuZWQgU2VydmljZSBXb3JrZXIgKi8nLDEpCnM9cy5yZXBsYWNlKCJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTInOyIsICJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTMnOyIsMSkKcz1zLnJlcGxhY2UoJz92PTI0LjAuMTInLCc/dj0yNC4wLjEzJykKcmF3X2hlYWRlcj0iJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiCmlmIHJhd19oZWFkZXIgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3JhdyBzaGFyZSBmaWxlbmFtZSBoZWFkZXIgbWFya2VyIG1pc3NpbmcnKQpzYWZlX2xpbmVzPSIiIiAgICAgICAgICAgIC8vIFNoYXJlZCBmaWxlbmFtZXMgYXJlIGF0dGFja2VyLWNvbnRyb2xsZWQgaW5wdXQuIEhlYWRlciB2YWx1ZXMgbWF5IG5vdCBjYXJyeSBDUi9MRgogICAgICAgICAgICAvLyBvciBvdGhlciBjb250cm9sIGJ5dGVzOyBib3VuZCB0aGUgdmFsdWUgYXMgd2VsbCBzbyBtZXRhZGF0YSBjYW5ub3QgYmVjb21lIGEgc3RvcmFnZSBzaW5rLgogICAgICAgICAgICBjb25zdCBzYWZlRmlsZW5hbWUgPSBTdHJpbmcoZmlsZS5uYW1lIHx8IGBzaGFyZWQtZmlsZS0ke2l9YCkKICAgICAgICAgICAgICAucmVwbGFjZSgvW1xcdTAwMDAtXFx1MDAxRlxcdTAwN0ZdL2csICdfJykuc2xpY2UoMCwgMTgwKSB8fCBgc2hhcmVkLWZpbGUtJHtpfWA7CiIiIgpjb250ZW50X2xpbmU9IiAgICAgICAgICAgIGNvbnN0IGNvbnRlbnRUeXBlID0gQUxMT1dFRF9TSEFSRV9UWVBFUy5oYXMoZmlsZS50eXBlKSA/IGZpbGUudHlwZSA6ICdhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0nO1xuIgppZiBjb250ZW50X2xpbmUgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3NoYXJlIGNvbnRlbnQtdHlwZSBtYXJrZXIgbWlzc2luZycpCnM9cy5yZXBsYWNlKGNvbnRlbnRfbGluZSwgY29udGVudF9saW5lICsgc2FmZV9saW5lcywgMSkKcz1zLnJlcGxhY2UocmF3X2hlYWRlcjogPSAiJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiIGlmIEZhbHNlIGVsc2UgcmF3X2hlYWRlcjogPSByYXdfaGVhZGVyLCByYXdfaGVhZGVyLCAxKQpzPXMucmVwbGFjZShyYXdfaGVhZGVyLCAiJ1gtRmlsZW5hbWUnOiBzYWZlRmlsZW5hbWUiLDEpCndyaXRlKHAscykKCg=='
-          # Use the exact verified service-worker replacement. The payload is inert data
-          # here so YAML cannot reinterpret its JavaScript regex/backticks.
-          sw = base64.b64decode(sw_b64).decode('utf-8')
-          # The encoded helper above intentionally includes one compatibility line from
-          # an earlier builder. Normalize it to the verified source transform.
-          sw = sw.replace("s=s.replace(raw_header := \"'X-Filename': file.name\" if False else raw_header := raw_header, raw_header, 1)\n", "")
-          patcher = patcher[:a] + sw + patcher[b:]
-
-          w_start = '# ── Worker v18: proactively scrub every reachable v7 plaintext token ──'
-          w_end = '# ── Release markers ──────────────────────────────────────────'
-          a = patcher.find(w_start); b = patcher.find(w_end)
-          if a < 0 or b < 0 or b <= a:
-              raise SystemExit('worker patcher section markers missing')
-          worker_b64 = 'IyDilIDilIAgV29ya2VyIHYxODogcHJvYWN0aXZlbHkgc2NydWIgZXZlcnkgcmVhY2hhYmxlIHY3IHBsYWludGV4dCB0b2tlbiDilIDilIAKcD0nY2xvdWQtYmFja3VwLXdvcmtlci5qcyc7IHM9cmVhZChwKQppZiAnLy8gRnJlaWdodExvZ2ljIENsb3VkIEJhY2t1cCBXb3JrZXIgdjE3JyBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnd29ya2VyIHYxNyBoZWFkZXIgbWFya2VyIG1pc3NpbmcnKQpzPXMucmVwbGFjZSgnLy8gRnJlaWdodExvZ2ljIENsb3VkIEJhY2t1cCBXb3JrZXIgdjE3JywgJy8vIEZyZWlnaHRMb2dpYyBDbG91ZCBCYWNrdXAgV29ya2VyIHYxOCcsMSkKaGRyPScvLyB2MTc6IGJhY2t1cC9kZWx0YSBrZXlzIGFyZSBtaW50ZWQgZnJvbSBhIE1PTk9UT05JQyBjbG9jay4nCmlmIGhkciBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnd29ya2VyIHYxNyByZWxlYXNlLW5vdGUgbWFya2VyIG1pc3NpbmcnKQpzPXMucmVwbGFjZShoZHIsIi8vIHYxODogbGVnYWN5IHY3IHBsYWludGV4dC10b2tlbiBjbGVhbnVwIGlzIHByb2FjdGl2ZSwgbm90IG9ubHkgcm90YXRpb24tdGltZS5cbi8vIEFkbWluIGxpc3Rpbmcgc2NydWJzIGV2ZXJ5IGxlZ2FjeSB1c2VyIHJlY29yZCBpdCBlbmNvdW50ZXJzOyBsYXp5IGRyaXZlciBtaWdyYXRpb24gcmV3cml0ZXNcbi8vIHRoZSBtYXRjaGluZyB1c2VyIHJlY29yZDsgcmV2b2tlIHJlbW92ZXMgYW55IHBsYWludGV4dCBmaWVsZCBiZWZvcmUgcGVyc2lzdGluZy4gTm8gbmV3IHRva2VuXG4vLyBpcyBldmVyIHN0b3JlZCByYXcuXG4iK2hkciwxKQoKYWRtaW5fb2xkPSIiIiAgICAgICAgICAgICAgICBjb25zdCB1ID0gSlNPTi5wYXJzZSh2YWwpOwogICAgICAgICAgICAgICAgLy8gTmV2ZXIgZXhwb3NlIGRyaXZlciB0b2tlbnMgaW4gdGhlIGFkbWluIGxpc3RpbmcKICAgICAgICAgICAgICAgIHVzZXJzLnB1c2goeyB1c2VySWQ6IHUudXNlcklkLCBuYW1lOiB1Lm5hbWUsIGNyZWF0ZWRBdDogdS5jcmVhdGVkQXQsIGFjdGl2ZTogdS5hY3RpdmUsIGJhY2t1cENvdW50OiB1LmJhY2t1cENvdW50IHx8IDAgfSk7IiIiCmFkbWluX25ldz0iIiIgICAgICAgICAgICAgICAgbGV0IHUgPSBKU09OLnBhcnNlKHZhbCk7CiAgICAgICAgICAgICAgICAvLyBQcm9hY3RpdmUgdjcgY2xlYW51cDogbGlzdGluZyBkcml2ZXJzIGlzIHRoZSBuYXR1cmFsIGJvdW5kZWQgc3dlZXAgb3ZlciBldmVyeQogICAgICAgICAgICAgICAgLy8gdXNlciByZWNvcmQuIElmIGEgbGVnYWN5IHJhdyB0b2tlbiBzdXJ2aXZlcywgbWlncmF0ZSBpdCBiZWZvcmUgcmV0dXJuaW5nIGRhdGEuCiAgICAgICAgICAgICAgICBpZiAodS50b2tlbiAmJiB1LnVzZXJJZCkgewogICAgICAgICAgICAgICAgICBjb25zdCBsZWdhY3lQbGFpbnRleHQgPSB1LnRva2VuOwogICAgICAgICAgICAgICAgICBjb25zdCBjbGVhbkhhc2ggPSB1LnRva2VuSGFzaCB8fCBhd2FpdCBoYXNoVG9rZW4obGVnYWN5UGxhaW50ZXh0KTsKICAgICAgICAgICAgICAgICAgY29uc3QgY2xlYW4gPSBPYmplY3QuYXNzaWduKHt9LCB1LCB7IHRva2VuSGFzaDogY2xlYW5IYXNoIH0pOwogICAgICAgICAgICAgICAgICBkZWxldGUgY2xlYW4udG9rZW47CiAgICAgICAgICAgICAgICAgIGNvbnN0IGNsZWFudXBPcHMgPSBbCiAgICAgICAgICAgICAgICAgICAgZW52LkJBQ0tVUFMucHV0KCd1c2VyOicgKyB1LnVzZXJJZCwgSlNPTi5zdHJpbmdpZnkoY2xlYW4pKSwKICAgICAgICAgICAgICAgICAgICBlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2VuOicgKyBsZWdhY3lQbGFpbnRleHQpLAogICAgICAgICAgICAgICAgICBdOwogICAgICAgICAgICAgICAgICBpZiAoY2xlYW4uYWN0aXZlKSBjbGVhbnVwT3BzLnB1c2goZW52LkJBQ0tVUFMucHV0KCd0b2toOicgKyBjbGVhbkhhc2gsIEpTT04uc3RyaW5naWZ5KGNsZWFuKSkpOwogICAgICAgICAgICAgICAgICBhd2FpdCBQcm9taXNlLmFsbChjbGVhbnVwT3BzKTsKICAgICAgICAgICAgICAgICAgdSA9IGNsZWFuOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgLy8gTmV2ZXIgZXhwb3NlIGRyaXZlciB0b2tlbnMgaW4gdGhlIGFkbWluIGxpc3RpbmcKICAgICAgICAgICAgICAgIHVzZXJzLnB1c2goeyB1c2VySWQ6IHUudXNlcklkLCBuYW1lOiB1Lm5hbWUsIGNyZWF0ZWRBdDogdS5jcmVhdGVkQXQsIGFjdGl2ZTogdS5hY3RpdmUsIGJhY2t1cENvdW50OiB1LmJhY2t1cENvdW50IHx8IDAgfSk7IiIiCmlmIGFkbWluX29sZCBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnd29ya2VyIGFkbWluIGxpc3QgbWFya2VyIG1pc3NpbmcnKQpzPXMucmVwbGFjZShhZG1pbl9vbGQsYWRtaW5fbmV3LDEpCgpsYXp5X29sZD0iIiIgICAgICAgICAgICBhd2FpdCBQcm9taXNlLmFsbChbCiAgICAgICAgICAgICAgZW52LkJBQ0tVUFMucHV0KCd0b2toOicgKyBkcml2ZXJUb2tlbkhhc2gsIEpTT04uc3RyaW5naWZ5KG1pZ1JlYykpLAogICAgICAgICAgICAgIGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIGRyaXZlclRva2VuKSwKICAgICAgICAgICAgXSk7CiAgICAgICAgICAgIHRva2VuUmF3ID0gSlNPTi5zdHJpbmdpZnkobWlnUmVjKTsiIiIKbGF6eV9uZXc9IiIiICAgICAgICAgICAgY29uc3QgbWlnT3BzID0gWwogICAgICAgICAgICAgIGVudi5CQUNLVVBTLnB1dCgndG9raDonICsgZHJpdmVyVG9rZW5IYXNoLCBKU09OLnN0cmluZ2lmeShtaWdSZWMpKSwKICAgICAgICAgICAgICBlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2VuOicgKyBkcml2ZXJUb2tlbiksCiAgICAgICAgICAgIF07CiAgICAgICAgICAgIGlmIChtaWdSZWMudXNlcklkKSBtaWdPcHMucHVzaChlbnYuQkFDS1VQUy5wdXQoJ3VzZXI6JyArIG1pZ1JlYy51c2VySWQsIEpTT04uc3RyaW5naWZ5KG1pZ1JlYykpKTsKICAgICAgICAgICAgYXdhaXQgUHJvbWlzZS5hbGwobWlnT3BzKTsKICAgICAgICAgICAgdG9rZW5SYXcgPSBKU09OLnN0cmluZ2lmeShtaWdSZWMpOyIiIgppZiBsYXp5X29sZCBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnd29ya2VyIGxhenkgbWlncmF0aW9uIG1hcmtlciBtaXNzaW5nJykKcz1zLnJlcGxhY2UobGF6eV9vbGQsbGF6eV9uZXcsMSkKCnJldm9rZV9vbGQ9IiIiICAgICAgICAgIHBhcnNlZC5hY3RpdmUgPSBmYWxzZTsKICAgICAgICAgIC8vIERlYWN0aXZhdGUgdXNlciByZWNvcmQgYW5kIHJldm9rZSB0b2tlbiBpbiBwYXJhbGxlbAogICAgICAgICAgY29uc3Qgb3BzID0gW2Vudi5CQUNLVVBTLnB1dCgndXNlcjonICsgZGVsSWQsIEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpXTsKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW5IYXNoKSBvcHMucHVzaChlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2g6JyArIHBhcnNlZC50b2tlbkhhc2gpKTsKICAgICAgICAgIC8vIExlZ2FjeSBwbGFpbnRleHQga2V5IGNsZWFudXAKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW4pIG9wcy5wdXNoKGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIHBhcnNlZC50b2tlbikpOyIiIgpyZXZva2VfbmV3PSIiIiAgICAgICAgICBwYXJzZWQuYWN0aXZlID0gZmFsc2U7CiAgICAgICAgICBjb25zdCBsZWdhY3lQbGFpbnRleHQgPSBwYXJzZWQudG9rZW47CiAgICAgICAgICBkZWxldGUgcGFyc2VkLnRva2VuOwogICAgICAgICAgLy8gRGVhY3RpdmF0ZSB1c2VyIHJlY29yZCBhbmQgcmV2b2tlIHRva2VuIGluIHBhcmFsbGVsLiBOZXZlciB3cml0ZSBhIHJhdyB0b2tlbiBiYWNrLgogICAgICAgICAgY29uc3Qgb3BzID0gW2Vudi5CQUNLVVBTLnB1dCgndXNlcjonICsgZGVsSWQsIEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpXTsKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW5IYXNoKSBvcHMucHVzaChlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2g6JyArIHBhcnNlZC50b2tlbkhhc2gpKTsKICAgICAgICAgIGlmIChsZWdhY3lQbGFpbnRleHQpIG9wcy5wdXNoKGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIGxlZ2FjeVBsYWludGV4dCkpOyIiIgppZiByZXZva2Vfb2xkIG5vdCBpbiBzOiByYWlzZSBTeXN0ZW1FeGl0KCd3b3JrZXIgcmV2b2tlIG1hcmtlciBtaXNzaW5nJykKcz1zLnJlcGxhY2UocmV2b2tlX29sZCxyZXZva2VfbmV3LDEpCmlmICJ2ZXJzaW9uOiAnMTcnIiBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnd29ya2VyIGhlYWx0aCB2ZXJzaW9uIG1hcmtlciBtaXNzaW5nJykKcz1zLnJlcGxhY2UoInZlcnNpb246ICcxNyciLCAidmVyc2lvbjogJzE4JyIsMSkKd3JpdGUocCxzKQoK'
-          patcher = patcher[:a] + base64.b64decode(worker_b64).decode('utf-8') + patcher[b:]
-
-          Path('/tmp/full-repair.py').write_text(patcher)
-          PY
-          python /tmp/full-repair.py
+          cp -a /tmp/repair/. .
+          node --check app.js
+          node --check service-worker.js
+          node --check admin-driver-ui.js
+          node --check cloud-backup-worker.js
+          grep -q "const APP_VERSION = '24.0.13'" app.js
+          grep -q "const DB_VERSION = 16" app.js
+          grep -q "paymentStatusKnown" app.js
+          grep -q "safeFilename" service-worker.js
+          grep -q "Cloud Backup Worker v18" cloud-backup-worker.js
+          grep -q "FR-05" tests/integration/full-repair-regressions.spec.mjs
 
       - name: Three-way merge post-baseline docs and runner
         shell: bash
@@ -142,8 +118,7 @@ jobs:
             printf '%s %s\n' "$path" "$sha" >> /tmp/blob-map.txt
             if [ "$first" -eq 0 ]; then printf ',' >> /tmp/tree.json; fi
             first=0
-            jq -nc --arg path "$path" --arg sha "$sha" '{path:$path,mode:"100644",type:"blob",sha:$sha}' >> /tmp/tree.entry
-            tr -d '\n' < /tmp/tree.entry >> /tmp/tree.json
+            jq -nc --arg path "$path" --arg sha "$sha" '{path:$path,mode:"100644",type:"blob",sha:$sha}' | tr -d '\n' >> /tmp/tree.json
           done
           printf ']}' >> /tmp/tree.json
           tree_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input /tmp/tree.json --jq .sha)
@@ -159,7 +134,7 @@ jobs:
           echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
           cat /tmp/blob-map.txt
 
-      - name: Upload object map and repaired source
+      - name: Upload object map and merged source
         uses: actions/upload-artifact@v4
         with:
           name: freightlogic-reviewed-full-repair-objects
