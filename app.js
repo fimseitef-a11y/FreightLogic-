@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.10 USA ENGINE
+/** FreightLogic v24.0.11 USA ENGINE
+ *  v24.0.11 "Exact Economics": OMEGA continuation — preserve unknown mileage,
+ *          compare unrounded RPM, validate costs and distance, prevent market
+ *          name collisions, and repair weekly report dates/export. DB 15 / Worker 17.
  *  v24.0.10 "Sixteen Pixels": the new six-width layout gate
  *          (tests/integration/six-width-layout.spec.mjs) measured every visible
  *          evaluator field at 320/375/390/393/430/440 CSS px and found two that
@@ -196,7 +199,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.10';
+const APP_VERSION = '24.0.11';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -533,7 +536,7 @@ function finiteNum(v, def=0){
 // and stays a real, verified zero. This is the distinction the canonical
 // economics/grade/authority layer lost when it read facts through `Number(x||0)`.
 function knownNum(v){
-  if (v === null || v === undefined) return null;
+  if (typeof v !== 'number' && typeof v !== 'string') return null;
   if (typeof v === 'string' && v.trim() === '') return null;
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
@@ -541,6 +544,29 @@ function knownNum(v){
 function tripHasKnownDeadhead(trip){
   const x = knownNum(trip?.emptyMiles);
   return x !== null && x >= 0 && x <= 300000;
+}
+// OMEGA: never sum an unknown deadhead as a verified zero. Financial totals
+// remain independent; whole-period mileage/RPM is unavailable if any row lacks it.
+function tripAllMiles(trip){
+  const loaded = knownNum(trip?.loadedMiles);
+  return loaded !== null && loaded >= 0 && loaded <= 300000 && tripHasKnownDeadhead(trip)
+    ? loaded + knownNum(trip.emptyMiles) : null;
+}
+function summarizeTripMileage(trips){
+  let loaded = 0, empty = 0, pay = 0, unknownTrips = 0;
+  for (const t of trips){
+    pay += finiteNum(t.pay);
+    loaded += Math.max(0, finiteNum(t.loadedMiles));
+    if (tripAllMiles(t) === null) unknownTrips++;
+    else empty += knownNum(t.emptyMiles);
+  }
+  const all = unknownTrips ? null : loaded + empty;
+  return { loaded, empty: unknownTrips ? null : empty, all, unknownTrips,
+    rpm: all > 0 ? pay / all : null,
+    deadheadPct: all > 0 ? empty / all * 100 : null };
+}
+function knownDisplay(value, digits=2){
+  return knownNum(value) === null ? 'Unknown' : Number(value).toFixed(digits);
 }
 function posNum(v, def=0, max=1e9){
   const x = finiteNum(v, def);
@@ -2744,9 +2770,11 @@ async function getSetting(key, fallback=null){
   if (SETTINGS_CACHE.has(key)) return SETTINGS_CACHE.get(key);
   const {stores} = tx('settings');
   const rec = await idbReq(stores.settings.get(key));
-  const value = rec ? rec.value : fallback;
-  SETTINGS_CACHE.set(key, value);
-  return value;
+  if (rec) {
+    SETTINGS_CACHE.set(key, rec.value);
+    return rec.value;
+  }
+  return fallback;
 }
 async function setSetting(key, value){
   const {t:txn, stores} = tx('settings','readwrite');
@@ -3515,8 +3543,8 @@ async function exportTripsCSV(){
   const trips = await dumpStore('trips');
   const header = ['Order#','Customer','Pickup','Delivery','Origin','Destination','Stops','Pay','LoadedMiles','EmptyMiles','AllMiles','RPM','Paid','PaidDate','WouldRunAgain','Notes'];
   const rows = [header, ...trips.map(t => {
-    const all = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
-    const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '0';
+    const all = tripAllMiles(t);
+    const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '';
     const stopsStr = Array.isArray(t.stops) ? t.stops.map(s => `${s.city||''}(${s.type||'stop'})`).join('; ') : '';
     return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, t.emptyMiles, all, rpm, t.isPaid?'Yes':'No', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
   })];
@@ -4151,9 +4179,8 @@ async function computeQuickKPIs(){
 
     const todayNet = todayGross - todayExp;
     const wkNet = wkGross - wkExp;
-    const wkAll = wkLoaded + wkEmpty;
-    const wkRpm = wkAll > 0 ? wkGross / wkAll : 0;
-    const deadheadPct = wkAll > 0 ? ((wkEmpty / wkAll) * 100) : 0;
+    const mileage = summarizeTripMileage(wkTrips.filter(t => !t.needsReview));
+    const { all:wkAll, rpm:wkRpm, deadheadPct } = mileage;
 
     $('#kpiTodayGross').textContent = fmtMoney(todayGross);
     $('#kpiTodayExp').textContent = fmtMoney(todayExp);
@@ -4168,11 +4195,11 @@ async function computeQuickKPIs(){
     $('#wkExp').textContent = fmtMoney(wkExp);
     $('#wkNet').textContent = fmtMoney(wkNet);
     $('#wkLoaded').textContent = fmtNum(wkLoaded);
-    $('#wkAll').textContent = fmtNum(wkAll);
-    $('#wkRpm').textContent = `$${wkRpm.toFixed(2)}`;
+    $('#wkAll').textContent = wkAll === null ? 'Unknown' : fmtNum(wkAll);
+    $('#wkRpm').textContent = wkRpm === null ? 'Unknown' : `$${wkRpm.toFixed(2)}`;
     const dhEl = $('#wkDeadhead');
     const dhPill = $('#deadheadPill');
-    if (dhEl) dhEl.textContent = `${deadheadPct.toFixed(1)}%`;
+    if (dhEl) dhEl.textContent = deadheadPct === null ? 'Unknown' : `${deadheadPct.toFixed(1)}%`;
     if (dhPill) dhPill.className = deadheadPct > 30 ? 'pill danger' : deadheadPct > 20 ? 'pill warn' : 'pill';
     // v21 T1D: Daily breakeven card
     try {
@@ -4187,7 +4214,7 @@ async function computeQuickKPIs(){
       const dailyBreakeven = roundCents(dailyFixed + dailyFuelEst);
       const todayMargin = todayGross - todayExp - dailyFixed;
       const burnEl = $('#kpiDailyBurn');
-      if (burnEl && dailyBreakeven > 0){
+      if (burnEl && wkAll !== null && Number(mpg) > 0 && Number(fuelPx) > 0 && dailyBreakeven > 0){
         const ahead = todayMargin >= 0;
         burnEl.innerHTML = `<span class="muted">Burn</span> <b>${fmtMoney(dailyBreakeven)}/day</b> · <span style="color:${ahead?'var(--good)':'var(--bad)'}">${ahead ? 'Ahead ' : 'Need '}<b>${fmtMoney(Math.abs(todayMargin))}</b></span>`;
       }
@@ -4221,10 +4248,8 @@ async function computeKPIs(){
   }
   const todayNet = todayGross - todayExp;
   const wkNet = wkGross - wkExp;
-  const wkAll = wkLoaded + wkEmpty;
-  const wkRpm = wkAll > 0 ? wkGross / wkAll : 0;
-  // P3-3: deadhead
-  const deadheadPct = wkAll > 0 ? ((wkEmpty / wkAll) * 100) : 0;
+  const mileage = summarizeTripMileage(trips.filter(t => !t.needsReview && new Date(t.pickupDate || t.deliveryDate || Date.now()).getTime() >= wk0));
+  const { all:wkAll, rpm:wkRpm, deadheadPct } = mileage;
 
   $('#kpiTodayGross').textContent = fmtMoney(todayGross);
   $('#kpiTodayExp').textContent = fmtMoney(todayExp);
@@ -4239,13 +4264,13 @@ async function computeKPIs(){
   $('#wkExp').textContent = fmtMoney(wkExp);
   $('#wkNet').textContent = fmtMoney(wkNet);
   $('#wkLoaded').textContent = fmtNum(wkLoaded);
-  $('#wkAll').textContent = fmtNum(wkAll);
-  $('#wkRpm').textContent = `$${wkRpm.toFixed(2)}`;
+  $('#wkAll').textContent = wkAll === null ? 'Unknown' : fmtNum(wkAll);
+  $('#wkRpm').textContent = wkRpm === null ? 'Unknown' : `$${wkRpm.toFixed(2)}`;
 
   // P3-3: deadhead display with alerts
   const dhEl = $('#wkDeadhead');
   const dhPill = $('#deadheadPill');
-  dhEl.textContent = `${deadheadPct.toFixed(1)}%`;
+  dhEl.textContent = deadheadPct === null ? 'Unknown' : `${deadheadPct.toFixed(1)}%`;
   dhPill.className = deadheadPct > 30 ? 'pill danger' : deadheadPct > 20 ? 'pill warn' : 'pill';
 
   // AR aging + broker
@@ -4770,6 +4795,12 @@ function _getScoreBaselines(allTrips, allExps){
 }
 
 function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
+  if (tripAllMiles(trip) === null || tripAllMiles(trip) <= 0){
+    return { available:false, verdict:'UNAVAILABLE', verdictColor:'var(--warn)',
+      marginScore:null, riskScore:null, rpm:null, loadedRpm:null, deadheadPct:null,
+      counterOffer:null, counterRpm:null, fuelCost:null, netAfterFuel:null,
+      tierName:'Unknown mileage', margin:{total:null,factors:[]}, risk:{total:null,factors:[]} };
+  }
   const pay = Number(trip.pay || 0);
   const loaded = Number(trip.loadedMiles || 0);
   const empty = Number(trip.emptyMiles || 0);
@@ -5084,6 +5115,7 @@ const DEFAULT_SCORE_WEIGHTS = Object.freeze({
 // ── Score badge for trip rows ──
 function scoreBadgeHTML(score){
   if (!score) return '';
+  if (score.available === false) return '<span class="tag" data-act="score">Mileage unknown</span>';
   const m = score.marginScore;
   let bg, border;
   if (m >= 80){ bg = 'rgba(107,255,149,.12)'; border = 'rgba(107,255,149,.4)'; }
@@ -5095,6 +5127,7 @@ function scoreBadgeHTML(score){
 
 // ── Score breakdown modal ──
 function openScoreBreakdown(trip, score){
+  if (score.available === false){ toast('Complete loaded and deadhead miles to score this load.'); return; }
   const body = document.createElement('div');
   body.style.cssText = 'padding:0';
 
@@ -5201,6 +5234,7 @@ function openScoreBreakdown(trip, score){
 
 // ── Score flash after trip save ──
 function showScoreFlash(trip, score){
+  if (score.available === false){ toast('Load saved — mileage needed before scoring.'); return; }
   haptic(30);
   const body = document.createElement('div');
   body.style.cssText = 'text-align:center;padding:8px 0';
@@ -5244,6 +5278,7 @@ function renderLiveScore(container, tripData, allTrips, allExps){
   if (pay <= 0 || allMi <= 0){ container.innerHTML = ''; return; }
 
   const score = computeLoadScore(tripData, allTrips, allExps);
+  if (score.available === false){ container.textContent = 'Complete mileage to see a score.'; return; }
   container.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;flex-wrap:wrap">
     <span style="font-weight:800;font-size:14px;color:${score.verdictColor}">${score.verdict}</span>
     <span class="pill" style="padding:4px 8px"><span class="muted">M</span> <b>${score.marginScore}</b></span>
@@ -5929,6 +5964,7 @@ async function renderSmartTip(state){
       const rpmAvg = (trpList) => {
         let sum = 0, cnt = 0;
         for (const t of trpList) {
+          if (tripAllMiles(t) === null) continue;
           const p = Number(t.pay || 0), l = Number(t.loadedMiles || 0), e = Number(t.emptyMiles || 0), m = l + e;
           if (m > 0 && p > 0) { sum += p / m; cnt++; }
         }
@@ -5952,6 +5988,7 @@ async function renderSmartTip(state){
       const dhAvg = (trpList) => {
         let sum = 0, cnt = 0;
         for (const t of trpList) {
+          if (tripAllMiles(t) === null) continue;
           const l = Number(t.loadedMiles || 0), e = Number(t.emptyMiles || 0), m = l + e;
           if (m > 0) { sum += (e / m) * 100; cnt++; }
         }
@@ -6205,12 +6242,13 @@ async function renderCommandCenter(){
         wkTripCount++;
       }
     }
-    const wkTrueRPM = wkMiAll > 0 ? wkGrossRpm / wkMiAll : 0;
-    const wkAvgDH = wkTripCount > 0 ? wkDhMiSum / wkTripCount : 0;
+    const wkMileage = summarizeTripMileage(trips.filter(t => !t.needsReview && new Date(t.pickupDate || t.deliveryDate || '').getTime() >= wk0));
+    const wkTrueRPM = wkMileage.rpm;
+    const wkAvgDH = wkMileage.empty === null ? null : (wkTripCount > 0 ? wkDhMiSum / wkTripCount : 0);
 
     const velEl = $('#pcRevVel');
     if (velEl){
-      velEl.textContent = wkTrueRPM > 0 ? `$${wkTrueRPM.toFixed(2)}` : '\u2014';
+      velEl.textContent = wkTrueRPM === null ? 'Unknown' : wkTrueRPM > 0 ? `$${wkTrueRPM.toFixed(2)}` : '\u2014';
       const parent = velEl.closest('.kpi-cell');
       if (parent){
         if (wkTrueRPM >= 1.75) parent.style.color = 'var(--good)';
@@ -6278,6 +6316,7 @@ async function renderCommandCenter(){
       });
       let totalMi30 = 0, loadCount30 = 0;
       for (const t of recent30mi){
+          if (tripAllMiles(t) === null) continue;
         const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
         if (mi > 0){ totalMi30 += mi; loadCount30++; }
       }
@@ -6301,11 +6340,11 @@ async function renderCommandCenter(){
     // v20: pcEfficiency shows Avg DH miles (more actionable than loaded efficiency %)
     const effEl = $('#pcEfficiency');
     if (effEl){
-      effEl.textContent = wkTripCount > 0 ? `${Math.round(wkAvgDH)} mi` : '\u2014';
+      effEl.textContent = wkAvgDH === null ? 'Unknown' : wkTripCount > 0 ? `${Math.round(wkAvgDH)} mi` : '\u2014';
       const parent = effEl.closest('.kpi-cell');
       if (parent){
-        if (wkAvgDH <= 25 && wkTripCount > 0) parent.style.color = 'var(--good)';
-        else if (wkAvgDH <= 50 && wkTripCount > 0) parent.style.color = '';
+        if (wkAvgDH !== null && wkAvgDH <= 25 && wkTripCount > 0) parent.style.color = 'var(--good)';
+        else if (wkAvgDH !== null && wkAvgDH <= 50 && wkTripCount > 0) parent.style.color = '';
         else if (wkTripCount > 0) parent.style.color = 'var(--warn)';
       }
     }
@@ -6331,6 +6370,7 @@ async function renderCommandCenter(){
       if (mi <= 0) continue;
       try{
         const s = computeLoadScore(t, trips, exps);
+        if (s.available === false) continue;
         scoreSum += s.marginScore; scoreCnt++;
         if (s.verdict === 'PREMIUM WIN' || s.verdict === 'ACCEPT') acceptCount++;
       }catch(e){ console.warn("[FL]", e); }
@@ -6423,7 +6463,7 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
   // 1. RPM declining
   let rpm7mi = 0, rpm7pay = 0, rpm14mi = 0, rpm14pay = 0;
   for (const t of trips){
-    if (t.needsReview) continue;
+    if (t.needsReview || tripAllMiles(t) === null) continue;
     const dt = t.pickupDate || t.deliveryDate;
     if (!dt) continue;
     const ts = new Date(dt).getTime();
@@ -6445,7 +6485,7 @@ async function renderTrendAlerts(trips, exps, fuel, ctx){
   // 2. Deadhead trending up
   let dh7 = 0, mi7 = 0, dh14 = 0, mi14 = 0;
   for (const t of trips){
-    if (t.needsReview) continue;
+    if (t.needsReview || tripAllMiles(t) === null) continue;
     const dt = t.pickupDate || t.deliveryDate;
     if (!dt) continue;
     const ts = new Date(dt).getTime();
@@ -8013,7 +8053,7 @@ const CA_CORRIDORS = [
 /** Normalize Canadian city names */
 function caNormCity(s){
   return (s || '').trim().toLowerCase()
-    .replace(/,?\s*(on|qc|bc|ab|mb|sk|nb|ns|pe|nl|nt|yt|nu|ont|que|canada)\s*$/i, '')
+    .replace(/(?:,\s*|\s+)(on|qc|bc|ab|mb|sk|nb|ns|pe|nl|nt|yt|nu|ont|que|canada)\s*$/i, '')
     .replace(/[.,;]/g, '').replace(/\s+/g, ' ').trim();
 }
 
@@ -8050,7 +8090,7 @@ function naPlaceIsSpecific(norm){
  *  "indianapolis"), never an arbitrary infix or suffix. Requiring startsWith in
  *  that direction keeps abbreviation support and drops the coincidences. */
 function naFuzzyPlaceMatch(norm, key){
-  return norm.includes(key) || key.startsWith(norm);
+  return norm === key || norm.startsWith(key + ' ') || key.startsWith(norm);
 }
 
 /** Lookup a city — check Canada first, then USA. Returns { city, ...data, country }
@@ -8209,7 +8249,7 @@ function caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, ga
 // ── USA Engine: Market Lookup (original — kept for backward compatibility) ──
 function usaNormCity(s){
   return (s || '').trim().toLowerCase()
-    .replace(/,?\s*(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)\.?$/i, '')
+    .replace(/(?:,\s*|\s+)(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)\.?$/i, '')
     .replace(/[.,;]/g, '').replace(/\s+/g, ' ').trim();
 }
 
@@ -8687,11 +8727,16 @@ function mwNormCity(s){
 }
 
 function mwGeoCheck(origin, dest){
-  const o = mwNormCity(origin), d = mwNormCity(dest);
-  const oT1 = MW.tier1.some(c => o.includes(c));
-  const dT1 = MW.tier1.some(c => d.includes(c));
-  const oT2 = MW.tier2.some(c => o.includes(c));
-  const dT2 = MW.tier2.some(c => d.includes(c));
+  const o = usaNormCity(origin), d = usaNormCity(dest);
+  const densityStates = {chicago:'IL',gary:'IN',indianapolis:'IN',cleveland:'OH',columbus:'OH',detroit:'MI',cincinnati:'OH',toledo:'OH',nashville:'TN',louisville:'KY','st louis':'MO',stl:'MO',dayton:'OH','fort wayne':'IN','grand rapids':'MI',milwaukee:'WI',lexington:'KY'};
+  const inTier = (place, tier, raw) => {
+    const qualifier = String(raw || '').match(/(?:,\s*|\s+)([a-z]{2})\.?$/i)?.[1]?.toUpperCase();
+    return tier.some(c => place === usaNormCity(c) && (!qualifier || qualifier === densityStates[place]));
+  };
+  const oT1 = inTier(o, MW.tier1, origin);
+  const dT1 = inTier(d, MW.tier1, dest);
+  const oT2 = inTier(o, MW.tier2, origin);
+  const dT2 = inTier(d, MW.tier2, dest);
   const destDensity = dT1 ? 'Tier 1' : dT2 ? 'Tier 2' : 'Out of Density';
   const origDensity = oT1 ? 'Tier 1' : oT2 ? 'Tier 2' : 'Out of Density';
   const intoDensity = dT1 || dT2;
@@ -8916,9 +8961,15 @@ function deriveUnifiedEconomics(facts){
   });
 
   const unknownFacts = [];
-  if (loadedMiK === null) unknownFacts.push('loadedMi');
-  if (deadMiK === null) unknownFacts.push('deadMi');
-  if (revenueK === null && effectiveRevenueK === null) unknownFacts.push('revenue');
+  if (loadedMiK === null || loadedMiK <= 0 || loadedMiK > 300000) unknownFacts.push('loadedMi');
+  if (deadMiK === null || deadMiK < 0 || deadMiK > 300000) unknownFacts.push('deadMi');
+  if (effectiveRevenueK === null || effectiveRevenueK < 0 || (revenueK !== null && revenueK < 0)) unknownFacts.push('revenue');
+  const mpgK = knownNum(f.mpg), fuelPriceK = knownNum(f.fuelPrice);
+  if (mpgK === null || mpgK <= 0) unknownFacts.push('mpg');
+  if (fuelPriceK === null || fuelPriceK < 0) unknownFacts.push('fuelPrice');
+  for (const key of ['opCPM', 'borderAdminCost']){
+    if (f[key] !== undefined && (knownNum(f[key]) === null || knownNum(f[key]) < 0)) unknownFacts.push(key);
+  }
   if (unknownFacts.length){
     const out = { available: false, unknownFacts: Object.freeze(unknownFacts), mileageProvenance };
     for (const key of UNAVAILABLE_ECONOMICS_FIELDS) out[key] = null;
@@ -8930,12 +8981,12 @@ function deriveUnifiedEconomics(facts){
   const totalMi = loadedMi + deadMi;
   const revenue = Math.max(0, revenueK === null ? effectiveRevenueK : revenueK);
   const effectiveRevenue = Math.max(0, effectiveRevenueK === null ? revenue : effectiveRevenueK);
-  const mpg = Number(f.mpg || 0);
-  const fuelPrice = Math.max(0, Number(f.fuelPrice || 0));
+  const mpg = mpgK;
+  const fuelPrice = fuelPriceK;
   const opCPM = Math.max(0, Number(f.opCPM || 0));
   const borderAdminCost = Math.max(0, Number(f.borderAdminCost || 0));
-  const trueRPM = totalMi > 0 ? roundCents(effectiveRevenue / totalMi) : 0;
-  const loadedRPM = loadedMi > 0 ? roundCents(effectiveRevenue / loadedMi) : 0;
+  const trueRPM = totalMi > 0 ? (effectiveRevenue / totalMi) : 0;
+  const loadedRPM = loadedMi > 0 ? (effectiveRevenue / loadedMi) : 0;
   const fuel = (totalMi > 0 && mpg > 0) ? roundCents((totalMi / mpg) * fuelPrice) : 0;
   const netAfterFuel = roundCents(effectiveRevenue - fuel);
   const operatingCost = roundCents(totalMi * opCPM);
@@ -8948,7 +8999,7 @@ function deriveUnifiedEconomics(facts){
   const estHours = totalMi > 0 ? Math.max(1, Math.round(totalMi / 50)) : 1;
   const profitPerHour = roundCents(trueProfit / estHours);
   const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
-  const deadheadPct = totalMi > 0 ? roundCents((deadMi / totalMi) * 100) : 0;
+  const deadheadPct = totalMi > 0 ? ((deadMi / totalMi) * 100) : 0;
   return Object.freeze({
     available: true,
     unknownFacts: Object.freeze([]),
@@ -10036,13 +10087,13 @@ async function mwEvaluateLoad(){
   const origin = ($('#mwOrigin')?.value || '').trim();
   const dest = ($('#mwDest')?.value || '').trim();
   const broker = ($('#mwBroker')?.value || '').trim();
-  const loadedMi = Math.max(0, numVal('mwLoadedMi', 0));
+  const loadedMi = knownNum($('#mwLoadedMi')?.value);
   // M1: a blank deadhead field used to become a confident 0, which inflated
   // True RPM and produced a grade the driver never supplied the inputs for.
   // Blank now means UNKNOWN; an explicitly entered 0 is a verified zero.
   const deadMiRaw = ($('#mwDeadMi')?.value ?? '').trim();
   const deadMiKnown = knownNum(deadMiRaw);
-  const deadMi = deadMiKnown === null ? null : Math.max(0, deadMiKnown);
+  const deadMi = deadMiKnown;
   const revenue = Math.max(0, numVal('mwRevenue', 0));
   const revenueCurrency = $('#mwCurrency')?.value || 'USD';
   const dayOfWeek = $('#mwDayOfWeek')?.value || 'mon';
@@ -10057,11 +10108,11 @@ async function mwEvaluateLoad(){
   if (!out) return;
   // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
   const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
-  if (!loadedMi || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
+  if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
   // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
   // True RPM, so the evaluator asks for it instead of assuming zero. Entering
   // 0 is one keystroke and records a verified zero.
-  if (deadMi === null){
+  if (deadMi === null || deadMi < 0 || deadMi > 300000){
     out.innerHTML = '<div class="muted" style="font-size:13px">Enter deadhead miles — type <b>0</b> if you are already at the pickup.<br><span style="font-size:11px">Leaving it blank used to be treated as zero deadhead, which overstated True RPM.</span></div>';
     return;
   }
@@ -10160,8 +10211,8 @@ async function mwEvaluateLoad(){
   const crossBorder = applyCanadaSettingsToCrossBorder(caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, gateway), revenue, revenueCurrency, caSettings);
   const effectiveRevenue = (crossBorder.isCrossBorder && revenueCurrency === 'CAD') ? crossBorder.normalizedRevenue : revenue;
   const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
-  const fuelPrice = Number(await getSetting('fuelPrice', MW.fuelBaseline) || MW.fuelBaseline);
-  const vehicleMpg = Number(await getSetting('vehicleMpg', MW.mpg) || MW.mpg);
+  const fuelPrice = knownNum(await getSetting('fuelPrice', MW.fuelBaseline));
+  const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
   const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
   const economicsResult = deriveUnifiedEconomics({
     revenue, effectiveRevenue, loadedMi, deadMi,
@@ -10173,6 +10224,10 @@ async function mwEvaluateLoad(){
     operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
     profitPerMile, estHours, profitPerHour, fuelPerMile,
   } = economicsResult;
+  if (!economicsResult.available){
+    out.innerHTML = `<div class="muted">Economics unavailable — check ${escapeHtml(economicsResult.unknownFacts.join(', '))} in the load and Settings.</div>`;
+    return;
+  }
   const tier = mwClassifyRPM(trueRPM);
   const geo = mwGeoCheck(origin, dest);
 
@@ -13316,7 +13371,7 @@ async function generateWeeklyReport(){
     let wkScoreSum = 0, wkScoreCnt = 0, wkAccept = 0;
     for (const t of trips){
       const dt = t.pickupDate || t.deliveryDate;
-      if (!dt || new Date(dt).getTime() < wk0) continue;
+      if (t.needsReview || !dt || new Date(dt).getTime() < wk0) continue;
       wkTrips++;
       wkGross += Number(t.pay || 0);
       const l = Number(t.loadedMiles||0), e = Number(t.emptyMiles||0);
@@ -13324,6 +13379,7 @@ async function generateWeeklyReport(){
       if (l + e > 0){
         try{
           const s = computeLoadScore(t, trips, exps);
+          if (s.available === false) continue;
           wkScoreSum += s.marginScore; wkScoreCnt++;
           if (s.verdict === 'PREMIUM WIN' || s.verdict === 'ACCEPT') wkAccept++;
         }catch(e){ console.warn("[FL]", e); }
@@ -13338,6 +13394,11 @@ async function generateWeeklyReport(){
     const wkAvgScore = wkScoreCnt > 0 ? Math.round(wkScoreSum / wkScoreCnt) : 0;
     const wkAccRate = wkScoreCnt > 0 ? Math.round((wkAccept / wkScoreCnt) * 100) : 0;
 
+    const wkTripsArr = trips.filter(t => {
+      const dt = t.pickupDate || t.deliveryDate;
+      return !t.needsReview && dt && new Date(dt).getTime() >= wk0;
+    });
+    const wkMileage = summarizeTripMileage(wkTripsArr);
     // F20: DZ exit stats — separated from main averages
     let wkDZCount = 0, wkDZGross = 0, wkDZMi = 0;
     for (const t of wkTripsArr){
@@ -13347,10 +13408,6 @@ async function generateWeeklyReport(){
     const wkRpmExclDZ = (wkAll - wkDZMi) > 0 ? (wkGross - wkDZGross) / (wkAll - wkDZMi) : wkRpm;
 
     // Top lane this week
-    const wkTripsArr = trips.filter(t => {
-      const dt = t.pickupDate || t.deliveryDate;
-      return dt && new Date(dt).getTime() >= wk0;
-    });
     const lanes = computeLaneStats(wkTripsArr);
     const topLane = lanes.length > 0 ? lanes[0] : null;
 
@@ -13450,12 +13507,12 @@ async function generateWeeklyReport(){
     }
 
     drawDivider('EFFICIENCY');
-    drawCard('Avg RPM', wkRpmExclDZ > 0 ? `$${wkRpmExclDZ.toFixed(2)}` : '—', `${fmtNum(wkAll - wkDZMi)} mi${wkDZCount > 0 ? ' (DZ exits excluded)' : ''}`);
-    drawCard('Deadhead', wkAll > 0 ? `${wkDh.toFixed(1)}%` : '—', `${fmtNum(wkAll - wkLoaded)} empty of ${fmtNum(wkAll)} total`, wkDh <= 15 ? '#6bff95' : wkDh <= 25 ? '#ffb300' : '#ff6b6b');
+    drawCard('Avg RPM', wkMileage.unknownTrips ? 'Unknown' : wkRpmExclDZ > 0 ? `$${wkRpmExclDZ.toFixed(2)}` : '—', `${wkMileage.unknownTrips ? 'Mileage incomplete' : fmtNum(wkAll - wkDZMi) + ' mi'}${wkDZCount > 0 ? ' (DZ exits excluded)' : ''}`);
+    drawCard('Deadhead', wkMileage.unknownTrips ? 'Unknown' : wkAll > 0 ? `${wkDh.toFixed(1)}%` : '—', wkMileage.unknownTrips ? 'Complete deadhead to calculate' : `${fmtNum(wkAll - wkLoaded)} empty of ${fmtNum(wkAll)} total`, wkDh <= 15 ? '#6bff95' : wkDh <= 25 ? '#ffb300' : '#ff6b6b');
     drawCard('Avg Load Score', wkScoreCnt > 0 ? `${wkAvgScore}/100` : '—', `Accept rate: ${wkAccRate}%`, wkAvgScore >= 60 ? '#6bff95' : wkAvgScore >= 40 ? '#ffb300' : '#ff6b6b');
 
     if (wkDZCount > 0){
-      drawCard('Dead Zone Exits', `${wkDZCount} load${wkDZCount>1?'s':''}`, `${fmtMoney(wkDZGross)} total • $${wkDZRpm.toFixed(2)} avg RPM (survival-tier, excluded from Avg RPM)`, '#f0a500');
+      drawCard('Dead Zone Exits', `${wkDZCount} load${wkDZCount>1?'s':''}`, `${fmtMoney(wkDZGross)} total • ${wkTripsArr.some(t => t.isDZExit && tripAllMiles(t) === null) ? 'Unknown' : '$' + wkDZRpm.toFixed(2)} avg RPM (survival-tier, excluded from Avg RPM)`, '#f0a500');
       if (wkDZCount > 2){ drawDivider('⚠️ High DZ frequency — review market positioning'); }
     }
 
@@ -17426,16 +17483,18 @@ async function generateWeeklyPnL(weekId){
     const y = parseInt(parts[1]), wk = parseInt(parts[2]);
     // Compute Monday of that week
     const jan1 = new Date(y, 0, 1);
-    const daysToMon = (8 - jan1.getDay()) % 7; // days to first Monday
-    const firstMon = new Date(y, 0, 1 + daysToMon);
-    const weekStart = new Date(firstMon.getTime() + (wk - 1) * 7 * 86400000);
-    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000 - 1);
+    const firstMon = startOfWeek(jan1); // inverse of getWeekId, including year-boundary weeks
+    const weekStart = new Date(firstMon);
+    weekStart.setDate(weekStart.getDate() + (wk - 1) * 7);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    weekEnd.setMilliseconds(-1);
     const wkStartISO = isoDate(weekStart);
     const wkEndISO = isoDate(weekEnd);
 
     const allTrips = await dumpStore('trips');
     const allExp = await dumpStore('expenses');
-    const weekTrips = allTrips.filter(t => t.pickupDate >= wkStartISO && t.pickupDate <= wkEndISO);
+    const weekTrips = allTrips.filter(t => !t.needsReview && t.pickupDate >= wkStartISO && t.pickupDate <= wkEndISO);
     const weekExp = allExp.filter(e => (e.date||'') >= wkStartISO && (e.date||'') <= wkEndISO);
 
     let grossRev = 0, totalLoadedMi = 0, totalDeadMi = 0, totalRPMSum = 0, rpmCount = 0;
@@ -17449,7 +17508,7 @@ async function generateWeeklyPnL(weekId){
       grossRev += pay;
       totalLoadedMi += loaded;
       totalDeadMi += empty;
-      if (total > 0 && pay > 0){ const rpm = pay/total; totalRPMSum += rpm; rpmCount++; if (!bestTrip || rpm > (bestTrip._rpm||0)) bestTrip = {...t, _rpm: rpm}; if (!worstTrip || rpm < (worstTrip._rpm||Infinity)) worstTrip = {...t, _rpm: rpm}; }
+      if (tripAllMiles(t) !== null && total > 0 && pay > 0){ const rpm = pay/total; totalRPMSum += rpm; rpmCount++; if (!bestTrip || rpm > (bestTrip._rpm||0)) bestTrip = {...t, _rpm: rpm}; if (!worstTrip || rpm < (worstTrip._rpm||Infinity)) worstTrip = {...t, _rpm: rpm}; }
       if (t.pickupDate) workDays.add(t.pickupDate);
       if (t.deliveryDate) workDays.add(t.deliveryDate);
     }
@@ -17461,13 +17520,15 @@ async function generateWeeklyPnL(weekId){
       const cat = e.category||'Other';
       expByCategory[cat] = (expByCategory[cat]||0) + amt;
     }
-    const mpg = Number(getCachedSetting('vehicleMpg',6.5)||6.5);
-    // v23.8.3: was a hardcoded 3.50 that drifted from MW.fuelBaseline; use the const.
-    const fuelPricePerGal = Number(getCachedSetting('fuelPrice',MW.fuelBaseline)||MW.fuelBaseline);
-    const fuelEstimate = roundCents(((totalLoadedMi+totalDeadMi) / mpg) * fuelPricePerGal);
+    const mileage = summarizeTripMileage(weekTrips);
+    const mpg = knownNum(getCachedSetting('vehicleMpg', null));
+    const fuelPricePerGal = knownNum(getCachedSetting('fuelPrice', null));
+    const fuelEstimate = mileage.all !== null && mpg > 0 && fuelPricePerGal !== null && fuelPricePerGal >= 0
+      ? roundCents((mileage.all / mpg) * fuelPricePerGal) : null;
     const netIncome = roundCents(grossRev - totalExpenses);
-    const avgRPM = (totalLoadedMi + totalDeadMi) > 0 ? roundCents(grossRev / (totalLoadedMi + totalDeadMi)) : 0;
-    const deadheadPct = (totalLoadedMi+totalDeadMi) > 0 ? roundCents((totalDeadMi/(totalLoadedMi+totalDeadMi))*100) : 0;
+    const avgRPM = mileage.rpm === null ? null : roundCents(mileage.rpm);
+    const deadheadPct = mileage.deadheadPct === null ? null : roundCents(mileage.deadheadPct);
+    totalDeadMi = mileage.empty;
 
     const report = { weekId, weekStart: wkStartISO, weekEnd: wkEndISO, grossRev, totalExpenses, netIncome, avgRPM, totalLoadedMi, totalDeadMi, deadheadPct, fuelEstimate, loadsCount: weekTrips.length, daysWorked: workDays.size, expByCategory, bestLane: bestTrip ? `${bestTrip.origin||'?'} → ${bestTrip.destination||'?'}` : null, bestRPM: bestTrip?._rpm||0, worstLane: worstTrip ? `${worstTrip.origin||'?'} → ${worstTrip.destination||'?'}` : null, worstRPM: worstTrip?._rpm||0, generatedAt: Date.now() };
     const {t, stores} = tx('weeklyReports','readwrite');
@@ -17513,10 +17574,10 @@ function formatWeeklyReportText(r){
     `Total Expenses:   ${fmtMoney(r.totalExpenses)}`,
     `Net Income:       ${fmtMoney(r.netIncome)}`,
     ``,
-    `Avg RPM:          $${(r.avgRPM||0).toFixed(2)}/mi`,
+    `Avg RPM:          ${r.avgRPM === null ? 'Unknown' : '$' + knownDisplay(r.avgRPM) + '/mi'}`,
     `Loaded Miles:     ${(r.totalLoadedMi||0).toLocaleString()} mi`,
-    `Deadhead Miles:   ${(r.totalDeadMi||0).toLocaleString()} mi (${(r.deadheadPct||0).toFixed(1)}%)`,
-    `Fuel Estimate:    ${fmtMoney(r.fuelEstimate||0)}`,
+    `Deadhead Miles:   ${r.totalDeadMi === null ? 'Unknown' : r.totalDeadMi.toLocaleString() + ' mi'} (${knownDisplay(r.deadheadPct, 1)}%)`,
+    `Fuel Estimate:    ${r.fuelEstimate === null ? 'Unknown' : fmtMoney(r.fuelEstimate)}`,
     `Loads Completed:  ${r.loadsCount||0}`,
     `Days Worked:      ${r.daysWorked||0}`,
   ];
@@ -17543,7 +17604,7 @@ async function renderWeeklyReportCard(report){
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
       <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--good)">${fmtMoney(report.grossRev||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Gross</div></div>
       <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:${netColor}">${fmtMoney(report.netIncome||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Net</div></div>
-      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700">$${(report.avgRPM||0).toFixed(2)}</div><div style="font-size:10px;color:var(--text-tertiary)">Avg RPM</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700">$${knownDisplay(report.avgRPM)}</div><div style="font-size:10px;color:var(--text-tertiary)">Avg RPM</div></div>
     </div>
     <div class="muted" style="font-size:11px;margin-top:8px;text-align:center">${report.loadsCount} load${report.loadsCount!==1?'s':''} · ${(report.totalLoadedMi||0).toLocaleString()} loaded mi · ${report.daysWorked||0} days worked</div>
   </div>`;
@@ -21029,6 +21090,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     _historicalRowFingerprint, _orderStableKey,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
+    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, exportTripsCSV, invalidateKPICache,
+    generateWeeklyPnL, getWeekId, formatWeeklyReportText, generateWeeklyReport,
     omegaTierForMiles, OMEGA_TIERS,
     mwClassifyRPM, MW, dzClassifySubTier,
     normOrderNo, sanitizeReceiptId, clampStr,

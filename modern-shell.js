@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.10 — modern five-surface navigation adapter
+/* FreightLogic v24.0.11 — modern five-surface navigation adapter
  * Structural navigation plus the operator-approved presentation overlay.
  * Canonical routing, state, evaluation and data ownership remain in app.js.
  */
