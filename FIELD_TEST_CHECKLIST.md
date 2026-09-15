@@ -8,7 +8,7 @@ Current runtime synchronization point: **production serves FreightLogic v24.0.12
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. Treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A11 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
+All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
@@ -119,9 +119,57 @@ PASS requires no visual regression in the SVG surfaces, no zoom-on-focus, persis
 
 PASS requires the exact fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
 
+## A12. Zero-token driver onboarding (added v24.0.13) — **the storage-partition question**
+
+**Prerequisite: Worker v18 AND app 24.0.13 must both be deployed before this runs.**
+The Worker goes first — the app calls `POST /admin/invites` and `POST /claim`, and
+neither exists on v17. Record both generations with the result; an A12 run against a
+v17 Worker certifies nothing.
+
+This gate exists because of one question no headless runner can answer, and the answer
+determines whether a real driver is stranded.
+
+1. **Owner setup.** On the owner's device, with App Lock enabled, open Settings →
+   Cloud Backup → Admin. Paste the admin token once and save. Confirm it asks for the
+   PIN, confirms "Admin access configured ✓", **clears the field**, and never shows the
+   value again. Deliberately try a wrong token first and confirm it says so and stores
+   nothing. Close the browser completely, reopen, open the panel: it must still say
+   configured, and the first action must ask for the PIN rather than the token.
+2. **Invite.** Tap Invite driver, enter a name, and confirm the share sheet carries a
+   link and states an expiry ("link works until …"). Confirm nothing on this screen,
+   including the modal, uses the word "token" or shows the raw code.
+3. **Delivery by iMessage and by Mail.** Send the same invite both ways to the driver's
+   phone. Both must open the app directly. Note whether either client rewrites or
+   truncates the URL — a fragment is the part most likely to be mangled by a link
+   preview or a redirect wrapper.
+4. **Claim in Safari.** On the driver's iPhone, open the link in Safari. Confirm the
+   claim wizard appears with no app chrome, that Continue stays disabled until the
+   passphrase is 10+ characters, confirmed, and the checkbox ticked, and that the
+   address bar no longer shows the code once the wizard is up. Complete the claim and
+   confirm cloud backup is connected.
+5. **THE QUESTION: Add to Home Screen.** Install the app to the Home Screen and open it
+   from there. **Is the claimed token present, or is that a separate storage
+   partition?** Record the answer explicitly — this is the whole reason A12 exists.
+   - If the token is present: note it, and the flow is finished.
+   - If storage is separate: the installed app will have nothing. Open the SAME invite
+     link again from the Home Screen app and walk the re-claim end to end. It must
+     succeed, and the Drivers list on the owner's device must still show **one** driver
+     with their backup count intact — not a second account. A second `userId` would
+     orphan every backup made before the install, which is the failure this path exists
+     to prevent. Record the result either way.
+6. **Invite expiry and single use.** Confirm a fourth claim of the same link is refused
+   with "already been used" rather than silently creating anything.
+7. **Revoke.** From the owner's device, Remove the driver. Confirm the driver's app
+   stops backing up, and that opening their old invite link again is refused rather
+   than reactivating them.
+
+PASS requires the answer to step 5 recorded explicitly, one driver account surviving
+the whole sequence with its backup count intact, and no token or code visible to
+either person at any point.
+
 # B. Live deployment blockers
 
-Run these against the same final production candidate used for A1-A11. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
+Run these against the same final production candidate used for A1-A12. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
 ## B1. Exact production app generation — **PASS**
 
@@ -188,7 +236,7 @@ Two measurement traps are worth knowing, because the first version of this gate 
 - `document.documentElement.scrollWidth` **cannot** detect overflow in this app — `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a scrollWidth wider than the viewport however far content spills. Injecting `min-width: 900px` left a scrollWidth assertion green.
 - Under mobile emulation the layout viewport **expands** to fit content wider than the device (`innerWidth` read 900 at a 320px device), so geometry compared against `innerWidth` is compared against a viewport that already grew to accommodate the overflow. Measure against the device width the test set.
 
-This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A11.
+This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A12.
 
 # E. Non-blocking resilience watch list
 
@@ -211,4 +259,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A11) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.
+The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A12) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.

@@ -1,4 +1,24 @@
-// FreightLogic Cloud Backup Worker v17 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v18 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v18: ZERO-TOKEN DRIVER ONBOARDING. POST /admin/invites mints a single-use
+// 24-char claim code (120 bits, base32, no ambiguous characters) and stores only
+// its SHA-256 hash under `inv:<hash>`, the same way driver tokens are stored as
+// `tokh:<hash>`; a KV dump therefore yields no usable invite. POST /claim
+// redeems that code for a `flk_` token and is deliberately UNAUTHENTICATED —
+// it sits above the X-Backup-Token gate because it is how a device acquires its
+// first token, and guarding it with the credential it issues would be circular.
+// What replaces authentication is the 120-bit code plus a 10/hr per-IP limit.
+// WHY THIS EXISTS: the only previous way to onboard a driver was POST
+// /admin/users, which returns a permanent bearer token that then had to be
+// carried to the phone by email or SMS — leaving a live credential in an inbox
+// forever. A claim code is spent on redemption, expires in 72h on its own, and
+// the token it produces is delivered straight to the claiming device.
+// Re-claim (up to maxClaims, default 3) returns the SAME userId with a FRESH
+// token and revokes the previous one, which is what makes the iOS
+// Safari -> Home Screen storage split recoverable without orphaning the
+// driver's backups; a second invite would mint a second userId and every
+// backup is keyed on userId. A revoked driver's outstanding invite is dead
+// (403), and re-putting the invite record re-derives the ORIGINAL expiry so a
+// repeatedly-claimed invite cannot extend its own 72h window indefinitely.
 // v17: backup/delta keys are minted from a MONOTONIC clock. The key was
 // `new Date().toISOString()` at millisecond precision, so two writes landing in the
 // same millisecond produced the SAME key: the second put() silently overwrote the
@@ -56,6 +76,27 @@ async function timingSafeEqual(a, b) {
 async function hashToken(token) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// v18 — RFC 4648 base32, used only to render invite claim codes.
+//
+// 15 random bytes = 120 bits = exactly 24 characters with no padding, so the
+// `/^[A-Z2-7]{24}$/` validator in POST /claim is exact rather than lenient.
+// The alphabet omits 0/1/8, which are the characters a driver reading a code
+// off a phone screen confuses with O/I/B.
+//
+// This renders a code; it is NOT a storage format. Only the code's SHA-256
+// hash is ever written to KV (`inv:<hash>`), exactly as driver tokens are
+// stored as `tokh:<hash>` — so a KV dump yields no usable invite.
+function b32(bytes) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0, val = 0, out = '';
+  for (const b of bytes) {
+    val = (val << 8) | b; bits += 8;
+    while (bits >= 5) { out += A[(val >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits) out += A[(val << (5 - bits)) & 31];
+  return out;
 }
 
 const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
@@ -123,6 +164,84 @@ export default {
             env.BACKUPS.put('user:' + userId, JSON.stringify(rec))
           ]);
           return json({ ok: true, userId, name, token }, 201, cors);
+        }
+
+        // POST /admin/invites — v18: mint a single-use CLAIM CODE, not a token.
+        //
+        // WHY. POST /admin/users returns a `flk_` bearer token, and the only way
+        // to get it onto the driver's phone was to send it — so a permanent
+        // credential ended up sitting in an inbox or an iMessage thread forever,
+        // readable by anyone who later picks up either device. A claim code is
+        // the opposite trade: it is useless after it is redeemed, it dies on its
+        // own in 72 hours, and the token it produces is delivered straight to
+        // the claiming device and is never transported by a human at all.
+        //
+        // Only the code's SHA-256 hash is stored, the same way driver tokens
+        // are. The plaintext code exists in exactly one place — this response —
+        // and the client puts it in a URL FRAGMENT, which browsers never send to
+        // an origin, so it cannot reach a Worker log or a Referer header.
+        //
+        // This handler sits inside the `/admin/` block deliberately: it inherits
+        // the admin-token check and the 20/hr per-IP admin rate limit above.
+        if (request.method === 'POST' && path === '/admin/invites') {
+          const body = await request.json().catch(() => ({}));
+          let name = (body.name || 'Driver').slice(0, 50);
+
+          // OPTIONAL `userId` — RE-INVITE an EXISTING driver rather than create
+          // a new one.
+          //
+          // WHY THIS IS NOT OPTIONAL POLISH. Without it there is exactly one
+          // kind of invite, and it always claims into a fresh `userId`. So
+          // "re-invite the driver who changed phones" would mint a SECOND
+          // account, and since every backup is keyed
+          // `user:<userId>:device:<id>:...`, their entire history would be
+          // orphaned — the data would stay in KV with nothing able to address
+          // it again. That is the precise failure v15's in-place rotation was
+          // added to prevent, and it would have been reintroduced here through
+          // a button labelled "Re-invite".
+          //
+          // Binding the invite to the existing `userId` makes a re-invite take
+          // the claim handler's re-claim branch: same identity, same backups,
+          // fresh token, old token revoked.
+          let boundUserId = null;
+          if (body.userId != null) {
+            const uid = String(body.userId);
+            if (!/^u_[a-f0-9-]{8,36}$/i.test(uid)) {
+              return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+            }
+            const existingRaw = await env.BACKUPS.get('user:' + uid);
+            if (!existingRaw) return json({ ok: false, error: 'Not found' }, 404, cors);
+            let existing;
+            try { existing = JSON.parse(existingRaw); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
+            // Refuse to re-invite a revoked driver. Claiming would be refused
+            // anyway (403), so issuing the invite would only hand the operator
+            // a link that cannot work — and if the claim guard were ever
+            // relaxed, this would silently reactivate someone deliberately
+            // turned off.
+            if (existing.active === false) {
+              return json({ ok: false, error: 'User is revoked. Re-inviting would silently reactivate it.' }, 409, cors);
+            }
+            boundUserId = uid;
+            // The account's own name wins over whatever the caller typed: a
+            // re-invite must not quietly rename the driver.
+            name = existing.name || name;
+          }
+
+          const code = b32(crypto.getRandomValues(new Uint8Array(15)));
+          const codeHash = await hashToken(code);
+          const ttl = 72 * 3600;
+          const rec = {
+            name,
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+            claims: 0,
+            maxClaims: 3,
+            userId: boundUserId,
+          };
+          // expirationTtl is the backstop: even if nothing ever deletes this
+          // record, KV drops it at 72h and the invite becomes unredeemable.
+          await env.BACKUPS.put('inv:' + codeHash, JSON.stringify(rec), { expirationTtl: ttl });
+          return json({ ok: true, name, code, expiresAt: rec.expiresAt, userId: boundUserId, reinvite: !!boundUserId }, 201, cors);
         }
 
         if (request.method === 'GET' && path === '/admin/users') {
@@ -245,7 +364,114 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '17', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '18', ts: new Date().toISOString() }, 200, cors);
+      }
+
+      // POST /claim — v18: redeem an invite code for a driver token.
+      //
+      // THIS ENDPOINT MUST NOT REQUIRE A BACKUP TOKEN, which is why it is here,
+      // above the `X-Backup-Token` gate, rather than with the driver routes: it
+      // is the mechanism by which a device acquires its first token. Guarding it
+      // with the credential it issues would be circular.
+      //
+      // What stands in for authentication is the code itself — 120 bits of
+      // randomness, matched against a stored SHA-256 hash — plus a 10/hr
+      // per-IP rate limit, so an attacker gets ten guesses an hour against a
+      // 2^120 space with a 72-hour window.
+      if (request.method === 'POST' && path === '/claim') {
+        const claimIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+        if (await checkRateLimit(env, 'ip:' + claimIp, 10, 'claim')) {
+          return json({ ok: false, error: 'Too many attempts. Try again later.' }, 429, cors);
+        }
+        const body = await request.json().catch(() => ({}));
+        const code = String(body.code || '').toUpperCase().trim();
+        // Validate the SHAPE before hashing. b32() of 15 bytes is exactly 24
+        // base32 characters, so this is exact, not merely defensive.
+        if (!/^[A-Z2-7]{24}$/.test(code)) {
+          return json({ ok: false, error: 'Invalid invite link.' }, 400, cors);
+        }
+        const codeHash = await hashToken(code);
+        const raw = await env.BACKUPS.get('inv:' + codeHash);
+        // 410 Gone is deliberate and is the same answer for "never existed",
+        // "expired" and "already spent": a distinct 404 would turn this into an
+        // oracle that confirms which codes were real.
+        if (!raw) return json({ ok: false, error: 'This invite has expired or was already used.' }, 410, cors);
+
+        let inv;
+        try { inv = JSON.parse(raw); }
+        catch { return json({ ok: false, error: 'Invite corrupted' }, 500, cors); }
+
+        const maxClaims = inv.maxClaims || 3;
+        if ((inv.claims || 0) >= maxClaims) {
+          await env.BACKUPS.delete('inv:' + codeHash);
+          return json({ ok: false, error: 'This invite has already been used.' }, 410, cors);
+        }
+
+        const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
+        const tokenHash = await hashToken(token);
+        let userId = inv.userId, rec, staleHash = null;
+
+        if (userId) {
+          // RE-CLAIM inside the window. This is not a convenience: on iOS,
+          // claiming in Safari and then installing to the Home Screen lands the
+          // driver in a SEPARATE storage partition with no token in it. Without
+          // this branch the only recovery would be a second invite, and the
+          // second invite would mint a second userId — orphaning every backup
+          // made from the first one, since backups are keyed on userId.
+          //
+          // Same user, same history, fresh token. The previous token is revoked
+          // (staleHash) so a re-claim is also a rotation, not an accumulation of
+          // live credentials.
+          const prevRaw = await env.BACKUPS.get('user:' + userId);
+          let prev = null;
+          try { prev = prevRaw ? JSON.parse(prevRaw) : null; } catch { prev = null; }
+          // A revoked driver's outstanding invite must be dead too, or revoking
+          // someone would be undone by an invite link they still have.
+          if (prev && prev.active === false) {
+            return json({ ok: false, error: 'This driver has been revoked.' }, 403, cors);
+          }
+          staleHash = prev && prev.tokenHash !== tokenHash ? prev.tokenHash : null;
+          rec = {
+            userId,
+            name: inv.name,
+            tokenHash,
+            createdAt: (prev && prev.createdAt) || new Date().toISOString(),
+            active: true,
+            backupCount: (prev && prev.backupCount) || 0,
+            rotatedAt: new Date().toISOString(),
+          };
+        } else {
+          userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+          rec = {
+            userId,
+            name: inv.name,
+            tokenHash,
+            createdAt: new Date().toISOString(),
+            active: true,
+            backupCount: 0,
+          };
+        }
+
+        inv.userId = userId;
+        inv.claims = (inv.claims || 0) + 1;
+
+        // Re-putting the invite record resets KV's TTL, so the ORIGINAL expiry
+        // has to be re-derived and re-applied. Without this, every claim would
+        // push the deadline another 72 hours out and a repeatedly-claimed invite
+        // would never expire at all.
+        const remainingTtl = Math.max(60, Math.floor((new Date(inv.expiresAt).getTime() - Date.now()) / 1000));
+
+        const ops = [
+          env.BACKUPS.put('tokh:' + tokenHash, JSON.stringify(rec)),
+          env.BACKUPS.put('user:' + userId, JSON.stringify(rec)),
+          env.BACKUPS.put('inv:' + codeHash, JSON.stringify(inv), { expirationTtl: remainingTtl }),
+        ];
+        if (staleHash) ops.push(env.BACKUPS.delete('tokh:' + staleHash));
+        await Promise.all(ops);
+
+        // The only time this token is ever transmitted, and it goes straight to
+        // the device that will use it.
+        return json({ ok: true, userId, name: rec.name, token }, 200, cors);
       }
 
       // DRIVER ENDPOINTS — require token

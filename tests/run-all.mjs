@@ -61,6 +61,8 @@ import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec
 
 import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mjs';
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
+import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
+import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 
 const specs = [
   omegaEconomics,
@@ -81,6 +83,8 @@ const specs = [
   cloudBackupPaused,
   workerTokenRotation,
   workerPointerRace,
+  workerInviteClaim,
+  zeroTokenOnboarding,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,
