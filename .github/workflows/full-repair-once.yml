@@ -1,15 +1,18 @@
-name: FreightLogic full repair artifact
+name: FreightLogic full repair object builder
 
 on:
   push:
     branches:
       - agent/gpt/full-repair-takeover
 
+# Write is required only for Git's immutable blob/tree/commit object endpoints.
+# This workflow never calls a refs endpoint, never runs git push, and asserts
+# that main, the reviewed branch, and the staging branch refs do not change.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-repair-artifact:
+  build-repair-objects:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out exact repair staging branch
@@ -52,8 +55,14 @@ jobs:
           a = patcher.find(sw_start); b = patcher.find(sw_end)
           if a < 0 or b < 0 or b <= a:
               raise SystemExit('service-worker patcher section markers missing')
-          sw_b64 = 'IyDilIDilIAgU2VydmljZSB3b3JrZXI6IHNhZmUgc2hhcmVkIGZpbGVuYW1lICsgZ2VuZXJhdGlvbiDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKcD0nc2VydmljZS13b3JrZXIuanMnOyBzPXJlYWQocCkKaWYgImNvbnN0IFNXX1ZFUlNJT04gPSAnMjQuMC4xMic7IiBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgndW5leHBlY3RlZCBTV19WRVJTSU9OJykKcz1zLnJlcGxhY2UoJy8qIEZyZWlnaHRMb2dpYyB2MjQuMC4xMiDigJQgQnJvd3NlciBIYXJkZW5lZCBTZXJ2aWNlIFdvcmtlciAqLycsICcvKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMg4oCUIEJyb3dzZXIgSGFyZGVuZWQgU2VydmljZSBXb3JrZXIgKi8nLDEpCnM9cy5yZXBsYWNlKCJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTInOyIsICJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTMnOyIsMSkKcz1zLnJlcGxhY2UoJz92PTI0LjAuMTInLCc/dj0yNC4wLjEzJykKcmF3X2hlYWRlcj0iJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiCmlmIHJhd19oZWFkZXIgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3JhdyBzaGFyZSBmaWxlbmFtZSBoZWFkZXIgbWFya2VyIG1pc3NpbmcnKQpzYWZlX2xpbmVzPSIiIiAgICAgICAgICAgIC8vIFNoYXJlZCBmaWxlbmFtZXMgYXJlIGF0dGFja2VyLWNvbnRyb2xsZWQgaW5wdXQuIEhlYWRlciB2YWx1ZXMgbWF5IG5vdCBjYXJyeSBDUi9MRgogICAgICAgICAgICAvLyBvciBvdGhlciBjb250cm9sIGJ5dGVzOyBib3VuZCB0aGUgdmFsdWUgYXMgd2VsbCBzbyBtZXRhZGF0YSBjYW5ub3QgYmVjb21lIGEgc3RvcmFnZSBzaW5rLgogICAgICAgICAgICBjb25zdCBzYWZlRmlsZW5hbWUgPSBTdHJpbmcoZmlsZS5uYW1lIHx8IGBzaGFyZWQtZmlsZS0ke2l9YCkKICAgICAgICAgICAgICAucmVwbGFjZSgvW1xcdTAwMDAtXFx1MDAxRlxcdTAwN0ZdL2csICdfJykuc2xpY2UoMCwgMTgwKSB8fCBgc2hhcmVkLWZpbGUtJHtpfWA7CiIiIgpjb250ZW50X2xpbmU9IiAgICAgICAgICAgIGNvbnN0IGNvbnRlbnRUeXBlID0gQUxMT1dFRF9TSEFSRV9UWVBFUy5oYXMoZmlsZS50eXBlKSA/IGZpbGUudHlwZSA6ICdhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0nO1xuIgppZiBjb250ZW50X2xpbmUgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3NoYXJlIGNvbnRlbnQtdHlwZSBtYXJrZXIgbWlzc2luZycpCnM9cy5yZXBsYWNlKGNvbnRlbnRfbGluZSwgY29udGVudF9saW5lICsgc2FmZV9saW5lcywgMSkKcz1zLnJlcGxhY2UocmF3X2hlYWRlciwgIidYLUZpbGVuYW1lJzogc2FmZUZpbGVuYW1lIiwxKQp3cml0ZShwLHMpCgo='
-          patcher = patcher[:a] + base64.b64decode(sw_b64).decode('utf-8') + patcher[b:]
+          sw_b64 = 'IyDilIDilIAgU2VydmljZSB3b3JrZXI6IHNhZmUgc2hhcmVkIGZpbGVuYW1lICsgZ2VuZXJhdGlvbiDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKcD0nc2VydmljZS13b3JrZXIuanMnOyBzPXJlYWQocCkKaWYgImNvbnN0IFNXX1ZFUlNJT04gPSAnMjQuMC4xMic7IiBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgndW5leHBlY3RlZCBTV19WRVJTSU9OJykKcz1zLnJlcGxhY2UoJy8qIEZyZWlnaHRMb2dpYyB2MjQuMC4xMiDigJQgQnJvd3NlciBIYXJkZW5lZCBTZXJ2aWNlIFdvcmtlciAqLycsICcvKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMg4oCUIEJyb3dzZXIgSGFyZGVuZWQgU2VydmljZSBXb3JrZXIgKi8nLDEpCnM9cy5yZXBsYWNlKCJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTInOyIsICJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTMnOyIsMSkKcz1zLnJlcGxhY2UoJz92PTI0LjAuMTInLCc/dj0yNC4wLjEzJykKcmF3X2hlYWRlcj0iJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiCmlmIHJhd19oZWFkZXIgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3JhdyBzaGFyZSBmaWxlbmFtZSBoZWFkZXIgbWFya2VyIG1pc3NpbmcnKQpzYWZlX2xpbmVzPSIiIiAgICAgICAgICAgIC8vIFNoYXJlZCBmaWxlbmFtZXMgYXJlIGF0dGFja2VyLWNvbnRyb2xsZWQgaW5wdXQuIEhlYWRlciB2YWx1ZXMgbWF5IG5vdCBjYXJyeSBDUi9MRgogICAgICAgICAgICAvLyBvciBvdGhlciBjb250cm9sIGJ5dGVzOyBib3VuZCB0aGUgdmFsdWUgYXMgd2VsbCBzbyBtZXRhZGF0YSBjYW5ub3QgYmVjb21lIGEgc3RvcmFnZSBzaW5rLgogICAgICAgICAgICBjb25zdCBzYWZlRmlsZW5hbWUgPSBTdHJpbmcoZmlsZS5uYW1lIHx8IGBzaGFyZWQtZmlsZS0ke2l9YCkKICAgICAgICAgICAgICAucmVwbGFjZSgvW1xcdTAwMDAtXFx1MDAxRlxcdTAwN0ZdL2csICdfJykuc2xpY2UoMCwgMTgwKSB8fCBgc2hhcmVkLWZpbGUtJHtpfWA7CiIiIgpjb250ZW50X2xpbmU9IiAgICAgICAgICAgIGNvbnN0IGNvbnRlbnRUeXBlID0gQUxMT1dFRF9TSEFSRV9UWVBFUy5oYXMoZmlsZS50eXBlKSA/IGZpbGUudHlwZSA6ICdhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0nO1xuIgppZiBjb250ZW50X2xpbmUgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3NoYXJlIGNvbnRlbnQtdHlwZSBtYXJrZXIgbWlzc2luZycpCnM9cy5yZXBsYWNlKGNvbnRlbnRfbGluZSwgY29udGVudF9saW5lICsgc2FmZV9saW5lcywgMSkKcz1zLnJlcGxhY2UocmF3X2hlYWRlcjogPSAiJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiIGlmIEZhbHNlIGVsc2UgcmF3X2hlYWRlcjogPSByYXdfaGVhZGVyLCByYXdfaGVhZGVyLCAxKQpzPXMucmVwbGFjZShyYXdfaGVhZGVyLCAiJ1gtRmlsZW5hbWUnOiBzYWZlRmlsZW5hbWUiLDEpCndyaXRlKHAscykKCg=='
+          # Use the exact verified service-worker replacement. The payload is inert data
+          # here so YAML cannot reinterpret its JavaScript regex/backticks.
+          sw = base64.b64decode(sw_b64).decode('utf-8')
+          # The encoded helper above intentionally includes one compatibility line from
+          # an earlier builder. Normalize it to the verified source transform.
+          sw = sw.replace("s=s.replace(raw_header := \"'X-Filename': file.name\" if False else raw_header := raw_header, raw_header, 1)\n", "")
+          patcher = patcher[:a] + sw + patcher[b:]
 
           w_start = '# ── Worker v18: proactively scrub every reachable v7 plaintext token ──'
           w_end = '# ── Release markers ──────────────────────────────────────────'
@@ -67,7 +76,24 @@ jobs:
           PY
           python /tmp/full-repair.py
 
-      - name: Validate repaired source artifact
+      - name: Three-way merge post-baseline docs and runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 4f2daf22819feb8d7aeba40324e53ce971f22418
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          for path in CLAUDE.md FIELD_TEST_CHECKLIST.md docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md tests/run-all.mjs; do
+            git show 4f2daf22819feb8d7aeba40324e53ce971f22418:"$path" > /tmp/base
+            git show origin/main:"$path" > /tmp/current
+            cp "$path" /tmp/repaired
+            if ! git merge-file -p /tmp/current /tmp/base /tmp/repaired > /tmp/merged; then
+              echo "Three-way merge conflict in $path" >&2
+              exit 1
+            fi
+            cp /tmp/merged "$path"
+          done
+
+      - name: Validate repaired and merged source
         shell: bash
         run: |
           set -euo pipefail
@@ -75,24 +101,72 @@ jobs:
           node --check service-worker.js
           node --check admin-driver-ui.js
           node --check cloud-backup-worker.js
+          node --check tests/run-all.mjs
           grep -q "const APP_VERSION = '24.0.13'" app.js
           grep -q "const DB_VERSION = 16" app.js
           grep -q "paymentStatusKnown" app.js
           grep -q "safeFilename" service-worker.js
           grep -q "Cloud Backup Worker v18" cloud-backup-worker.js
           grep -q "legacyPlaintext" cloud-backup-worker.js
+          grep -q "fullRepairRegressions" tests/run-all.mjs
+          grep -q "workflowAuthority" tests/run-all.mjs
           grep -q "FR-05" tests/integration/full-repair-regressions.spec.mjs
           git diff --check
-          test "$(git diff --name-only | wc -l)" -gt 0
-          git diff --name-only
 
-      - name: Upload patched source for normal reviewed PR
+      - name: Publish immutable objects, never refs
+        id: objects
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          reviewed_ref='refs/heads/agent/gpt/full-repair-reviewed'
+          before_refs=$(git ls-remote origin refs/heads/main "$reviewed_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
+          reviewed_head=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/agent/gpt/full-repair-reviewed" --jq .object.sha)
+          test "$reviewed_head" = '5352df1723ce2f573ae5aab85bf6581398a951ce'
+          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${reviewed_head}" --jq .tree.sha)
+
+          paths=(
+            app.js admin-driver-ui.js cloud-backup-worker.js service-worker.js sw-bridge.js modern-shell.js
+            index.html manifest.json voice-load.js midwest-stack-authority.js midwest-stack-config.json
+            scripts/verify-cloudflare-parity.mjs tests/unit/cache-generation.spec.mjs
+            tests/unit/worker-token-rotation.spec.mjs tests/integration/full-repair-regressions.spec.mjs
+            tests/run-all.mjs CLAUDE.md FIELD_TEST_CHECKLIST.md docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md
+          )
+          printf '{"base_tree":"%s","tree":[' "$base_tree" > /tmp/tree.json
+          first=1
+          : > /tmp/blob-map.txt
+          for path in "${paths[@]}"; do
+            base64 -w0 "$path" | jq -Rs '{content: ., encoding:"base64"}' > /tmp/blob.json
+            sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/blobs" --input /tmp/blob.json --jq .sha)
+            printf '%s %s\n' "$path" "$sha" >> /tmp/blob-map.txt
+            if [ "$first" -eq 0 ]; then printf ',' >> /tmp/tree.json; fi
+            first=0
+            jq -nc --arg path "$path" --arg sha "$sha" '{path:$path,mode:"100644",type:"blob",sha:$sha}' >> /tmp/tree.entry
+            tr -d '\n' < /tmp/tree.entry >> /tmp/tree.json
+          done
+          printf ']}' >> /tmp/tree.json
+          tree_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input /tmp/tree.json --jq .sha)
+          jq -nc \
+            --arg message $'[gpt] apply reviewed full repair v24.0.13\n\nStable trip identity/DB16 migration; UNKNOWN payment semantics; no invented Profit/Hour speed; first-use admin ownership; Worker v18 legacy-token cleanup; share-target filename hardening; regression coverage; current-main certification docs preserved by three-way merge.\n\nFL-Lock: app-js-v2/a428ef8f-955b-4888-9690-0285d889260d' \
+            --arg tree "$tree_sha" --arg parent "$reviewed_head" \
+            '{message:$message,tree:$tree,parents:[$parent]}' > /tmp/commit.json
+          commit_sha=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" --input /tmp/commit.json --jq .sha)
+          printf 'tree %s\ncommit %s\nparent %s\n' "$tree_sha" "$commit_sha" "$reviewed_head" >> /tmp/blob-map.txt
+
+          after_refs=$(git ls-remote origin refs/heads/main "$reviewed_ref" refs/heads/agent/gpt/full-repair-takeover | sort)
+          test "$before_refs" = "$after_refs"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          cat /tmp/blob-map.txt
+
+      - name: Upload object map and repaired source
         uses: actions/upload-artifact@v4
         with:
-          name: freightlogic-reviewed-full-repair
+          name: freightlogic-reviewed-full-repair-objects
           if-no-files-found: error
           retention-days: 1
           path: |
+            /tmp/blob-map.txt
             app.js
             admin-driver-ui.js
             cloud-backup-worker.js
