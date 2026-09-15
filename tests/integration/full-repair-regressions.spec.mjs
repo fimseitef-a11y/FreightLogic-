@@ -1,14 +1,15 @@
-import { createSuite, ok, eq, startServer, newPage, stopServer } from '../lib/harness.mjs';
+import { createSuite, ok, eq, launchApp, skipFirstRunWizard } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/full-repair-regressions.spec.mjs');
-let page;
+let app;
+
 async function boot(){
-  if (page) return page;
-  const base = await startServer();
-  page = await newPage({ testsEnabled:true });
-  await page.goto(base + '/#home');
-  await page.waitForFunction(() => !!window.__FL_TESTS);
-  return page;
+  if (app) return app.page;
+  app = await launchApp();
+  await skipFirstRunWizard(app.page);
+  await app.page.reload({ waitUntil:'load' });
+  await app.page.waitForFunction(() => !!window.__FL_TESTS);
+  return app.page;
 }
 
 test('[FR-01] Profit/Hour is UNKNOWN without operator planning speed and real with it', async () => {
@@ -40,11 +41,12 @@ test('[FR-03] DB16 tripRecords uses stable id and permits two blank/reused order
   const p=await boot();
   const r=await p.evaluate(async () => {
     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('FreightLogic_v18');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-    const store=db.transaction('tripRecords','readwrite').objectStore('tripRecords');
+    const txn=db.transaction('tripRecords','readwrite');
+    const store=txn.objectStore('tripRecords');
     const kp=store.keyPath, unique=store.index('orderNo').unique;
     store.put({id:'fr-blank-1',orderNo:'',created:1,pickupDate:'2026-01-01',customer:'A'});
     store.put({id:'fr-blank-2',orderNo:'',created:2,pickupDate:'2026-01-02',customer:'B'});
-    await new Promise((resolve,reject)=>{store.transaction.oncomplete=resolve;store.transaction.onerror=()=>reject(store.transaction.error)});
+    await new Promise((resolve,reject)=>{txn.oncomplete=resolve;txn.onerror=()=>reject(txn.error)});
     const tx=db.transaction('tripRecords','readonly'), s=tx.objectStore('tripRecords');
     const all=await new Promise((resolve,reject)=>{const q=s.index('orderNo').getAll(IDBKeyRange.only(''));q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
     db.close(); return {kp,unique,count:all.filter(x=>x.id.startsWith('fr-blank-')).length};
@@ -54,7 +56,9 @@ test('[FR-03] DB16 tripRecords uses stable id and permits two blank/reused order
 
 test('[FR-04] controlled-PWA admin module owns Manage Drivers without double-toggle race', async () => {
   const p=await boot();
-  await p.addScriptTag({url:'/admin-driver-ui.js?v=24.0.13'});
+  if (await p.evaluate(() => document.body.dataset.flAdminUiReady !== '1')) {
+    await p.addScriptTag({url:'/admin-driver-ui.js?v=24.0.13'});
+  }
   await p.waitForFunction(() => document.body.dataset.flAdminUiReady === '1');
   const r=await p.evaluate(() => {
     const b=document.getElementById('btnAdminToggle'),panel=document.getElementById('adminPanel');
@@ -65,10 +69,14 @@ test('[FR-04] controlled-PWA admin module owns Manage Drivers without double-tog
 });
 
 test('[FR-05] service worker sanitizes attacker-controlled shared filenames before X-Filename', async () => {
-  const txt=await (await fetch('/service-worker.js')).text();
+  const p=await boot();
+  const txt=await p.evaluate(async () => await (await fetch('/service-worker.js')).text());
   ok(txt.includes('safeFilename'),'safe filename variable exists');
   ok(txt.includes("replace(/[\\u0000-\\u001F\\u007F]/g, '_')"),'control bytes are stripped');
   ok(!txt.includes("'X-Filename': file.name"),'raw file.name is never written to header');
 });
 
-export async function runSpec(){ const r=await run(); try{await page?.close()}catch{}; return r; }
+export async function runSpec(){
+  try{return await run();}
+  finally{if(app){await app.close(); app=null;}}
+}
