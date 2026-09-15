@@ -2830,3 +2830,74 @@ Full suite: **483 passed, 0 failed across 52 spec files** — `fb408a0`'s 481 pl
 
 **Still HOLD.** Physical iPhone A1–A10 and M6 raw-data certification remain OPEN, and
 nothing in this release touches either.
+
+---
+
+## Workflow authority — the prohibition that was upheld by a YAML error
+
+Tooling and CI metadata only. No shipped file changed, so no version marker moved:
+`APP_VERSION` and `SW_VERSION` stay `24.0.12`, `DB_VERSION` 15, Worker v17.
+
+**The finding.** This file has recorded since the v24.1 section that the v24.0.1
+comment-triggered, branch-pushing CI repair machinery *"was removed on purpose and
+must not return"*, and `.github/workflows/deploy-backup-worker.yml` repeats the rule
+in its own header. Neither sentence was enforced by anything.
+
+On 2026-09-15 a workflow appeared on a side branch that triggered **on push**, took
+**`permissions: contents: write`**, auto-applied a 608-line patch advancing
+`APP_VERSION`, `DB_VERSION` 15 → 16 and the Worker to v18, and finished with
+`git push origin HEAD:<its own branch>`. It never ran — it failed to start with zero
+jobs — so nothing was auto-committed. **The prohibition held because the thing
+violating it happened to be broken.** That is not a prohibition; it is luck, and it
+is the same shape as `OI-11` passing with the defect reinstated (v24.0.12) and
+checklist item 15 being documented as machine-checked while nothing read the field.
+
+**The gate.** `tests/unit/workflow-authority.spec.mjs` (new, 6 assertions, wired into
+`tests/run-all.mjs`) globs **every** file in `.github/workflows/` and fails if any one:
+
+- **WFA-01** declares no explicit top-level `permissions:` block — an absent block
+  inherits the repository default, which may be write;
+- **WFA-02** requests write authority (`contents: write`, `write-all`, or a write on
+  `packages`/`id-token`/`pull-requests`/`issues`/`actions`);
+- **WFA-03** performs a repository write — `git push`, `git commit`, `git tag`,
+  `peter-evans/create-pull-request`, `stefanzweifel/git-auto-commit-action`,
+  `ad-m/github-push-action`, `gh pr create|merge`, or `gh api -X POST|PUT|PATCH|DELETE`.
+  CI may verify and it may deploy; it may never author a commit;
+- **WFA-04** triggers on `issue_comment`, `repository_dispatch` or
+  `pull_request_target`. `workflow_run` stays allowed — it is already gated on a
+  first-party workflow and `verify-authenticated-worker.yml` depends on it.
+
+**WFA-05** keeps `deploy-backup-worker.yml` as the one workflow that changes the
+world, and keeps it gated: manual dispatch only, never `push` or `schedule`, still
+requiring the typed `DEPLOY`, and holding no git write authority — it pushes to
+Cloudflare, not to this repository.
+
+It applies **by glob**, so a new workflow is covered the moment it lands rather than
+when someone remembers to add it to a list. Every check reads executable lines only,
+with comments stripped: scrubbing prose would let a workflow pass by deleting the
+paragraph explaining why it is safe.
+
+**WFA-06 is the assertion that keeps the rest honest.** The four rules are pure
+functions over workflow text, and WFA-06 runs them against a reduced copy of that
+exact offending workflow and requires each one to reject it — so the negative control
+is a permanent test rather than something checked once by hand and then trusted. It
+also asserts the inverse in both directions: a real compliant workflow
+(`verify-live-parity.yml`) must not be flagged, and a *comment describing* the
+prohibition must not read as violating it. A guard that fires on its own
+documentation gets disabled, and a guard nobody has watched fail is the defect this
+suite exists to catch.
+
+**It found a real pre-existing gap on its first run**, which is the argument for it.
+`tests.yml` and `lanes.yml` carried **no `permissions:` block at all** and were
+inheriting the repository default. Both now declare `contents: read`; neither uploads
+artifacts nor calls the GitHub API, so this is least privilege with no behaviour
+change. The offending side-branch workflow was not the only exposure, merely the
+visible one.
+
+**Not in scope, deliberately.** This gate governs what reaches `main`. A workflow on
+a side branch that pushes to *itself* is outside any PR check by construction — the
+gate stops such machinery landing, it cannot stop it running where it already sits.
+Removing it from that branch is the owning lane's, requested through `/.agents/inbox/`
+rather than edited across lanes.
+
+Full suite: **489 passed, 0 failed across 53 spec files** (from 483/52).

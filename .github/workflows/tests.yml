@@ -18,6 +18,11 @@ on:
   push:
     branches: [main]
 
+permissions:
+  # Explicit and least-privilege: an absent block inherits the repository
+  # default, which may be write. This job only checks out and runs Node.
+  contents: read
+
 jobs:
   playwright-suite:
     runs-on: ubuntu-latest
