@@ -174,7 +174,7 @@ test('[CG-09] DB version and Worker version are unchanged by a generation freeze
   // drift the rest of this spec exists to eliminate.
   const dbm = read('app.js').match(/^const DB_VERSION = (\d+);/m);
   ok(dbm, 'could not read DB_VERSION from app.js');
-  eq(dbm[1], '15', 'DB_VERSION must stay 15 — a cache-generation freeze must not migrate the database');
+  eq(dbm[1], '16', 'DB_VERSION must be 16 — v24.0.14 migrates trips from external order-number identity to stable internal ids');
   const workerSrc = read('cloud-backup-worker.js');
   const srcWorker = workerSrc.match(/Cloud Backup Worker v(\d+)/)?.[1];
   const healthWorker = workerSrc.match(/version:\s*'(\d+)'/)?.[1];

@@ -191,3 +191,7 @@ The release suite must continue to exercise the real shared paths, not helper-on
 - legacy payload compatibility with absent lifecycle/evidence sections.
 
 Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.x release-integrity/blocker specs, the v24.0.9 pickup-feasibility/UNKNOWN-setting coverage, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
+
+## DB16 stable trip identity (v24.0.14 repair candidate)
+
+`orderNo` is external evidence, not a unique internal identity. DB16 keeps the legacy `trips` store for rollback but routes logical trip operations to `tripRecords`, keyed by stable internal `id`, with a non-unique `orderNo` index. Pre-DB16 rows whose paid/unpaid provenance cannot be proven migrate with payment status UNKNOWN until the operator explicitly marks them.

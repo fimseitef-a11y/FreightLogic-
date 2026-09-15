@@ -30,8 +30,9 @@ async function dumpAllStores(page) {
         const req = indexedDB.open('FreightLogic_v18');
         req.onsuccess = () => {
           const db = req.result;
-          const txn = db.transaction(name, 'readonly');
-          const getAll = txn.objectStore(name).getAll();
+          const physical = name === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : name;
+          const txn = db.transaction(physical, 'readonly');
+          const getAll = txn.objectStore(physical).getAll();
           getAll.onsuccess = () => { db.close(); resolve(getAll.result); };
           getAll.onerror = () => reject(getAll.error);
         };
@@ -49,8 +50,9 @@ async function wipeAllStores(page) {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
         const db = req.result;
-        const txn = db.transaction(names, 'readwrite');
-        for (const n of names) txn.objectStore(n).clear();
+        const physicalNames = names.map(n => n === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : n);
+        const txn = db.transaction(physicalNames, 'readwrite');
+        for (const n of physicalNames) txn.objectStore(n).clear();
         txn.oncomplete = () => { db.close(); resolve(); };
         txn.onerror = () => reject(txn.error);
       };
@@ -65,8 +67,9 @@ async function seedRecord(page, storeName, record) {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
         const db = req.result;
-        const txn = db.transaction(storeName, 'readwrite');
-        txn.objectStore(storeName).put(record);
+        const physical = storeName === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : storeName;
+        const txn = db.transaction(physical, 'readwrite');
+        txn.objectStore(physical).put(record);
         txn.oncomplete = () => { db.close(); resolve(); };
         txn.onerror = () => reject(txn.error);
       };

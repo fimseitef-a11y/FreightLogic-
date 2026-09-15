@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.13 USA ENGINE
+/** FreightLogic v24.0.14 USA ENGINE
+ *  v24.0.14 "Post-Onboarding Full Repair": stable internal trip IDs (DB16), UNKNOWN payment
+ *          semantics, explicit-speed-only Profit/Hour, header-safe shared filenames, and
+ *          Worker v19 proactive legacy-token cleanup. PR #210 zero-token invite/claim
+ *          onboarding remains authoritative. A1-A11 and authentic M6 remain open gates.
  *  v24.0.13 "Zero-Token Onboarding": a driver is invited with a single-use claim
  *          code (Worker v18) instead of being sent a permanent flk_ bearer token,
  *          so no live credential is left sitting in an inbox or an iMessage thread.
@@ -218,7 +222,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.13';
+const APP_VERSION = '24.0.14';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -258,7 +262,7 @@ function getCachedSetting(key, fallback=null){ return SETTINGS_CACHE.has(key) ? 
 // • sw-bridge.js auto-activates new service worker builds
 // ════════════════════════════════════════════════════════════════════════════
 
-const DB_VERSION = 15;
+const DB_VERSION = 16;
 const PAGE_SIZE = 50;
 
 const LIMITS = Object.freeze({
@@ -2657,6 +2661,36 @@ async function initDB(){
       // architectural boundary — `loadLifecycle` must not become a catch-all
       // ledger. Purely additive; no existing record is rewritten.
       if (old < 15) { ensureStore(EVIDENCE_STORE, { keyPath:'evidenceId' }); }
+      // v16: `orderNo` is external evidence, not identity. The legacy store keyed by
+      // orderNo silently overwrote blank/reused numbers (observed 13 -> 12 on first import).
+      // Preserve it for rollback, but migrate every surviving row to stable internal `id`.
+      if (old < 16) {
+        ensureStore('tripRecords', { keyPath:'id' });
+        ensureIndexes('tripRecords', [
+['pickupDate','pickupDate'], ['created','created'], ['customer','customer'],
+['orderNo','orderNo',{ unique:false }]
+        ]);
+        if (d.objectStoreNames.contains('trips')) {
+const legacyTrips = e.target.transaction.objectStore('trips');
+const stableTrips = e.target.transaction.objectStore('tripRecords');
+const curReq = legacyTrips.openCursor();
+curReq.onsuccess = (ev) => {
+  const cur = ev.target.result;
+  if (!cur) return;
+  const rec = Object.assign({}, cur.value || {});
+  if (!rec.id) rec.id = crypto.randomUUID?.() || ('trip_' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+  // Pre-v16 rows have no way to prove whether false was explicit or a sanitizer fallback.
+  // Fail closed: UNKNOWN until the operator marks paid/unpaid.
+  if (typeof rec.paymentStatusKnown !== 'boolean') rec.paymentStatusKnown = false;
+  stableTrips.put(rec);
+  cur.continue();
+};
+        }
+      }
+      ensureIndexes('tripRecords', [
+        ['pickupDate','pickupDate'], ['created','created'], ['customer','customer'],
+        ['orderNo','orderNo',{ unique:false }]
+      ]);
       ensureIndexes(EVIDENCE_STORE, [
         ['recordedAt', 'recordedAt'],
         ['lifecycleId', 'lifecycleId'],
@@ -2748,7 +2782,7 @@ async function migrateFromLegacyDB(){
 
     if (!records.length) continue;
     const { t, stores } = tx([storeName], 'readwrite');
-    for (const rec of records){ try{ stores[storeName].put(rec); }catch{} }
+    for (const rec of records){ try{ stores[storeName].put(storeName === 'trips' ? sanitizeTrip(rec) : rec); }catch{} }
     await waitTxn(t);
     total += records.length;
   }
@@ -2772,9 +2806,12 @@ async function ensureLocalUserId(){
 }
 
 function tx(storeNames, mode='readonly'){
-  const t = db.transaction(storeNames, mode);
+  const logical = Array.isArray(storeNames) ? storeNames : [storeNames];
+  const physicalFor = (n) => (n === 'trips' && db.objectStoreNames.contains('tripRecords')) ? 'tripRecords' : n;
+  const physical = [...new Set(logical.map(physicalFor))];
+  const t = db.transaction(physical, mode);
   const stores = {};
-  for (const n of (Array.isArray(storeNames)? storeNames:[storeNames])) stores[n] = t.objectStore(n);
+  for (const n of logical) stores[n] = t.objectStore(physicalFor(n));
   return { t, stores };
 }
 function waitTxn(txn){
@@ -2812,7 +2849,7 @@ function newTripTemplate(){
   return { id: crypto.randomUUID?.() || ('trip_' + Math.random().toString(36).slice(2) + Date.now().toString(36)), orderNo:'', customer:'', pickupDate:isoDate(), deliveryDate:isoDate(),
     invoiceDate:'', dueDate:'', origin:'', destination:'', pay:0, loadedMiles:0, emptyMiles:null,
     stops:[], // v14.5.0: multi-stop support [{city, date, type:'stop'|'pickup'|'delivery', notes}]
-    notes:'', isPaid:false, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],
+    notes:'', isPaid:false, paymentStatusKnown:true, paidDate:null, wouldRunAgain:null, needsReview:false, reviewReasons:[],
     // F20: Dead Zone Exit fields
     isDZExit:false, dzDistanceFromHome:null, dzSubTier:null,
     created:Date.now(), updated:Date.now() };
@@ -2844,6 +2881,7 @@ function computeTripReviewReasons(raw){
   if (loaded > 2500) reasons.push('Loaded miles exceed cargo-van sanity threshold');
   if (empty !== null && empty > 1500) reasons.push('Deadhead exceeds sanity threshold');
   if (pay > 20000) reasons.push('Revenue exceeds sanity threshold');
+  if (raw?.paymentStatusKnown === false) reasons.push('Payment status is unknown');
   return reasons;
 }
 
@@ -2865,7 +2903,9 @@ function sanitizeTrip(raw){
   // v14.5.0: multi-stop
   t.stops = Array.isArray(raw.stops) ? raw.stops.slice(0, 10).map(sanitizeStop).filter(Boolean) : [];
   t.notes = clampStr(raw.notes, 500);
-  t.isPaid = !!raw.isPaid;
+  const hasPaidFlag = Object.prototype.hasOwnProperty.call(raw || {}, 'isPaid') && typeof raw.isPaid === 'boolean';
+  t.isPaid = hasPaidFlag ? raw.isPaid : false;
+  t.paymentStatusKnown = typeof raw.paymentStatusKnown === 'boolean' ? raw.paymentStatusKnown : hasPaidFlag;
   // F-2 fix: paidDate now goes through isValidISODate() like every sibling
   // date field above — was stored verbatim, letting a malformed CSV
   // import's PaidDate column (app.js:~1662) reach day-count arithmetic
@@ -2894,10 +2934,17 @@ function sanitizeTrip(raw){
   return t;
 }
 
-async function tripExists(orderNo){
+function tripPaymentKnown(t){ return !!t && t.paymentStatusKnown === true && typeof t.isPaid === 'boolean'; }
+function tripIsPaid(t){ return tripPaymentKnown(t) && t.isPaid === true; }
+function tripIsUnpaid(t){ return tripPaymentKnown(t) && t.isPaid === false; }
+async function findTripsByOrderNo(orderNo, limit=10){
+  const key = normOrderNo(orderNo);
+  if (!key) return [];
   const {stores} = tx('trips');
-  return !!(await idbReq(stores.trips.get(orderNo)));
+  if (!stores.trips.indexNames.contains('orderNo')) return [];
+  return (await idbReq(stores.trips.index('orderNo').getAll(IDBKeyRange.only(key), limit))) || [];
 }
+async function tripExists(orderNo){ return (await findTripsByOrderNo(orderNo, 1)).length > 0; }
 async function upsertTrip(trip){
   // F-6 fix: optimistic concurrency. `trip.updatedAt` (on the RAW argument,
   // before sanitizeTrip builds a fresh object) is whatever this caller's
@@ -2923,7 +2970,7 @@ async function upsertTrip(trip){
   // can't strand a lock for other tabs to wait on.
   const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
   let beforeData = null;
-  try{ beforeData = await idbReq(stores.trips.get(t.orderNo)); }catch(e){ console.warn("[FL]", e); }
+  try{ beforeData = await idbReq(stores.trips.get(t.id)); }catch(e){ console.warn("[FL]", e); }
   if (beforeData && expectedUpdatedAt != null && beforeData.updatedAt !== expectedUpdatedAt){
     try{ txn.abort(); }catch(e){ console.warn("[FL]", e); }
     const err = new Error('This trip was changed elsewhere since you opened it.');
@@ -2944,14 +2991,14 @@ async function upsertTrip(trip){
   stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: t.orderNo, action: beforeData ? 'UPDATE_TRIP' : 'CREATE_TRIP', beforeData: beforeData || null, afterData: t, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(t); txn.onerror = ()=>{ const err = txn.error; if (err?.name === 'QuotaExceededError' || (err?.message||'').includes('quota')) toast('Storage full — export a backup and clear old data', true); reject(err); }; });
 }
-async function deleteTrip(orderNo){
-  // TOCTOU-safe: read + write in single readwrite transaction
+async function deleteTrip(tripId){
+  // Stable-id delete. External order numbers are not unique identities.
   const {t:txn, stores} = tx(['trips','receipts','auditLog'],'readwrite');
   let beforeData = null;
-  try{ beforeData = await idbReq(stores.trips.get(orderNo)); }catch(e){ console.warn("[FL]", e); }
-  stores.trips.delete(orderNo);
-  try{ stores.receipts.delete(orderNo); }catch(e){ console.warn("[FL]", e); }
-  stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: orderNo, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
+  try{ beforeData = await idbReq(stores.trips.get(tripId)); }catch(e){ console.warn("[FL]", e); }
+  stores.trips.delete(tripId);
+  try{ if (beforeData?.orderNo) stores.receipts.delete(beforeData.orderNo); }catch(e){ console.warn("[FL]", e); }
+  stores.auditLog?.put?.({ id: crypto.randomUUID?.() || String(Date.now())+Math.random(), timestamp: Date.now(), entityId: tripId, action:'DELETE_TRIP', beforeData: beforeData || null, afterData: null, source: 'user' });
   return new Promise((resolve,reject)=>{ txn.oncomplete = ()=> resolve(true); txn.onerror = ()=> reject(txn.error); });
 }
 async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaidOnly=false}={}){
@@ -3572,7 +3619,7 @@ async function exportTripsCSV(){
     const all = tripAllMiles(t);
     const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '';
     const stopsStr = Array.isArray(t.stops) ? t.stops.map(s => `${s.city||''}(${s.type||'stop'})`).join('; ') : '';
-    return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, t.emptyMiles, all, rpm, t.isPaid?'Yes':'No', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
+    return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, t.emptyMiles, all, rpm, tripPaymentKnown(t) ? (t.isPaid?'Yes':'No') : '', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
   })];
   downloadCSV(rows, `freight-logic-trips-${isoDate()}.csv`);
   toast('CSV exported');
@@ -3901,6 +3948,7 @@ async function importCSVFile(file){
             emptyMiles: (() => { const v = cellAt(row, 'EmptyMiles','Empty','Deadhead','DeadheadMiles','DH').replace(/[,]/g,'').trim(); return v === '' ? null : Number(v); })(),
             notes: cellAt(row, 'Notes','Note','Comments','Memo'),
             isPaid: ['yes','true','paid','1'].includes(cellAt(row, 'Paid','IsPaid','Status').toLowerCase()),
+            paymentStatusKnown: cellAt(row, 'Paid','IsPaid','Status').trim() !== '',
             paidDate: cellAt(row, 'PaidDate','PayDate','PaymentDate') || null,
             wouldRunAgain: ['yes','true','1'].includes(cellAt(row, 'WouldRunAgain','RunAgain','Repeat').toLowerCase()) ? true : null,
           });
@@ -4176,7 +4224,7 @@ async function queryUnpaidTotal(){
     req.onsuccess = (e) => {
       const cur = e.target.result;
       if (!cur) { resolve(total); return; }
-      if (!cur.value.isPaid && !cur.value.needsReview) total += Number(cur.value.pay || 0);
+      if (tripIsUnpaid(cur.value) && !cur.value.needsReview) total += Number(cur.value.pay || 0);
       cur.continue();
     };
   });
@@ -4264,7 +4312,7 @@ async function computeKPIs(){
     if (dt === today) todayGross += pay;
     const ts = new Date(dt || Date.now()).getTime();
     if (ts >= wk0){ wkGross += pay; wkLoaded += loaded; wkEmpty += empty; }
-    if (!t.isPaid) unpaid += pay;
+    if (tripIsUnpaid(t)) unpaid += pay;
   }
   for (const e of exps){
     const amt = Number(e.amount||0);
@@ -4424,7 +4472,7 @@ function computeBrokerStats(trips, todayIso, windowDays=90){
     let rec = map.get(name);
     if (!rec){ rec = { name, trips:0, pay:0, miles:0, paidTrips:0, daysToPaySum:0, unpaid:0 }; map.set(name, rec); }
     rec.trips += 1; rec.pay += pay; rec.miles += allMi;
-    if (!t.isPaid) rec.unpaid += pay;
+    if (tripIsUnpaid(t)) rec.unpaid += pay;
     if (t.isPaid && t.paidDate){
       const d = daysBetweenISO(t.invoiceDate || dt, t.paidDate);
       // F-2 fix: same d>=0/d<365 sanity bound renderMoneyCard already
@@ -4907,7 +4955,7 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   if (customer){
     const brokerTrips = allTrips.filter(t => (t.customer || '') === customer);
     if (brokerTrips.length >= 2){
-      const unpaidCount = brokerTrips.filter(t => !t.isPaid).length;
+      const unpaidCount = brokerTrips.filter(t => tripIsUnpaid(t)).length;
       const unpaidRate = unpaidCount / brokerTrips.length;
       let dtpAvg = null;
       const paidWithDate = brokerTrips.filter(t => t.isPaid && t.paidDate);
@@ -6032,7 +6080,7 @@ async function renderSmartTip(state){
     if (!tip) {
       const overdueTrips = trips.filter(t => {
         const refDate = t.deliveryDate || t.pickupDate;
-        return !t.isPaid && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
+        return tripIsUnpaid(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
       });
       if (overdueTrips.length >= 2) {
         const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
@@ -6859,7 +6907,7 @@ function tripRow(t, {compact=false}={}){
 
   $('[data-act="paid"]', d).addEventListener('click', async ()=>{
     haptic(15);
-    t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
+    t.isPaid = !t.isPaid; t.paymentStatusKnown = true; t.paidDate = t.isPaid ? isoDate() : null;
     await upsertTrip(t); invalidateKPICache();
     toast(t.isPaid ? 'Marked paid' : 'Marked unpaid');
     await renderAR(); await renderTrips(true);
@@ -6867,7 +6915,7 @@ function tripRow(t, {compact=false}={}){
 
   // v20: Swipe-right → Mark Paid; Swipe-left → Delete (with confirm)
   const markPaid = async ()=>{
-    t.isPaid = !t.isPaid; t.paidDate = t.isPaid ? isoDate() : null;
+    t.isPaid = !t.isPaid; t.paymentStatusKnown = true; t.paidDate = t.isPaid ? isoDate() : null;
     await upsertTrip(t); invalidateKPICache();
     toast(t.isPaid ? 'Marked paid ✓' : 'Marked unpaid');
     refreshUnpaidBadge().catch(()=>{});
@@ -6878,7 +6926,7 @@ function tripRow(t, {compact=false}={}){
     d.remove();
     showUndoToast(
       `Trip ${escapeHtml(String(t.orderNo))}`,
-      async ()=>{ await deleteTrip(t.orderNo); invalidateKPICache(); await renderTrips(true); await renderHome(); },
+      async ()=>{ await deleteTrip(t.id); invalidateKPICache(); await renderTrips(true); await renderHome(); },
       async ()=>{ await renderTrips(true); }
     );
   };
@@ -7067,7 +7115,7 @@ async function listUnpaidTrips(limit=200){
     req.onsuccess = (e)=>{
       const cur = e.target.result;
       if (!cur || out.length >= limit){ resolve(out); return; }
-      if (!cur.value.isPaid) out.push(cur.value);
+      if (tripIsUnpaid(cur.value)) out.push(cur.value);
       cur.continue();
     };
   });
@@ -7101,7 +7149,7 @@ async function renderAR(){
       <div class="right"><div class="v">${fmtMoney(t.pay||0)}</div><button class="btn primary sm">Mark Paid</button></div>`;
     $('button', d).addEventListener('click', async ()=>{
       haptic(20);
-      t.isPaid = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs(); refreshUnpaidBadge().catch(()=>{});
+      t.isPaid = true; t.paymentStatusKnown = true; t.paidDate = isoDate(); await upsertTrip(t); invalidateKPICache(); toast('Marked paid'); await renderAR(); await computeKPIs(); refreshUnpaidBadge().catch(()=>{});
     });
     list.appendChild(d);
   });
@@ -9022,8 +9070,10 @@ function deriveUnifiedEconomics(facts){
   const profitMarginPct = effectiveRevenue > 0 ? roundCents((trueProfit / effectiveRevenue) * 100) : 0;
   const breakEvenRPM = totalMi > 0 ? roundCents(totalCost / totalMi) : 0;
   const profitPerMile = totalMi > 0 ? roundCents(trueProfit / totalMi) : 0;
-  const estHours = totalMi > 0 ? Math.max(1, Math.round(totalMi / 50)) : 1;
-  const profitPerHour = roundCents(trueProfit / estHours);
+  const avgMphK = knownNum(f.avgMph);
+  const avgMph = (avgMphK !== null && avgMphK >= PICKUP_FEASIBILITY.MIN_MPH && avgMphK <= PICKUP_FEASIBILITY.MAX_MPH) ? avgMphK : null;
+  const estHours = avgMph === null ? null : roundCents(totalMi / avgMph);
+  const profitPerHour = estHours && estHours > 0 ? roundCents(trueProfit / estHours) : null;
   const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
   const deadheadPct = totalMi > 0 ? ((deadMi / totalMi) * 100) : 0;
   return Object.freeze({
@@ -10239,10 +10289,11 @@ async function mwEvaluateLoad(){
   const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
   const fuelPrice = knownNum(await getSetting('fuelPrice', MW.fuelBaseline));
   const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
+  const planningAvgMph = await getPlanningAvgMph();
   const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
   const economicsResult = deriveUnifiedEconomics({
     revenue, effectiveRevenue, loadedMi, deadMi,
-    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost,
+    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost, avgMph: planningAvgMph,
   });
   const {
     totalMi, trueRPM, loadedRPM, deadheadPct,
@@ -10730,7 +10781,7 @@ function _mwRenderDecision(out, d){
       <div style="font-size:10px;color:var(--text-tertiary)">Profit/Mile</div>
     </div>
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
-      <div style="font-family:var(--font-mono);font-size:14px;font-weight:500">$${profitPerHour.toFixed(0)}</div>
+      <div style="font-family:var(--font-mono);font-size:14px;font-weight:500">${profitPerHour === null ? '—' : ('$' + profitPerHour.toFixed(0))}</div>
       <div style="font-size:10px;color:var(--text-tertiary)">Profit/Hour</div>
     </div>
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
@@ -12602,11 +12653,8 @@ function openTripWizard(existing=null){
     if (!orderNo){ hint.textContent = 'Order # is required.'; return false; }
     if (!(pay > 0)){ hint.textContent = 'Pay must be > 0.'; return false; }
     if (mode==='add' && await tripExists(orderNo)){
-      hint.textContent = 'Order # already exists. You can edit the existing trip instead.';
-      const existingTrip = await idbReq(tx('trips').stores.trips.get(orderNo)).catch(()=>null);
-      const openIt = confirm('Order # already exists. Open the existing trip instead of creating a duplicate?');
-      if (openIt && existingTrip){ setTimeout(()=> openTripWizard(existingTrip), 0); closeModal(); }
-      return false;
+      // External order numbers can be reused by different brokers/loads. Warn, do not merge identities.
+      hint.textContent = 'Order # already exists — allowed if this is a distinct load.';
     }
     hint.textContent = 'Looks good.'; return true;
   }
@@ -12835,7 +12883,7 @@ function openTripWizard(existing=null){
         async ()=>{
           try{ const rec = await getReceipts(trip.orderNo);
             for (const f of (rec?.files||[])) try{ await cacheDeleteReceipt(f.id); }catch(e){ console.warn("[FL]", e); } }catch(e){ console.warn("[FL]", e); }
-          await deleteTrip(trip.orderNo); invalidateKPICache();
+          await deleteTrip(trip.id); invalidateKPICache();
           await renderTrips(true); await renderHome();
         },
         async ()=>{ await renderTrips(true); }
@@ -15427,11 +15475,11 @@ async function mergeRestoreData(parsed){
   // commits first (and this read sees it, and skips) or commits after (and
   // wins). This is the idiom upsertTrip() has used since F-6, and the one the
   // lifecycle/evidence loops further down already use.
-  const inTrips = arr(parsed.trips);
+  const inTrips = arr(parsed.trips).map(x => sanitizeTrip(x));
   for (const incoming of inTrips){
     try {
       const {t:wt, stores:ws} = tx('trips','readwrite');
-      const existing = await idbReq(ws.trips.get(incoming.orderNo));
+      const existing = await idbReq(ws.trips.get(incoming.id));
       if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
       else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); stats.trips.updated++; }
       else { stats.trips.skipped++; }
@@ -16732,7 +16780,7 @@ async function getBrokerTripIntel(company){
       const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
       totalPay += pay;
       totalMiles += miles;
-      if (!t.isPaid) unpaidCount++;
+      if (tripIsUnpaid(t)) unpaidCount++;
       if (t.isPaid && t.paidDate && t.invoiceDate){
         const days = Math.max(0, Math.round((new Date(t.paidDate) - new Date(t.invoiceDate)) / 86400000));
         if (days < 200){ totalDaysToPay += days; payCount++; }
@@ -20934,9 +20982,10 @@ async function renderMoneyCard() {
   // Unpaid totals
   let unpaidAmt = 0, unpaidCount = 0, totalPaid = 0, totalEver = 0;
   for (const t of validTrips) {
+    if (!tripPaymentKnown(t)) continue;
     const pay = Number(t.pay || 0);
     totalEver += pay;
-    if (!t.isPaid) { unpaidAmt += pay; unpaidCount++; } else { totalPaid += pay; }
+    if (tripIsUnpaid(t)) { unpaidAmt += pay; unpaidCount++; } else if (tripIsPaid(t)) { totalPaid += pay; }
   }
   const collectedPct = totalEver > 0 ? Math.round((totalPaid / totalEver) * 100) : 0;
 
@@ -21593,7 +21642,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
-    sanitizeTrip, sanitizeExpense, sanitizeFuel,
+    sanitizeTrip, sanitizeExpense, sanitizeFuel, tripPaymentKnown, tripIsPaid, tripIsUnpaid, findTripsByOrderNo,
     // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
     addExpense, updateExpense, addFuel, updateFuel, dumpStore,
     // v24.2 Load Lifecycle

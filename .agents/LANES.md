@@ -16,6 +16,12 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 |---|---|---|
 | `cloud-backup-worker.js` | gpt | Temporary Worker v19 legacy plaintext-token cleanup exception; preserve PR #210 zero-token onboarding. |
 | `tests/integration/full-repair-regressions.spec.mjs` | gpt | Temporary regressions for the bounded post-PR-210 repair. |
+| `tests/integration/omega-economics.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |
+| `tests/integration/tax-export-csv-corruption.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |
+| `tests/integration/toctou-concurrent-edit.spec.mjs` | gpt | Temporary DB16 fixture adapter; concurrency assertions unchanged. |
+| `tests/integration/field-resilience.spec.mjs` | gpt | Temporary DB16 fixture adapter; resilience assertions unchanged. |
+| `tests/integration/backup-restore-parity.spec.mjs` | gpt | Temporary DB16 fixture adapter; restore-parity assertions unchanged. |
+| `tests/unit/worker-invite-claim.spec.mjs` | gpt | Temporary Worker v19 health-generation assertion update; onboarding assertions unchanged. |
 | `tests/unit/worker-token-rotation.spec.mjs` | gpt | Temporary legacy-token cleanup regression exception. |
 | `tests/unit/cache-generation.spec.mjs` | gpt | Temporary DB16/app-generation invariant update. |
 | `tests/run-all.mjs` | gpt | Temporary regression-registration exception; preserve PR #210 test registrations. |

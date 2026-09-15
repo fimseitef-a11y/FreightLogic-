@@ -1,27 +1,27 @@
-/* FreightLogic v24.0.13 — Browser Hardened Service Worker */
-const SW_VERSION = '24.0.13';
+/* FreightLogic v24.0.14 — Browser Hardened Service Worker */
+const SW_VERSION = '24.0.14';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=24.0.13"></script>';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.13"></script>';
+const ADMIN_UI_TAG = '<script src="admin-driver-ui.js?v=24.0.14"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.14"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=24.0.13',
-  './voice-load.js?v=24.0.13',
+  './app.js?v=24.0.14',
+  './voice-load.js?v=24.0.14',
   './styles.css',
-  './admin-driver-ui.js?v=24.0.13',
-  './midwest-stack-authority.js?v=24.0.13',
-  './manifest.json?v=24.0.13',
+  './admin-driver-ui.js?v=24.0.14',
+  './midwest-stack-authority.js?v=24.0.14',
+  './manifest.json?v=24.0.14',
   './midwest-stack-config.json',
   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
   // import works fully offline from the very first install.
   './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=24.0.13',
-  './modern-shell.js?v=24.0.13'
+  './sw-bridge.js?v=24.0.14',
+  './modern-shell.js?v=24.0.14'
 ];
 
 // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
@@ -30,7 +30,7 @@ const CORE = [
 // generation is handled separately (a known asset may fall back to a
 // query-insensitive cache hit; an unknown path may not).
 function normalizeAssetPath(pathname) {
-  // './app.js?v=24.0.13' and '/app.js' must resolve to the same identity.
+  // './app.js?v=24.0.14' and '/app.js' must resolve to the same identity.
   return new URL(pathname, self.location.href).pathname;
 }
 const KNOWN_ASSET_PATHS = new Set(
@@ -68,7 +68,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.13', './voice-load.js?v=24.0.13', './styles.css', './sw-bridge.js?v=24.0.13', './modern-shell.js?v=24.0.13', './manifest.json?v=24.0.13', './midwest-stack-authority.js?v=24.0.13', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.14', './voice-load.js?v=24.0.14', './styles.css', './sw-bridge.js?v=24.0.14', './modern-shell.js?v=24.0.14', './manifest.json?v=24.0.14', './midwest-stack-authority.js?v=24.0.14', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
@@ -126,7 +126,11 @@ self.addEventListener('fetch', (event) => {
           for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': file.name } }));
+            // Shared filenames are attacker-controlled input. Header values may not carry
+            // control bytes; bound the value so metadata cannot become a header/storage sink.
+            const safeFilename = String(file.name || `shared-file-${i}`)
+              .replace(/[\u0000-\u001F\u007F]/g, '_').slice(0, 180) || `shared-file-${i}`;
+            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': safeFilename } }));
           }
         }
       } catch {}

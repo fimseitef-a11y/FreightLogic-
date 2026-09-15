@@ -1,4 +1,7 @@
-// FreightLogic Cloud Backup Worker v18 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v19 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v19: PROACTIVE LEGACY TOKEN SCRUB. Admin listing migrates every reachable v7
+// plaintext user record to tokenHash-only storage, lazy driver auth rewrites the matching
+// user record as well as its token index, and revoke never persists a raw token field.
 // v18: ZERO-TOKEN DRIVER ONBOARDING. POST /admin/invites mints a single-use
 // 24-char claim code (120 bits, base32, no ambiguous characters) and stores only
 // its SHA-256 hash under `inv:<hash>`, the same way driver tokens are stored as
@@ -254,7 +257,21 @@ export default {
           for (const val of vals) {
             if (val) {
               try {
-                const u = JSON.parse(val);
+                let u = JSON.parse(val);
+                // Bounded proactive v7 cleanup while admin listing already walks every user.
+                if (u.token && u.userId) {
+                  const legacyPlaintext = u.token;
+                  const cleanHash = u.tokenHash || await hashToken(legacyPlaintext);
+                  const clean = Object.assign({}, u, { tokenHash: cleanHash });
+                  delete clean.token;
+                  const cleanupOps = [
+                    env.BACKUPS.put('user:' + u.userId, JSON.stringify(clean)),
+                    env.BACKUPS.delete('token:' + legacyPlaintext),
+                  ];
+                  if (clean.active) cleanupOps.push(env.BACKUPS.put('tokh:' + cleanHash, JSON.stringify(clean)));
+                  await Promise.all(cleanupOps);
+                  u = clean;
+                }
                 // Never expose driver tokens in the admin listing
                 users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
               } catch {}
@@ -350,11 +367,12 @@ export default {
           let parsed;
           try { parsed = JSON.parse(userRec); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
           parsed.active = false;
-          // Deactivate user record and revoke token in parallel
+          const legacyPlaintext = parsed.token;
+          delete parsed.token;
+          // Deactivate the user without ever writing a raw credential back to KV.
           const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
           if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          // Legacy plaintext key cleanup
-          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));
+          if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));
           await Promise.all(ops);
           return json({ ok: true, revoked: delId }, 200, cors);
         }
@@ -364,7 +382,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '18', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '19', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -494,10 +512,12 @@ export default {
           if (migRec) {
             migRec.tokenHash = driverTokenHash;
             delete migRec.token;
-            await Promise.all([
+            const migOps = [
               env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
               env.BACKUPS.delete('token:' + driverToken),
-            ]);
+            ];
+            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
+            await Promise.all(migOps);
             tokenRaw = JSON.stringify(migRec);
           }
         }
