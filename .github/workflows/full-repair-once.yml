@@ -5,9 +5,6 @@ on:
     branches:
       - agent/gpt/full-repair-takeover
 
-# This transport may create immutable Git blobs/trees/commit objects only.
-# It never updates refs and never runs git push. The reviewed branch is moved
-# later through the GitHub connector only after this builder is green.
 permissions:
   actions: read
   contents: write
@@ -34,240 +31,23 @@ jobs:
           test "$(git rev-parse HEAD)" = '63c2743700053d9794f45236b9b2d2e68c1e264a'
           test "$(git rev-parse origin/main)" = '801b2aa800fe7472fa9db867aba112a70ebdd016'
 
-      - name: Adapt the already-reviewed repair to the zero-token baseline
+      - name: Prepare immutable reviewed inputs and apply repair locally
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/git/blobs/f4407b8ace9dc67906cf4448ffeef4e84ea11023" --jq .content | tr -d '\n' | base64 -d > /tmp/original-full-repair.yml
-          python - <<'PY'
-          from pathlib import Path
-
-          src = Path('/tmp/original-full-repair.yml').read_text()
-          start_marker = "          python - <<'PY'\n"
-          end_marker = "          PY\n\n      - name: Static syntax and release gates"
-          a = src.find(start_marker)
-          b = src.find(end_marker, a + len(start_marker))
-          if a < 0 or b < 0:
-              raise SystemExit('could not extract original reviewed patcher')
-          lines = src[a + len(start_marker):b].splitlines()
-          patcher = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
-
-          # Advance the old 24.0.12->24.0.13 / Worker17->18 patcher one generation
-          # without ever conflating its source and target literals.
-          patcher = patcher.replace('24.0.13', '__APP_TARGET__').replace('24.0.12', '24.0.13').replace('__APP_TARGET__', '24.0.14')
-          patcher = patcher.replace('Worker v18', '__WORKER_TARGET__').replace('Worker v17', 'Worker v18').replace('__WORKER_TARGET__', 'Worker v19')
-          patcher = patcher.replace("version: '18'", "version: '__WORKER_TARGET_NUM__'").replace("version: '17'", "version: '18'").replace("version: '__WORKER_TARGET_NUM__'", "version: '19'")
-          patcher = patcher.replace('workerVersion: "18"', 'workerVersion: "__WORKER_TARGET_NUM__"').replace('workerVersion: "17"', 'workerVersion: "18"').replace('workerVersion: "__WORKER_TARGET_NUM__"', 'workerVersion: "19"')
-
-          # PR #210 changed the v24.0.13 release-note title. Replace the brittle
-          # old header matcher with a generation-agnostic current-baseline check.
-          start = patcher.find("p='app.js'; s=read(p)")
-          end = patcher.find('# New trips have an explicit known unpaid state', start)
-          if start < 0 or end < 0:
-              raise SystemExit('app release-header patcher boundaries missing')
-          app_header = '''p='app.js'; s=read(p)\nif "const APP_VERSION = '24.0.13';" not in s: raise SystemExit('unexpected APP_VERSION')\nif "const DB_VERSION = 15;" not in s: raise SystemExit('unexpected DB_VERSION')\ns=s.replace('/** FreightLogic v24.0.13', '/** FreightLogic v24.0.14',1)\nrelease_note=(\" *  v24.0.14 \\\"Post-Onboarding Full Repair\\\": stable internal trip IDs (DB16), UNKNOWN payment\\n\"\n              \" *          semantics, explicit-speed-only Profit/Hour, header-safe shared filenames, and\\n\"\n              \" *          Worker v19 proactive legacy-token cleanup. PR #210 zero-token invite/claim\\n\"\n              \" *          onboarding remains authoritative. A1-A11 and authentic M6 remain open gates.\\n\")\nfirst_release=s.find(' *  v24.0.13')\nif first_release >= 0: s=s[:first_release]+release_note+s[first_release:]\ns=s.replace(\"const APP_VERSION = '24.0.13';\", \"const APP_VERSION = '24.0.14';\",1)\ns=s.replace('const DB_VERSION = 15;', 'const DB_VERSION = 16;',1)\n\n'''
-          patcher = patcher[:start] + app_header + patcher[end:]
-
-          # The old first-use admin race repair is superseded by PR #210's app-owned
-          # zero-token onboarding. Do not resurrect legacy admin event/token behavior.
-          start = patcher.find('# First-use admin:')
-          end = patcher.find('# Export helpers for regression tests.', start)
-          if start < 0 or end < 0:
-              raise SystemExit('superseded app-admin patch boundaries missing')
-          patcher = patcher[:start] + patcher[end:]
-
-          # Current v24.0.13 worker source is exact and still writes raw file.name.
-          start = patcher.find('# ── Service worker: safe shared filename + generation')
-          end = patcher.find('# ── Worker v19:', start)
-          if start < 0 or end < 0:
-              raise SystemExit('service/worker patch boundaries missing')
-          service_patch = r'''# ── Service worker: safe shared filename + generation ──────────
-p='service-worker.js'; s=read(p)
-if "const SW_VERSION = '24.0.13';" not in s: raise SystemExit('unexpected SW_VERSION')
-s=s.replace('/* FreightLogic v24.0.13', '/* FreightLogic v24.0.14',1)
-s=s.replace("const SW_VERSION = '24.0.13';", "const SW_VERSION = '24.0.14';",1)
-s=s.replace('?v=24.0.13','?v=24.0.14')
-old="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': file.name } }));"""
-new="""            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';
-            // Shared filenames are attacker-controlled input. Header values may not carry
-            // control bytes; bound the value so metadata cannot become a header/storage sink.
-            const safeFilename = String(file.name || `shared-file-${i}`)
-              .replace(/[\\u0000-\\u001F\\u007F]/g, '_').slice(0, 180) || `shared-file-${i}`;
-            await shareCache.put(`/shared-file-${i}`, new Response(file, { headers: { 'Content-Type': contentType, 'X-Filename': safeFilename } }));"""
-if old not in s: raise SystemExit('share filename marker missing')
-s=s.replace(old,new,1)
-write(p,s)
-
-'''
-          patcher = patcher[:start] + service_patch + patcher[end:]
-
-          # Replace the transformed old Worker section with a v19 extension of the
-          # actual PR #210 Worker v18 invite/claim architecture.
-          start = patcher.find('# ── Worker v19:')
-          end = patcher.find('# ── Release markers', start)
-          if start < 0 or end < 0:
-              raise SystemExit('worker patch boundaries missing')
-          worker_patch = r'''# ── Worker v19: proactive v7 plaintext cleanup, preserving v18 invite/claim ──
-p='cloud-backup-worker.js'; s=read(p)
-if '// FreightLogic Cloud Backup Worker v18' not in s: raise SystemExit('unexpected Worker source generation')
-s=s.replace('// FreightLogic Cloud Backup Worker v18', '// FreightLogic Cloud Backup Worker v19',1)
-hdr='// v18: ZERO-TOKEN DRIVER ONBOARDING.'
-if hdr not in s: raise SystemExit('Worker v18 onboarding header missing')
-note=("// v19: PROACTIVE LEGACY TOKEN SCRUB. Admin listing migrates every reachable v7\\n"
-      "// plaintext user record to tokenHash-only storage, lazy driver auth rewrites the matching\\n"
-      "// user record as well as its token index, and revoke never persists a raw token field.\\n")
-s=s.replace(hdr,note+hdr,1)
-old="""                const u = JSON.parse(val);
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
-new="""                let u = JSON.parse(val);
-                // Bounded proactive v7 cleanup while admin listing already walks every user.
-                if (u.token && u.userId) {
-                  const legacyPlaintext = u.token;
-                  const cleanHash = u.tokenHash || await hashToken(legacyPlaintext);
-                  const clean = Object.assign({}, u, { tokenHash: cleanHash });
-                  delete clean.token;
-                  const cleanupOps = [
-                    env.BACKUPS.put('user:' + u.userId, JSON.stringify(clean)),
-                    env.BACKUPS.delete('token:' + legacyPlaintext),
-                  ];
-                  if (clean.active) cleanupOps.push(env.BACKUPS.put('tokh:' + cleanHash, JSON.stringify(clean)));
-                  await Promise.all(cleanupOps);
-                  u = clean;
-                }
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });"""
-if old not in s: raise SystemExit('Worker admin-list cleanup marker missing')
-s=s.replace(old,new,1)
-old="""            await Promise.all([
-              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
-              env.BACKUPS.delete('token:' + driverToken),
-            ]);
-            tokenRaw = JSON.stringify(migRec);"""
-new="""            const migOps = [
-              env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
-              env.BACKUPS.delete('token:' + driverToken),
-            ];
-            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
-            await Promise.all(migOps);
-            tokenRaw = JSON.stringify(migRec);"""
-if old not in s: raise SystemExit('Worker lazy-migration cleanup marker missing')
-s=s.replace(old,new,1)
-old="""          parsed.active = false;
-          // Deactivate user record and revoke token in parallel
-          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
-          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          // Legacy plaintext key cleanup
-          if (parsed.token) ops.push(env.BACKUPS.delete('token:' + parsed.token));"""
-new="""          parsed.active = false;
-          const legacyPlaintext = parsed.token;
-          delete parsed.token;
-          // Deactivate the user without ever writing a raw credential back to KV.
-          const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
-          if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
-          if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));"""
-if old not in s: raise SystemExit('Worker revoke cleanup marker missing')
-s=s.replace(old,new,1)
-s=s.replace("version: '18'", "version: '19'",1)
-write(p,s)
-
-'''
-          patcher = patcher[:start] + worker_patch + patcher[end:]
-
-          # Replace the old browser regression file with the corrected repository
-          # harness contract and only the repairs that still exist after PR #210.
-          start = patcher.find('# Full-repair browser regressions.')
-          end = patcher.find("p='tests/run-all.mjs';", start)
-          if start < 0 or end < 0:
-              raise SystemExit('browser regression patch boundaries missing')
-          browser_patch = r'''# Full-repair browser regressions on the repository's actual harness.
-Path('tests/integration/full-repair-regressions.spec.mjs').write_text(r''' + "'''" + r'''import { createSuite, ok, eq, launchApp, skipFirstRunWizard } from '../lib/harness.mjs';
-
-const { test, run } = createSuite('integration/full-repair-regressions.spec.mjs');
-let app;
-async function boot(){
-  if (app) return app.page;
-  app = await launchApp();
-  await skipFirstRunWizard(app.page);
-  await app.page.reload({ waitUntil:'load' });
-  await app.page.waitForFunction(() => !!window.__FL_TESTS);
-  return app.page;
-}
-
-test('[FR-01] Profit/Hour is UNKNOWN without operator planning speed and real with it', async () => {
-  const p=await boot();
-  const r=await p.evaluate(() => {
-    const f=window.__FL_TESTS.deriveUnifiedEconomics;
-    const base={revenue:1000,effectiveRevenue:1000,loadedMi:500,deadMi:0,mpg:20,fuelPrice:4,opCPM:0.2,borderAdminCost:0};
-    return [f(base),f({...base,avgMph:50})];
-  });
-  eq(r[0].available,true); eq(r[0].estHours,null); eq(r[0].profitPerHour,null);
-  eq(r[1].estHours,10); ok(Number.isFinite(r[1].profitPerHour),'explicit speed produces profit/hour');
-});
-
-test('[FR-02] payment absence stays UNKNOWN while explicit false/true stay authoritative', async () => {
-  const p=await boot();
-  const r=await p.evaluate(() => {
-    const T=window.__FL_TESTS;
-    const u=T.sanitizeTrip({id:'u1',orderNo:'A',pay:100,loadedMiles:10,emptyMiles:0});
-    const n=T.sanitizeTrip({id:'u2',orderNo:'B',pay:100,loadedMiles:10,emptyMiles:0,isPaid:false});
-    const y=T.sanitizeTrip({id:'u3',orderNo:'C',pay:100,loadedMiles:10,emptyMiles:0,isPaid:true});
-    return {u,n,y,uu:T.tripIsUnpaid(u),nu:T.tripIsUnpaid(n),yp:T.tripIsPaid(y)};
-  });
-  eq(r.u.paymentStatusKnown,false); eq(r.uu,false);
-  eq(r.n.paymentStatusKnown,true); eq(r.nu,true);
-  eq(r.y.paymentStatusKnown,true); eq(r.yp,true);
-});
-
-test('[FR-03] DB16 tripRecords uses stable id and permits two blank/reused order numbers', async () => {
-  const p=await boot();
-  const r=await p.evaluate(async () => {
-    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('FreightLogic_v18');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-    const txn=db.transaction('tripRecords','readwrite');
-    const store=txn.objectStore('tripRecords');
-    const kp=store.keyPath, unique=store.index('orderNo').unique;
-    store.put({id:'fr-blank-1',orderNo:'',created:1,pickupDate:'2026-01-01',customer:'A'});
-    store.put({id:'fr-blank-2',orderNo:'',created:2,pickupDate:'2026-01-02',customer:'B'});
-    await new Promise((resolve,reject)=>{txn.oncomplete=resolve;txn.onerror=()=>reject(txn.error)});
-    const tx=db.transaction('tripRecords','readonly'), s=tx.objectStore('tripRecords');
-    const all=await new Promise((resolve,reject)=>{const q=s.index('orderNo').getAll(IDBKeyRange.only(''));q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});
-    db.close(); return {kp,unique,count:all.filter(x=>x.id.startsWith('fr-blank-')).length};
-  });
-  eq(r.kp,'id'); eq(r.unique,false); eq(r.count,2);
-});
-
-test('[FR-04] service worker sanitizes attacker-controlled shared filenames before X-Filename', async () => {
-  const p=await boot();
-  const txt=await p.evaluate(async () => await (await fetch('/service-worker.js')).text());
-  ok(txt.includes('safeFilename'),'safe filename variable exists');
-  ok(txt.includes("replace(/[\\u0000-\\u001F\\u007F]/g, '_')"),'control bytes are stripped');
-  ok(!txt.includes("'X-Filename': file.name"),'raw file.name is never written to header');
-});
-
-export async function runSpec(){
-  try{return await run();}
-  finally{if(app){await app.close(); app=null;}}
-}
-''' + "'''" + r''')
-
-'''
-          patcher = patcher[:start] + browser_patch + patcher[end:]
-
-          # Preserve PR #210's documentation as history. Advance only explicit
-          # current-candidate labels and add a concise successor note.
-          start = patcher.find('# Documentation current-marker refresh only')
-          end = patcher.find('# Final invariants before test execution.', start)
-          if start < 0 or end < 0:
-              raise SystemExit('documentation patch boundaries missing')
-          docs_patch = '''# Documentation: advance current labels without rewriting v24.0.13 history.\np='CLAUDE.md'; s=read(p)\ns=s.replace('**FreightLogic v24.0.13**','**FreightLogic v24.0.14**',1)\nanchor='**Stack:** Vanilla JS'\nnote=(\"**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A11 and authentic M6 remain open.\\n\\n\")\nif note not in s and anchor in s: s=s.replace(anchor,note+anchor,1)\nwrite(p,s)\nfor p in ['FIELD_TEST_CHECKLIST.md','docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md']:\n    if Path(p).exists():\n        s=read(p)\n        s=s.replace('Candidate: v24.0.13','Candidate: v24.0.14',1)\n        s=s.replace('candidate v24.0.13','candidate v24.0.14',1)\n        write(p,s)\np='docs/BACKUP_CONTRACT.md'\nif Path(p).exists():\n    s=read(p)\n    note=''' + '"""' + '''\n\n## DB16 stable trip identity (v24.0.14 repair candidate)\n\n`orderNo` is external evidence, not a unique internal identity. DB16 keeps the legacy `trips` store for rollback but routes logical trip operations to `tripRecords`, keyed by stable internal `id`, with a non-unique `orderNo` index. Pre-DB16 rows whose paid/unpaid provenance cannot be proven migrate with payment status UNKNOWN until the operator explicitly marks them.\n''' + '"""' + '''\n    if '## DB16 stable trip identity (v24.0.14 repair candidate)' not in s: s+=note\n    write(p,s)\n\n'''
-          patcher = patcher[:start] + docs_patch + patcher[end:]
-
-          Path('/tmp/full-repair-v24.0.14.py').write_text(patcher)
-          PY
-          python /tmp/full-repair-v24.0.14.py
+          git fetch --no-tags origin ee3e7bf97491f8309f18c3ff003ee4a612cf6727
+          git show ee3e7bf97491f8309f18c3ff003ee4a612cf6727:tests/integration/full-repair-regressions.spec.mjs > /tmp/full-repair-regressions-fixed.mjs
+          printf '%s' \
+            'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQoKZGVmIHJlYWQocCk6CiAgICByZXR1cm4gUGF0aChwKS5yZWFkX3RleHQoKQoKZGVmIHdyaXRlKHAsIHMpOgogICAgUGF0aChwKS53cml0ZV90ZXh0KHMpCgojIFJldXNlIG9ubHkgdGhlIGFscmVhZHktcmV2aWV3ZWQgYXBwL2RhdGEgcGF0Y2ggYW5kIHdvcmtlciByZWdyZXNzaW9uIGFkZGl0aW9ucwojIGZyb20gdGhlIGltbXV0YWJsZSBvbGQgcGF0Y2hlci4gU3VwZXJzZWRlZCBhZG1pbiBjb2RlIGlzIGRlbGliZXJhdGVseSBleGNsdWRlZC4Kc3JjID0gUGF0aCgnL3RtcC9vcmlnaW5hbC1mdWxsLXJlcGFpci55bWwnKS5yZWFkX3RleHQoKQpzdGFydF9tYXJrZXIgPSAiICAgICAgICAgIHB5dGhvbiAtIDw8J1BZJ1xuIgplbmRfbWFya2VyID0gIiAgICAgICAgICBQWVxuXG4gICAgICAtIG5hbWU6IFN0YXRpYyBzeW50YXggYW5kIHJlbGVhc2UgZ2F0ZXMiCmEgPSBzcmMuZmluZChzdGFydF9tYXJrZXIpCmIgPSBzcmMuZmluZChlbmRfbWFya2VyLCBhICsgbGVuKHN0YXJ0X21hcmtlcikpCmlmIGEgPCAwIG9yIGIgPCAwOgogICAgcmFpc2UgU3lzdGVtRXhpdCgnY291bGQgbm90IGV4dHJhY3Qgb3JpZ2luYWwgcmV2aWV3ZWQgcGF0Y2hlcicpCmxpbmVzID0gc3JjW2EgKyBsZW4oc3RhcnRfbWFya2VyKTpiXS5zcGxpdGxpbmVzKCkKb2xkX3BhdGNoZXIgPSAnXG4nLmpvaW4obGluZVsxMDpdIGlmIGxpbmUuc3RhcnRzd2l0aCgnICAgICAgICAgICcpIGVsc2UgbGluZSBmb3IgbGluZSBpbiBsaW5lcykgKyAnXG4nCgpoZWxwZXJzX2VuZCA9IG9sZF9wYXRjaGVyLmZpbmQoJyMg4pSA4pSAIEFwcCBnZW5lcmF0aW9uICsgREIgc2NoZW1hJykKY29yZV9zdGFydCA9IG9sZF9wYXRjaGVyLmZpbmQoJyMgTmV3IHRyaXBzIGhhdmUgYW4gZXhwbGljaXQga25vd24gdW5wYWlkIHN0YXRlJykKY29yZV9lbmQgPSBvbGRfcGF0Y2hlci5maW5kKCcjIEZpcnN0LXVzZSBhZG1pbjonLCBjb3JlX3N0YXJ0KQpleHBvcnRfc3RhcnQgPSBvbGRfcGF0Y2hlci5maW5kKCcjIEV4cG9ydCBoZWxwZXJzIGZvciByZWdyZXNzaW9uIHRlc3RzLicsIGNvcmVfZW5kKQpleHBvcnRfZW5kID0gb2xkX3BhdGNoZXIuZmluZCgnIyDilIDilIAgU2VydmljZSB3b3JrZXI6JywgZXhwb3J0X3N0YXJ0KQppZiBtaW4oaGVscGVyc19lbmQsIGNvcmVfc3RhcnQsIGNvcmVfZW5kLCBleHBvcnRfc3RhcnQsIGV4cG9ydF9lbmQpIDwgMDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ29sZCBhcHAgcGF0Y2ggc2VjdGlvbnMgbWlzc2luZycpCmV4ZWMob2xkX3BhdGNoZXJbOmhlbHBlcnNfZW5kXSwgZ2xvYmFscygpLCBnbG9iYWxzKCkpCgojIEN1cnJlbnQgcG9zdC1QUi0yMTAgYXBwIGJhc2VsaW5lOiBwcmVzZXJ2ZSB6ZXJvLXRva2VuIG9uYm9hcmRpbmcgYW5kIGFkdmFuY2Ugb25seQojIHRoZSBib3VuZGVkIHJlcGFpciBnZW5lcmF0aW9uL3NjaGVtYS4KcCA9ICdhcHAuanMnCnMgPSByZWFkKHApCmlmICJjb25zdCBBUFBfVkVSU0lPTiA9ICcyNC4wLjEzJzsiIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgndW5leHBlY3RlZCBBUFBfVkVSU0lPTicpCmlmICdjb25zdCBEQl9WRVJTSU9OID0gMTU7JyBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ3VuZXhwZWN0ZWQgREJfVkVSU0lPTicpCnMgPSBzLnJlcGxhY2UoJy8qKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMnLCAnLyoqIEZyZWlnaHRMb2dpYyB2MjQuMC4xNCcsIDEpCnJlbGVhc2Vfbm90ZSA9ICgKICAgICcgKiAgdjI0LjAuMTQgIlBvc3QtT25ib2FyZGluZyBGdWxsIFJlcGFpciI6IHN0YWJsZSBpbnRlcm5hbCB0cmlwIElEcyAoREIxNiksIFVOS05PV04gcGF5bWVudFxuJwogICAgJyAqICAgICAgICAgIHNlbWFudGljcywgZXhwbGljaXQtc3BlZWQtb25seSBQcm9maXQvSG91ciwgaGVhZGVyLXNhZmUgc2hhcmVkIGZpbGVuYW1lcywgYW5kXG4nCiAgICAnICogICAgICAgICAgV29ya2VyIHYxOSBwcm9hY3RpdmUgbGVnYWN5LXRva2VuIGNsZWFudXAuIFBSICMyMTAgemVyby10b2tlbiBpbnZpdGUvY2xhaW1cbicKICAgICcgKiAgICAgICAgICBvbmJvYXJkaW5nIHJlbWFpbnMgYXV0aG9yaXRhdGl2ZS4gQTEtQTExIGFuZCBhdXRoZW50aWMgTTYgcmVtYWluIG9wZW4gZ2F0ZXMuXG4nCikKZmlyc3RfcmVsZWFzZSA9IHMuZmluZCgnICogIHYyNC4wLjEzJykKaWYgZmlyc3RfcmVsZWFzZSA+PSAwIGFuZCAnUG9zdC1PbmJvYXJkaW5nIEZ1bGwgUmVwYWlyJyBub3QgaW4gczoKICAgIHMgPSBzWzpmaXJzdF9yZWxlYXNlXSArIHJlbGVhc2Vfbm90ZSArIHNbZmlyc3RfcmVsZWFzZTpdCnMgPSBzLnJlcGxhY2UoImNvbnN0IEFQUF9WRVJTSU9OID0gJzI0LjAuMTMnOyIsICJjb25zdCBBUFBfVkVSU0lPTiA9ICcyNC4wLjE0JzsiLCAxKQpzID0gcy5yZXBsYWNlKCdjb25zdCBEQl9WRVJTSU9OID0gMTU7JywgJ2NvbnN0IERCX1ZFUlNJT04gPSAxNjsnLCAxKQoKIyBBcHBseSByZXZpZXdlZCBEQjE2L3BheW1lbnQvZWNvbm9taWNzIHBhdGNoIGJvZHksIHRoZW4gdGhlIHRlc3QgZXhwb3J0cy4KZXhlYyhvbGRfcGF0Y2hlcltjb3JlX3N0YXJ0OmNvcmVfZW5kXSArIG9sZF9wYXRjaGVyW2V4cG9ydF9zdGFydDpleHBvcnRfZW5kXSwgZ2xvYmFscygpLCBnbG9iYWxzKCkpCgojIFNlcnZpY2Ugd29ya2VyOiBnZW5lcmF0aW9uICsgYXR0YWNrZXItY29udHJvbGxlZCBmaWxlbmFtZSBoYXJkZW5pbmcuCnAgPSAnc2VydmljZS13b3JrZXIuanMnCnMgPSByZWFkKHApCmlmICJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTMnOyIgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCd1bmV4cGVjdGVkIFNXX1ZFUlNJT04nKQpzID0gcy5yZXBsYWNlKCcvKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMnLCAnLyogRnJlaWdodExvZ2ljIHYyNC4wLjE0JywgMSkKcyA9IHMucmVwbGFjZSgiY29uc3QgU1dfVkVSU0lPTiA9ICcyNC4wLjEzJzsiLCAiY29uc3QgU1dfVkVSU0lPTiA9ICcyNC4wLjE0JzsiLCAxKQpzID0g' \
+            'cy5yZXBsYWNlKCc/dj0yNC4wLjEzJywgJz92PTI0LjAuMTQnKQpvbGQgPSAiIiIgICAgICAgICAgICBjb25zdCBjb250ZW50VHlwZSA9IEFMTE9XRURfU0hBUkVfVFlQRVMuaGFzKGZpbGUudHlwZSkgPyBmaWxlLnR5cGUgOiAnYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtJzsKICAgICAgICAgICAgYXdhaXQgc2hhcmVDYWNoZS5wdXQoYC9zaGFyZWQtZmlsZS0ke2l9YCwgbmV3IFJlc3BvbnNlKGZpbGUsIHsgaGVhZGVyczogeyAnQ29udGVudC1UeXBlJzogY29udGVudFR5cGUsICdYLUZpbGVuYW1lJzogZmlsZS5uYW1lIH0gfSkpOyIiIgpuZXcgPSAiIiIgICAgICAgICAgICBjb25zdCBjb250ZW50VHlwZSA9IEFMTE9XRURfU0hBUkVfVFlQRVMuaGFzKGZpbGUudHlwZSkgPyBmaWxlLnR5cGUgOiAnYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtJzsKICAgICAgICAgICAgLy8gU2hhcmVkIGZpbGVuYW1lcyBhcmUgYXR0YWNrZXItY29udHJvbGxlZCBpbnB1dC4gSGVhZGVyIHZhbHVlcyBtYXkgbm90IGNhcnJ5CiAgICAgICAgICAgIC8vIGNvbnRyb2wgYnl0ZXM7IGJvdW5kIHRoZSB2YWx1ZSBzbyBtZXRhZGF0YSBjYW5ub3QgYmVjb21lIGEgaGVhZGVyL3N0b3JhZ2Ugc2luay4KICAgICAgICAgICAgY29uc3Qgc2FmZUZpbGVuYW1lID0gU3RyaW5nKGZpbGUubmFtZSB8fCBgc2hhcmVkLWZpbGUtJHtpfWApCiAgICAgICAgICAgICAgLnJlcGxhY2UoL1tcXHUwMDAwLVxcdTAwMUZcXHUwMDdGXS9nLCAnXycpLnNsaWNlKDAsIDE4MCkgfHwgYHNoYXJlZC1maWxlLSR7aX1gOwogICAgICAgICAgICBhd2FpdCBzaGFyZUNhY2hlLnB1dChgL3NoYXJlZC1maWxlLSR7aX1gLCBuZXcgUmVzcG9uc2UoZmlsZSwgeyBoZWFkZXJzOiB7ICdDb250ZW50LVR5cGUnOiBjb250ZW50VHlwZSwgJ1gtRmlsZW5hbWUnOiBzYWZlRmlsZW5hbWUgfSB9KSk7IiIiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ3NoYXJlIGZpbGVuYW1lIG1hcmtlciBtaXNzaW5nJykKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKd3JpdGUocCwgcykKCiMgV29ya2VyIHYxOTogZXh0ZW5kLCBkbyBub3QgcmVwbGFjZSwgUFIgIzIxMCB6ZXJvLXRva2VuIGludml0ZS9jbGFpbSBhcmNoaXRlY3R1cmUuCnAgPSAnY2xvdWQtYmFja3VwLXdvcmtlci5qcycKcyA9IHJlYWQocCkKaWYgJy8vIEZyZWlnaHRMb2dpYyBDbG91ZCBCYWNrdXAgV29ya2VyIHYxOCcgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCd1bmV4cGVjdGVkIFdvcmtlciBzb3VyY2UgZ2VuZXJhdGlvbicpCmlmICcvLyB2MTg6IFpFUk8tVE9LRU4gRFJJVkVSIE9OQk9BUkRJTkcuJyBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ1dvcmtlciB2MTggb25ib2FyZGluZyBoZWFkZXIgbWlzc2luZycpCnMgPSBzLnJlcGxhY2UoJy8vIEZyZWlnaHRMb2dpYyBDbG91ZCBCYWNrdXAgV29ya2VyIHYxOCcsICcvLyBGcmVpZ2h0TG9naWMgQ2xvdWQgQmFja3VwIFdvcmtlciB2MTknLCAxKQpub3RlID0gKAogICAgJy8vIHYxOTogUFJPQUNUSVZFIExFR0FDWSBUT0tFTiBTQ1JVQi4gQWRtaW4gbGlzdGluZyBtaWdyYXRlcyBldmVyeSByZWFjaGFibGUgdjdcbicKICAgICcvLyBwbGFpbnRleHQgdXNlciByZWNvcmQgdG8gdG9rZW5IYXNoLW9ubHkgc3RvcmFnZSwgbGF6eSBkcml2ZXIgYXV0aCByZXdyaXRlcyB0aGUgbWF0Y2hpbmdcbicKICAgICcvLyB1c2VyIHJlY29yZCBhcyB3ZWxsIGFzIGl0cyB0b2tlbiBpbmRleCwgYW5kIHJldm9rZSBuZXZlciBwZXJzaXN0cyBhIHJhdyB0b2tlbiBmaWVsZC5cbicKKQpzID0gcy5yZXBsYWNlKCcvLyB2MTg6IFpFUk8tVE9LRU4gRFJJVkVSIE9OQk9BUkRJTkcuJywgbm90ZSArICcvLyB2MTg6IFpFUk8tVE9LRU4gRFJJVkVSIE9OQk9BUkRJTkcuJywgMSkKb2xkID0gIiIiICAgICAgICAgICAgICAgIGNvbnN0IHUgPSBKU09OLnBhcnNlKHZhbCk7CiAgICAgICAgICAgICAgICAvLyBOZXZlciBleHBvc2UgZHJpdmVyIHRva2VucyBpbiB0aGUgYWRtaW4gbGlzdGluZwogICAgICAgICAgICAgICAgdXNlcnMucHVzaCh7IHVzZXJJZDogdS51c2VySWQsIG5hbWU6IHUubmFtZSwgY3JlYXRlZEF0OiB1LmNyZWF0ZWRBdCwgYWN0aXZlOiB1LmFjdGl2ZSwgYmFja3VwQ291bnQ6IHUuYmFja3VwQ291bnQgfHwgMCB9KTsiIiIKbmV3ID0gIiIiICAgICAgICAgICAgICAgIGxldCB1ID0gSlNPTi5wYXJzZSh2YWwpOwogICAgICAgICAgICAgICAgLy8gQm91bmRlZCBwcm9hY3RpdmUgdjcgY2xlYW51cCB3aGlsZSBhZG1pbiBsaXN0aW5nIGFscmVhZHkgd2Fsa3MgZXZlcnkgdXNlci4KICAgICAgICAgICAgICAgIGlmICh1LnRva2VuICYmIHUudXNlcklkKSB7CiAgICAgICAgICAgICAgICAgIGNvbnN0IGxlZ2FjeVBsYWludGV4dCA9IHUudG9rZW47CiAgICAgICAgICAgICAgICAgIGNvbnN0IGNsZWFuSGFzaCA9IHUudG9rZW5IYXNoIHx8IGF3YWl0IGhhc2hUb2tlbihsZWdhY3lQbGFpbnRleHQpOwogICAgICAgICAgICAgICAgICBjb25zdCBjbGVhbiA9IE9iamVjdC5hc3NpZ24oe30sIHUsIHsgdG9rZW5IYXNoOiBjbGVhbkhhc2ggfSk7CiAgICAgICAgICAgICAgICAgIGRlbGV0ZSBjbGVhbi50b2tlbjsKICAgICAgICAgICAgICAgICAgY29uc3QgY2xlYW51cE9wcyA9IFsKICAgICAgICAgICAgICAgICAgICBlbnYuQkFDS1VQUy5wdXQoJ3VzZXI6JyArIHUudXNlcklkLCBKU09OLnN0cmluZ2lmeShjbGVhbikpLAogICAgICAgICAgICAgICAgICAgIGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIGxlZ2FjeVBsYWludGV4dCksCiAgICAgICAgICAgICAgICAgIF07CiAgICAgICAgICAgICAgICAgIGlmIChjbGVhbi5hY3RpdmUpIGNsZWFudXBPcHMucHVzaChlbnYuQkFDS1VQUy5wdXQoJ3Rva2g6JyArIGNsZWFuSGFzaCwgSlNPTi5zdHJpbmdpZnkoY2xlYW4pKSk7CiAgICAgICAgICAgICAgICAgIGF3YWl0IFByb21pc2UuYWxsKGNsZWFudXBPcHMpOwogICAgICAgICAgICAgICAgICB1ID0gY2xlYW47CiAg' \
+            'ICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAvLyBOZXZlciBleHBvc2UgZHJpdmVyIHRva2VucyBpbiB0aGUgYWRtaW4gbGlzdGluZwogICAgICAgICAgICAgICAgdXNlcnMucHVzaCh7IHVzZXJJZDogdS51c2VySWQsIG5hbWU6IHUubmFtZSwgY3JlYXRlZEF0OiB1LmNyZWF0ZWRBdCwgYWN0aXZlOiB1LmFjdGl2ZSwgYmFja3VwQ291bnQ6IHUuYmFja3VwQ291bnQgfHwgMCB9KTsiIiIKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgnV29ya2VyIGFkbWluLWxpc3QgY2xlYW51cCBtYXJrZXIgbWlzc2luZycpCnMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCm9sZCA9ICIiIiAgICAgICAgICAgIGF3YWl0IFByb21pc2UuYWxsKFsKICAgICAgICAgICAgICBlbnYuQkFDS1VQUy5wdXQoJ3Rva2g6JyArIGRyaXZlclRva2VuSGFzaCwgSlNPTi5zdHJpbmdpZnkobWlnUmVjKSksCiAgICAgICAgICAgICAgZW52LkJBQ0tVUFMuZGVsZXRlKCd0b2tlbjonICsgZHJpdmVyVG9rZW4pLAogICAgICAgICAgICBdKTsKICAgICAgICAgICAgdG9rZW5SYXcgPSBKU09OLnN0cmluZ2lmeShtaWdSZWMpOyIiIgpuZXcgPSAiIiIgICAgICAgICAgICBjb25zdCBtaWdPcHMgPSBbCiAgICAgICAgICAgICAgZW52LkJBQ0tVUFMucHV0KCd0b2toOicgKyBkcml2ZXJUb2tlbkhhc2gsIEpTT04uc3RyaW5naWZ5KG1pZ1JlYykpLAogICAgICAgICAgICAgIGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIGRyaXZlclRva2VuKSwKICAgICAgICAgICAgXTsKICAgICAgICAgICAgaWYgKG1pZ1JlYy51c2VySWQpIG1pZ09wcy5wdXNoKGVudi5CQUNLVVBTLnB1dCgndXNlcjonICsgbWlnUmVjLnVzZXJJZCwgSlNPTi5zdHJpbmdpZnkobWlnUmVjKSkpOwogICAgICAgICAgICBhd2FpdCBQcm9taXNlLmFsbChtaWdPcHMpOwogICAgICAgICAgICB0b2tlblJhdyA9IEpTT04uc3RyaW5naWZ5KG1pZ1JlYyk7IiIiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ1dvcmtlciBsYXp5LW1pZ3JhdGlvbiBjbGVhbnVwIG1hcmtlciBtaXNzaW5nJykKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKb2xkID0gIiIiICAgICAgICAgIHBhcnNlZC5hY3RpdmUgPSBmYWxzZTsKICAgICAgICAgIC8vIERlYWN0aXZhdGUgdXNlciByZWNvcmQgYW5kIHJldm9rZSB0b2tlbiBpbiBwYXJhbGxlbAogICAgICAgICAgY29uc3Qgb3BzID0gW2Vudi5CQUNLVVBTLnB1dCgndXNlcjonICsgZGVsSWQsIEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpXTsKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW5IYXNoKSBvcHMucHVzaChlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2g6JyArIHBhcnNlZC50b2tlbkhhc2gpKTsKICAgICAgICAgIC8vIExlZ2FjeSBwbGFpbnRleHQga2V5IGNsZWFudXAKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW4pIG9wcy5wdXNoKGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIHBhcnNlZC50b2tlbikpOyIiIgpuZXcgPSAiIiIgICAgICAgICAgcGFyc2VkLmFjdGl2ZSA9IGZhbHNlOwogICAgICAgICAgY29uc3QgbGVnYWN5UGxhaW50ZXh0ID0gcGFyc2VkLnRva2VuOwogICAgICAgICAgZGVsZXRlIHBhcnNlZC50b2tlbjsKICAgICAgICAgIC8vIERlYWN0aXZhdGUgdGhlIHVzZXIgd2l0aG91dCBldmVyIHdyaXRpbmcgYSByYXcgY3JlZGVudGlhbCBiYWNrIHRvIEtWLgogICAgICAgICAgY29uc3Qgb3BzID0gW2Vudi5CQUNLVVBTLnB1dCgndXNlcjonICsgZGVsSWQsIEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpXTsKICAgICAgICAgIGlmIChwYXJzZWQudG9rZW5IYXNoKSBvcHMucHVzaChlbnYuQkFDS1VQUy5kZWxldGUoJ3Rva2g6JyArIHBhcnNlZC50b2tlbkhhc2gpKTsKICAgICAgICAgIGlmIChsZWdhY3lQbGFpbnRleHQpIG9wcy5wdXNoKGVudi5CQUNLVVBTLmRlbGV0ZSgndG9rZW46JyArIGxlZ2FjeVBsYWludGV4dCkpOyIiIgppZiBvbGQgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCdXb3JrZXIgcmV2b2tlIGNsZWFudXAgbWFya2VyIG1pc3NpbmcnKQpzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQpzID0gcy5yZXBsYWNlKCJ2ZXJzaW9uOiAnMTgnIiwgInZlcnNpb246ICcxOSciLCAxKQp3cml0ZShwLCBzKQoKIyBSZWxlYXNlIG1hcmtlcnM6IG9uZSBjb2hlcmVudCBhcHAgZ2VuZXJhdGlvbiwgV29ya2VyIHYxOSBwYXJpdHkuCmZvciBwIGluIFsnc3ctYnJpZGdlLmpzJywgJ21vZGVybi1zaGVsbC5qcycsICd2b2ljZS1sb2FkLmpzJywgJ21pZHdlc3Qtc3RhY2stYXV0aG9yaXR5LmpzJ106CiAgICBzID0gcmVhZChwKS5yZXBsYWNlKCcyNC4wLjEzJywgJzI0LjAuMTQnKQogICAgd3JpdGUocCwgcykKcCA9ICdpbmRleC5odG1sJwp3cml0ZShwLCByZWFkKHApLnJlcGxhY2UoJz92PTI0LjAuMTMnLCAnP3Y9MjQuMC4xNCcpKQpwID0gJ21hbmlmZXN0Lmpzb24nCndyaXRlKHAsIHJlYWQocCkucmVwbGFjZSgnRnJlaWdodExvZ2ljIHYyNC4wLjEzJywgJ0ZyZWlnaHRMb2dpYyB2MjQuMC4xNCcpKQpwID0gJ21pZHdlc3Qtc3RhY2stY29uZmlnLmpzb24nCndyaXRlKHAsIHJlYWQocCkucmVwbGFjZSgnRnJlaWdodExvZ2ljIHYyNC4wLjEzJywgJ0ZyZWlnaHRMb2dpYyB2MjQuMC4xNCcpKQpwID0gJ3NjcmlwdHMvdmVyaWZ5LWNsb3VkZmxhcmUtcGFyaXR5Lm1qcycKcyA9IHJlYWQocCkucmVwbGFjZSgnMjQuMC4xMycsICcyNC4wLjE0JykucmVwbGFjZSgnd29ya2VyVmVyc2lvbjogIjE4IicsICd3b3JrZXJWZXJzaW9uOiAiMTkiJykKd3JpdGUocCwgcykKCiMgREIxNiBpbnZhcmlhbnQuCnAgPSAndGVzdHMvdW5pdC9jYWNoZS1nZW5lcmF0aW9uLnNwZWMubWpzJwpzID0gcmVhZChwKQpvbGQgPSAiZXEoZGJtWzFdLCAnMTUnLCAnREJfVkVSU0lPTiBtdXN0IHN0YXkgMTUg4oCUIGEgY2FjaGUtZ2VuZXJhdGlvbiBmcmVlemUgbXVzdCBub3QgbWlncmF0ZSB0aGUgZGF0YWJhc2UnKTsiCm5ldyA9ICJlcShkYm1bMV0sICcxNicsICdEQl9WRVJTSU9O' \
+            'IG11c3QgYmUgMTYg4oCUIHYyNC4wLjE0IG1pZ3JhdGVzIHRyaXBzIGZyb20gZXh0ZXJuYWwgb3JkZXItbnVtYmVyIGlkZW50aXR5IHRvIHN0YWJsZSBpbnRlcm5hbCBpZHMnKTsiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ2NhY2hlLWdlbmVyYXRpb24gREIxNSBhc3NlcnRpb24gbWlzc2luZycpCndyaXRlKHAsIHMucmVwbGFjZShvbGQsIG5ldywgMSkpCgojIFJldXNlIHRoZSBhbHJlYWR5LXJldmlld2VkIFdUUi0wOS4uMTEgYWRkaXRpb25zLgp3dF9zdGFydCA9IG9sZF9wYXRjaGVyLmZpbmQoJyMgV29ya2VyIHRva2VuIHJlZ3Jlc3Npb246JykKd3RfZW5kID0gb2xkX3BhdGNoZXIuZmluZCgnIyBGdWxsLXJlcGFpciBicm93c2VyIHJlZ3Jlc3Npb25zLicsIHd0X3N0YXJ0KQppZiB3dF9zdGFydCA8IDAgb3Igd3RfZW5kIDwgMDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoJ3dvcmtlciByZWdyZXNzaW9uIHBhdGNoIHNlY3Rpb24gbWlzc2luZycpCmV4ZWMob2xkX3BhdGNoZXJbd3Rfc3RhcnQ6d3RfZW5kXSwgZ2xvYmFscygpLCBnbG9iYWxzKCkpCgojIFVzZSB0aGUgY29ycmVjdGVkIFBSICMyMDkgcmVncmVzc2lvbiBoYXJuZXNzLCBidXQgcmVtb3ZlIHRoZSBvYnNvbGV0ZSBhZG1pbi1yYWNlIHRlc3QuCnNwZWMgPSBQYXRoKCcvdG1wL2Z1bGwtcmVwYWlyLXJlZ3Jlc3Npb25zLWZpeGVkLm1qcycpLnJlYWRfdGV4dCgpCmFkbWluX3N0YXJ0ID0gc3BlYy5maW5kKCJ0ZXN0KCdbRlItMDRdIGNvbnRyb2xsZWQtUFdBIGFkbWluIG1vZHVsZSIpCnNlcnZpY2Vfc3RhcnQgPSBzcGVjLmZpbmQoInRlc3QoJ1tGUi0wNV0gc2VydmljZSB3b3JrZXIiLCBhZG1pbl9zdGFydCkKaWYgYWRtaW5fc3RhcnQgPCAwIG9yIHNlcnZpY2Vfc3RhcnQgPCAwOgogICAgcmFpc2UgU3lzdGVtRXhpdCgnZml4ZWQgcmVncmVzc2lvbiBzcGVjIGJvdW5kYXJpZXMgbWlzc2luZycpCnNwZWMgPSBzcGVjWzphZG1pbl9zdGFydF0gKyBzcGVjW3NlcnZpY2Vfc3RhcnQ6XQpzcGVjID0gc3BlYy5yZXBsYWNlKCJbRlItMDVdIHNlcnZpY2Ugd29ya2VyIiwgIltGUi0wNF0gc2VydmljZSB3b3JrZXIiLCAxKQpzcGVjID0gc3BlYy5yZXBsYWNlKCcyNC4wLjEzJywgJzI0LjAuMTQnKQp3cml0ZSgndGVzdHMvaW50ZWdyYXRpb24vZnVsbC1yZXBhaXItcmVncmVzc2lvbnMuc3BlYy5tanMnLCBzcGVjKQoKIyBSZWdpc3RlciB3aXRob3V0IGRpc3R1cmJpbmcgUFIgIzIxMCdzIHdvcmtlckludml0ZUNsYWltL3plcm9Ub2tlbk9uYm9hcmRpbmcgc3BlY3MuCnAgPSAndGVzdHMvcnVuLWFsbC5tanMnCnMgPSByZWFkKHApCmltcCA9ICJpbXBvcnQgeyBydW5TcGVjIGFzIGZ1bGxSZXBhaXJSZWdyZXNzaW9ucyB9IGZyb20gJy4vaW50ZWdyYXRpb24vZnVsbC1yZXBhaXItcmVncmVzc2lvbnMuc3BlYy5tanMnO1xuIgppZiBpbXAgbm90IGluIHM6CiAgICBhbmNob3IgPSAiaW1wb3J0IHsgcnVuU3BlYyBhcyByZWxlYXNlR2VuZXJhdGlvbkRpc2NpcGxpbmUgfSBmcm9tICcuL3VuaXQvcmVsZWFzZS1nZW5lcmF0aW9uLWRpc2NpcGxpbmUuc3BlYy5tanMnO1xuIgogICAgaWYgYW5jaG9yIG5vdCBpbiBzOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoJ3J1bi1hbGwgcmVsZWFzZS1nZW5lcmF0aW9uIGltcG9ydCBhbmNob3IgbWlzc2luZycpCiAgICBzID0gcy5yZXBsYWNlKGFuY2hvciwgYW5jaG9yICsgaW1wLCAxKQppZiAnICBmdWxsUmVwYWlyUmVncmVzc2lvbnMsJyBub3QgaW4gczoKICAgIHMgPSBzLnJlcGxhY2UoJ2NvbnN0IHNwZWNzID0gW1xuJywgJ2NvbnN0IHNwZWNzID0gW1xuICBmdWxsUmVwYWlyUmVncmVzc2lvbnMsXG4nLCAxKQp3cml0ZShwLCBzKQoKIyBDdXJyZW50IGRvY3M6IGtlZXAgdjI0LjAuMTMvV29ya2VyMTggemVyby10b2tlbiBoaXN0b3J5IGludGFjdCBhbmQgYWRkIHN1Y2Nlc3NvciBzdGF0ZS4KcCA9ICdDTEFVREUubWQnCnMgPSByZWFkKHApCnMgPSBzLnJlcGxhY2UoJyoqRnJlaWdodExvZ2ljIHYyNC4wLjEzKionLCAnKipGcmVpZ2h0TG9naWMgdjI0LjAuMTQqKicsIDEpCmFuY2hvciA9ICIqKlN0YWNrOioqIFZhbmlsbGEgSlMiCmRvY19ub3RlID0gKAogICAgIioqdjI0LjAuMTQgcmVwYWlyIGNhbmRpZGF0ZToqKiByZWJhc2VkIG9uIFBSICMyMTAgemVyby10b2tlbiBvbmJvYXJkaW5nLiBBZGRzIERCMTYgc3RhYmxlIHRyaXAgaWRlbnRpdHksICIKICAgICJVTktOT1dOIHBheW1lbnQgc2VtYW50aWNzLCBleHBsaWNpdC1zcGVlZC1vbmx5IFByb2ZpdC9Ib3VyLCBzaGFyZS1maWxlbmFtZSBoYXJkZW5pbmcsIGFuZCBXb3JrZXIgdjE5ICIKICAgICJwcm9hY3RpdmUgbGVnYWN5LXRva2VuIGNsZWFudXAuIFNvdXJjZS1vbmx5IHVudGlsIG5vcm1hbCBQUiBDSSwgZGVwbG95IHBhcml0eSwgYW5kIHByb2R1Y3Rpb24gZ2F0ZXMgcGFzczsgIgogICAgInBoeXNpY2FsIGlQaG9uZSBBMS1BMTEgYW5kIGF1dGhlbnRpYyBNNiByZW1haW4gb3Blbi5cblxuIgopCmlmIGRvY19ub3RlIG5vdCBpbiBzIGFuZCBhbmNob3IgaW4gczoKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBkb2Nfbm90ZSArIGFuY2hvciwgMSkKd3JpdGUocCwgcykKCmZvciBwIGluIFsnRklFTERfVEVTVF9DSEVDS0xJU1QubWQnLCAnZG9jcy9DTE9VREZMQVJFX0RFUExPWU1FTlRfUEFSSVRZX0NIRUNLTElTVC5tZCddOgogICAgcyA9IHJlYWQocCkKICAgIHMgPSBzLnJlcGxhY2UoJ0NhbmRpZGF0ZTogdjI0LjAuMTMnLCAnQ2FuZGlkYXRlOiB2MjQuMC4xNCcsIDEpCiAgICBzID0gcy5yZXBsYWNlKCdjYW5kaWRhdGUgdjI0LjAuMTMnLCAnY2FuZGlkYXRlIHYyNC4wLjE0JywgMSkKICAgIHdyaXRlKHAsIHMpCgpwID0gJ2RvY3MvQkFDS1VQX0NPTlRSQUNULm1kJwpzID0gcmVhZChwKQpjb250cmFjdF9ub3RlID0gIiIiCiMjIERCMTYgc3RhYmxlIHRyaXAgaWRlbnRpdHkgKHYyNC4wLjE0IHJlcGFpciBjYW5kaWRhdGUpCgpgb3JkZXJOb2AgaXMgZXh0ZXJuYWwgZXZpZGVuY2UsIG5vdCBhIHVuaXF1ZSBpbnRl' \
+            'cm5hbCBpZGVudGl0eS4gREIxNiBrZWVwcyB0aGUgbGVnYWN5IGB0cmlwc2Agc3RvcmUgZm9yIHJvbGxiYWNrIGJ1dCByb3V0ZXMgbG9naWNhbCB0cmlwIG9wZXJhdGlvbnMgdG8gYHRyaXBSZWNvcmRzYCwga2V5ZWQgYnkgc3RhYmxlIGludGVybmFsIGBpZGAsIHdpdGggYSBub24tdW5pcXVlIGBvcmRlck5vYCBpbmRleC4gUHJlLURCMTYgcm93cyB3aG9zZSBwYWlkL3VucGFpZCBwcm92ZW5hbmNlIGNhbm5vdCBiZSBwcm92ZW4gbWlncmF0ZSB3aXRoIHBheW1lbnQgc3RhdHVzIFVOS05PV04gdW50aWwgdGhlIG9wZXJhdG9yIGV4cGxpY2l0bHkgbWFya3MgdGhlbS4KIiIiCmlmICcjIyBEQjE2IHN0YWJsZSB0cmlwIGlkZW50aXR5ICh2MjQuMC4xNCByZXBhaXIgY2FuZGlkYXRlKScgbm90IGluIHM6CiAgICBzICs9IGNvbnRyYWN0X25vdGUKd3JpdGUocCwgcykKCiMgRmluYWwgc291cmNlIGludmFyaWFudHMgYmVmb3JlIGJyb3dzZXIgdGVzdHMuCmFzc2VydCAiY29uc3QgQVBQX1ZFUlNJT04gPSAnMjQuMC4xNCc7IiBpbiByZWFkKCdhcHAuanMnKQphc3NlcnQgJ2NvbnN0IERCX1ZFUlNJT04gPSAxNjsnIGluIHJlYWQoJ2FwcC5qcycpCmFzc2VydCAiY29uc3QgU1dfVkVSU0lPTiA9ICcyNC4wLjE0JzsiIGluIHJlYWQoJ3NlcnZpY2Utd29ya2VyLmpzJykKYXNzZXJ0ICdzYWZlRmlsZW5hbWUnIGluIHJlYWQoJ3NlcnZpY2Utd29ya2VyLmpzJykKYXNzZXJ0ICInWC1GaWxlbmFtZSc6IGZpbGUubmFtZSIgbm90IGluIHJlYWQoJ3NlcnZpY2Utd29ya2VyLmpzJykKYXNzZXJ0ICdDbG91ZCBCYWNrdXAgV29ya2VyIHYxOScgaW4gcmVhZCgnY2xvdWQtYmFja3VwLXdvcmtlci5qcycpCmFzc2VydCAidmVyc2lvbjogJzE5JyIgaW4gcmVhZCgnY2xvdWQtYmFja3VwLXdvcmtlci5qcycpCmFzc2VydCAnUE9TVCAvYWRtaW4vaW52aXRlcycgaW4gcmVhZCgnY2xvdWQtYmFja3VwLXdvcmtlci5qcycpCmFzc2VydCAnUE9TVCAvY2xhaW0nIGluIHJlYWQoJ2Nsb3VkLWJhY2t1cC13b3JrZXIuanMnKQphc3NlcnQgJ3plcm9Ub2tlbk9uYm9hcmRpbmcnIGluIHJlYWQoJ3Rlc3RzL3J1bi1hbGwubWpzJykKYXNzZXJ0ICd3b3JrZXJJbnZpdGVDbGFpbScgaW4gcmVhZCgndGVzdHMvcnVuLWFsbC5tanMnKQo=' | base64 -d > /tmp/patch-v24.0.14.py
+          python -m py_compile /tmp/patch-v24.0.14.py
+          python /tmp/patch-v24.0.14.py
 
       - name: Merge approved PR 206 CSS onto PR 210 baseline
         shell: bash
