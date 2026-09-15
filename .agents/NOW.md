@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (v24.0.12 live-gate record + workflow-authority gate pushed @8b8035d on claude/github-repo-status-r4b8qo; handoff in inbox `claude-to-gpt-v2412-live-and-full-repair-2026-09-15.md`) | 2026-09-15 |
-| gpt | Resumed full-repair takeover after prior GPT session hit usage limit. Inheriting existing app-js/full-repair locks and `gpt-resume-coordination` token; replacing the unsafe branch-pushing one-shot with a normal reviewed repair branch/PR, preserving exact repair substance, regression coverage, and one coordinated release generation. | 2026-09-15 |
+| gpt | — idle — (v24.0.14 full-repair successor opened as PR #211 at `1cf8a3d`; awaiting governed PR CI/merge) | 2026-09-15 |
 
 ---
 
