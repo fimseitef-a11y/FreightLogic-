@@ -2,7 +2,7 @@
 
 Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
-Current application contract: **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**.
+Current application contract: **FreightLogic v24.0.13 / IndexedDB v16 / Worker v18**.
 
 ## Rule
 
@@ -19,11 +19,14 @@ Cloud backup and `exportJSON()` exclude these secret settings:
 
 No backup/import path may re-introduce them from an export payload.
 
-## Store-level contract — current through v24.0.9 / DB v15
+Worker v18 also tightens the legacy driver-token contract. A legacy v7 plaintext token is migration input only, never durable output: admin listing proactively scrubs any reachable raw token, lazy driver authentication rewrites the matching user record to the hashed-token form, and revoke removes any residual plaintext field before persisting the disabled user. New tokens must never be written back in plaintext.
+
+## Store-level contract — current through v24.0.13 / DB v16
 
 | Store | Full backup | Delta backup | Restored | Contract |
 |---|---:|---:|---:|---|
-| `trips` | Yes | Yes | Yes | Existing trip merge rules; no secret material. |
+| `tripRecords` (logical backup key `trips`) | Yes | Yes | Yes | Canonical DB16 trip store. `id` is stable internal identity; `orderNo` is a non-unique lookup/index signal and must never be a write key. |
+| `trips` (legacy DB15 store) | Migration source only | No new canonical writes | Migrated into `tripRecords` | Retained as the DB15 source during upgrade. Its historical `orderNo` keyPath is not authoritative after DB16. |
 | `expenses` | Yes | Yes | Yes | Includes `insuranceBucket` where present. |
 | `fuel` | Yes | Yes | Yes | Preserve persisted fuel records. |
 | `laneHistory` | Yes | Yes | Yes | Preserve history without manufacturing newer evidence. |
@@ -38,6 +41,48 @@ No backup/import path may re-introduce them from an export payload.
 | `normalizedEvidence` | Yes | Yes | Yes | Protected durable normalized opportunity evidence; see below. |
 | `receiptBlobs` (Cache API) | No | No | No | Out of scope; receipt metadata round-trips, blob bytes do not. |
 | `auditLog` | No | No | No | Intentionally local-only. |
+
+## DB16 stable-trip identity and migration contract
+
+DB16 fixes a data-loss class in which an external broker/order number could act as the IndexedDB primary key. External identifiers are not guaranteed unique: they can be blank, reused, malformed, or repeated by different sources. Therefore they are evidence for lookup/reconciliation, not identity.
+
+The canonical v24.0.13 trip rules are:
+
+- `tripRecords` uses keyPath `id`, a stable internal trip identity independent of `orderNo`;
+- the `orderNo` index is non-unique and may return multiple records;
+- creating or importing a trip with a duplicate external order number must not overwrite another shipment;
+- blank or missing external order numbers are valid as unknown evidence and must not collapse unrelated records;
+- CRUD, restore, merge, and delete operations target the stable internal `id`;
+- lookup by `orderNo` is explicitly one-to-many and must be reconciled rather than treated as proof of identity.
+
+### Upgrade from DB15
+
+During the DB15 → DB16 upgrade, each legacy `trips` row is copied into `tripRecords` with a stable internal `id`. Migration must be additive/fail-safe: an existing historical trip may not be discarded merely because its order number is blank or collides with another row. The legacy DB15 store remains the migration source, while post-upgrade runtime access to logical `trips` routes to the canonical DB16 store.
+
+The backup/export payload keeps the logical key `trips` so cloud/local interchange does not require a gratuitous wire-format rename. On v24.0.13/DB16, that logical key represents canonical `tripRecords` data and restore/import must persist by stable `id`.
+
+### Payment-state preservation during migration and restore
+
+`paymentStatusKnown` is part of the truthfulness contract:
+
+- `paymentStatusKnown === true` means the paid/unpaid boolean is backed by explicit state;
+- `paymentStatusKnown !== true` means payment status is UNKNOWN;
+- missing legacy `isPaid` evidence must remain UNKNOWN, not silently become unpaid;
+- receivables/unpaid totals may include only explicit known-unpaid records;
+- CSV/export may serialize UNKNOWN distinctly (or leave the paid value blank where the format requires) but must not emit a fabricated `false`.
+
+Restore/import/sanitize paths must preserve this distinction so an old or incomplete payload cannot manufacture debt/receivables.
+
+### Downgrade and rollback warning
+
+DB16 introduces a new canonical store. A runtime rollback to DB15 cannot be assumed to understand trips created or changed only in `tripRecords` after the upgrade. Therefore:
+
+1. before any downgrade from v24.0.13/DB16, create and verify a current-generation export/cloud backup;
+2. do not treat the retained legacy DB15 `trips` store as a complete rollback snapshot after DB16 has been used;
+3. if rollback is required, preserve the DB16 database/export until forward recovery is proven;
+4. a rollback procedure must never delete the DB16 database merely to make an older runtime open successfully.
+
+This is a recovery constraint, not an optional cleanup detail.
 
 ## `loadLifecycle` contract
 
@@ -59,7 +104,7 @@ For competing lifecycle copies, an older delta/import must not roll a newer conf
 
 A legacy payload with no `loadLifecycle` key is valid legacy input and is not corruption.
 
-## `normalizedEvidence` contract — current through v24.0.9 / DB v15
+## `normalizedEvidence` contract — introduced in v24.0.x and retained through v24.0.13 / DB v16
 
 `normalizedEvidence` is the durable evidence layer introduced by the v24.0.2 release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
 
@@ -110,7 +155,7 @@ A pre-v15 payload with no `normalizedEvidence` key is valid legacy input and is 
 
 ## Protected export integrity
 
-v24.0.2 introduced/retained the legacy `checksumFull` compatibility path and the current `checksumProtected` coverage. v24.0.9 keeps that contract unchanged. Current-generation integrity coverage includes at least:
+v24.0.2 introduced/retained the legacy `checksumFull` compatibility path and the current `checksumProtected` coverage. v24.0.13 keeps that contract unchanged. Current-generation integrity coverage includes at least:
 
 - `loadLifecycle`;
 - `normalizedEvidence`;
@@ -143,9 +188,9 @@ The settings store is generic; current durable keys include, among others:
 | `insuranceMigrationBackupKeys` | retained migration snapshot index |
 | `insuranceMigrationBackup_<timestamp>` | pre-mutation insurance category snapshots |
 | `vanProfile` | configurable cargo dimensions/payload used by fit checks |
-| `planningAvgMph` | optional operator-set pickup-planning average speed for v24.0.9 feasibility checks; valid runtime range 5–85 mph. There is deliberately no default. Missing/cleared means the gate is inapplicable and restore/import must never invent or clamp a value. |
+| `planningAvgMph` | optional operator-set pickup-planning average speed; valid runtime range 5–85 mph. There is deliberately no default. Missing/cleared means the gate and any time-derived Profit/Hour estimate are inapplicable. Restore/import must never invent or clamp a missing value. |
 
-These keys are covered through the settings-store backup/restore path; no separate store is required. `planningAvgMph` is also explicitly admitted by the local JSON import allow-list introduced with v24.0.9, so export/import may preserve a real operator-set value while an absent value stays absent. Secret exclusions above still apply.
+These keys are covered through the settings-store backup/restore path; no separate store is required. `planningAvgMph` is explicitly admitted by the local JSON import allow-list, so export/import may preserve a real operator-set value while an absent value stays absent. Secret exclusions above still apply.
 
 ## Expense field carried by this contract
 
@@ -153,10 +198,13 @@ These keys are covered through the settings-store backup/restore path; no separa
 
 ## Verification
 
-The release suite must continue to exercise the real shared paths, not helper-only substitutes. For the current v24.0.9 / DB v15 candidate that includes:
+The release suite must continue to exercise the real shared paths, not helper-only substitutes. For the current v24.0.13 / DB v16 candidate that includes:
 
+- DB15 → DB16 trip migration with duplicate and blank external order numbers preserved as distinct records;
+- stable-id create/edit/delete/restore behavior after migration;
+- UNKNOWN payment status preserved through sanitize, import/restore, receivables logic, and export;
 - full backup → delta(s) → wipe → restore;
-- settings, receipts metadata, gpsLogs, lifecycle, and normalized-evidence preservation;
+- settings, receipts metadata, gpsLogs, lifecycle, normalized-evidence, and canonical trips preservation;
 - preservation of explicit durable settings such as `planningAvgMph` without manufacturing missing settings;
 - confirmed delta-gap warning behavior;
 - zero-change delta push;
@@ -166,6 +214,7 @@ The release suite must continue to exercise the real shared paths, not helper-on
 - local JSON protected-record revision reconciliation;
 - exact no-op evidence re-import;
 - lifecycle/evidence protected-checksum mutation detection;
+- Worker v18 legacy plaintext-token cleanup without exposing raw tokens through admin listing;
 - legacy payload compatibility with absent lifecycle/evidence sections.
 
-Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.x release-integrity/blocker specs, the v24.0.9 pickup-feasibility/UNKNOWN-setting coverage, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
+Relevant regression coverage includes `tests/integration/full-repair-regressions.spec.mjs`, `tests/integration/backup-restore-parity.spec.mjs`, `tests/unit/worker-token-rotation.spec.mjs`, the v24.0.x release-integrity/blocker specs, pickup-feasibility/UNKNOWN-setting coverage, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
