@@ -31,6 +31,7 @@ jobs:
           git show 0a2ee08d6ae255715203b887ca739546fee8d004:.github/workflows/full-repair-once.yml > /tmp/original-full-repair.yml
           python - <<'PY'
           from pathlib import Path
+          import base64
 
           src = Path('/tmp/original-full-repair.yml').read_text()
           start_marker = "          python - <<'PY'\n"
@@ -52,26 +53,8 @@ jobs:
           b = patcher.find(end_tag)
           if a < 0 or b < 0 or b <= a:
               raise SystemExit('service-worker patcher section markers missing')
-          replacement = r'''# ── Service worker: safe shared filename + generation ──────────
-          p='service-worker.js'; s=read(p)
-          if "const SW_VERSION = '24.0.12';" not in s: raise SystemExit('unexpected SW_VERSION')
-          s=s.replace('/* FreightLogic v24.0.12 — Browser Hardened Service Worker */', '/* FreightLogic v24.0.13 — Browser Hardened Service Worker */',1)
-          s=s.replace("const SW_VERSION = '24.0.12';", "const SW_VERSION = '24.0.13';",1)
-          s=s.replace('?v=24.0.12','?v=24.0.13')
-          raw_header="'X-Filename': file.name"
-          if raw_header not in s: raise SystemExit('raw share filename header marker missing')
-          safe_lines="""            // Shared filenames are attacker-controlled input. Header values may not carry CR/LF
-            // or other control bytes; bound the value as well so metadata cannot become a storage sink.
-            const safeFilename = String(file.name || `shared-file-${i}`)
-              .replace(/[\\u0000-\\u001F\\u007F]/g, '_').slice(0, 180) || `shared-file-${i}`;
-"""
-          content_line="            const contentType = ALLOWED_SHARE_TYPES.has(file.type) ? file.type : 'application/octet-stream';\n"
-          if content_line not in s: raise SystemExit('share content-type marker missing')
-          s=s.replace(content_line, content_line + safe_lines, 1)
-          s=s.replace(raw_header, "'X-Filename': safeFilename",1)
-          write(p,s)
-
-'''
+          replacement_b64 = 'IyDilIDilIAgU2VydmljZSB3b3JrZXI6IHNhZmUgc2hhcmVkIGZpbGVuYW1lICsgZ2VuZXJhdGlvbiDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKcD0nc2VydmljZS13b3JrZXIuanMnOyBzPXJlYWQocCkKaWYgImNvbnN0IFNXX1ZFUlNJT04gPSAnMjQuMC4xMic7IiBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgndW5leHBlY3RlZCBTV19WRVJTSU9OJykKcz1zLnJlcGxhY2UoJy8qIEZyZWlnaHRMb2dpYyB2MjQuMC4xMiDigJQgQnJvd3NlciBIYXJkZW5lZCBTZXJ2aWNlIFdvcmtlciAqLycsICcvKiBGcmVpZ2h0TG9naWMgdjI0LjAuMTMg4oCUIEJyb3dzZXIgSGFyZGVuZWQgU2VydmljZSBXb3JrZXIgKi8nLDEpCnM9cy5yZXBsYWNlKCJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTInOyIsICJjb25zdCBTV19WRVJTSU9OID0gJzI0LjAuMTMnOyIsMSkKcz1zLnJlcGxhY2UoJz92PTI0LjAuMTInLCc/dj0yNC4wLjEzJykKcmF3X2hlYWRlcj0iJ1gtRmlsZW5hbWUnOiBmaWxlLm5hbWUiCmlmIHJhd19oZWFkZXIgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3JhdyBzaGFyZSBmaWxlbmFtZSBoZWFkZXIgbWFya2VyIG1pc3NpbmcnKQpzYWZlX2xpbmVzPSIiIiAgICAgICAgICAgIC8vIFNoYXJlZCBmaWxlbmFtZXMgYXJlIGF0dGFja2VyLWNvbnRyb2xsZWQgaW5wdXQuIEhlYWRlciB2YWx1ZXMgbWF5IG5vdCBjYXJyeSBDUi9MRgogICAgICAgICAgICAvLyBvciBvdGhlciBjb250cm9sIGJ5dGVzOyBib3VuZCB0aGUgdmFsdWUgYXMgd2VsbCBzbyBtZXRhZGF0YSBjYW5ub3QgYmVjb21lIGEgc3RvcmFnZSBzaW5rLgogICAgICAgICAgICBjb25zdCBzYWZlRmlsZW5hbWUgPSBTdHJpbmcoZmlsZS5uYW1lIHx8IGBzaGFyZWQtZmlsZS0ke2l9YCkKICAgICAgICAgICAgICAucmVwbGFjZSgvW1xcdTAwMDAtXFx1MDAxRlxcdTAwN0ZdL2csICdfJykuc2xpY2UoMCwgMTgwKSB8fCBgc2hhcmVkLWZpbGUtJHtpfWA7CiIiIgpjb250ZW50X2xpbmU9IiAgICAgICAgICAgIGNvbnN0IGNvbnRlbnRUeXBlID0gQUxMT1dFRF9TSEFSRV9UWVBFUy5oYXMoZmlsZS50eXBlKSA/IGZpbGUudHlwZSA6ICdhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0nO1xuIgppZiBjb250ZW50X2xpbmUgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3NoYXJlIGNvbnRlbnQtdHlwZSBtYXJrZXIgbWlzc2luZycpCnM9cy5yZXBsYWNlKGNvbnRlbnRfbGluZSwgY29udGVudF9saW5lICsgc2FmZV9saW5lcywgMSkKcz1zLnJlcGxhY2UocmF3X2hlYWRlciwgIidYLUZpbGVuYW1lJzogc2FmZUZpbGVuYW1lIiwxKQp3cml0ZShwLHMpCgo='
+          replacement = base64.b64decode(replacement_b64).decode('utf-8')
           patcher = patcher[:a] + replacement + patcher[b:]
           Path('/tmp/full-repair.py').write_text(patcher)
           PY
