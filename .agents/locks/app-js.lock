@@ -1,0 +1,6 @@
+owner: gpt
+token: 1ce16d0f-d134-4f59-9fef-8f78f250ad3a
+started_utc: 2026-09-15T07:05:00Z
+expected_release_utc: 2026-09-15T13:05:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: Operator-directed full-repair pass for confirmed first-use cloud/admin, trip identity/import, payment-state, economics time-assumption, share-target, and release-generation repairs.
