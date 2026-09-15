@@ -2901,3 +2901,67 @@ Removing it from that branch is the owning lane's, requested through `/.agents/i
 rather than edited across lanes.
 
 Full suite: **489 passed, 0 failed across 53 spec files** (from 483/52).
+
+---
+
+## The boot probe proved the wrong document
+
+Test harness only. No shipped file changed: `APP_VERSION` and `SW_VERSION` stay
+`24.0.12`, `DB_VERSION` 15, Worker v17.
+
+**The failure.** `main` went red immediately after the v24.0.12 documentation merge —
+run `34951456824`, **488 passed / 1 failed**, on `SMS-04`, while the identical tree
+had passed on the PR head minutes earlier and passed three times locally. The
+tempting reading is "flake". It is not.
+
+```
+TypeError: Cannot read properties of null (reading 'transaction')
+    at tx (app.js:2764)  ←  db is null
+    at addExpense (app.js:3012)
+```
+
+It failed on the **first statement of the test body**, which means
+`waitForAppBoot()` had already returned success. The revision-stamp logic `SMS-04`
+guards was never reached and is not implicated: `Math.max(Date.now(), before + 1)`
+is strictly increasing by construction, and `db` is assigned once (`app.js:21157`)
+and never nulled anywhere in the file.
+
+**Why a passing probe proves nothing.** `app.js` exposes `window.__FL_TESTS` at
+**parse** time (`app.js:21071`) but assigns the shared IndexedDB handle inside the
+boot IIFE (`app.js:21157`). Every fresh document therefore has a window where
+`T.dumpStore` exists and `db` is still `null` — which is why the probe was added at
+all (PRs #148/#149). But a single successful probe only proves *the document that
+answered it* had booted. It says nothing about the document the test body runs in.
+
+**Something does swap the document.** `sw-bridge.js` calls `window.location.reload()`
+from `reloadOnce()`, driven by `controllerchange` **and** by an unconditional
+`setTimeout(reloadOnce, 3000)` fallback. So a launch that boots in ~200ms can be
+reloaded seconds later, mid-test, handing the test a brand-new document with
+`__FL_TESTS` present and `db` back to `null`. That is the whole defect, and it is
+timing-dependent in exactly the way that makes it look like a flake.
+
+**The fix, entirely in `tests/lib/harness.mjs`.** Two conditions, neither of which
+weakens any assertion:
+
+1. A bounded, best-effort wait for the service worker to settle — no `installing`
+   and no `waiting` registration — so the bridge has nothing left to request
+   `SKIP_WAITING` for. Deliberately non-fatal: `sw-update-handshake.spec.mjs`
+   drives that handshake on purpose and must not be converted into a hard timeout.
+2. The **same document** must complete the `dumpStore` probe twice, with a gap. A
+   reload between attempts resets the per-document token, so the loop keeps going
+   until one document answers twice — which is the property the caller actually
+   needs, rather than "some document answered once". An in-flight navigation
+   destroys the execution context, so the probe treats that as "not yet".
+
+**Negative control.** The stabilisation logic was driven directly over a token
+sequence containing a mid-sequence change: it settles on the first *repeat*, not the
+first success, so a document swap cannot satisfy it. Full suite **489 passed, 0
+failed across 53 spec files** with the fix, and `same-millisecond-concurrency`
+passes repeatedly on its own with no measurable slowdown.
+
+**Raised, not changed:** `tx()` dereferences `db` with no guard, so this class of
+race surfaces as `Cannot read properties of null` rather than a named error, and
+`cloudSaveConfig()`'s catch does not `return` — an unreachable Worker leaves the
+token saved unverified while toasting "Cloud backup connected!". Both are `app.js`,
+which was under a held `lock/app-js` at the time; they are reported rather than
+edited across a live lock.

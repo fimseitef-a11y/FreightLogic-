@@ -141,20 +141,60 @@ async function waitForAppBoot(page, enableTestExports) {
   await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
   if (!enableTestExports) return;
 
-  // appMeta can populate before initDB() has assigned the app's shared IndexedDB
-  // handle. Tests that call persistence helpers immediately after launch therefore
-  // used to race `db === null` nondeterministically. Probe the same exported data
-  // path the suite is about to use and only return once it can complete.
+  // `app.js` exposes window.__FL_TESTS at PARSE time but assigns the shared
+  // IndexedDB handle `db` only inside the boot IIFE, so there is a real window in
+  // every fresh document where T.dumpStore exists and `db` is still null. That is
+  // why the probe below exists at all (PRs #148/#149).
+  //
+  // The probe alone is not sufficient, and CI proved it: run 34951456824 failed
+  // SMS-04 with `TypeError: Cannot read properties of null (reading 'transaction')`
+  // at tx() <- addExpense(), on the FIRST statement of the test body — i.e. the
+  // probe had already succeeded. A single successful probe only proves the
+  // document that answered it had booted; it says nothing about the document the
+  // test body will actually run in.
+  //
+  // Something does swap the document: `sw-bridge.js` calls window.location.reload()
+  // from reloadOnce(), driven by a controllerchange AND by an unconditional
+  // `setTimeout(reloadOnce, 3000)` fallback. So a launch that boots in ~200ms can
+  // be reloaded seconds later, mid-test, handing the test a brand-new document
+  // with __FL_TESTS present and `db` back to null.
+  //
+  // Two conditions close that window, neither of which weakens any assertion.
+
+  // 1. Let the service worker reach a settled state, so the bridge has no waiting
+  //    or installing worker left to request SKIP_WAITING for. Best-effort and
+  //    bounded: a spec that deliberately drives the update handshake must not be
+  //    turned into a hard timeout, so an unsettled worker proceeds rather than
+  //    failing the launch.
   await page.waitForFunction(async () => {
+    if (!('serviceWorker' in navigator)) return true;
+    const regs = await navigator.serviceWorker.getRegistrations().catch(() => []);
+    return regs.every(r => !r.installing && !r.waiting);
+  }, { timeout: 5000 }).catch(() => {});
+
+  // 2. Require the SAME document to complete the probe twice with a gap between.
+  //    A reload between the two attempts resets the token, so the loop simply
+  //    keeps going until one document answers twice — which is the property the
+  //    caller actually needs, rather than "some document answered once".
+  const probe = () => page.evaluate(async () => {
     const T = window.__FL_TESTS;
-    if (!T || typeof T.dumpStore !== 'function') return false;
-    try {
-      await T.dumpStore('settings');
-      return true;
-    } catch {
-      return false;
+    if (!T || typeof T.dumpStore !== 'function') return null;
+    try { await T.dumpStore('settings'); } catch { return null; }
+    if (!window.__flBootToken) {
+      window.__flBootToken = `${performance.timeOrigin}:${Math.random().toString(36).slice(2)}`;
     }
-  }, { timeout: 15000 });
+    return window.__flBootToken;
+  }).catch(() => null); // an in-flight navigation destroys the execution context
+
+  const deadline = Date.now() + 15000;
+  let previous = null;
+  while (Date.now() < deadline) {
+    const token = await probe();
+    if (token && token === previous) return;
+    previous = token;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error('waitForAppBoot: the app never presented a stable booted document within 15s');
 }
 
 /**
