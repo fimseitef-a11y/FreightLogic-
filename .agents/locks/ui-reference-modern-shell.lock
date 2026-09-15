@@ -1,0 +1,6 @@
+owner: gpt
+token: 693da5db-078a-40aa-bf61-030c719984cd
+started_utc: 2026-09-15T00:30:00Z
+expected_release_utc: 2026-09-15T01:15:00Z
+paths: modern-shell.js
+task: Operator-directed implementation of the approved reference UI presentation without changing canonical app behavior.
