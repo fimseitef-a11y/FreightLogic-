@@ -8,8 +8,16 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against concurrent sessions, not just different agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
 
+**OMEGA continuation (2026-09-15, operator-directed).** The operator explicitly asks GPT to verify and repair the remaining app.js economics/math paths, market classifier collision, and release-generation discipline, with regressions and exact-head gates. This bounded task authorizes those shared app.js behaviors under lock/app-js. The exact file exceptions below cover its regressions, generation markers, and evidence; other Claude paths retain their ownership. These assignments do not close physical iPhone A1–A10 or M6 raw-data certification.
+
 | Top-level path | Owner | Notes |
 |---|---|---|
+| `docs/OMEGA_CONTINUATION_2026-09-15.md` | gpt | Bounded operator-directed OMEGA continuation. |
+| `scripts/verify-cloudflare-parity.mjs` | gpt | Bounded operator-directed OMEGA continuation. |
+| `scripts/verify-release-generation.mjs` | gpt | Bounded operator-directed OMEGA continuation. |
+| `tests/run-all.mjs` | gpt | Bounded operator-directed OMEGA continuation. |
+| `tests/unit/release-generation-discipline.spec.mjs` | gpt | Bounded operator-directed OMEGA continuation. |
+| `tests/integration/omega-economics.spec.mjs` | gpt | Bounded operator-directed OMEGA continuation. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
 | `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
@@ -41,7 +49,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `icon64.png` | claude | Visual asset. |
 | `index.html` | SHARED | UI shell + CSP/script ordering; lock before editing. |
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
-| `midwest-stack-authority.js` | claude | Decision/bid advisory core and DZ gate integration. |
+| `midwest-stack-authority.js` | gpt | **Temporary bounded OMEGA exception:** v24.0.11 generation marker plus verified market-identity collision repair only; restore Claude ownership immediately after this repair lands. |
 | `midwest-stack-config.json` | claude | Decision/bid configuration. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
@@ -51,7 +59,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
-| `voice-load.js` | claude | Functional intake/parser behavior. |
+| `voice-load.js` | gpt | **Temporary bounded OMEGA exception:** v24.0.11 shipped-module header marker only; restore Claude ownership immediately after this repair lands. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
 ## Current lane intent
@@ -61,7 +69,7 @@ The targeted UI takeover changes only presentation ownership:
 - `styles.css` is GPT-owned for the approved redesign and can be changed without an `app.js` lock.
 - `app.js` is `SHARED` and needs `lock/app-js` plus a full suite for any edit. It remains a 1.1MB single-IIFE file where concurrent edits can lose work.
 - The rest of the `SHARED` set (`index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore`) remains serialized because it is release-critical or protocol surface.
-- Every other non-`SHARED` path remains Claude-owned.
+- Every other non-`SHARED` path remains Claude-owned except the exact temporary OMEGA exceptions named above.
 
 The CSS seam stays a real physical boundary and is worth keeping: presentation changes in `styles.css` do not need an `app.js` lock. It does **not** cover UI sections that still live inside `app.js` — those remain `SHARED` until an approved extraction creates more physical paths.
 
