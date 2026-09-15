@@ -1311,3 +1311,89 @@ lane's `lock/app-js` (full-repair pass) when this was found. The regression is
 committed and deliberately **not** wired into `run-all.mjs`, per `tests/README.md`,
 so it cannot sink an otherwise-green gate before the fix lands; it turns green and
 joins the default run with the fix.
+
+---
+
+## D-02 — the cloud-backup setup link never delivers its token, so every connect attempt reads "Invalid token" — CONFIRMED, OPEN
+
+**Severity: High.** First-use cloud backup is unreachable. The operator cannot
+connect at all, and the message they get names the wrong cause, so no amount of
+retrying or re-entering can succeed. Reported by the operator as "it keeps saying
+invalid no matter what I do."
+
+**Where.** `app.js` — `cloudCheckSetupLink()`, its only call site inside
+`renderInsights()`, and the two admin surfaces `cloudAdminCreateUser()` and
+`cloudAdminShowInvite()`.
+
+**What.** Three behaviours combine into a closed loop with no way out.
+
+1. **The token is delivered in the URL fragment.** Both admin surfaces build
+   `origin + pathname + '#token=' + encodeURIComponent(token)`.
+2. **The only reader runs too late.** `cloudCheckSetupLink()` is called from
+   `cloudInitUI()`, which is called from **`renderInsights()` alone** — the
+   Settings screen. Opening the link resolves to `home` (the router maps an
+   unrecognised hash to `home` and does not rewrite it), so the token sits in
+   `location.hash` unread. Navigating to Settings sets the hash to `#insights`,
+   **destroying the token before the code that wants it ever runs.**
+3. **No surface ever shows the bare token.** `cloudAdminCreateUser()` renders
+   only the setup link; `cloudAdminShowInvite()` renders only the setup link and
+   states "This is shown once." The raw `flk_…` value is never displayed or
+   copyable on its own.
+
+So the operator's only artifact is a URL, and the field is labelled "Your Token"
+with placeholder `flk_... (given to you)`. Pasting the URL is the obvious move.
+`cloudSaveConfig()` trims it and forwards it verbatim as `X-Backup-Token`. The
+Worker validates `/^flk_[a-f0-9]{32}$/` (`cloud-backup-worker.js`) and answers
+**403 `{ error: 'Invalid token' }`**, which the app displays. Forever.
+
+**Reproduction.** `tests/integration/setup-link-token.spec.mjs` against real
+headless Chromium on `main` @ `18806af`:
+
+```
+[SLT-01] opening the setup link puts the token in the token field
+    expected: "flk_a1b2c3d4e5f60718293a4b5c6d7e8f90"   actual: ""
+[SLT-02] a pasted setup link is accepted as the token it contains
+    expected: "flk_a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    actual:   "http://127.0.0.1:38291/index.html#token=flk_a1b2c3d4e5f60718293a4b5c6d7e8f90"
+0 passed, 2 failed
+```
+
+SLT-02 captures the exact header sent to the Worker: a whole URL in
+`X-Backup-Token`. Observed directly beforehand by driving the app with a real
+setup link — after opening it the visible view is `view-home` with the token
+still in `location.hash`; after opening Settings the hash is `#insights` and the
+token field is `""`.
+
+**Operator workaround, available today with no deploy.** Everything after
+`#token=` in the setup link *is* the real token. Pasting only the `flk_…`
+portion into the token field connects normally. This is a workaround, not the
+fix — it depends on the operator knowing to dismantle a URL by hand.
+
+**Fix shape** (all in `app.js`; none of it changes the Worker):
+
+1. **Read the fragment before the router can lose it.** Capture the token at
+   boot rather than from `renderInsights()`, and hold it until the field exists.
+   The existing `history.replaceState` scrub then still clears it from the URL.
+2. **Normalise what is pasted.** In `cloudSaveConfig()` (and the Test button),
+   extract `flk_[a-f0-9]{32}` from the entered value before sending, so a pasted
+   setup link, or a token with stray text around it, resolves to the token.
+   Reject client-side with a message naming the real problem when no token can
+   be extracted, instead of spending a round trip to be told "Invalid token".
+3. **Show the bare token too.** Both admin surfaces should display and offer to
+   copy the raw `flk_…` alongside the link, so the link is a convenience rather
+   than the single point of failure.
+
+**Related, and worth fixing in the same pass:** `cloudSaveConfig()` reports
+`e.error || 'Invalid token'`, so **any** non-OK response whose body is not JSON
+with an `error` field is displayed as "Invalid token" — a 404, a 502, a
+Cloudflare error page. The label is asserted, not observed, which is why the
+symptom gave the operator nothing to act on. `cloudSaveConfig()` also does not
+`return` from its `catch`, so an unreachable server still falls through and
+saves the token as though it had been verified.
+
+**Status. OPEN.** `app.js` is SHARED and was held under the gpt lane's
+`lock/app-js` when this was captured — a lock whose task line already names
+"confirmed first-use cloud/admin" repairs, so this is very likely the defect
+that lane is mid-repair on. The regression is committed and quarantined per
+`tests/unit/spec-coverage.spec.mjs`; it turns green and joins `run-all.mjs` with
+the fix.

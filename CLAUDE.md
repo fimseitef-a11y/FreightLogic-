@@ -2966,6 +2966,18 @@ denominators (positioning brief, chain analysis, weekly strategy, seasonal intel
 **Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN, and
 nothing here touches either.
 
+**D-02 — cloud backup cannot be connected at all (operator-reported, OPEN).** The
+admin panel hands the operator a setup link carrying the token in the URL fragment,
+but the only reader (`cloudCheckSetupLink`) runs from `renderInsights()`, and
+reaching Settings rewrites the hash to `#insights` and destroys the token first. No
+admin surface ever shows the bare `flk_…` value, so the operator's only artifact is a
+URL; pasting it sends a whole URL as `X-Backup-Token`, the Worker's
+`^flk_[a-f0-9]{32}$` check rejects it, and the app shows "Invalid token" every time.
+Reproduced in real Chromium — see `AUDIT_REPORT.md` D-02 and
+`tests/integration/setup-link-token.spec.mjs` (quarantined, fails today). Workaround
+with no deploy: paste only the part after `#token=`. `app.js` is SHARED and was under
+`lock/app-js`, whose task line already names first-use cloud/admin repairs.
+
 ---
 
 ## Spec coverage — a test nobody runs, and the quarantine that never expired
