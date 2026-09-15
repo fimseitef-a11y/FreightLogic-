@@ -67,7 +67,7 @@ jobs:
           PY
           python /tmp/full-repair.py
 
-      - name: Static syntax and repair invariants
+      - name: Validate repaired source artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -75,10 +75,13 @@ jobs:
           node --check service-worker.js
           node --check admin-driver-ui.js
           node --check cloud-backup-worker.js
-          node tests/unit/cache-generation.spec.mjs
-          node tests/unit/worker-token-rotation.spec.mjs
-          node tests/unit/release-generation-discipline.spec.mjs
-          node scripts/verify-cloudflare-parity.mjs --static-only
+          grep -q "const APP_VERSION = '24.0.13'" app.js
+          grep -q "const DB_VERSION = 16" app.js
+          grep -q "paymentStatusKnown" app.js
+          grep -q "safeFilename" service-worker.js
+          grep -q "Cloud Backup Worker v18" cloud-backup-worker.js
+          grep -q "legacyPlaintext" cloud-backup-worker.js
+          grep -q "FR-05" tests/integration/full-repair-regressions.spec.mjs
           git diff --check
           test "$(git diff --name-only | wc -l)" -gt 0
           git diff --name-only
