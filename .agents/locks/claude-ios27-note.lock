@@ -1,6 +1,0 @@
-owner: claude
-token: 33967ef2-c394-4854-a146-81e4354e9fb0
-started_utc: 2026-09-15T09:12:31Z
-expected_release_utc: 2026-09-15T11:12:31Z
-paths: .agents/inbox/, .agents/STATUS.md
-task: Deliver the iOS 27 / Safari 27 assessment conclusions to the GPT lane before it implements the two APIs this lane assessed and declined.
