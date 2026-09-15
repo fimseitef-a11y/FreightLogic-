@@ -1223,3 +1223,91 @@ the deployed Worker.
 this deploy are not recoverable — the losing write was never stored. Nothing in the
 data identifies them, because a collision leaves one valid key rather than a
 corrupt one.
+
+---
+
+## D-01 — `tripRow()` renders a loaded-only RPM as True RPM when deadhead is UNKNOWN — CONFIRMED, OPEN
+
+**Severity: Medium.** A fabricated economic figure on the two surfaces a driver
+looks at most — the Home recent-trips list and the Trips page — for every trip whose
+deadhead was never stated. It cannot change a canonical verdict (the evaluator, the
+KPI card, CSV export and `computeLoadScore()` all fail closed since v24.0.1/v24.0.11),
+but it teaches the driver a True RPM and a letter grade that were never computed.
+
+**Where.** `app.js`, `function tripRow(t, {compact=false}={})` — both the compact
+branch (`.fl-tc`, mounted in `#homeRecentTrips`) and the full branch
+(`.fl-trip-full`, mounted in `#tripList`).
+
+**What.** The row computes
+
+```js
+const miles = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
+const rpm = miles>0 ? (Number(t.pay||0)/miles) : 0;
+```
+
+so `emptyMiles: null` contributes `0` to the denominator and `rpm` is the
+loaded-only ratio, which is then rendered as `$X.XX/mi` with `_rpmGrade(rpm)` in a
+grade chip. Nothing in the function consults `tripHasKnownDeadhead()`, which
+v24.0.5 introduced for exactly this class of consumer. The `needsReview` tag is
+rendered beside the figure but does not suppress it, and a stored record whose
+review bit is stale or `false` (the legacy-defence vector in
+`gpt-omega-infinity-money-integrity-2026-09-15.md`) carries no warning at all.
+
+**Reproduction.** `tests/integration/trip-row-unknown-deadhead.spec.mjs`, run on
+`main` @ `b48d7bc` against real headless Chromium. Three trips at $600 / 100 loaded
+miles: explicit `emptyMiles: 0`, `emptyMiles: null` as `sanitizeTrip()` persists it,
+and `emptyMiles: null` with `needsReview` forced `false`.
+
+```
+[TRU-01] Trips page (full row)
+    expected: "—"     actual: "$6.00/mi"
+[TRU-02] Home recent trips (compact row)
+    expected: "—"     actual: "$6.00"
+0 passed, 2 failed
+```
+
+The explicit-zero control passed in both modes (`$6.00/mi`, grade `A`) before the
+unknown-deadhead assertion failed, so the spec distinguishes a verified zero from an
+absent value — the invariant, not a blanket suppression.
+
+**Why v24.0.11 did not close it.** That release fixed the three other secondary
+surfaces the gpt packet named — `exportTripsCSV()` now reads `tripAllMiles()`
+(OI-06), `computeLoadScore()` returns `available: false` (OI-04), and
+`renderLiveScore()` defers to it — and its regressions cover those. No `OI-*`
+assertion renders a trip row, which is how this one survived a green suite.
+
+**Inventory — the same coercion elsewhere.** A sweep of every
+`Number(t.emptyMiles||0)` in `app.js` at this commit finds 33 sites. Most are
+guarded upstream by `needsReview` and/or `tripHasKnownDeadhead()` filtering, or
+feed `computeLoadScore()` which fails closed. These do **not** filter and put the
+coerced figure in a denominator or a ratio:
+
+| Function | What it fabricates |
+|---|---|
+| `tripRow()` | `$/mi` and grade chip, both modes — **this finding** |
+| `getPositioningBrief()` | outbound-lane minimum RPM; day-of-week `avgRPM` |
+| `openChainAnalysis()` | per-destination RPM list |
+| `openWeeklyStrategy()` | weekly `avgRPM` and `milesWk`-based net |
+| `openSeasonalIntel()` | per-month RPM list |
+| `renderCommandCenter()` | 30-day loaded-mile efficiency `%` (understated denominator overstates efficiency) |
+
+Four more (`generateAccountantPackage()` ×2, `openCPAPackage()` ×2) **sum**
+miles for a mileage total rather than dividing by them, so an unknown deadhead
+understates a tax mileage figure instead of inflating an RPM — a different
+failure, still a fabricated "all miles". Two (`openScoreBreakdown()`,
+`renderLiveScore()`) only display a total after `computeLoadScore()` has already
+refused, and are safe.
+
+**Fix shape.** In `tripRow()`, gate on `tripHasKnownDeadhead(t)` before computing
+`miles`; when it is false, render `—` for the RPM and `?` for the grade exactly as
+the `miles <= 0` branch already does, keeping the `needsReview` tag. Apply the same
+gate at the six intel sites above; for the two tax packages, exclude the trip from
+the mileage total and report the count excluded, rather than summing a zero. Then
+add `tests/integration/trip-row-unknown-deadhead.spec.mjs` to `tests/run-all.mjs`
+in the same commit.
+
+**Status. OPEN.** Reported, not fixed: `app.js` is SHARED and was held under the gpt
+lane's `lock/app-js` (full-repair pass) when this was found. The regression is
+committed and deliberately **not** wired into `run-all.mjs`, per `tests/README.md`,
+so it cannot sink an otherwise-green gate before the fix lands; it turns green and
+joins the default run with the fix.

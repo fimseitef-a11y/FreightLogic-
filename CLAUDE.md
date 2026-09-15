@@ -2952,10 +2952,16 @@ returns `available: false` (OI-04), and `renderLiveScore()` defers to it. The fo
 `$/mi` figure with a letter grade chip, in both compact and full modes. A trip whose
 deadhead was never stated therefore shows a loaded-only RPM dressed as True RPM on the
 Home recent-trips list and the Trips page. No `OI-*` assertion covers `tripRow`. It is
-recorded here rather than fixed because `app.js` is under the gpt lane's
-`lock/app-js` for the full-repair pass; it belongs in that pass or the next held lock,
-with a regression that renders a trip with `emptyMiles: null` and asserts `—` / `?`
-rather than a number, alongside an explicit-zero control.
+recorded as **D-01** in `AUDIT_REPORT.md` with its captured reproduction, and the
+regression already exists: `tests/integration/trip-row-unknown-deadhead.spec.mjs`
+(TRU-01 full row, TRU-02 compact row, explicit-zero control in both) drives the real
+router and asserts the correct behaviour, so it **fails on `main` today** and is
+deliberately **not** in `run-all.mjs` — per `tests/README.md`, a logged-but-unfixed
+finding is kept out of the default run and wired in by the commit that fixes it.
+It is not fixed here because `app.js` is under the gpt lane's `lock/app-js` for the
+full-repair pass; D-01 also inventories the six other unguarded deadhead-as-zero
+denominators (positioning brief, chain analysis, weekly strategy, seasonal intel,
+30-day efficiency) that the same lock should close.
 
 **Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN, and
 nothing here touches either.
