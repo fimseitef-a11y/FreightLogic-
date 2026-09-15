@@ -57,9 +57,9 @@ test('[OI-06] CSV retains raw unknown deadhead and leaves derived all miles/RPM 
   const download=await pending, stream=await download.createReadStream();let text='';for await(const chunk of stream) text+=chunk.toString();
   const rows=await app.page.evaluate(text=>window.__FL_TESTS.parseCSVLines(text.replace(/^\uFEFF/,'').split(/\r?\n/)),text);
   const header=rows[0]||[], col=name=>header.indexOf(name);
-  ok(col('EmptyMiles')>=0,'EmptyMiles header');ok(col('AllMiles')>=0,'AllMiles header');ok(col('TrueRPM')>=0,'TrueRPM header');
-  eq(rows[1][col('EmptyMiles')],'','raw unknown empty');eq(rows[1][col('AllMiles')],'','derived all blank');eq(rows[1][col('TrueRPM')],'','derived RPM blank');
-  eq(rows[2][col('EmptyMiles')],'0','explicit zero');eq(rows[2][col('AllMiles')],'100','known total');eq(rows[2][col('TrueRPM')],'6.00','known RPM');
+  ok(col('EmptyMiles')>=0,'EmptyMiles header');ok(col('AllMiles')>=0,'AllMiles header');ok(col('RPM')>=0,'RPM header');
+  eq(rows[1][col('EmptyMiles')],'','raw unknown empty');eq(rows[1][col('AllMiles')],'','derived all blank');eq(rows[1][col('RPM')],'','derived RPM blank');
+  eq(rows[2][col('EmptyMiles')],'0','explicit zero');eq(rows[2][col('AllMiles')],'100','known total');eq(rows[2][col('RPM')],'6.00','known RPM');
 });
 test('[OI-07] persisted weekly P&L and share text do not turn unknown mileage/fuel into zero',async()=>{
   await seed([{emptyMiles:null}]);
