@@ -2,11 +2,11 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.11 / IndexedDB v15 / Worker v17**; repository source is **v24.0.12**, which is **not deployed**. Test against what the device actually reports, and record which of the two you tested — they are not interchangeable.
+Current runtime synchronization point: **production serves FreightLogic v24.0.12 / IndexedDB v15 / Worker v17**, and repository source is the same **24.0.12** — they agree, which they did not for most of the v24.0.x line. Observed 2026-09-15 by live parity run `34939229143` and production service-worker run `34939417958`, both on `main` @ `4f2daf2`. Test against what the device actually reports, and if the device disagrees with this line, the disagreement is the finding.
 
-**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11 — the app moved and this file did not — so treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-14.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
+**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. Treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
 
 All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A10 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
 
@@ -21,7 +21,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.10** is active, on the exact candidate SHA named in the certification document.
+4. Close/reopen online and verify **24.0.12** is active, on the exact candidate SHA named in the certification document.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -91,7 +91,7 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.10)
+## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.12)
 
 Use a synthetic load with an optional pickup cutoff.
 
@@ -198,4 +198,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD** until exact v24.0.9 live production all-asset parity is observed, authenticated Worker authority/backup smokes pass, the real private-history bundle is reconciled, six-width browser-layout acceptance passes, truthful rollback/fix-forward evidence is recorded, and all applicable physical-iPhone blockers are PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-14.md` before the release is frozen.
+The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.

@@ -6,7 +6,7 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA source is v24.0.12 (**not yet deployed** — production serves v24.0.11) and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA is v24.0.12, **deployed and observed live** at generation `24.0.12` on 2026-09-15 (live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`), and DB remains v15.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -2792,13 +2792,38 @@ shell would never fetch the changed file. "Inert in production" is an argument a
 behaviour, not about delivery, and the generation rule is about delivery. This is the
 v24.0.3 lesson applied rather than relearned, and every governed marker moved together.
 
-### Deployment status — stated plainly
+### Deployment status — DEPLOYED and OBSERVED LIVE 2026-09-15
 
-**v24.0.12 is source-only. It has not been deployed and has not been observed live.**
-The live evidence in the v24.0.11 section above is evidence for **v24.0.11**, which is
-what production serves. When v24.0.12 deploys, the parity run must be re-dispatched
-against it; a push-triggered run that fires immediately after the merge will race the
-Cloudflare deploy, so record the later run.
+This section shipped reading *"v24.0.12 is source-only. It has not been deployed and
+has not been observed live."* That was accurate when written and stopped being accurate
+about ninety minutes later, when the re-dispatch it itself called for came back PASS.
+It is corrected here rather than quietly overwritten, because a release section that
+keeps a superseded claim is the drift class this file records against itself four times
+over.
+
+Production serves **24.0.12**. Two independent live gates, both `workflow_dispatch` on
+`main` @ `4f2daf2`:
+
+- **Live all-asset parity** — run `34939229143`, `VERDICT: PASS`. `sw-bridge` imports
+  `modern-shell.js` v24.0.12 and the worker precaches it at that generation, the
+  manifest name is `FreightLogic v24.0.12`, Worker `/health` returns
+  `{"ok":true,"version":"17"}`, **all 23** declared runtime assets load, and none is
+  served as HTML.
+- **Production service worker** — run `34939417958`, **16 checks / 0 failures**,
+  `VERDICT: PASS`. The precache is `freightlogic-24.0.12` carrying all 23 assets, the
+  cached shell requests `?v=24.0.12`, `admin-driver-ui.js` and
+  `midwest-stack-authority.js` are injected **and fetchable as script** (HTTP 200,
+  `text/javascript`), an offline subresource miss is `504 text/plain` rather than the
+  HTML shell, a drifted `?v=` self-heals, and exactly one generation cache survives.
+
+**The push-race recurred exactly as predicted and must not be cited.** Both workflows
+also fired on the push at 06:51Z and both FAILED — `34938834929` and `34938834924` —
+about five minutes before the dispatched runs passed. They observed the previous
+generation still being served while Cloudflare finished deploying. That is real
+evidence about the origin at that instant and is not evidence about the release.
+
+The certification authority for this candidate is
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`.
 
 Full suite: **483 passed, 0 failed across 52 spec files** — `fb408a0`'s 481 plus
 `OI-14` and `CG-14`.
