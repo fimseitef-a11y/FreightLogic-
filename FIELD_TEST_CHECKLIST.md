@@ -213,7 +213,7 @@ Its verdict is deliberately incapable of naming a safe rollback target. Older ge
 
 It states its own limit rather than implying otherwise: **the offline navigation itself is not observed there.** A navigation restarts the service worker outside the network emulation that covered it, which was tested, not assumed. That is precisely what **A4** on a real device is for, and why B6 does not replace it.
 
-## B7. Live invite/claim contract (added v24.0.13) — **run it after every Worker deploy**
+## B7. Live invite/claim contract (added v24.0.13) — **PASS**
 
 This gate exists because the zero-token onboarding flow reached production with
 **no live verification of any kind**. `tests/unit/worker-invite-claim.spec.mjs` (17)
@@ -245,9 +245,27 @@ Three things about it are deliberate and should not be "improved" away:
   and carries the name `FreightLogic Certification`, so it is findable in
   `GET /admin/users` rather than hiding among real drivers.
 
+**Observed 2026-09-16.** Run `35048574588`, `workflow_dispatch` on
+`claude/zero-token-driver-onboarding-dkcf4f` @ `da0667c`, whole step **success** —
+which means all three verifiers in it passed, the invite/claim one included. The
+verdict logic at that commit refuses `PASS` unless a seeded invite has actually been
+claimed against the live Worker, so this is positive evidence that the round trip
+ran, not merely that nothing objected.
+
+**Three earlier runs are part of this record rather than hidden from it.**
+`35038600985` passed; `35038771767` and `35039223738` then failed within the same
+hour. `/claim` is limited to 10 per hour per IP, this gate spends up to 6, and
+GitHub runners share egress ranges — so the second and third runs were answered 429
+and scored it as a broken contract. Two defects, both fixed and both regression-
+covered: the verifier now reads a 429 as `UNOBSERVED` (LIC-09/LIC-10), and the
+workflow no longer lets `set -e` collapse `UNOBSERVED` and `FAILURE` into one red
+run (LIC-07). Re-running after the hourly window rolled over produced the PASS
+above. **Do not re-run this gate twice inside one hour and read the second result
+as a product failure.**
+
 Record the run ID and verdict. `UNOBSERVED` (exit 2) is not a pass: it means the
-origin was unreachable or the invite could not be seeded, and it must never be
-written down as evidence the contract holds.
+origin was unreachable, the claim budget was spent, or the invite could not be
+seeded, and it must never be written down as evidence the contract holds.
 
 # C. Private-history reconciliation blocker
 
