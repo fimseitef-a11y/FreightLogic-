@@ -36,6 +36,17 @@ Until that happens the position is:
   partition. If it is separate, the re-claim path is the recovery and must be walked end
   to end, confirming the owner still sees **one** driver with their backup count intact.
 
+**One gate was ADDED after 24.0.13 deployed, because the deploy exposed a hole
+nobody had listed.** `/admin/invites` and `/claim` went live with no production
+verification of any kind: the offline spec proves them against the real fetch handler
+with an in-memory KV, and every existing live gate predates the endpoints. That left
+the only flow in the app that mints a credential unobserved in production, which is
+the worst place in this system to have an unobserved contract. `B7` in
+`FIELD_TEST_CHECKLIST.md` and `scripts/verify-live-invite-claim.mjs` close it; the
+verifier runs inside `Verify Authenticated Worker` after every dispatched Worker
+deploy, and carries the same three-verdict discipline as the other live gates, so an
+unreachable origin can never be recorded as evidence the contract holds.
+
 The HOLD is unchanged and is now three things rather than two: the private M6 history
 bundle, the physical-iPhone gate, and — for 24.0.13 specifically — a deploy that has not
 happened and live gates that have not been observed.
