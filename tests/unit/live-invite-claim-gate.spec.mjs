@@ -241,6 +241,22 @@ test('[LIC-07] the authenticated gate actually runs this verifier', async () => 
     'the workflow must invoke the verifier — a script nothing calls is not a gate');
   ok(/FL_CF_API_TOKEN=/.test(exec) && /FL_KV_NAMESPACE_ID=/.test(exec),
     'it must pass the KV credentials, or the claim round trip can never run');
+
+  // THE WIRING MUST NOT COLLAPSE THE VERDICTS. `set -e` fails a step on any
+  // non-zero exit, so a naive invocation makes UNOBSERVED (2) and FAILURE (1)
+  // indistinguishable from outside — and the run conclusion is all most readers
+  // ever see. That throws away the entire reason the verifier has three
+  // outcomes: an unreachable origin or a spent claim budget would be recorded
+  // as evidence the deployed Worker is broken. Two runs of this gate failed
+  // exactly that way before this was fixed.
+  ok(/IC_CODE=\$\{PIPESTATUS\[0\]\}/.test(exec),
+    'the step must capture the verifier exit code rather than letting set -e swallow it');
+  ok(/IC_VERDICT=UNOBSERVED/.test(exec) && /IC_VERDICT=FAILURE/.test(exec),
+    'it must map the exit code to a NAMED verdict, distinguishing 2 from 1');
+  ok(/GITHUB_STEP_SUMMARY/.test(exec),
+    'the verifier output must reach the job summary — raw log blobs are not always fetchable');
+  ok(/exit "\$IC_CODE"/.test(exec),
+    'it must still fail closed on anything but PASS — an unobserved gate is not a passed gate');
   // The gate must stay read-only toward the repository; it changes production
   // KV only, and only values it created.
   ok(/permissions:\s*\n\s*contents:\s*read/.test(wf),

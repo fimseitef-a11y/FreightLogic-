@@ -157,10 +157,43 @@ jobs:
           # mints carry no TTL of their own, so that cleanup is mandatory).
           # It spends at most 6 of the 10/hr per-IP claim budget and deliberately
           # does not test the 429, which would consume the rest.
+          # The verifier reports THREE verdicts — PASS 0, FAILURE 1,
+          # UNOBSERVED 2 — and `set -e` collapses the last two into one failed
+          # step, which throws away the whole point of having them. An
+          # unreachable origin or a spent per-IP claim budget would then be
+          # indistinguishable from the deployed Worker getting the contract
+          # wrong. Capture the code, name the verdict, and put the verifier's
+          # own output in the job summary so the answer is legible without
+          # digging through raw logs.
           echo 'Running live invite/claim contract verification.'
+          set +e
           FL_CF_API_TOKEN="$CLOUDFLARE_API_TOKEN" \
           FL_CF_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
           FL_KV_NAMESPACE_ID="$KV_NAMESPACE_ID" \
-            node scripts/verify-live-invite-claim.mjs "$WORKER_ORIGIN"
+            node scripts/verify-live-invite-claim.mjs "$WORKER_ORIGIN" 2>&1 | tee /tmp/fl-invite-claim.log
+          IC_CODE=${PIPESTATUS[0]}
+          set -e
+          case "$IC_CODE" in
+            0) IC_VERDICT=PASS ;;
+            2) IC_VERDICT=UNOBSERVED ;;
+            *) IC_VERDICT=FAILURE ;;
+          esac
+          {
+            echo "## Live invite/claim contract — $IC_VERDICT"
+            echo
+            echo "- verifier exit code: \`$IC_CODE\`"
+            echo
+            echo '```'
+            cat /tmp/fl-invite-claim.log 2>/dev/null || echo '(no verifier output)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Still fail closed on anything but PASS — an unobserved gate is not a
+          # passed gate — but say WHICH it was, so a network condition is never
+          # written into a certification record as evidence the Worker is broken.
+          if [ "$IC_VERDICT" != 'PASS' ]; then
+            echo "::error::Live invite/claim verdict: $IC_VERDICT (exit $IC_CODE). UNOBSERVED is not a product failure; re-run after the claim budget resets."
+            exit "$IC_CODE"
+          fi
 
           echo 'AUTHENTICATED WORKER VERDICT: PASS'
