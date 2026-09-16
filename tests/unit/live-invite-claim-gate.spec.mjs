@@ -231,6 +231,35 @@ test('[LIC-10] a rate-limited run does not seed KV for a claim it cannot make', 
   eq(result.code, 2, `still UNOBSERVED, got ${result.code}`);
 });
 
+test('[LIC-11] a FAILURE names the failing checks as CI annotations', async () => {
+  // A FAILURE verdict exists to say WHICH assertion broke. In this project's
+  // execution environment the raw log blob host is unreachable and the step
+  // summary is not exposed by the API, so detail that lives only in the log
+  // reaches nobody — a real production FAILURE was observed and could not be
+  // diagnosed for exactly this reason. Annotations ARE retrievable.
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 200, { ok: true });  // should be 401
+    if (req.url === '/claim') return json(res, 404, { ok: false });         // should be 400/410
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, { GITHUB_ACTIONS: '1' }));
+
+  eq(result.code, 1, `expected FAILURE, got ${result.code}`);
+  const annotations = result.out.split('\n').filter(l => l.startsWith('::error::'));
+  ok(annotations.length >= 2, `each failing check must be annotated, saw ${annotations.length}`);
+  ok(annotations.every(a => /invite\/claim FAILED/.test(a)), 'each annotation must be identifiable as this gate\'s');
+  ok(annotations.some(a => /admin token/.test(a)), 'the annotation must name the actual check that failed');
+});
+
+test('[LIC-12] a non-FAILURE run emits no error annotations', async () => {
+  // An UNOBSERVED run must not pollute the checks UI with errors — that is the
+  // conflation this whole three-verdict design exists to prevent, and it would
+  // reintroduce it at the annotation layer.
+  const result = await runVerifier('https://unreachable.invalid', { GITHUB_ACTIONS: '1' });
+  eq(result.code, 2, `expected UNOBSERVED, got ${result.code}`);
+  eq(result.out.split('\n').filter(l => l.startsWith('::error::')).length, 0,
+    'an unreachable origin must produce no error annotations');
+});
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 test('[LIC-07] the authenticated gate actually runs this verifier', async () => {

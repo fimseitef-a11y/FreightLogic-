@@ -367,6 +367,18 @@ function report() {
   // A real failure outranks unreachability: evidence of a broken contract is
   // evidence regardless of whether some later check could not be attempted.
   if (failed) {
+    // Emit each failing check as a GitHub Actions annotation.
+    //
+    // Not decoration: in this project's execution environment the raw log blob
+    // host is unreachable and the step summary is not exposed by the API, so a
+    // failure whose detail exists only in the log is a failure nobody can read.
+    // Annotations ARE retrievable, so this is the channel that actually
+    // delivers the one thing a FAILURE verdict is for — WHICH assertion broke.
+    if (process.env.GITHUB_ACTIONS) {
+      for (const c of checks.filter(c => c.state === 'FAIL')) {
+        console.log(`::error::invite/claim FAILED — ${c.name}${c.detail ? ` (${c.detail})` : ''}`);
+      }
+    }
     console.log('\n  VERDICT: FAILURE — the deployed Worker got the invite/claim contract wrong.');
     console.log('  Do not certify this release generation until this is resolved.');
     return 1;
