@@ -47,6 +47,24 @@ verifier runs inside `Verify Authenticated Worker` after every dispatched Worker
 deploy, and carries the same three-verdict discipline as the other live gates, so an
 unreachable origin can never be recorded as evidence the contract holds.
 
+**B7 is OBSERVED PASS**: run `35048574588` on `da0667c`, whole step success. The
+verdict logic at that commit refuses PASS unless a seeded invite has actually been
+claimed against the live Worker, so it is positive evidence the round trip ran rather
+than an absence of objections.
+
+Building it surfaced two defects in the gate itself, both worth recording because
+both are the shape this project keeps finding. First, the verifier could report PASS
+having exercised only the checks that need no seeded state — a credential-minting
+contract certified without its minting half ever running — and the test meant to
+catch that was passing for an unrelated reason and so could never have caught it.
+Second, and only visible because two production runs failed and I could not tell why:
+the verifier reports three verdicts and was invoked inside a `set -e` step, which
+collapses FAILURE and UNOBSERVED into one red run. A spent per-IP claim budget
+therefore rendered exactly like a broken Worker. A three-verdict instrument wired
+into a two-verdict socket is not a gate, and this repository's whole reason for
+distinguishing UNOBSERVED is that a network condition must never enter a
+certification record as evidence production is broken.
+
 The HOLD is unchanged and is now three things rather than two: the private M6 history
 bundle, the physical-iPhone gate, and — for 24.0.13 specifically — a deploy that has not
 happened and live gates that have not been observed.
