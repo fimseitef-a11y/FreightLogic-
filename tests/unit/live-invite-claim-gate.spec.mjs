@@ -186,6 +186,51 @@ test('[LIC-06] the gate spends at most 6 of the 10/hr per-IP claim budget', asyn
     'the source must record why the 429 is not tested live');
 });
 
+test('[LIC-09] a /claim 429 is UNOBSERVED, never FAILURE', async () => {
+  // THE GATE'S OWN SECOND RUN FOUND THIS. Run 35038600985 passed against
+  // production; the re-run fifteen minutes later failed. /claim is limited to 10
+  // per hour PER IP and this gate spends up to 6, so a second run inside the
+  // hour — from a GitHub runner sharing an egress range — can be answered 429 on
+  // every probe through no fault of the deployed Worker.
+  //
+  // Scored naively that is a FAILURE on every claim assertion: a gate reporting
+  // that the deployed Worker is broken when the only thing that happened is that
+  // it declined to answer. A gate that cries wolf on its own re-run is a gate
+  // people learn to ignore, and the next real FAILURE is the one they ignore.
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') return json(res, 429, { ok: false, error: 'Too many attempts. Try again later.' });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    // Credentials present, so this is NOT the no-KV path — the budget is the
+    // only thing stopping the round trip.
+    FL_CF_API_TOKEN: 'synthetic', FL_CF_ACCOUNT_ID: 'synthetic', FL_KV_NAMESPACE_ID: 'synthetic',
+  }));
+
+  eq(result.code, 2, `a rate-limited run must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(!/VERDICT: FAILURE/.test(result.out), 'a spent budget must never be reported as a broken contract');
+  ok(/429/.test(result.out), 'the verdict must name the 429 so the reader knows why');
+  ok(/per-IP budget|budget \(10\/hr\)/.test(result.out), 'it must explain the per-IP budget');
+  ok(/Re-run after the hour/.test(result.out), 'it must say what to do about it');
+});
+
+test('[LIC-10] a rate-limited run does not seed KV for a claim it cannot make', async () => {
+  // Seeding would write an invite key for a round trip that provably cannot
+  // happen, leaving a key to clean up for no benefit.
+  let kvWrites = 0;
+  const result = await withOrigin((req, res) => {
+    if (req.url.startsWith('/client/v4/')) { kvWrites++; return json(res, 200, { success: true }); }
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') return json(res, 429, { ok: false });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    FL_CF_API_TOKEN: 'synthetic', FL_CF_ACCOUNT_ID: 'synthetic', FL_KV_NAMESPACE_ID: 'synthetic',
+  }));
+
+  ok(/not seeding/.test(result.out), 'the run must say it skipped seeding, and why');
+  eq(result.code, 2, `still UNOBSERVED, got ${result.code}`);
+});
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 test('[LIC-07] the authenticated gate actually runs this verifier', async () => {
