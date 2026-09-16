@@ -260,6 +260,22 @@ test('[LIC-12] a non-FAILURE run emits no error annotations', async () => {
     'an unreachable origin must produce no error annotations');
 });
 
+test('[LIC-13] an origin answering 5xx is UNOBSERVED, never FAILURE', async () => {
+  // THE DEPLOY RACE, IN GATE FORM. This gate runs right after a Worker deploy,
+  // which is precisely when a Cloudflare edge can answer 5xx for a few seconds.
+  // Scored as a contract failure it would declare the deployed Worker broken
+  // every time a release lands — and run 35049015938 failed two minutes before
+  // 35049144080 passed, on a tree whose offline contract spec was 17/17, which
+  // is what this case looks like from outside.
+  const result = await withOrigin((req, res) => json(res, 503, { error: 'no healthy upstream' }),
+    (origin) => runVerifier(origin));
+
+  eq(result.code, 2, `a 5xx origin must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(!/VERDICT: FAILURE/.test(result.out), 'an unavailable origin must never read as a broken contract');
+  eq(result.out.split('\n').filter(l => l.startsWith('::error::')).length, 0,
+    'and it must raise no error annotations');
+});
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 test('[LIC-07] the authenticated gate actually runs this verifier', async () => {
