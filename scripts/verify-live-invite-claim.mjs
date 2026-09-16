@@ -40,6 +40,12 @@
  * in the same run report a rate limit instead of its real answer. The limit is
  * covered offline by WIC-11.
  *
+ * If the Worker DOES answer 429, that is this gate's own budget being spent and
+ * is reported as UNOBSERVED, never FAILURE. GitHub runners share egress ranges,
+ * so a legitimate re-run inside the hour can land on it through no fault of the
+ * Worker — and a gate that cries FAILURE on its own second run is a gate people
+ * learn to ignore.
+ *
  * EXIT CODES — "unreachable" and "failed" must stay different outcomes, because
  * an unobserved check is not a product failure and must never be recorded as
  * one:
@@ -71,6 +77,16 @@ let unreachable = false;
  *  reported as verified when its minting half never ran. A verdict is a claim
  *  about what was observed, so PASS has to require the observation. */
 let roundTripObserved = false;
+/** Set when the deployed Worker answers a /claim probe with 429.
+ *
+ *  That is the per-IP budget being spent, NOT a broken contract — and the two
+ *  must not be conflated, because a gate that cries FAILURE on its own second
+ *  run in an hour is a gate people learn to ignore. The budget is 10/hr per IP
+ *  and GitHub runners share egress ranges, so a legitimate re-run, or an
+ *  unrelated run from the same range, can land on it through no fault of the
+ *  Worker. It reads as UNOBSERVED: the contract was not disproved, it was not
+ *  reachable. */
+let rateLimited = false;
 /** Every KV key this run created, so cleanup can remove all of them. */
 const created = new Set();
 
@@ -121,11 +137,15 @@ async function req(path, opts = {}, timeoutMs = 20000) {
   }
 }
 
-const claim = (code) => req('/claim', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ code }),
-});
+async function claim(code) {
+  const r = await req('/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (r.ok && r.status === 429) rateLimited = true;
+  return r;
+}
 
 // ── Cloudflare KV, used only to seed and to clean up ────────────────────────
 
@@ -205,8 +225,10 @@ async function run() {
 
   // ── 2. Claim input validation. Needs no seeded state. ────────────────────
   const malformed = await claim('nope');
-  if (malformed.ok) {
+  if (malformed.ok && !rateLimited) {
     assert('POST /claim with a malformed code is 400', malformed.status === 400, `HTTP ${malformed.status}`);
+  } else if (rateLimited) {
+    skip('POST /claim with a malformed code is 400', 'HTTP 429 — per-IP claim budget spent');
   } else {
     skip('POST /claim with a malformed code is 400', 'origin unreachable');
   }
@@ -215,13 +237,19 @@ async function run() {
   // in the Worker: a distinct 404 would be an oracle confirming which codes
   // were once real.
   const unknown = await claim(b32(crypto.randomBytes(15)));
-  if (unknown.ok) {
+  if (unknown.ok && !rateLimited) {
     assert('POST /claim with an unknown code is 410, not 404', unknown.status === 410, `HTTP ${unknown.status}`);
+  } else if (rateLimited) {
+    skip('POST /claim with an unknown code is 410, not 404', 'HTTP 429 — per-IP claim budget spent');
   } else {
     skip('POST /claim with an unknown code is 410, not 404', 'origin unreachable');
   }
 
   if (unreachable) return report();
+  if (rateLimited) {
+    skip('seeded claim round trip', 'per-IP claim budget already spent — not seeding');
+    return report();
+  }
 
   // ── 3. The full claim path, against a seeded invite. ─────────────────────
   if (!CF_TOKEN || !CF_ACCOUNT || !KV_NS) {
@@ -342,6 +370,14 @@ function report() {
     console.log('\n  VERDICT: FAILURE — the deployed Worker got the invite/claim contract wrong.');
     console.log('  Do not certify this release generation until this is resolved.');
     return 1;
+  }
+  if (rateLimited) {
+    console.log('\n  VERDICT: UNOBSERVED — the deployed Worker answered /claim with 429.');
+    console.log('  That is the per-IP budget (10/hr) being spent, NOT a broken contract. This');
+    console.log('  gate spends up to 6 per run and GitHub runners share egress ranges, so a');
+    console.log('  second run inside the hour can land here through no fault of the Worker.');
+    console.log('  Re-run after the hour rolls over. Do NOT record this as a failure.');
+    return 2;
   }
   if (unreachable || !roundTripObserved) {
     console.log('\n  VERDICT: UNOBSERVED — the live origin could not be reached, or the seeded');
