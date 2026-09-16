@@ -10,9 +10,12 @@
 > 2026-09-13 when v14 was deployed** — no code change was needed, exactly as the findings
 > predicted.
 >
-> **One residue is still open:** v14 deletes each legacy plaintext `token:` key only when that
-> token is next used or its user is revoked, so every driver token minted under v7 remains
-> exposed at rest until rotated. See the banner above the P-series for detail.
+> **One residue is still open, and it narrowed at Worker v19 (deployed).** This line used to read
+> that v14 deletes each legacy plaintext `token:` key "only when that token is next used or its
+> user is revoked". That was true of v14 and is no longer the whole picture: v19 scrubs
+> proactively. The half that has **not** changed is the one that matters — every driver token
+> minted under v7 was exposed at rest and must still be **rotated**. See the banner above the
+> P-series for what v19 does and does not close.
 >
 > **New, 2026-09-14: W-01 — CLOSED by deploy.** Appended at the very end of this report —
 > backup and delta keys collided inside one millisecond, so the second write silently destroyed
@@ -977,6 +980,22 @@ distinct from `scripts/verify-cloudflare-parity.mjs`'s `EXPECTED` block (which d
 > rest until rotated**, and rotation is an operator action rather than a deploy side effect.
 > Do not read this banner as "the credential exposure is over"; read it as "no new tokens are
 > being written in plaintext, and the old ones are still out there."
+>
+> **Update 2026-09-16 — the storage half narrowed at Worker v19; the rotation half did not.**
+> v19 is deployed (it is the generation production serves). Its `GET /admin/users` handler now
+> scrubs proactively while it is already walking every user record: a record still carrying a
+> raw `token` field is rewritten to `tokenHash`-only, the `token:<plaintext>` index key is
+> deleted, and the `tokh:` index is re-put for an active user. Lazy driver auth rewrites the
+> user record as well as its token index, and revoke never persists a raw token field. So the
+> storage-side residue clears on any admin listing rather than waiting on each token's next use.
+>
+> **Two things that update does not do, stated so this banner is not read as more than it is.**
+> First, deleting a key is not un-exposing a secret: a token that sat in plaintext KV under v7
+> was readable at rest for as long as it sat there, so rotation remains required and remains the
+> operator's. Second, the scrub is driven by the user listing — it reaches records matching
+> `user:u_<id>` and cleans the `token:` key named inside them. An orphaned `token:<plaintext>`
+> key whose user record is absent or unparseable is not reached by it, and this report does not
+> claim otherwise.
 >
 > The finding text below is left exactly as written on 2026-09-12, as evidence of the state
 > that was found. It is not retrofitted to the present tense.
