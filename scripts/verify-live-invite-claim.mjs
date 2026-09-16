@@ -129,6 +129,19 @@ async function req(path, opts = {}, timeoutMs = 20000) {
     clearTimeout(t);
     let json = null;
     try { json = await res.json(); } catch { /* not every response is JSON */ }
+    // A 5xx is the ORIGIN being unavailable, not the contract being wrong, and
+    // the difference is not academic: a Cloudflare deploy in flight can answer
+    // 5xx for a few seconds, which is exactly when this gate fires (it runs
+    // after a Worker deploy). Scored as a contract failure it would report the
+    // deployed Worker broken every time a release lands. Treated as
+    // unreachable, it reports UNOBSERVED and asks to be re-run.
+    //
+    // The Worker does have one real 5xx of its own — a corrupted invite record
+    // — but this gate always seeds valid JSON, so it cannot be that.
+    if (res.status >= 500) {
+      unreachable = true;
+      return { ok: false, status: res.status, json, serverError: true };
+    }
     return { ok: true, status: res.status, json };
   } catch (e) {
     clearTimeout(t);
