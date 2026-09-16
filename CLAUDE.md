@@ -8,7 +8,11 @@
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Production serves app v24.0.14 / DB16 and Worker v19, and that is OBSERVED, not assumed** — live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, VERDICT PASS against an `EXPECTED` block of `24.0.14` / `FreightLogic v24.0.14` / Worker `19`. That gate fails the job on anything but PASS and `UNOBSERVED` is also non-zero, so a success is a positive observation rather than an absence of objections. v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup.
+
+*This paragraph previously read "the v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed. Production still serves app v24.0.12 / DB15 and Worker v17." That was true when the candidate was written and stopped being true once the deploys landed. It is corrected rather than quietly overwritten, because a release record that keeps a superseded deployment claim is the drift class this file already records against itself five times — and this instance was worse than cosmetic: it understated production by two app generations and two Worker generations, so anyone reading it would have re-run a deployment sequence that had already happened, or certified against a candidate production stopped serving days earlier.*
+
+The intermediate generations are part of the record: **Worker v18** deployed (run `35037355686`, every post-deploy check green including `/health` reporting 18) and **app 24.0.13** observed live (parity run `35037460402`) before PR #211 superseded both with v24.0.14 / Worker v19.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -3108,12 +3112,34 @@ re-claim mint a new `userId` fails WIC-07; dropping the revoked-driver guard fai
 WIC-10; moving `/claim` below the driver-token gate fails WIC-15; unbinding the
 re-invite (`userId: null`) fails WIC-16.
 
-**NOT DEPLOYED, and the order matters.** Worker v18 and app 24.0.13 are source-only.
-The Worker must be deployed **first**: the app's Invite and claim flows call
-`POST /admin/invites` and `POST /claim`, neither of which exists on the deployed v17,
-so shipping the app first leaves the owner an Invite button that 404s. After both,
-re-dispatch live parity rather than citing the push-triggered run, which races the
-Cloudflare deploy.
+**DEPLOYED, in the order this section required, and then superseded.** This paragraph
+shipped reading *"NOT DEPLOYED … Worker v18 and app 24.0.13 are source-only"*, which was
+true when written. Worker v18 went first — run `35037355686`, every post-deploy check
+green including `/health` reporting 18, CORS echoing the real app origin and both
+unauthenticated boundaries still denying — because the app's Invite and claim flows call
+`POST /admin/invites` and `POST /claim`, neither of which existed on the deployed v17.
+App 24.0.13 followed and was observed live by parity run `35037460402`.
+
+**The push-race recurred and must not be cited.** Parity run `35032822316` FAILED eleven
+seconds after the #210 merge because Cloudflare had not finished deploying. That is real
+evidence about the origin at that instant and is not evidence about the release; the
+re-dispatch is the observation of record. Fourth recorded occurrence.
+
+Both generations are now **superseded**: PR #211 carried Worker v19 and app v24.0.14, and
+production serves those — see the corrected Project Overview above. Do not deploy v18
+again.
+
+**The invite/claim contract is now verified against the deployed Worker, which it was
+not when this shipped.** `tests/unit/worker-invite-claim.spec.mjs` (17) proves it against
+the real fetch handler with an in-memory KV — a SOURCE gate — and every live gate that
+existed predated `/admin/invites` and `/claim` entirely, so the only flow in this app that
+MINTS a credential reached production unobserved. `scripts/verify-live-invite-claim.mjs`
+closes that inside `Verify Authenticated Worker`: **B7 is OBSERVED PASS against Worker
+v19**, run `35049144080`. See `FIELD_TEST_CHECKLIST.md` B7 for what it does and does not
+claim, and for the two operational warnings — do not dispatch it twice inside one clock
+hour (`/claim` is 10/hr per IP and the gate spends up to 6), and do not dispatch it while
+a Worker deploy is still landing. Both give UNOBSERVED, which is neither a pass nor a
+product failure.
 
 **Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN.
 `FIELD_TEST_CHECKLIST.md` gains no new row here, but the device gate for this release
