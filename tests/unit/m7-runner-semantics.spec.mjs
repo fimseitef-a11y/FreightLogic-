@@ -92,6 +92,49 @@ test('[M7-04] the four gate classes stay visibly separate', () => {
   ok(/PHYSICAL DEVICE GATES/.test(out), 'physical iPhone checks are their own class');
 });
 
+/* ── the physical-device list told the operator to wait for a deploy that had landed ──
+
+   Until 2026-09-16 the A12 row read "REQUIRES Worker v18 AND app 24.0.13 deployed,
+   Worker first". That was true when written and stopped being true the moment those
+   generations deployed and were superseded by 24.0.14 / Worker v19 — so a runner whose
+   whole job is telling an operator what is left was naming a prerequisite as OUTSTANDING
+   that had already been satisfied, and naming the wrong generations to test against.
+
+   The same shape has now been recorded at 24.0.3 (midwest-stack-config appTarget), 24.0.10
+   (the B5 rollback gate's pinned SHA), 24.0.11 and 24.0.12. The repair is the one the B5
+   gate already uses: derive, never pin. These two assertions are what keep it derived. */
+
+test('[M7-09] the device gates name the generations SOURCE declares, not a pinned literal', () => {
+  const appV    = (readFileSync(path.join(ROOT, 'app.js'), 'utf8')
+                    .match(/APP_VERSION = '([0-9.]+)'/) || [])[1];
+  const workerV = (readFileSync(path.join(ROOT, 'cloud-backup-worker.js'), 'utf8')
+                    .match(/version:\s*'(\d+)'/) || [])[1];
+  ok(!!appV && !!workerV, 'both generations must be readable from source');
+
+  const { out } = runCertify();
+  const a12 = (out.match(/^\s+→ manual — prerequisite SATISFIED.*$/m) || [])[0] || '';
+  ok(!!a12, 'the A12 row must still state whether its prerequisite is satisfied');
+  ok(a12.includes(`app ${appV}`),
+     `A12 must name the app generation source declares (${appV}), not a stale one`);
+  ok(a12.includes(`Worker v${workerV}`),
+     `A12 must name the Worker generation source declares (v${workerV}), not a stale one`);
+});
+
+test('[M7-10] no physical-device gate pins a generation literal', () => {
+  const src = readFileSync(path.join(ROOT, 'scripts/m7-certify.mjs'), 'utf8');
+  const from = src.indexOf('PHYSICAL DEVICE GATES');
+  ok(from > -1, 'the physical-device gate list must still exist');
+  const block = src.slice(from, src.indexOf('/* ---- the verdict', from));
+
+  // M7-09 alone would pass today if someone re-pinned the CURRENT numbers as text —
+  // and would then go stale at the very next release, which is the defect, not the fix.
+  for (const [what, re_] of [['an app generation', /\b2\d\.\d+\.\d+\b/],
+                             ['a Worker generation', /Worker v\d+\b/]]){
+    const hit = block.match(re_);
+    ok(!hit, `the device-gate list must not hardcode ${what} (found "${hit && hit[0]}") — read it from source instead`);
+  }
+});
+
 test('[M7-05] a clean preflight on a held release still exits 0, and the verdict carries the meaning', () => {
   const { code, out } = runCertify();
   // Exit status reports GATE FAILURE. Conflating "this release is not

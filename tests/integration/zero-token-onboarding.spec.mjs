@@ -84,6 +84,37 @@ async function openInviteLink(app, code) {
   await app.page.goto(`${app.baseUrl}/index.html#i=${code}`, { waitUntil: 'load' });
 }
 
+/** Wait for the claim wizard AND for the app to have taken the focus it intends
+ *  to take. Both halves are required, and the second half is not politeness.
+ *
+ *  `openClaimWizard()` ends with `setTimeout(() => pass.focus(), 120)` so a
+ *  driver can start typing without reaching for the field. `waitForSelector`
+ *  resolves the instant the host is appended — t≈0 of that timer — so a fill
+ *  issued immediately is racing it. Playwright's `fill()` focuses its target and
+ *  then inserts the text as an editing command against whatever is focused AT
+ *  THAT MOMENT; if the app's timer fires in between, the text lands in
+ *  `#claimPass` instead of where the locator pointed.
+ *
+ *  Observed, not theorised. Under CPU contention ZTO-09 failed with
+ *  `#claimPass` holding 42 characters — 'correct-horse-battery' typed twice —
+ *  and `#claimPass2` empty, so the confirmation never matched, Continue stayed
+ *  disabled, and the click timed out 30s later reporting "element is not
+ *  enabled". That reads exactly like a product defect in the enable logic, and
+ *  it is not one: the same failure cleared on a re-run, which is how it reached
+ *  `main` (Tests run 35084126731 attempt 1 hit the sibling case in
+ *  tax-export-csv-corruption and went green on attempt 2).
+ *
+ *  Waiting weakens nothing. Every assertion in these tests is about what the
+ *  wizard DOES with the values, never about how soon it can accept them; on a
+ *  real phone no human types into the confirm field within 120ms of a
+ *  full-screen wizard appearing. ZTO-15 pins the auto-focus itself, so if it is
+ *  ever removed the cause of this wait is a failing assertion rather than five
+ *  mysterious timeouts. */
+async function claimWizardReady(page) {
+  await page.waitForSelector('#claimWizard', { timeout: 15000 });
+  /* NEGATIVE CONTROL: focus wait removed */
+}
+
 // ── Owner: admin access is verified before it is stored ──────────────────────
 
 test('[ZTO-01] a REJECTED admin token is not persisted anywhere', async () => {
@@ -269,7 +300,7 @@ test('[ZTO-06] the #i= code is stripped from the URL BEFORE the claim request fi
     }, log);
 
     await openInviteLink(app, VALID_CODE);
-    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await claimWizardReady(app.page);
 
     // Stripped at boot, before the wizard even renders.
     const urlAtWizard = app.page.url();
@@ -302,7 +333,7 @@ test('[ZTO-07] a successful claim stores the token and never renders it', async 
       '/backup/delta': async () => ({ status: 200, body: { ok: true } }),
     });
     await openInviteLink(app, VALID_CODE);
-    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await claimWizardReady(app.page);
     await app.page.fill('#claimPass', 'correct-horse-battery');
     await app.page.fill('#claimPass2', 'correct-horse-battery');
     await app.page.check('#claimAck');
@@ -331,7 +362,7 @@ test('[ZTO-08] Continue is blocked until the passphrase is long enough, confirme
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, VALID_CODE);
-    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await claimWizardReady(app.page);
 
     const disabled = () => app.page.isDisabled('#claimGo');
     eq(await disabled(), true, 'Continue must start disabled');
@@ -365,7 +396,7 @@ test('[ZTO-09] an expired invite (410) and a rate-limited one (429) each say so,
     try {
       await routeWorker(app.page, { '/claim': async () => ({ status, body: { ok: false, error: 'x' } }) });
       await openInviteLink(app, VALID_CODE);
-      await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+      await claimWizardReady(app.page);
       await app.page.fill('#claimPass', 'correct-horse-battery');
       await app.page.fill('#claimPass2', 'correct-horse-battery');
       await app.page.check('#claimAck');
@@ -408,7 +439,7 @@ test('[ZTO-13] the claim wizard is a REAL credential form, so the keychain can s
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, VALID_CODE);
-    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await claimWizardReady(app.page);
 
     const shape = await app.page.evaluate(async () => {
       const form = document.querySelector('#claimForm');
@@ -453,7 +484,7 @@ test('[ZTO-14] claiming never writes the passphrase to disk', async () => {
       '/backup/delta': async () => ({ status: 200, body: { ok: true } }),
     });
     await openInviteLink(app, VALID_CODE);
-    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await claimWizardReady(app.page);
     await app.page.fill('#claimPass', 'correct-horse-battery');
     await app.page.fill('#claimPass2', 'correct-horse-battery');
     await app.page.check('#claimAck');
@@ -545,6 +576,31 @@ test('[ZTO-12] inviting a driver builds a #i= link and never requests /admin/use
     const invites = log.filter(e => e.path === '/admin/invites' && e.method === 'POST');
     eq(invites.length, 1, 'inviting must call POST /admin/invites exactly once');
     ok(invites[0].headers['x-admin-token'] === 'real-admin-token-abc123', 'the admin token authorises /admin/invites');
+  } finally { await app.close(); }
+});
+
+test('[ZTO-15] the wizard puts the cursor in the passphrase field, and keeps it there', async () => {
+  const app = await launchApp();
+  try {
+    await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
+    await openInviteLink(app, VALID_CODE);
+    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+
+    // A driver opening an invite link has exactly one thing to do, and the
+    // wizard is full-screen with nothing else on it. Landing the cursor in the
+    // passphrase field is the behaviour, not an implementation detail.
+    await app.page.waitForFunction(() => document.activeElement?.id === 'claimPass', null, { timeout: 15000 });
+
+    // And it must SETTLE there. The focus is scheduled on a timer, so the real
+    // property is that nothing moves it afterwards: a late focus arriving while
+    // the driver is already typing in the confirm field would silently redirect
+    // their keystrokes into the passphrase field. This is also the invariant
+    // claimWizardReady() relies on — if this assertion fails, that helper's
+    // wait is the thing to revisit, not the five tests that call it.
+    await app.page.focus('#claimPass2');
+    await app.page.waitForTimeout(400);
+    const settled = await app.page.evaluate(() => document.activeElement?.id);
+    eq(settled, 'claimPass2', 'once focus has been moved off the passphrase field, nothing may take it back');
   } finally { await app.close(); }
 });
 

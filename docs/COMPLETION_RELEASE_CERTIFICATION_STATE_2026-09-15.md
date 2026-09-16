@@ -36,6 +36,41 @@ Until that happens the position is:
   partition. If it is separate, the re-claim path is the recovery and must be walked end
   to end, confirming the owner still sees **one** driver with their backup count intact.
 
+**One gate was ADDED after 24.0.13 deployed, because the deploy exposed a hole
+nobody had listed.** `/admin/invites` and `/claim` went live with no production
+verification of any kind: the offline spec proves them against the real fetch handler
+with an in-memory KV, and every existing live gate predates the endpoints. That left
+the only flow in the app that mints a credential unobserved in production, which is
+the worst place in this system to have an unobserved contract. `B7` in
+`FIELD_TEST_CHECKLIST.md` and `scripts/verify-live-invite-claim.mjs` close it; the
+verifier runs inside `Verify Authenticated Worker` after every dispatched Worker
+deploy, and carries the same three-verdict discipline as the other live gates, so an
+unreachable origin can never be recorded as evidence the contract holds.
+
+**B7 is OBSERVED PASS against Worker v19**: run `35049144080` on `72ab81e`, whole step success with zero error annotations (an earlier `35048574588` observed the same contract on v18). The
+verdict logic at that commit refuses PASS unless a seeded invite has actually been
+claimed against the live Worker, so it is positive evidence the round trip ran rather
+than an absence of objections.
+
+Building it surfaced four defects IN THE GATE ITSELF, none in the Worker, and they
+are worth recording because they are all one shape: the gate failing to distinguish
+*could not look* from *looked and it is broken*. A 429 from its own spent budget, a
+5xx from an edge mid-deploy, a `set -e` step collapsing two verdicts into one red
+run, and a FAILURE whose detail existed only in a log this environment cannot fetch.
+The last one is why run `35049015938` — which failed two minutes before the passing
+run, on a tree whose offline contract spec was 17/17 — **was never positively
+diagnosed, and is recorded as undiagnosed rather than explained away.** First, the verifier could report PASS
+having exercised only the checks that need no seeded state — a credential-minting
+contract certified without its minting half ever running — and the test meant to
+catch that was passing for an unrelated reason and so could never have caught it.
+Second, and only visible because two production runs failed and I could not tell why:
+the verifier reports three verdicts and was invoked inside a `set -e` step, which
+collapses FAILURE and UNOBSERVED into one red run. A spent per-IP claim budget
+therefore rendered exactly like a broken Worker. A three-verdict instrument wired
+into a two-verdict socket is not a gate, and this repository's whole reason for
+distinguishing UNOBSERVED is that a network condition must never enter a
+certification record as evidence production is broken.
+
 The HOLD is unchanged and is now three things rather than two: the private M6 history
 bundle, the physical-iPhone gate, and — for 24.0.13 specifically — a deploy that has not
 happened and live gates that have not been observed.

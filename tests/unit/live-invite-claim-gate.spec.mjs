@@ -1,0 +1,330 @@
+// The live invite/claim gate (scripts/verify-live-invite-claim.mjs).
+//
+// WHY THIS SPEC EXISTS. v24.0.13 shipped zero-token onboarding, and
+// tests/unit/worker-invite-claim.spec.mjs proves the contract against the real
+// fetch handler with an in-memory KV. That is a strong SOURCE gate and says
+// nothing about the deployed Worker. The existing authenticated production gate
+// predates those endpoints, so at the moment onboarding went live the only flow
+// in the app that MINTS a credential had zero production verification.
+//
+// This spec guards the gate that closes it. Most assertions SPAWN THE REAL
+// VERIFIER and check its real exit code rather than grepping the source for the
+// strings that would produce one — the same method live-parity-runner.spec.mjs
+// uses, and for the same reason: a verdict you have never seen produced is a
+// verdict you cannot rely on.
+//
+// The three-outcome contract is the substance. An unreachable origin must NOT
+// read as a broken product, and a broken product must NOT hide behind an
+// unreachable origin. Those are opposite errors and both are dangerous:
+// the first writes a network outage into a certification record as evidence the
+// Worker is wrong, and the second lets a run that observed nothing be cited as
+// though it had looked.
+import { createSuite, ok, eq } from '../lib/harness.mjs';
+import { spawn } from 'node:child_process';
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const { test, run } = createSuite('unit/live-invite-claim-gate.spec.mjs');
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const SCRIPT = path.join(ROOT, 'scripts', 'verify-live-invite-claim.mjs');
+const WORKFLOW = path.join(ROOT, '.github', 'workflows', 'verify-authenticated-worker.yml');
+
+/** Run the real verifier and resolve its real exit code.
+ *
+ *  Deliberately async: the synchronous form blocks this process's event loop,
+ *  so an in-process HTTP server could never accept the connection and the
+ *  verifier would time out against a server that is, from its own side,
+ *  perfectly up — reporting UNOBSERVED and making a harness deadlock look like
+ *  a product defect. That exact trap is recorded in CLAUDE.md for the
+ *  live-parity runner; it applies here identically. */
+function runVerifier(originArg, env = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [SCRIPT, originArg], {
+      cwd: ROOT,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { out += d; });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+}
+
+/** A local origin whose responses are supplied per path. */
+async function withOrigin(handler, fn) {
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', d => { body += d; });
+    req.on('end', () => handler(req, res, body));
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  try { return await fn(`http://127.0.0.1:${port}`); }
+  finally { await new Promise(r => srv.close(r)); }
+}
+
+const json = (res, status, obj) => {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj ?? {}));
+};
+
+// ── The three verdicts, each produced for real ───────────────────────────────
+
+test('[LIC-01] an unreachable origin is UNOBSERVED (exit 2), never a product failure', async () => {
+  // .invalid is reserved by RFC 2606 and never resolves, so this is
+  // deterministic offline rather than dependent on the sandbox's network.
+  const { code, out } = await runVerifier('https://unreachable.invalid');
+  eq(code, 2, `an unreachable origin must exit 2, got ${code}`);
+  ok(/UNOBSERVED/.test(out), 'the verdict must say UNOBSERVED');
+  ok(!/VERDICT: FAILURE/.test(out), 'an unreachable origin must NOT be reported as a failure');
+});
+
+test('[LIC-02] an origin that answers WRONGLY is a FAILURE (exit 1)', async () => {
+  const result = await withOrigin((req, res) => {
+    // Up, and wrong on every axis: the invite endpoint hands out invites with
+    // no auth, and an unknown claim code 404s instead of 410.
+    if (req.url === '/admin/invites') return json(res, 200, { ok: true, code: 'LEAKED' });
+    if (req.url === '/claim') return json(res, 404, { ok: false });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin));
+
+  eq(result.code, 1, `a wrong origin must exit 1, got ${result.code}`);
+  ok(/VERDICT: FAILURE/.test(result.out), 'the verdict must say FAILURE');
+  ok(/without an admin token is 401/.test(result.out), 'it must name the invite auth boundary it checked');
+});
+
+test('[LIC-03] the invite auth boundary is checked without any secret', async () => {
+  // This half must work with no admin token and no KV credential, because the
+  // gate does not have ADMIN_TOKEN and must never be given it.
+  const seen = [];
+  const result = await withOrigin((req, res) => {
+    seen.push({ url: req.url, admin: req.headers['x-admin-token'] || null });
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false, error: 'Unauthorized' });
+    if (req.url === '/claim') {
+      return json(res, 400, { ok: false });
+    }
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin));
+
+  const invites = seen.filter(s => s.url === '/admin/invites');
+  eq(invites.length, 2, `both invite auth cases must be attempted, saw ${invites.length}`);
+  eq(invites[0].admin, null, 'the first case must send NO admin token');
+  ok(invites[1].admin && invites[1].admin.length > 0, 'the second case must send a wrong admin token');
+  // Every real admin token the app uses is the operator's secret; the gate must
+  // never transmit anything that could be one.
+  ok(!/^flk_/.test(invites[1].admin), 'the wrong-token probe must not look like a real credential');
+  ok(/401/.test(result.out), 'the run must report on the 401 boundary');
+});
+
+test('[LIC-04] a correct origin with NO KV credential is UNOBSERVED, never PASS', async () => {
+  // THIS TEST PASSED FOR THE WRONG REASON when it was first written, which is the
+  // defect it now guards. Its fake origin answered 400 to BOTH claim probes, so
+  // the "unknown code is 410" assertion failed and the run was a FAILURE — it
+  // never reached the question being asked. The origin below answers every
+  // no-state check CORRECTLY, so nothing fails and the only thing standing
+  // between this run and a PASS is the missing round trip.
+  //
+  // Without that guard the gate reports "invite/claim contract verified" having
+  // never exercised the half that MINTS a credential.
+  let claims = 0;
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') {
+      claims++;
+      // Probe 1 is the malformed code (400), probe 2 the unknown code (410).
+      return json(res, claims === 1 ? 400 : 410, { ok: false });
+    }
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, { FL_CF_API_TOKEN: '', FL_CF_ACCOUNT_ID: '', FL_KV_NAMESPACE_ID: '' }));
+
+  ok(!/VERDICT: FAILURE/.test(result.out),
+    'precondition: every no-state check must PASS, or this test is not asking the question');
+  ok(!/VERDICT: PASS/.test(result.out),
+    'a run that never claimed a seeded invite must NEVER report PASS');
+  eq(result.code, 2, `a half-observed contract must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(/no KV credential supplied/.test(result.out), 'the run must say why the round trip did not happen');
+  ok(/MINTS a credential/.test(result.out), 'it must say which half went unobserved');
+});
+
+test('[LIC-05] a FAILURE outranks unreachability', async () => {
+  // An origin that answers the first probe wrongly and then dies. Evidence of a
+  // broken contract is evidence regardless of whether later checks could run;
+  // reporting UNOBSERVED here would hide a real defect behind a network excuse.
+  let n = 0;
+  const result = await withOrigin((req, res) => {
+    n++;
+    if (n === 1) return json(res, 200, { ok: true }); // /admin/invites with no auth -> should be 401
+    res.socket.destroy();
+  }, (origin) => runVerifier(origin));
+
+  eq(result.code, 1, `a failure plus unreachability must still exit 1, got ${result.code}`);
+  ok(/VERDICT: FAILURE/.test(result.out), 'FAILURE must win over UNOBSERVED');
+});
+
+// ── The claim budget, which is a real production constraint ─────────────────
+
+test('[LIC-06] the gate spends at most 6 of the 10/hr per-IP claim budget', async () => {
+  // The deployed Worker rate-limits /claim to 10 per hour per IP, checked
+  // BEFORE the code is parsed. A gate that spent the budget would make every
+  // later check in the same run report a rate limit instead of its real answer,
+  // and would lock out a real driver claiming from the same egress.
+  let claims = 0;
+  await withOrigin((req, res) => {
+    if (req.url === '/claim') { claims++; return json(res, 400, { ok: false }); }
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin));
+
+  ok(claims <= 6, `the gate must spend at most 6 claim requests, spent ${claims}`);
+
+  const src = fs.readFileSync(SCRIPT, 'utf8');
+  ok(/does NOT test the 429|deliberately does NOT test the 429/i.test(src),
+    'the source must record why the 429 is not tested live');
+});
+
+test('[LIC-09] a /claim 429 is UNOBSERVED, never FAILURE', async () => {
+  // THE GATE'S OWN SECOND RUN FOUND THIS. Run 35038600985 passed against
+  // production; the re-run fifteen minutes later failed. /claim is limited to 10
+  // per hour PER IP and this gate spends up to 6, so a second run inside the
+  // hour — from a GitHub runner sharing an egress range — can be answered 429 on
+  // every probe through no fault of the deployed Worker.
+  //
+  // Scored naively that is a FAILURE on every claim assertion: a gate reporting
+  // that the deployed Worker is broken when the only thing that happened is that
+  // it declined to answer. A gate that cries wolf on its own re-run is a gate
+  // people learn to ignore, and the next real FAILURE is the one they ignore.
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') return json(res, 429, { ok: false, error: 'Too many attempts. Try again later.' });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    // Credentials present, so this is NOT the no-KV path — the budget is the
+    // only thing stopping the round trip.
+    FL_CF_API_TOKEN: 'synthetic', FL_CF_ACCOUNT_ID: 'synthetic', FL_KV_NAMESPACE_ID: 'synthetic',
+  }));
+
+  eq(result.code, 2, `a rate-limited run must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(!/VERDICT: FAILURE/.test(result.out), 'a spent budget must never be reported as a broken contract');
+  ok(/429/.test(result.out), 'the verdict must name the 429 so the reader knows why');
+  ok(/per-IP budget|budget \(10\/hr\)/.test(result.out), 'it must explain the per-IP budget');
+  ok(/Re-run after the hour/.test(result.out), 'it must say what to do about it');
+});
+
+test('[LIC-10] a rate-limited run does not seed KV for a claim it cannot make', async () => {
+  // Seeding would write an invite key for a round trip that provably cannot
+  // happen, leaving a key to clean up for no benefit.
+  let kvWrites = 0;
+  const result = await withOrigin((req, res) => {
+    if (req.url.startsWith('/client/v4/')) { kvWrites++; return json(res, 200, { success: true }); }
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') return json(res, 429, { ok: false });
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    FL_CF_API_TOKEN: 'synthetic', FL_CF_ACCOUNT_ID: 'synthetic', FL_KV_NAMESPACE_ID: 'synthetic',
+  }));
+
+  ok(/not seeding/.test(result.out), 'the run must say it skipped seeding, and why');
+  eq(result.code, 2, `still UNOBSERVED, got ${result.code}`);
+});
+
+test('[LIC-11] a FAILURE names the failing checks as CI annotations', async () => {
+  // A FAILURE verdict exists to say WHICH assertion broke. In this project's
+  // execution environment the raw log blob host is unreachable and the step
+  // summary is not exposed by the API, so detail that lives only in the log
+  // reaches nobody — a real production FAILURE was observed and could not be
+  // diagnosed for exactly this reason. Annotations ARE retrievable.
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 200, { ok: true });  // should be 401
+    if (req.url === '/claim') return json(res, 404, { ok: false });         // should be 400/410
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, { GITHUB_ACTIONS: '1' }));
+
+  eq(result.code, 1, `expected FAILURE, got ${result.code}`);
+  const annotations = result.out.split('\n').filter(l => l.startsWith('::error::'));
+  ok(annotations.length >= 2, `each failing check must be annotated, saw ${annotations.length}`);
+  ok(annotations.every(a => /invite\/claim FAILED/.test(a)), 'each annotation must be identifiable as this gate\'s');
+  ok(annotations.some(a => /admin token/.test(a)), 'the annotation must name the actual check that failed');
+});
+
+test('[LIC-12] a non-FAILURE run emits no error annotations', async () => {
+  // An UNOBSERVED run must not pollute the checks UI with errors — that is the
+  // conflation this whole three-verdict design exists to prevent, and it would
+  // reintroduce it at the annotation layer.
+  const result = await runVerifier('https://unreachable.invalid', { GITHUB_ACTIONS: '1' });
+  eq(result.code, 2, `expected UNOBSERVED, got ${result.code}`);
+  eq(result.out.split('\n').filter(l => l.startsWith('::error::')).length, 0,
+    'an unreachable origin must produce no error annotations');
+});
+
+test('[LIC-13] an origin answering 5xx is UNOBSERVED, never FAILURE', async () => {
+  // THE DEPLOY RACE, IN GATE FORM. This gate runs right after a Worker deploy,
+  // which is precisely when a Cloudflare edge can answer 5xx for a few seconds.
+  // Scored as a contract failure it would declare the deployed Worker broken
+  // every time a release lands — and run 35049015938 failed two minutes before
+  // 35049144080 passed, on a tree whose offline contract spec was 17/17, which
+  // is what this case looks like from outside.
+  const result = await withOrigin((req, res) => json(res, 503, { error: 'no healthy upstream' }),
+    (origin) => runVerifier(origin));
+
+  eq(result.code, 2, `a 5xx origin must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(!/VERDICT: FAILURE/.test(result.out), 'an unavailable origin must never read as a broken contract');
+  eq(result.out.split('\n').filter(l => l.startsWith('::error::')).length, 0,
+    'and it must raise no error annotations');
+});
+
+// ── Wiring ──────────────────────────────────────────────────────────────────
+
+test('[LIC-07] the authenticated gate actually runs this verifier', async () => {
+  const wf = fs.readFileSync(WORKFLOW, 'utf8');
+  const exec = wf.split('\n').filter(l => !l.trim().startsWith('#')).join('\n');
+
+  ok(/node scripts\/verify-live-invite-claim\.mjs/.test(exec),
+    'the workflow must invoke the verifier — a script nothing calls is not a gate');
+  ok(/FL_CF_API_TOKEN=/.test(exec) && /FL_KV_NAMESPACE_ID=/.test(exec),
+    'it must pass the KV credentials, or the claim round trip can never run');
+
+  // THE WIRING MUST NOT COLLAPSE THE VERDICTS. `set -e` fails a step on any
+  // non-zero exit, so a naive invocation makes UNOBSERVED (2) and FAILURE (1)
+  // indistinguishable from outside — and the run conclusion is all most readers
+  // ever see. That throws away the entire reason the verifier has three
+  // outcomes: an unreachable origin or a spent claim budget would be recorded
+  // as evidence the deployed Worker is broken. Two runs of this gate failed
+  // exactly that way before this was fixed.
+  ok(/IC_CODE=\$\{PIPESTATUS\[0\]\}/.test(exec),
+    'the step must capture the verifier exit code rather than letting set -e swallow it');
+  ok(/IC_VERDICT=UNOBSERVED/.test(exec) && /IC_VERDICT=FAILURE/.test(exec),
+    'it must map the exit code to a NAMED verdict, distinguishing 2 from 1');
+  ok(/GITHUB_STEP_SUMMARY/.test(exec),
+    'the verifier output must reach the job summary — raw log blobs are not always fetchable');
+  ok(/exit "\$IC_CODE"/.test(exec),
+    'it must still fail closed on anything but PASS — an unobserved gate is not a passed gate');
+  // The gate must stay read-only toward the repository; it changes production
+  // KV only, and only values it created.
+  ok(/permissions:\s*\n\s*contents:\s*read/.test(wf),
+    'the workflow must remain contents: read');
+  ok(!/git\s+push|create-pull-request|gh\s+pr\s+(create|merge)/.test(exec),
+    'the gate must never write to the repository');
+});
+
+test('[LIC-08] the verifier cleans up every key it creates, on every path', async () => {
+  const src = fs.readFileSync(SCRIPT, 'utf8');
+  // A claim makes the Worker write user:<id> and tokh:<hash> with no expiry of
+  // their own. Without cleanup this gate would accumulate synthetic driver
+  // accounts in production KV on every deploy, forever.
+  ok(/finally\s*\{[\s\S]*cleanup\(\)/.test(src),
+    'cleanup must run in a finally block so a thrown error still cleans up');
+  ok(/created\.add\('tokh:'/.test(src), 'every minted token hash must be registered for cleanup');
+  ok(/created\.add\('user:'/.test(src), 'every minted user record must be registered for cleanup');
+  ok(/expiration_ttl=/.test(src), 'the seeded invite must also carry a TTL as a backstop');
+});
+
+export async function runSpec() { return run(); }
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const r = await runSpec();
+  process.exit(r.fail > 0 ? 1 : 0);
+}
