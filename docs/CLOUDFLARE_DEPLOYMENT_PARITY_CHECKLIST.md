@@ -2,13 +2,24 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-Current runtime candidate:
+**v24.0.13 is SOURCE-ONLY. Nothing below has been observed at 24.0.13, and this
+document does not claim it has.** The lines under "Current runtime candidate" describe
+what production is still serving. Two deploys are outstanding and **the order is not
+interchangeable**: the backup/API Worker must go to **v18 first**, because the app's
+Invite and claim flows call `POST /admin/invites` and `POST /claim`, and neither
+endpoint exists on the deployed v17 — shipping the app first leaves the owner an
+Invite button that 404s and a driver whose link cannot be redeemed. After both,
+re-dispatch live parity; a push-triggered run races the Cloudflare deploy and its
+FAILURE is evidence about the origin at that instant, not about the release.
 
-- app / PWA / service worker: **24.0.12**, **deployed and observed live** 2026-09-15 (repository source and production origin agree);
-- IndexedDB schema: **15**;
-- backup/API Worker source: **17**, deployed and live;
+Current runtime candidate (what production serves TODAY):
+
+- app / PWA / service worker: **24.0.12**, **deployed and observed live** 2026-09-15 (repository source at that generation and the production origin agree);
+- repository source generation: **24.0.13** — AHEAD of production, not yet deployed;
+- IndexedDB schema: **15** (unchanged by 24.0.13);
+- backup/API Worker source: **18**, **NOT deployed**; production serves **17**;
 - exact runtime Git candidate: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** (merged PR #202);
-- current repository `main`: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** — the same commit as the runtime candidate, because 24.0.12 is the tip;
+- current repository `main`: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** at the time this line was written; the 24.0.13 work sits on `claude/zero-token-driver-onboarding-dkcf4f` and is not merged;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - GitHub-attached Cloudflare build check for the exact runtime Git SHA: **SUCCESS**, check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;

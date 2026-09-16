@@ -1378,3 +1378,211 @@ label { color: var(--text-secondary); font-size: 12px; font-weight: 620; }
 @media (max-width: 480px) {
   input, select, textarea { font-size: 16px !important; }
 }
+
+/* NEXT PRESENTATION — operator-requested visual update.
+   Keep this seam independent of app.js and the injected reference stylesheet.
+   The html/body scope deliberately wins over that later presentation overlay;
+   no renderer, route, input identity, or economic value is replaced here.
+   Integration requires a NEW coordinated release generation before deployment. */
+html:root {
+  --bg: #0a0d10;
+  --surface-0: #10151a;
+  --surface-1: #161c22;
+  --surface-2: #1e262e;
+  --surface-3: #2a3540;
+  --border: #33404b;
+  --border-subtle: #29343e;
+  --border-focus: #566675;
+  --text: #f4f7fa;
+  --text-secondary: #bac5ce;
+  --text-tertiary: #a0afbc;
+  --accent: #ffbc52;
+  --accent-dark: #e6a438;
+  --accent-text: #ffca76;
+  --accent-muted: rgba(255,188,82,.09);
+  --accent-border: rgba(255,188,82,.38);
+  --good: #62dba4;
+  --bad: #ff8d88;
+  --warn: #ffca76;
+  --r: 20px;
+  --r-sm: 14px;
+  --shadow: 0 10px 30px rgba(0,0,0,.16);
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  --bg: #f2f4f6;
+  --surface-0: #eaf0f4;
+  --surface-1: #fff;
+  --surface-2: #f1f4f7;
+  --surface-3: #dee6ed;
+  --border: #c5d0da;
+  --border-subtle: #dce3e9;
+  --border-focus: #8497a7;
+  --text: #16232e;
+  --text-secondary: #425769;
+  --text-tertiary: #526779;
+  --accent: #ffbc52;
+  --accent-dark: #e6a438;
+  --accent-text: #805000;
+  --accent-muted: rgba(173,106,0,.07);
+  --accent-border: rgba(143,91,0,.32);
+  --good: #146c4b;
+  --bad: #b32e33;
+  --warn: #805000;
+  --shadow: 0 8px 28px rgba(30,48,63,.05);
+  color-scheme: light;
+}
+html body { line-height: 1.5; }
+body .app { max-width: 620px; padding: 12px 16px calc(104px + env(safe-area-inset-bottom,0px)); }
+body header#mainHeader {
+  padding: calc(10px + env(safe-area-inset-top,0px)) 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+body header#mainHeader .hdr-row { max-width: 588px; margin-inline: auto; }
+body #mainHeader .brand { gap: 9px; }
+body #mainHeader .logo { display: block; width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; }
+body #mainHeader .title strong { color: var(--text); font-size: 17px; font-weight: 800; }
+body #mainHeader .title span { color: var(--text-tertiary); font-size: 10px; }
+body #mainHeader .theme-btn { border-radius: 13px; background: var(--surface-1); }
+body .card { padding: 18px; border-radius: var(--r); box-shadow: var(--shadow); }
+body .card h3 { color: var(--text-secondary); font-size: 12px; letter-spacing: .05em; }
+body .spacer { height: 14px; }
+body .grid2 { gap: 12px; }
+body #homeKPICard {
+  position: relative;
+  padding: 20px;
+  background: radial-gradient(ellipse at 100% 0, var(--accent-muted), transparent 65%), var(--surface-1);
+  border-color: var(--accent-border);
+}
+body #homeKPICard h3 { font-size: 12px; color: var(--text-secondary); }
+body #homeKPICard .kpi-hero { padding: 12px 0 14px; }
+body #homeKPICard .kpi-hero-value { font-size: clamp(34px,10vw,48px); letter-spacing: -.045em; }
+body #homeKPICard .kpi-hero-label { font-size: 11px; letter-spacing: .045em; }
+body #homeKPICard .kpi-progress-bar-wrap { height: 6px; margin-block: 12px; }
+body #homeKPICard .fl-kpi-3col { gap: 8px; }
+body #homeKPICard .kpi-cell { padding: 12px 8px; border-radius: 13px; }
+body #homeKPICard .kpi-cell-value { font-size: 16px; overflow-wrap: anywhere; }
+body #homeKPICard .kpi-cell-label { font-size: 10px; line-height: 1.4; }
+body .fl-next-move { padding: 14px; margin-top: 14px; border-radius: 14px; }
+body .fl-nm-label { font-size: 10px; letter-spacing: .05em; }
+body .fl-nm-text { font-size: 13px; line-height: 1.5; }
+body .fl-quick-grid { gap: 9px; margin-top: 14px; }
+body .fl-quick-btn { min-height: 64px; padding: 12px 8px; border-radius: 14px; font-size: 12px; }
+body .fl-quick-btn .fl-qb-icon { font-size: 20px; }
+body .fl-quick-btn.primary { background: var(--accent); color: #231807; }
+body .list { gap: 10px; }
+body .item { padding: 15px; border-radius: 16px; box-shadow: var(--shadow); }
+body .item .k { font-size: 10px; color: var(--text-tertiary); }
+body .item .v { font-size: 16px; }
+body .item .sub { font-size: 12px; line-height: 1.5; }
+body .tag { font-size: 11px; padding: 4px 8px; }
+body .item.fl-trip-full { gap: 10px; align-items: flex-start; }
+body .fl-trip-full .fl-tf-origin { font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+body .fl-trip-full .fl-tf-sub { font-size: 12px; line-height: 1.5; }
+body .fl-trip-full .fl-tf-pay { font-size: 18px; letter-spacing: -.02em; }
+body .fl-trip-full .fl-tf-right { max-width: 45%; overflow-wrap: anywhere; }
+body .fl-trip-full .fl-tf-rpm { font-size: 12px; }
+body .fl-trip-full .fl-tf-tags { gap: 5px; margin-top: 8px; }
+body .btn { min-height: 44px; padding: 11px 14px; border-radius: 13px; font-size: 13px; line-height: 1.4; }
+body .btn.primary, body .btn.primary:hover { background: var(--accent); border-color: var(--accent); color: #231807; }
+body .btn:disabled, body button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+body .chip { min-height: 44px; font-size: 12px; padding: 9px 13px; }
+body label { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+body :is(input,select,textarea) { border-radius: 13px; }
+body :is(input,textarea)::placeholder { color: var(--text-tertiary); opacity: 1; }
+body :is(button,a,input,select,textarea):focus-visible { outline: 3px solid var(--accent-text); outline-offset: 3px; }
+body #view-money > .card:first-child { padding: 20px; border-color: var(--accent-border); }
+body #view-omega > .card { padding: 18px; }
+body :is(#view-loads,#view-trips,#view-expenses,#view-fuel) > .card:first-child h3 { font-size: 28px; letter-spacing: -.04em; }
+body #view-money > .card:first-child h3 { font-size: 28px; }
+body :is(#btnLoadsIntake,#btnTripAdd,#btnAddExp2) { min-height: 44px; }
+body .intel-row { padding: 14px; border-radius: 16px; }
+body .fl-intel-tab { min-height: 44px; font-size: 12px; }
+body .settings-collapse-btn { min-height: 48px; padding: 13px 14px; font-size: 13px; }
+body .empty-state { padding: 36px 20px; border: 1px dashed var(--border); border-radius: 18px; }
+body .empty-state h4 { color: var(--text); font-size: 18px; letter-spacing: -.02em; }
+body .empty-state p { color: var(--text-secondary); line-height: 1.6; }
+body .modal { max-width: 620px; border: 1px solid var(--border); border-bottom: 0; }
+body .modal header { background: var(--surface-1); }
+/* Brand the real local-PIN dialog without changing authentication or its controls. */
+body .modal:has(#unlockPin) {
+  background: radial-gradient(ellipse at 50% 0, var(--accent-muted), transparent 65%), var(--surface-1);
+  border-color: var(--accent-border);
+}
+body .modal:has(#unlockPin) .mhead { min-height: 80px; padding-left: 58px; background: url('./icon64.png') no-repeat left center / 44px 44px; }
+body #unlockPin { min-height: 58px; text-align: center; letter-spacing: .25em; font-size: 22px; }
+body #unlockNow { width: 100%; min-height: 50px; }
+body #unlockHint { color: var(--text-secondary); }
+body #unlockForgotPin { display: inline-flex; align-items: center; min-height: 44px; }
+body .bottom {
+  left: 0; right: 0; bottom: 0;
+  padding: 0 10px env(safe-area-inset-bottom,0px);
+  border-radius: 0; border-top: 1px solid var(--border);
+  background: var(--surface-0);
+}
+body .bottom .nav { max-width: 588px; height: 72px; }
+body .bottom .nav a { gap: 4px; padding: 8px 3px; }
+body .bottom .nav a .ni { width: 38px; height: 28px; }
+body .bottom .nav a .ni svg { width: 22px; height: 22px; stroke-width: 1.8; }
+body .bottom .nav a .nl { font-size: 11px; font-weight: 650; }
+body .bottom .nav a.active { color: var(--accent-text); }
+body .bottom .nav a[data-nav="home"] .nl { font-size: 0; }
+body .bottom .nav a[data-nav="home"] .nl::after { font-size: 11px; }
+body .bottom .nav a.nav-eval-center { flex: 0 0 68px; margin-top: -7px; padding: 0 2px 3px; transform: none; }
+body .bottom .nav a.nav-eval-center .ni { width: 52px; height: 52px; border-radius: 18px; background: var(--accent); color: #231807; box-shadow: 0 0 0 5px var(--surface-0); }
+body .bottom .nav a.nav-eval-center .nl { font-size: 11px; color: var(--accent-text); }
+html[data-theme="light"] body :is(header#mainHeader,.bottom) { background: var(--surface-1); }
+
+/* Safari 27 / supporting engines: enhance native single-select menus only.
+   Plain-text options, form events, keyboard semantics and legacy pickers remain
+   browser-owned. No display/flex replacement and no global appearance reset.
+   Source: webkit.org/blog/18117/the-golden-rule-of-customizable-select/ */
+@supports (appearance: base-select) {
+  body select:not([multiple]):not([size]),
+  body select[size="1"]:not([multiple]),
+  body select:not([multiple]):not([size])::picker(select),
+  body select[size="1"]:not([multiple])::picker(select) {
+    appearance: base-select;
+  }
+  body select:not([multiple]):not([size])::picker(select),
+  body select[size="1"]:not([multiple])::picker(select) {
+    margin-block: 6px;
+    padding: 6px;
+    border: 1px solid var(--border-focus);
+    border-radius: 14px;
+    background: var(--surface-1);
+    color: var(--text);
+    box-shadow: var(--shadow-lg);
+    max-height: min(55dvh, 360px);
+    overflow-y: auto;
+  }
+  body select:not([multiple]):not([size])::picker-icon,
+  body select[size="1"]:not([multiple])::picker-icon { color: var(--text-secondary); }
+  body select:not([multiple]):not([size]) option,
+  body select[size="1"]:not([multiple]) option { min-height: 44px; padding: 11px 12px; border-radius: 8px; white-space: normal; overflow-wrap: anywhere; }
+  body select:not([multiple]):not([size]) option:checked,
+  body select[size="1"]:not([multiple]) option:checked { background: var(--accent-muted); color: var(--accent-text); font-weight: 650; }
+  body select:not([multiple]):not([size]) option:not(:disabled):is(:hover,:focus),
+  body select[size="1"]:not([multiple]) option:not(:disabled):is(:hover,:focus) { background: var(--surface-3); color: var(--text); outline-offset: -3px; }
+  body select:not([multiple]):not([size]) option::checkmark,
+  body select[size="1"]:not([multiple]) option::checkmark { color: var(--accent-text); }
+}
+@media (max-width: 370px) {
+  body .app { padding-inline: 12px; }
+  body header#mainHeader { padding-inline: 12px; }
+  body #mainHeader .brand { gap: 6px; }
+  body #mainHeader .logo { width: 26px; height: 26px; }
+  body #mainHeader .title strong { font-size: 15px; }
+  body #mainHeader .title span { max-width: 104px; }
+  body .card, body #view-omega > .card { padding: 14px; }
+  body #homeKPICard { padding: 16px; }
+  body .fl-trip-full .fl-tf-pay { font-size: 16px; }
+  body .fl-trip-full .fl-tf-origin { font-size: 13px; }
+  body .grid2 { gap: 8px; }
+}
+@media (forced-colors: active) {
+  body :is(.card,.item,.btn,.chip,.fl-quick-btn,.bottom) { border: 1px solid CanvasText; box-shadow: none; }
+  body .bottom .nav a.active { outline: 2px solid Highlight; outline-offset: -4px; }
+}

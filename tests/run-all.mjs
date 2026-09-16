@@ -62,11 +62,17 @@ import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec
 import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mjs';
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
 import { runSpec as specCoverage } from './unit/spec-coverage.spec.mjs';
+import { runSpec as setupLinkToken } from './integration/setup-link-token.spec.mjs';
+import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
+import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
+import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 
 const specs = [
+  fullRepairRegressions,
   omegaEconomics,
   releaseGenerationDiscipline,
   specCoverage,
+  setupLinkToken,
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,
@@ -83,6 +89,8 @@ const specs = [
   cloudBackupPaused,
   workerTokenRotation,
   workerPointerRace,
+  workerInviteClaim,
+  zeroTokenOnboarding,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,

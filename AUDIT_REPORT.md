@@ -1314,7 +1314,7 @@ joins the default run with the fix.
 
 ---
 
-## D-02 — the cloud-backup setup link never delivers its token, so every connect attempt reads "Invalid token" — CONFIRMED, OPEN
+## D-02 — the cloud-backup setup link never delivers its token, so every connect attempt reads "Invalid token" — CONFIRMED, FIXED (v24.0.15)
 
 **Severity: High.** First-use cloud backup is unreachable. The operator cannot
 connect at all, and the message they get names the wrong cause, so no amount of
@@ -1391,9 +1391,35 @@ symptom gave the operator nothing to act on. `cloudSaveConfig()` also does not
 `return` from its `catch`, so an unreachable server still falls through and
 saves the token as though it had been verified.
 
-**Status. OPEN.** `app.js` is SHARED and was held under the gpt lane's
-`lock/app-js` when this was captured — a lock whose task line already names
-"confirmed first-use cloud/admin" repairs, so this is very likely the defect
-that lane is mid-repair on. The regression is committed and quarantined per
-`tests/unit/spec-coverage.spec.mjs`; it turns green and joins `run-all.mjs` with
-the fix.
+**Status. FIXED in v24.0.15.** Three changes in `app.js`, none touching the Worker:
+
+1. `extractBackupToken(raw)` reduces whatever was pasted — a bare token, a
+   `#token=`/`?token=` link, or a token with text around it — to the bare
+   `flk_` value, lower-cased because the Worker's check is lower-case only.
+   Both `cloudSaveConfig()` and `cloudTestConnection()` use it, and when nothing
+   well-formed can be extracted they say so **before** spending a round trip.
+2. `flCaptureSetupToken()` captures a legacy setup link **at boot**, on the line
+   after `flCaptureClaimCode()` and before the first `await`, and strips it from
+   the URL. `cloudCheckSetupLink()` consumes that capture, so navigating to
+   Settings can no longer destroy the token before its only reader runs.
+3. The error label stopped asserting. A non-OK response now reports what the
+   server actually said, or the status when it said nothing usable, and the
+   `catch` **returns** instead of falling through to save an unverified token.
+
+v24.0.13's zero-token claim flow (`#i=`) is a separate, newer path and was
+already correct — it captures at boot for exactly this reason. It did not close
+this finding: on `24.0.14` both assertions below still failed, because the paste
+path and the legacy link were untouched.
+
+**The regression that proves it** is `tests/integration/setup-link-token.spec.mjs`,
+now wired into `tests/run-all.mjs` and its `QUARANTINE` row removed, per
+`tests/unit/spec-coverage.spec.mjs`.
+
+**A flaw in the first version of that spec is worth recording**, because it is the
+same class as `OI-11`. `page.goto()` to a URL differing only in the **fragment**
+is a same-document navigation: no reload, no re-boot. SLT-01 therefore measured a
+page that had never booted with the token in its URL, so a boot-time capture could
+never have satisfied it and the test could not distinguish the fix from its
+absence. It now forces a real load, which is what a driver opening a link gets.
+Negative control re-run after that correction: against `origin/main`'s unfixed
+`app.js`, **both** assertions fail; against the fix, both pass.

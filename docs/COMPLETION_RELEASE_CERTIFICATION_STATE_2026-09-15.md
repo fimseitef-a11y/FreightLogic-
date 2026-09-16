@@ -6,6 +6,40 @@ Status: **HOLD — EVERY AUTOMATABLE AND LIVE-ORIGIN GATE IS OBSERVED AND PASSIN
 
 This document is the certification authority. Every earlier state and addendum document is historical evidence and must not be read as the current candidate.
 
+## v24.0.13 supersession notice (added with the zero-token onboarding work)
+
+**This document certifies 24.0.12 / Worker v17, which is what production serves. It does
+NOT certify 24.0.13 / Worker v18, and nothing in it should be read as doing so.**
+
+Shipped files changed again after this document was written: v24.0.13 "Zero-Token
+Onboarding" moves the app generation and the Worker generation together. By this
+document's own standing rule — *if a shipped file changes, the candidate section must be
+updated and the live gates re-observed* — a superseding certification state document is
+due **the day 24.0.13 deploys**, not the day it merges.
+
+Until that happens the position is:
+
+- Every gate recorded below remains valid evidence about **24.0.12 / v17**, the candidate
+  production is actually serving. None of it is evidence about 24.0.13.
+- 24.0.13 is **source-only**. Its suite, static parity, cache-generation and
+  release-generation gates are green in-repo, which is a source claim, not a live one.
+- Two deploys are outstanding and **ordered**: Worker **v18 first**, then the app. The
+  app's invite and claim flows call `POST /admin/invites` and `POST /claim`, neither of
+  which exists on the deployed v17, so shipping the app first leaves the owner an Invite
+  button that 404s and a driver holding a link that cannot be redeemed.
+- After both deploys, **re-dispatch** live parity and the production service-worker gate
+  rather than citing the push-triggered runs; a push-triggered run races the Cloudflare
+  deploy, and its FAILURE is evidence about the origin at that instant, not the release.
+- The physical-iPhone gate widens to **A1-A12**. A12 is the new one, and it carries the
+  question no automated environment can answer: whether a claim performed in Safari
+  survives **Add to Home Screen**, or whether the installed app is a separate storage
+  partition. If it is separate, the re-claim path is the recovery and must be walked end
+  to end, confirming the owner still sees **one** driver with their backup count intact.
+
+The HOLD is unchanged and is now three things rather than two: the private M6 history
+bundle, the physical-iPhone gate, and — for 24.0.13 specifically — a deploy that has not
+happened and live gates that have not been observed.
+
 ## Exact candidate
 
 - FreightLogic app / PWA / service-worker generation: **24.0.12**

@@ -40,11 +40,6 @@ const QUARANTINE = [
     finding: 'D-01',
     why: 'asserts the correct UNKNOWN-deadhead behaviour in tripRow(); app.js is SHARED and was under the gpt lane lock/app-js when the finding was captured',
   },
-  {
-    spec: 'integration/setup-link-token.spec.mjs',
-    finding: 'D-02',
-    why: 'asserts the cloud-backup setup link actually delivers its token; app.js is SHARED and was under the gpt lane lock/app-js, whose task line already names first-use cloud/admin repairs',
-  },
 ];
 
 function specsOnDisk(){

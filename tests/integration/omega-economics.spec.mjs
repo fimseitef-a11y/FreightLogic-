@@ -6,7 +6,8 @@ const econ = (overrides={}) => app.page.evaluate(o => window.__FL_TESTS.deriveUn
 async function seed(rows){
   await app.page.evaluate(async rows => {
     const T=window.__FL_TESTS, db=await T.initDB();
-    const tx=db.transaction('trips','readwrite'), store=tx.objectStore('trips');
+    const storeName=db.objectStoreNames.contains('tripRecords')?'tripRecords':'trips';
+    const tx=db.transaction(storeName,'readwrite'), store=tx.objectStore(storeName);
     store.clear();
     for(const [i,r] of rows.entries()) store.put({...T.sanitizeTrip({id:`omega-${i}`,orderNo:`OMEGA-${i}`,pickupDate:T.isoDate(),deliveryDate:T.isoDate(),pay:600,loadedMiles:100,emptyMiles:0}),...r,needsReview:false});
     await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});

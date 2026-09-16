@@ -14,12 +14,33 @@ A restore must preserve newer local protected history. For revisioned records, i
 
 Cloud backup and `exportJSON()` exclude these secret settings:
 
+- `cloudBackupToken` — the driver's bearer credential for this Worker
+- `cloudAdminTokenEnc` — **v24.0.13.** The admin token at rest: an AES-GCM envelope
+  (`{encrypted, iv, salt}`) keyed by PBKDF2 over the device PIN. It is excluded even
+  though it is ciphertext rather than plaintext. It grants create/list/revoke over
+  **every** driver account, and a portable payload that carries it moves the most
+  powerful credential in the system to wherever that payload lands.
+- `appLockPin` — PBKDF2 hash of the device PIN
+- `appLockFailCount`, `appLockLockedUntil` — device-local lockout state
 - `fmcsaApiKey`
 - `eiaApiKey`
 
-No backup/import path may re-introduce them from an export payload.
+The exclusion is enforced by one policy — `isSettingExportSafe()` /
+`exportSafeSettings()` (`app.js`, v24.0.4) — consumed by local export, cloud full
+backup, cloud delta **and every checksum computed over settings**. It withholds a key
+named above **or** whose name matches the credential pattern, so a secret added in a
+future release is withheld by default rather than by memory.
 
-## Store-level contract — current through v24.0.9 / DB v15
+Both halves matter together. The filtered array must be the array that is
+checksummed: computing `checksumFull` over an unfiltered dump while shipping a
+filtered payload is the X-05 defect, where every honest export failed its own
+integrity check on import. Filter first, then checksum.
+
+No backup/import path may re-introduce any of them from an export payload.
+`cloudAdminTokenEnc` is deliberately **absent from `ALLOWED_SETTINGS_KEYS`**, so an
+import silently drops it: an admin credential must never arrive from a file.
+
+## Store-level contract — current through v24.0.13 / DB v15 / Worker v18
 
 | Store | Full backup | Delta backup | Restored | Contract |
 |---|---:|---:|---:|---|
@@ -143,6 +164,7 @@ The settings store is generic; current durable keys include, among others:
 | `insuranceMigrationBackupKeys` | retained migration snapshot index |
 | `insuranceMigrationBackup_<timestamp>` | pre-mutation insurance category snapshots |
 | `vanProfile` | configurable cargo dimensions/payload used by fit checks |
+| `driverDisplayName` | **v24.0.13.** The driver's name as recorded on the invite, written once by a successful claim. Ordinary non-secret settings data: backed up, restored, and admitted by the local JSON import allow-list. |
 | `planningAvgMph` | optional operator-set pickup-planning average speed for v24.0.9 feasibility checks; valid runtime range 5–85 mph. There is deliberately no default. Missing/cleared means the gate is inapplicable and restore/import must never invent or clamp a value. |
 
 These keys are covered through the settings-store backup/restore path; no separate store is required. `planningAvgMph` is also explicitly admitted by the local JSON import allow-list introduced with v24.0.9, so export/import may preserve a real operator-set value while an absent value stays absent. Secret exclusions above still apply.
@@ -169,3 +191,7 @@ The release suite must continue to exercise the real shared paths, not helper-on
 - legacy payload compatibility with absent lifecycle/evidence sections.
 
 Relevant regression coverage includes `tests/integration/backup-restore-parity.spec.mjs`, the v24.0.x release-integrity/blocker specs, the v24.0.9 pickup-feasibility/UNKNOWN-setting coverage, and the M7 automated certification preflight. A green repository suite proves code-side behavior only; final completion certification still requires live Cloudflare and physical-device gates recorded against the exact release SHA.
+
+## DB16 stable trip identity (v24.0.14 repair candidate)
+
+`orderNo` is external evidence, not a unique internal identity. DB16 keeps the legacy `trips` store for rollback but routes logical trip operations to `tripRecords`, keyed by stable internal `id`, with a non-unique `orderNo` index. Pre-DB16 rows whose paid/unpaid provenance cannot be proven migrate with payment status UNKNOWN until the operator explicitly marks them.

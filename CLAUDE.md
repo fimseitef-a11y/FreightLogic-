@@ -2,11 +2,13 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.12** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.14** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+
+**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A12 and authentic M6 remain open.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is Worker **v17**, **deployed and live** at `https://freightlogic-backup.fimseitef.workers.dev`. Worker v16 carried the authority-order hotfix and the backup pointer-discovery race fix; **v17 adds the monotonic backup/delta key clock** (see the v17 section at the end of this file). App/PWA is v24.0.12, **deployed and observed live** at generation `24.0.12` on 2026-09-15 (live parity run `34939229143`, production service-worker run `34939417958`, both `workflow_dispatch` on `main` @ `4f2daf2`), and DB remains v15.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. The **v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed**. Production still serves app **v24.0.12 / DB15** and Worker **v17** (app live parity run `34939229143`; production service-worker run `34939417958`; Worker v17 deploy run `34884719806`). v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup. Deployment order remains Worker v19 first, then app v24.0.14, because the production v17 Worker does not expose the invite/claim endpoints.
 
 **No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
 
@@ -82,8 +84,8 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 4. **Storage** — `requestPersistentStorage`, `checkStorageQuota`, ITP/Safari detection
 5. **Navigation** — `openTripNavigation` (Apple Maps on iOS, Google Maps otherwise)
 6. **UI utilities** — `toast`, `openModal`, `closeModal`, `haptic`, autocomplete
-7. **IndexedDB layer** — `initDB` (v12 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
-8. **Data stores:** `trips`, `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
+7. **IndexedDB layer** — `initDB` (current DB16 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
+8. **Data stores:** logical `trips` (DB16 maps to `tripRecords`), `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
 9. **Export/Import** — JSON, CSV, XLSX (trips/expenses/fuel), receipt blobs
 10. **Freight evaluator** — Market Feed, Tomorrow Signal, Strategic Floor A–E scoring; auto-triggers OpenAI analysis via `/evaluate`
 11. **Cloud backup** — encrypt/decrypt, push/pull, user identity, AI evaluate call
@@ -98,8 +100,9 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
 21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
 
-### IndexedDB schema (`DB_VERSION = 15`, `DB_NAME = 'FreightLogic_v18'`)
-- `trips` — keyPath: `orderNo`
+### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)
+- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`
+- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present
 - `expenses` — keyPath: `id`
 - `fuel` — keyPath: `id`
 - `receipts` — keyPath: `tripOrderNo`
@@ -121,6 +124,11 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
 `XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
 `legacyMigrated` in settings, and never runs again. The old DB is not deleted.
+DB16 additionally creates `tripRecords` with stable internal `id` identity and a
+non-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.
+The legacy `trips` store is deliberately retained for rollback; external order
+numbers are evidence/lookup values, never authoritative record identity. Migrated
+rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 
 ### User namespace
 `ensureLocalUserId()` generates a stable `usr_<16hex>` on first boot, stored in
@@ -131,8 +139,8 @@ On first boot after upgrade from any prior version, `migrateFromLegacyDB()` open
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.12';
-const DB_VERSION = 15;
+const APP_VERSION = '24.0.14';
+const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
 const PAGE_SIZE = 50;
@@ -172,9 +180,9 @@ This app handles financial data. All security mitigations are intentional and mu
 
 | Credential | Storage | Scope |
 |---|---|---|
-| Backup token (`flk_…`) | IndexedDB (`settings`) | Persists across sessions — non-secret identifier |
+| Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |
 | Encryption passphrase | `sessionStorage` (`fl_cloud_pass`) | Cleared on tab/browser close — never written to disk |
-| Admin token | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close |
+| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |
 | Device ID | `localStorage` (`fl_device_id`) | Persists — non-secret identifier |
 
 Do not move the passphrase or admin token back to persistent storage.
@@ -206,11 +214,12 @@ store — so the friction can never be resolved by weakening the encryption
 instead.
 
 The admin token grants create/list/revoke over **every** driver account, so it is the most
-sensitive credential in the app. Both writers must keep it session-scoped:
-`app.js` (`cloudAdminSaveToken`) and `admin-driver-ui.js` (`saveTok`/`loadTok`).
-`admin-driver-ui.js` also runs `purgeLegacyTok()` on every load, which migrates any token
-left in `localStorage` by a pre-23.8.0 build into `sessionStorage` and deletes the on-disk
-copy. Do not remove that purge until enough releases have passed that no stale copies remain.
+sensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin
+material session-scoped; persistence is allowed only as AES-GCM ciphertext in
+`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only
+after the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down
+from the legacy admin-driver flow and its legacy-token purge is delete-only: stale
+plaintext localStorage credentials must never be promoted back into a live session.
 
 ---
 
@@ -274,8 +283,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.12` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.12`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.13` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.13`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -3056,3 +3065,155 @@ call is invisible to the tooling that reports staleness. The rule to apply until
 changes: **an expired timestamp is a prompt to look for a live holder, never on its own
 a licence to reap.** `.agents/` is SHARED, so the protocol text itself was not edited
 here — this is the claude-lane record of the judgement and the reasoning behind it.
+---
+
+## v24.0.13 "Zero-Token Onboarding" — the credential that used to live in an inbox
+
+Worker **v17 → v18**. `DB_VERSION` stays **15**. Onboarding a driver no longer
+involves a token anybody can see, hold, or forward.
+
+**The defect this closes is not a bug, it is the design.** The only way to onboard a
+driver was `POST /admin/users`, which returns a permanent `flk_` bearer token — and
+that token then had to reach the driver's phone, which meant a human sent it. Both
+prior surfaces did exactly that: `cloudAdminCreateUser()` and
+`cloudAdminRotateToken()` each ended by rendering the token into a `#token=` setup
+link for the owner to share, and `admin-driver-ui.js` did the same independently. So
+a live credential came to rest in an inbox or an iMessage thread and stayed there,
+readable by anyone who later picked up either device, long after that driver had been
+onboarded or even revoked. Rotating did not help: it produced a second permanent
+token to send the same way.
+
+**The replacement.** `POST /admin/invites` mints a 24-character claim code — 15 random
+bytes, 120 bits, base32 with `0`/`1`/`8` omitted so it cannot be misread off a phone
+screen. Only its SHA-256 hash is stored, under `inv:<hash>`, exactly as driver tokens
+are stored as `tokh:<hash>`; a KV dump yields no usable invite. `POST /claim` redeems
+it for a token that is handed straight to the claiming device. The code rides the URL
+**fragment** (`#i=`), which browsers never send to an origin, so it cannot reach a
+Worker log, an access log, or a `Referer` header.
+
+Three properties are load-bearing:
+
+1. **`/claim` is unauthenticated, and sits above the `X-Backup-Token` gate.** That is
+   not an oversight — it is how a device acquires its first token, so guarding it with
+   the credential it issues would be circular. What stands in for authentication is the
+   120-bit code plus a 10/hr per-IP limit, checked *before* the code is parsed.
+   `WIC-15` fails if the handler is ever moved below the gate.
+2. **The fragment is stripped before the first `await`.** `flCaptureClaimCode()` is
+   synchronous end to end and runs on the first line of boot. An `await` yields to the
+   event loop, and anything reading `location.href` in between would capture a live
+   invite. `ZTO-06` proves the ordering by reading the page URL *inside* the
+   intercepted `/claim` handler — checking afterwards would pass even on late cleanup.
+3. **Identity survives every path that issues a new token.** Backups are keyed
+   `user:<userId>:device:<id>:...`, so minting a second `userId` orphans every backup
+   the driver has made — the data stays in KV with nothing able to address it again.
+   That is the failure v15's in-place rotation was added to prevent, and there are now
+   two ways to reintroduce it, both closed:
+   - **Re-claim** (same code, up to `maxClaims` = 3) returns the same account with a
+     fresh token and revokes the previous one. This is what makes the iOS Safari →
+     Home Screen storage split recoverable: the driver opens the same link again from
+     the installed app. Re-putting the invite re-derives the **original** expiry,
+     because Cloudflare resets a TTL on every put and a repeatedly-claimed invite
+     would otherwise never expire at all (`WIC-09`).
+   - **Re-invite** (a new code for an existing driver) passes `userId` to
+     `POST /admin/invites`, which binds the invite to that account so claiming it
+     takes the re-claim branch. **This was a real defect found in review, not a
+     hypothetical**: the endpoint as first written always set `userId: null`, so the
+     Drivers list's Re-invite button would have minted a second account and orphaned
+     the driver's history while appearing to work. `WIC-16` gives the driver real
+     backup history, re-invites, and asserts the new token reaches it and that the
+     admin listing still shows **one** driver; reverting the binding fails it.
+     A revoked driver cannot be re-invited (409) and an unknown one is 404.
+
+**Admin access is entered once and is never shown again.** It is verified with
+`GET /admin/users` and persisted **only on a 200** — a rejected token leaves nothing
+on disk. What is stored is AES-GCM ciphertext keyed by PBKDF2 over the device PIN
+(`cloudEncrypt`, the same primitive cloud backups use). The decrypted value still
+lives only in `sessionStorage` and still dies with the tab, so the Credential Storage
+Rules above are unchanged in substance: what is new is a ciphertext at rest that is
+not a credential unless you also know the PIN.
+
+**Admin access therefore requires App Lock**, and that is deliberate rather than
+incidental: with no PIN there is no key, and the only way to persist would be in the
+clear — which is the thing the rule prohibits. The panel says so instead of silently
+falling back.
+
+**Three removals, one of which was a live shadowing bug.** `cloudAdminCreateUser()`,
+`cloudAdminShare()`, `cloudAdminRotateToken()` and the token-based
+`cloudAdminShowInvite()` are gone; leaving them would have kept a second path that
+still puts a permanent credential in an inbox, making the feature opt-in rather than
+true. Removing the old `cloudAdminShowInvite()` also fixed a defect this change would
+otherwise have shipped: **two top-level declarations of that name stood in the same
+IIFE scope**, so hoisting made the later, token-based one win at *every* call site —
+including the new invite flow, which would have silently rendered a token instead of a
+claim link. That is precisely the `getBrokerIntel()` defect v23.8.3 found and this file
+records. It was caught by reading the declarations, not by observing the symptom.
+`admin-driver-ui.js` now stands down explicitly (`ADMIN_UI_STANDS_DOWN`) rather than
+by accident — removing `#adminDriverName` from `index.html` already made its element
+guard fail, but "correct because an element happens to be missing" is not a property
+anyone can rely on while editing markup.
+
+**The legacy-token purge is kept and narrowed.** `purgeLegacyTok()` was only reachable
+through `saveTok`/`loadTok`/`getTok`, which the stand-down makes unreachable — so it
+now runs unconditionally at load, which is what this file has always described it as
+doing. It is also **delete-only** now: it used to promote a surviving `localStorage`
+token into `sessionStorage`, and with admin access gated behind the PIN that would
+walk straight around the gate. Removing the on-disk copy was always the point.
+
+**Guardrail 1 was already satisfied and is now named.** `isSettingExportSafe()` /
+`exportSafeSettings()` (v24.0.4) is the single policy for local export, cloud full
+backup, cloud delta **and every checksum input**, and its name-pattern arm already
+withheld `cloudAdminTokenEnc` because it contains "token". It is named explicitly in
+`SETTINGS_NEVER_EXPORT` anyway: this is the most powerful credential in the app, and a
+key that important should not depend on a regex nobody re-reads. `ZTO-05` re-computes
+`checksumFull` over the payload's own settings array, which is the exact X-05 failure
+shape — filter first, then checksum.
+
+`driverDisplayName` (written by a successful claim) is added to
+`ALLOWED_SETTINGS_KEYS` in the same change that introduces it. `cloudAdminTokenEnc`
+deliberately is **not**: an imported admin token must never be accepted.
+
+**Tests.** `tests/unit/worker-invite-claim.spec.mjs` (17) drives the real exported
+fetch handler against an in-memory KV that honours `expirationTtl` — without TTL the
+72-hour expiry, the non-extension on re-put, and the rate-limit window are all
+invisible. `tests/integration/zero-token-onboarding.spec.mjs` (14) drives the real app
+in Chromium with every Worker call intercepted. ZTO-13 pins the claim wizard as a
+**real credential form** for the same reasons CBP-08 pins `openCloudReconnect()`'s
+(v24.0.6) — a real `<form>`, a visible read-only `autocomplete="username"` field, an
+`autocomplete="new-password"` field and a genuine `type="submit"` — and additionally
+requires the account value to equal `localUserId`, the same value `openCloudReconnect()`
+declares. If those two disagree, the credential the keychain saves at claim time is not
+the one it offers back when the session ends, and the driver retypes a 10+ character
+passphrase on a phone forever. ZTO-14 asserts the passphrase itself never reaches
+`localStorage` or the settings store, so the friction can never be resolved later by
+weakening the encryption instead.
+
+Two harness findings worth keeping, both of which first read as product defects:
+- **A time test must move every clock it depends on.** WIC-09 advanced only the KV
+  stand-in's clock while the Worker derived its remaining TTL from `Date.now()`, and
+  "failed" reporting a three-day extension that was really two clocks 71 hours apart.
+- **`page.goto('…/index.html#i=CODE')` from `…/index.html` runs nothing.** It is a
+  same-document navigation: the hash changes, boot never re-executes, and the wizard
+  never opens. The spec bounces through `about:blank` to force a real load, which is
+  what tapping a link in Messages actually does.
+- Related: `sessionStorage` survives a reload. Only closing the tab clears it, so
+  ZTO-03 ends the session explicitly rather than asserting a reload does it.
+
+Negative controls, all verified to fire: reverting the `remainingTtl` derivation fails
+WIC-09; storing the code instead of its hash fails WIC-03 and WIC-12; making a
+re-claim mint a new `userId` fails WIC-07; dropping the revoked-driver guard fails
+WIC-10; moving `/claim` below the driver-token gate fails WIC-15; unbinding the
+re-invite (`userId: null`) fails WIC-16.
+
+**NOT DEPLOYED, and the order matters.** Worker v18 and app 24.0.13 are source-only.
+The Worker must be deployed **first**: the app's Invite and claim flows call
+`POST /admin/invites` and `POST /claim`, neither of which exists on the deployed v17,
+so shipping the app first leaves the owner an Invite button that 404s. After both,
+re-dispatch live parity rather than citing the push-triggered run, which races the
+Cloudflare deploy.
+
+**Still HOLD.** Physical iPhone A1-A11 and M6 raw-data certification remain OPEN.
+`FIELD_TEST_CHECKLIST.md` gains no new row here, but the device gate for this release
+includes the one thing an automated environment genuinely cannot answer: whether a
+claim performed in Safari is still present after **Add to Home Screen**, or whether
+that install is a separate storage partition. If it is separate, the re-claim path is
+the recovery, and it is what the "One more thing" prompt tells the driver to do.

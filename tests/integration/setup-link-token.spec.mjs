@@ -24,8 +24,13 @@ const TOKEN = 'flk_a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 test('[SLT-01] opening the setup link puts the token in the token field', async () => {
   const base = app.page.url().split('#')[0];
+  // page.goto() to a URL differing ONLY in the fragment is a same-document
+  // navigation: no reload, no re-boot, so boot-time capture never runs and the
+  // test measures nothing. A driver opening a setup link gets a real load, so
+  // force one. (This flaw was in the first version of this spec.)
   await app.page.goto(base + '#token=' + encodeURIComponent(TOKEN), { waitUntil: 'load' });
-  await app.page.waitForTimeout(900);
+  await app.page.reload({ waitUntil: 'load' });
+  await app.page.waitForTimeout(1200);
   // Settings is the only screen that reads the fragment. Reaching it is the
   // ordinary thing an operator does, and it is what destroys the token.
   await app.page.evaluate(() => { location.hash = '#insights'; });
