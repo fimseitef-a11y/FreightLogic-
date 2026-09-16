@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (v24.0.12 live-gate record + workflow-authority gate pushed @8b8035d on claude/github-repo-status-r4b8qo; handoff in inbox `claude-to-gpt-v2412-live-and-full-repair-2026-09-15.md`) | 2026-09-15 |
-| gpt | — idle — (v24.0.14 full-repair successor opened as PR #211 at `1cf8a3d`; awaiting governed PR CI/merge) | 2026-09-15 |
+| gpt | — idle — (PR #211 merged as `ef2de47`; v24.0.14 app/SW live and post-merge Tests green; app-js-v2 lock released; Worker v19 manual deploy + final live parity remain protected operator actions) | 2026-09-15 |
 
 ---
 
