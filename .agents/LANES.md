@@ -30,6 +30,9 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `midwest-stack-authority.js` | gpt | Temporary release-marker update only. |
 | `voice-load.js` | gpt | Temporary release-marker update only. |
 | `CLAUDE.md` | gpt | Temporary current-release/evidence documentation exception; preserve zero-token onboarding documentation. |
+| `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
+| `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
+| `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
 | `FIELD_TEST_CHECKLIST.md` | gpt | Temporary release/evidence documentation exception; A1–A12 stay open. |
 | `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary parity-evidence documentation exception. |
 | `docs/BACKUP_CONTRACT.md` | gpt | Temporary DB16 stable-identity migration/restore contract amendment. |
