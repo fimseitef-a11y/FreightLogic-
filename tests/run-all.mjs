@@ -63,6 +63,7 @@ import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mj
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
 import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
 import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
+import { runSpec as liveInviteClaimGate } from './unit/live-invite-claim-gate.spec.mjs';
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 
 const specs = [
@@ -86,6 +87,7 @@ const specs = [
   workerTokenRotation,
   workerPointerRace,
   workerInviteClaim,
+  liveInviteClaimGate,
   zeroTokenOnboarding,
   laneGuard,
   dzGradeCap,
