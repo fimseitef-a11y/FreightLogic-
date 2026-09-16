@@ -1,0 +1,6 @@
+owner: gpt
+token: 8f6b7e7e-5c73-4c23-bf0d-75b7d2fd4d59
+started_utc: 2026-09-16T09:26:00Z
+expected_release_utc: 2026-09-16T10:26:00Z
+paths: .agents/LANES.md
+task: Register authoritative FreightLogic UI redesign brief and reference-image paths for the operator-approved redesign.
