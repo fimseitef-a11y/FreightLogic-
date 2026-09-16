@@ -99,6 +99,9 @@ const releaseState = readCanonicalReleaseState();
 
 /* ---- 1. version-marker consistency (the CLAUDE.md release-bump contract) ---- */
 let appV = (R('app.js').match(/APP_VERSION = '([0-9.]+)'/) || [])[1];
+// Derived, never pinned: a hardcoded generation in this runner's prose is the exact drift
+// class this repository has recorded against itself at 24.0.3, 24.0.10, 24.0.11 and 24.0.12.
+const workerV = (R('cloud-backup-worker.js').match(/version:\s*'(\d+)'/) || [])[1];
 const markers = {
   'service-worker SW_VERSION': (R('service-worker.js').match(/SW_VERSION = '([0-9.]+)'/) || [])[1],
   'manifest name': (R('manifest.json').match(/"name":\s*"FreightLogic v([0-9.]+)"/) || [])[1],
@@ -192,7 +195,7 @@ for (const [g, cmd] of [
   ['GPS / background / permission-loss resilience', 'manual — start a trip, background the app, revoke location, confirm the session survives'],
   ['Production M5B intake durability check', 'manual — More → Opportunity Intake, save evidence, reload, export, re-import'],
   ['iOS 27 / Safari 27 regression pass (A11)', 'manual — on iOS 27+: F31 SVG chart, tab-bar icons, select zoom-on-focus, persisted storage granted, cloud-backup paused banner (FIELD_TEST_CHECKLIST.md A11)'],
-  ['Zero-token driver onboarding (A12)', 'manual — REQUIRES Worker v18 AND app 24.0.13 deployed, Worker first. Owner sets admin access once under the PIN; invite by iMessage and by Mail; claim in Safari; then ADD TO HOME SCREEN and record whether the token is present or the install is a separate storage partition. If separate, walk the re-claim and confirm the owner still sees ONE driver with their backup count intact (FIELD_TEST_CHECKLIST.md A12)'],
+  ['Zero-token driver onboarding (A12)', `manual — prerequisite SATISFIED: the invite/claim contract is deployed and live-observed (B7 PASS, run 35049144080). Run A12 against app ${appV} / Worker v${workerV} and record BOTH generations with the result. Owner sets admin access once under the PIN; invite by iMessage and by Mail; claim in Safari; then ADD TO HOME SCREEN and record whether the token is present or the install is a separate storage partition. If separate, walk the re-claim and confirm the owner still sees ONE driver with their backup count intact (FIELD_TEST_CHECKLIST.md A12)`],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 /* ---- the verdict. Certification requires ALL of: canonical state clear,
