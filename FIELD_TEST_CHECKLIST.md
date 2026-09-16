@@ -245,23 +245,35 @@ Three things about it are deliberate and should not be "improved" away:
   and carries the name `FreightLogic Certification`, so it is findable in
   `GET /admin/users` rather than hiding among real drivers.
 
-**Observed 2026-09-16.** Run `35048574588`, `workflow_dispatch` on
-`claude/zero-token-driver-onboarding-dkcf4f` @ `da0667c`, whole step **success** —
-which means all three verifiers in it passed, the invite/claim one included. The
-verdict logic at that commit refuses `PASS` unless a seeded invite has actually been
-claimed against the live Worker, so this is positive evidence that the round trip
-ran, not merely that nothing objected.
+**Observed 2026-09-16 against Worker v19.** Run `35049144080`,
+`workflow_dispatch` @ `72ab81e`, whole step **success** with zero error annotations.
+The verdict logic refuses `PASS` unless a seeded invite has actually been claimed
+against the live Worker, so this is positive evidence the round trip ran. An earlier
+`35048574588` observed the same contract on Worker v18; v19 left `/admin/invites` and
+`/claim` untouched and the 17 offline contract assertions pass against it.
 
-**Three earlier runs are part of this record rather than hidden from it.**
-`35038600985` passed; `35038771767` and `35039223738` then failed within the same
-hour. `/claim` is limited to 10 per hour per IP, this gate spends up to 6, and
-GitHub runners share egress ranges — so the second and third runs were answered 429
-and scored it as a broken contract. Two defects, both fixed and both regression-
-covered: the verifier now reads a 429 as `UNOBSERVED` (LIC-09/LIC-10), and the
-workflow no longer lets `set -e` collapse `UNOBSERVED` and `FAILURE` into one red
-run (LIC-07). Re-running after the hourly window rolled over produced the PASS
-above. **Do not re-run this gate twice inside one hour and read the second result
-as a product failure.**
+**Four runs failed on the way here and all four are in this record.** Two
+(`35038771767`, `35039223738`) were the per-IP claim budget: `/claim` allows 10 per
+hour per IP, this gate spends up to 6, and GitHub runners share egress ranges.
+One (`35049015938`) failed two minutes before the passing run above, on a tree whose
+offline contract spec was 17/17, while the v19 deploy was landing — **its cause was
+never positively identified and this document does not claim otherwise.** The fourth
+was the same class in a different disguise.
+
+They produced four fixes, each regression-covered, and the pattern is worth more than
+the incidents: every one was the gate failing to distinguish *could not look* from
+*looked and it is broken*.
+
+- A 429 reads as `UNOBSERVED` (LIC-09, LIC-10).
+- A 5xx reads as `UNOBSERVED` (LIC-13) — a Cloudflare edge can answer 5xx for
+  seconds during the very deploy this gate fires after.
+- The workflow no longer lets `set -e` collapse `UNOBSERVED` into `FAILURE` (LIC-07).
+- A `FAILURE` now annotates **which** check failed (LIC-11, LIC-12), because the raw
+  log host is unreachable from the automated environment and a detail only in the log
+  reaches nobody. That gap is why `35049015938` cannot be explained today.
+
+**Do not run this gate twice inside one hour and read the second result as a product
+failure, and do not run it while a Worker deploy is still landing.**
 
 Record the run ID and verdict. `UNOBSERVED` (exit 2) is not a pass: it means the
 origin was unreachable, the claim budget was spent, or the invite could not be

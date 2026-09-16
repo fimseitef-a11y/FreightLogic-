@@ -47,13 +47,19 @@ verifier runs inside `Verify Authenticated Worker` after every dispatched Worker
 deploy, and carries the same three-verdict discipline as the other live gates, so an
 unreachable origin can never be recorded as evidence the contract holds.
 
-**B7 is OBSERVED PASS**: run `35048574588` on `da0667c`, whole step success. The
+**B7 is OBSERVED PASS against Worker v19**: run `35049144080` on `72ab81e`, whole step success with zero error annotations (an earlier `35048574588` observed the same contract on v18). The
 verdict logic at that commit refuses PASS unless a seeded invite has actually been
 claimed against the live Worker, so it is positive evidence the round trip ran rather
 than an absence of objections.
 
-Building it surfaced two defects in the gate itself, both worth recording because
-both are the shape this project keeps finding. First, the verifier could report PASS
+Building it surfaced four defects IN THE GATE ITSELF, none in the Worker, and they
+are worth recording because they are all one shape: the gate failing to distinguish
+*could not look* from *looked and it is broken*. A 429 from its own spent budget, a
+5xx from an edge mid-deploy, a `set -e` step collapsing two verdicts into one red
+run, and a FAILURE whose detail existed only in a log this environment cannot fetch.
+The last one is why run `35049015938` — which failed two minutes before the passing
+run, on a tree whose offline contract spec was 17/17 — **was never positively
+diagnosed, and is recorded as undiagnosed rather than explained away.** First, the verifier could report PASS
 having exercised only the checks that need no seeded state — a credential-minting
 contract certified without its minting half ever running — and the test meant to
 catch that was passing for an unrelated reason and so could never have caught it.
