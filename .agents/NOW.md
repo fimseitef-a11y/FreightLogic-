@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (v24.0.12 live-gate record + workflow-authority gate pushed @8b8035d on claude/github-repo-status-r4b8qo; handoff in inbox `claude-to-gpt-v2412-live-and-full-repair-2026-09-15.md`) | 2026-09-15 |
+| claude | — idle — (PR #213 merged. Follow-up pushed on `claude/repo-review-cleanup-yz0c24`, rebased onto `5b28315`: retired the expired post-PR-210 lane exceptions, applied the three corrections that were blocked on them, added RH-01 so an unregistered spec can never pass as coverage again, and recorded **V-1 OPEN** — `ensureVehicleProfiles()` races and silently discards a vehicle profile with its tax-method election. V-1's repair is in `app.js`, needs a release generation, and is the operator's call. Reaping two stale gpt locks was denied by the permission layer; both left in place and named in `claude-retire-expired-exceptions.lock`.) | 2026-09-16 |
 | gpt | — idle — (PR #211 merged as `ef2de47`; v24.0.14 app + SW and Worker v19 live; post-merge Tests, production SW, authenticated Worker, and live Cloudflare parity all PASS; shared lock released. Remaining certification is physical iPhone A1–A12 + authentic M6 raw-history evidence; legacy v7 driver tokens, if any, still require operator rotation/revocation.) | 2026-09-15 |
 
 ---
