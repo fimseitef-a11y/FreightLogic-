@@ -59,6 +59,10 @@ const CF_TOKEN = process.env.FL_CF_API_TOKEN || '';
 const CF_ACCOUNT = process.env.FL_CF_ACCOUNT_ID || '';
 const KV_NS = process.env.FL_KV_NAMESPACE_ID || '';
 
+/** The name every synthetic record this gate creates carries, so a residue is
+ *  identifiable in GET /admin/users instead of hiding among real drivers. */
+const CERT_NAME = 'FreightLogic Certification';
+
 const checks = [];
 let unreachable = false;
 /** Every KV key this run created, so cleanup can remove all of them. */
@@ -138,15 +142,35 @@ async function kvPut(key, value, ttlSeconds) {
 
 async function kvDelete(key) {
   try {
-    await fetch(`${kvBase()}/values/${encodeURIComponent(key)}`, { method: 'DELETE', headers: kvAuth() });
-  } catch { /* best effort, by design */ }
+    const res = await fetch(`${kvBase()}/values/${encodeURIComponent(key)}`, { method: 'DELETE', headers: kvAuth() });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** MANDATORY, not tidy. A claim makes the Worker write `user:<id>` and
  *  `tokh:<hash>` with NO expiry of their own, so anything this run mints would
- *  otherwise be a synthetic driver account living in production KV forever. */
+ *  otherwise be a synthetic driver account living in production KV forever.
+ *
+ *  Deletion is best effort — a Cloudflare API blip during cleanup must not turn
+ *  a good run into a failure — but it is NOT SILENT. A residue that nobody is
+ *  told about is a residue nobody removes, so anything still standing is named
+ *  here, with the fact that it is findable in the admin listing under the
+ *  certification name rather than hiding among real drivers. */
 async function cleanup() {
-  for (const key of created) await kvDelete(key);
+  if (!created.size) return;
+  const stuck = [];
+  for (const key of created) {
+    if (!(await kvDelete(key))) stuck.push(key);
+  }
+  if (stuck.length) {
+    console.log('\n  CLEANUP INCOMPLETE — these synthetic keys could not be deleted:');
+    for (const k of stuck) console.log(`    ${k}`);
+    console.log('  They are this gate\'s, not an operator\'s. The driver records carry');
+    console.log(`  name "${CERT_NAME}" and are visible in GET /admin/users; the invite key`);
+    console.log('  expires on its own TTL. Remove them before the next certification run.');
+  }
 }
 
 async function run() {
@@ -203,7 +227,7 @@ async function run() {
   const codeKey = 'inv:' + sha256(code);
   const ttl = 900;
   const invite = {
-    name: 'FreightLogic Certification',
+    name: CERT_NAME,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     claims: 0,
