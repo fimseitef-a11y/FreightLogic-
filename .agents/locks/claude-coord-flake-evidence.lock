@@ -1,6 +1,0 @@
-owner: claude
-token: 3f6c1a58-0d2e-4a77-9b41-8c5e2d7a6b90
-started_utc: 2026-09-16T19:18:00Z
-expected_release_utc: 2026-09-16T20:18:00Z
-paths: .agents/inbox/claude-to-gpt-suite-flakes-2026-09-16.md
-task: Hand GPT the exact CI evidence for the intermittent tax-export-csv-corruption failure and the root cause diagnosed in the sibling zero-token spec. Inbox file only; STATUS.md and NOW.md are declared by gpt-completion-review.lock and are deliberately not touched.
