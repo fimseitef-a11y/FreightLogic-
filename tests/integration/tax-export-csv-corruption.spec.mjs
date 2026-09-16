@@ -51,8 +51,9 @@ async function seedTrip(page, overrides) {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
         const db = req.result;
-        const txn = db.transaction('trips', 'readwrite');
-        txn.objectStore('trips').put(t);
+        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+        const txn = db.transaction(storeName, 'readwrite');
+        txn.objectStore(storeName).put(t);
         txn.oncomplete = () => { db.close(); resolve(); };
         txn.onerror = () => reject(txn.error);
       };

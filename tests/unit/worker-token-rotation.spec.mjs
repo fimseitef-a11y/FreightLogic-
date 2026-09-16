@@ -214,4 +214,50 @@ test('[WTR-08] rotation requires the admin token', async () => {
   eq(rec.rotatedAt, undefined, 'a rejected rotation must not stamp rotatedAt');
 });
 
+
+test('[WTR-09] lazy legacy authentication rewrites the user record without plaintext', async () => {
+  const worker = await loadWorker();
+  const token = 'flk_' + 'abcd1234'.repeat(4);
+  const userId = 'u_3f2a1b4c-5d6';
+  const rec = { userId, name:'Legacy Lazy', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
+  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
+  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
+  const res = await worker.fetch(new Request('https://worker.test/backup', { method:'GET', headers:{'X-Backup-Token':token,'X-Device-Id':'devA'} }), env);
+  eq(res.status, 404, 'valid migrated token reaches backup lookup (no backup exists)');
+  eq(await kv.get('token:'+token), null, 'plaintext key deleted');
+  const clean = JSON.parse(await kv.get('user:'+userId));
+  eq(clean.token, undefined, 'user record plaintext field deleted');
+  ok(clean.tokenHash, 'user record gains tokenHash');
+});
+
+test('[WTR-10] admin listing proactively sweeps dormant v7 plaintext residue', async () => {
+  const worker = await loadWorker();
+  const token = 'flk_' + '1234abcd'.repeat(4);
+  const userId = 'u_4f3e2d1c-6b7';
+  const rec = { userId, name:'Dormant Legacy', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
+  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
+  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
+  const res = await worker.fetch(adminReq('/admin/users','GET'), env);
+  eq(res.status, 200, 'admin listing succeeds');
+  eq(await kv.get('token:'+token), null, 'dormant plaintext key deleted by sweep');
+  const clean = JSON.parse(await kv.get('user:'+userId));
+  eq(clean.token, undefined, 'dormant user record no longer contains plaintext');
+  ok(clean.tokenHash, 'dormant account remains usable through hashed credential');
+});
+
+test('[WTR-11] revoking a legacy account never writes its plaintext token back', async () => {
+  const worker = await loadWorker();
+  const token = 'flk_' + 'aabbccdd'.repeat(4);
+  const userId = 'u_5e4d3c2b-7a8';
+  const rec = { userId, name:'Legacy Revoke', token, createdAt:'2026-03-13T00:00:00.000Z', active:true };
+  const kv = makeKV({ ['user:'+userId]:JSON.stringify(rec), ['token:'+token]:JSON.stringify(rec) });
+  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
+  const res = await worker.fetch(adminReq('/admin/users/'+userId,'DELETE'), env);
+  eq(res.status, 200, 'legacy revoke succeeds');
+  eq(await kv.get('token:'+token), null, 'plaintext key deleted');
+  const clean = JSON.parse(await kv.get('user:'+userId));
+  eq(clean.token, undefined, 'revoked user record carries no plaintext token');
+  eq(clean.active, false, 'account remains revoked');
+});
+
 export async function runSpec() { return run(); }

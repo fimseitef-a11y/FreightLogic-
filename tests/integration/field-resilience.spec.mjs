@@ -21,8 +21,9 @@ async function getStoreCount(page, storeName) {
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => {
       const db = req.result;
-      const txn = db.transaction(storeName, 'readonly');
-      const cReq = txn.objectStore(storeName).count();
+      const physical = storeName === 'trips' && db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : storeName;
+      const txn = db.transaction(physical, 'readonly');
+      const cReq = txn.objectStore(physical).count();
       cReq.onsuccess = () => { db.close(); resolve(cReq.result); };
       cReq.onerror = () => reject(cReq.error);
     };
@@ -35,8 +36,10 @@ async function getTripByOrderNo(page, orderNo) {
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => {
       const db = req.result;
-      const txn = db.transaction('trips', 'readonly');
-      const gReq = txn.objectStore('trips').get(orderNo);
+      const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+      const txn = db.transaction(storeName, 'readonly');
+      const store = txn.objectStore(storeName);
+      const gReq = storeName === 'tripRecords' ? store.index('orderNo').get(orderNo) : store.get(orderNo);
       gReq.onsuccess = () => { db.close(); resolve(gReq.result || null); };
       gReq.onerror = () => reject(gReq.error);
     };
@@ -403,8 +406,10 @@ test('[FINDING PHASE-4 / DST] a trip logged with the app clock faked to the ambi
     const req = indexedDB.open('FreightLogic_v18');
     req.onsuccess = () => {
       const db = req.result;
-      const txn = db.transaction('trips', 'readonly');
-      const gReq = txn.objectStore('trips').get(orderNo);
+      const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+      const txn = db.transaction(storeName, 'readonly');
+      const store = txn.objectStore(storeName);
+      const gReq = storeName === 'tripRecords' ? store.index('orderNo').get(orderNo) : store.get(orderNo);
       gReq.onsuccess = () => { db.close(); resolve(gReq.result || null); };
       gReq.onerror = () => reject(gReq.error);
     };

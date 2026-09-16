@@ -396,7 +396,7 @@ test('[WIC-14] a revoked driver\'s token is 403 on /backup', async () => {
 
 // ── Endpoint placement ───────────────────────────────────────────────────────
 
-test('[WIC-15] /claim requires NO backup token, and /health reports v18', async () => {
+test('[WIC-15] /claim requires NO backup token, and /health reports v19', async () => {
   const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
   const { body: inv } = await mintInvite(worker, env, 'Dana');
 
@@ -407,7 +407,7 @@ test('[WIC-15] /claim requires NO backup token, and /health reports v18', async 
   eq(res.status, 200, `/claim must not require a backup token, got ${res.status}`);
 
   const health = await (await worker.fetch(REQ('/health'), env)).json();
-  eq(String(health.version), '18', `health should report v18, got ${health.version}`);
+  eq(String(health.version), '19', `health should report v19, got ${health.version}`);
 });
 
 export async function runSpec() { return run(); }

@@ -60,8 +60,9 @@ async function seedTrip(page, orderNo, pay) {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
         const db = req.result;
-        const txn = db.transaction('trips', 'readwrite');
-        txn.objectStore('trips').put(t);
+        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+        const txn = db.transaction(storeName, 'readwrite');
+        txn.objectStore(storeName).put(t);
         txn.oncomplete = () => { db.close(); resolve(); };
         txn.onerror = () => reject(txn.error);
       };
@@ -76,8 +77,10 @@ async function getTrip(page, orderNo) {
       const req = indexedDB.open('FreightLogic_v18');
       req.onsuccess = () => {
         const db = req.result;
-        const txn = db.transaction('trips', 'readonly');
-        const getReq = txn.objectStore('trips').get(orderNo);
+        const storeName = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+        const txn = db.transaction(storeName, 'readonly');
+        const store = txn.objectStore(storeName);
+        const getReq = storeName === 'tripRecords' ? store.index('orderNo').get(orderNo) : store.get(orderNo);
         getReq.onsuccess = () => { db.close(); resolve(getReq.result); };
         getReq.onerror = () => reject(getReq.error);
       };
