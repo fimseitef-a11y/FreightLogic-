@@ -65,6 +65,12 @@ const CERT_NAME = 'FreightLogic Certification';
 
 const checks = [];
 let unreachable = false;
+/** Set only once a SEEDED invite has actually been claimed against the live
+ *  Worker. Without it this gate could return PASS having exercised only the
+ *  four checks that need no seeded state — a credential-minting contract
+ *  reported as verified when its minting half never ran. A verdict is a claim
+ *  about what was observed, so PASS has to require the observation. */
+let roundTripObserved = false;
 /** Every KV key this run created, so cleanup can remove all of them. */
 const created = new Set();
 
@@ -264,6 +270,7 @@ async function run() {
 
   const okFirst = assert('a seeded invite claims successfully', first.status === 200 && first.json?.ok === true, `HTTP ${first.status}`);
   if (!okFirst) return report();
+  roundTripObserved = true;
 
   const t1 = first.json.token, u1 = first.json.userId;
   if (t1) created.add('tokh:' + sha256(t1));
@@ -336,9 +343,13 @@ function report() {
     console.log('  Do not certify this release generation until this is resolved.');
     return 1;
   }
-  if (unreachable) {
-    console.log('\n  VERDICT: UNOBSERVED — the live origin could not be reached, or the invite');
-    console.log('  could not be seeded. This is NOT a pass and NOT a product failure.');
+  if (unreachable || !roundTripObserved) {
+    console.log('\n  VERDICT: UNOBSERVED — the live origin could not be reached, or the seeded');
+    console.log('  claim round trip never ran. This is NOT a pass and NOT a product failure.');
+    if (!unreachable && !roundTripObserved) {
+      console.log('  The no-state checks above passed, but they do not cover the half of this');
+      console.log('  contract that MINTS a credential, so this run cannot report PASS.');
+    }
     return 2;
   }
   console.log(`\n  VERDICT: PASS — invite/claim contract verified on ${workerOrigin}.`);

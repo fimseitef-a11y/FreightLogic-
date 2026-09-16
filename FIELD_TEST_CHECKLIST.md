@@ -213,6 +213,42 @@ Its verdict is deliberately incapable of naming a safe rollback target. Older ge
 
 It states its own limit rather than implying otherwise: **the offline navigation itself is not observed there.** A navigation restarts the service worker outside the network emulation that covered it, which was tested, not assumed. That is precisely what **A4** on a real device is for, and why B6 does not replace it.
 
+## B7. Live invite/claim contract (added v24.0.13) — **run it after every Worker deploy**
+
+This gate exists because the zero-token onboarding flow reached production with
+**no live verification of any kind**. `tests/unit/worker-invite-claim.spec.mjs` (17)
+proves the contract against the real fetch handler with an in-memory KV, which is a
+source gate and says nothing about the deployed Worker; B2 and B4 predate
+`/admin/invites` and `/claim` entirely. That left the only flow in the app that
+**mints a credential** unobserved in production.
+
+`scripts/verify-live-invite-claim.mjs` runs inside `Verify Authenticated Worker`,
+which fires automatically after every dispatched Worker deploy. Against the deployed
+origin it proves: the invite endpoint denies both a missing and a wrong admin token;
+`/claim` rejects a malformed code with 400 and an unknown one with 410 rather than
+404; a seeded invite claims successfully and the minted token **actually
+authenticates**, not merely matches a shape; a re-claim returns the **same `userId`**
+with a fresh token and revokes the previous one; and the fourth claim of one invite
+is refused.
+
+Three things about it are deliberate and should not be "improved" away:
+
+- It never holds `ADMIN_TOKEN`. The invite half is verified only at its auth
+  boundary, which is the honest limit of what a gate without the operator's secret
+  can claim.
+- It spends at most 6 of the deployed `/claim` limit of 10 per hour per IP, and does
+  **not** test the 429 — that would consume the rest and make every later check in
+  the same run report a rate limit instead of its real answer.
+- It seeds a short-TTL invite into production KV and deletes every key it creates in
+  a `finally` block. The `user:`/`tokh:` records a claim mints carry no TTL of their
+  own, so cleanup is mandatory. A residue it cannot delete is **named in the log**
+  and carries the name `FreightLogic Certification`, so it is findable in
+  `GET /admin/users` rather than hiding among real drivers.
+
+Record the run ID and verdict. `UNOBSERVED` (exit 2) is not a pass: it means the
+origin was unreachable or the invite could not be seeded, and it must never be
+written down as evidence the contract holds.
+
 # C. Private-history reconciliation blocker
 
 The original August 27 five-file M6 bundle was recovered privately in prior evidence. Preflight reports 216 source rows and the unchanged adapter deterministically produces 149 candidate records. Raw rows remain outside the public repository.
