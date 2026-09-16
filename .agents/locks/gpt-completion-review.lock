@@ -1,0 +1,6 @@
+owner: gpt
+token: 1a443d90-fb7a-4869-8f70-6e501a7c27f2
+started_utc: 2026-09-16T11:36:00Z
+expected_release_utc: 2026-09-16T14:36:00Z
+paths: .agents/STATUS.md, .agents/NOW.md, .agents/TEST_LEDGER.md, .agents/inbox/gpt-completion-review-2026-09-16.md
+task: Finish available repository integration, verify current failures, correct requested certification records, and prepare redesign Gates 1-4; no concurrent protected runtime edits
