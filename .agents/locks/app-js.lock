@@ -1,0 +1,6 @@
+owner: gpt
+token: 1db616da-84db-401c-b25c-7397c6a655ee
+started_utc: 2026-09-16T07:37:12Z
+expected_release_utc: 2026-09-16T10:37:12Z
+paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js, .agents/LANES.md
+task: v24.0.15 operator-facing zero-token owner-password cloud setup; client-only, Worker v19 untouched
