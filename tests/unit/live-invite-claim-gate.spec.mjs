@@ -120,22 +120,34 @@ test('[LIC-03] the invite auth boundary is checked without any secret', async ()
   ok(/401/.test(result.out), 'the run must report on the 401 boundary');
 });
 
-test('[LIC-04] with no KV credential the claim round trip is SKIPPED, not failed', async () => {
-  // A missing credential says nothing about whether the Worker is correct, so
-  // it must not be recorded as a product failure.
+test('[LIC-04] a correct origin with NO KV credential is UNOBSERVED, never PASS', async () => {
+  // THIS TEST PASSED FOR THE WRONG REASON when it was first written, which is the
+  // defect it now guards. Its fake origin answered 400 to BOTH claim probes, so
+  // the "unknown code is 410" assertion failed and the run was a FAILURE — it
+  // never reached the question being asked. The origin below answers every
+  // no-state check CORRECTLY, so nothing fails and the only thing standing
+  // between this run and a PASS is the missing round trip.
+  //
+  // Without that guard the gate reports "invite/claim contract verified" having
+  // never exercised the half that MINTS a credential.
+  let claims = 0;
   const result = await withOrigin((req, res) => {
     if (req.url === '/admin/invites') return json(res, 401, { ok: false });
     if (req.url === '/claim') {
-      // Correct answers for both no-state cases: malformed 400, unknown 410.
-      return json(res, 400, { ok: false });
+      claims++;
+      // Probe 1 is the malformed code (400), probe 2 the unknown code (410).
+      return json(res, claims === 1 ? 400 : 410, { ok: false });
     }
     return json(res, 404, {});
   }, (origin) => runVerifier(origin, { FL_CF_API_TOKEN: '', FL_CF_ACCOUNT_ID: '', FL_KV_NAMESPACE_ID: '' }));
 
-  ok(/no KV credential supplied/.test(result.out),
-    'the run must say why the seeded round trip did not happen');
+  ok(!/VERDICT: FAILURE/.test(result.out),
+    'precondition: every no-state check must PASS, or this test is not asking the question');
   ok(!/VERDICT: PASS/.test(result.out),
-    'a run that could not seed must never report PASS — it observed only half the contract');
+    'a run that never claimed a seeded invite must NEVER report PASS');
+  eq(result.code, 2, `a half-observed contract must exit 2 (UNOBSERVED), got ${result.code}`);
+  ok(/no KV credential supplied/.test(result.out), 'the run must say why the round trip did not happen');
+  ok(/MINTS a credential/.test(result.out), 'it must say which half went unobserved');
 });
 
 test('[LIC-05] a FAILURE outranks unreachability', async () => {
