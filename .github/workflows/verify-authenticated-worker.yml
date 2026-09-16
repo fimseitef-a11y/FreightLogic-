@@ -147,4 +147,20 @@ jobs:
           echo 'Running synthetic backup/delta/restore round trip.'
           FL_BACKUP_TOKEN="$TOKEN" node scripts/verify-live-backup.mjs "$WORKER_ORIGIN"
 
+          # Worker v18 zero-token onboarding. This gate predates those endpoints,
+          # so when /admin/invites and /claim went live they had NO production
+          # verification at all — and this is the only flow in the app that MINTS
+          # a credential. The verifier seeds its own short-TTL invite straight
+          # into KV the same way this step seeds its synthetic driver, exercises
+          # the full claim path against the deployed Worker, and cleans up every
+          # key it creates in a finally block (the user:/tokh: records a claim
+          # mints carry no TTL of their own, so that cleanup is mandatory).
+          # It spends at most 6 of the 10/hr per-IP claim budget and deliberately
+          # does not test the 429, which would consume the rest.
+          echo 'Running live invite/claim contract verification.'
+          FL_CF_API_TOKEN="$CLOUDFLARE_API_TOKEN" \
+          FL_CF_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
+          FL_KV_NAMESPACE_ID="$KV_NAMESPACE_ID" \
+            node scripts/verify-live-invite-claim.mjs "$WORKER_ORIGIN"
+
           echo 'AUTHENTICATED WORKER VERDICT: PASS'
