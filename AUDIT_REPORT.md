@@ -4,8 +4,15 @@
 > (v23.8.3/v23.8.4) and X-series (v23.9) against repository **source**, and — appended at the
 > end — the **P-series (P-01 … P-07) against the DEPLOYED backup/API Worker**.
 >
-> The P-series were the only OPEN findings this report has ever carried, including two live
-> credential exposures and a live violation of the v24.0 decision-authority rule. They were open
+> **One finding is OPEN as of 2026-09-16: V-1**, at the very end of this report —
+> `ensureVehicleProfiles()` is a read-modify-write with no serialization, so two concurrent
+> callers each mint a vehicle profile and one is silently discarded along with the tax-method
+> election attached to it. It was found by `main` failing its own release gate and being
+> cleared by a re-run. Reported rather than fixed: the repair is in `app.js`, which is SHARED
+> and needs a release generation.
+>
+> The P-series were, until then, the only OPEN findings this report had ever carried, including
+> two live credential exposures and a live violation of the v24.0 decision-authority rule. They were open
 > because production ran Worker **v7**, seven generations behind source. **All seven closed on
 > 2026-09-13 when v14 was deployed** — no code change was needed, exactly as the findings
 > predicted.
@@ -1242,3 +1249,81 @@ the deployed Worker.
 this deploy are not recoverable — the losing write was never stored. Nothing in the
 data identifies them, because a collision leaves one valid key rather than a
 corrupt one.
+
+---
+
+## V-1 — `ensureVehicleProfiles()` is not safe to call concurrently — OPEN
+
+**Severity: Medium.** A dropped vehicle profile takes the tax-method election
+attached to it, and that election gates the F30 Schedule C export.
+
+**How it surfaced.** Not from a report — from `main` failing its own release gate.
+Tests run `35084126731`, **attempt 1**, job `104754806868`, push on `main` @
+`8f90725`: `TOTAL: 523 passed, 4 failed across 56 spec files`, all four in
+`tax-export-csv-corruption.spec.mjs`, the first being its setup:
+
+```js
+await saveActiveVehicleProfile({ vehicleTaxMethod: STANDARD_MILEAGE, firstYearElection: STANDARD_MILEAGE });
+return (await getActiveVehicleProfile()).vehicleTaxMethod;   // !== 'STANDARD_MILEAGE'
+```
+
+The other three are that one setup cascading — X-03 blocks the Schedule C export
+entirely while `vehicleTaxMethod` is UNSET. **Attempt 2 on the same SHA passed, and
+that is the green Tests check standing for `8f90725` today.** A second, unrelated
+intermittent failure (ZTO-09) was found on the same tree and is separately fixed; a
+suite that needs a second attempt to go green stops being evidence, which is why
+neither was written off as a flake.
+
+**Where.** `app.js`, `ensureVehicleProfiles()`. It seeds lazily and is a
+read-modify-write over a settings key with no serialization:
+
+```js
+let profiles = await getSetting('vehicleProfiles', null);     // (1) observed absent
+if (!Array.isArray(profiles) || !profiles.length){
+  ... await Promise.all([getSetting('vehicleYear'), getSetting('vehicleMake')])
+  profiles = [_newVehicleProfile(label)];                      // (2) mint a fresh id
+  await setSetting('vehicleProfiles', profiles);               // (3) overwrite the array
+  await setSetting('activeVehicleId', profiles[0].id);
+}
+```
+
+Two callers can both be parked on the IndexedDB round trip at (1) before either
+reaches (3). Both then mint a profile with its own id and each overwrites the whole
+array, so one profile is silently discarded and the survivor is decided by whichever
+`setSetting` lands last. `setSetting` populates `SETTINGS_CACHE` synchronously before
+awaiting its transaction, which narrows the window without closing it — the window is
+the round trip at (1), which precedes any cache write.
+
+**Reachable in production, not only under a harness.** Three call sites read through
+this function: `refreshVehicleTaxMethodRow()` (any render that populates Settings),
+`openVehicleTaxMethodModal()`, and `openTaxSeasonExport()`. On a fresh install, any
+two overlapping is enough.
+
+**Reproduction.** `tests/integration/vehicle-profile-race.spec.mjs`, tagged
+`[FINDING V-1 / NEW]` per this suite's convention — a green `NEW` test means the
+evidence is captured, not that the defect is repaired. A Settings-side reader and a
+tax-method writer entering the lazy seed together mint **two distinct profile ids in
+8/8 iterations**, and the stored array holds exactly **one** profile in 8/8: two
+created, one overwritten. A scratch run at 30 iterations reproduced it 30/30. The
+second test is the control — the same save and read, serialized, is correct — so a
+failure here can never be misread as "vehicle profiles are broken" rather than "they
+race".
+
+**What is NOT claimed.** The specific direction that produced the CI failure — the
+one where the LOSING write is the operator's, so the election reads back UNSET — was
+**not reproduced**. In all 30 scratch iterations the surviving write happened to be
+the operator's, and giving the reader a head start of 0, 1, 2, 3 or 4 event-loop
+ticks did not flip it (0/10 at each). The lost update is proven; that this is what
+run `35084126731` hit is **inferred from the mechanism and the exact failure
+signature, not observed.** Recorded as inferred, for the same reason run
+`35049015938` is recorded as undiagnosed rather than explained away: a mechanism that
+fits is not a cause that was seen.
+
+**Fix, not taken here.** Serialize the lazy seed — a module-scope in-flight promise
+so concurrent callers await the same seeding operation rather than each performing
+their own, which is the smallest change that makes the concurrent case equivalent to
+the uncontended case the control test already proves correct. It belongs in `app.js`,
+which is SHARED and changes deployed bytes, so it requires a release generation
+(`verify-release-generation.mjs` RG-03) and a deploy. Reported rather than taken
+unilaterally. When it lands, the first test flips to asserting a single profile and
+is retagged `/ FIXED`.
