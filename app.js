@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.17 USA ENGINE
+/** FreightLogic v24.0.18 USA ENGINE
+ *  v24.0.18 "Never Press Backup": Issue #205 section 3 — automatic cloud sync is
+ *          now observable and survives a close. Pending work is DERIVED from
+ *          `lastCloudSyncedAt`, the same delta watermark cloudPushBackup()
+ *          already selects records against, so the count cannot disagree with
+ *          what a push would send; there is deliberately NO separate queue,
+ *          because a second hand-maintained list at 27 mutation sites is the
+ *          X-07 drift shape. A failed push now leaves a durable marker (both
+ *          paths previously said nothing and stored nothing when silent), a
+ *          success clears it, boot drains a sync the previous session's
+ *          in-memory 30s debounce lost, and Home shows Synced / N changes
+ *          waiting / Offline / Sync problem. DB stays 16 — no migration spent.
  *  v24.0.17 "One Less Surface": Voice Load removed completely by operator
  *          decision (Issue #230) — the module, its script tag, the evaluator
  *          microphone control and status region, its precache entries in both
@@ -274,7 +285,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.17';
+const APP_VERSION = '24.0.18';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -6552,6 +6563,9 @@ async function renderHome(){
   // operator reliably passes through, so it cannot be missed the way the
   // Diagnostics row was.
   renderCloudPausedBanner().catch(()=>{});
+  // #205 §3: and the positive/pending case the banner deliberately does not
+  // cover, so "am I backed up" is answerable without opening Diagnostics.
+  renderSyncStatusRow().catch(()=>{});
 
   // F26: Driver Command Strip wiring (idempotent — only bind once)
   const dcEval = $('#dcEvaluate');
@@ -15890,6 +15904,9 @@ async function cloudPushBackup(silent = true){
       _lastCloudSync = Date.now(); _cloudRetryCount = 0;
       await setSetting('lastCloudSync', _lastCloudSync);
       await setSetting('lastCloudSyncedAt', _lastCloudSync);
+      // A success clears the durable failure marker (#205 §3). Without this the
+      // status row would say "Sync problem" forever after one transient 500.
+      await setSetting('lastCloudSyncError', null);
       if (!silent) toast(isDelta ? 'Delta sync complete' : 'Backup synced');
       cloudRefreshStatusPanel();
     }
@@ -15900,9 +15917,16 @@ async function cloudPushBackup(silent = true){
         await setSetting('lastCloudSyncedAt', 0);
         return cloudPushBackup(silent);
       }
+      // Persist the failure (#205 §3). Both failure paths previously called
+      // cloudScheduleRetry() and, when silent, said nothing and stored nothing,
+      // so a repeatedly failing sync was indistinguishable from a quiet one.
+      await setSetting('lastCloudSyncError', 'HTTP ' + res.status);
       if (!silent) toast(res.status === 413 ? 'Too large (>5MB)' : 'Backup failed (' + res.status + ')', true); cloudScheduleRetry();
     }
-  } catch(e) { if (!silent) toast('Backup failed', true); cloudScheduleRetry(); }
+  } catch(e) {
+    try { await setSetting('lastCloudSyncError', String(e?.message || e || 'network')); } catch (_) {}
+    if (!silent) toast('Backup failed', true); cloudScheduleRetry();
+  }
   finally { _cloudSyncInProgress = false; if (!silent) cloudRefreshStatusPanel(); }
 }
 
@@ -16262,6 +16286,156 @@ function cloudSetSyncStatus(type, msg){
  *  rules forbid persisting it. The fix is to make the gap LOUD and recovery one
  *  tap, not to weaken the encryption.
  */
+// ── Issue #205 §3 — automatic cloud sync: pending state, durability, status ──
+//
+// §3's requirement is that "the normal user should never need to remember to
+// press Backup". Most of the model was already here: every mutation calls
+// invalidateKPICache() -> cloudScheduleSync() (27 call sites covering trips,
+// expenses, fuel, mark-paid, imports, settings and maintenance), delta sync
+// only sends what changed, restore is revision-aware, and a manual action
+// stays in Settings as a diagnostic. Three things were missing, and only three.
+//
+// 1. PENDING WORK WAS NOT OBSERVABLE. Nothing could answer "how many changes
+//    are waiting", so "3 changes waiting" could not be shown and an operator
+//    had no way to tell automatic sync had stopped except at restore time.
+//
+// 2. THE INTENT WAS NOT DURABLE. cloudScheduleSync() is a 30s in-memory
+//    debounce. Close the app inside that window — or fail the push — and the
+//    timer dies with the page. The DATA was never at risk (local save always
+//    happens first) but the *sync* silently did not happen, which is the
+//    failure this section is about.
+//
+// 3. A FAILURE LEFT NO TRACE. Both failure paths in cloudPushBackup() called
+//    cloudScheduleRetry() and, when silent, said nothing and persisted nothing,
+//    so a repeatedly failing sync was indistinguishable from a quiet one.
+//
+// WHY THERE IS NO SEPARATE QUEUE, which is the design decision worth reading.
+// The obvious implementation is a durable queue store of pending mutations.
+// This deliberately does not do that, because FreightLogic ALREADY has a
+// durable definition of pending work: `lastCloudSyncedAt`, the delta watermark
+// that cloudPushBackup() itself selects records against. Anything with
+// `updatedAt` newer than the watermark is, by that function's own definition,
+// not yet on the server. Deriving the count from the watermark cannot drift
+// from what the push would actually send. A parallel queue can — it would be a
+// second list of what needs syncing, maintained by hand at 27 call sites, and
+// two lists that can disagree is the exact shape of the X-07 restore gap and
+// the 2026-09-13 asset defect this repository already records. It also needs no
+// new object store, so DB_VERSION stays 16 and no migration is spent here.
+//
+// The stores counted are the record stores delta sync actually filters by
+// `updatedAt`. `settings` is excluded on purpose: it has no revision field, is
+// pushed wholesale every time, and counting it would make "0 changes waiting"
+// unreachable.
+const SYNC_PENDING_STORES = ['trips', 'expenses', 'fuel', 'laneHistory', 'weeklyReports',
+  'reloadOutcomes', 'bidHistory', 'documents', 'loadLifecycle', EVIDENCE_STORE];
+
+/** How many records are newer than the server's watermark, plus the oldest such
+ *  change. Never throws: a store that cannot be read is skipped rather than
+ *  taking the whole status surface down with it, because this runs on every
+ *  home render. */
+async function syncPendingSummary(){
+  const watermark = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
+  let pending = 0, oldestAt = null;
+  for (const store of SYNC_PENDING_STORES){
+    let rows = [];
+    try { rows = await dumpStore(store); } catch (_) { continue; }
+    for (const r of rows){
+      const at = finiteNum(r?.updatedAt, 0);
+      // A record with no usable updatedAt is NOT counted as pending. It cannot
+      // be proven newer than the watermark, and inventing pending work would
+      // make the surface cry wolf forever on legacy rows — the UNKNOWN-is-not-
+      // a-value rule applied to sync state.
+      if (at > watermark){
+        pending++;
+        if (oldestAt === null || at < oldestAt) oldestAt = at;
+      }
+    }
+  }
+  return { pending, oldestAt, watermark };
+}
+
+/** The state the driver is actually in, as one value the UI can switch on.
+ *  Order matters: a configured-but-passphrase-less install is PAUSED even when
+ *  offline, because the paused banner owns that case and offers the fix. */
+const SYNC_STATE = { OFF: 'OFF', PAUSED: 'PAUSED', OFFLINE: 'OFFLINE',
+  PROBLEM: 'PROBLEM', PENDING: 'PENDING', SYNCED: 'SYNCED' };
+
+async function cloudSyncStatus(){
+  const token = await getSetting('cloudBackupToken', '');
+  // Never configured: report OFF and render nothing. Nagging a driver who never
+  // enabled cloud backup trains them to dismiss the one banner that matters —
+  // the same reason cloudBackupPaused() returns false with no token.
+  if (!token) return { state: SYNC_STATE.OFF, pending: 0 };
+
+  const { pending, oldestAt } = await syncPendingSummary();
+  if (await cloudBackupPaused()) return { state: SYNC_STATE.PAUSED, pending, oldestAt };
+
+  const err = await getSetting('lastCloudSyncError', null);
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  if (offline) return { state: SYNC_STATE.OFFLINE, pending, oldestAt };
+  if (pending > 0 && err) return { state: SYNC_STATE.PROBLEM, pending, oldestAt, error: err };
+  if (pending > 0) return { state: SYNC_STATE.PENDING, pending, oldestAt };
+  return { state: SYNC_STATE.SYNCED, pending: 0, lastSyncedAt: Number(await getSetting('lastCloudSync', 0) || 0) };
+}
+
+function _syncStatusText(st){
+  const n = st.pending;
+  const changes = n === 1 ? '1 change' : n + ' changes';
+  switch (st.state){
+    case SYNC_STATE.OFFLINE: return { icon: '📴', text: 'Offline — saved on this device' + (n ? ' (' + changes + ' waiting)' : ''), tone: 'warn' };
+    case SYNC_STATE.PROBLEM: return { icon: '⚠️', text: 'Sync problem — retrying (' + changes + ' waiting)', tone: 'bad' };
+    case SYNC_STATE.PENDING: return { icon: '⏳', text: changes + ' waiting', tone: 'warn' };
+    case SYNC_STATE.SYNCED:  return { icon: '✅', text: 'Synced', tone: 'ok' };
+    default: return null;   // OFF and PAUSED render nothing here
+  }
+}
+
+/** One compact row on Home. Deliberately NOT a fixed banner: that slot belongs
+ *  to renderCloudPausedBanner(), and two stacked fixed banners would cover the
+ *  app. PAUSED renders nothing here precisely so the two cannot both speak. */
+async function renderSyncStatusRow(){
+  const home = $('#view-home');
+  if (!home) return;
+  const st = await cloudSyncStatus();
+  const copy = _syncStatusText(st);
+  const existing = $('#syncStatusRow');
+  if (!copy){ existing?.remove(); return; }
+
+  const tone = copy.tone === 'ok' ? 'var(--good,#34c759)' : copy.tone === 'bad' ? 'var(--bad,#ff3b30)' : 'var(--warn,#f0a500)';
+  const el = existing || document.createElement('div');
+  el.id = 'syncStatusRow';
+  el.style.cssText = 'margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--surface-0);' +
+    'border:1px solid ' + tone + ';font-size:13px;display:flex;align-items:center;gap:8px';
+  // escapeHtml on the operator-invisible error string too: it can carry an
+  // HTTP status or a network message that originated off-device.
+  el.innerHTML = '<span>' + copy.icon + '</span><span style="flex:1">' + escapeHtml(copy.text) + '</span>';
+  if (!existing){
+    const anchor = $('#homeTripTrackCard');
+    if (anchor?.parentNode) anchor.parentNode.insertBefore(el, anchor);
+    else home.insertBefore(el, home.firstChild);
+  }
+}
+
+/** The durability fix (gap 2). cloudScheduleSync()'s debounce is in-memory, so
+ *  a close inside the window loses the intent — the data is safe locally but
+ *  the sync never happened. Boot re-derives pending work from the watermark and
+ *  drains once. Idempotent and retry-safe by construction: it pushes the same
+ *  delta the lost timer would have, and re-sending a delta is already safe
+ *  because restore is revision-aware.
+ *
+ *  It does NOT force a push when nothing is pending, and it stays silent when
+ *  cloud backup is off or paused — a boot-time toast for a state the banner
+ *  already explains is noise. */
+async function resumeSyncIfPending(){
+  try {
+    if (!(await cloudIsEnabled())) return { drained: false, reason: 'not-enabled' };
+    const { pending } = await syncPendingSummary();
+    if (pending <= 0) return { drained: false, reason: 'nothing-pending' };
+    await cloudPushBackup(true);
+    return { drained: true, pending };
+  } catch (_) { return { drained: false, reason: 'error' }; }
+}
+
 async function cloudBackupPaused(){
   const token = await getSetting('cloudBackupToken', '');
   if (!token) return false;                       // never configured — not "paused"
@@ -22153,6 +22327,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     importFile, importTXTFile, importXLSXFile, importExceedsSizeLimit, LIMITS,
     // X-01/X-07 (v23.9 Phase 4)
     cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
+    // Issue #205 section 3 — automatic sync: pending state, status, durability
+    syncPendingSummary, cloudSyncStatus, renderSyncStatusRow, resumeSyncIfPending,
+    SYNC_STATE, SYNC_PENDING_STORES,
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
     // X-04 (v23.9 Phase 5)
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
@@ -22298,6 +22475,14 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
 
     await navigate();
     _updateOnlineStatus();
+
+    // Issue #205 §3: drain any sync the previous session could not finish.
+    // cloudScheduleSync()'s 30s debounce is in-memory, so closing the app inside
+    // that window lost the intent — the data was always saved locally, but the
+    // sync silently did not happen. Fire-and-forget AFTER first paint so it
+    // never delays the driver's first screen, and it no-ops when cloud backup
+    // is off, paused, or nothing is pending.
+    resumeSyncIfPending().catch(()=>{});
     setInterval(()=>{ if (document.visibilityState === 'visible') computeQuickKPIs().catch(()=>{}); }, 60_000);
 
     // v20: FAB removed — onboarding handled via Home welcome card
