@@ -3497,6 +3497,22 @@ any future Claude regression that genuinely needs its own file.
 failed until it was reworded. Second consecutive release in which that gate caught the
 person who added it.
 
+Full suite on the exact candidate head, first attempt, real headless Chromium:
+**615 passed, 0 failed across 64 spec files.** Nothing was skipped, quarantined or
+weakened. Every negative control fired: reverting the TXT guard fails `ICT-11` with
+`["text"]` recorded and the XLSX guard fails `ICT-12` with `["arrayBuffer"]`, while
+`ICT-13` stays green — which proves the three layers are independent rather than one
+guard tested three ways; restoring any single Voice Load reference fails `RH-04`;
+re-admitting a withheld document fails `DAC-06`, and excluding `field-certification.js`
+fails `DAC-07`.
+
+**An earlier run of this suite was discarded rather than reported.** The #232 control's
+chained restore overwrote the Voice removal mid-run, so the tree changed underneath a
+suite already in progress. That run's numbers would have described a tree that never
+existed; it was killed, the removal re-applied, and the suite re-run from the top on the
+final head. "First-attempt exact-head result is the evidence" only means anything if the
+head holds still for the whole attempt.
+
 ### Not deployed
 
 **Source-only.** v24.0.17 is not deployed and not live-observed. Deploy order is Worker
