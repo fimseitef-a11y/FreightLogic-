@@ -7,6 +7,12 @@ Status: **HOLD — EVERY AUTOMATABLE AND LIVE-ORIGIN GATE IS OBSERVED AND PASSIN
 This document is the certification authority. Every earlier state and addendum document is
 historical evidence and must not be read as the current candidate.
 
+> **Not a live test queue.** On 2026-09-16 the operator deferred the physical-device gate
+> (A1-A12) and the M6 private-history reconciliation to the **final post-v24.5 candidate**.
+> **24.0.14 is not the certification candidate**, and the two open gates below are not
+> awaiting imminent testing. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before acting
+> on the HOLD or on any open row in `FIELD_TEST_CHECKLIST.md`.
+
 ## Why this document exists
 
 The document it supersedes certified **24.0.12 / Worker v17**. Production now serves
@@ -88,6 +94,12 @@ This has now happened at 24.0.10, 24.0.12 and 24.0.13. It is a property of the p
 a defect to be fixed by ignoring it.
 
 ## Still HOLD — exactly two things
+
+Both are **deferred by the operator's 2026-09-16 decision** to the final post-v24.5
+candidate, not queued against this one. HOLD here means deferred by decision, not blocked
+on unfinished work — `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` records the rationale and
+the conditions under which the deferral lifts. The facts below are unchanged and remain
+accurate; only the schedule is stated elsewhere.
 
 - **Private-history reconciliation.** The five raw M6 files are not in this repository and
   have not been mounted in any session. The instrument is committed and ready; only the data
