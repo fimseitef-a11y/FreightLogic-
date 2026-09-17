@@ -255,7 +255,8 @@ test('[FIELD CERT / NEGATIVE] FC-09 a runtime-generation change invalidates an i
     await page.waitForFunction(() => document.body.dataset.sessionState === 'INVALID');
     eq(await page.locator('body').getAttribute('data-session-state'), 'INVALID',
       'candidate/environment drift must invalidate rather than silently resume');
-    await gate(page, 'A2').locator('[data-action="start"]').click();
+    eq(await gate(page, 'A2').locator('[data-action="start"]').isDisabled(), true,
+      'an invalidated session must disable physical-row start controls');
     eq(await gateStatus(page, 'A2'), 'NOT_RUN', 'an invalidated session cannot continue physical rows');
   } finally {
     await app.close();
