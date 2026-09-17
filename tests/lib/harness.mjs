@@ -231,18 +231,70 @@ export async function waitForAppReady(page, { timeout = 15000 } = {}) {
 
   // appMeta can populate before initDB() has assigned the app's shared IndexedDB
   // handle. Tests that call persistence helpers immediately after launch therefore
-  // used to race `db === null` nondeterministically. Probe the same exported data
-  // path the suite is about to use and only return once it can complete.
-  await page.waitForFunction(async () => {
-    const T = window.__FL_TESTS;
-    if (typeof T?.dumpStore !== 'function') return false;
+  // race `db === null` nondeterministically. Probe the same exported data path the
+  // suite is about to use and only return once it can complete.
+  //
+  // Issue #224 — why this polls from NODE and not with `page.waitForFunction()`.
+  // `waitForFunction` evaluates its predicate and tests the RESULT for truthiness
+  // without awaiting it. An `async` predicate always returns a Promise, and a
+  // Promise is always truthy, so the wait satisfied itself on its first poll and
+  // the database probe inside it never decided anything. That is not a deduction:
+  // `probeResolvesWithoutAwaiting()` below drives the real Playwright build this
+  // suite runs on and measures it, and HR-04 fails if the behaviour ever changes
+  // or if this file goes back to the async-predicate form.
+  //
+  // `page.evaluate()` DOES await a returned Promise, so the poll is a Node-side
+  // loop over evaluate. This is not a retry of a failed assertion and not a
+  // timeout bump: it is the wait that was written here doing the waiting it
+  // always claimed to do.
+  const deadline = Date.now() + timeout;
+  let lastErr = 'never probed';
+  for (;;) {
+    let ok = false;
     try {
-      await T.dumpStore('settings');
-      return true;
-    } catch {
-      return false;
+      const r = await page.evaluate(async () => {
+        const T = window.__FL_TESTS;
+        if (typeof T?.dumpStore !== 'function') return { ok: false, err: '__FL_TESTS.dumpStore missing' };
+        try {
+          await T.dumpStore('settings');
+          return { ok: true, err: null };
+        } catch (e) {
+          return { ok: false, err: String(e && e.message || e) };
+        }
+      });
+      ok = r.ok;
+      if (!ok) lastErr = r.err;
+    } catch (e) {
+      // A navigation mid-evaluate destroys the execution context. That is the
+      // #224 re-bootstrap itself, so it is a reason to keep waiting for the NEW
+      // document to become ready, not a reason to fail here.
+      lastErr = 'evaluate failed: ' + String(e && e.message || e);
     }
-  }, { timeout });
+    if (ok) return;
+    if (Date.now() >= deadline) {
+      throw new Error(`waitForAppReady: IndexedDB not ready within ${timeout}ms — last probe: ${lastErr}`);
+    }
+    await new Promise(r => setTimeout(r, 25));
+  }
+}
+
+/** Drives the real Playwright build this suite runs on and reports whether
+ *  `waitForFunction` resolves an `async` predicate WITHOUT awaiting it — the
+ *  Issue #224 mechanism, measured rather than asserted from documentation.
+ *  Returns { resolvedMs, awaited } where `awaited: false` is the defect.
+ *  Exported for HR-04; not used by the readiness path itself. */
+export async function probeResolvesWithoutAwaiting(page, settleMs = 600) {
+  await page.evaluate(ms => {
+    window.__FL_PROBE_READY = false;
+    setTimeout(() => { window.__FL_PROBE_READY = true; }, ms);
+  }, settleMs);
+  const t0 = Date.now();
+  await page.waitForFunction(async () => {
+    await new Promise(r => setTimeout(r, 20));
+    return window.__FL_PROBE_READY;
+  }, { timeout: settleMs * 10 });
+  const resolvedMs = Date.now() - t0;
+  return { resolvedMs, awaited: resolvedMs >= settleMs };
 }
 
 async function waitForAppBoot(page, enableTestExports, rec) {

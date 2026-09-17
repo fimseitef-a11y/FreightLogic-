@@ -2,39 +2,49 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**v24.0.15 is SOURCE-ONLY. Nothing below has been observed at 24.0.15, and this
+**v24.0.19 is SOURCE-ONLY. Nothing below has been observed at 24.0.19, and this
 document does not claim it has.** The lines under "Current runtime candidate" describe
-what production is serving, which is **24.0.14 / DB16 / Worker v19** — a state that is
-OBSERVED, not assumed. One deploy is outstanding and it is the app only: v24.0.15 changes
-no Worker semantics and no schema, so the Worker/app ordering constraint that governed
-the v18/24.0.13 pair does not apply here. After deploying, **re-dispatch** live parity; a
-push-triggered run races the Cloudflare deploy and its FAILURE is evidence about the
-origin at that instant, not about the release.
+what production is serving, which is **24.0.18 / DB16 / Worker v19**. The app half of
+that is observed; the Worker half is the outstanding deploy and is a live MISMATCH
+against source v20. v24.0.19 changes no Worker semantics and no schema, so it does not
+alter that ordering constraint — it also does not resolve it. After deploying,
+**re-dispatch** live parity; a push-triggered run races the Cloudflare deploy and its
+FAILURE is evidence about the origin at that instant, not about the release.
 
-*This block previously described 24.0.13 as the source candidate and 24.0.12 / Worker v17
-as production — two app generations and two Worker generations stale, with an outstanding
-Worker deploy that had long since happened. It is corrected rather than overwritten,
-because a parity document that keeps a superseded deployment claim is exactly the drift
-it exists to catch.*
+*This block previously described 24.0.15 as the source candidate and 24.0.14 as
+production — four app generations stale, with deploys that had since happened. It went
+stale the same way the block before it did (which described 24.0.13 / 24.0.12 / Worker
+v17). It is corrected rather than overwritten, because a parity document that keeps a
+superseded deployment claim is exactly the drift it exists to catch. The rule that
+prevents it is unchanged and is stated below: a superseding record is due the day a
+shipped file deploys, not the day it merges.*
 
 Current runtime candidate (what production serves TODAY):
 
-- app / PWA / service worker: **24.0.14**, **deployed and observed live** 2026-09-16 by
-  all-asset live parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`,
-  VERDICT PASS against an `EXPECTED` block of `24.0.14` / `FreightLogic v24.0.14` /
-  Worker `19`;
-- repository source generation: **24.0.15** — AHEAD of production, not yet deployed;
-- IndexedDB schema: **16** (unchanged by 24.0.15);
-- backup/API Worker: **19**, deployed and serving; **unchanged by 24.0.15**;
-- exact runtime Git candidate: **`8f90725`**;
-- current repository `main`: **`5b28315`** at the time this line was written; the 24.0.15
-  work sits on `claude/repo-review-cleanup-yz0c24` and is not merged;
+- app / PWA / service worker: **24.0.18**, deployed. The app-side observation of record
+  is live-parity run `35284924340` **attempt 2**, `push` on `main` @ `ac04f61`, job
+  `105416938250`. **Read that run carefully: its overall verdict is `FAILURE`, which
+  this document has verified.** It failed on the Worker check below, not on an app-side
+  one; Issue #240 records the app-side and runtime-asset checks in that same run as
+  green. A run whose verdict is FAILURE is not a parity PASS for this generation, and
+  citing it as one would be the error this checklist exists to prevent — what it
+  supports is the narrower claim that the deployed app is at 24.0.18;
+- repository source generation: **24.0.19** — AHEAD of production, not yet deployed;
+- IndexedDB schema: **16** (unchanged by 24.0.19);
+- backup/API Worker: **19** deployed and serving, against **v20 in source**. This is a
+  live, observed MISMATCH and it is the single failing check in the run above. Worker
+  v20 has been dispatched twice (`35211428043`, `35213350763`) and both were refused in
+  ~7 seconds at the typed-`DEPLOY` confirmation guard — the guard working as designed,
+  not a broken workflow. It remains an operator dispatch;
+- exact runtime Git candidate: **`ac04f61`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`,
-  which certifies 24.0.14 and stays authoritative until 24.0.15 actually deploys — a
-  superseding document is due the day a shipped file deploys, not the day it merges;
-- status: **HOLD**.
+- certification authority: the current
+  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_*.md`. A superseding document is due the
+  day a shipped file deploys, not the day it merges;
+- status: **HOLD.** Issue **#240** (v24.0.18 could report "Synced" over unsynced data)
+  is fixed in 24.0.19 source and is not yet deployed; issue **#224** is closed by the
+  24.0.19 harness repair. Physical iPhone A1-A12 and authentic M6 remain open.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
 
