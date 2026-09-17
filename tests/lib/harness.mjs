@@ -137,9 +137,97 @@ export async function stopServer() {
   }
 }
 
-async function waitForAppBoot(page, enableTestExports) {
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
-  if (!enableTestExports) return;
+// ── Issue #224: lifecycle diagnostics ────────────────────────────────────────
+//
+// `main` intermittently fails with the app's module-scoped IndexedDB handle
+// `null` inside `tx()` — `Cannot read properties of null (reading
+// 'objectStoreNames')` at `physicalFor` — in specs that had already completed
+// `waitForAppBoot()`. The handle is assigned once (`db = await initDB()`) and
+// nothing sets it back to null, so the only way it can be null AFTER readiness
+// is a NEW DOCUMENT: a reload or navigation that re-ran the IIFE.
+//
+// That was a deduction, not an observation, and nothing recorded which it was.
+// This substrate makes it observable rather than inferred:
+//
+//   - every tracked page is stamped with a per-document id at init-script time,
+//     so a re-bootstrap is detectable by comparing the id at readiness with the
+//     id now — a reload gets a new stamp;
+//   - main-frame navigations, page errors and console errors are recorded;
+//   - `createSuite()` dumps all of it for every live page when an assertion
+//     fails, so a CI failure arrives WITH its evidence instead of prompting
+//     another rerun.
+//
+// Deliberately harness-only: no production byte changes for diagnostics. It is
+// also deliberately not a retry, a timeout bump, or a weakened assertion —
+// #224 forbids all three, and they would hide the very transition being hunted.
+const TRACKED = new Set();
+
+const LIFECYCLE_INIT = () => {
+  window.__FL_DOC_ID = Math.random().toString(36).slice(2) + ':' + Date.now();
+  window.__FL_DOC_ERRORS = [];
+  window.addEventListener('error', e => {
+    try { window.__FL_DOC_ERRORS.push('error: ' + (e.message || '')); } catch (_) {}
+  });
+};
+
+function trackPage(page, label) {
+  const rec = { page, label, navigations: [], pageErrors: [], consoleErrors: [], bootDocId: null };
+  page.on('framenavigated', f => {
+    try { if (f === page.mainFrame()) rec.navigations.push(f.url()); } catch (_) {}
+  });
+  page.on('pageerror', e => rec.pageErrors.push(String(e && e.message || e)));
+  page.on('console', m => { if (m.type() === 'error') rec.consoleErrors.push(m.text().slice(0, 300)); });
+  page.on('close', () => TRACKED.delete(rec));
+  TRACKED.add(rec);
+  return rec;
+}
+
+/** Everything known about one tracked page's document lifecycle, right now. */
+async function lifecycleOf(rec) {
+  let live = { docId: null, dbNull: null, readyErr: null };
+  try {
+    live = await rec.page.evaluate(async () => {
+      const out = { docId: window.__FL_DOC_ID || null, dbNull: null, readyErr: null,
+                    errors: (window.__FL_DOC_ERRORS || []).slice(0, 5) };
+      try { await window.__FL_TESTS.dumpStore('settings'); out.dbNull = false; }
+      catch (e) { out.dbNull = true; out.readyErr = String(e && e.message || e); }
+      return out;
+    });
+  } catch (e) { live.readyErr = 'evaluate failed: ' + String(e && e.message || e); }
+  return {
+    label: rec.label,
+    bootDocId: rec.bootDocId,
+    currentDocId: live.docId,
+    reBootstrapped: !!(rec.bootDocId && live.docId && rec.bootDocId !== live.docId),
+    dbUnusableNow: live.dbNull,
+    dbError: live.readyErr,
+    navigations: rec.navigations,
+    pageErrors: rec.pageErrors.slice(0, 5),
+    consoleErrors: rec.consoleErrors.slice(0, 5),
+    inPageErrors: live.errors || [],
+  };
+}
+
+/** Printed by createSuite() on any assertion failure. */
+async function dumpLifecycleDiagnostics() {
+  if (!TRACKED.size) return;
+  const lines = [];
+  for (const rec of [...TRACKED]) {
+    let info;
+    try { info = await lifecycleOf(rec); } catch (e) { info = { label: rec.label, error: String(e) }; }
+    lines.push(`    [#224 lifecycle] ${JSON.stringify(info)}`);
+    if (info.reBootstrapped) {
+      lines.push('    [#224 lifecycle] *** DOCUMENT RE-BOOTSTRAPPED AFTER READINESS — this is the db===null mechanism ***');
+    }
+  }
+  console.log(lines.join('\n'));
+}
+
+/** The readiness contract every page in this suite must satisfy before a test
+ *  touches persistence — exported so a spec that opens its OWN extra page (two
+ *  tabs, a concurrency test) cannot settle for a weaker wait. */
+export async function waitForAppReady(page, { timeout = 15000 } = {}) {
+  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout });
 
   // appMeta can populate before initDB() has assigned the app's shared IndexedDB
   // handle. Tests that call persistence helpers immediately after launch therefore
@@ -147,14 +235,27 @@ async function waitForAppBoot(page, enableTestExports) {
   // path the suite is about to use and only return once it can complete.
   await page.waitForFunction(async () => {
     const T = window.__FL_TESTS;
-    if (!T || typeof T.dumpStore !== 'function') return false;
+    if (typeof T?.dumpStore !== 'function') return false;
     try {
       await T.dumpStore('settings');
       return true;
     } catch {
       return false;
     }
-  }, { timeout: 15000 });
+  }, { timeout });
+}
+
+async function waitForAppBoot(page, enableTestExports, rec) {
+  if (!enableTestExports) {
+    await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    return;
+  }
+  await waitForAppReady(page);
+  if (rec) {
+    // The document that satisfied readiness. If a later failure sees a different
+    // id, the app re-bootstrapped underneath the test.
+    rec.bootDocId = await page.evaluate(() => window.__FL_DOC_ID || null).catch(() => null);
+  }
 }
 
 /**
@@ -176,12 +277,27 @@ export async function launchApp({ headless = true, geolocation = null, permissio
   if (enableTestExports) {
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
+  await context.addInitScript(LIFECYCLE_INIT);   // Issue #224 diagnostics
   const page = await context.newPage();
+  const rec = trackPage(page, 'launchApp:page');
   const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
-  await waitForAppBoot(page, enableTestExports);
+  await waitForAppBoot(page, enableTestExports, rec);
   return {
     browser, context, page, baseUrl,
+    /** Issue #224: open an ADDITIONAL tab in this context, already tracked and
+     *  already past the same readiness contract page 1 satisfied. Specs used to
+     *  hand-roll this with an `#appMeta`-only wait, which the harness's own
+     *  comment documents as insufficient. */
+    newReadyPage: async (label = 'extra') => {
+      const p = await context.newPage();
+      const r = trackPage(p, label);
+      await p.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
+      await waitForAppReady(p);
+      r.bootDocId = await p.evaluate(() => window.__FL_DOC_ID || null).catch(() => null);
+      return p;
+    },
+    lifecycle: async () => Promise.all([...TRACKED].map(lifecycleOf)),
     close: async () => { await browser.close(); },
   };
 }
@@ -203,14 +319,17 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
   if (enableTestExports) {
     await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   }
+  await context.addInitScript(LIFECYCLE_INIT);   // Issue #224 diagnostics
   const page = await context.newPage();
+  const rec = trackPage(page, 'launchBlank:page');
   const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/tests/fixtures/blank.html`, { waitUntil: 'load' });
   return {
     browser, context, page, baseUrl,
+    lifecycle: async () => Promise.all([...TRACKED].map(lifecycleOf)),
     bootApp: async () => {
       await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
-      await waitForAppBoot(page, enableTestExports);
+      await waitForAppBoot(page, enableTestExports, rec);
     },
     close: async () => { await browser.close(); },
   };
@@ -268,6 +387,10 @@ export function createSuite(fileLabel) {
         } catch (e) {
           console.log(`  \x1b[31m✗ ${name}\x1b[0m`);
           console.log(`    ${String(e.message || e).split('\n').join('\n    ')}`);
+          // Issue #224: a failure prints the document lifecycle of every live
+          // page, so a post-readiness re-bootstrap shows up as evidence in the
+          // CI log instead of being deduced from a stack trace afterwards.
+          try { await dumpLifecycleDiagnostics(); } catch (_) {}
           fail++;
           failures.push({ name, error: String(e.message || e) });
         }

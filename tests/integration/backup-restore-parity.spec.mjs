@@ -7,7 +7,7 @@
 // tests/lib/mock-worker.mjs for why a mock stands in for the (unreachable
 // from this environment) live Cloudflare Worker.
 import { chromium } from 'playwright';
-import { skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
+import { skipFirstRunWizard, createSuite, ok, eq, waitForAppReady } from '../lib/harness.mjs';
 import { startMockWorker } from '../lib/mock-worker.mjs';
 
 const { test, run } = createSuite('integration/backup-restore-parity.spec.mjs');
@@ -138,7 +138,7 @@ test('[X-01/X-07] wipe local data, restore, and assert parity of every contracte
 
   await wipeAllStores(app.page);
   await app.page.reload({ waitUntil: 'load' });
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
   await skipFirstRunWizard(app.page);
 
   const postWipe = await dumpAllStores(app.page);
@@ -224,7 +224,7 @@ export async function runSpec() {
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();
   await page.goto(worker.appUrl, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
   app = { browser, context, page, close: async () => { await browser.close(); } };
   await skipFirstRunWizard(app.page);
   try {

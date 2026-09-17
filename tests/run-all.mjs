@@ -8,6 +8,8 @@ import { stopServer } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
+// Issue #224 — suite readiness contract + lifecycle diagnostics
+import { runSpec as harnessReadiness } from './unit/harness-readiness.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
 import { runSpec as liveParityRunner } from './unit/live-parity-runner.spec.mjs';
@@ -81,6 +83,7 @@ const specs = [
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,
+  harnessReadiness,
   cacheGeneration,
   deployAssetCoverage,
   liveParityRunner,

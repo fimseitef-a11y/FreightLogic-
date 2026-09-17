@@ -105,9 +105,12 @@ test('seed one trip and open it for editing in two independent tabs', async () =
 
   // Tab B = a second page in the SAME browser context, sharing the same
   // origin's IndexedDB — exactly like two browser tabs on one device.
-  page2 = await app.context.newPage();
-  await page2.goto(`${app.baseUrl}/index.html`, { waitUntil: 'load' });
-  await page2.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  // Issue #224: this used to wait only for `#appMeta` to have text. The
+  // harness's own comment says that is insufficient — appMeta populates before
+  // `initDB()` assigns the shared IndexedDB handle, which is the exact
+  // `db === null` signature #224 is about. `newReadyPage()` applies the same
+  // DB-backed readiness contract page 1 gets.
+  page2 = await app.newReadyPage('toctou:tabB');
 
   await openTripForEdit(app.page, 'AUDIT-TOCTOU-1');
   await openTripForEdit(page2, 'AUDIT-TOCTOU-1');
@@ -168,9 +171,10 @@ test('[F-6 best-effort] a save fired then the tab closed immediately never leave
   await seedTrip(app.page, 'AUDIT-TOCTOU-KILL', 2000);
 
   for (let attempt = 0; attempt < 5; attempt++) {
-    const page3 = await app.context.newPage();
-    await page3.goto(`${app.baseUrl}/index.html`, { waitUntil: 'load' });
-    await page3.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    // Issue #224: same weak wait as tab B had, and this loop opens five pages
+    // and kills each one mid-transaction — the most contended point in the
+    // suite, so the readiness window mattered most here.
+    const page3 = await app.newReadyPage('toctou:killTab');
     await openTripForEdit(page3, 'AUDIT-TOCTOU-KILL');
     await page3.fill('#f_pay', '9999');
     // Fire-and-forget: click without awaiting the save's own promise chain,
