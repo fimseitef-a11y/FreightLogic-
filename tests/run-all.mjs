@@ -35,6 +35,7 @@ import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
 import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.spec.mjs';
+import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fuel-concurrency.spec.mjs';
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
@@ -105,6 +106,7 @@ const specs = [
   xlsxBundledVendor,
   vanFitPrecheck,
   pickupFeasibility,
+  positionAuthority,
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
   m3ConfidenceEvidence,

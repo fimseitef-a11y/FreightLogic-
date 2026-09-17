@@ -3150,12 +3150,14 @@ the recovery, and it is what the "One more thing" prompt tells the driver to do.
 
 ---
 
-## v24.0.15 "Two Findings And A Residue" — the open items, closed
+## v24.0.15 "Two Findings, A Residue, And One Position" — the open items, closed
 
 `DB_VERSION` stays **16** and the Worker stays **v19** — no schema and no Worker
 semantics changed. Three defects, all in `app.js`, all previously recorded as
 reported-not-fixed because the repair needed a release generation and that is a deploy
-commitment rather than a cleanup side effect.
+commitment rather than a cleanup side effect — **plus Issue #216**, reported from a real
+device while this generation was still undeployed and folded in here rather than opening
+a second one (see its own subsection below).
 
 **V-1 — two concurrent vehicle-profile seeds minted two profiles and discarded one.**
 `ensureVehicleProfiles()` is a read-modify-write, and two callers could both be parked
@@ -3217,12 +3219,111 @@ Every negative control verified to fire: reverting the in-flight promise fails V
 the uncontended control still passes; reverting the claim-wizard guard restores
 `modalClose`; reverting `tripAllMiles(t)` in `tripRow` fails OI-15.
 
+Full suite with the #216 work folded in: **557 passed, 0 failed across 59 spec files**
+(v24.0.15's own 549/58 plus `position-authority.spec.mjs`).
+
 **Two new gates, from the empty-function incident.** `RH-01` scans `tests/unit` and
 `tests/integration` on disk and requires every spec to be both imported and listed in
 `run-all.mjs` — a directory scan, not a maintained list, because a list has the same
 failure mode it is checking. `RH-02` fails any spec carrying an active `NEGATIVE CONTROL`
 comment marker, so a control edit cannot reach `main` again; its own control fires
 against the exact text that shipped.
+
+### Issue #216 — the Today screen reported two conflicting positions at once
+
+Folded into this same generation rather than opening a second one: v24.0.15 had not
+deployed, so the changed bytes reach a client on the same fetch either way, and two
+generations for one undeployed release is the thing `CLAUDE.md` tells both lanes not to do.
+
+**Observed** 2026-09-16 20:04 CT, iPhone, installed Home Screen PWA, app 24.0.14. In one
+viewport the alert banner read `Athens, TN — Limited reload options. Consider
+repositioning` directly above `YOUR POSITION: Columbus, OH · anchor market · Midwest`
+with verdict **HOLD**. The driver was told to reposition out of a market the app
+simultaneously said he was not in.
+
+**Four independent mechanisms**, all reproduced against the real app in headless
+Chromium before any of them was fixed:
+
+1. **Opposite tie-breaks on equal `created`.** Both surfaces meant "the most recently
+   created trip's destination" and ordered by the same key.
+   `renderPositionContextBanner()` read `listTrips()` → the `created` **index** with
+   cursor `'prev'`, and IndexedDB breaks equal index keys by **primary key descending**.
+   `renderPositioningCard()` read `_getTripsAndExps()` → `dumpStore()` (store order =
+   primary key **ascending**) → `Array.prototype.sort`, which is **stable**, so an equal
+   `created` keeps store order. Under DB16 the primary key is a random UUID, so on a tie
+   the two surfaces picked **opposite** trips — random per install, stable forever
+   afterwards, which is why this presented as a fixed contradiction rather than a
+   flicker. Ties are ordinary: `sanitizeTrip()` defaults `created` to `Date.now()` and
+   trips are written in tight loops by import and by the cloud-restore merge.
+2. **The card read a 120 s cache; the banner read IndexedDB fresh.** Any trip write that
+   did not call `invalidateKPICache()` left them up to two minutes apart. Reproduced:
+   banner `Knoxville, TN`, card `Athens, TN`.
+3. **They answered different questions.** The card resolved GPS first; the banner had no
+   GPS awareness at all. While a tracking session was live, nothing disclosed which was
+   which.
+4. **The banner had no UNKNOWN state, and carried a live geography defect.** It tested
+   `MW.tier1/tier2/avoid` with `city.includes(c)` on the raw destination. `MW.avoid` is
+   `['deep southeast','rural southeast','deep texas','far northeast']` — not one of them
+   a city name — so that branch was unreachable and **every** unrecognised city fell
+   through to a final `else` emitting the *same* "Limited reload options. Consider
+   repositioning" directive. Athens, TN was never assessed as thin; it was not
+   recognised, and the absence was rendered as a confident adverse directive. That is the
+   `naLookupMarket('')`→Toronto class (v24.0.4) and the blank-deadhead class (v24.0.1).
+
+**Worse, and not in the original report: `Calgary, AB` was being priced as a Midwest
+Tier 1 anchor.** `'calgary, ab'.includes('gary')` is true, so the banner told the driver
+to **"Hold for $1.60+"** on an Alberta city. v24.0.4 fixed exactly this in the *lookup*
+functions; this surface never used them. Confirmed against the running app before the
+fix, with `naLookupMarket('Calgary, AB')` correctly returning `calgary/ALBERTA` at the
+same moment.
+
+**The repair.** `resolveDriverPosition()` is the single owner of "where is the driver" —
+GPS, then the last trip — and every surface calls it. Ordering is an explicit **total**
+order (`created` desc → `deliveryDate` desc → `id` desc) rather than one that falls out
+of storage internals, and position always comes from the indexed read, never the KPI
+cache. `classifyPositionMarket()` resolves identity through the canonical fail-closed
+lookup and keys the doctrine tier on the **resolved market key**, which is what preserves
+Cincinnati and Toledo at the Tier 1 standing v24.0.1 gave them in `MW.tier1` — keying on
+`USA_MARKETS.role` instead would have silently demoted both to support.
+
+`updatedAt` is deliberately **not** in the ordering chain: it records when a row was last
+written, not where the driver was, so including it let an edit to an ancient trip move
+his reported position. It was in the first version and was caught by the ambiguity test
+refusing to fire, not by reading.
+
+**Two deliberate behaviour changes, named rather than slipped in.** The banner is now
+GPS-aware, because it shares the resolver — while a tracking session is live it says
+`Near <market>` instead of naming a delivery the driver has since driven away from. And
+the old `city.includes('transitional')` branch is gone: it matched the literal word
+"transitional" inside a destination string, which no real place name contains, so it was
+unreachable in production and there is no doctrine tier behind it. Nothing else the
+banner could previously say has been dropped.
+
+A genuine tie that **disagrees** about the destination sets `ambiguous`. The pick stays
+deterministic — that is what stops the two surfaces contradicting each other — but the
+banner, which issues a *directive*, stands down to "confirm your position before
+pricing" rather than pricing off a coin flip.
+
+**Tests.** `tests/integration/position-authority.spec.mjs` (8, new), driving the real app
+and asserting **rendered content**, not internal state — the hash and the highlighted tab
+were already correct while the surface was wrong, which is how v24.0.8 shipped green.
+
+Two things the controls found, both kept:
+
+- **PA-01 initially passed against the reinstated defect, about half the time.** With
+  random UUIDs, which of the two tied trips the pre-fix card picked was a coin flip, so
+  the regression guarding the reported defect could not reliably fail on it — the `OI-11`
+  failure mode this file already records. The trip `id`s are **pinned** now
+  (`sanitizeTrip` preserves a supplied `id`), so the pre-fix card deterministically names
+  Columbus while the banner names Athens: the operator's screenshot, every run.
+- **The render-generation guard is unproven and is labelled as such.** Both surfaces are
+  fired and forgotten from `renderHome()` and both `await` before painting, so two renders
+  can complete out of order; each now takes a ticket and abandons rather than painting
+  over a newer one. But **no assertion in this suite fails without it** — with the
+  resolver reading IndexedDB at resolve time, an overlapping render re-reads current data
+  and reaches the same answer. It is kept because `getPositioningBrief()` does live NWS
+  I/O in production where the ordering is genuinely unconstrained, not because a test
+  demands it. A negative control that does not fire is the finding, not a formality.
 
 **Also corrected while bumping:** the PWA section above read `24.0.13` for both the
 manifest `?v=` and the service-worker version — **two generations stale**, and the third

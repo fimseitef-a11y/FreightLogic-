@@ -2,6 +2,23 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
+> **Not a live test queue — deferred by decision, not pending.** On 2026-09-16 the operator
+> deferred **A1-A12** and the **section C** private-history reconciliation to the **final
+> post-v24.5 candidate**, and the gate runs **once** against it. **24.0.14 is not the
+> certification candidate**, and neither is any generation before the redesign lands. Read
+> `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below.
+>
+> The instrument is ready and correct; it is deliberately not being run yet. Do not open a
+> partial A-section to make progress — a half-filled section against a superseded generation
+> reads as evidence and is not, which is the exact failure the rest of this header exists to
+> prevent. A deferred gate is **open**, not closed.
+>
+> The rationale is that v24.5 rewrites the surfaces A1, A3, A9, A10 and A11 observe — shell
+> identity, intake, the evaluator UI, the hand-built F31 SVG chart, the tab icons and the
+> selects — so device evidence gathered before it merges expires the day it does. When the
+> deferral lifts, **re-verify this checklist against the new shell first**: those five rows
+> will describe surfaces that no longer exist in that form.
+
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`.
 
 Current runtime synchronization point: **production serves FreightLogic v24.0.14 / IndexedDB v16 / Worker v19.** Observed 2026-09-16 by live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, whose `EXPECTED` block is exactly those generations. **Repository source has since advanced to 24.0.15, which is NOT deployed** — it closes two `AUDIT_REPORT.md` findings and the `tripRow` residue, with no schema or Worker change (DB stays 16, Worker stays v19). So source and production deliberately disagree right now, and 24.0.14 is the candidate to certify. Test against what the device actually reports. If the device reports **24.0.14**, that is expected. If it reports **24.0.15**, the deploy has happened and a superseding certification-state document is due before you record anything — stop and get one. Any other disagreement is itself the finding.
@@ -10,7 +27,7 @@ Current runtime synchronization point: **production serves FreightLogic v24.0.14
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. Treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository.
+All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository. Both are **deferred to the final post-v24.5 candidate** per the notice at the top of this file — open, scheduled, and not due now.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 

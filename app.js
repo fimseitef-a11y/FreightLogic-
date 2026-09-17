@@ -5587,36 +5587,229 @@ function pulseKPI(el){
   el.classList.add('kpi-pop');
 }
 
+// ---- Driver position: one owner, one total order (Issue #216) ----
+//
+// Before this, two surfaces answered "where is the driver" independently and
+// could contradict each other in a single viewport. Observed 2026-09-16 20:04
+// CT on an installed PWA: the banner read "Athens, TN — Limited reload options.
+// Consider repositioning" directly above "YOUR POSITION: Columbus, OH · anchor
+// market · Midwest" with verdict HOLD. The driver was told to reposition out of
+// a market the app simultaneously said he was not in.
+//
+// Both intended "the most recently created trip's destination". They ordered by
+// the same key and broke ties in OPPOSITE directions:
+//
+//   renderPositionContextBanner -> listTrips() -> the `created` INDEX with
+//     cursor direction 'prev'. IndexedDB breaks equal index keys by PRIMARY KEY
+//     DESCENDING.
+//   renderPositioningCard       -> _getTripsAndExps() -> dumpStore() (store
+//     order = primary key ASCENDING) -> Array.prototype.sort, which is STABLE,
+//     so an equal `created` keeps store order — primary key ASCENDING.
+//
+// Under DB16 the primary key is a random UUID, so on a tie the two surfaces
+// picked OPPOSITE trips — random per install, and stable forever afterwards,
+// which is why this presented as a fixed contradiction rather than a flicker.
+//
+// Ties are ordinary, not exotic: sanitizeTrip() defaults `created` to
+// Date.now(), and trips are written in tight loops by XLSX/CSV/JSON import and
+// by the cloud-restore merge.
+//
+// Two further divergences are closed here as well. The card read a 120s KPI
+// cache while the banner read IndexedDB fresh, so any trip write that did not
+// invalidate left them up to two minutes apart; position now always comes from
+// the indexed read. And the card resolved GPS first while the banner had no GPS
+// awareness at all, so while a tracking session was live the two were answering
+// different questions with nothing disclosing which was which; `source` is now
+// part of the answer and both surfaces say which one they used.
+
+// Descending comparator. `created` stays the primary key — both surfaces already
+// intended it — but the order is now TOTAL and explicit rather than falling out
+// of storage internals. The final `id` tiebreak matches IndexedDB's primary-key
+// descending, so the indexed path's existing answer is preserved and it is the
+// card that moves into agreement with it.
+function _positionTripRank(a, b){
+  const dc = finiteNum(b.created, 0) - finiteNum(a.created, 0);
+  if (dc) return dc;
+  // `deliveryDate` is the semantically meaningful tiebreak: of two records made
+  // at the same instant, the one delivered later is where he ended up.
+  const dd = String(b.deliveryDate || '').localeCompare(String(a.deliveryDate || ''));
+  if (dd) return dd;
+  // `updatedAt` is deliberately NOT in this chain. It records when a row was last
+  // written, not where the driver was, so including it meant that editing an
+  // ancient trip could move his reported position -- and, because upsertTrip()
+  // stamps it per save, two rows written in one loop almost never tie on it,
+  // which would have made the ambiguity check below effectively unreachable.
+  return String(b.id || b.orderNo || '').localeCompare(String(a.id || a.orderNo || ''));
+}
+
+// The single owner of "where is the driver". Every surface that shows a position
+// calls this; none re-derives one.
+//
+// Returns { city, display, source, known, ambiguous, trip }:
+//   city      — the string handed to the market lookups (a raw trip destination,
+//               or a canonical market key when GPS resolved it)
+//   display   — what a surface prints
+//   source    — 'OVERRIDE' | 'GPS' | 'LAST_TRIP' | null
+//   known     — whether a position was resolved at all
+//   ambiguous — two or more trips tie on every ordering key AND disagree about
+//               the destination, so the app genuinely cannot tell which was
+//               last. The pick stays deterministic (that is the whole point),
+//               but a surface that issues a DIRECTIVE stands down rather than
+//               grounding one in what is effectively a coin flip.
+async function resolveDriverPosition({ overrideCity = null } = {}){
+  const none = { city: null, display: '', source: null, known: false, ambiguous: false, trip: null };
+
+  if (overrideCity){
+    const c = String(overrideCity).trim();
+    if (!c) return none;
+    return { city: c, display: _positionDisplayName(c), source: 'OVERRIDE', known: true, ambiguous: false, trip: null };
+  }
+
+  if (_activeTracking && _activeTracking.lastPos){
+    const { lat, lng } = _activeTracking.lastPos;
+    let best = null, bestDist = Infinity;
+    for (const [key, m] of Object.entries(USA_MARKETS)){
+      if (!m.lat || !m.lng) continue;
+      const d = haversineDistanceMi(lat, lng, m.lat, m.lng);
+      if (d < 30 && d < bestDist) { bestDist = d; best = key; }
+    }
+    if (best){
+      let display;
+      try { display = nearestMarketCity(lat, lng); } catch(e) { display = _positionDisplayName(best); }
+      if (!display || display === 'Unknown area') display = _positionDisplayName(best);
+      return { city: best, display, source: 'GPS', known: true, ambiguous: false, trip: null };
+    }
+  }
+
+  try {
+    const { items } = await listTrips({ cursor: null });
+    const withDest = items.filter(t => t && t.destination);
+    if (!withDest.length) return none;
+    const ranked = withDest.slice().sort(_positionTripRank);
+    const top = ranked[0];
+    // Ambiguous only when a genuine tie DISAGREES about where the driver is. Two
+    // tied trips to the same place are not an ambiguity anybody can act on.
+    const tied = ranked.filter(t =>
+      finiteNum(t.created, 0) === finiteNum(top.created, 0) &&
+      String(t.deliveryDate || '') === String(top.deliveryDate || '')
+    );
+    const ambiguous = tied.some(t => normalizeLanePart(t.destination) !== normalizeLanePart(top.destination));
+    return { city: top.destination, display: String(top.destination).trim(), source: 'LAST_TRIP', known: true, ambiguous, trip: top };
+  } catch(e){ return none; }
+}
+
+// Issue #216, the mechanism that needs no `created` tie at all.
+//
+// Both position surfaces are fired and forgotten from renderHome()
+// (`renderPositioningCard().catch(()=>{})`), and both await before they paint --
+// the card awaits getPositioningBrief(), which does live NWS I/O. So two renders
+// can be in flight at once, and the SLOWER one paints last even though it
+// resolved the driver's position from older data. Last writer wins, and the
+// winner is whichever network call happened to finish second.
+//
+// That is almost certainly what the operator actually hit: it needs only a trip
+// save (upsertTrip -> renderHome) landing while a previous Today render is still
+// waiting on the weather fetch. Reproduced at 4/10 with overlapping renders and
+// 0/10 once they are serialized.
+//
+// Each render takes a ticket. After every await, a render whose ticket is no
+// longer current abandons instead of painting.
+let _positionCardRenderSeq = 0;
+let _positionBannerRenderSeq = 0;
+
+function _positionDisplayName(key){
+  const k = String(key || '').trim();
+  if (!k) return '';
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+
+// Issue #216, second half — the banner had no UNKNOWN state, and it re-admitted
+// a geography defect this repository had already closed elsewhere.
+//
+// It tested MW.tier1/tier2/avoid with `city.includes(c)` against the raw
+// destination string. Three consequences, all observed:
+//
+//  1. MW.avoid is ['deep southeast','rural southeast','deep texas','far
+//     northeast'] — not one of which is a city name — so that branch was
+//     unreachable for a real destination, and EVERY unrecognised city fell
+//     through to a final `else` emitting the SAME "Limited reload options.
+//     Consider repositioning" directive as the avoid branch. "Athens, TN" was
+//     never assessed as a thin market; it was not recognised, and the absence
+//     was rendered as a confident adverse directive in a warning colour. That
+//     is the naLookupMarket('')->Toronto class fixed in v24.0.4 and the
+//     blank-deadhead-means-zero class fixed in v24.0.1.
+//  2. Raw substring matching re-admitted the exact Gary/Calgary defect v24.0.4
+//     closed: 'calgary, ab'.includes('gary') is true, so an Alberta city was
+//     classified a Midwest Tier 1 anchor and the driver was told "Hold for
+//     $1.60+" on it. v24.0.4 fixed the LOOKUP functions; this surface never
+//     used them.
+//  3. The card and the banner could disagree about the market even when they
+//     agreed about the city, because they classified it two different ways.
+//
+// Identity now comes from the canonical fail-closed lookup both surfaces share,
+// and the DOCTRINE TIER is keyed on the resolved market key rather than a
+// substring — which is also what keeps Cincinnati and Toledo at the Tier 1
+// standing v24.0.1 gave them in MW.tier1, where their USA_MARKETS role
+// ('support') would have silently demoted them.
+function classifyPositionMarket(city){
+  const market = (naLookupMarket(city) || usaLookupMarket(city)) || null;
+  if (!market) return { known: false, tier: null, market: null };
+  const key = market.city;
+  if (MW.tier1.includes(key)) return { known: true, tier: 'TIER1', market };
+  if (MW.tier2.includes(key)) return { known: true, tier: 'TIER2', market };
+  if (market.role === 'trap') return { known: true, tier: 'TRAP', market };
+  return { known: true, tier: 'OTHER', market };
+}
+
 // ---- Position Context Banner ----
 async function renderPositionContextBanner(){
   const slot = $('#homePositionBanner');
   if (!slot) return;
   try {
-    const { items } = await listTrips({ cursor: null });
-    const last = items[0];
-    if (!last || !last.destination){ slot.style.display = 'none'; return; }
-    const city = last.destination.toLowerCase().trim();
+    const myGen = ++_positionBannerRenderSeq;
+    const pos = await resolveDriverPosition();
+    if (myGen !== _positionBannerRenderSeq) return;   // a newer render owns this slot
+    if (!pos.known){ slot.style.display = 'none'; return; }
+
+    const where = escapeHtml(pos.display);
+    const lead = pos.source === 'GPS' ? `Near ${where}` : where;
+    const cls = classifyPositionMarket(pos.city);
+
     let line = '', color = 'var(--text-secondary)', bg = 'var(--surface-1)', icon = '📍';
-    const t1 = MW.tier1.some(c => city.includes(c));
-    const t2 = MW.tier2.some(c => city.includes(c));
-    const avoid = MW.avoid.some(c => city.includes(c));
-    if (t1){
-      line = `${escapeHtml(last.destination)} — Anchor market. Hold for $1.60+`;
+
+    if (pos.ambiguous){
+      // Two trips tie on every ordering key and disagree about where he is. The
+      // pick stays deterministic so the two surfaces cannot contradict each
+      // other, but this is checked BEFORE classification on purpose: "I cannot
+      // tell where you are" must not be reported as "I know where you are and
+      // do not recognise it".
+      line = `${lead} — Two trips tie for most recent. Confirm your position before pricing.`;
+      color = 'var(--warn)'; bg = 'var(--warn-muted)'; icon = '⚠️';
+    } else if (!cls.known){
+      // A market this app does not recognise is UNKNOWN, not adverse. It gets a
+      // neutral statement and NO directive -- the old code emitted the same
+      // "consider repositioning" string here as it did for a real trap.
+      line = `${lead} — Market not recognised. Score the load on its own economics.`;
+      color = 'var(--text-secondary)'; bg = 'var(--surface-1)'; icon = '❓';
+    } else if (cls.tier === 'TIER1'){
+      line = `${lead} — Anchor market. Hold for $1.60+`;
       color = 'var(--good)'; bg = 'var(--good-muted)'; icon = '🟢';
-    } else if (t2){
-      line = `${escapeHtml(last.destination)} — Support market. Target $1.50+`;
+    } else if (cls.tier === 'TIER2'){
+      line = `${lead} — Support market. Target $1.50+`;
       color = 'var(--accent-text)'; bg = 'var(--accent-muted)'; icon = '🟡';
-    } else if (avoid){
-      line = `${escapeHtml(last.destination)} — Limited reload options. Consider repositioning`;
+    } else if (cls.tier === 'TRAP'){
+      line = `${lead} — Trap market. Limited reload options. Consider repositioning`;
       color = 'var(--bad)'; bg = 'var(--bad-muted)'; icon = '🔴';
-    } else if (city.includes('transitional') || city.includes('transit')){
-      line = `${escapeHtml(last.destination)} — Transitional. Watch deadhead carefully`;
-      color = 'var(--warn)'; bg = 'var(--warn-muted)'; icon = '🟠';
     } else {
-      // Unknown / thin market
-      line = `${escapeHtml(last.destination)} — Limited reload options. Consider repositioning`;
-      color = 'var(--warn)'; bg = 'var(--warn-muted)'; icon = '🟠';
+      // A real market, outside the Midwest doctrine tiers. Also not adverse.
+      const zoneLabel = (typeof USA_ZONES !== 'undefined' && USA_ZONES[cls.market.zone] && USA_ZONES[cls.market.zone].label)
+        ? USA_ZONES[cls.market.zone].label : (cls.market.zone || '');
+      const sub = [cls.market.role, zoneLabel].filter(Boolean).map(escapeHtml).join(' · ');
+      line = `${lead} — ${sub || 'Known market'}. Outside your Midwest tiers — judge on the load.`;
+      color = 'var(--text-secondary)'; bg = 'var(--surface-1)'; icon = '📍';
     }
+
+    if (myGen !== _positionBannerRenderSeq) return;
     slot.innerHTML = `<div style="padding:10px 14px;border-radius:10px;background:${bg};border:1px solid ${color}33;font-size:13px;font-weight:600;color:${color};display:flex;align-items:center;gap:8px"><span style="font-size:15px">${icon}</span><span>${line}</span></div>`;
     slot.style.display = '';
   } catch(e){ slot.style.display = 'none'; }
@@ -20499,38 +20692,33 @@ async function renderPositioningCard(overrideCity, isExploring) {
   const card = $('#homePositioningCard');
   if (!card) return;
 
-  // Step 1: Determine city
-  let city = overrideCity || null;
-
-  if (!city && _activeTracking && _activeTracking.lastPos) {
-    const { lat, lng } = _activeTracking.lastPos;
-    let best = null, bestDist = Infinity;
-    for (const [key, m] of Object.entries(USA_MARKETS)) {
-      if (!m.lat || !m.lng) continue;
-      const d = haversineDistanceMi(lat, lng, m.lat, m.lng);
-      if (d < 30 && d < bestDist) { bestDist = d; best = key; }
-    }
-    if (best) city = best;
-  }
-
-  if (!city) {
-    try {
-      const { trips } = await _getTripsAndExps();
-      const latest = trips.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
-      if (latest && latest.destination) city = latest.destination;
-    } catch(e) { /* ok */ }
-  }
-
-  if (!city) { card.style.display = 'none'; return; }
+  // Step 1: Determine city.
+  //
+  // Issue #216: this used to resolve position itself -- GPS, then the latest
+  // trip out of the 120s KPI cache, sorted with a STABLE Array.prototype.sort
+  // whose equal-`created` order is primary key ASCENDING. The banner resolved
+  // the same question from the `created` INDEX, whose equal-key order is
+  // primary key DESCENDING. Under DB16's UUID primary key the two picked
+  // opposite trips on a tie and contradicted each other on screen. Both now
+  // call one resolver. See resolveDriverPosition().
+  const myGen = ++_positionCardRenderSeq;
+  const pos = await resolveDriverPosition({ overrideCity });
+  if (myGen !== _positionCardRenderSeq) return;   // a newer render owns this card
+  if (!pos.known) { card.style.display = 'none'; return; }
+  const city = pos.city;
 
   // Step 2: Skeleton
   card.style.display = '';
-  card.innerHTML = `<div class="card" style="padding:20px;text-align:center"><div class="muted" style="font-size:13px">\uD83D\uDCCD Analyzing ${escapeHtml(city)}\u2026</div></div>`;
+  card.innerHTML = `<div class="card" style="padding:20px;text-align:center"><div class="muted" style="font-size:13px">\uD83D\uDCCD Analyzing ${escapeHtml(pos.display)}\u2026</div></div>`;
 
   // Step 3: Fetch brief and render
   let brief;
   try { brief = await getPositioningBrief(city); }
-  catch(e) { card.innerHTML = ''; card.style.display = 'none'; return; }
+  catch(e) {
+    if (myGen !== _positionCardRenderSeq) return;
+    card.innerHTML = ''; card.style.display = 'none'; return;
+  }
+  if (myGen !== _positionCardRenderSeq) return;   // getPositioningBrief does live NWS I/O
 
   // Onboarding check
   const f24seen = await getSetting('f24OnboardingSeen', false);
@@ -20577,7 +20765,7 @@ async function renderPositioningCard(overrideCity, isExploring) {
   // Outbound lanes HTML
   let lanesHtml = '';
   if (outboundLanes.length) {
-    const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+    const cityDisplay = pos.display;  // Issue #216: one resolver owns the display name too
     lanesHtml = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin:14px 0 6px">Best Outbound Lanes</div>`;
     for (const lane of outboundLanes) {
       const roleHtml = lane.destRole ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border-subtle);margin-left:6px">${escapeHtml(lane.destRole)}</span>` : '';
@@ -20637,7 +20825,8 @@ async function renderPositioningCard(overrideCity, isExploring) {
   }
 
   // Render card
-  const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+  const cityDisplay = pos.display;  // Issue #216: one resolver owns the display name too
+  if (myGen !== _positionCardRenderSeq) return;   // last guard before the paint
   card.innerHTML = `<div class="card" style="padding:16px 14px">
     <div style="font-size:16px;font-weight:700;margin-bottom:2px">\uD83D\uDCCD YOUR POSITION: ${escapeHtml(cityDisplay)}</div>
     <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">${marketSub}</div>
@@ -21778,6 +21967,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     checkPickupFeasibility, getPlanningAvgMph, PICKUP_FEASIBILITY,
     // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
     naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
+    // Issue #216 — the single position resolver and the market classifier both
+    // surfaces share. Exposed so a regression can assert the ORDERING and the
+    // UNKNOWN state directly, not only through two rendered surfaces agreeing.
+    resolveDriverPosition, classifyPositionMarket, _positionTripRank,
     // The place normalizers are the unit the separator rule actually lives in.
     // Asserting it through a market lookup proves nothing: every name in a table
     // still resolves under the OLD rule via the fuzzy pass or the other country's
