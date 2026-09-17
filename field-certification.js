@@ -321,6 +321,7 @@
     const badge = qs('.status', row);
     if (badge) badge.textContent = status;
     saveSession();
+    updateControlAvailability();
   }
 
   function clearGateError(row) {
