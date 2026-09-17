@@ -2,7 +2,18 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.18** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.19** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+
+**v24.0.19 source candidate:** the Issue #240 P0 — v24.0.18, which is LIVE in
+production, could report **Synced** over genuinely unsynced data. One change-clock
+authority now serves both the delta push and the pending summary, a durable
+`syncDirtyAt` marker carries the settings-only case the record count cannot represent,
+and an unreadable store fails closed to `UNKNOWN` instead of a confident zero. It also
+closes **#224**: `waitForFunction` does not await an `async` predicate, so the harness's
+own readiness probe had been resolving on its first poll and waiting for nothing —
+measured against the real Playwright build, not deduced. App **24.0.18 → 24.0.19**; DB
+stays **16**; Worker stays **v20 source / v19 deployed**. **Source-only: not deployed
+and not live-observed.** The Worker deploy blocker is separate and unchanged.
 
 **v24.0.17 source candidate:** Voice Load removed completely by operator decision
 (#230), the import ceiling enforced before materialization (#232), and internal
@@ -174,7 +185,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.18';
+const APP_VERSION = '24.0.19';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -318,8 +329,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.18` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.18`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.19` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.19`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -3947,3 +3958,143 @@ records this candidate as source-only.
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's.
+
+---
+
+## v24.0.19 "Synced Is A Claim" — Issue #240, and the readiness wait that waited for nothing
+
+`DB_VERSION` stays **16** and the Worker stays **v20 source / v19 deployed**. This is
+the P0 follow-up to v24.0.18, which is **live in production** — live-parity run
+`35284924340` attempt 2 observed the deployed app at 24.0.18 with every app-side check
+green. A live release reporting "Synced" over data that is not synced is the reason
+this is a generation of its own rather than a cleanup.
+
+### #224 — the root cause, measured rather than deduced
+
+v24.0.16 fixed 15 call sites of the weak-readiness class and said plainly that the
+root cause was **not** proven. It is now, and it was in the repair itself.
+
+`waitForAppReady()` polled with `page.waitForFunction(async () => { …await
+dumpStore('settings')… })`. **`waitForFunction` evaluates its predicate and tests the
+RESULT for truthiness without awaiting it.** An `async` function always returns a
+Promise, and a Promise is always truthy — so that wait satisfied itself on its first
+poll and the database probe inside it never decided anything. Readiness returned
+before `db = await initDB()` had assigned the handle, which is the `db === null`
+window #224 reports, written into the harness's own contract.
+
+This was not taken on documentation's word. `probeResolvesWithoutAwaiting()` drives
+the real Playwright build this suite runs on against a predicate that cannot settle
+for 3000 ms: it resolved in **67 ms**. `HR-06` runs that measurement as an assertion,
+so if Playwright ever starts awaiting the predicate the spec says so rather than
+quietly passing.
+
+The repair is a Node-side poll over `page.evaluate()`, which **does** await a returned
+Promise. It is not a retry, not a timeout bump, not a skip and not a production
+IndexedDB retry — #224 forbids all four. It is the wait that was already written here
+doing the waiting it always claimed to do, and it now throws with the last probe error
+instead of returning quietly when the database never becomes usable.
+
+`HR-07` drives the mechanism end to end: reload (which re-runs the IIFE and resets
+`let db = null`), await readiness, write immediately, six times.
+
+**HR-07's negative control does NOT fire, and that is recorded rather than glossed.**
+With the async-predicate wait reinstated it still passed 6/6 — the window is short on a
+fast host, which is precisely why #224 presented as an intermittent CI failure and never
+reproduced locally. `HR-01` and `HR-06` are the assertions that hold the repair. A
+negative control that does not fire is the finding, not a formality.
+
+### #240 defect 1 — two transcriptions of one rule, already drifted
+
+`syncPendingSummary()` decided "unsynced" with `finiteNum(r?.updatedAt, 0) > watermark`
+while `cloudPushBackup()` selected on store-specific clocks: `generatedAt`
+(weeklyReports), `timestamp` (gpsLogs), `recordedAt` (normalized evidence), and
+fallback chains for laneHistory, reloadOutcomes, bidHistory and documents. `gpsLogs`
+was missing from `SYNC_PENDING_STORES` entirely — a whole store of unsynced rows that
+could not be seen. So a row the push would have sent could sit unsynced while Home
+said **Synced** and `resumeSyncIfPending()` returned `nothing-pending`.
+
+`SYNC_CHANGE_CLOCKS` is now the single definition, and both sides read it —
+`cloudPushBackup()` through `syncChangedSince()`, the summary through
+`syncChangeClock()`. `SYNC_PENDING_STORES` is **derived** from its keys, so a store
+added to one is added to both on the same edit. The v24.0.18 design note argued
+against a parallel queue because two lists that can disagree is the X-07 / 2026-09-13
+shape; it then shipped exactly that as two timestamp transcriptions. The fix is one
+list, not a better-maintained second one.
+
+`||` and not `??`, transcribed from the push field for field: a `0` timestamp means
+"no clock here" and must fall through to the next candidate.
+
+### #240 defect 2 — and the worse half found while fixing it
+
+`settings` and `receipts` ride every payload wholesale and have no per-record clock, so
+a settings-only mutation left the count at zero. The issue describes the loss as a
+session ending inside `cloudScheduleSync()`'s 30-second in-memory debounce.
+
+**It was worse than that.** The empty-delta guard returned `Up to date` **without
+sending** whenever every `changed*` array was empty — so on the delta path a
+settings-only change never reached the server *at all*, whether or not the session
+survived. `SQ-10` asserts the push actually fires, by intercepting `fetch`.
+
+`markSyncDirty()` writes a durable `syncDirtyAt` at `cloudScheduleSync()`, the one
+choke point all 27 mutation sites already reach. Still no queue and still no new store,
+so `DB_VERSION` stays 16. It is cleared by compare-and-clear — only a push that
+*observed* that exact marker clears it — so a mutation landing mid-upload re-stamps a
+newer value and survives instead of being erased by that push's success. The marker is
+gated on a configured token: a driver who never enabled cloud backup has nothing
+pending by definition. It is fire-and-forget at the call sites, because making 27
+mutation paths await an IndexedDB write to save a trip is not an improvement;
+`cloudScheduleSync()` returns the promise so a caller that needs it settled can await.
+
+`syncDirtyAt` is in `ALLOWED_SETTINGS_KEYS` for the same reason `lastCloudSyncedAt`
+already is — a key the app writes but the importer drops is the X-07 class of gap, and
+an imported marker can only cause one extra no-op push, which is the fail-safe
+direction.
+
+### #240 defect 3 — "I could not look" is not "nothing to do"
+
+The summary caught a `dumpStore()` failure and `continue`d. `cloudPushBackup()` treats
+the same read failure as a failed push that does not advance the watermark; the summary
+instead discarded the store, so with every *other* store clean it returned `pending: 0`
+and the row said **Synced** over a required store nobody could inspect.
+
+It now reports `{ unreadable, complete }` and fails closed into a new
+`SYNC_STATE.UNKNOWN` — *"Can't verify backup — retrying"* — checked **before** anything
+can resolve to a reassuring state. UNKNOWN deliberately outranks OFFLINE: offline
+explains why nothing is being sent, but it is still a claim that we know what is
+outstanding, and we do not. `resumeSyncIfPending()` drains on `!complete` as well:
+pushing when nothing was outstanding costs one no-op delta; not pushing when something
+was costs the change. This is the UNKNOWN-is-not-a-value doctrine of v24.0.1 and the
+`UNOBSERVED` verdict of the live-parity runner, applied to sync state.
+
+`_syncStatusText()` prints "changes waiting" with no number when the outstanding change
+is a durable marker rather than counted rows. `0 changes waiting` would be worse than
+both.
+
+**One narrow seam, named as such.** `syncPendingSummary(opts)` accepts a `readStore`
+override; production always takes the default. It exists because the fail-closed branch
+is not otherwise reachable from a test without corrupting the database the rest of the
+suite shares — and an unproven fail-closed branch is how the fail-**open** one shipped.
+
+### Tests
+
+`SQ-08`…`SQ-12` in the already-registered `cloud-backup-paused.spec.mjs`, driving the
+real functions against the real database: per-store clocks including the two the old
+rule could never see, the structural proof that the push carries no second field list,
+the settings-only case end to end, marker durability across a real reload, and the
+unreadable-store case asserted down to the **rendered row text**, because Home is the
+surface the defect was reported against. `HR-06`/`HR-07` in `harness-readiness.spec.mjs`.
+
+`SQ-12` deliberately does **not** assert that the drain reaches the network. With every
+readable store clean, the push's "Up to date" short circuit is correct — there is
+nothing to send *from them*. In production the same unreadable store makes the push's
+own `dumpStore()` throw into its catch, recording `lastCloudSyncError` and leaving the
+watermark where it was; the seam replaces only the summary's reader, so that path is not
+reachable from this fixture and is not claimed.
+
+### Why this is a version bump
+
+`app.js` changed and v24.0.18 is **deployed**. `CACHE_NAME` is
+`freightlogic-${SW_VERSION}` and the `?v=` query is the only other identity a child
+asset carries, so an installed PWA holding the 24.0.18 shell would never fetch the
+repaired file — a live app would keep reporting Synced over unsynced data indefinitely.
+The v24.0.3 lesson applied rather than relearned; every governed marker moves together.

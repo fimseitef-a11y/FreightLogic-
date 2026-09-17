@@ -1,7 +1,24 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.18 USA ENGINE
+/** FreightLogic v24.0.19 USA ENGINE
+ *  v24.0.19 "Synced Is A Claim": Issue #240 — v24.0.18 could report "Synced"
+ *          over genuinely unsynced data. Three defects of one family, a surface
+ *          saying something reassuring about a fact it never established.
+ *          (1) The pending count tested `updatedAt` on every store while the
+ *          delta push selected on store-specific clocks (`generatedAt`,
+ *          `timestamp`, `recordedAt`, fallback chains) and `gpsLogs` was not in
+ *          the list at all — two transcriptions of one rule, already drifted.
+ *          SYNC_CHANGE_CLOCKS is now the single authority both sides read, and
+ *          SYNC_PENDING_STORES is derived from it. (2) `settings`/`receipts`
+ *          have no per-record clock, so a settings-only change counted zero —
+ *          and worse, the empty-delta guard returned "Up to date" WITHOUT
+ *          SENDING, so on the delta path it never reached the server at all.
+ *          A durable `syncDirtyAt` marker at cloudScheduleSync() fixes both,
+ *          cleared only by a push that observed it. (3) An unreadable store was
+ *          skipped, so a confident zero from the rest read as Synced; it now
+ *          fails closed to SYNC_STATE.UNKNOWN and still drains. DB stays 16 —
+ *          no migration and still no queue.
  *  v24.0.18 "Never Press Backup": Issue #205 section 3 — automatic cloud sync is
  *          now observable and survives a close. Pending work is DERIVED from
  *          `lastCloudSyncedAt`, the same delta watermark cloudPushBackup()
@@ -285,7 +302,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.18';
+const APP_VERSION = '24.0.19';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3887,7 +3904,11 @@ async function importJSON(file, opts={}){
       // v24.0.9 — planning average speed for the pickup-feasibility gate. A
       // settings key the app writes but the importer drops is the X-07 class
       // of gap, so it is allowed through at the same time it is introduced.
-      'planningAvgMph']);
+      'planningAvgMph',
+      // v24.0.19 (#240): the durable sync-dirty marker, allowed through import
+      // for the same reason `lastCloudSyncedAt` already is. An imported marker
+      // can only cause one extra no-op push, which is the fail-safe direction.
+      'syncDirtyAt']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
     //
     // Issue #219: `isSettingImportSafe()` is ANDed in, not substituted. The
@@ -15835,6 +15856,11 @@ async function cloudPushBackup(silent = true){
   try {
     // v21 T2B: Delta sync — only send records changed since last sync
     const lastSynced = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
+    // Read the durable intent marker BEFORE building the payload, and clear it
+    // on success only if nothing re-stamped it in the meantime — a mutation
+    // that lands mid-upload writes a newer value and therefore stays pending
+    // instead of being erased by this push's success.
+    const dirtyAt = finiteNum(await getSetting('syncDirtyAt', 0), 0);
     const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
     const allFuel = await dumpStore('fuel');
     // v24.0.4 item 5: the SAME export-safety policy exportJSON() uses. Cloud
@@ -15851,17 +15877,22 @@ async function cloudPushBackup(silent = true){
     const documents = await dumpStore('documents');
     const gpsLogs = await dumpStore('gpsLogs');
 
-    // Filter to changed records for delta, fall back to full push if no timestamps or too much changed
-    const changedTrips = lastSynced > 0 ? allTrips.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allTrips;
-    const changedExps = lastSynced > 0 ? allExpenses.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allExpenses;
-    const changedFuel = lastSynced > 0 ? allFuel.filter(r => (r.updatedAt || r.updated || r.created || 0) > lastSynced) : allFuel;
-    // Apply same delta filter to intelligence stores using their actual timestamp fields
-    const changedLaneHistory = lastSynced > 0 ? laneHistory.filter(r => (r.updated || r.created || 0) > lastSynced) : laneHistory;
-    const changedWeeklyReports = lastSynced > 0 ? weeklyReports.filter(r => (r.generatedAt || 0) > lastSynced) : weeklyReports;
-    const changedReloadOutcomes = lastSynced > 0 ? reloadOutcomes.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : reloadOutcomes;
-    const changedBidHistory = lastSynced > 0 ? bidHistory.filter(r => (r.updatedAt || r.created || r.timestamp || 0) > lastSynced) : bidHistory;
-    const changedDocuments = lastSynced > 0 ? documents.filter(r => (r.updatedAt || r.createdAt || 0) > lastSynced) : documents;
-    const changedGpsLogs = lastSynced > 0 ? gpsLogs.filter(r => (r.timestamp || 0) > lastSynced) : gpsLogs;
+    // Delta selection runs through the ONE change-clock authority
+    // (SYNC_CHANGE_CLOCKS), which is also what syncPendingSummary() counts
+    // through. Before #240 these were two transcriptions of the same rule and
+    // they had already drifted — the summary tested `updatedAt` on stores whose
+    // clock is `generatedAt`, `timestamp` or `recordedAt`, so Home could report
+    // "Synced" over rows this filter would have sent. Keep both sides reading
+    // the map; do not reintroduce an inline field list here.
+    const changedTrips = syncChangedSince('trips', allTrips, lastSynced);
+    const changedExps = syncChangedSince('expenses', allExpenses, lastSynced);
+    const changedFuel = syncChangedSince('fuel', allFuel, lastSynced);
+    const changedLaneHistory = syncChangedSince('laneHistory', laneHistory, lastSynced);
+    const changedWeeklyReports = syncChangedSince('weeklyReports', weeklyReports, lastSynced);
+    const changedReloadOutcomes = syncChangedSince('reloadOutcomes', reloadOutcomes, lastSynced);
+    const changedBidHistory = syncChangedSince('bidHistory', bidHistory, lastSynced);
+    const changedDocuments = syncChangedSince('documents', documents, lastSynced);
+    const changedGpsLogs = syncChangedSince('gpsLogs', gpsLogs, lastSynced);
     // A2 (Issue #119 Batch A): `loadLifecycle` is dumped and filtered HERE, with
     // every other store, not after the empty-delta guard below. The guard reads
     // `lc`, so declaring it later was a temporal-dead-zone ReferenceError on
@@ -15869,9 +15900,9 @@ async function cloudPushBackup(silent = true){
     // `changedLifecycle` also belongs in the isDelta size test: a sync whose
     // only changes are lifecycle rows is still a delta.
     const allLifecycle = await dumpStore('loadLifecycle');
-    const changedLifecycle = lastSynced > 0 ? allLifecycle.filter(r => finiteNum(r.updatedAt, 0) > lastSynced) : allLifecycle;
+    const changedLifecycle = syncChangedSince('loadLifecycle', allLifecycle, lastSynced);
     const allEvidence = await dumpStore(EVIDENCE_STORE);
-    const changedEvidence = lastSynced > 0 ? allEvidence.filter(r => finiteNum(r.recordedAt, 0) > lastSynced) : allEvidence;
+    const changedEvidence = syncChangedSince(EVIDENCE_STORE, allEvidence, lastSynced);
     const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length + changedLifecycle.length + changedEvidence.length) < 50;
 
     const trips = isDelta ? changedTrips : allTrips;
@@ -15886,7 +15917,16 @@ async function cloudPushBackup(silent = true){
     const lc = isDelta ? changedLifecycle : allLifecycle;
     const ev = isDelta ? changedEvidence : allEvidence;
 
-    if (isDelta && trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0 && ev.length === 0){
+    // The empty-delta short circuit, and the `dirtyAt` term that #240 defect 2
+    // made necessary. `settings` and `receipts` ride every payload wholesale but
+    // have no per-record clock, so with only a settings change outstanding every
+    // `changed*` array is empty and this guard used to return "Up to date"
+    // WITHOUT SENDING — meaning a settings-only mutation never reached the
+    // server on the delta path at all, not merely when a session ended early.
+    // A push with empty record arrays and current settings is exactly what that
+    // change needs, so an outstanding marker is a reason to send, not to skip.
+    const noRecordChanges = trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0 && ev.length === 0;
+    if (isDelta && noRecordChanges && !dirtyAt){
       _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
       if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
     }
@@ -15907,6 +15947,10 @@ async function cloudPushBackup(silent = true){
       // A success clears the durable failure marker (#205 §3). Without this the
       // status row would say "Sync problem" forever after one transient 500.
       await setSetting('lastCloudSyncError', null);
+      // Compare-and-clear the dirty marker (#240 defect 2).
+      if (dirtyAt && finiteNum(await getSetting('syncDirtyAt', 0), 0) <= dirtyAt){
+        await setSetting('syncDirtyAt', 0);
+      }
       if (!silent) toast(isDelta ? 'Delta sync complete' : 'Backup synced');
       cloudRefreshStatusPanel();
     }
@@ -16322,66 +16366,168 @@ function cloudSetSyncStatus(type, msg){
 // the 2026-09-13 asset defect this repository already records. It also needs no
 // new object store, so DB_VERSION stays 16 and no migration is spent here.
 //
-// The stores counted are the record stores delta sync actually filters by
-// `updatedAt`. `settings` is excluded on purpose: it has no revision field, is
-// pushed wholesale every time, and counting it would make "0 changes waiting"
-// unreachable.
-const SYNC_PENDING_STORES = ['trips', 'expenses', 'fuel', 'laneHistory', 'weeklyReports',
-  'reloadOutcomes', 'bidHistory', 'documents', 'loadLifecycle', EVIDENCE_STORE];
+// ONE CHANGE-CLOCK AUTHORITY (Issue #240 defect 1). The stores below are the
+// record stores the delta path can send, each paired with the timestamp field
+// that path actually selects on. This map is the ONLY definition of "changed
+// since the watermark": cloudPushBackup() filters through syncChangedSince()
+// and syncPendingSummary() counts through syncChangeClock(), so the two cannot
+// disagree about what is pending.
+//
+// They DID disagree in v24.0.19, which is what #240 reports. The summary tested
+// `updatedAt` on every store while the push used store-specific fields, so a
+// weeklyReports row (`generatedAt`), a gpsLogs row (`timestamp` — the store was
+// missing from the list entirely) or a normalized-evidence row (`recordedAt`)
+// could be genuinely unsynced while the summary counted zero and Home reported
+// "Synced". That is the two-lists-that-can-drift shape this file already
+// records twice (the X-07 restore gap, the 2026-09-13 asset defect) — the fix
+// is one list, not a better-maintained second one.
+//
+// `||` and not `??`: a 0 timestamp means "no clock here", so it must fall
+// through to the next candidate. That is exactly what the push has always done
+// and this map is transcribed from it field for field.
+//
+// `settings` and `receipts` are NOT here, and their absence is not an oversight
+// — neither is delta-filtered, both are pushed wholesale every time, so neither
+// has a per-record change clock to read. Counting them would make "0 changes
+// waiting" unreachable. They are covered instead by the durable dirty marker
+// below, which is what makes their pending state survive a session.
+const SYNC_CHANGE_CLOCKS = Object.freeze({
+  trips:          r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  expenses:       r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  fuel:           r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  laneHistory:    r => finiteNum(r?.updated || r?.created, 0),
+  weeklyReports:  r => finiteNum(r?.generatedAt, 0),
+  reloadOutcomes: r => finiteNum(r?.updatedAt || r?.created || r?.timestamp, 0),
+  bidHistory:     r => finiteNum(r?.updatedAt || r?.created || r?.timestamp, 0),
+  documents:      r => finiteNum(r?.updatedAt || r?.createdAt, 0),
+  gpsLogs:        r => finiteNum(r?.timestamp, 0),
+  loadLifecycle:  r => finiteNum(r?.updatedAt, 0),
+  [EVIDENCE_STORE]: r => finiteNum(r?.recordedAt, 0),
+});
 
-/** How many records are newer than the server's watermark, plus the oldest such
- *  change. Never throws: a store that cannot be read is skipped rather than
- *  taking the whole status surface down with it, because this runs on every
- *  home render. */
-async function syncPendingSummary(){
+// Derived, never hand-maintained: a store added to the authority above is
+// counted by the summary on the same edit that teaches the push to send it.
+const SYNC_PENDING_STORES = Object.freeze(Object.keys(SYNC_CHANGE_CLOCKS));
+
+/** This record's change instant under the authority, or 0 when it has none. */
+function syncChangeClock(store, r){
+  const clock = SYNC_CHANGE_CLOCKS[store];
+  return clock ? clock(r) : 0;
+}
+
+/** The delta selection itself. `since <= 0` means no watermark yet, which is a
+ *  full push — every row is "changed". */
+function syncChangedSince(store, rows, since){
+  const arr = Array.isArray(rows) ? rows : [];
+  return since > 0 ? arr.filter(r => syncChangeClock(store, r) > since) : arr;
+}
+
+/** The durable half of the intent (Issue #240 defect 2). cloudScheduleSync()'s
+ *  30s debounce is in-memory, and `settings`/`receipts` have no per-record
+ *  clock, so a settings-only mutation followed by a tab close left NOTHING
+ *  behind: the next boot counted zero pending rows, resumeSyncIfPending()
+ *  returned `nothing-pending`, and Home said "Synced" for a change that never
+ *  reached the server.
+ *
+ *  A single durable marker at the one choke point every mutation already goes
+ *  through is enough — this is still not a queue, and still no new store.
+ *  Cleared only by a push that observed it (see cloudPushBackup), so a mutation
+ *  landing DURING an upload re-stamps a newer value and survives. */
+async function markSyncDirty(){
+  try {
+    // A driver who never enabled cloud backup has nothing pending by
+    // definition; writing a marker for them is noise on every mutation.
+    if (!(await getSetting('cloudBackupToken', ''))) return;
+    await setSetting('syncDirtyAt', Date.now());
+  } catch (_) {}
+}
+
+/** How many records are newer than the server's watermark, the oldest such
+ *  change, whether a non-record (settings/receipts) change is outstanding, and
+ *  — the part that must never be silently dropped — which required stores could
+ *  not be read at all.
+ *
+ *  FAILS CLOSED (Issue #240 defect 3). This used to `continue` past an
+ *  unreadable store, so with every other store clean it returned `pending: 0`
+ *  and the surface said "Synced" although one required backup store could not
+ *  be inspected. cloudPushBackup() treats the same read failure as a failed
+ *  push that does not advance the watermark, so "I could not look" must never
+ *  resolve to "nothing to do". It is reported, not thrown: this runs on every
+ *  home render and taking the whole surface down is not an improvement. */
+async function syncPendingSummary(opts){
+  // `readStore` is a narrow, documented seam and nothing else: production always
+  // takes the default. It exists because the fail-closed branch below cannot be
+  // proven any other way — a store read failure is not reachable from a test
+  // without corrupting the shared database the rest of the suite is using, and
+  // an unproven fail-closed branch is how the fail-OPEN one shipped.
+  const readStore = opts?.readStore || dumpStore;
   const watermark = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
   let pending = 0, oldestAt = null;
+  const unreadable = [];
   for (const store of SYNC_PENDING_STORES){
-    let rows = [];
-    try { rows = await dumpStore(store); } catch (_) { continue; }
+    let rows;
+    try { rows = await readStore(store); }
+    catch (_) { unreadable.push(store); continue; }
     for (const r of rows){
-      const at = finiteNum(r?.updatedAt, 0);
-      // A record with no usable updatedAt is NOT counted as pending. It cannot
-      // be proven newer than the watermark, and inventing pending work would
-      // make the surface cry wolf forever on legacy rows — the UNKNOWN-is-not-
-      // a-value rule applied to sync state.
+      const at = syncChangeClock(store, r);
+      // A record with no usable clock is NOT counted as pending. It cannot be
+      // proven newer than the watermark, and inventing pending work would make
+      // the surface cry wolf forever on legacy rows — the UNKNOWN-is-not-a-value
+      // rule applied to sync state.
       if (at > watermark){
         pending++;
         if (oldestAt === null || at < oldestAt) oldestAt = at;
       }
     }
   }
-  return { pending, oldestAt, watermark };
+  const dirtyAt = finiteNum(await getSetting('syncDirtyAt', 0), 0);
+  return { pending, oldestAt, watermark,
+           dirty: dirtyAt > 0, dirtyAt,
+           unreadable, complete: unreadable.length === 0 };
 }
 
 /** The state the driver is actually in, as one value the UI can switch on.
  *  Order matters: a configured-but-passphrase-less install is PAUSED even when
  *  offline, because the paused banner owns that case and offers the fix. */
-const SYNC_STATE = { OFF: 'OFF', PAUSED: 'PAUSED', OFFLINE: 'OFFLINE',
+const SYNC_STATE = { OFF: 'OFF', PAUSED: 'PAUSED', UNKNOWN: 'UNKNOWN', OFFLINE: 'OFFLINE',
   PROBLEM: 'PROBLEM', PENDING: 'PENDING', SYNCED: 'SYNCED' };
 
-async function cloudSyncStatus(){
+async function cloudSyncStatus(opts){
   const token = await getSetting('cloudBackupToken', '');
   // Never configured: report OFF and render nothing. Nagging a driver who never
   // enabled cloud backup trains them to dismiss the one banner that matters —
   // the same reason cloudBackupPaused() returns false with no token.
   if (!token) return { state: SYNC_STATE.OFF, pending: 0 };
 
-  const { pending, oldestAt } = await syncPendingSummary();
+  const { pending, oldestAt, dirty, unreadable, complete } = await syncPendingSummary(opts);
   if (await cloudBackupPaused()) return { state: SYNC_STATE.PAUSED, pending, oldestAt };
+
+  // Fail closed BEFORE anything can resolve to a reassuring state (#240 defect
+  // 3). A required store that could not be read means backup completeness is
+  // unknown, and unknown outranks even OFFLINE here: offline explains why
+  // nothing is being sent, but it is still a claim that we know what is
+  // outstanding, and we do not.
+  if (!complete) return { state: SYNC_STATE.UNKNOWN, pending, oldestAt, unreadable };
 
   const err = await getSetting('lastCloudSyncError', null);
   const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
   if (offline) return { state: SYNC_STATE.OFFLINE, pending, oldestAt };
-  if (pending > 0 && err) return { state: SYNC_STATE.PROBLEM, pending, oldestAt, error: err };
-  if (pending > 0) return { state: SYNC_STATE.PENDING, pending, oldestAt };
+  // `dirty` carries the changes the record count cannot represent — a
+  // settings-only or receipts-only mutation. Without it those render "Synced".
+  const outstanding = pending > 0 || dirty;
+  if (outstanding && err) return { state: SYNC_STATE.PROBLEM, pending, oldestAt, error: err };
+  if (outstanding) return { state: SYNC_STATE.PENDING, pending, oldestAt };
   return { state: SYNC_STATE.SYNCED, pending: 0, lastSyncedAt: Number(await getSetting('lastCloudSync', 0) || 0) };
 }
 
 function _syncStatusText(st){
   const n = st.pending;
-  const changes = n === 1 ? '1 change' : n + ' changes';
+  // With a durable dirty marker and no counted rows the honest phrasing is
+  // "changes waiting" with no number — the change is real, the count is not
+  // what represents it. Printing "0 changes waiting" would be worse than both.
+  const changes = n === 1 ? '1 change' : n > 1 ? n + ' changes' : 'changes';
   switch (st.state){
+    case SYNC_STATE.UNKNOWN: return { icon: '⚠️', text: 'Can\'t verify backup — retrying', tone: 'bad' };
     case SYNC_STATE.OFFLINE: return { icon: '📴', text: 'Offline — saved on this device' + (n ? ' (' + changes + ' waiting)' : ''), tone: 'warn' };
     case SYNC_STATE.PROBLEM: return { icon: '⚠️', text: 'Sync problem — retrying (' + changes + ' waiting)', tone: 'bad' };
     case SYNC_STATE.PENDING: return { icon: '⏳', text: changes + ' waiting', tone: 'warn' };
@@ -16393,10 +16539,10 @@ function _syncStatusText(st){
 /** One compact row on Home. Deliberately NOT a fixed banner: that slot belongs
  *  to renderCloudPausedBanner(), and two stacked fixed banners would cover the
  *  app. PAUSED renders nothing here precisely so the two cannot both speak. */
-async function renderSyncStatusRow(){
+async function renderSyncStatusRow(opts){
   const home = $('#view-home');
   if (!home) return;
-  const st = await cloudSyncStatus();
+  const st = await cloudSyncStatus(opts);
   const copy = _syncStatusText(st);
   const existing = $('#syncStatusRow');
   if (!copy){ existing?.remove(); return; }
@@ -16426,13 +16572,18 @@ async function renderSyncStatusRow(){
  *  It does NOT force a push when nothing is pending, and it stays silent when
  *  cloud backup is off or paused — a boot-time toast for a state the banner
  *  already explains is noise. */
-async function resumeSyncIfPending(){
+async function resumeSyncIfPending(opts){
   try {
     if (!(await cloudIsEnabled())) return { drained: false, reason: 'not-enabled' };
-    const { pending } = await syncPendingSummary();
-    if (pending <= 0) return { drained: false, reason: 'nothing-pending' };
+    const { pending, dirty, complete, unreadable } = await syncPendingSummary(opts);
+    // Three reasons to drain, and only one of them is a count. `dirty` is the
+    // settings-only case the count cannot see; `!complete` is a store we could
+    // not read, where skipping recovery on an unknown count is the fail-open
+    // #240 defect 3 names. Pushing when nothing was actually outstanding costs
+    // one no-op delta; not pushing when something was costs the change.
+    if (pending <= 0 && !dirty && complete) return { drained: false, reason: 'nothing-pending' };
     await cloudPushBackup(true);
-    return { drained: true, pending };
+    return { drained: true, pending, dirty, unreadable };
   } catch (_) { return { drained: false, reason: 'error' }; }
 }
 
@@ -17281,8 +17432,15 @@ function cloudScheduleRetry(){
 }
 
 function cloudScheduleSync(){
+  // Record the intent durably before arming an in-memory timer that a tab close
+  // destroys (#240 defect 2). Fire-and-forget on purpose: all 27 mutation call
+  // sites call this synchronously and must not be made to await an IndexedDB
+  // write to save a trip. `markSyncDirty` is returned so a caller that needs
+  // the marker settled — a test, resumeSyncIfPending — can await it.
+  const marked = markSyncDirty();
   if (_cloudSyncTimer) clearTimeout(_cloudSyncTimer);
   _cloudSyncTimer = setTimeout(async ()=>{ _cloudSyncTimer = null; if (await cloudIsEnabled()) await cloudPushBackup(true); }, CLOUD_SYNC_DEBOUNCE);
+  return marked;
 }
 
 // ── v15.3.0: Emergency auto-backup on tab close/hide ──
@@ -22330,6 +22488,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // Issue #205 section 3 — automatic sync: pending state, status, durability
     syncPendingSummary, cloudSyncStatus, renderSyncStatusRow, resumeSyncIfPending,
     SYNC_STATE, SYNC_PENDING_STORES,
+    // Issue #240 — the one change-clock authority both the push and the
+    // pending summary read, exported so a regression can assert they agree
+    // rather than asserting each side's transcription separately.
+    SYNC_CHANGE_CLOCKS, syncChangeClock, syncChangedSince, markSyncDirty, cloudScheduleSync,
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
     // X-04 (v23.9 Phase 5)
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,

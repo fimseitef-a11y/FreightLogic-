@@ -20,7 +20,7 @@
 // it. This suite asserts the gap is loud and recovery is one tap — not that the
 // passphrase survives a restart. CBP-07 pins that distinction so a later change
 // cannot quietly "fix" the friction by weakening the encryption.
-import { launchApp, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, skipFirstRunWizard, waitForAppReady, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/cloud-backup-paused.spec.mjs');
 
@@ -446,6 +446,284 @@ test('[SQ-07] boot wires the drain after first paint, and the mutation hook stil
     eq(r.hookIntact, true, 'invalidateKPICache() must still schedule a sync — that is the auto-enqueue for ' +
       'every mutation site, and §3 depends on it');
     eq(r.rowOnHome, true, 'the status row must render on every home render, like the paused banner');
+  } finally { await close(); }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #240 — v24.0.18 could report "Synced" over genuinely unsynced data.
+// Three defects, all of the same family: a surface that says something
+// reassuring about a fact it never actually established.
+//
+//   1. The pending count tested `updatedAt` on every store while the delta push
+//      selected on store-specific fields (`generatedAt`, `timestamp`,
+//      `recordedAt`, and fallback chains), and `gpsLogs` was not in the list at
+//      all. Two transcriptions of one rule, already drifted.
+//   2. `settings` has no per-record clock, so a settings-only mutation left the
+//      count at zero. Worse than the issue states, and found while fixing it:
+//      the empty-delta guard in cloudPushBackup() returned "Up to date" WITHOUT
+//      SENDING, so a settings-only change never reached the server on the delta
+//      path at all — not merely when a session ended inside the 30s debounce.
+//   3. An unreadable store was skipped, so with every other store clean the
+//      summary returned `pending: 0` and the row said "Synced" although backup
+//      completeness could not be established.
+//
+// These assert BEHAVIOUR through the real functions and the real database. The
+// store-clock cases deliberately write raw rows rather than driving each
+// feature's UI: what is under test is the selection rule, and a fixture that
+// went through the app's own writers could only ever produce the field the
+// writer happens to stamp today.
+//
+// NEGATIVE CONTROLS, each verified to fire — see the release section in
+// CLAUDE.md for the exact reversions.
+// ---------------------------------------------------------------------------
+
+/** Writes a raw row straight into a store, which is the only way to produce a
+ *  row carrying a specific change clock for a store whose feature UI is not
+ *  what is under test here. */
+const RAW_PUT = `async (store, row) => {
+  await new Promise((resolve, reject) => {
+    const open = indexedDB.open('FreightLogic_v18');
+    open.onsuccess = () => {
+      const db = open.result;
+      try {
+        const t = db.transaction(store, 'readwrite');
+        t.objectStore(store).put(row);
+        t.oncomplete = () => { db.close(); resolve(); };
+        t.onerror = () => { db.close(); reject(t.error); };
+      } catch (e) { db.close(); reject(e); }
+    };
+    open.onerror = () => reject(open.error);
+  });
+}`;
+
+test('[SQ-08] pending detection reads each store on the clock the push selects on', async () => {
+  // Defect 1, per store, including the two the old rule could never see:
+  // `gpsLogs` (absent from the list) and normalized evidence (`recordedAt`).
+  const { page, close } = await launchApp();
+  try {
+    await skipFirstRunWizard(page);
+    const r = await page.evaluate(async rawPutSrc => {
+      const T = window.__FL_TESTS;
+      const rawPut = eval(rawPutSrc);
+      const WM = 1_000_000;
+      await T.setSetting('lastCloudSyncedAt', WM);
+      await T.setSetting('syncDirtyAt', 0);
+
+      // One row per store, stamped ONLY on that store's own clock and with no
+      // `updatedAt` at all — which is exactly what the old rule required.
+      const cases = [
+        ['weeklyReports',  { weekId: 'SQ08-W', generatedAt: WM + 10 },      'generatedAt'],
+        ['gpsLogs',        { tripTrackingId: 'SQ08-G', timestamp: WM + 20 }, 'timestamp'],
+        ['documents',      { id: 'SQ08-D', createdAt: WM + 30 },            'createdAt (fallback)'],
+        ['laneHistory',    { id: 'SQ08-L', created: WM + 40 },              'created (fallback)'],
+      ];
+      const evStore = T.SYNC_PENDING_STORES.find(s => /evidence/i.test(s));
+      if (evStore) cases.push([evStore, { evidenceId: 'SQ08-E', recordedAt: WM + 50 }, 'recordedAt']);
+
+      const out = [];
+      for (const [store, row, clock] of cases) {
+        const before = (await T.syncPendingSummary()).pending;
+        try { await rawPut(store, row); } catch (e) { out.push({ store, clock, err: String(e && e.message || e) }); continue; }
+        const after = await T.syncPendingSummary();
+        const status = await T.cloudSyncStatus();
+        out.push({ store, clock, before, after: after.pending, state: status.state,
+                   inList: T.SYNC_PENDING_STORES.includes(store) });
+      }
+      return { out, stores: T.SYNC_PENDING_STORES };
+    }, RAW_PUT);
+
+    ok(r.stores.includes('gpsLogs'),
+      'gpsLogs is delta-pushed on `timestamp` and was missing from the pending list entirely — a whole store of ' +
+      'unsynced rows could not be seen');
+    for (const c of r.out) {
+      ok(!c.err, `${c.store}: raw write failed — ${c.err}`);
+      ok(c.inList, `${c.store} is delta-pushed and must be in the pending list`);
+      eq(c.after, c.before + 1,
+        `${c.store}: a row newer than the watermark on its OWN clock (${c.clock}) must count as pending — ` +
+        `the push selects on it, so the summary must too`);
+    }
+  } finally { await close(); }
+});
+
+test('[SQ-09] the push and the pending summary read one authority, not two transcriptions', async () => {
+  // The structural half of defect 1. Two independently maintained field lists
+  // is the shape this repository already records twice (the X-07 restore gap,
+  // the 2026-09-13 asset defect); asserting each side's transcription
+  // separately would just be a third copy.
+  const { page, close } = await launchApp();
+  try {
+    const r = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      const src = await (await fetch('app.js')).text();
+      const body = src.slice(src.indexOf('async function cloudPushBackup'),
+                             src.indexOf('async function mergeRestoreData'));
+      const clocks = Object.keys(T.SYNC_CHANGE_CLOCKS);
+      return {
+        clocks,
+        pendingStores: T.SYNC_PENDING_STORES,
+        // every store the push sends must be selected through the shared helper
+        selectorCalls: (body.match(/syncChangedSince\(/g) || []).length,
+        // and the old inline field lists must be gone from the push
+        inlineFilters: (body.match(/\.filter\(\s*r\s*=>\s*\(?r\.(updatedAt|updated|created|generatedAt|timestamp|createdAt|recordedAt)/g) || []).length,
+        // the two sides agree on a real row, checked rather than assumed
+        agreeOnRow: (() => {
+          const row = { generatedAt: 5000 };
+          return T.syncChangeClock('weeklyReports', row) === 5000 &&
+                 T.syncChangedSince('weeklyReports', [row], 4999).length === 1 &&
+                 T.syncChangedSince('weeklyReports', [row], 5000).length === 0;
+        })(),
+      };
+    });
+    eq(r.pendingStores.join(','), r.clocks.join(','),
+      'the pending store list must be DERIVED from the change-clock authority, so a store added to one is added to both');
+    ok(r.selectorCalls >= 11,
+      `every delta-filtered store must select through syncChangedSince(); found ${r.selectorCalls} calls`);
+    eq(r.inlineFilters, 0,
+      'cloudPushBackup() must not carry its own inline timestamp field list — that second copy IS the defect');
+    eq(r.agreeOnRow, true, 'the clock and the selector must agree on the same row, at and either side of the boundary');
+  } finally { await close(); }
+});
+
+test('[SQ-10] a settings-only change is pending, is sent, and is not reported as Synced', async () => {
+  // Defect 2, plus the harder half found while fixing it: the empty-delta guard
+  // used to return "Up to date" WITHOUT SENDING when no record had changed, so
+  // a settings-only mutation never reached the server on the delta path.
+  const { page, close } = await launchApp();
+  try {
+    await skipFirstRunWizard(page);
+    const r = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      await T.setSetting('cloudBackupToken', 'flk_' + 'a'.repeat(32));
+      await T.setSetting('cloudBackupUrl', 'https://sq10.invalid');
+      sessionStorage.setItem('fl_cloud_pass', 'passphrase-sq10');
+      // Watermark in the future: no record row can be pending, so the ONLY
+      // outstanding change is the settings one.
+      await T.setSetting('lastCloudSyncedAt', Date.now() + 60_000);
+      await T.setSetting('syncDirtyAt', 0);
+
+      const clean = await T.cloudSyncStatus();
+
+      // The durable marker every mutation site already reaches, awaited here
+      // only so the assertion is not racing an intentionally fire-and-forget write.
+      await T.markSyncDirty();
+      const summary = await T.syncPendingSummary();
+      const dirtyStatus = await T.cloudSyncStatus();
+
+      // Does a push with zero changed records actually SEND? Intercept fetch.
+      const calls = [];
+      const realFetch = window.fetch;
+      window.fetch = (...a) => { calls.push(String(a[0])); return Promise.reject(new Error('sq10-blocked')); };
+      try { await T.cloudPushBackup(true); } catch (_) {}
+
+      // And the boot drain must not call this "nothing-pending".
+      const resumed = await T.resumeSyncIfPending();
+      window.fetch = realFetch;
+
+      return { cleanState: clean.state, pending: summary.pending, dirty: summary.dirty,
+               dirtyState: dirtyStatus.state, sent: calls.some(u => /backup/.test(u)),
+               resumeReason: resumed.reason, drained: resumed.drained };
+    });
+
+    eq(r.cleanState, 'SYNCED', 'with nothing outstanding the surface must still be able to say Synced');
+    eq(r.pending, 0, 'a settings-only change is deliberately not a counted record — the count is not what represents it');
+    eq(r.dirty, true, 'but it MUST leave a durable marker, or it cannot survive the tab close that loses the 30s timer');
+    eq(r.dirtyState, 'PENDING',
+      'Home must not report Synced while a settings mutation has not reached the server — that is the reported defect');
+    eq(r.sent, true,
+      'the push must actually SEND when the only outstanding change is settings; the empty-delta guard used to ' +
+      'return "Up to date" without sending, so the change never reached the server at all');
+    eq(r.drained, true, 'boot recovery must drain it');
+    ok(r.resumeReason !== 'nothing-pending', `boot recovery must not report nothing-pending; got ${r.resumeReason}`);
+  } finally { await close(); }
+});
+
+test('[SQ-11] the dirty marker survives a session, and only a push that saw it clears it', async () => {
+  const { page, close } = await launchApp();
+  try {
+    await skipFirstRunWizard(page);
+    await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      await T.setSetting('cloudBackupToken', 'flk_' + 'b'.repeat(32));
+      await T.setSetting('lastCloudSyncedAt', Date.now() + 60_000);
+      await T.markSyncDirty();
+    });
+    // A real reload is the session boundary the in-memory debounce does not survive.
+    await page.reload({ waitUntil: 'load' });
+    await waitForAppReady(page);
+    const r = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      const s = await T.syncPendingSummary();
+      return { dirty: s.dirty, pending: s.pending };
+    });
+    eq(r.pending, 0, 'no record is pending — the watermark is ahead of every row');
+    eq(r.dirty, true,
+      'the intent must be DURABLE: a marker that dies with the page is the in-memory debounce the fix replaces');
+  } finally { await close(); }
+});
+
+test('[SQ-12] a store that cannot be read can never report Synced, and never suppresses recovery', async () => {
+  // Defect 3, the fail-open case. cloudPushBackup() treats a required-store read
+  // failure as a failed push that does not advance the watermark; the summary
+  // used to `continue` past it, so with every other store clean it returned
+  // pending: 0 and the row said Synced over a store nobody could look at.
+  const { page, close } = await launchApp();
+  try {
+    await skipFirstRunWizard(page);
+    const r = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      await T.setSetting('cloudBackupToken', 'flk_' + 'c'.repeat(32));
+      await T.setSetting('cloudBackupUrl', 'https://sq12.invalid');
+      sessionStorage.setItem('fl_cloud_pass', 'passphrase-sq12');
+      await T.setSetting('lastCloudSyncedAt', Date.now() + 60_000);
+      await T.setSetting('syncDirtyAt', 0);
+
+      // Baseline: everything readable and nothing outstanding really is Synced,
+      // so the assertions below are about the failure and not about the fixture.
+      const healthy = await T.cloudSyncStatus();
+
+      // Exactly one required store fails. The others stay clean, which is the
+      // dangerous shape: the count from the rest is a confident zero.
+      const broken = { readStore: async (store) => {
+        if (store === 'gpsLogs') throw new Error('forced read failure');
+        return T.dumpStore(store);
+      } };
+
+      const summary = await T.syncPendingSummary(broken);
+      const status = await T.cloudSyncStatus(broken);
+      const realFetch = window.fetch;
+      window.fetch = () => Promise.reject(new Error('sq12-blocked'));
+      const resumed = await T.resumeSyncIfPending(broken);
+      window.fetch = realFetch;
+
+      // And what the driver actually sees on Home, which is the surface the
+      // defect was reported against.
+      await T.renderSyncStatusRow(broken);
+      const rowText = document.getElementById('syncStatusRow')?.textContent || '';
+
+      return { healthy: healthy.state, pending: summary.pending, complete: summary.complete,
+               unreadable: summary.unreadable, state: status.state,
+               reason: resumed.reason, drained: resumed.drained, rowText };
+    });
+
+    eq(r.healthy, 'SYNCED', 'baseline: with every store readable and nothing outstanding, Synced is correct');
+    eq(r.pending, 0, 'the readable stores are genuinely clean — this is the fail-open shape, not a pending count');
+    eq(r.complete, false, 'the summary must report that it could not inspect everything');
+    eq(r.unreadable.join(','), 'gpsLogs', 'and must name which store, so the failure is diagnosable');
+    ok(r.state !== 'SYNCED',
+      `a store that could not be read must never resolve to Synced; got ${r.state}`);
+    eq(r.state, 'UNKNOWN', 'it is reported as unverifiable rather than as a count of zero');
+    ok(r.reason !== 'nothing-pending',
+      `recovery must not be suppressed by an unknown count; got ${r.reason}`);
+    eq(r.drained, true, 'an unverifiable state must still attempt the push');
+    ok(!/Synced/.test(r.rowText) && /verify/i.test(r.rowText),
+      `Home must say the backup cannot be verified, not "Synced"; row read: "${r.rowText}"`);
+    // Deliberately NOT asserted here: that the drain reaches the network. With
+    // every readable store clean, cloudPushBackup()'s "Up to date" short circuit
+    // is correct — there is nothing to send FROM THEM. In production the same
+    // unreadable store makes the push's own `dumpStore()` throw into its catch,
+    // which records `lastCloudSyncError` and leaves the watermark where it was;
+    // the seam here replaces only the summary's reader, so that path is not
+    // reachable from this fixture and is not claimed.
   } finally { await close(); }
 });
 

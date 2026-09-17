@@ -57,7 +57,7 @@
 // the fix, which is the argument for writing it as a directory sweep instead of
 // a list of the sites already known.
 
-import { launchApp, waitForAppReady, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, waitForAppReady, probeResolvesWithoutAwaiting, createSuite, ok, eq } from '../lib/harness.mjs';
 import { readFileSync } from 'node:fs';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -76,8 +76,12 @@ test('[HR-01] readiness is gated on a real IndexedDB operation, not on #appMeta'
   ok(body.includes('appMeta'), 'the cheap DOM check is still a useful first gate');
   ok(/dumpStore\(['"]settings['"]\)/.test(body),
     'readiness MUST complete a real IndexedDB-backed operation — `#appMeta` populates before `db = await initDB()` resolves, which is the whole race');
-  ok(/catch\s*\{?\s*\n?\s*return false/.test(body) || body.includes('return false'),
-    'a failed probe must keep waiting rather than resolving readiness');
+  ok(/page\.evaluate\(/.test(body),
+    'the probe must run through page.evaluate(), which awaits a returned Promise — see HR-06');
+  ok(/Date\.now\(\)\s*>=\s*deadline|Date\.now\(\)\s*<\s*deadline/.test(body),
+    'a probe that never succeeds must time out loudly rather than resolving readiness');
+  ok(/throw new Error/.test(body),
+    'readiness must FAIL when the database never becomes usable — returning quietly is the bug it is meant to catch');
 });
 
 test('[HR-02] no spec settles for an #appMeta-only wait on a page it opens itself', async () => {
@@ -160,6 +164,69 @@ test('[HR-05] a freshly opened extra tab is ready for persistence immediately', 
     const seen = await app.page.evaluate(async () =>
       (await window.__FL_TESTS.dumpStore('trips')).some(t => t.orderNo === 'HR-05-TAB-B'));
     ok(seen, 'and the write must be visible from the first tab — one shared origin, one database');
+  } finally { await app.close(); }
+});
+
+test('[HR-06] readiness does not rely on waitForFunction awaiting an async predicate', async () => {
+  // THE #224 ROOT CAUSE, MEASURED. `waitForAppReady()` used to poll with
+  //
+  //     await page.waitForFunction(async () => { ...await dumpStore()...; }, ...)
+  //
+  // `waitForFunction` evaluates its predicate and tests the RESULT for
+  // truthiness WITHOUT awaiting it. An `async` function always returns a
+  // Promise, and a Promise is always truthy — so that wait satisfied itself on
+  // its first poll and the database probe inside it never decided anything.
+  // Readiness therefore returned before `db = await initDB()` had assigned the
+  // handle, which is exactly the `db === null` window #224 reports.
+  //
+  // This does not take that on documentation's word: it drives the real
+  // Playwright build this suite runs on and measures it, so the assertion stays
+  // honest if the behaviour ever changes.
+  const app = await launchApp();
+  try {
+    const { resolvedMs, awaited } = await probeResolvesWithoutAwaiting(app.page, 600);
+    eq(awaited, false,
+      `Playwright resolved an async waitForFunction predicate only after ${resolvedMs}ms — it now appears to await it. ` +
+      'That is a behaviour change, not a pass: re-read whether the Node-side poll in waitForAppReady() is still required before relaxing anything.');
+
+    // And the harness must not have gone back to that form.
+    const h = read('tests/lib/harness.mjs');
+    const fn = h.match(/export async function waitForAppReady\([\s\S]*?\n\}/);
+    ok(fn, 'could not find waitForAppReady()');
+    ok(!/waitForFunction\(\s*async/.test(fn[0]),
+      'waitForAppReady() must not pass an async predicate to waitForFunction — that resolves on the first poll and waits for nothing');
+  } finally { await app.close(); }
+});
+
+test('[HR-07] readiness holds until persistence genuinely works, across re-bootstraps', async () => {
+  // The behavioural half of HR-06, run against the mechanism #224 names: a
+  // reload re-runs the IIFE and resets `let db = null`.
+  //
+  // STATED PLAINLY: this assertion's negative control does NOT reliably fire.
+  // With the async-predicate wait reinstated it still passed 6/6 here — the
+  // window between readiness resolving and `db = await initDB()` settling is
+  // short on a fast host, which is precisely why #224 presented as an
+  // intermittent CI failure and not a reproducible one. HR-01 and HR-06 are the
+  // assertions that actually hold the repair; this one is kept because it
+  // exercises the real sequence end to end and would catch a repair that
+  // satisfied the static checks while still returning early. A negative control
+  // that does not fire is the finding, not a formality.
+  const app = await launchApp();
+  try {
+    for (let i = 0; i < 6; i++) {
+      await app.page.reload({ waitUntil: 'load' });
+      await waitForAppReady(app.page);
+      const r = await app.page.evaluate(async n => {
+        try {
+          await window.__FL_TESTS.upsertTrip({
+            orderNo: 'HR-07-' + n, customer: 'X', origin: 'Gary, IN', destination: 'Toledo, OH',
+            pay: 600, loadedMiles: 220, emptyMiles: 0,
+          });
+          return 'ok';
+        } catch (e) { return String(e && e.message || e); }
+      }, i);
+      eq(r, 'ok', `iteration ${i}: a write immediately after readiness must not race db === null`);
+    }
   } finally { await app.close(); }
 });
 
