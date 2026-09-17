@@ -95,8 +95,10 @@ test('[CG-05] the exact URLs index.html requests are the exact URLs the SW preca
   const index = read('index.html');
   const sw = read('service-worker.js');
   const requested = [...index.matchAll(/(?:src|href)="([A-Za-z0-9._/-]+\?v=[0-9.]+)"/g)].map(m => m[1]);
-  ok(requested.length >= 4,
-    `expected at least 4 versioned assets in index.html (app.js, voice-load.js, sw-bridge.js, manifest.json), found ${requested.length}`);
+  // Was 4 before Voice Load was removed by operator decision (Issue #230,
+  // v24.0.17): app.js, sw-bridge.js and the manifest link remain.
+  ok(requested.length >= 3,
+    `expected at least 3 versioned assets in index.html (app.js, sw-bridge.js, manifest.json), found ${requested.length}`);
   for (const url of requested) {
     ok(sw.includes(url),
       `index.html requests "${url}" but service-worker.js never precaches that exact URL. ` +
@@ -133,7 +135,7 @@ test('[CG-07] manifest name, overlay VERSION and the module headers all agree', 
   eq(om[1], v, 'midwest-stack-authority.js VERSION must match the app generation');
 
   // Header comment on each shipped module — historically the quietest drift.
-  for (const f of ['service-worker.js', 'sw-bridge.js', 'voice-load.js', 'midwest-stack-authority.js', 'modern-shell.js']) {
+  for (const f of ['service-worker.js', 'sw-bridge.js', 'midwest-stack-authority.js', 'modern-shell.js']) {
     const firstLine = read(f).split('\n', 1)[0];
     ok(firstLine.includes(v), `${f} header comment must name v${v}; got: ${firstLine.trim()}`);
   }

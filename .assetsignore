@@ -5,3 +5,33 @@ wrangler.jsonc
 .assetsignore
 .gitignore
 .git/
+
+# Issue #228 — internal audit/certification/reference material is repository-only.
+# AUDIT_REPORT.md and FIELD_TEST_CHECKLIST.md were externally observed returning
+# HTTP 200 on the app origin. wrangler.jsonc publishes `assets.directory: "."`,
+# so anything NOT listed here is served, and these are documents about how the
+# app is built, audited and certified — never something a driver's browser
+# fetches. None of them is in the declared runtime inventory
+# (scripts/lib/deploy-assets.mjs), which is what tests/unit/deploy-asset-coverage
+# DAC-02 checks in the other direction.
+#
+# Deliberately NOT excluded: `field-certification.html` / `field-certification.js`
+# are the operator-approved SAME-ORIGIN device companion and must stay fetchable
+# on the real iPhone; `vendor/` carries the bundled SheetJS the service worker
+# precaches.
+AGENTS.md
+AUDIT_REPORT.md
+FIELD_TEST_CHECKLIST.md
+RECON_24_0_2.md
+UI_BRIEF_V24.5.md
+FreightLogic_UI_Reference.html
+
+# Repository-only directories: source of the gates, not inputs to the app.
+.agents/
+.claude/
+.github/
+.githooks/
+docs/
+schemas/
+scripts/
+tests/

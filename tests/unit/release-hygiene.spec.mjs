@@ -99,6 +99,66 @@ test('[X-11] the Universal Import UI no longer claims PDF import "uses OCR"', ()
   ok(stubMatch[0].includes('not supported'), 'importPDFFile() must still honestly report itself as unsupported');
 });
 
+test('[RH-04] Voice Load is absent from every runtime surface (Issue #230)', () => {
+  // Operator decision 2026-09-17: remove Voice Load completely. A removal is
+  // proved by ABSENCE, and absence is what nothing in this repository asserted
+  // before — a half-removal (module gone, precache entry left behind) would have
+  // shipped a 404 in the install-blocking critical shell, which is the exact
+  // 2026-09-13 defect class. Each of these five was true on main @ 0ebdc39 and
+  // is the negative control for this test: restoring any one fails it.
+  const exists = (rel) => { try { readFileSync(path.join(REPO_ROOT, rel), 'utf8'); return true; } catch { return false; } };
+  eq(exists('voice-load.js'), false, 'voice-load.js must be deleted from the repository, not merely unreferenced');
+
+  const index = readFileSync(path.join(REPO_ROOT, 'index.html'), 'utf8');
+  ok(!index.includes('voice-load'), 'index.html must not reference voice-load.js');
+  ok(!index.includes('mwVoiceBtn'), 'the evaluator microphone control #mwVoiceBtn must be gone');
+  ok(!index.includes('mwVoiceStatus'), 'the voice status region #mwVoiceStatus must be gone');
+  ok(!/Paste,\s*Voice,\s*or\s*Type/i.test(index),
+    'no driver-facing copy may still offer Voice input');
+  ok(/Load Intake — Paste or Type/.test(index),
+    'the load-intake control must still offer the surviving paste/type paths');
+
+  const sw = readFileSync(path.join(REPO_ROOT, 'service-worker.js'), 'utf8');
+  ok(!sw.includes('voice-load'),
+    'service-worker.js must not precache voice-load.js in CORE or in the install-blocking critical shell');
+
+  // The deploy inventory is derived from those same declarations, so a stale
+  // entry anywhere above would resurface here as a requested-but-missing asset.
+  ok(!readFileSync(path.join(REPO_ROOT, 'scripts/verify-cloudflare-parity.mjs'), 'utf8')
+      .includes("includes('voice-load.js?v="),
+    'the parity gate must no longer REQUIRE a voice-load.js reference in the deployed index');
+
+  // The enumerated list in Issue #230 named the module and the evaluator mic, but
+  // two FURTHER independent SpeechRecognition implementations lived in app.js and
+  // built their own driver-facing "Voice" buttons through innerHTML, so no
+  // index.html check could see them: F27 Load Intake's #liVoice and F23 Smart Load
+  // Inbox's #f23VoiceBtn. Removing only the module would have left an operator who
+  // asked for complete removal looking at two live Voice buttons doing the same
+  // job, which is what item 4's "any other driver-facing wording that offers Voice
+  // input" forbids. The F28 diagnostics row goes with them: reporting
+  // "Voice Input: Supported" in an app with no voice input is the X-11 dead-claim
+  // class asserted immediately below.
+  const app = appJs();
+  for (const marker of ['liVoice', 'f23VoiceBtn', '_startInboxVoice', 'dxVoice']) {
+    ok(!app.includes(marker), `app.js must carry no Voice Load remnant: ${marker}`);
+  }
+  ok(!/SpeechRecognition/.test(app),
+    'no SpeechRecognition plumbing may remain — the issue\'s non-goal forbids replacing Voice Load ' +
+    'with a new speech feature, and a dormant recognizer is a feature waiting to be re-exposed');
+});
+
+test('[RH-05] typed and pasted load intake survive the Voice removal', () => {
+  // Non-goal guard (Issue #230 item 7): the removal must not take ordinary
+  // intake with it. These are the surfaces the paste/type path binds to.
+  const index = readFileSync(path.join(REPO_ROOT, 'index.html'), 'utf8');
+  for (const id of ['btnLoadIntake', 'mwRevenue', 'mwLoadedMi', 'mwDeadMi']) {
+    ok(index.includes(`id="${id}"`), `#${id} must survive the Voice Load removal`);
+  }
+  // And the intake parser itself is untouched app.js logic, not voice-owned.
+  ok(appJs().includes('function openLoadIntake'), 'F27 Unified Load Intake must remain');
+  ok(appJs().includes('function parseLoadTextForInbox'), 'F23 paste parsing must remain');
+});
+
 export async function runSpec() {
   return await run();
 }
