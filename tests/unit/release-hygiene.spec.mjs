@@ -53,6 +53,42 @@ test('[RH-01] every spec file on disk is registered in run-all.mjs', () => {
   eq(missing.join(', '), '', `every spec must be imported AND listed in the specs array — unregistered: ${missing.join(', ')}`);
 });
 
+/* ── a negative control left in the tree is a deleted fix ────────────────────
+ *
+ * PR #213 merged `zero-token-onboarding.spec.mjs` with the body of
+ * `claimWizardReady()` replaced by `/* NEGATIVE CONTROL: focus wait removed *​/`.
+ * The control had been run deliberately — remove the repair, watch 2/10 runs
+ * fail under load, put it back — and the command that put it back died before it
+ * ran, on a `pkill` pattern that matched its own shell.
+ *
+ * It then survived two verifications. `grep -c claimWizardReady` counts an
+ * IDENTIFIER and returns the same number whether the body is there or not, and
+ * re-running the spec unloaded passes either way, because unloaded is precisely
+ * the condition under which that race does not fire. So a merged, documented,
+ * "verified" fix was an empty function for a day, and the defect it was supposed
+ * to close kept failing CI.
+ *
+ * Running negative controls is the right practice and this must not discourage
+ * it. The cheap structural guard is simply: the marker never reaches `main`. */
+test('[RH-02] no spec file carries leftover negative-control scaffolding', () => {
+  const offenders = [];
+  for (const dir of ['unit', 'integration']) {
+    for (const f of readdirSync(path.join(REPO_ROOT, 'tests', dir))) {
+      if (!f.endsWith('.spec.mjs')) continue;
+      const src = readFileSync(path.join(REPO_ROOT, 'tests', dir, f), 'utf8');
+      // The marker as an ACTIVE comment line. Prose that merely discusses
+      // negative controls — this very block, and several spec headers that
+      // explain which control fires — must not trip it, or the guard gets
+      // deleted the first time it cries wolf on its own documentation.
+      for (const line of src.split('\n')) {
+        if (/^\s*(\/\/|\/\*)\s*NEGATIVE CONTROL\b/i.test(line)) offenders.push(`${dir}/${f}: ${line.trim()}`);
+      }
+    }
+  }
+  eq(offenders.join(' | '), '',
+    `a negative-control edit was left in a spec — the repair it removed is missing: ${offenders.join(' | ')}`);
+});
+
 test('[X-11] the Universal Import UI no longer claims PDF import "uses OCR"', () => {
   const text = appJs();
   ok(!text.includes('Rate confirmation (PDF) — uses OCR'), 'the dead PDF-OCR button label must be removed — importPDFFile() is an unconditional stub');

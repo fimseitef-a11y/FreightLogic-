@@ -4,12 +4,17 @@
 > (v23.8.3/v23.8.4) and X-series (v23.9) against repository **source**, and — appended at the
 > end — the **P-series (P-01 … P-07) against the DEPLOYED backup/API Worker**.
 >
-> **One finding is OPEN as of 2026-09-16: V-1**, at the very end of this report —
-> `ensureVehicleProfiles()` is a read-modify-write with no serialization, so two concurrent
-> callers each mint a vehicle profile and one is silently discarded along with the tax-method
-> election attached to it. It was found by `main` failing its own release gate and being
-> cleared by a re-run. Reported rather than fixed: the repair is in `app.js`, which is SHARED
-> and needs a release generation.
+> **Two findings are OPEN as of 2026-09-17, both at the very end of this report, and both
+> repairs land in `app.js` — SHARED, needing a release generation — so both are reported
+> rather than fixed.** **V-1**: `ensureVehicleProfiles()` is a read-modify-write with no
+> serialization, so two concurrent callers each mint a vehicle profile and one is silently
+> discarded along with the tax-method election attached to it. **V-2**: `checkFirstRunSetup()`
+> fires 800 ms into boot and `openModal()` focuses what it opens, so the first-run modal takes
+> the keyboard focus away from an open claim wizard — from a driver mid-way through typing a
+> passphrase that cannot be reset.
+>
+> Neither came from a report. Both came from `main` failing its own release gate and being
+> cleared by a re-run.
 >
 > The P-series were, until then, the only OPEN findings this report had ever carried, including
 > two live credential exposures and a live violation of the v24.0 decision-authority rule. They were open
@@ -1327,3 +1332,60 @@ which is SHARED and changes deployed bytes, so it requires a release generation
 (`verify-release-generation.mjs` RG-03) and a deploy. Reported rather than taken
 unilaterally. When it lands, the first test flips to asserting a single profile and
 is retagged `/ FIXED`.
+
+---
+
+## V-2 — the first-run setup modal takes focus away from an open claim wizard — OPEN
+
+**Severity: Medium.** It lands on a passphrase that by design cannot be reset, at the
+one moment a new driver is typing it.
+
+**Where.** `openClaimWizard()` covers the app at z-index 12000, and its own comment
+says so: *"the claim wizard … covers the app at z-index 12000 while the rest of boot
+continues behind it."* The rest of boot includes `checkFirstRunSetup()`, armed on an
+**800 ms `setTimeout`**, and `openModal()` ends by focusing the first focusable element
+in whatever it opens:
+
+```js
+setTimeout(()=> checkFirstRunSetup().catch(()=>{}), 800);          // boot
+const focusable = md.querySelector('input:not([type="hidden"]),select,textarea,button,[tabindex]:not([tabindex="-1"])');
+if (focusable) focusable.focus();                                   // openModal
+```
+
+So roughly 800 ms after a driver taps an invite link — while they are typing into a
+full-screen wizard — the keyboard focus jumps to a modal behind it. What they type next
+goes somewhere else, in a masked field, with a confirmation field that will then refuse
+to match.
+
+**Observed, not inferred.** The assertion was first written as part of ZTO-15 expecting
+focus to settle where it was put, and it failed with `document.activeElement.id` equal
+to **`modalClose`** — the first-run modal's own close button — with the claim wizard
+still open. Evidence line from the spec:
+
+```
+[evidence] focus after 1500ms in the confirm field: modalClose (claim wizard open: true, first-run modal open: true)
+```
+
+**Reproduction.** `tests/integration/zero-token-onboarding.spec.mjs`,
+`[FINDING V-2 / NEW]` — the one invite test that deliberately does **not** suppress the
+first-run wizard, because that wizard is the subject. Its settle window is 1500 ms
+specifically to outlast the 800 ms timer; a shorter window passes while leaving the
+hazard unobserved. ZTO-15 is the paired control: with the first-run wizard suppressed,
+focus stays exactly where it is put.
+
+**Fix, not taken here.** `checkFirstRunSetup()` should stand down while a claim wizard
+is open — one condition. It is in `app.js`, which is SHARED and changes deployed bytes,
+so it needs a release generation and a deploy. When it lands, V-2 flips to asserting
+`claimPass2` and merges back into ZTO-15.
+
+**How it was found, which is the part worth keeping.** Not by a report and not by
+looking for it. ZTO-09 had been failing CI intermittently; the first repair for that —
+waiting for the wizard's own 120 ms focus timer before typing — was merged in PR #213
+**with its body accidentally emptied by a negative-control edit that was never
+restored**. Two verifications passed anyway: `grep -c` on the helper's name counts an
+identifier and is unchanged by an empty body, and re-running the spec unloaded passes
+either way because unloaded is precisely when the race does not fire. Re-running the
+full suite is what exposed it, and widening the assertion to ask *"does focus stay
+put?"* is what turned a test-harness race into this product finding. `RH-02` now fails
+any spec carrying leftover negative-control scaffolding, so the marker cannot reach
+`main` again.
