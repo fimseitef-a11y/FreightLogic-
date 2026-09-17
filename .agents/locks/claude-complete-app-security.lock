@@ -2,5 +2,5 @@ owner: claude
 token: a05cb06c-9b56-4c00-b0bc-a405faabdfa1
 started_utc: 2026-09-17T10:09:39Z
 expected_release_utc: 2026-09-17T18:09:39Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, .agents/inbox/, .agents/STATUS.md
 task: Complete app - issues #224 (suite db===null race), #219 (import overwrites credentials), #221 (retire raw token= links), #220 (remove jsDelivr OCR fallback), #225 (supersede cert records), plus the release generation bump those require.
