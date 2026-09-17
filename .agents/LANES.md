@@ -6,6 +6,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **UI redesign takeover (2026-09-14, operator-directed).** The operator explicitly directed GPT to take over and handle the approved FreightLogic reference-image redesign. `styles.css` is therefore reassigned to `gpt` for the presentation implementation. All other non-`SHARED` paths remain `claude`; this is a targeted presentation takeover, not a blanket ownership transfer.
 
+**Field certification runner exception (2026-09-17, operator-approved).** The operator approved a bounded physical-device certification companion so A1-A12 can be executed on the real iPhone with structured evidence instead of ad-hoc notes. The runner is isolated from `app.js` and the service worker: GPT owns only `field-certification.html`, `field-certification.js`, and the exact regression `tests/integration/field-certification-runner.spec.mjs`. It may record device-observed evidence and auto-observable browser facts, but it may never auto-promote a hardware-only step to PASS without explicit observation. This exception does not transfer any other `tests/` path or runtime/core ownership.
+
 `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against concurrent sessions, not just different agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
@@ -25,6 +27,9 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
+| `field-certification.html` | gpt | Operator-approved same-origin physical-device certification companion; no app.js or decision-engine authority. |
+| `field-certification.js` | gpt | Field-certification state/evidence capture. May auto-record browser-observable facts but may not infer hardware-only PASS. |
+| `tests/integration/field-certification-runner.spec.mjs` | gpt | Exact regression exception for the field-certification companion only; no other tests/ ownership transfers. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
 | `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
@@ -66,9 +71,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 ## Current lane intent
 
 - `styles.css` remains GPT-owned for the approved redesign.
+- The exact field-certification companion paths named above are GPT-owned for this operator-approved bounded task.
 - `app.js` remains `SHARED` and requires the current covering lock plus a full suite.
 - PR #210 zero-token onboarding is authoritative; nothing may reinstate the superseded raw-token/admin-handler flow.
-- The post-PR-210 full-repair exceptions are retired. `styles.css` and the three UI-redesign authority documents are now the only GPT-owned paths.
+- The post-PR-210 full-repair exceptions are retired. `styles.css`, the three UI-redesign authority documents, and the exact field-certification companion paths are the only GPT-owned paths.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
 - Every other non-excepted path remains Claude-owned.
 
@@ -84,7 +90,7 @@ This map is enforced mechanically, not by recollection:
 - `.githooks/pre-commit` rejects a staged change to a foreign lane, and a staged change to a `SHARED` path with no held lock covering that path. Enable per clone: `git config core.hooksPath .githooks` and `git config freightlogic.agent <claude|gpt>`.
 - `.github/workflows/lanes.yml` re-checks path ownership and commit prefixes on every PR to `main`. The hook is fast feedback and is bypassable; CI is the boundary.
 - A path with **no row in this table** fails closed. Adding a file means adding its row.
-- A lock past `expected_release_utc` + 2h is reported as **stale**. It grants nothing and is never auto-stolen; reap it deliberately per `/AGENTS.md`.
+- A lock past `expected_release_utc` + 2h is reported as **stale**. It grants nothing — including to its own holder — and it is never auto-stolen; reap it deliberately per `/AGENTS.md`.
 
 ## Cross-lane requests
 
