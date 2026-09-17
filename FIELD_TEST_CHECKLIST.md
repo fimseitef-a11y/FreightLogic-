@@ -2,32 +2,17 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-> **Not a live test queue — deferred by decision, not pending.** On 2026-09-16 the operator
-> deferred **A1-A12** and the **section C** private-history reconciliation to the **final
-> post-v24.5 candidate**, and the gate runs **once** against it. **24.0.14 is not the
-> certification candidate**, and neither is any generation before the redesign lands. Read
-> `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below.
->
-> The instrument is ready and correct; it is deliberately not being run yet. Do not open a
-> partial A-section to make progress — a half-filled section against a superseded generation
-> reads as evidence and is not, which is the exact failure the rest of this header exists to
-> prevent. A deferred gate is **open**, not closed.
->
-> The rationale is that v24.5 rewrites the surfaces A1, A3, A9, A10 and A11 observe — shell
-> identity, intake, the evaluator UI, the hand-built F31 SVG chart, the tab icons and the
-> selects — so device evidence gathered before it merges expires the day it does. When the
-> deferral lifts, **re-verify this checklist against the new shell first**: those five rows
-> will describe surfaces that no longer exist in that form.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`.
+Current runtime synchronization point: **production serves FreightLogic v24.0.14 / IndexedDB v16 / Worker v19.** Observed 2026-09-16 by live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, whose `EXPECTED` block is exactly those generations. Current `main` has advanced through documentation/coordination commits without changing those shipped runtime generations.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.14 / IndexedDB v16 / Worker v19.** Observed 2026-09-16 by live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, whose `EXPECTED` block is exactly those generations. **Repository source has since advanced to 24.0.15, which is NOT deployed** — it closes two `AUDIT_REPORT.md` findings and the `tripRow` residue, with no schema or Worker change (DB stays 16, Worker stays v19). So source and production deliberately disagree right now, and 24.0.14 is the candidate to certify. Test against what the device actually reports. If the device reports **24.0.14**, that is expected. If it reports **24.0.15**, the deploy has happened and a superseding certification-state document is due before you record anything — stop and get one. Any other disagreement is itself the finding.
+**Not a live test queue.** A1-A12 and the section C private-history reconciliation are **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and run **once** against it. **24.0.14 is not the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
-*This line previously read `24.0.12` / `v15` / `v17`. It was two app generations and two Worker generations stale, and so was the certification document it defers to — the same drift this file already records twice about itself. A tester following it would have certified a candidate production stopped serving days earlier. Both are corrected together, because correcting only one of them is what produced the second occurrence.*
+**Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
-**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. Treat the synchronization point above as something to re-verify on the device, not to trust. Read the SHA out of `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` immediately before testing, and confirm the generation strings above against Diagnostics and Worker `/health` on the device itself. If any of the three disagree, stop — the disagreement is the finding.
+**The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. When the deferral lifts, read the SHA out of the then-current superseding certification document immediately before testing and confirm the generation strings against Diagnostics and Worker `/health` on the device itself. If any disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence, recorded in that certification document. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**, which needs raw files that are not in this repository. Both are **deferred to the final post-v24.5 candidate** per the notice at the top of this file — open, scheduled, and not due now.
+All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**. Their execution is deferred as stated above.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
@@ -40,7 +25,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.14** is active, on the exact candidate SHA named in the certification document.
+4. Close/reopen online and verify **24.0.12** is active, on the exact candidate SHA named in the certification document.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -110,7 +95,7 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.14)
+## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.12)
 
 Use a synthetic load with an optional pickup cutoff.
 
@@ -140,13 +125,10 @@ PASS requires the exact fail-closed behavior above. A guessed/clamped/default pl
 
 ## A12. Zero-token driver onboarding (added v24.0.13) — **the storage-partition question**
 
-**Prerequisite SATISFIED.** Worker v18 and app 24.0.13 were deployed and observed
-(runs `35037355686`, `35037460402`), then superseded: production now serves **app
-24.0.14 / Worker v19**, which carries the same invite/claim contract — B7 is OBSERVED
-PASS against v19, run `35049144080`. Run A12 against **24.0.14 / v19** and record both
-generations with the result. The original ordering constraint stands as history: the
-Worker had to go first, because the app calls `POST /admin/invites` and `POST /claim`
-and neither existed on v17, and an A12 run against a v17 Worker certifies nothing.
+**Prerequisite: Worker v18 AND app 24.0.13 must both be deployed before this runs.**
+The Worker goes first — the app calls `POST /admin/invites` and `POST /claim`, and
+neither exists on v17. Record both generations with the result; an A12 run against a
+v17 Worker certifies nothing.
 
 This gate exists because of one question no headless runner can answer, and the answer
 determines whether a real driver is stranded.
@@ -235,60 +217,6 @@ Its verdict is deliberately incapable of naming a safe rollback target. Older ge
 
 It states its own limit rather than implying otherwise: **the offline navigation itself is not observed there.** A navigation restarts the service worker outside the network emulation that covered it, which was tested, not assumed. That is precisely what **A4** on a real device is for, and why B6 does not replace it.
 
-## B7. Live invite/claim contract (added v24.0.13) — **PASS**
-
-This gate exists because the zero-token onboarding flow reached production with **no
-live verification of any kind**. `tests/unit/worker-invite-claim.spec.mjs` (17) proves
-the contract against the real fetch handler with an in-memory KV, which is a source gate
-and says nothing about the deployed Worker; B2 and B4 predate `/admin/invites` and
-`/claim` entirely. That left the only flow in the app that **mints a credential**
-unobserved in production.
-
-`scripts/verify-live-invite-claim.mjs` runs inside `Verify Authenticated Worker`, which
-fires automatically after every dispatched Worker deploy. Against the deployed origin it
-proves: the invite endpoint denies both a missing and a wrong admin token; `/claim`
-rejects a malformed code with 400 and an unknown one with 410 rather than 404; a seeded
-invite claims successfully and the minted token **actually authenticates**, not merely
-matches a shape; a re-claim returns the **same `userId`** with a fresh token and revokes
-the previous one; and the fourth claim of one invite is refused.
-
-Three things about it are deliberate and should not be "improved" away:
-
-- It never holds `ADMIN_TOKEN`. The invite half is verified only at its auth boundary,
-  which is the honest limit of what a gate without the operator's secret can claim.
-- It spends at most 6 of the deployed `/claim` limit of 10 per hour per IP, and does
-  **not** test the 429 — that would consume the rest and make every later check in the
-  same run report a rate limit instead of its real answer.
-- It seeds a short-TTL invite into production KV and deletes every key it creates in a
-  `finally` block. The `user:`/`tokh:` records a claim mints carry no TTL of their own,
-  so cleanup is mandatory. A residue it cannot delete is **named in the log** and carries
-  the name `FreightLogic Certification`, so it is findable in `GET /admin/users` rather
-  than hiding among real drivers.
-
-**Observed 2026-09-16 against Worker v19.** Run `35049144080`, `workflow_dispatch` @
-`72ab81e`, whole step **success** with zero error annotations. The verdict logic refuses
-`PASS` unless a seeded invite has actually been claimed against the live Worker, so this
-is positive evidence the round trip ran. An earlier `35048574588` observed the same
-contract on Worker v18; v19 left `/admin/invites` and `/claim` untouched and the 17
-offline contract assertions pass against it.
-
-**Four runs failed on the way here and all four are in this record.** Two
-(`35038771767`, `35039223738`) were the per-IP claim budget. One (`35049015938`) failed
-two minutes before the passing run above, on a tree whose offline contract spec was
-17/17, while the v19 deploy was landing — **its cause was never positively identified and
-this document does not claim otherwise.** The fourth was the same class in a different
-disguise. Every one was the gate failing to distinguish *could not look* from *looked and
-it is broken*: a 429 now reads `UNOBSERVED` (LIC-09, LIC-10), a 5xx reads `UNOBSERVED`
-(LIC-13), the workflow no longer lets `set -e` collapse `UNOBSERVED` into `FAILURE`
-(LIC-07), and a `FAILURE` now annotates **which** check failed (LIC-11, LIC-12).
-
-**Do not run this gate twice inside one hour and read the second result as a product
-failure, and do not run it while a Worker deploy is still landing.**
-
-Record the run ID and verdict. `UNOBSERVED` (exit 2) is not a pass: it means the origin
-was unreachable, the claim budget was spent, or the invite could not be seeded, and it
-must never be written down as evidence the contract holds.
-
 # C. Private-history reconciliation blocker
 
 The original August 27 five-file M6 bundle was recovered privately in prior evidence. Preflight reports 216 source rows and the unchanged adapter deterministically produces 149 candidate records. Raw rows remain outside the public repository.
@@ -335,4 +263,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A12) are not PASS. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` is that record and is the current authority; it supersedes the 2026-09-15 document, which had gone two app generations stale. Any later certification-state document must explicitly supersede it before the release is frozen, and one is due **the day a shipped file deploys** — not the day it merges. That interval is precisely where the last two occurrences of this drift lived.
+The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A12) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.
