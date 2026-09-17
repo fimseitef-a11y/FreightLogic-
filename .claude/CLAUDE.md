@@ -2,11 +2,12 @@
 
 For any visual redesign, driver-shell, navigation, card-layout, screen-composition, or UI-restyling work:
 
-1. Read `UI_BRIEF_V24.5.md` before making changes.
+1. Read `UI_BRIEF_V24.5.md` before making changes, but reconcile it against current exact source and newer operator decisions before treating older capability language as authority.
 2. Open `FreightLogic_UI_Reference.html` as the repository-native visual reference.
-3. Complete Gates 1–4 in the brief and **stop for approval before writing redesign UI code**.
+3. Keep Gates 1–4 current before redesign UI changes. The visual direction and implementation continuation are already operator-approved; do **not** stop to request duplicate approval when the user says Proceed/Continue/Resume/Finish. Stop only for a genuine material conflict, unsafe/destructive action requiring approval, unavailable authorization, or physical user-only evidence.
 4. Preserve the current canonical economics/data/security behavior. The redesign displays existing logic; it does not create a second evaluator or silently remove existing capabilities.
-5. The center ⚡ action reuses the current Unified Load Intake; preserve currently-authorized photo/screenshot, paste, and voice paths unless the operator separately approves a removal.
-6. Respect `AGENTS.md`, `.agents/LANES.md`, live locks, full-suite rules, and current release-generation discipline.
+5. **Voice Load is intentionally removed.** Operator approval on 2026-09-17 and v24.0.17 supersede older redesign-brief wording that said to preserve Voice. The center ⚡ action reuses the current Unified Load Intake with the capabilities actually present in current source; do not reintroduce `voice-load.js`, SpeechRecognition buttons, or Voice wording. Photo/screenshot/OCR must also reflect the current self-hosted-availability contract rather than pretending an unavailable OCR engine exists.
+6. Respect `AGENTS.md`, `.agents/LANES.md`, live locks, full-suite rules, and current release-generation discipline. Latest physical-path ownership wins: the targeted GPT `styles.css` presentation takeover remains in force, while Claude owns the non-excepted runtime/test paths and SHARED paths remain serialized.
+7. Before calling a redesign/release complete, verify exact current source versus production. As of the 2026-09-17 v24.0.17 reconciliation, the app/service worker were live at v24.0.17 while the backup/API Worker still reported v19 although source required v20; this is a blocker until a newer verified live-parity result supersedes it.
 
-`v24.5` is a working redesign label only. Do not bump runtime versions merely because the brief uses that filename.
+`v24.5` is a working redesign label only. Do not bump runtime versions merely because the brief uses that filename. Fast-moving SHA/version/deployment facts above are checkpoint context, not permission to skip a fresh verification before release claims.
