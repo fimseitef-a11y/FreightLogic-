@@ -1,0 +1,6 @@
+owner: gpt
+token: b3f264d7-71f6-4e71-b84b-dfa0e2e532ee
+started_utc: 2026-09-17T21:13:05Z
+expected_release_utc: 2026-09-17T21:45:00Z
+paths: .agents/LANES.md
+task: Retire the spent tests/run-all.mjs GPT exception so Claude-owned tests can register new specs without RH-01/path-ownership deadlock.
