@@ -1,6 +1,0 @@
-owner: claude
-token: 8d2b47e1-5c93-4f06-a1d8-6e0b93f4c275
-started_utc: 2026-09-16T23:10:00Z
-expected_release_utc: 2026-09-17T02:10:00Z
-paths: .agents/LANES.md, .agents/STATUS.md, .agents/NOW.md, .agents/inbox/
-task: Retire the post-PR-210 temporary GPT exceptions whose own stated bound (the reviewed successor PR) was met when PR #211 landed as ef2de47, then apply the three corrections blocked on them. gpt app-js.lock (1db616da) and gpt-completion-review.lock (1a443d90) are both STALE and grant nothing; reaping them was denied by this session's permission layer, so they are left in place and named here instead.
