@@ -1,0 +1,53 @@
+# Dependabot configuration (Issue #222).
+#
+# WHAT THIS REPOSITORY ACTUALLY HAS TO UPDATE, which is the whole reason this
+# file is short:
+#
+#   FreightLogic has NO build system and NO package manifest — no npm, no
+#   bundler, no transpiler, no lockfile. `vendor/xlsx.full.min.js` (SheetJS
+#   v0.18.5) is a committed third-party file, not a resolved dependency, so no
+#   ecosystem can see it; keeping it current is a deliberate, reviewed vendoring
+#   decision recorded in README.txt, not something to automate. Playwright is
+#   installed globally in CI and symlinked, deliberately not committed as a
+#   dependency (see tests/README.md).
+#
+#   So the only ecosystem with anything to resolve is `github-actions`: the
+#   pinned action versions used by the workflows in this directory. That is not
+#   a trivial surface — those actions run with repository credentials, and
+#   `tests/unit/workflow-authority.spec.mjs` constrains what a workflow may ask
+#   for precisely because CI is a privileged path.
+#
+#   A `npm` entry is NOT added: with no manifest, Dependabot would report a
+#   configuration error on every run, and a permanently erroring check trains
+#   people to ignore it. If a manifest is ever introduced, add the ecosystem in
+#   the same change.
+#
+# Dependabot *alerts* and *security updates* are repository settings, not this
+# file, and the connected integration cannot mutate them — Issue #222 records
+# that. This file covers version updates only.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '05:00'
+    open-pull-requests-limit: 3
+    commit-message:
+      # The repository enforces a commit-prefix convention per lane
+      # (scripts/lane-guard.mjs, `ci-prefix`). Dependabot's PRs are not agent
+      # commits and are not covered by a lane, but prefixing them keeps the
+      # history readable alongside `[claude]` / `[gpt]` commits.
+      prefix: '[deps]'
+    labels:
+      - dependencies
+    groups:
+      # One PR for all action bumps rather than three: every one of these is
+      # reviewed the same way and by the same person, and three separate PRs
+      # each triggering the full Playwright suite is wasted CI for no extra
+      # signal.
+      github-actions:
+        patterns:
+          - '*'

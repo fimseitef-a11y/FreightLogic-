@@ -1,0 +1,77 @@
+# CodeQL / code scanning for the JavaScript codebase (Issue #222).
+#
+# AUTHORITY, and why this workflow is allowed to exist at all:
+#
+#   `tests/unit/workflow-authority.spec.mjs` globs every file in this directory
+#   and fails any workflow that takes repository write authority, performs a
+#   repository write, or triggers on `issue_comment` / `repository_dispatch` /
+#   `pull_request_target`. This workflow holds `security-events: write` — which
+#   is the permission CodeQL needs to upload its SARIF results and is NOT
+#   repository write: it cannot author a commit, move a ref, or open a PR.
+#   `contents` stays `read`. WFA-02's banned set is deliberately explicit
+#   (contents / packages / id-token / pull-requests / issues / actions), so this
+#   grant is inside the rule rather than an exception to it.
+#
+#   It never deploys and never writes to this repository. The v24.0.1
+#   comment-triggered, branch-pushing CI repair machinery was removed on purpose
+#   and must not return.
+#
+# SCOPE. This closes the "CodeQL/code scanning for the JavaScript codebase"
+# requirement of Issue #222 — the part of that issue that is code. Branch
+# protection, secret scanning / push protection, and Dependabot *alerts* are
+# repository control-plane settings that the connected integration cannot
+# mutate; Issue #222 says so itself, and this workflow does not pretend to
+# cover them.
+#
+# BUILD MODE. FreightLogic has no build system — no npm, no bundler, no
+# transpiler; everything ships as flat files. `build-mode: none` is therefore
+# the correct and only sensible choice: there is nothing to compile, and
+# CodeQL analyses the sources as they ship.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # A weekly scheduled run so a newly published query catches an existing
+  # pattern even when nobody has pushed. Sunday 04:17 UTC — an odd minute on
+  # purpose, to stay off the top-of-hour runner contention spike.
+  schedule:
+    - cron: '17 4 * * 0'
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze JavaScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the exact ref under analysis
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          # `security-extended` over the default suite: this application handles
+          # financial records, a cloud bearer credential and an app-lock PIN
+          # hash, and its own audit history records injection-class findings
+          # (XSS, CSV injection, prototype pollution) that the extended suite
+          # covers more of. The cost is a longer run on a 1.1 MB single-IIFE
+          # file, which a weekly schedule absorbs.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
