@@ -154,6 +154,61 @@ test('[DAC-05] admin-driver-ui.js specifically is requested, present, and deploy
     '2026-09-13 production 404 exactly, reintroduced');
 });
 
+test('[DAC-06] internal audit/certification/reference material is never a deployed asset', () => {
+  // Issue #228. External verification observed `AUDIT_REPORT.md` and
+  // `FIELD_TEST_CHECKLIST.md` returning HTTP 200 on the app origin. That is not
+  // a misconfiguration on top of a safe default — `wrangler.jsonc` publishes
+  // `assets.directory: "."`, so the repository root IS the document root and
+  // every file is served unless `.assetsignore` withholds it. These documents
+  // describe how the app is audited and certified, and one of them is the
+  // physical-device certification gate itself.
+  const mustNotBePublic = [
+    'AGENTS.md',
+    'AUDIT_REPORT.md',
+    'FIELD_TEST_CHECKLIST.md',
+    'RECON_24_0_2.md',
+    'UI_BRIEF_V24.5.md',
+    'FreightLogic_UI_Reference.html',
+    '.agents/LANES.md',
+    '.agents/STATUS.md',
+    '.claude/CLAUDE.md',
+    '.github/workflows/tests.yml',
+    '.githooks/pre-commit',
+    'docs/COMPLETION_RELEASE_PLAN_2026-08-25.md',
+    'docs/BACKUP_CONTRACT.md',
+    'schemas/broker-memory.schema.json',
+    'scripts/lib/deploy-assets.mjs',
+    'scripts/verify-cloudflare-parity.mjs',
+    'tests/run-all.mjs',
+    'tests/lib/harness.mjs',
+  ];
+  for (const f of mustNotBePublic) {
+    const { excluded } = isExcluded(f);
+    ok(excluded, `${f} must be withheld from the deployed assets (Issue #228) — it is repository-only ` +
+      'material, and wrangler.jsonc publishes the whole repository directory');
+  }
+});
+
+test('[DAC-07] the #228 exclusions withhold no runtime asset, and keep the device companion served', () => {
+  // The failure mode of DAC-06 is over-exclusion: withholding a real asset
+  // produces exactly the 2026-09-13 production 404 this spec exists to prevent,
+  // in the opposite direction. DAC-02 already asserts the declared inventory is
+  // never excluded; this names the two specific things the #228 change had to
+  // reason about explicitly, so a later broadening cannot take them out quietly.
+  //
+  // `field-certification.html` / `.js` are the operator-approved SAME-ORIGIN
+  // device companion: A1-A12 are executed against them on the real iPhone, so
+  // they must stay fetchable even though they are not in the runtime inventory.
+  for (const f of ['field-certification.html', 'field-certification.js']) {
+    const { excluded, by } = isExcluded(f);
+    eq(excluded, false, `${f} is the physical-device certification companion and must stay served ` +
+      `on the app origin; it was excluded by ${by}`);
+  }
+  // The bundled parser the service worker precaches in its install-blocking shell.
+  eq(isExcluded('vendor/xlsx.full.min.js').excluded, false,
+    'the bundled SheetJS vendor file is an install-critical precached asset (X-10)');
+});
+
 export async function runSpec() {
   return await run();
 }

@@ -2,7 +2,16 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.16** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.17** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+
+**v24.0.17 source candidate:** Voice Load removed completely by operator decision
+(#230), the import ceiling enforced before materialization (#232), and internal
+audit/certification documents withheld from the public asset origin (#228). App
+**24.0.16 → 24.0.17**; DB stays **16**; Worker stays **v20 source**. **Source-only: not
+deployed and not live-observed.** It STACKS ON an undeployed v24.0.16 — Worker v20 still
+must deploy before the app generation, exactly as the v24.0.16 section requires. Issue
+**#224 remains OPEN** (the `db === null` race did not reproduce), so `main` must not be
+described as having all automatable gates green.
 
 **v24.0.16 source candidate:** three trust-boundary security issues (#219 untrusted
 import installing credentials, #221 the token index outranking the account record plus
@@ -57,7 +66,6 @@ modern-shell.js            — Driver-facing structural shell: the Today/Loads/E
                              Money tab bar and the More entry. Loaded by dynamic import from
                              sw-bridge.js. Structural ONLY — it owns no route, renderer or
                              state; tabs are plain hrefs into the canonical hash router
-voice-load.js              — Voice input enhancement module (spoken numbers, interim results)
 admin-driver-ui.js         — Admin driver management UI (injected via service worker)
 midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
                              (injected via service worker, not referenced from index.html)
@@ -166,7 +174,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.16';
+const APP_VERSION = '24.0.17';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -310,8 +318,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.16` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.16`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.17` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.17`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -337,7 +345,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
      every entry in the `CORE` array. These are easy to miss and stale values ship stale assets.
   4. `manifest.json` `name` field
   5. `?v=` query on `<link rel="manifest">` in `index.html`
-  6. `?v=` queries on `app.js`, `voice-load.js`, and `sw-bridge.js` script tags in `index.html`
+  6. `?v=` queries on `app.js` and `sw-bridge.js` script tags in `index.html` (`voice-load.js`
+     was removed in v24.0.17 by operator decision, Issue #230)
   7. ~~Design-system header comment.~~ **RETIRED as of v24.0.4 — nothing to bump.**
      This item pointed at a comment in `index.html` that has not existed since the CSS
      extraction, so it guarded a location that could not drift while the real marker in
@@ -353,7 +362,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
      `styles.css`. Restored in v24.0.5 after the v24.0.5 landing commit reverted this
      item to its pre-retirement wording.
   8. `VERSION` const and header comment in `midwest-stack-authority.js`
-  9. Header comments in `voice-load.js` and `sw-bridge.js`
+  9. Header comment in `sw-bridge.js`
   10. Version references in `CLAUDE.md` — Project Overview, Key Constants, and PWA sections
   11. `EXPECTED` block in `scripts/verify-cloudflare-parity.mjs` (`serviceWorkerVersion`,
       `manifestName`, `overlayScript`) plus the inline `?v=` / version strings in its
@@ -395,7 +404,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
   Quick audit — every shipped file should report the new version:
   ```bash
   grep -rno "2[0-9]\.[0-9]\+\.[0-9]\+" app.js index.html manifest.json service-worker.js \
-    midwest-stack-authority.js sw-bridge.js voice-load.js styles.css midwest-stack-config.json \
+    midwest-stack-authority.js sw-bridge.js styles.css midwest-stack-config.json \
     | awk -F: '{print $1" -> "$3}' | sort -u
   ```
   Historical changelog comments in `app.js` legitimately name older versions — leave those alone.
@@ -469,7 +478,7 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ### F27 — Unified Load Intake (v23.4.0)
 - `openLoadIntake()` — replaces the ad-hoc parse-then-fill flow; two-stage modal (text input → parsed draft review)
-- Stage 1: paste area + voice button + Parse action; voice uses `SpeechRecognition` (same as voice-load.js)
+- Stage 1: paste area + Parse action (the voice button was removed in v24.0.17, Issue #230)
 - Stage 2: editable draft grid (revenue, miles, deadhead, weight, origin, dest, order#, broker, notes) with parse-confidence indicator; "Score This Load" fills evaluator fields and navigates to Evaluate tab; "Save as Trip Draft" saves to `settings['tripDraft']` and opens `openQuickAddSheet()`
 - Parse confidence color-coded: ≥70% green, ≥40% amber, <40% red
 - Accessible via Driver Command Strip (`#dcEvaluate`) and F23 Load Inbox
@@ -3361,6 +3370,161 @@ live parity rather than citing the push-triggered run, which races the Cloudflar
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's.
+
+---
+
+## v24.0.17 "One Less Surface" — a feature removal, a ceiling that binds, and a document root
+
+`DB_VERSION` stays **16** and the Worker stays **v20 source** — neither's semantics
+changed. Three issues, done as one generation because all three change deployed bytes
+and two generations for one deploy is the thing this file tells both lanes not to do.
+
+**This release STACKS ON an undeployed v24.0.16.** Worker v20 must still deploy before
+the app generation, for the reason the v24.0.16 section gives: a driver whose token index
+is stale gets a 403 only once v20 is serving.
+
+### #230 — Voice Load removed completely, by operator decision
+
+Not a hide and not a disable. `voice-load.js` is deleted; the `<script>` tag, the
+evaluator microphone control `#mwVoiceBtn` and the status region `#mwVoiceStatus` are
+gone from `index.html`; both the `CORE` list and the install-blocking `critical` array
+drop the precache entry; and the driver-facing copy reads `Load Intake — Paste or Type`.
+
+**The generation bump is what makes the removal real.** `CACHE_NAME` is
+`freightlogic-${SW_VERSION}` and the `?v=` query is the only other identity a child
+asset carries, so an installed iPhone holding the `24.0.16` shell would keep serving the
+deleted module from cache indefinitely. A removal that cannot reach the device is not a
+removal — the v24.0.3 lesson applied rather than relearned.
+
+**Scope read wider than the issue's enumerated list, and this is the judgement to
+check.** Items 1-5 name the module and the evaluator mic. But the issue's title says
+*completely*, item 4 says "remove any other driver-facing wording that offers Voice
+input", and the repository had **two further, independent** SpeechRecognition
+implementations that the enumeration did not mention: F27 Load Intake's `#liVoice`
+(`🎤 Voice`, its own recognizer and handler) and F23 Smart Load Inbox's `#f23VoiceBtn`
+(`🎤 Voice`, backed by `_startInboxVoice()`). Removing only the module would have left an
+operator who asked for complete removal looking at two live Voice buttons doing the same
+job. Both are removed, along with the F28 Diagnostics `dxVoice` capability row, which
+would otherwise report "Voice Input: Supported" in an app that has no voice input — the
+X-11 dead-claim class this file already records fixing once. The `SpeechRecognition`
+plumbing goes with them; nothing replaces it, per the issue's non-goal.
+
+Ordinary typed and pasted intake is untouched, which `RH-05` asserts by name rather than
+leaving to inspection: `#btnLoadIntake`, `#mwRevenue`, `#mwLoadedMi`, `#mwDeadMi`,
+`openLoadIntake` and `parseLoadTextForInbox` all survive.
+
+**The expectations that REQUIRED the module are inverted, not weakened.**
+`scripts/verify-cloudflare-parity.mjs` asserted the deployed index references
+`voice-load.js?v=<gen>`; it now asserts the index does **not** reference `voice-load.js`
+at all, so a reintroduced tag or a stale deployed index fails rather than passing
+quietly. `CG-04`'s versioned-asset floor moves 4 → 3 (app.js, sw-bridge.js, manifest)
+and `CG-07`'s header sweep drops the file. The deploy inventory in
+`scripts/lib/deploy-assets.mjs` needed no edit at all: it derives from the real
+declarations, so deleting the CORE entry and the script tag dropped the asset by itself —
+**23 declared runtime assets → 22**, which is the design working.
+
+### #232 — the import ceiling now binds before materialization
+
+`LIMITS.MAX_IMPORT_BYTES` (30 MB) was checked before the read in `importJSON()` and
+`importCSVFile()`, but the TXT route ran `await file.text()` and the XLSX route ran
+`await file.arrayBuffer()` **plus a full SheetJS parse** first, meeting the ceiling only
+afterwards, on the synthetic CSV they had already built from the resident source. A
+rejection that lands after the whole file is in memory does not bound the spike it exists
+to prevent.
+
+`importExceedsSizeLimit(file)` is one helper used by all four routes plus a pre-dispatch
+backstop in `importFile()`, so the sites cannot drift apart the way the two asset lists
+did in the 2026-09-13 defect, and a NEW route fails closed. The operator-facing limit is
+unchanged; streaming was deliberately not the fix, per the issue and the #204 assessment
+— every terminal operation here still needs a complete buffer.
+
+`ICT-11`…`ICT-14` assert the **ordering**, not the limit's value, because ordering was
+the whole defect: each oversized input instruments its own readers, so the assertion is
+"was the byte-producing call ever invoked". A message-level assertion could not have
+caught this — a guard that rejects only after reading still produces the right toast.
+`ICT-14` covers the guard's own failure mode, over-rejection: exactly at the ceiling is
+allowed, a 0-byte file is still read, and an input with no size is not treated as
+oversized.
+
+**The probe throws after recording, and that detail is load-bearing.** The first version
+returned usable bytes, so with the guard reverted the route continued into the real
+interactive importer and the run **hung** instead of failing. A negative control that
+cannot run is not a control; the reader now records the attempt and throws, the route's
+own try/catch swallows it, and an unguarded route fails fast with the read recorded.
+
+### #228 — the repository root was the document root
+
+`wrangler.jsonc` publishes `assets.directory: "."`, so every file in the repository is
+served at the app origin unless `.assetsignore` withholds it, and that list named only
+seven entries. External verification had already observed `AUDIT_REPORT.md` and
+`FIELD_TEST_CHECKLIST.md` returning **HTTP 200** on the app origin — the second of those
+being the physical-device certification gate itself.
+
+Withheld now: `AGENTS.md`, `AUDIT_REPORT.md`, `FIELD_TEST_CHECKLIST.md`,
+`RECON_24_0_2.md`, `UI_BRIEF_V24.5.md`, `FreightLogic_UI_Reference.html`, and the
+repository-only directories `.agents/`, `.claude/`, `.github/`, `.githooks/`, `docs/`,
+`schemas/`, `scripts/`, `tests/`.
+
+**Deliberately still served, both named in `DAC-07` so a later broadening cannot take
+them out quietly:** `field-certification.html` / `field-certification.js` are the
+operator-approved same-origin device companion, and A1-A12 are executed against them on
+the real iPhone; `vendor/xlsx.full.min.js` is the bundled parser the install-blocking
+shell precaches.
+
+Over-exclusion is this repair's own failure mode — it produces exactly the 2026-09-13
+production 404 in the opposite direction — so it was verified against the derived
+inventory rather than by reading: **0 of the 22 declared runtime assets is excluded**,
+which the parity gate reports on every run and `DAC-02` asserts.
+
+### Tests
+
+`RH-04`/`RH-05` (Voice absence and intake survival), `DAC-06`/`DAC-07` (asset boundary
+both directions), `ICT-11`…`ICT-14` (import ordering), and `MS-11` retargeted from
+proving `voice-load.js` hydrated a fresh session to proving the removal is clean at
+runtime — no global, no DOM node, no script element, **and no request for the deleted
+module**, which is the half a static file check cannot see. `MS-10` still fails if the
+removal broke boot.
+
+**No new spec file, and that is deliberate.** `RH-01` requires every spec on disk to be
+registered in `tests/run-all.mjs`, and `run-all.mjs` is owned by the **gpt** lane under
+the PR #227 exception — the deadlock this file records at the end of the v24.0.16
+section, still unresolved. Every assertion here went into an already-registered spec, so
+the sweep needed no cross-lane edit and `RH-01` stays green. That deadlock still blocks
+any future Claude regression that genuinely needs its own file.
+
+**`RH-02` fired on this release's own author.** The `ICT` comment block used the singular
+`NEGATIVE CONTROL` marker form that `RH-02` bans as leftover scaffolding, and the spec
+failed until it was reworded. Second consecutive release in which that gate caught the
+person who added it.
+
+Full suite on the exact candidate head, first attempt, real headless Chromium:
+**615 passed, 0 failed across 64 spec files.** Nothing was skipped, quarantined or
+weakened. Every negative control fired: reverting the TXT guard fails `ICT-11` with
+`["text"]` recorded and the XLSX guard fails `ICT-12` with `["arrayBuffer"]`, while
+`ICT-13` stays green — which proves the three layers are independent rather than one
+guard tested three ways; restoring any single Voice Load reference fails `RH-04`;
+re-admitting a withheld document fails `DAC-06`, and excluding `field-certification.js`
+fails `DAC-07`.
+
+**An earlier run of this suite was discarded rather than reported.** The #232 control's
+chained restore overwrote the Voice removal mid-run, so the tree changed underneath a
+suite already in progress. That run's numbers would have described a tree that never
+existed; it was killed, the removal re-applied, and the suite re-run from the top on the
+final head. "First-attempt exact-head result is the evidence" only means anything if the
+head holds still for the whole attempt.
+
+### Not deployed
+
+**Source-only.** v24.0.17 is not deployed and not live-observed. Deploy order is Worker
+v20 first, then the app generation, then **re-dispatch** live parity rather than citing
+the push-triggered run, which races the Cloudflare deploy — six recorded occurrences now.
+After deploying, verify the live `index.html` and `service-worker.js` no longer reference
+Voice Load, that the production precache is `freightlogic-24.0.17` carrying 22 assets,
+and that the withheld documents return 404 on the app origin.
+
+**Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
+unchanged and remain the operator's. Issue **#224 remains OPEN** — the `db === null` race
+did not reproduce and nothing here touches it.
 
 ---
 

@@ -304,34 +304,44 @@ test('[MS-10] booting the app raises no uncaught error', async () => {
   } finally { await app.close(); }
 });
 
-test('[MS-11] voice-load draft storage reads a missing key as empty, not null', async () => {
-  const app = await bootShell();
+test('[MS-11] the removed Voice Load module leaves no runtime trace (Issue #230)', async () => {
+  // This assertion used to prove voice-load.js's safeJSONParse hydrated a fresh
+  // session instead of throwing (the v24.0.8 repair: sessionStorage.getItem()
+  // returns null for an unwritten key, JSON.parse(null) is valid JSON yielding
+  // null, so the catch never ran and every array consumer got null). Voice Load
+  // was removed completely by operator decision, so the module it guarded is
+  // gone and the guard is retargeted rather than deleted: what matters now is
+  // that the removal is CLEAN at runtime, which is the half a static file check
+  // cannot see. MS-10 above still fails if the removal broke boot.
+  const app = await launchBlank();
+  const failed = [];
+  app.page.on('requestfailed', (r) => failed.push(r.url()));
+  app.page.on('response', (r) => { if (r.status() === 404) failed.push(`404 ${r.url()}`); });
   try {
-    const shapes = await app.page.evaluate(() => {
-      // Reproduce the exact pre-fix helper against the exact storage states it
-      // sees in the field, so the assertion names the root cause rather than a
-      // symptom two frames downstream.
-      const broken = (raw, fallback) => { try { return JSON.parse(raw); } catch (_) { return fallback; } };
-      return {
-        brokenMissing: broken(sessionStorage.getItem('fl_no_such_key_v2408'), []),
-        brokenLiteralNull: broken('null', []),
-        brokenGarbage: broken('{oops', []),
-      };
-    });
-    eq(shapes.brokenMissing, null,
-      'documents the root cause: JSON.parse(null) returns null without throwing, so the ' +
-      'fallback never applied and every array consumer got null');
-    eq(shapes.brokenLiteralNull, null, 'a literal "null" payload had the same shape');
-    eq(Array.isArray(shapes.brokenGarbage), true, 'only a genuine parse error ever reached the catch');
+    await app.bootApp();
+    await app.page.waitForFunction(() => !!window.FreightLogicModernShell, null, { timeout: 10000 });
+    await app.page.waitForTimeout(800);
 
-    // And the shipped module, on a genuinely fresh session, now hydrates rather
-    // than dying: its review panel exists and the module finished init().
-    const healthy = await app.page.evaluate(() => ({
-      draftsKey: sessionStorage.getItem('fl_voice_drafts'),
-      hasVoiceModule: typeof window.FreightLogicVoiceLoad !== 'undefined' || !!document.getElementById('mwRevenue'),
+    const state = await app.page.evaluate(() => ({
+      globalGone: typeof window.FreightLogicVoiceLoad === 'undefined',
+      btnGone: !document.getElementById('mwVoiceBtn'),
+      statusGone: !document.getElementById('mwVoiceStatus'),
+      scriptGone: ![...document.scripts].some((s) => (s.src || '').includes('voice-load')),
+      // The surviving intake path must still be mounted.
+      revenueField: !!document.getElementById('mwRevenue'),
+      intakeButton: !!document.getElementById('btnLoadIntake'),
     }));
-    eq(healthy.draftsKey, null, 'this must be a genuinely fresh session — the key must be absent');
-    ok(healthy.hasVoiceModule, 'the evaluator fields voice-load binds to must be present');
+
+    eq(state.globalGone, true, 'no Voice Load global may remain on window');
+    eq(state.btnGone, true, 'the evaluator microphone control must not be in the live DOM');
+    eq(state.statusGone, true, 'the voice status region must not be in the live DOM');
+    eq(state.scriptGone, true, 'no script element may still point at voice-load.js');
+    eq(state.revenueField, true, 'the evaluator fields the surviving intake path binds to must be present');
+    eq(state.intakeButton, true, 'paste/type Load Intake must still be reachable');
+
+    const voiceFailures = failed.filter((u) => u.includes('voice-load'));
+    eq(voiceFailures.length, 0,
+      `the removal must not leave a request for the deleted module; got ${JSON.stringify(voiceFailures)}`);
   } finally { await app.close(); }
 });
 

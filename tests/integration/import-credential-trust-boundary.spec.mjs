@@ -297,4 +297,157 @@ test('[ICT-07] the record-has-own-key helper reads the store\'s real keyPath', a
   } finally { await app.close(); }
 });
 
+// ---------------------------------------------------------------------------
+// Issue #232 — the import ceiling must bind BEFORE materialization.
+//
+// `LIMITS.MAX_IMPORT_BYTES` (30 MB) was checked before the read in
+// `importJSON()` and `importCSVFile()`, but the TXT route ran
+// `await file.text()` and the XLSX route ran `await file.arrayBuffer()` plus a
+// full SheetJS parse FIRST, and only met the ceiling afterwards, on the
+// synthetic CSV they had already built from the resident source. A rejection
+// that lands after the whole file is in memory does not bound the spike it
+// exists to prevent.
+//
+// These assertions do not check the limit's VALUE — they check the ORDERING,
+// which is the whole defect. Each oversized input reports its size honestly and
+// instruments its own readers, so the assertion is "was the byte-producing call
+// ever invoked", not "did a toast appear". A guard that rejects only after
+// reading would still produce the right toast, which is why a message-level
+// assertion could not have caught this.
+//
+// NEGATIVE CONTROLS, each verified to fire: removing the guard from `importTXTFile`
+// fails ICT-11; removing it from `importXLSXFile` fails ICT-12; removing the
+// pre-dispatch backstop in `importFile()` alone still leaves both route-level
+// guards, so ICT-13 asserts that boundary separately.
+// ---------------------------------------------------------------------------
+
+// A File-like object that is honest about its size and records whether anything
+// ever asked it for bytes. Deliberately not a real 30 MB File: allocating one
+// would make the test cost what the defect costs, and the size property is the
+// only thing a correct guard reads.
+const OVERSIZED_PROBE = `
+  (name, type) => {
+    const probe = {
+      name, type,
+      size: 31 * 1024 * 1024,   // over LIMITS.MAX_IMPORT_BYTES (30 MB)
+      read: [],
+      // Each reader records the attempt and then throws. Recording alone would
+      // be enough for the assertion, but a probe that RETURNS usable bytes
+      // sends an unguarded route onward into the real interactive importer,
+      // where it waits for operator input and the test hangs instead of
+      // failing — a negative control that cannot run is not a control. The
+      // route's own try/catch swallows this, so an unguarded route fails fast
+      // with the read recorded, which is exactly the evidence wanted.
+      text() { this.read.push('text'); throw new Error('probe: no bytes may be produced for an over-ceiling import'); },
+      arrayBuffer() { this.read.push('arrayBuffer'); throw new Error('probe: no bytes may be produced for an over-ceiling import'); },
+      slice() { this.read.push('slice'); return this; },
+      stream() { this.read.push('stream'); return null; },
+    };
+    return probe;
+  }
+`;
+
+test('[ICT-11] an oversized TXT import is refused before file.text() is called', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await app.page.evaluate(async (mk) => {
+      const T = window.__FL_TESTS;
+      const probe = eval(mk)('big.txt', 'text/plain');
+      await T.importTXTFile(probe);
+      return { read: probe.read, limit: T.LIMITS.MAX_IMPORT_BYTES, flagged: T.importExceedsSizeLimit(probe) };
+    }, OVERSIZED_PROBE);
+
+    eq(r.read.length, 0,
+      `an oversized TXT must be refused before any byte-producing read; the guard let ${JSON.stringify(r.read)} run`);
+    eq(r.limit, 30 * 1024 * 1024, 'the operator-facing ceiling is unchanged by this repair');
+    eq(r.flagged, true, 'the shared policy must recognise this input as over the ceiling');
+  } finally { await app.close(); }
+});
+
+test('[ICT-12] an oversized XLSX import is refused before arrayBuffer() and before SheetJS parses', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await app.page.evaluate(async (mk) => {
+      const T = window.__FL_TESTS;
+      // Instrument the parser too: the original defect materialized the buffer
+      // AND handed it to SheetJS, so both must stay uninvoked.
+      let parsed = 0;
+      const priorXLSX = window.XLSX;
+      window.XLSX = { read: () => { parsed++; return { SheetNames: [] }; }, utils: { sheet_to_json: () => [] } };
+      const probe = eval(mk)('big.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      try {
+        await T.importXLSXFile(probe);
+      } finally { window.XLSX = priorXLSX; }
+      return { read: probe.read, parsed };
+    }, OVERSIZED_PROBE);
+
+    eq(r.read.length, 0,
+      `an oversized workbook must not be materialized; the guard let ${JSON.stringify(r.read)} run`);
+    eq(r.parsed, 0, 'SheetJS must never be handed an over-ceiling workbook');
+  } finally { await app.close(); }
+});
+
+test('[ICT-13] the dispatcher refuses an oversized file whatever the route, including an unknown type', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await app.page.evaluate(async (mk) => {
+      const T = window.__FL_TESTS;
+      const out = {};
+      for (const [label, name, type] of [
+        ['txt', 'big.txt', 'text/plain'],
+        ['xlsx', 'big.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        ['csv', 'big.csv', 'text/csv'],
+        ['json', 'big.json', 'application/json'],
+        ['unknown', 'big.bin', ''],
+      ]) {
+        const probe = eval(mk)(name, type);
+        await T.importFile(probe);
+        out[label] = probe.read;
+      }
+      return out;
+    }, OVERSIZED_PROBE);
+
+    for (const [label, read] of Object.entries(r)) {
+      eq(read.length, 0,
+        `routing an oversized file as ${label} must not read it; got ${JSON.stringify(read)}`);
+    }
+  } finally { await app.close(); }
+});
+
+test('[ICT-14] a within-limit import is still read and still imports', async () => {
+  // The guard's own failure mode is over-rejection, which would break every
+  // ordinary import silently. An explicit 0-byte and a normal-sized file must
+  // both still reach their reader.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await app.page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      const mk = (size) => ({
+        name: 'ok.txt', type: 'text/plain', size,
+        read: [],
+        text() { this.read.push('text'); return Promise.resolve('order,revenue\n'); },
+      });
+      const small = mk(2048), empty = mk(0);
+      await T.importTXTFile(small);
+      await T.importTXTFile(empty);
+      return {
+        small: small.read, empty: empty.read,
+        atLimit: T.importExceedsSizeLimit({ size: T.LIMITS.MAX_IMPORT_BYTES }),
+        overByOne: T.importExceedsSizeLimit({ size: T.LIMITS.MAX_IMPORT_BYTES + 1 }),
+        noSize: T.importExceedsSizeLimit({}),
+      };
+    });
+
+    ok(r.small.includes('text'), 'a normal-sized TXT must still be read');
+    ok(r.empty.includes('text'), 'a 0-byte file is within the limit and must still be read');
+    eq(r.atLimit, false, 'exactly at the ceiling is allowed — the limit is a maximum, not an exclusive bound');
+    eq(r.overByOne, true, 'one byte over the ceiling is refused');
+    eq(r.noSize, false, 'an input with no size is not treated as oversized (unchanged behaviour)');
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }

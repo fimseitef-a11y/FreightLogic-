@@ -22,7 +22,8 @@ As of Issue #220 there is NO CDN fallback for OCR, and `cdn.jsdelivr.net` is no
 longer permitted by the Content-Security-Policy at all. `loadTesseract()` loads
 the three files above from `vendor/` or returns null, and the two OCR entry
 points (receipt camera scan, load-screenshot Quick Evaluate) say OCR is not
-installed rather than failing obscurely. Paste and voice intake are unaffected.
+installed rather than failing obscurely. Paste and typed intake are unaffected (voice
+intake was removed in v24.0.17 by operator decision, Issue #230).
 
 Removing the fallback took away nothing that worked. The shipped CSP could never
 have completed the CDN path: `connect-src` does not allow

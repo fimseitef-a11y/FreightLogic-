@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.16 USA ENGINE
+/** FreightLogic v24.0.17 USA ENGINE
+ *  v24.0.17 "One Less Surface": Voice Load removed completely by operator
+ *          decision (Issue #230) — the module, its script tag, the evaluator
+ *          microphone control and status region, its precache entries in both
+ *          CORE and the install-blocking critical shell, and the driver-facing
+ *          "Paste, Voice, or Type" copy. A feature removal, not a hide: the
+ *          generation bump is what retires the cached asset on an installed
+ *          iPhone. Also Issue #232 — the LIMITS.MAX_IMPORT_BYTES ceiling is now
+ *          enforced BEFORE materialization on every route. TXT reached
+ *          `await file.text()` and XLSX reached `await file.arrayBuffer()` plus
+ *          a SheetJS parse before any check, so the rejection landed after the
+ *          spike it exists to prevent. One helper, four call sites.
  *  v24.0.16 "Trust Boundaries": three security issues handed to this lane after
  *          PR #223, each a trust boundary that was documented but not enforced.
  *          #219 — importJSON()'s allow-list admitted cloudBackupToken,
@@ -263,7 +274,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.16';
+const APP_VERSION = '24.0.17';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3770,9 +3781,27 @@ async function exportFuelCSV(){
   toast('CSV exported');
 }
 
+// Issue #232 — the import ceiling must be enforced BEFORE materialization.
+//
+// `LIMITS.MAX_IMPORT_BYTES` was checked inside `importJSON()` and
+// `importCSVFile()` before either read the file, but the TXT and XLSX routes
+// reached their own `await file.text()` / `await file.arrayBuffer()` first and
+// only hit the ceiling afterwards, on the synthetic CSV they had already built.
+// A rejection that happens after the whole source file is resident — and, for
+// XLSX, after SheetJS has parsed it — does not bound the memory spike it exists
+// to prevent.
+//
+// One helper, used by every import route, so the four call sites cannot drift
+// apart the way the two lists in the 2026-09-13 asset defect did. It answers
+// only "is this too large", and the caller decides what to say.
+function importExceedsSizeLimit(file){
+  const size = Number(file?.size);
+  return Number.isFinite(size) && size > LIMITS.MAX_IMPORT_BYTES;
+}
+
 async function importJSON(file, opts={}){
   try{
-    if (file?.size && file.size > LIMITS.MAX_IMPORT_BYTES){ toast(`Import too large`, true); return; }
+    if (importExceedsSizeLimit(file)){ toast(`Import too large`, true); return; }
     const data = deepCleanObj(JSON.parse(await file.text()));
     const arr = (x)=> Array.isArray(x) ? x : [];
 
@@ -4063,7 +4092,7 @@ function normalizeHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-
 
 async function importCSVFile(file){
   try{
-    if (file?.size && file.size > LIMITS.MAX_IMPORT_BYTES){ toast('File too large', true); return; }
+    if (importExceedsSizeLimit(file)){ toast('File too large', true); return; }
     const text = await file.text();
     // Strip BOM
     const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
@@ -4179,6 +4208,9 @@ async function importCSVFile(file){
 
 async function importFile(file){
   if (!file) return;
+  // Pre-dispatch backstop (Issue #232). Every route below also checks, because
+  // each is reachable directly; this is what makes a NEW route fail closed.
+  if (importExceedsSizeLimit(file)){ toast('File too large', true); return; }
   try {
   const name = (file.name || '').toLowerCase();
   if (name.endsWith('.csv') || name.endsWith('.tsv') || file.type === 'text/csv'){
@@ -4247,6 +4279,9 @@ async function loadSheetJS(){
 
 async function importXLSXFile(file){
   try{
+    // Before the parser, before the ArrayBuffer: an oversized workbook must not
+    // be materialized or parsed at all (Issue #232).
+    if (importExceedsSizeLimit(file)){ toast('File too large', true); return; }
     toast('Loading Excel parser...');
     await loadSheetJS();
     const data = await file.arrayBuffer();
@@ -4266,6 +4301,9 @@ async function importXLSXFile(file){
 // ---- TXT Import (auto-detect delimiter) ----
 async function importTXTFile(file){
   try{
+    // Before the read: the synthetic CSV this builds is checked downstream, but
+    // that is too late to bound the source materialization (Issue #232).
+    if (importExceedsSizeLimit(file)){ toast('File too large', true); return; }
     let text = await file.text();
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     // Detect delimiter: tab > pipe > comma > space
@@ -12116,7 +12154,7 @@ async function mwInit(){
   await mwRenderBoardLog();
   await mwRenderTomorrowSignal();
 
-  // F10: Voice input handled by voice-load.js (loaded after app.js)
+  // F10: voice input was removed by operator decision (Issue #230, v24.0.17).
 }
 
 let omegaBound = false;
@@ -15257,11 +15295,10 @@ function openLoadIntake(){
   // Stage 1: Input pane
   const stage1 = document.createElement('div');
   stage1.innerHTML = `
-    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Paste a load confirmation, type load details, or use voice. We'll parse it and show you exactly what was found before scoring.</p>
+    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Paste a load confirmation or type load details. We'll parse it and show you exactly what was found before scoring.</p>
     <textarea id="liRawText" class="input" rows="7" placeholder="Paste load text here — rate confirmation, load board copy, or free text…" style="width:100%;box-sizing:border-box;resize:vertical;font-size:13px;line-height:1.5;font-family:monospace"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" id="liVoice" style="flex:1;font-size:13px">🎤 Voice</button>
-      <button class="btn primary" id="liParse" style="flex:2;font-size:13px">Parse Load →</button>
+      <button class="btn primary" id="liParse" style="flex:1;font-size:13px">Parse Load →</button>
     </div>
     <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
   body.appendChild(stage1);
@@ -15385,31 +15422,8 @@ function openLoadIntake(){
     stage2.style.display = '';
   });
 
-  // Voice input
-  stage1.querySelector('#liVoice').addEventListener('click', ()=>{
-    haptic();
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition){ toast('Voice input not supported in this browser.', true); return; }
-    const voiceBtn = stage1.querySelector('#liVoice');
-    const ta = getField('liRawText');
-    const baseValue = ta?.value || '';
-    voiceBtn.textContent = '⏹️ Listening…';
-    voiceBtn.disabled = true;
-    haptic(20);
-    const rec = new SpeechRecognition();
-    rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true;
-    toast('Listening… speak load details now.');
-    rec.start();
-    rec.onresult = e => {
-      const results = Array.from(e.results);
-      const finalParts = results.filter(r => r.isFinal).map(r => r[0].transcript);
-      const interimParts = results.filter(r => !r.isFinal).map(r => r[0].transcript);
-      const display = [...finalParts, ...interimParts].join(' ').trim();
-      if (ta && display) ta.value = (baseValue ? baseValue + '\n' : '') + display;
-    };
-    rec.onerror = () => { haptic(30); toast('Could not hear clearly. Try again.', true); };
-    rec.onend = () => { voiceBtn.textContent = '🎤 Voice'; voiceBtn.disabled = false; };
-  });
+  // The Load Intake voice control was removed with the rest of Voice Load
+  // (Issue #230, v24.0.17). Paste and type remain the intake paths.
 
   // Back to edit text
   stage2.querySelector('#liBack').addEventListener('click', ()=>{
@@ -15499,7 +15513,6 @@ async function openDiagnosticsPanel(){
     ${row('Lane History',      'dxLane',    '...')}
     ${row('IDB Status',        'dxIdb',     '...')}
     <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Features</div>
-    ${row('Voice Input',       'dxVoice',   '...')}
     ${row('File Input',        'dxFile',    '...')}
     ${row('Offline (SW)',      'dxOffline', '...')}
     ${row('Cloud Backup',      'dxCloud',   '...')}
@@ -15589,9 +15602,6 @@ async function openDiagnosticsPanel(){
       set('dxIdb',    'OK', true);
     } catch(e){ set('dxIdb', 'Error: ' + (e?.message||e), false); }
 
-    // Voice input
-    const hasVoice = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-    set('dxVoice', hasVoice ? 'Supported' : 'Not supported', hasVoice);
 
     // File input
     const hasFile = typeof FileReader !== 'undefined' && typeof File !== 'undefined';
@@ -19046,7 +19056,7 @@ document.addEventListener('visibilitychange', ()=>{
 // ════════════════════════════════════════════════════════════════════════
 
 // ── F10: Voice Input ─────────────────────────────────────────────────────
-// Handled by voice-load.js with full draft review workflow, spoken number
+// Voice load intake was removed by operator decision (Issue #230, v24.0.17). Was: full draft review workflow, spoken number
 // parsing, interim results, and confidence scoring.
 
 // ── F11: Document Vault ──────────────────────────────────────────────────
@@ -21865,15 +21875,13 @@ function _renderInboxInput(card) {
   inputArea.className = 'card';
   inputArea.style.marginBottom = '12px';
 
-  const hasSpeech = ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
   inputArea.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
     + '<span style="font-size:18px">\u{1F4E5}</span><h3 style="margin:0">Paste a Load Offer</h3></div>'
     + '<textarea id="f23Textarea" rows="5" '
     + 'placeholder="Paste load email or text here&#10;&#10;Example:&#10;Chicago IL to Detroit MI&#10;280 miles, $560 all-in&#10;Pickup tomorrow 8am&#10;XPO Logistics" '
     + 'style="width:100%;font-size:15px;resize:vertical;min-height:120px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text);padding:10px;box-sizing:border-box"></textarea>'
     + '<div style="display:flex;gap:10px;margin-top:10px">'
-    + '<button class="btn primary" id="f23ScoreBtn" style="flex:2;min-height:48px;font-weight:700">Score This Load</button>'
-    + `<button class="btn" id="f23VoiceBtn" style="flex:1;min-height:48px;${hasSpeech ? '' : 'display:none'}" title="Voice input">\u{1F3A4} Voice</button>`
+    + '<button class="btn primary" id="f23ScoreBtn" style="flex:1;min-height:48px;font-weight:700">Score This Load</button>'
     + '</div>'
     + '<div id="f23RecentBar" style="margin-top:10px"></div>';
 
@@ -21900,7 +21908,6 @@ function _renderInboxInput(card) {
     }, 800);
   });
   inputArea.querySelector('#f23ScoreBtn')?.addEventListener('click', () => { haptic(10); _score(); });
-  inputArea.querySelector('#f23VoiceBtn')?.addEventListener('click', () => { haptic(10); _startInboxVoice(textarea, card); });
 
   _renderInboxRecent(inputArea.querySelector('#f23RecentBar'), card);
 }
@@ -22079,38 +22086,8 @@ function _renderInboxFailure(card) {
   });
 }
 
-function _startInboxVoice(textarea, card) {
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) { toast('Voice input is not supported in this browser.', true); return; }
-
-  const voiceBtn = card?.querySelector('#f23VoiceBtn');
-  if (voiceBtn) { voiceBtn.textContent = '⏹️ Stop'; voiceBtn.disabled = true; }
-  haptic(20);
-
-  const rec = new SpeechRec();
-  rec.lang = 'en-US'; rec.continuous = false; rec.interimResults = true;
-  toast('Listening… speak load details now.');
-  rec.start();
-
-  rec.onresult = (e) => {
-    const results = Array.from(e.results);
-    const finalParts = results.filter(r => r.isFinal).map(r => r[0].transcript);
-    const interimParts = results.filter(r => !r.isFinal).map(r => r[0].transcript);
-    const display = [...finalParts, ...interimParts].join(' ').trim();
-    if (textarea && display) textarea.value = display;
-    if (finalParts.length) _processInboxText(finalParts.join(' '), card);
-  };
-
-  rec.onerror = () => {
-    haptic(30);
-    toast("Couldn't hear that clearly. Try again.", true);
-  };
-
-  rec.onend = () => {
-    haptic(10);
-    if (voiceBtn) { voiceBtn.textContent = '🎤 Voice'; voiceBtn.disabled = false; }
-  };
-}
+// Voice input was removed from the Smart Load Inbox with the rest of Voice Load
+// (Issue #230, v24.0.17). Paste and type remain the intake paths.
 
 
 // TEST EXPORTS — pure functions exposed for test harness
@@ -22172,6 +22149,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     migrateInsuranceCategorySplit, revertInsuranceCategorySplit,
     // X-05 (v23.9 Phase 3)
     exportJSON, importJSON, getSetting, setSetting,
+    // Issue #232 — import ceiling enforced before materialization
+    importFile, importTXTFile, importXLSXFile, importExceedsSizeLimit, LIMITS,
     // X-01/X-07 (v23.9 Phase 4)
     cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
     cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
