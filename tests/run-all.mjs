@@ -36,6 +36,8 @@ import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.spec.mjs';
 import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
+// Issue #219 — untrusted-import credential trust boundary
+import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fuel-concurrency.spec.mjs';
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
@@ -107,6 +109,7 @@ const specs = [
   vanFitPrecheck,
   pickupFeasibility,
   positionAuthority,
+  importCredentialTrustBoundary,
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
   m3ConfidenceEvidence,

@@ -3592,6 +3592,71 @@ function exportSafeSettings(allSettings){
   return (allSettings || []).filter(s => s && isSettingExportSafe(s.key));
 }
 
+// ── Issue #219: the IMPORT direction is a separate trust domain ────────────────
+//
+// Export-side stripping is not a defence against an import-side overwrite. A
+// local JSON import is UNTRUSTED data — an operator can be handed a file, and
+// `importJSON()` wrote `data.settings` straight into the `settings` store
+// through a blind `put()`. `ALLOWED_SETTINGS_KEYS` admitted `cloudBackupToken`,
+// `cloudBackupUrl`, `appLockPin`, `fmcsaApiKey` and `eiaApiKey`, and
+// `cloudGetConfig()` reads BOTH the token and the URL back — so a crafted file
+// could silently repoint every later backup at an attacker's endpoint with an
+// attacker's bearer token, or replace the app-lock PIN hash.
+//
+// Ordinary data portability and credential provisioning are different
+// operations. Restoring trips must never be a way to install a credential.
+//
+// Two independent reasons a credential cannot arrive this way, deliberately:
+// the credential keys are removed from `ALLOWED_SETTINGS_KEYS` below, AND this
+// gate denies them regardless of what that list says. The list describes what
+// the app writes and is edited by habit whenever a key is added; this gate is
+// the one that has to hold when somebody adds a secret to it without thinking.
+//
+// `isSettingExportSafe()` is reused rather than restated: a value too sensitive
+// to LEAVE the device is also too sensitive to ACCEPT from a file, and one
+// policy cannot drift from itself. The extra names below are the asymmetric
+// half — keys that are perfectly safe to export but carry SECURITY AUTHORITY
+// rather than secrecy, so accepting them from an untrusted file is the defect
+// even though emitting them is not.
+const SETTINGS_NEVER_IMPORT = Object.freeze(new Set([
+  'cloudBackupUrl',     // endpoint authority: cloudGetConfig() reads this, so an
+                        // imported value redirects every subsequent backup and
+                        // restore. Exportable (it is not a secret), never
+                        // importable. Absent, the hardcoded CLOUD_WORKER_URL
+                        // still applies, so blocking it degrades nothing.
+  'appLockEnabled',     // turning the device lock OFF is a security downgrade,
+                        // and an import is not an authenticated request to
+                        // perform one.
+]));
+
+/** Is this settings key safe to accept FROM an untrusted portable payload?
+ *  Strictly narrower than `isSettingExportSafe()` — see the block comment. */
+function isSettingImportSafe(key){
+  const k = String(key || '');
+  if (!isSettingExportSafe(k)) return false;   // every secret, named or by pattern
+  if (SETTINGS_NEVER_IMPORT.has(k)) return false;
+  return true;
+}
+
+/** Does `rec` actually carry a value at `store`'s own key path?
+ *
+ *  Issue #219, second half. The import writer's `mode === 'skip'` guard tested
+ *  `x.id !== undefined` — but `settings` has keyPath `key`, not `id`, so no
+ *  settings record ever satisfied it and every one fell through to `put()`.
+ *  `skip` therefore overwrote existing settings on every import, which is the
+ *  opposite of what the mode means. Reading the store's REAL keyPath fixes it
+ *  for `settings` (`key`) and `receipts` (`tripOrderNo`) at the same time,
+ *  instead of adding a second hardcoded name that the next store would miss. */
+function idbRecordHasOwnKey(store, rec){
+  if (!rec || typeof rec !== 'object') return false;
+  const kp = store && store.keyPath;
+  if (kp == null) return false;   // out-of-line keys: the caller supplies them
+  const paths = Array.isArray(kp) ? kp : [kp];
+  return paths.every(p =>
+    String(p).split('.').reduce((o, seg) => (o == null ? undefined : o[seg]), rec) !== undefined
+  );
+}
+
 async function exportJSON(){
   const trips = await dumpStore('trips');
   const expenses = await dumpStore('expenses');
@@ -3732,9 +3797,9 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','lastCloudSync','vehicleClass','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
       // v21 new settings keys
-      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','eiaApiKey','localUserId',
+      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','localUserId',
       // v22 F21/F22/F23 onboarding flags
       'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
       // v23 F24 positioning engine flags
@@ -3760,12 +3825,22 @@ async function importJSON(file, opts={}){
       // of gap, so it is allowed through at the same time it is introduced.
       'planningAvgMph']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
+    //
+    // Issue #219: `isSettingImportSafe()` is ANDed in, not substituted. The
+    // allowlist says which keys this app recognises; the gate says which of
+    // them an untrusted file may set. The credential keys are gone from the
+    // list above as well, so a credential now needs BOTH edits to become
+    // importable again — and the regression fails on either one alone.
     const isAllowedSettingsKey = k => {
+      if (!isSettingImportSafe(k)) return false;
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
       if (k.startsWith('broker_note_') && k.length <= 80) return true;
       if (k.startsWith('laneReviewDone_') && k.length <= 80) return true;
       return false;
     };
+    const rejectedSettingKeys = arr(data.settings)
+      .filter(s => s && typeof s === 'object' && typeof s.key === 'string' && !isSettingImportSafe(s.key))
+      .map(s => s.key);
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && isAllowedSettingsKey(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
     }));
@@ -3838,7 +3913,33 @@ async function importJSON(file, opts={}){
       try{ stores.loadLifecycle.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores[EVIDENCE_STORE].clear(); }catch(e){ console.warn("[FL]", e); }
     }
-    const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
+    // Issue #219: `skip` used to test `x.id !== undefined`, which no `settings`
+    // record can satisfy (keyPath `key`) — so `skip` silently overwrote every
+    // existing setting. `idbRecordHasOwnKey()` reads the store's real keyPath,
+    // so `add()` is attempted whenever the record carries its own key and the
+    // ConstraintError on an existing key is what makes `skip` actually skip.
+    const putAll = (store, a) => (a||[]).forEach(x => {
+      try{
+        if (mode === 'skip' && idbRecordHasOwnKey(store, x)){
+          const req = store.add(x);
+          // `skip` means "leave the existing record alone", and the only signal
+          // that one exists is the ConstraintError from add(). IndexedDB raises
+          // that ASYNCHRONOUSLY as a request error event which bubbles to the
+          // transaction and ABORTS IT — the surrounding try/catch is
+          // synchronous and never sees it. So without preventDefault() one
+          // duplicate key rolls back the entire import, including every record
+          // that had already been written.
+          //
+          // That is a PRE-EXISTING defect, not one Issue #219 introduced: the
+          // old guard already routed trips/expenses/fuel with an `id` through
+          // add(), so re-importing any file that shared a single record id
+          // silently imported NOTHING. It only surfaced now because the keyPath
+          // repair finally lets `settings` reach add() too, where duplicate
+          // keys are the normal case rather than the exception.
+          req.onerror = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+        } else store.put(x);
+      }catch(e){ console.warn("[FL]", e); }
+    });
     putAll(stores.trips, safeTripArr);
     putAll(stores.expenses, safeExpArr);
     putAll(stores.fuel, safeFuelArr);
@@ -3879,7 +3980,16 @@ async function importJSON(file, opts={}){
     }
     await waitTxn(txn);
     SETTINGS_CACHE.clear();
-    toast('Import complete');
+    // Issue #219: say so rather than dropping them silently. A withheld
+    // credential is a deliberate refusal, not a parse failure, and an operator
+    // restoring their own file should learn why the cloud endpoint or PIN did
+    // not come back with the rest of it. The KEY NAMES are named; no value is.
+    if (rejectedSettingKeys.length){
+      const shown = [...new Set(rejectedSettingKeys)].slice(0, 4).join(', ');
+      toast(`Import complete — ${rejectedSettingKeys.length} security setting(s) refused (${shown}). Credentials are never imported.`, true);
+    } else {
+      toast('Import complete');
+    }
   }catch(err){ toast('Import failed (invalid JSON or corrupted export).', true); }
 }
 
@@ -15858,7 +15968,17 @@ async function mergeRestoreData(parsed){
     // do.
     const {t:wt, stores:ws} = tx('settings','readwrite');
     const existingKeys = new Set((await idbReq(ws.settings.getAll())).map(s => s.key));
-    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key));
+    // Issue #219, defence in depth — NOT the reported defect. This merge is
+    // add-only, so it could never OVERWRITE a local credential the way the
+    // local-import path could; but it could still INSTALL one that happens to
+    // be absent locally (a fresh device mid-disaster-recovery is exactly that
+    // state). `cloudPushBackup()` already strips secrets through
+    // `exportSafeSettings()`, so a legitimate payload never carries them —
+    // which is the point: if one arrives, the payload is not legitimate, and a
+    // restore is not an authenticated request to provision a credential.
+    // Nothing is lost, because the passphrase and token are not in the payload
+    // and must be re-entered on a new device regardless.
+    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key) && isSettingImportSafe(s.key));
     for (const s of toAdd) ws.settings.put(s);
     await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     stats.settings.added = toAdd.length;
@@ -21978,6 +22098,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
     isSettingExportSafe, exportSafeSettings,
+    isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
     // v24.0.13 zero-token onboarding. Exported so the regressions can drive the
     // REAL admin/claim paths rather than a reimplementation — the claim wizard
     // and the PIN modal are asserted through the DOM, but "was a rejected token
