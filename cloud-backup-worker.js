@@ -1,4 +1,12 @@
-// FreightLogic Cloud Backup Worker v19 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v20 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// v20: CANONICAL-USER TOKEN AUTHORITY (Issue #221). Driver auth no longer trusts
+// the `tokh:<hash>` index alone. After resolving the index it loads
+// `user:<userId>` and requires that record to be active and to name the exact
+// hash presented; a mismatch deletes that superseded index entry and returns
+// 403. KV has no CAS, so two overlapping claims could each leave a live token
+// record for one account and the loser kept working indefinitely — including
+// after a rotation meant to retire it. Also drops the legacy
+// freightlogic.pages.dev CORS origins, which are not the live app.
 // v19: PROACTIVE LEGACY TOKEN SCRUB. Admin listing migrates every reachable v7
 // plaintext user record to tokenHash-only storage, lazy driver auth rewrites the matching
 // user record as well as its token index, and revoke never persists a raw token field.
@@ -103,12 +111,15 @@ function b32(bytes) {
 }
 
 const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
+// Issue #221 — the legacy `freightlogic.pages.dev` / `www.freightlogic.pages.dev`
+// entries are removed. That Pages origin is not the live app and has not been
+// for the whole v24.0.x line; "accepted during migration" outlived the migration.
+// A CORS allow-list is an authority list, and an origin nobody deploys to is an
+// origin nobody can vouch for. `env.ALLOWED_ORIGIN` remains the exact-match
+// configuration hook for a future origin, so re-adding one is a variable, not a
+// code change.
 const ALLOWED_ORIGINS = new Set([
   PRODUCTION_APP_ORIGIN,
-  // Legacy Pages origins remain accepted during migration, but are no longer
-  // the fallback authority because freightlogic.pages.dev is not the live app.
-  'https://freightlogic.pages.dev',
-  'https://www.freightlogic.pages.dev',
 ]);
 
 export default {
@@ -382,7 +393,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '19', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '20', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -532,7 +543,52 @@ export default {
         return json({ ok: false, error: 'Token revoked' }, 403, cors);
       }
 
+      // Issue #221 — the token INDEX is not the authority. The USER RECORD is.
+      //
+      // `POST /claim` reads the invite, writes a fresh `tokh:<newHash>` plus
+      // `user:<userId>`, and deletes the hash it observed. KV offers no
+      // transaction and no compare-and-swap, so two overlapping claims can each
+      // read the same prior state and each write a token record: the last
+      // `user:` write wins, but the LOSER's `tokh:` entry can survive the race.
+      //
+      // Authenticating from `tokh:` alone therefore leaves MORE THAN ONE LIVE
+      // BEARER CREDENTIAL for a single account, and the superseded one keeps
+      // working indefinitely — including after a rotation whose whole purpose
+      // was to retire it. Rotation and re-claim both delete the hash they
+      // observed, which is exactly the hash a racing writer may not have seen.
+      //
+      // This does NOT pretend KV became atomic: the claim-count increment is
+      // still a race and is still documented as one. It makes the canonical
+      // user record the single authority on WHICH hash is current, so a stale
+      // or losing index entry authenticates nothing. Then it deletes that
+      // entry, so the residue is cleaned by the first request that presents it
+      // rather than lingering until someone notices.
+      //
+      // A legacy v7 `user:` record can carry plaintext `token` and no
+      // `tokenHash`; it is derived rather than waved through, so there is no
+      // fail-open branch here. A record with neither is malformed and is
+      // refused — an index entry is not an account.
       const driverUserId = tokenData.userId;
+      if (!driverUserId) {
+        return json({ ok: false, error: 'Invalid token' }, 403, cors);
+      }
+      {
+        const userRaw = await env.BACKUPS.get('user:' + driverUserId);
+        let userRec = null;
+        try { userRec = userRaw ? JSON.parse(userRaw) : null; } catch { userRec = null; }
+        if (!userRec || userRec.active === false) {
+          return json({ ok: false, error: 'Token revoked' }, 403, cors);
+        }
+        const canonicalHash = userRec.tokenHash
+          || (userRec.token ? await hashToken(userRec.token) : null);
+        if (!canonicalHash || canonicalHash !== driverTokenHash) {
+          // Opportunistic cleanup of the superseded index entry. Deliberately
+          // only the entry whose hash was just presented: deleting anything
+          // else would let one holder of a stale token evict the live one.
+          try { await env.BACKUPS.delete('tokh:' + driverTokenHash); } catch (e) {}
+          return json({ ok: false, error: 'Token superseded' }, 403, cors);
+        }
+      }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
 
       // POST /evaluate — AI load analysis via OpenAI

@@ -16324,20 +16324,54 @@ async function cloudRefreshButtons(){
   if (pb) pb.disabled = !enabled; if (pl) pl.disabled = !enabled;
 }
 
-function cloudCheckSetupLink(){
+/** Issue #221 — a link no longer INSTALLS a bearer credential, and a legacy one
+ *  is disarmed at boot rather than whenever Settings happens to render.
+ *
+ *  WHAT THIS REPLACES. `cloudCheckSetupLink()` accepted `#token=<flk_…>` and
+ *  `?token=<flk_…>`, filled `#cloudBackupToken` and navigated to Settings. Both
+ *  halves were the human credential transport that v24.0.13's zero-token
+ *  onboarding exists to eliminate, kept alive for compatibility with a flow that
+ *  had already been deliberately retired:
+ *
+ *    - `?token=` is worse than the fragment form, not merely equivalent. A query
+ *      string IS sent to the origin, so the bearer token reaches the access log,
+ *      the Worker's own request line and any `Referer` header BEFORE any
+ *      client-side cleanup can run. Stripping it afterwards tidies the address
+ *      bar; it cannot un-send it. That is why the toast for this case says the
+ *      token must be treated as exposed rather than merely unsupported.
+ *    - `#token=` never reaches a server, but it still leaves a permanent
+ *      credential in a mail or iMessage thread — exactly the resting place the
+ *      claim-code design removed.
+ *
+ *  WHY IT MOVED TO BOOT. `cloudCheckSetupLink()` was only reachable through
+ *  `cloudInitUI()`, which runs inside `renderInsights()` — the Settings render.
+ *  So the old `history.replaceState` only fired if the operator happened to open
+ *  Settings, and until then a bearer token sat in the address bar, in session
+ *  history, and in any screenshot or share sheet. Found by ZTO-16/17 asserting
+ *  the URL as well as the field; a field-only assertion would have passed.
+ *
+ *  Synchronous, and called before the first await for the same reason
+ *  `flCaptureClaimCode()` is: an await yields to the event loop, and anything
+ *  reading `location.href` in between would capture a live credential.
+ *
+ *  Returns 'query' | 'fragment' | null — the transport, never the token, so the
+ *  value cannot reach a log or an error message through this path. */
+function flStripLegacyTokenLink(){
   try {
-    // Check fragment first (new format — token never sent to servers)
-    const frag = window.location.hash.slice(1);
-    let t = null;
-    if (frag.startsWith('token=')) {
-      t = decodeURIComponent(frag.slice(6));
-    } else {
-      // Legacy: query-param fallback for older invite links
-      const p = new URLSearchParams(window.location.search);
-      t = p.get('token');
-    }
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
-  } catch(e) {}
+    const frag = String(window.location.hash || '').slice(1);
+    const fragToken = frag.startsWith('token=') ? decodeURIComponent(frag.slice(6)) : null;
+    let queryToken = null;
+    try { queryToken = new URLSearchParams(window.location.search).get('token'); } catch(_) {}
+
+    const viaQuery = !!(queryToken && queryToken.startsWith('flk_'));
+    const viaFragment = !!(fragToken && fragToken.startsWith('flk_'));
+    if (!viaQuery && !viaFragment) return null;
+
+    // Strip unconditionally and immediately. Whatever is reported afterwards,
+    // the credential must stop travelling with this page.
+    try { history.replaceState(null, '', window.location.pathname); } catch(_) {}
+    return viaQuery ? 'query' : 'fragment';
+  } catch(_) { return null; }
 }
 
 // ─── v24.0.13 Zero-token driver onboarding ────────────────────────────────────
@@ -16376,6 +16410,10 @@ const CLAIM_CODE_RE = /^[A-Z2-7]{24}$/;
  *  Module-scoped rather than global: `app.js` exports nothing, so this is not
  *  reachable from another script on the page. Cleared the moment it is spent. */
 let _pendingClaimCode = null;
+/** Issue #221: 'query' | 'fragment' | null — which retired setup-link transport
+ *  this page was opened with, recorded so boot can say so once the DOM exists.
+ *  Deliberately never holds the token itself. */
+let _legacyTokenLinkSeen = null;
 
 /* ── Owner: one-time admin setup ─────────────────────────────────────────────
  *
@@ -16953,7 +16991,6 @@ function maybePromptAddToHomeScreen(){
 // direct API use.
 
 function cloudInitUI(){
-  cloudCheckSetupLink();
   var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
   makeToggle('#btnPassToggle', '#cloudBackupPass');
   makeToggle('#btnTokenToggle', '#cloudBackupToken');
@@ -22118,6 +22155,12 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   // event loop, and anything that reads location.href in between would capture a
   // live invite code. flCaptureClaimCode() is synchronous end to end.
   _pendingClaimCode = flCaptureClaimCode();
+  // Issue #221: disarm a legacy `#token=`/`?token=` setup link on the same
+  // synchronous line of boot. It used to be handled inside renderInsights(), so
+  // a bearer token stayed in the address bar and in session history until the
+  // operator happened to open Settings. Only the TRANSPORT is kept, never the
+  // token, so this cannot become a way for the credential to reach a log.
+  _legacyTokenLinkSeen = flStripLegacyTokenLink();
   try{
     $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
     db = await initDB();
@@ -22132,6 +22175,18 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
       const claimCode = _pendingClaimCode;
       _pendingClaimCode = null;
       openClaimWizard(claimCode).catch(()=>{ console.warn('[FL] claim wizard failed to open'); });
+    }
+    // Issue #221: report the retired setup link now that the DOM exists. Not
+    // silence — silence would leave an operator holding a real invite with no
+    // idea why nothing happened. Deliberately after the claim wizard, so a
+    // genuine `#i=` link is never talked over.
+    if (_legacyTokenLinkSeen && !_pendingClaimCode){
+      const via = _legacyTokenLinkSeen;
+      _legacyTokenLinkSeen = null;
+      toast(via === 'query'
+        ? 'That setup link put a token in the web address, so it must be treated as exposed — ask for it to be revoked, then use a claim link.'
+        : 'Token setup links are retired. Ask the owner for a claim link — tokens are no longer shared.',
+        true);
     }
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
