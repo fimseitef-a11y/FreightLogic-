@@ -3,500 +3,721 @@
 
   const STORE_KEY = 'freightlogic_field_cert_v1';
   const SCHEMA_VERSION = 1;
-  const TERMINAL = new Set(['PASS', 'FAIL', 'BLOCKED']);
+  const CHECKLIST_VERSION = 'A1-A12-2026-09-17';
+  const BACKUP_WORKER_HEALTH = 'https://freightlogic-backup.fimseitef.workers.dev/health';
 
   const GATES = {
     A1: {
-      expected: 'The installed app reaches the exact certification candidate through the normal update path without data loss or a blank/update loop.',
-      checks: ['Normal install/update path completed on the physical iPhone.', 'Existing local data remained present after launch.']
+      expected: 'The installed Home Screen app reaches the exact frozen candidate through the normal non-destructive update path with no data loss or blank/update loop.',
+      checks: [
+        'Confirmed the installed PWA shows the same candidate generation recorded above.',
+        'Confirmed the normal update/launch path completed without clearing site data.',
+        'Confirmed existing local FreightLogic data remained present after the update.'
+      ]
     },
     A2: {
-      expected: 'Missing deadhead remains UNKNOWN while an explicitly entered zero remains a known zero.',
-      checks: ['Synthetic missing-deadhead case remained UNKNOWN.', 'Synthetic explicit-zero case remained a known zero.']
+      expected: 'Missing deadhead remains UNKNOWN while an explicit 0 remains a verified real zero in both quick and full evaluation paths.',
+      checks: [
+        'Ran a synthetic case with deadhead omitted and observed UNKNOWN rather than 0.',
+        'Ran the same synthetic case with deadhead explicitly set to 0 and observed a known zero.',
+        'Confirmed the two cases did not collapse to the same canonical result.'
+      ]
     },
     A3: {
-      expected: 'A synthetic intake record and its provenance survive closing and reopening the app.',
-      checks: ['Synthetic opportunity created through the shipped intake path.', 'The same record and evidence were present after reopen.']
+      expected: 'A synthetic opportunity created through the shipped intake path retains identity and provenance after close/reopen.',
+      checks: [
+        'Created one synthetic opportunity through the shipped intake surface.',
+        'Recorded its non-sensitive identity/provenance summary before closing.',
+        'Closed/reopened the app and confirmed the same opportunity/evidence remained.'
+      ]
     },
     A4: {
-      expected: 'The app survives an online → airplane-mode → close/reopen offline → reconnect round trip without duplication or loss.',
-      checks: ['Online state was primed before Airplane Mode.', 'Local mutations/navigation worked while offline.', 'Close/reopen while offline preserved the synthetic data.', 'Reconnect produced no duplication or loss.']
+      expected: 'The app survives a real-device offline round trip without duplicating or losing synthetic local mutations.',
+      checks: [
+        'Primed the app online before disconnecting.',
+        'Enabled Airplane Mode on the physical iPhone.',
+        'Performed the approved synthetic local mutation/navigation while offline.',
+        'Closed and reopened the FreightLogic app while still offline.',
+        'Reconnected and confirmed there was no duplicate or missing synthetic record.'
+      ]
     },
     A5: {
-      expected: 'Local export/import preserves synthetic data, rejects corrupted input, and excludes protected credentials.',
-      checks: ['Synthetic export/import round trip preserved expected data.', 'Corrupted synthetic payload was rejected.', 'Export inspection showed no protected credential material.']
+      expected: 'Local export/import preserves integrity, rejects a corrupted synthetic payload, and exposes no protected credentials.',
+      checks: [
+        'Exported only synthetic/non-sensitive test data.',
+        'Inspected the export without revealing token, PIN, passphrase, invite, or claim secrets.',
+        'Re-imported the valid synthetic export and confirmed expected integrity.',
+        'Tried the approved corrupted synthetic payload and observed rejection.'
+      ]
     },
     A6: {
-      expected: 'A real-device GPS trip remains recoverable after at least ten minutes backgrounded/locked and records an honest quality state.',
-      checks: ['Test trip was started on the physical iPhone.', 'The app was backgrounded/locked for the measured interval.', 'Return, stop and save preserved the trip/quality state.']
+      expected: 'A real iPhone GPS trip survives background/lock for at least 10 minutes and remains stoppable/salvageable on return.',
+      checks: [
+        'Started a test trip while safely stationary.',
+        'Moved a representative distance without interacting with the phone while driving.',
+        'Backgrounded/locked the iPhone, then returned after the measured interval.',
+        'Stopped/saved the trip and recorded the visible tracking quality/degradation state.'
+      ]
     },
     A7: {
-      expected: 'Revoking Location permission mid-trip produces a visible paused/degraded state while preserving salvageable trip state.',
-      checks: ['Location permission was revoked in iOS Settings during the test trip.', 'The app visibly paused/degraded instead of silently ending the trip.', 'The trip remained salvageable and could be stopped/saved.']
+      expected: 'Revoking Location permission mid-trip produces a visible paused/degraded state while preserving a salvageable trip.',
+      checks: [
+        'Started a synthetic/test trip on the physical iPhone.',
+        'Revoked FreightLogic Location permission in iOS Settings.',
+        'Observed the visible paused/degraded tracking state.',
+        'Confirmed the open trip remained stoppable and salvageable.'
+      ]
     },
     A8: {
-      expected: 'Two real Safari tabs editing the same synthetic record cannot silently lose the newer write.',
-      checks: ['The same synthetic record was opened in two Safari tabs.', 'The first tab saved a newer value.', 'The stale second save was rejected or reconciled without overwriting the newer value.']
+      expected: 'A stale second Safari-tab edit cannot silently overwrite the newer first save.',
+      checks: [
+        'Opened the same synthetic record in two real Safari tabs.',
+        'Saved a change from the first tab.',
+        'Attempted a stale save from the second tab.',
+        'Confirmed the newer value survived and the stale writer did not silently overwrite it.'
+      ]
     },
     A9: {
-      expected: 'Doctrine, geography, cargo-fit and profit sanity boundaries behave exactly at the approved synthetic vectors.',
-      checks: ['Blank/short market and Gary/Calgary vectors were checked.', '121/122 in and 54.8/54.9 in fit boundaries were checked.', '3000/3001 lb payload boundary was checked.', 'Defensible versus undefended cost input behavior was checked.']
+      expected: 'Doctrine/geography/cargo-fit/profit boundaries remain exact on the physical candidate.',
+      checks: [
+        'Checked blank/short market text plus Gary vs Calgary.',
+        'Checked cargo length 121 in passes and 122 in blocks.',
+        'Checked wheel-well width 54.8 in passes and 54.9 in blocks.',
+        'Checked 3000 lb passes and 3001 lb blocks.',
+        'Checked defensible cost input versus missing/undefended cost input.'
+      ]
     },
     A10: {
-      expected: 'Pickup-feasibility vectors distinguish unset speed, impossible/reachable/tight windows, UNKNOWN deadhead and explicit-zero deadhead.',
-      checks: ['Unset planning speed vector was checked.', 'Impossible, reachable and tight pickup windows were checked.', 'UNKNOWN and explicit-zero deadhead vectors remained distinct.']
+      expected: 'Pickup feasibility keeps unset speed inert, distinguishes impossible/reachable/tight windows, and preserves UNKNOWN vs explicit-zero deadhead.',
+      checks: [
+        'Checked no planning speed set.',
+        'Checked an impossible pickup window.',
+        'Checked a comfortably reachable pickup window.',
+        'Checked a reachable-but-tight pickup window.',
+        'Checked UNKNOWN deadhead separately from explicit zero deadhead.'
+      ]
     },
     A11: {
-      expected: 'Real iOS 27+ passes the required visual and iOS-specific regression checklist; emulation alone never counts.',
-      checks: ['F31 SVG chart inspected on iOS 27+.', 'Primary tab icons inspected.', 'Required select controls inspected.', 'Scroll anchoring inspected.', 'Persistent-storage behavior inspected.', 'Backup paused/resume behavior inspected.']
+      expected: 'The exact candidate has no required visual/regression defect on a real iPhone running iOS 27 or later.',
+      checks: [
+        'Inspected the F31 SVG chart.',
+        'Inspected primary tab icons and labels.',
+        'Inspected every required select/menu control.',
+        'Checked scroll anchoring/restoration behavior.',
+        'Checked persistent-storage grant behavior.',
+        'Checked backup-paused banner and Resume behavior.'
+      ]
     },
     A12: {
-      expected: 'Owner invite → Safari claim → Home Screen launch/reclaim preserves one canonical account and records the observed Safari/PWA storage relationship without exposing credentials.',
-      checks: ['Owner invite and Safari claim path were observed on the physical device.', 'Home Screen launch/reclaim path was observed.', 'Canonical account/backup continuity was observed.', 'No token, code, PIN or passphrase was copied into evidence.']
+      expected: 'Owner invite → Safari claim → Home Screen launch/reclaim preserves one canonical user/backup history, with storage-partition behavior explicitly observed and no credential value recorded.',
+      checks: [
+        'Created the owner-side invite using the shipped flow without copying any secret into this runner.',
+        'Claimed through Safari and then launched/reclaimed through the Home Screen app.',
+        'Confirmed the same canonical user/backup history was preserved.',
+        'Observed the real-device delivery/reclaim behavior without recording any token, code, PIN, or passphrase.'
+      ]
     }
   };
 
-  const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const body = document.body;
+  const qs = (selector, root = document) => root.querySelector(selector);
+  const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  let currentEnvironment = null;
+  let session = null;
 
-  let environment = null;
-  let state = freshState();
+  function nowIso() { return new Date().toISOString(); }
 
-  function freshState() {
+  function normalizeGeneration(value) {
+    const match = String(value || '').match(/(?:^|\bv)?(\d+\.\d+\.\d+)\b/i);
+    return match ? match[1] : 'UNAVAILABLE';
+  }
+
+  function sanitizeText(value) {
+    let text = String(value || '');
+    text = text.replace(/\bflk_[A-Za-z0-9_-]+\b/gi, '[REDACTED_TOKEN]');
+    text = text.replace(/\b(bearer|token|admin[_ -]?token|passphrase|password|pin(?:hash)?|invite(?:code)?|claim(?:code)?|secret)\s*[:=]\s*([^\s,;]+)/gi, (_m, key) => `${key}=[REDACTED]`);
+    text = text.replace(/\bAuthorization\s*:\s*Bearer\s+[^\s,;]+/gi, 'Authorization: Bearer [REDACTED]');
+    return text.slice(0, 4000);
+  }
+
+  function safeSessionForStorage(source) {
+    if (!source) return null;
+    const out = JSON.parse(JSON.stringify(source));
+    out.deviceModel = sanitizeText(out.deviceModel);
+    out.iosVersion = sanitizeText(out.iosVersion);
+    if (out.environment) {
+      out.environment.deviceModel = sanitizeText(out.environment.deviceModel);
+      out.environment.iosVersion = sanitizeText(out.environment.iosVersion);
+    }
+    if (out.gates) {
+      for (const gate of Object.values(out.gates)) {
+        gate.operatorObservation = sanitizeText(gate.operatorObservation);
+        gate.reference = sanitizeText(gate.reference);
+        gate.reason = sanitizeText(gate.reason);
+        if (Array.isArray(gate.automatedObservations)) gate.automatedObservations = gate.automatedObservations.map(sanitizeText);
+      }
+    }
+    return out;
+  }
+
+  function saveSession() {
+    if (!session) return;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(safeSessionForStorage(session))); } catch (_err) { /* local-only best effort */ }
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && parsed.schemaVersion === SCHEMA_VERSION ? parsed : null;
+    } catch (_err) { return null; }
+  }
+
+  function launchMode() {
+    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    return standalone ? 'HOME_SCREEN_PWA' : 'SAFARI_OR_BROWSER_TAB';
+  }
+
+  function browserFact() {
+    const ua = navigator.userAgent || '';
+    if (/CriOS/i.test(ua)) return 'Chrome iOS';
+    if (/FxiOS/i.test(ua)) return 'Firefox iOS';
+    if (/Safari/i.test(ua) && !/Chrome|Chromium|CriOS/i.test(ua)) return 'Safari/WebKit';
+    if (/Chrome|Chromium/i.test(ua)) return 'Chromium';
+    return 'Web browser';
+  }
+
+  async function fetchText(url, timeoutMs = 1500) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.text();
+    } finally { clearTimeout(timer); }
+  }
+
+  async function fetchJson(url, timeoutMs = 1500) {
+    return JSON.parse(await fetchText(url, timeoutMs));
+  }
+
+  async function observeEnvironment() {
+    const observed = {
+      origin: location.origin,
+      appGeneration: 'UNAVAILABLE',
+      indexedDbSchema: 'UNAVAILABLE',
+      swScript: 'UNAVAILABLE',
+      swScope: 'UNAVAILABLE',
+      swCache: 'UNAVAILABLE',
+      workerGeneration: 'UNAVAILABLE',
+      gitSha: 'UNAVAILABLE',
+      launchMode: launchMode(),
+      browser: browserFact(),
+      deviceModel: 'OPERATOR_REQUIRED',
+      iosVersion: 'OPERATOR_REQUIRED',
+      timestamp: nowIso()
+    };
+
+    try {
+      const manifest = await fetchJson(`manifest.json?fieldcert=${Date.now()}`, 1500);
+      observed.appGeneration = normalizeGeneration(`${manifest.name || ''} ${manifest.short_name || ''}`);
+    } catch (_err) { /* fail closed later if generation cannot be identified */ }
+
+    try {
+      const appSource = await fetchText(`app.js?fieldcert=${Date.now()}`, 1500);
+      const db = appSource.match(/\bDB_VERSION\s*=\s*(\d+)/);
+      if (db) observed.indexedDbSchema = `DB${db[1]}`;
+      const sha = appSource.match(/\b(?:GIT_SHA|BUILD_SHA|COMMIT_SHA)\s*=\s*['\"]([0-9a-f]{7,40})['\"]/i);
+      if (sha) observed.gitSha = sha[1];
+    } catch (_err) { /* informational */ }
+
+    if (observed.indexedDbSchema === 'UNAVAILABLE') {
+      try {
+        if (indexedDB.databases) {
+          const dbs = await indexedDB.databases();
+          const versions = dbs.map(db => Number(db.version)).filter(Number.isFinite);
+          if (versions.length) observed.indexedDbSchema = `DB${Math.max(...versions)}`;
+        }
+      } catch (_err) { /* informational */ }
+    }
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          const worker = reg.active || reg.waiting || reg.installing;
+          observed.swScript = worker?.scriptURL || 'UNAVAILABLE';
+          observed.swScope = reg.scope || 'UNAVAILABLE';
+        }
+      }
+    } catch (_err) { /* informational */ }
+
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        const freight = keys.filter(key => /freightlogic|fl-/i.test(key));
+        observed.swCache = freight.length ? freight.sort().join(', ') : 'NONE_OBSERVED';
+      }
+    } catch (_err) { /* informational */ }
+
+    try {
+      const health = await fetchJson(`${BACKUP_WORKER_HEALTH}?fieldcert=${Date.now()}`, 1000);
+      const raw = health.version ?? health.workerVersion ?? health.generation ?? health.worker_generation;
+      if (raw !== undefined && raw !== null) observed.workerGeneration = String(raw).slice(0, 80);
+    } catch (_err) { /* never guess Worker state */ }
+
+    return observed;
+  }
+
+  function criticalEnvironmentMatches(frozen, observed) {
+    if (!frozen || !observed) return false;
+    const strict = ['origin', 'appGeneration', 'indexedDbSchema', 'swScript', 'swScope'];
+    for (const key of strict) {
+      const a = frozen[key];
+      const b = observed[key];
+      if (a && b && a !== 'UNAVAILABLE' && b !== 'UNAVAILABLE' && a !== b) return false;
+    }
+    if (frozen.workerGeneration && observed.workerGeneration && frozen.workerGeneration !== 'UNAVAILABLE' && observed.workerGeneration !== 'UNAVAILABLE' && frozen.workerGeneration !== observed.workerGeneration) return false;
+    if (frozen.swCache && observed.swCache && !['UNAVAILABLE', 'NONE_OBSERVED'].includes(frozen.swCache) && !['UNAVAILABLE', 'NONE_OBSERVED'].includes(observed.swCache) && frozen.swCache !== observed.swCache) return false;
+    return true;
+  }
+
+  function environmentFingerprint(env) {
+    const fields = ['origin', 'appGeneration', 'indexedDbSchema', 'swScript', 'swScope', 'swCache', 'workerGeneration'];
+    return fields.map(key => `${key}=${env?.[key] ?? 'UNAVAILABLE'}`).join('|');
+  }
+
+  function renderEnvironment(env) {
+    for (const el of qsa('[data-env-key]')) {
+      const key = el.getAttribute('data-env-key');
+      el.textContent = env?.[key] ?? 'UNAVAILABLE';
+    }
+    body.dataset.observedGeneration = env?.appGeneration || 'UNAVAILABLE';
+  }
+
+  function setSessionState(state, message) {
+    body.dataset.sessionState = state;
+    const banner = qs('[data-session-banner]');
+    if (banner) banner.textContent = message || state;
+    if (session) {
+      session.sessionState = state;
+      if (state === 'INVALID') session.invalidatedAt = nowIso();
+      saveSession();
+    }
+    updateControlAvailability();
+  }
+
+  function gateRecord(id) {
+    return session?.gates?.[id] || null;
+  }
+
+  function setGateStatus(id, status) {
+    const row = qs(`[data-gate="${id}"]`);
+    const rec = gateRecord(id);
+    if (!row || !rec) return;
+    rec.status = status;
+    row.dataset.status = status;
+    const badge = qs('.status', row);
+    if (badge) badge.textContent = status;
+    saveSession();
+  }
+
+  function clearGateError(row) {
+    const error = qs('[data-gate-error]', row);
+    if (error) error.textContent = '';
+  }
+
+  function gateError(row, message) {
+    const error = qs('[data-gate-error]', row);
+    if (error) error.textContent = message;
+  }
+
+  function readGateInputs(row, rec) {
+    rec.operatorObservation = sanitizeText(qs('[data-operator-observation]', row)?.value || '');
+    rec.reference = sanitizeText(qs('[data-reference]', row)?.value || '');
+    rec.reason = sanitizeText(qs('[data-reason]', row)?.value || '');
+    rec.attestedPhysicalDevice = Boolean(qs('[data-attestation]', row)?.checked);
+    rec.manualChecks = qsa('[data-required-check]', row).map(input => Boolean(input.checked));
+    if (row.dataset.gate === 'A6') {
+      rec.realDevice = Boolean(qs('[data-real-device]', row)?.checked);
+      rec.backgroundMinutes = Number(qs('[data-background-minutes]', row)?.value || 0);
+    }
+    if (row.dataset.gate === 'A12') rec.storagePartition = qs('[data-storage-partition]', row)?.value || 'UNANSWERED';
+  }
+
+  function restoreGateInputs(row, rec) {
+    const observation = qs('[data-operator-observation]', row);
+    const reference = qs('[data-reference]', row);
+    const reason = qs('[data-reason]', row);
+    const attestation = qs('[data-attestation]', row);
+    if (observation) observation.value = rec.operatorObservation || '';
+    if (reference) reference.value = rec.reference || '';
+    if (reason) reason.value = rec.reason || '';
+    if (attestation) attestation.checked = Boolean(rec.attestedPhysicalDevice);
+    qsa('[data-required-check]', row).forEach((input, i) => { input.checked = Boolean(rec.manualChecks?.[i]); });
+    if (row.dataset.gate === 'A6') {
+      const real = qs('[data-real-device]', row);
+      const mins = qs('[data-background-minutes]', row);
+      if (real) real.checked = Boolean(rec.realDevice);
+      if (mins && Number.isFinite(rec.backgroundMinutes)) mins.value = rec.backgroundMinutes ? String(rec.backgroundMinutes) : '';
+    }
+    if (row.dataset.gate === 'A12') {
+      const storage = qs('[data-storage-partition]', row);
+      if (storage) storage.value = rec.storagePartition || 'UNANSWERED';
+    }
+  }
+
+  function captureGateProgress(row) {
+    if (!session) return;
+    const rec = gateRecord(row.dataset.gate);
+    if (!rec) return;
+    readGateInputs(row, rec);
+    saveSession();
+  }
+
+  function validatePass(row, rec) {
+    if (body.dataset.sessionState !== 'ACTIVE') return 'Certification session is not active.';
+    if (rec.status !== 'RUNNING') return 'Start this row before recording PASS.';
+    readGateInputs(row, rec);
+    if (!rec.operatorObservation.trim()) return 'Record the operator observation from the physical device.';
+    if (!rec.attestedPhysicalDevice) return 'Physical-device attestation is required.';
+    if (!rec.manualChecks.length || rec.manualChecks.some(value => !value)) return 'Complete every required physical checkpoint.';
+
+    if (row.dataset.gate === 'A6') {
+      if (!rec.realDevice) return 'A6 requires explicit real-device confirmation.';
+      if (!Number.isFinite(rec.backgroundMinutes) || rec.backgroundMinutes < 10) return 'A6 requires at least 10 measured background/lock minutes.';
+    }
+    if (row.dataset.gate === 'A11') {
+      const major = Number.parseInt(String(session.iosVersion || '').match(/\d+/)?.[0] || '0', 10);
+      if (!Number.isFinite(major) || major < 27) return 'A11 requires a real device running iOS 27 or later.';
+    }
+    if (row.dataset.gate === 'A12' && (!rec.storagePartition || rec.storagePartition === 'UNANSWERED')) {
+      return 'A12 requires the observed Safari → Home Screen storage-partition answer.';
+    }
+    return null;
+  }
+
+  function onGateAction(row, action) {
+    if (!session) return;
+    const id = row.dataset.gate;
+    const rec = gateRecord(id);
+    if (!rec) return;
+    clearGateError(row);
+
+    if (action === 'reset') {
+      rec.status = 'NOT_RUN';
+      rec.startedAt = null;
+      rec.completedAt = null;
+      rec.operatorObservation = '';
+      rec.reference = '';
+      rec.reason = '';
+      rec.attestedPhysicalDevice = false;
+      rec.manualChecks = (GATES[id].checks || []).map(() => false);
+      rec.realDevice = false;
+      rec.backgroundMinutes = 0;
+      rec.storagePartition = 'UNANSWERED';
+      rec.environmentFingerprint = null;
+      restoreGateInputs(row, rec);
+      setGateStatus(id, 'NOT_RUN');
+      return;
+    }
+
+    if (body.dataset.sessionState !== 'ACTIVE') {
+      gateError(row, 'Start a valid certification session before changing this row.');
+      return;
+    }
+
+    if (action === 'start') {
+      if (rec.status !== 'NOT_RUN') return;
+      rec.startedAt = nowIso();
+      rec.environmentFingerprint = session.environmentFingerprint;
+      setGateStatus(id, 'RUNNING');
+      return;
+    }
+
+    if (rec.status !== 'RUNNING') return;
+    readGateInputs(row, rec);
+
+    if (action === 'pass') {
+      const problem = validatePass(row, rec);
+      if (problem) {
+        gateError(row, problem);
+        saveSession();
+        return;
+      }
+      rec.reason = '';
+      rec.completedAt = nowIso();
+      setGateStatus(id, 'PASS');
+      maybeCompleteSession();
+      return;
+    }
+
+    if (action === 'fail' || action === 'block') {
+      if (!rec.reason.trim()) {
+        gateError(row, `Record the ${action === 'fail' ? 'failure' : 'blocking'} reason first.`);
+        return;
+      }
+      rec.completedAt = nowIso();
+      setGateStatus(id, action === 'fail' ? 'FAIL' : 'BLOCKED');
+      maybeCompleteSession();
+    }
+  }
+
+  function maybeCompleteSession() {
+    if (!session) return;
+    const statuses = Object.values(session.gates).map(g => g.status);
+    if (statuses.every(status => status === 'PASS')) {
+      session.completedAt = nowIso();
+      setSessionState('COMPLETE', 'A1–A12 all show operator-recorded PASS for the frozen candidate.');
+    }
+  }
+
+  function updateControlAvailability() {
+    const active = body.dataset.sessionState === 'ACTIVE';
+    for (const row of qsa('[data-gate]')) {
+      const rec = gateRecord(row.dataset.gate);
+      for (const btn of qsa('button[data-action]', row)) {
+        if (btn.dataset.action === 'reset') btn.disabled = !rec || rec.status === 'NOT_RUN';
+        else btn.disabled = !active;
+      }
+    }
+  }
+
+  function buildGateUI() {
+    for (const row of qsa('[data-gate]')) {
+      const id = row.dataset.gate;
+      const def = GATES[id];
+      if (!def) continue;
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'gate-body';
+      bodyEl.innerHTML = `
+        <p data-expected><strong>Expected:</strong> ${def.expected}</p>
+        <div class="automated"><strong>Automated observation:</strong> <span data-automated-observation>Related automated regressions are informational only and never close this physical row.</span></div>
+        <fieldset class="checks"><legend>Required physical checkpoints</legend>
+          ${def.checks.map((label, index) => `<label><input type="checkbox" data-required-check="${index}"> <span>${label}</span></label>`).join('')}
+        </fieldset>
+        ${id === 'A6' ? `<div class="special"><label><input type="checkbox" data-real-device> This was executed on the real physical iPhone.</label><label>Measured background/lock minutes <input type="number" min="0" step="1" inputmode="numeric" data-background-minutes></label><p class="safety">Safety: make all phone interactions while safely parked/stationary; never interact with this runner while driving.</p></div>` : ''}
+        ${id === 'A12' ? `<div class="special"><label>Safari → Home Screen credential storage observation <select data-storage-partition><option value="UNANSWERED">Not answered yet</option><option value="SHARED">Shared credential/storage state observed</option><option value="PARTITIONED">Partitioned storage / reclaim required</option><option value="OTHER">Other observed behavior</option></select></label></div>` : ''}
+        <label class="field">Operator observation<textarea data-operator-observation rows="3" placeholder="Describe only the non-sensitive physical-device observation. Never paste credentials."></textarea></label>
+        <label class="attestation"><input type="checkbox" data-attestation> I personally observed the required physical-device behavior described above.</label>
+        <label class="field">Optional local screenshot/reference metadata<input data-reference placeholder="e.g. screenshot filename or local note — no secret values"></label>
+        <label class="field">FAIL/BLOCKED reason<input data-reason placeholder="Required before FAIL or BLOCKED"></label>
+        <div class="gate-actions"><button type="button" data-action="start">Start</button><button type="button" data-action="pass">PASS</button><button type="button" data-action="fail">FAIL</button><button type="button" data-action="block">BLOCKED</button><button type="button" data-action="reset">Reset row</button></div>
+        <p class="gate-error" data-gate-error role="alert"></p>`;
+      row.appendChild(bodyEl);
+
+      row.addEventListener('click', event => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        onGateAction(row, button.dataset.action);
+      });
+      row.addEventListener('input', () => captureGateProgress(row));
+      row.addEventListener('change', () => captureGateProgress(row));
+    }
+  }
+
+  function makeFreshSession() {
     const gates = {};
     for (const id of Object.keys(GATES)) {
       gates[id] = {
-        status: 'NOT_RUN', startedAt: null, completedAt: null,
-        observation: '', reference: '', reason: '', attestation: false,
-        checks: [], backgroundMinutes: null, realDevice: false, storagePartition: 'UNKNOWN'
+        checklistRowId: id,
+        checklistVersion: CHECKLIST_VERSION,
+        status: 'NOT_RUN',
+        expectedBehavior: GATES[id].expected,
+        automatedObservations: ['Automated regressions are advisory only; physical PASS requires operator evidence.'],
+        manualChecks: GATES[id].checks.map(() => false),
+        operatorObservation: '',
+        reference: '',
+        reason: '',
+        attestedPhysicalDevice: false,
+        startedAt: null,
+        completedAt: null,
+        environmentFingerprint: null,
+        realDevice: false,
+        backgroundMinutes: 0,
+        storagePartition: 'UNANSWERED'
       };
     }
     return {
-      version: SCHEMA_VERSION,
-      session: {
-        state: 'IDLE', candidate: '', origin: location.origin,
-        deviceModel: '', iosVersion: '', startedAt: null, completedAt: null,
-        environment: null
-      },
+      schemaVersion: SCHEMA_VERSION,
+      checklistVersion: CHECKLIST_VERSION,
+      sessionState: 'IDLE',
+      candidate: '',
+      deviceModel: '',
+      iosVersion: '',
+      startedAt: null,
+      completedAt: null,
+      invalidatedAt: null,
+      environment: null,
+      environmentFingerprint: null,
       gates
     };
   }
 
-  function scrubText(value) {
-    let text = String(value || '');
-    text = text.replace(/\b(?:admin\s*token|bearer|token|passphrase|password|pin|invite(?:\s*code|code)?|secret)\b\s*[:=]\s*[^\s,;]+/gi,
-      match => `${match.split(/[:=]/, 1)[0].trim()}=[REDACTED]`);
-    text = text.replace(/\bflk_[A-Za-z0-9_-]+\b/g, '[REDACTED]');
-    return text.slice(0, 2000);
-  }
-
-  function safeVersion(value) {
-    const match = String(value || '').match(/(?:^|\s|v)(\d+\.\d+\.\d+)(?:\b|$)/i);
-    return match ? match[1] : '';
-  }
-
-  function displayMode() {
-    if (window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true) return 'standalone-pwa';
-    return 'browser-tab';
-  }
-
-  async function appGeneration() {
-    try {
-      const response = await fetch(`manifest.json?fieldCert=${Date.now()}`, { cache: 'no-store' });
-      if (!response.ok) return '';
-      const manifest = await response.json();
-      return safeVersion(manifest.name || manifest.short_name || '');
-    } catch (_) {
-      return '';
+  function restoreSessionUI() {
+    if (!session) return;
+    qs('#candidateExpected').value = session.candidate || currentEnvironment?.appGeneration || '';
+    qs('#deviceModel').value = session.deviceModel || '';
+    qs('#iosVersion').value = session.iosVersion || '';
+    for (const row of qsa('[data-gate]')) {
+      const rec = gateRecord(row.dataset.gate);
+      if (!rec) continue;
+      row.dataset.status = rec.status || 'NOT_RUN';
+      qs('.status', row).textContent = rec.status || 'NOT_RUN';
+      restoreGateInputs(row, rec);
     }
+    const message = session.sessionState === 'ACTIVE'
+      ? 'Certification session resumed for the same frozen candidate.'
+      : session.sessionState === 'COMPLETE'
+        ? 'Completed local certification evidence resumed for the same frozen candidate.'
+        : session.sessionState;
+    setSessionState(session.sessionState || 'IDLE', message);
   }
 
-  async function indexedDbVersion() {
-    try {
-      if (!indexedDB.databases) return 'UNOBSERVED';
-      const dbs = await indexedDB.databases();
-      const versions = dbs.map(db => Number(db.version)).filter(Number.isFinite);
-      return versions.length ? String(Math.max(...versions)) : 'UNOBSERVED';
-    } catch (_) {
-      return 'UNOBSERVED';
-    }
+  function invalidateSession(message) {
+    if (!session) session = makeFreshSession();
+    setSessionState('INVALID', message || 'Certification environment changed. Start a new session on the intended candidate.');
   }
 
-  async function serviceWorkerFacts() {
-    const result = { swScript: 'UNOBSERVED', swScope: 'UNOBSERVED', swCache: 'UNOBSERVED' };
-    try {
-      const registration = await navigator.serviceWorker?.getRegistration?.();
-      const worker = registration?.active || registration?.waiting || registration?.installing;
-      if (worker?.scriptURL) result.swScript = worker.scriptURL;
-      if (registration?.scope) result.swScope = registration.scope;
-    } catch (_) {}
-    try {
-      if (window.caches?.keys) {
-        const names = await caches.keys();
-        if (names.length) result.swCache = names.join(', ');
+  async function refreshEnvironment({ initial = false } = {}) {
+    body.dataset.environmentReady = 'false';
+    const observed = await observeEnvironment();
+    currentEnvironment = observed;
+    renderEnvironment(observed);
+
+    if (initial) {
+      const saved = loadSession();
+      if (saved && ['ACTIVE', 'COMPLETE'].includes(saved.sessionState) && criticalEnvironmentMatches(saved.environment, observed) && saved.candidate === observed.appGeneration) {
+        session = saved;
+        restoreSessionUI();
+      } else if (saved && ['ACTIVE', 'COMPLETE'].includes(saved.sessionState)) {
+        session = saved;
+        invalidateSession('Saved certification session no longer matches the observed runtime environment. Start a fresh session.');
+      } else if (saved && saved.sessionState === 'INVALID') {
+        session = saved;
+        restoreSessionUI();
+      } else {
+        session = makeFreshSession();
+        const requested = new URLSearchParams(location.search).get('candidate');
+        session.candidate = requested ? normalizeGeneration(requested) : observed.appGeneration;
+        restoreSessionUI();
       }
-    } catch (_) {}
-    return result;
-  }
-
-  async function captureEnvironment() {
-    const [generation, dbSchema, sw] = await Promise.all([
-      appGeneration(), indexedDbVersion(), serviceWorkerFacts()
-    ]);
-    const observed = generation || 'UNKNOWN';
-    const facts = {
-      origin: location.origin,
-      appGeneration: observed,
-      indexedDbSchema: dbSchema,
-      swScript: sw.swScript,
-      swScope: sw.swScope,
-      swCache: sw.swCache,
-      workerGeneration: 'UNOBSERVED',
-      gitSha: document.querySelector('meta[name="git-sha"]')?.content || 'UNOBSERVED',
-      launchMode: displayMode(),
-      browser: navigator.userAgent || 'UNOBSERVED',
-      deviceModel: $('#deviceModel')?.value || '',
-      iosVersion: $('#iosVersion')?.value || '',
-      timestamp: new Date().toISOString()
-    };
-    environment = facts;
-    document.body.dataset.observedGeneration = observed;
-    for (const [key, value] of Object.entries(facts)) {
-      const node = document.querySelector(`[data-env-key="${key}"]`);
-      if (node) node.textContent = String(value || 'UNOBSERVED');
-    }
-    return facts;
-  }
-
-  function renderGateDetails() {
-    for (const [id, config] of Object.entries(GATES)) {
-      const row = document.querySelector(`[data-gate="${id}"]`);
-      if (!row) continue;
-      const title = row.querySelector('h2')?.textContent || id;
-      row.innerHTML = '';
-
-      const head = document.createElement('div');
-      head.className = 'gate-head';
-      const h2 = document.createElement('h2'); h2.textContent = title;
-      const badge = document.createElement('span'); badge.className = 'status'; badge.textContent = 'NOT_RUN';
-      head.append(h2, badge);
-      row.append(head);
-
-      const expected = document.createElement('p');
-      expected.dataset.expected = '';
-      expected.className = 'expected';
-      expected.textContent = config.expected;
-      row.append(expected);
-
-      const checklist = document.createElement('fieldset');
-      checklist.className = 'checks';
-      const legend = document.createElement('legend'); legend.textContent = 'Required physical checkpoints';
-      checklist.append(legend);
-      config.checks.forEach((labelText, index) => {
-        const label = document.createElement('label'); label.className = 'check-row';
-        const input = document.createElement('input'); input.type = 'checkbox'; input.dataset.requiredCheck = ''; input.value = String(index);
-        const span = document.createElement('span'); span.textContent = labelText;
-        label.append(input, span); checklist.append(label);
-      });
-      row.append(checklist);
-
-      const evidence = document.createElement('div'); evidence.className = 'evidence-grid';
-      evidence.innerHTML = `
-        <label>Operator observation<textarea data-operator-observation rows="2" autocomplete="off"></textarea></label>
-        <label>Local screenshot/reference metadata<input data-reference type="text" autocomplete="off" placeholder="Optional local filename/reference only"></label>
-        <label>FAIL/BLOCKED reason<input data-reason type="text" autocomplete="off" placeholder="Required for FAIL or BLOCKED"></label>
-        <label class="attest"><input data-attestation type="checkbox"> I attest this observation was performed on the required physical device.</label>
-        <p class="gate-error" data-gate-error aria-live="polite"></p>`;
-      row.append(evidence);
-
-      if (id === 'A6') {
-        const special = document.createElement('div'); special.className = 'special';
-        special.innerHTML = `
-          <label>Measured background minutes<input data-background-minutes type="number" min="0" step="1" inputmode="numeric"></label>
-          <label class="attest"><input data-real-device type="checkbox"> Confirm this was a real physical-iPhone background/lock run.</label>`;
-        row.append(special);
-      }
-      if (id === 'A12') {
-        const special = document.createElement('div'); special.className = 'special';
-        special.innerHTML = `<label>Safari → Home Screen credential storage observation
-          <select data-storage-partition>
-            <option value="UNKNOWN">Not observed yet</option>
-            <option value="SHARED">Shared / credential available</option>
-            <option value="PARTITIONED">Partitioned / reclaim required</option>
-          </select></label>`;
-        row.append(special);
-      }
-
-      const actions = document.createElement('div'); actions.className = 'actions';
-      for (const [action, labelText] of [['start','Start'],['pass','Pass'],['fail','Fail'],['block','Block'],['reset','Reset']]) {
-        const button = document.createElement('button');
-        button.type = 'button'; button.dataset.action = action; button.textContent = labelText;
-        actions.append(button);
-      }
-      row.append(actions);
-    }
-  }
-
-  function setGateStatus(id, status) {
-    const row = document.querySelector(`[data-gate="${id}"]`);
-    if (!row) return;
-    row.dataset.status = status;
-    const badge = row.querySelector('.status');
-    if (badge) badge.textContent = status;
-    state.gates[id].status = status;
-  }
-
-  function setGateError(id, message) {
-    const node = document.querySelector(`[data-gate="${id}"] [data-gate-error]`);
-    if (node) node.textContent = message || '';
-  }
-
-  function setSessionState(next, message = '') {
-    state.session.state = next;
-    document.body.dataset.sessionState = next;
-    const banner = $('[data-session-banner]');
-    if (banner) banner.textContent = message || (next === 'ACTIVE' ? 'Certification session active.' : next);
-  }
-
-  function snapshotGate(id) {
-    const row = document.querySelector(`[data-gate="${id}"]`);
-    if (!row) return;
-    const current = state.gates[id];
-    current.observation = scrubText($('[data-operator-observation]', row)?.value || '');
-    current.reference = scrubText($('[data-reference]', row)?.value || '');
-    current.reason = scrubText($('[data-reason]', row)?.value || '');
-    current.attestation = Boolean($('[data-attestation]', row)?.checked);
-    current.checks = $$('[data-required-check]', row).map(input => Boolean(input.checked));
-    if (id === 'A6') {
-      const raw = $('[data-background-minutes]', row)?.value;
-      current.backgroundMinutes = raw === '' || raw == null ? null : Number(raw);
-      current.realDevice = Boolean($('[data-real-device]', row)?.checked);
-    }
-    if (id === 'A12') current.storagePartition = $('[data-storage-partition]', row)?.value || 'UNKNOWN';
-  }
-
-  function persist() {
-    try {
-      state.session.deviceModel = scrubText($('#deviceModel')?.value || state.session.deviceModel || '');
-      state.session.iosVersion = scrubText($('#iosVersion')?.value || state.session.iosVersion || '');
-      localStorage.setItem(STORE_KEY, JSON.stringify(state));
-    } catch (_) {}
-  }
-
-  function loadStored() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-      if (!parsed || parsed.version !== SCHEMA_VERSION || !parsed.session || !parsed.gates) return null;
-      return parsed;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function restoreGateInputs(id, saved) {
-    const row = document.querySelector(`[data-gate="${id}"]`);
-    if (!row || !saved) return;
-    setGateStatus(id, saved.status || 'NOT_RUN');
-    const observation = $('[data-operator-observation]', row); if (observation) observation.value = saved.observation || '';
-    const reference = $('[data-reference]', row); if (reference) reference.value = saved.reference || '';
-    const reason = $('[data-reason]', row); if (reason) reason.value = saved.reason || '';
-    const attestation = $('[data-attestation]', row); if (attestation) attestation.checked = Boolean(saved.attestation);
-    $$('[data-required-check]', row).forEach((input, index) => { input.checked = Boolean(saved.checks?.[index]); });
-    if (id === 'A6') {
-      const minutes = $('[data-background-minutes]', row); if (minutes && saved.backgroundMinutes != null) minutes.value = String(saved.backgroundMinutes);
-      const real = $('[data-real-device]', row); if (real) real.checked = Boolean(saved.realDevice);
-    }
-    if (id === 'A12') {
-      const partition = $('[data-storage-partition]', row); if (partition) partition.value = saved.storagePartition || 'UNKNOWN';
-    }
-  }
-
-  function baseEvidenceComplete(id) {
-    const row = document.querySelector(`[data-gate="${id}"]`);
-    if (!row) return false;
-    if (!String($('[data-operator-observation]', row)?.value || '').trim()) {
-      setGateError(id, 'Add the operator observation from the required physical device.'); return false;
-    }
-    if (!$('[data-attestation]', row)?.checked) {
-      setGateError(id, 'Physical-device attestation is required.'); return false;
-    }
-    const checks = $$('[data-required-check]', row);
-    if (!checks.length || checks.some(input => !input.checked)) {
-      setGateError(id, 'Complete every required physical checkpoint.'); return false;
-    }
-    return true;
-  }
-
-  function specialEvidenceComplete(id) {
-    const row = document.querySelector(`[data-gate="${id}"]`);
-    if (id === 'A6') {
-      const minutes = Number($('[data-background-minutes]', row)?.value);
-      if (!$('[data-real-device]', row)?.checked) {
-        setGateError(id, 'A6 requires explicit confirmation of a real physical-device run.'); return false;
-      }
-      if (!Number.isFinite(minutes) || minutes < 10) {
-        setGateError(id, 'A6 requires at least 10 measured background minutes.'); return false;
+    } else if (session && ['ACTIVE', 'COMPLETE'].includes(session.sessionState)) {
+      if (!criticalEnvironmentMatches(session.environment, observed) || session.candidate !== observed.appGeneration) {
+        invalidateSession('Runtime generation/environment mismatch detected. This certification session is invalid and cannot continue.');
+      } else {
+        setSessionState(session.sessionState, 'Environment re-verified against the frozen candidate.');
       }
     }
-    if (id === 'A11') {
-      const version = String($('#iosVersion')?.value || '').trim();
-      const major = Number(version.split('.')[0]);
-      if (!Number.isFinite(major) || major < 27) {
-        setGateError(id, 'A11 requires iOS 27 or later on the real device.'); return false;
-      }
-    }
-    if (id === 'A12') {
-      const answer = $('[data-storage-partition]', row)?.value || 'UNKNOWN';
-      if (answer === 'UNKNOWN') {
-        setGateError(id, 'Record the observed Safari-to-Home-Screen storage-partition result.'); return false;
-      }
-    }
-    return true;
+
+    body.dataset.environmentReady = 'true';
+    return observed;
   }
 
-  function handleGateAction(id, action) {
-    const gateState = state.gates[id];
-    if (!gateState) return;
-    const current = gateState.status;
+  function startCertification() {
+    if (!currentEnvironment) return;
+    const candidate = normalizeGeneration(qs('#candidateExpected').value);
+    const deviceModel = sanitizeText(qs('#deviceModel').value.trim());
+    const iosVersion = sanitizeText(qs('#iosVersion').value.trim());
 
-    if (action === 'reset') {
-      gateState.startedAt = null; gateState.completedAt = null;
-      setGateStatus(id, 'NOT_RUN'); setGateError(id, ''); snapshotGate(id); persist(); return;
+    if (candidate === 'UNAVAILABLE' || currentEnvironment.appGeneration === 'UNAVAILABLE' || candidate !== currentEnvironment.appGeneration) {
+      session = makeFreshSession();
+      session.candidate = candidate;
+      session.deviceModel = deviceModel;
+      session.iosVersion = iosVersion;
+      session.environment = currentEnvironment;
+      invalidateSession(`Candidate/runtime mismatch: expected ${candidate}, observed ${currentEnvironment.appGeneration}.`);
+      return;
     }
-    if (state.session.state !== 'ACTIVE') return;
-    if (action === 'start') {
-      if (current !== 'NOT_RUN') return;
-      gateState.startedAt = new Date().toISOString(); gateState.completedAt = null;
-      setGateStatus(id, 'RUNNING'); setGateError(id, ''); snapshotGate(id); persist(); return;
-    }
-    if (TERMINAL.has(current) || current !== 'RUNNING') return;
-
-    if (action === 'fail' || action === 'block') {
-      const reason = String($('[data-reason]', document.querySelector(`[data-gate="${id}"]`))?.value || '').trim();
-      if (!reason) { setGateError(id, 'A reason is required for FAIL or BLOCKED.'); return; }
-      snapshotGate(id);
-      gateState.completedAt = new Date().toISOString();
-      setGateStatus(id, action === 'fail' ? 'FAIL' : 'BLOCKED');
-      setGateError(id, ''); persist(); return;
+    if (!deviceModel || !iosVersion) {
+      if (!session || session.sessionState === 'INVALID') session = makeFreshSession();
+      session.candidate = candidate;
+      setSessionState('IDLE', 'Enter the physical iPhone model and exact iOS version before starting.');
+      return;
     }
 
-    if (action === 'pass') {
-      if (!baseEvidenceComplete(id) || !specialEvidenceComplete(id)) return;
-      snapshotGate(id);
-      gateState.completedAt = new Date().toISOString();
-      setGateStatus(id, 'PASS'); setGateError(id, ''); persist();
-    }
+    session = makeFreshSession();
+    session.candidate = candidate;
+    session.deviceModel = deviceModel;
+    session.iosVersion = iosVersion;
+    session.startedAt = nowIso();
+    session.environment = { ...currentEnvironment, deviceModel, iosVersion };
+    session.environmentFingerprint = environmentFingerprint(session.environment);
+    setSessionState('ACTIVE', `Certification active for FreightLogic v${candidate}. Physical-device evidence is required for every PASS.`);
+    restoreSessionUI();
+    saveSession();
   }
 
-  function bindActions() {
-    document.addEventListener('click', event => {
-      const button = event.target.closest('[data-action]');
-      if (!button) return;
-      const row = button.closest('[data-gate]');
-      if (!row) return;
-      handleGateAction(row.dataset.gate, button.dataset.action);
-    });
-    $('[data-start-session]')?.addEventListener('click', startSession);
-    $('[data-verify-environment]')?.addEventListener('click', verifyEnvironment);
-    $('[data-export]')?.addEventListener('click', exportEvidence);
-  }
-
-  async function startSession() {
-    const candidate = String($('#candidateExpected')?.value || '').trim();
-    const observed = environment?.appGeneration || document.body.dataset.observedGeneration || 'UNKNOWN';
-    state.session.candidate = candidate;
-    state.session.origin = location.origin;
-    state.session.deviceModel = scrubText($('#deviceModel')?.value || '');
-    state.session.iosVersion = scrubText($('#iosVersion')?.value || '');
-    state.session.startedAt ||= new Date().toISOString();
-    state.session.environment = { ...environment, deviceModel: state.session.deviceModel, iosVersion: state.session.iosVersion };
-    if (!candidate || candidate !== observed) {
-      setSessionState('INVALID', `Candidate mismatch: expected ${candidate || 'unset'}, observed ${observed}.`);
-      persist(); return;
-    }
-    setSessionState('ACTIVE', `Candidate ${candidate} frozen. Complete A1–A12 only on the required physical iPhone.`);
-    persist();
-  }
-
-  async function verifyEnvironment() {
-    const current = await captureEnvironment();
-    const frozen = state.session.candidate || String($('#candidateExpected')?.value || '').trim();
-    if (frozen && current.appGeneration !== frozen) {
-      setSessionState('INVALID', `Candidate mismatch: frozen ${frozen}, now observed ${current.appGeneration}. Start a fresh certification session.`);
-      persist(); return;
-    }
-    if (state.session.state === 'ACTIVE') {
-      $('[data-session-banner]').textContent = `Environment still matches frozen candidate ${frozen}.`;
-    }
+  function newSession() {
+    session = makeFreshSession();
+    session.candidate = currentEnvironment?.appGeneration || '';
+    try { localStorage.removeItem(STORE_KEY); } catch (_err) { /* best effort */ }
+    restoreSessionUI();
+    setSessionState('IDLE', 'Fresh local certification session prepared.');
   }
 
   function exportEvidence() {
-    for (const id of Object.keys(GATES)) snapshotGate(id);
-    persist();
-    const payload = {
-      schema: 'freightlogic-field-cert-v1',
-      candidate: state.session.candidate,
-      environment: state.session.environment,
-      sessionState: state.session.state,
-      startedAt: state.session.startedAt,
-      completedAt: state.session.completedAt,
-      gates: Object.fromEntries(Object.entries(state.gates).map(([id, gate]) => [id, {
+    if (!session) return;
+    for (const row of qsa('[data-gate]')) captureGateProgress(row);
+    const safe = safeSessionForStorage(session);
+    const summary = {
+      schemaVersion: safe.schemaVersion,
+      checklistVersion: safe.checklistVersion,
+      candidate: safe.candidate,
+      sessionState: safe.sessionState,
+      startedAt: safe.startedAt,
+      completedAt: safe.completedAt,
+      invalidatedAt: safe.invalidatedAt,
+      environment: safe.environment,
+      gates: Object.fromEntries(Object.entries(safe.gates).map(([id, gate]) => [id, {
+        checklistRowId: gate.checklistRowId,
+        checklistVersion: gate.checklistVersion,
         status: gate.status,
+        expectedBehavior: gate.expectedBehavior,
+        automatedObservations: gate.automatedObservations,
+        manualChecks: gate.manualChecks,
+        operatorObservation: gate.operatorObservation,
+        reference: gate.reference,
+        reason: gate.reason,
+        attestedPhysicalDevice: gate.attestedPhysicalDevice,
         startedAt: gate.startedAt,
         completedAt: gate.completedAt,
-        observation: scrubText(gate.observation),
-        reference: scrubText(gate.reference),
-        reason: scrubText(gate.reason),
-        attestation: Boolean(gate.attestation),
-        checks: gate.checks,
-        ...(id === 'A6' ? { backgroundMinutes: gate.backgroundMinutes, realDevice: Boolean(gate.realDevice) } : {}),
-        ...(id === 'A12' ? { storagePartition: gate.storagePartition } : {})
+        environmentFingerprint: gate.environmentFingerprint,
+        backgroundMinutes: id === 'A6' ? gate.backgroundMinutes : undefined,
+        realDevice: id === 'A6' ? gate.realDevice : undefined,
+        storagePartition: id === 'A12' ? gate.storagePartition : undefined
       }]))
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    const candidate = (state.session.candidate || 'unstarted').replace(/[^A-Za-z0-9._-]+/g, '-');
-    anchor.href = url; anchor.download = `freightlogic-field-cert-${candidate}.json`;
-    document.body.append(anchor); anchor.click(); anchor.remove();
+    const a = document.createElement('a');
+    const candidate = (safe.candidate || 'unknown').replace(/[^0-9A-Za-z._-]+/g, '-');
+    a.href = url;
+    a.download = `freightlogic-field-cert-${candidate}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  async function boot() {
-    renderGateDetails(); bindActions();
-    const queryCandidate = new URLSearchParams(location.search).get('candidate');
-    environment = await captureEnvironment();
-    const observed = environment.appGeneration;
-    const candidateInput = $('#candidateExpected');
-    if (candidateInput) candidateInput.value = queryCandidate || observed;
-
-    const saved = loadStored();
-    if (saved) {
-      state = saved;
-      const sameCandidate = Boolean(saved.session.candidate) && saved.session.candidate === observed;
-      const sameOrigin = !saved.session.origin || saved.session.origin === location.origin;
-      if (sameCandidate && sameOrigin && saved.session.state === 'ACTIVE') {
-        if (candidateInput) candidateInput.value = saved.session.candidate;
-        if ($('#deviceModel')) $('#deviceModel').value = saved.session.deviceModel || '';
-        if ($('#iosVersion')) $('#iosVersion').value = saved.session.iosVersion || '';
-        for (const id of Object.keys(GATES)) restoreGateInputs(id, saved.gates[id]);
-        setSessionState('ACTIVE', `Resumed candidate ${saved.session.candidate}. Environment still matches.`);
-      } else if (saved.session.state === 'INVALID') {
-        if (candidateInput) candidateInput.value = queryCandidate || saved.session.candidate || observed;
-        if ($('#deviceModel')) $('#deviceModel').value = saved.session.deviceModel || '';
-        if ($('#iosVersion')) $('#iosVersion').value = saved.session.iosVersion || '';
-        for (const id of Object.keys(GATES)) restoreGateInputs(id, saved.gates[id]);
-        setSessionState('INVALID', 'Previous certification session is invalid. Reset/start a matching candidate before continuing.');
-      } else {
-        state = freshState();
-        if (candidateInput) candidateInput.value = queryCandidate || observed;
-      }
-    }
-    document.body.dataset.environmentReady = 'true';
+  function bindTopLevelControls() {
+    qs('[data-start-session]')?.addEventListener('click', startCertification);
+    qs('[data-verify-environment]')?.addEventListener('click', () => refreshEnvironment({ initial: false }));
+    qs('[data-new-session]')?.addEventListener('click', newSession);
+    qs('[data-export]')?.addEventListener('click', exportEvidence);
   }
 
-  boot().catch(error => {
-    document.body.dataset.environmentReady = 'true';
-    setSessionState('INVALID', `Environment capture failed closed: ${error?.message || 'unknown error'}`);
+  async function init() {
+    buildGateUI();
+    bindTopLevelControls();
+    session = makeFreshSession();
+    updateControlAvailability();
+    await refreshEnvironment({ initial: true });
+  }
+
+  init().catch(error => {
+    body.dataset.environmentReady = 'true';
+    setSessionState('INVALID', `Field certification environment could not be initialized: ${sanitizeText(error?.message || error)}`);
   });
 })();
