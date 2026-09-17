@@ -1,6 +1,0 @@
-owner: claude
-token: 7e96aa9c-c68b-4a6d-9ee8-d3d7040c8786
-started_utc: 2026-09-17T02:34:46Z
-expected_release_utc: 2026-09-17T06:34:46Z
-paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js, .agents/LANES.md, .agents/STATUS.md, .agents/NOW.md
-task: v24.0.15 single release generation - fold unmerged V-1/V-2/tripRow work, add issue #216 position-authority repair, full suite

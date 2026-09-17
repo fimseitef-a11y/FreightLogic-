@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | v24.0.15 position-authority pass on `claude/cert-deferral-position-conflict-xqve1k` — folded the unmerged v24.0.15 (V-1/V-2/tripRow + LANES exception retirement) into ONE generation and added the Issue #216 repair (one driver-position resolver, real UNKNOWN market state, Calgary-as-Tier-1 pricing defect). Lock `claude-v24015-position-authority` held. **Do not open a second generation.** | 2026-09-17 |
+| claude | — idle — (**v24.0.15 + Issue #216 pushed on `claude/cert-deferral-position-conflict-xqve1k` @ `d13ee23`**, not merged, not deployed. Suite 557/0 across 59 specs; every gate green; lock released. **v24.0.15 is claimed — do not open a second generation.** CI only runs on `pull_request`, so this branch has no CI signal until a PR exists. Remaining: physical iPhone A1–A12 and authentic M6, both DEFERRED by operator decision to the final post-v24.5 candidate — see `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.) | 2026-09-17 |
 | gpt | v24.5 presentation implementation on `agent/gpt/v24-5-presentation`: GPT-owned `styles.css` seam only, plus read-only reference/architecture review. No `app.js`, `modern-shell.js`, release generation, or Claude-owned runtime edits. | 2026-09-17 |
 
 ---
