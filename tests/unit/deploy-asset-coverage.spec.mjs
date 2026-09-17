@@ -209,6 +209,40 @@ test('[DAC-07] the #228 exclusions withhold no runtime asset, and keep the devic
     'the bundled SheetJS vendor file is an install-critical precached asset (X-10)');
 });
 
+test('[DAC-08] the live parity gate proves the withheld paths are actually non-public', () => {
+  // Issue #228 item 1 asked for a regression that REQUESTS every internal path
+  // and fails unless the result is non-public. DAC-06 is the static half — it
+  // reads `.assetsignore` — and a static check could not have caught the
+  // reported defect: `AUDIT_REPORT.md` and `FIELD_TEST_CHECKLIST.md` were
+  // observed at HTTP 200 on the live origin, and nothing in this repository
+  // noticed. `.assetsignore` being right in the repo says nothing about what
+  // the deployed origin serves, which is the 2026-09-13 lesson exactly.
+  const script = read('scripts/verify-cloudflare-parity.mjs');
+  // Commented-out code must not satisfy this, for the same reason as DAC-04.
+  const live = script.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  ok(/async function runWithheldPathChecks/.test(live),
+    'the verifier must implement a live withheld-path sweep (runWithheldPathChecks)');
+  ok(/^\s*await runWithheldPathChecks\(checks\);/m.test(live),
+    'runWithheldPathChecks must actually be CALLED on the live path — an uncalled sweep ' +
+    'reports nothing and every check still passes');
+
+  // The list it requests must cover the documents the issue named as exposed,
+  // plus the Worker source, which is the most damaging thing the "." document
+  // root could serve.
+  for (const p of ['AUDIT_REPORT.md', 'FIELD_TEST_CHECKLIST.md', 'CLAUDE.md', 'cloud-backup-worker.js']) {
+    ok(live.includes(`'${p}'`), `the live withheld-path sweep must request ${p} by name`);
+  }
+
+  // A 200 must be the failure. If the sweep treated only 404 as interesting and
+  // shrugged at everything else, an origin serving these with a 200 would pass.
+  const body = live.slice(live.indexOf('async function runWithheldPathChecks'));
+  ok(/res\.ok/.test(body) && /served\.push/.test(body),
+    'a successful response for a withheld path must be recorded as a failure, not ignored');
+  ok(/404/.test(body) && /403/.test(body),
+    'the sweep must accept 404 or 403 as non-public and nothing weaker');
+});
+
 export async function runSpec() {
   return await run();
 }

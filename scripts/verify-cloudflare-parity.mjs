@@ -301,6 +301,83 @@ async function runAssetCoverageChecks(checks) {
     htmlInsteadOfAsset.length === 0, htmlInsteadOfAsset.join('; '));
 }
 
+/** Issue #228, item 1 — the live half of the asset boundary.
+ *
+ *  `checkLocalAssetExclusions()` above proves no RUNTIME asset is withheld. This
+ *  proves the opposite direction against the real origin: that repository-only
+ *  material is genuinely not public. Those two are not the same check and
+ *  neither implies the other — `.assetsignore` being correct in the repository
+ *  says nothing about what the deployed origin is actually serving, which is the
+ *  whole lesson of the 2026-09-13 defect where a curated subset passed 24/24
+ *  while an undeclared asset 404'd.
+ *
+ *  It exists because a STATIC assertion could not have caught the reported
+ *  defect either: `AUDIT_REPORT.md` and `FIELD_TEST_CHECKLIST.md` were observed
+ *  at HTTP 200 on the app origin by external verification, and nothing in this
+ *  repository would have noticed. `wrangler.jsonc` publishes
+ *  `assets.directory: "."`, so the repository root IS the document root and an
+ *  exclusion that silently stops matching re-exposes these immediately.
+ *
+ *  Non-public means 404 or 403. A 200 is the defect. Anything else (a 500, a
+ *  redirect that resolves to a body) is reported rather than assumed benign,
+ *  because "not obviously served" is not the same fact as "withheld". */
+const MUST_NOT_BE_PUBLIC = [
+  'AGENTS.md',
+  'AUDIT_REPORT.md',
+  'CLAUDE.md',
+  'FIELD_TEST_CHECKLIST.md',
+  'RECON_24_0_2.md',
+  'UI_BRIEF_V24.5.md',
+  'FreightLogic_UI_Reference.html',
+  'cloud-backup-worker.js',
+  'wrangler.jsonc',
+  '.assetsignore',
+  '.agents/LANES.md',
+  '.agents/STATUS.md',
+  '.claude/CLAUDE.md',
+  '.github/workflows/deploy-backup-worker.yml',
+  'docs/BACKUP_CONTRACT.md',
+  'schemas/broker-memory.schema.json',
+  'scripts/verify-cloudflare-parity.mjs',
+  'scripts/lib/deploy-assets.mjs',
+  'tests/run-all.mjs',
+  'tests/lib/harness.mjs',
+];
+
+async function runWithheldPathChecks(checks) {
+  const served = [];
+  const unexpected = [];
+  const CONCURRENCY = 6;
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, MUST_NOT_BE_PUBLIC.length) }, async () => {
+    while (cursor < MUST_NOT_BE_PUBLIC.length) {
+      const rel = MUST_NOT_BE_PUBLIC[cursor++];
+      try {
+        const res = await liveFetch(`${appOrigin}/${rel}`);
+        const body = await res.text().catch(() => '');
+        if (res.status === 404 || res.status === 403) continue;
+        if (res.ok) {
+          // Name the evidence, not just the status: a short prefix of the body
+          // is what distinguishes "the document is really being served" from an
+          // origin that answers 200 with an SPA shell for every unknown path.
+          served.push(`${rel} -> HTTP ${res.status} (${body.length} bytes) "${body.slice(0, 60).replace(/\s+/g, ' ')}"`);
+        } else {
+          unexpected.push(`${rel} -> HTTP ${res.status}`);
+        }
+      } catch (err) {
+        unexpected.push(`${rel} -> ${err && err.message ? err.message : String(err)}`);
+      }
+    }
+  }));
+
+  assert(checks, `No repository-only path is served publicly (${MUST_NOT_BE_PUBLIC.length} checked, Issue #228)`,
+    served.length === 0, served.join('; '));
+  // Separate check on purpose: a transport error or a 500 is not proof of
+  // withholding and must not be counted as one, but it is also not the reported
+  // defect. Keeping them apart stops an outage reading as a security pass.
+  assert(checks, 'Every withheld path answered with a definite status', unexpected.length === 0, unexpected.join('; '));
+}
+
 async function main() {
   const checks = [];
 
@@ -315,6 +392,7 @@ async function main() {
 
   try {
     await runLiveChecks(checks);
+    await runWithheldPathChecks(checks);
   } catch (err) {
     assert(checks, 'live deployment checks reached the deployed origins', false,
       `${err && err.message ? err.message : String(err)} — run this from a network that can reach ${appOrigin} and ${workerOrigin}`);

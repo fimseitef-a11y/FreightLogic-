@@ -3513,18 +3513,100 @@ existed; it was killed, the removal re-applied, and the suite re-run from the to
 final head. "First-attempt exact-head result is the evidence" only means anything if the
 head holds still for the whole attempt.
 
-### Not deployed
+### Deployed and OBSERVED — app only. Worker v20 is still v19 in production.
 
-**Source-only.** v24.0.17 is not deployed and not live-observed. Deploy order is Worker
-v20 first, then the app generation, then **re-dispatch** live parity rather than citing
-the push-triggered run, which races the Cloudflare deploy — six recorded occurrences now.
-After deploying, verify the live `index.html` and `service-worker.js` no longer reference
-Voice Load, that the production precache is `freightlogic-24.0.17` carrying 22 assets,
-and that the withheld documents return 404 on the app origin.
+This section shipped reading *"Source-only. v24.0.17 is not deployed and not
+live-observed."* That was true when written and stopped being true about twenty minutes
+later, when PR #233 merged and Cloudflare deployed the app. It is corrected here rather
+than quietly overwritten, for the reason this file now records against itself seven
+times: a release record that keeps a superseded deployment claim is the drift class.
+
+**The app half is OBSERVED at 24.0.17.** Live all-asset parity, `workflow_dispatch` on
+`main` @ `3461ad9` (run `35274866403`): `index.html` references `app.js` and
+`sw-bridge.js` at 24.0.17, **`index.html` does not reference `voice-load.js`** — the
+inverted #230 assertion, observed live — service worker `24.0.17`, `sw-bridge` imports
+and the worker precaches `modern-shell.js` at 24.0.17, manifest name
+`FreightLogic v24.0.17`, **all 22** declared runtime assets load with none served as
+HTML, and CSP byte-identity holds. The production service-worker gate passed on the same
+SHA (run `35272368177`), and `Tests` passed on the merge commit (run `35272368176`).
+
+**The deploy order was inverted, and exactly one check says so:**
+
+```
+FAIL  Worker reports v20 — {"ok":true,"version":"19"}
+```
+
+The app generation reached production while the Worker did not. Worker v20 has been
+dispatched twice (runs `35211428043`, `35213350763`) and **both refused in ~7 seconds**:
+`Select DEPLOY in the confirmation control to run this. Nothing was deployed.` That is
+the confirmation guard working exactly as the v24.0.6 section describes it working — it
+is not a broken workflow and needs no repair. Worker v20 remains an **operator dispatch**
+with `DEPLOY` selected.
+
+This is tolerable rather than harmless, and the v24.0.16 section says why: the app is
+unchanged in what it calls, so nothing breaks, but a driver whose token index is stale
+gets a 403 only once v20 is serving, and the CORS narrowing has not landed. Deploy the
+Worker, then re-dispatch parity; the single failing check flips and nothing else has to
+move.
+
+**The push-triggered parity run FAILED and is not the evidence** (run `35272368173`,
+43 seconds after the merge) — but note what distinguished it this time: the
+**re-dispatch also failed**, which is what proved this was a real mismatch rather than
+the seventh occurrence of the Cloudflare race. A re-dispatch that fails the same way is
+evidence; a re-dispatch is not a way of making a failure go away.
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's. Issue **#224 remains OPEN** — the `db === null` race
 did not reproduce and nothing here touches it.
+
+---
+
+## Asset boundary, live half — the static check that could not have caught it
+
+Tooling only. No shipped file changed, so no version marker moved: `APP_VERSION` and
+`SW_VERSION` stay `24.0.17`, `DB_VERSION` 16, Worker v20 source / **v19 deployed**.
+`scripts/` and `tests/` are claude-owned, so no lock was required.
+
+**The gap this closes is in v24.0.17's own #228 work, found by reading the issue against
+what shipped.** Issue #228 item 1 asked for *"a deployment regression that requests every
+known internal/repository-only path and fails unless the result is non-public (prefer
+404)"*. What shipped was `DAC-06`, which reads `.assetsignore` — the **static** half. That
+is a necessary check and it is not the one the issue asked for, because a static
+assertion could not have caught the reported defect: `AUDIT_REPORT.md` and
+`FIELD_TEST_CHECKLIST.md` were observed at **HTTP 200 on the live origin** by external
+verification, and nothing in this repository noticed. `.assetsignore` being correct in the
+repository says nothing about what the deployed origin is actually serving — which is the
+2026-09-13 lesson restated, where a curated subset reported 24/24 PASS while a declared
+asset 404'd.
+
+`runWithheldPathChecks()` requests **20** repository-only paths against the real app
+origin and fails on a `200`. Three properties keep it honest:
+
+- **Non-public means 404 or 403, and nothing weaker.** A 200 is the defect.
+- **A 500 or a transport error is reported SEPARATELY** and never counted as withholding.
+  "Not obviously served" is not the same fact as "withheld", and collapsing them would let
+  an outage read as a security pass — the same UNKNOWN-is-not-a-value doctrine v24.0.1
+  applied to the canonical decision and the live-parity runner applied to `UNOBSERVED`.
+- **It names the evidence, not just the status.** A short body prefix distinguishes "the
+  document is really being served" from an origin answering 200 with an SPA shell for
+  every unknown path.
+
+The list deliberately includes `cloud-backup-worker.js` and `wrangler.jsonc` — the Worker
+source with its auth middleware is the most damaging thing a `"."` document root could
+serve, and `DAC-03` already asserts they stay excluded statically. Both directions now
+have both halves.
+
+`DAC-08` asserts the gate actually **calls** the sweep, with comment lines stripped first,
+because a call that exists only inside a `//` comment reports nothing at runtime — the
+`DAC-04` convention, which exists because commented-out code once satisfied a check.
+Negative control verified to fire: commenting out the `await runWithheldPathChecks(checks)`
+call fails `DAC-08` while the other seven stay green.
+
+**What this does not yet claim.** The sweep is in the operator gate, not in
+`tests/run-all.mjs` — a gate that needs the internet is a network gate, not a code gate,
+per the standing rule. So #228 is **not** closable on this commit alone: it closes when a
+live parity run is dispatched and reports the new check PASS against the production
+origin. Until then the repair is proven in configuration and unproven in production.
 
 ---
 
