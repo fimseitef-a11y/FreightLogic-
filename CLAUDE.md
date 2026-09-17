@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.17** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.18** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
 **v24.0.17 source candidate:** Voice Load removed completely by operator decision
 (#230), the import ceiling enforced before materialization (#232), and internal
@@ -174,7 +174,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.17';
+const APP_VERSION = '24.0.18';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -318,8 +318,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.17` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.17`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.18` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.18`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -3370,6 +3370,108 @@ live parity rather than citing the push-triggered run, which races the Cloudflar
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's.
+
+---
+
+## v24.0.18 "Never Press Backup" — Issue #205 §3, and the queue that was deliberately not built
+
+`DB_VERSION` stays **16** and the Worker stays **v20 source / v19 deployed** — no schema
+and no Worker semantics changed, and **no migration was spent**, which is the point of
+the design below.
+
+Issue #205 §3 asks that "the normal user should never need to remember to press Backup".
+Most of that model was already here and is worth naming before the gap: every mutation
+calls `invalidateKPICache()` → `cloudScheduleSync()` (**27 call sites**, covering trips,
+expenses, fuel, mark-paid, imports, settings and maintenance), delta sync sends only what
+changed, restore is revision-aware, and a manual action stays in Settings as a
+diagnostic. Three things were missing, and only three.
+
+**1 — Pending work was not observable.** Nothing could answer "how many changes are
+waiting", so §3's `3 changes waiting` could not be shown and an operator had no way to
+tell automatic sync had stopped except at restore time — the same discovery-at-restore
+failure v24.0.6 fixed for the paused case.
+
+**2 — The intent was not durable.** `cloudScheduleSync()` is a 30-second **in-memory**
+debounce. Close the app inside that window, or fail the push, and the timer dies with the
+page. The *data* was never at risk — local save always happens first — but the *sync*
+silently did not happen, which is exactly what this section is about.
+
+**3 — A failure left no trace.** Both failure paths in `cloudPushBackup()` called
+`cloudScheduleRetry()` and, when `silent`, said nothing and persisted nothing. A
+repeatedly failing sync was indistinguishable from a quiet one.
+
+### Why there is no separate queue — the decision worth reading
+
+The obvious implementation is a durable queue store of pending mutations. This
+deliberately does **not** do that, because FreightLogic **already has** a durable
+definition of pending work: `lastCloudSyncedAt`, the delta watermark that
+`cloudPushBackup()` itself selects records against. Anything whose `updatedAt` is newer
+than the watermark is, by that function's own definition, not yet on the server.
+
+Deriving the count from the watermark **cannot drift from what a push would actually
+send**. A parallel queue can: it would be a second list of what needs syncing, maintained
+by hand at 27 call sites, and two lists that can disagree is the precise shape of the
+X-07 restore gap (stores pushed but never restored) and the 2026-09-13 asset defect
+(`.assetsignore` and `CORE` disagreeing while both gates read green). It also needs no
+new object store, so `DB_VERSION` stays 16.
+
+`SYNC_PENDING_STORES` covers the record stores delta sync filters by `updatedAt`.
+**`settings` is excluded on purpose**: it has no revision field and is pushed wholesale
+every time, so counting it would make "0 changes waiting" unreachable — a status surface
+that can never read clean is one people stop believing.
+
+A record whose `updatedAt` is missing or `0` is **not** counted as pending. It cannot be
+*proven* newer than the watermark, and inventing pending work would make the row cry wolf
+forever on legacy rows — the `knownNum()` doctrine of v24.0.1 applied to sync state.
+
+### The surface, and why PAUSED renders nothing
+
+`renderSyncStatusRow()` runs on every home render beside `renderCloudPausedBanner()` and
+shows exactly the four states §3 names: `Synced`, `N changes waiting`,
+`Offline — saved on this device`, `Sync problem — retrying`. `PROBLEM` outranks `PENDING`
+when a failure marker exists.
+
+Two states render **nothing** here, both deliberately:
+- **OFF** (no token) — nagging a driver who never enabled cloud backup trains them to
+  dismiss the one banner that matters, the same reason `cloudBackupPaused()` returns
+  `false` with no token.
+- **PAUSED** — the v24.0.6 fixed banner owns that state and offers the one-tap fix. Two
+  fixed surfaces both speaking would cover the app, and the row is not a second authority
+  on a state something else already explains.
+
+`resumeSyncIfPending()` runs at boot **after** `navigate()`, so it never delays the
+driver's first screen, and it no-ops when cloud backup is off, paused, or nothing is
+pending — a forced push on every boot is the opposite of the ask. It is idempotent by
+construction: it pushes the same delta the lost timer would have, and re-sending a delta
+is already safe because restore is revision-aware.
+
+### Tests
+
+`SQ-01`…`SQ-07` in `tests/integration/cloud-backup-paused.spec.mjs` — the existing
+registered spec, because `RH-01` requires every spec on disk to be registered in
+`tests/run-all.mjs` and that file is still **gpt**-owned under the PR #227 exception. The
+deadlock recorded at the end of the v24.0.16 section is unchanged and still worked around
+rather than fixed.
+
+They assert the **derived** count rather than a queue's bookkeeping, which is the whole
+design: `SQ-01` advances the watermark alone and requires the same record to stop being
+pending, with no queue to drain and nothing to mark done.
+
+*A TDZ that would have killed the app on load was avoided by checking rather than
+assuming:* `SYNC_PENDING_STORES` references `EVIDENCE_STORE` at module-evaluation time,
+and `const` declarations are not hoisted — `EVIDENCE_STORE` is at `app.js:1564` and the
+new const lands near 16318, so the order is safe. That is the `getBrokerIntel()`
+shadowing class this file already records twice, caught by reading the declarations.
+
+### Not deployed
+
+**Source-only.** Deploy order is unchanged and still matters: **Worker v20 first** (it
+remains undeployed; production serves v19, both dispatches having been refused at the
+`DEPLOY` confirmation guard), then the app generation, then **re-dispatch** live parity
+rather than citing the push-triggered run.
+
+**Still HOLD.** Physical iPhone A1-A12 and authentic M6 certification are unchanged.
+Issue **#224 remains OPEN**.
 
 ---
 
