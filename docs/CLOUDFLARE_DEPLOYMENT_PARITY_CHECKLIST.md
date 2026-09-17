@@ -2,30 +2,38 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**v24.0.13 is SOURCE-ONLY. Nothing below has been observed at 24.0.13, and this
+**v24.0.15 is SOURCE-ONLY. Nothing below has been observed at 24.0.15, and this
 document does not claim it has.** The lines under "Current runtime candidate" describe
-what production is still serving. Two deploys are outstanding and **the order is not
-interchangeable**: the backup/API Worker must go to **v18 first**, because the app's
-Invite and claim flows call `POST /admin/invites` and `POST /claim`, and neither
-endpoint exists on the deployed v17 — shipping the app first leaves the owner an
-Invite button that 404s and a driver whose link cannot be redeemed. After both,
-re-dispatch live parity; a push-triggered run races the Cloudflare deploy and its
-FAILURE is evidence about the origin at that instant, not about the release.
+what production is serving, which is **24.0.14 / DB16 / Worker v19** — a state that is
+OBSERVED, not assumed. One deploy is outstanding and it is the app only: v24.0.15 changes
+no Worker semantics and no schema, so the Worker/app ordering constraint that governed
+the v18/24.0.13 pair does not apply here. After deploying, **re-dispatch** live parity; a
+push-triggered run races the Cloudflare deploy and its FAILURE is evidence about the
+origin at that instant, not about the release.
+
+*This block previously described 24.0.13 as the source candidate and 24.0.12 / Worker v17
+as production — two app generations and two Worker generations stale, with an outstanding
+Worker deploy that had long since happened. It is corrected rather than overwritten,
+because a parity document that keeps a superseded deployment claim is exactly the drift
+it exists to catch.*
 
 Current runtime candidate (what production serves TODAY):
 
-- app / PWA / service worker: **24.0.12**, **deployed and observed live** 2026-09-15 (repository source at that generation and the production origin agree);
-- repository source generation: **24.0.13** — AHEAD of production, not yet deployed;
-- IndexedDB schema: **15** (unchanged by 24.0.13);
-- backup/API Worker source: **18**, **NOT deployed**; production serves **17**;
-- exact runtime Git candidate: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** (merged PR #202);
-- current repository `main`: **`4f2daf22819feb8d7aeba40324e53ce971f22418`** at the time this line was written; the 24.0.13 work sits on `claude/zero-token-driver-onboarding-dkcf4f` and is not merged;
+- app / PWA / service worker: **24.0.14**, **deployed and observed live** 2026-09-16 by
+  all-asset live parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`,
+  VERDICT PASS against an `EXPECTED` block of `24.0.14` / `FreightLogic v24.0.14` /
+  Worker `19`;
+- repository source generation: **24.0.15** — AHEAD of production, not yet deployed;
+- IndexedDB schema: **16** (unchanged by 24.0.15);
+- backup/API Worker: **19**, deployed and serving; **unchanged by 24.0.15**;
+- exact runtime Git candidate: **`8f90725`**;
+- current repository `main`: **`5b28315`** at the time this line was written; the 24.0.15
+  work sits on `claude/repo-review-cleanup-yz0c24` and is not merged;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- GitHub-attached Cloudflare build check for the exact runtime Git SHA: **SUCCESS**, check `103831029587`, build `d66b1b47-9ca6-4736-994a-ff02fc6f5490`, version `7582ec81-bbc6-40b4-b85b-7b5e34c3ad70`;
-- version-specific preview for that check: **`https://7582ec81-freightlogic-v2.fimseitef.workers.dev`**;
-- current merged source/tooling suite: **483 passed / 0 failed across 52 spec files** in main run `34938834977`;
-- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`;
+- certification authority: `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`,
+  which certifies 24.0.14 and stays authoritative until 24.0.15 actually deploys — a
+  superseding document is due the day a shipped file deploys, not the day it merges;
 - status: **HOLD**.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.

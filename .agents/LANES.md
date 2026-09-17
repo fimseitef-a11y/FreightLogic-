@@ -10,32 +10,21 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
-**Post-PR-210 full-repair continuation (2026-09-15, operator-directed).** `main` advanced through PR #210 while GPT's reviewed repair PR #209 was in flight. PR #210's zero-token onboarding is authoritative and supersedes the older admin-handler repair; GPT must not restore that old path. The still-confirmed bounded repair is rebased onto current `main` as v24.0.14 / Worker v19: stable internal trip identity (DB16), UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-target filename hardening, proactive cleanup of reachable legacy v7 plaintext-token residue, the already-approved GPT-owned CSS contribution, and only the regression/release/evidence files required to prove and ship those changes. These exact exceptions expire when the reviewed successor PR lands. Physical iPhone A1–A12 and authentic M6 remain open evidence gates.
+**Post-PR-210 full-repair continuation — RETIRED 2026-09-16.** That paragraph granted GPT a bounded set of exact-file exceptions for the v24.0.14 / Worker v19 repair, and it set its own bound: *"These exact exceptions expire when the reviewed successor PR lands."* PR #211 landed as `ef2de47`, and production has served 24.0.14 / DB16 / Worker v19 since, observed by live all-asset parity run `35087770010`. The bound is met, so the exceptions are retired and their parent rows own those paths again — deleted rather than flipped back, because a redundant narrower row is just another thing to go stale, exactly as the OMEGA continuation was closed above. Six of them had no parent row (`cloud-backup-worker.js`, `midwest-stack-config.json`, `midwest-stack-authority.js`, `voice-load.js`, `CLAUDE.md`, `FIELD_TEST_CHECKLIST.md`) and keep a row naming `claude`, because a path with no row fails closed. PR #210 zero-token onboarding stays authoritative and the superseded raw-token/admin-handler flow must not be reinstated. Physical iPhone A1–A12 and authentic M6 remain open evidence gates.
+
+This retirement was requested twice through `/.agents/inbox/` before it was taken — `claude-to-gpt-cert-chain-stale-2026-09-16.md` and `claude-to-gpt-suite-flakes-2026-09-16.md`, both naming retirement as the clean alternative — and it is reversible by restoring the rows. It does **not** touch the UI-redesign takeover: `styles.css` and the three redesign authority documents are a separate, still-current operator directive.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `cloud-backup-worker.js` | gpt | Temporary Worker v19 legacy plaintext-token cleanup exception; preserve PR #210 zero-token onboarding. |
-| `tests/integration/full-repair-regressions.spec.mjs` | gpt | Temporary regressions for the bounded post-PR-210 repair. |
-| `tests/integration/omega-economics.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |
-| `tests/integration/tax-export-csv-corruption.spec.mjs` | gpt | Temporary DB16 fixture adapter; assertions unchanged. |
-| `tests/integration/toctou-concurrent-edit.spec.mjs` | gpt | Temporary DB16 fixture adapter; concurrency assertions unchanged. |
-| `tests/integration/field-resilience.spec.mjs` | gpt | Temporary DB16 fixture adapter; resilience assertions unchanged. |
-| `tests/integration/backup-restore-parity.spec.mjs` | gpt | Temporary DB16 fixture adapter; restore-parity assertions unchanged. |
-| `tests/unit/worker-invite-claim.spec.mjs` | gpt | Temporary Worker v19 health-generation assertion update; onboarding assertions unchanged. |
-| `tests/unit/worker-token-rotation.spec.mjs` | gpt | Temporary legacy-token cleanup regression exception. |
-| `tests/unit/cache-generation.spec.mjs` | gpt | Temporary DB16/app-generation invariant update. |
-| `tests/run-all.mjs` | gpt | Temporary regression-registration exception; preserve PR #210 test registrations. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary app/Worker parity marker update. |
-| `midwest-stack-config.json` | gpt | Temporary appTarget release-marker update only. |
-| `midwest-stack-authority.js` | gpt | Temporary release-marker update only. |
-| `voice-load.js` | gpt | Temporary release-marker update only. |
-| `CLAUDE.md` | gpt | Temporary current-release/evidence documentation exception; preserve zero-token onboarding documentation. |
+| `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
+| `midwest-stack-config.json` | claude | Midwest Stack tuning config. `appTarget` is a governed release marker — `tests/unit/cache-generation.spec.mjs` CG-14 asserts it against `APP_VERSION`. |
+| `midwest-stack-authority.js` | claude | Advisory overlay and TRUE_RPM decision layer; carries a governed `VERSION` marker. |
+| `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
+| `CLAUDE.md` | claude | Project guide and release record. Every release needs its own section, not only bumped version references — checklist item 10. |
+| `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
-| `FIELD_TEST_CHECKLIST.md` | gpt | Temporary release/evidence documentation exception; A1–A12 stay open. |
-| `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary parity-evidence documentation exception. |
-| `docs/BACKUP_CONTRACT.md` | gpt | Temporary DB16 stable-identity migration/restore contract amendment. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
 | `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
@@ -49,7 +38,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `admin-driver-ui.js` | claude | PR #210 zero-token onboarding makes this module explicitly stand down; do not restore the superseded GPT admin-handler patch. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains serialized. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
-| `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation except exact temporary rows above. |
+| `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation. |
 | `favicon16.png` | claude | Visual asset. |
 | `favicon32.png` | claude | Visual asset. |
 | `icon1024.png` | claude | Visual asset. |
@@ -66,11 +55,11 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/` | claude | Release/certification tooling and deploy-asset inventory except exact temporary row above. |
+| `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | claude | Playwright suite except exact temporary rows above. Assertions may not be weakened or quarantined to make a release green. |
+| `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
@@ -78,8 +67,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 - `styles.css` remains GPT-owned for the approved redesign.
 - `app.js` remains `SHARED` and requires the current covering lock plus a full suite.
-- PR #210 zero-token onboarding is authoritative; the bounded repair may extend it but must not reinstate the superseded raw-token/admin-handler flow.
-- The post-PR-210 full-repair exception is narrow and temporary: only the exact rows above are GPT-owned for this task.
+- PR #210 zero-token onboarding is authoritative; nothing may reinstate the superseded raw-token/admin-handler flow.
+- The post-PR-210 full-repair exceptions are retired. `styles.css` and the three UI-redesign authority documents are now the only GPT-owned paths.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
 - Every other non-excepted path remains Claude-owned.
 

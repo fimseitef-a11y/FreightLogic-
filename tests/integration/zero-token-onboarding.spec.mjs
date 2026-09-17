@@ -109,10 +109,26 @@ async function openInviteLink(app, code) {
  *  real phone no human types into the confirm field within 120ms of a
  *  full-screen wizard appearing. ZTO-15 pins the auto-focus itself, so if it is
  *  ever removed the cause of this wait is a failing assertion rather than five
- *  mysterious timeouts. */
+ *  mysterious timeouts.
+ *
+ *  THIS BODY SHIPPED EMPTY ONCE. The first attempt at this repair was merged in
+ *  PR #213 with the focus wait replaced by `/* NEGATIVE CONTROL: focus wait
+ *  removed *​/` — the control edit was never restored, because the command that
+ *  was supposed to restore it died on a `pkill` pattern that matched its own
+ *  shell. Neither verification caught it: `grep -c claimWizardReady` counts an
+ *  IDENTIFIER and returns the same number with the body empty, and re-running
+ *  the spec unloaded passes either way, because unloaded is exactly the
+ *  condition under which the race does not fire. Two green signals, both blind
+ *  to the only thing that mattered — the same shape as OI-11 and as checklist
+ *  item 15. Verify a repair by removing it and watching a test fail, under the
+ *  conditions that make it fail, and never by counting a symbol. */
 async function claimWizardReady(page) {
   await page.waitForSelector('#claimWizard', { timeout: 15000 });
-  /* NEGATIVE CONTROL: focus wait removed */
+  try {
+    await page.waitForFunction(() => document.activeElement?.id === 'claimPass', null, { timeout: 15000 });
+  } catch (_) {
+    throw new Error('the claim wizard never focused #claimPass — see ZTO-15; these tests wait for that focus so it cannot land mid-fill');
+  }
 }
 
 // ── Owner: admin access is verified before it is stored ──────────────────────
@@ -290,7 +306,7 @@ test('[ZTO-05] the admin token is absent from the export AND from its checksum i
 // ── Driver: the claim flow ───────────────────────────────────────────────────
 
 test('[ZTO-06] the #i= code is stripped from the URL BEFORE the claim request fires', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     const log = [];
     await routeWorker(app.page, {
@@ -325,7 +341,7 @@ test('[ZTO-06] the #i= code is stripped from the URL BEFORE the claim request fi
 });
 
 test('[ZTO-07] a successful claim stores the token and never renders it', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     await routeWorker(app.page, {
       '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_test', name: 'Dana', token: FAKE_TOKEN } }),
@@ -358,7 +374,7 @@ test('[ZTO-07] a successful claim stores the token and never renders it', async 
 });
 
 test('[ZTO-08] Continue is blocked until the passphrase is long enough, confirmed AND acknowledged', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, VALID_CODE);
@@ -392,7 +408,7 @@ test('[ZTO-08] Continue is blocked until the passphrase is long enough, confirme
 
 test('[ZTO-09] an expired invite (410) and a rate-limited one (429) each say so, and store nothing', async () => {
   for (const [status, needle] of [[410, /expired or was already used/i], [429, /too many attempts/i]]) {
-    const app = await launchApp();
+    const app = await openApp();
     try {
       await routeWorker(app.page, { '/claim': async () => ({ status, body: { ok: false, error: 'x' } }) });
       await openInviteLink(app, VALID_CODE);
@@ -419,7 +435,7 @@ test('[ZTO-09] an expired invite (410) and a rate-limited one (429) each say so,
 });
 
 test('[ZTO-10] a malformed #i= fragment is stripped and opens no wizard', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, 'nope');
@@ -435,7 +451,7 @@ test('[ZTO-10] a malformed #i= fragment is stripped and opens no wizard', async 
 });
 
 test('[ZTO-13] the claim wizard is a REAL credential form, so the keychain can save it', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, VALID_CODE);
@@ -476,7 +492,7 @@ test('[ZTO-13] the claim wizard is a REAL credential form, so the keychain can s
 });
 
 test('[ZTO-14] claiming never writes the passphrase to disk', async () => {
-  const app = await launchApp();
+  const app = await openApp();
   try {
     await routeWorker(app.page, {
       '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'Dana', token: FAKE_TOKEN } }),
@@ -579,8 +595,8 @@ test('[ZTO-12] inviting a driver builds a #i= link and never requests /admin/use
   } finally { await app.close(); }
 });
 
-test('[ZTO-15] the wizard puts the cursor in the passphrase field, and keeps it there', async () => {
-  const app = await launchApp();
+test('[ZTO-15] the wizard puts the cursor in the passphrase field', async () => {
+  const app = await openApp();
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
     await openInviteLink(app, VALID_CODE);
@@ -588,19 +604,81 @@ test('[ZTO-15] the wizard puts the cursor in the passphrase field, and keeps it 
 
     // A driver opening an invite link has exactly one thing to do, and the
     // wizard is full-screen with nothing else on it. Landing the cursor in the
-    // passphrase field is the behaviour, not an implementation detail.
+    // passphrase field is the behaviour, not an implementation detail — and it
+    // is the invariant `claimWizardReady()` waits on, so if this fails, that
+    // helper is the thing to revisit rather than the six tests calling it.
     await app.page.waitForFunction(() => document.activeElement?.id === 'claimPass', null, { timeout: 15000 });
 
-    // And it must SETTLE there. The focus is scheduled on a timer, so the real
-    // property is that nothing moves it afterwards: a late focus arriving while
-    // the driver is already typing in the confirm field would silently redirect
-    // their keystrokes into the passphrase field. This is also the invariant
-    // claimWizardReady() relies on — if this assertion fails, that helper's
-    // wait is the thing to revisit, not the five tests that call it.
+    // With the first-run wizard suppressed, focus must then STAY where it is put.
+    // V-2 below is the same check without that suppression, and it does not pass.
     await app.page.focus('#claimPass2');
-    await app.page.waitForTimeout(400);
+    await app.page.waitForTimeout(1500);
     const settled = await app.page.evaluate(() => document.activeElement?.id);
-    eq(settled, 'claimPass2', 'once focus has been moved off the passphrase field, nothing may take it back');
+    eq(settled, 'claimPass2', 'with no first-run modal, nothing may take focus back');
+  } finally { await app.close(); }
+});
+
+/* ── V-2 (FIXED in v24.0.15): the first-run setup modal took focus from an open
+ *    claim wizard ───────────────────────────────────────────────────────────
+ *
+ * Deliberately `launchApp()` and NOT `openApp()` — the only invite test here
+ * that does not suppress the F26 first-run wizard, because that wizard IS the
+ * subject. Suppressing it would make this test pass for the wrong reason, which
+ * is the entire point of keeping it separate from ZTO-15.
+ *
+ * `openClaimWizard()`'s own comment says the claim wizard "covers the app at
+ * z-index 12000 while the rest of boot continues behind it". The rest of boot
+ * included `checkFirstRunSetup()`, armed on an 800ms `setTimeout`, and
+ * `openModal()` ends by focusing the first focusable element in whatever it
+ * opens. So ~800ms after a driver tapped an invite link, while they were typing
+ * a passphrase into a full-screen wizard, the keyboard focus jumped to a modal
+ * behind it — into a masked field, with a confirmation that would then refuse to
+ * match, for a passphrase that by design cannot be reset.
+ *
+ * OBSERVED, not inferred. This assertion was first written as part of ZTO-15
+ * expecting focus to settle, and it failed with `document.activeElement.id`
+ * equal to `modalClose` — the F26 modal's own close button.
+ *
+ * THE REPAIR (v24.0.15): `checkFirstRunSetup()` returns early while a
+ * `#claimWizard` is open. Deferred, not cancelled, and deliberately not marked
+ * complete — if the driver abandons the claim, the next boot offers setup
+ * normally. */
+test('[FINDING V-2 / FIXED] the first-run setup modal leaves the claim wizard alone', async () => {
+  const app = await launchApp();
+  try {
+    await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
+    await openInviteLink(app, VALID_CODE);
+    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    await app.page.waitForFunction(() => document.activeElement?.id === 'claimPass', null, { timeout: 15000 });
+
+    // Stand where the driver stands: in the confirm field, mid-entry.
+    await app.page.focus('#claimPass2');
+    // 1500ms outlasts the 800ms checkFirstRunSetup() timer. A shorter window
+    // would pass while leaving the hazard unobserved, which is the whole point.
+    await app.page.waitForTimeout(1500);
+
+    const state = await app.page.evaluate(() => ({
+      focused: document.activeElement?.id || document.activeElement?.tagName,
+      wizardStillOpen: !!document.querySelector('#claimWizard'),
+      // `#modal` is STATIC markup in index.html — it is always in the DOM and
+      // openModal() merely sets display:block. Asserting on its existence would
+      // fail forever and read as a product defect; visibility is the real signal.
+      modalOpen: (() => {
+        const md = document.querySelector('#modal');
+        return !!md && getComputedStyle(md).display !== 'none';
+      })(),
+    }));
+    console.log(`    [evidence] focus after 1500ms in the confirm field: ${state.focused}` +
+                ` (claim wizard open: ${state.wizardStillOpen}, first-run modal open: ${state.modalOpen})`);
+
+    ok(state.wizardStillOpen, 'the claim wizard must still be open — otherwise this is a different defect');
+    eq(state.focused, 'claimPass2',
+      'the driver must keep the field they were typing in — this read "modalClose" before the fix');
+    // The stronger half: the first-run modal must not have OPENED at all behind
+    // the wizard. Asserting only on focus would still pass if the modal appeared
+    // and merely failed to steal focus, which is not the contract.
+    eq(state.modalOpen, false,
+      'checkFirstRunSetup() must stand down entirely while a claim wizard is open, not just lose the focus race');
   } finally { await app.close(); }
 });
 
