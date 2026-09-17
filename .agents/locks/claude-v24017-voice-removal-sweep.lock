@@ -1,6 +1,0 @@
-owner: claude
-token: 44fc9429-0515-4c2b-8a4c-b7205e1ebfb5
-started_utc: 2026-09-17T19:20:00Z
-expected_release_utc: 2026-09-18T03:20:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, .assetsignore, .agents/inbox/, .agents/STATUS.md
-task: v24.0.17 one-sweep release - issue #230 (remove Voice Load completely, operator-approved), #232 (enforce MAX_IMPORT_BYTES before TXT/XLSX materialization), #228 (withhold internal audit/certification documents from the public asset origin), plus the release generation bump those require.
