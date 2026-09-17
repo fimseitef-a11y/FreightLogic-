@@ -1,0 +1,6 @@
+owner: claude
+token: c7a91e34-2b6d-4f58-9e07-1d5b84f0a3c9
+started_utc: 2026-09-17T00:15:00Z
+expected_release_utc: 2026-09-17T04:15:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, midwest-stack-authority.js, midwest-stack-config.json, voice-load.js, .agents/STATUS.md, .agents/NOW.md, .agents/inbox/
+task: v24.0.15 — close AUDIT_REPORT V-1 (ensureVehicleProfiles lost update) and V-2 (first-run modal steals focus from the claim wizard), plus the tripRow unknown-deadhead residue CLAUDE.md records as reported-not-fixed. All three need app.js, so they need one coordinated release generation. CLAUDE.md is explicit that two lanes must not each claim a generation: if GPT is also mid-flight on a v24.0.15, whoever reads this second must coordinate through the inbox rather than open a second one. gpt app-js.lock 1db616da is STALE since 2026-09-16T12:37Z and grants nothing; reaping it was denied by this session's permission layer, so it is left untouched and named here.
