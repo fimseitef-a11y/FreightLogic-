@@ -1,4 +1,5 @@
-// FINDING V-1 — `ensureVehicleProfiles()` is not safe to call concurrently.
+// FINDING V-1 (FIXED in v24.0.15) — `ensureVehicleProfiles()` was not safe to
+// call concurrently.
 //
 // HOW IT SURFACED. `main` @ 8f90725 failed CI on Tests run 35084126731 attempt 1
 // with four assertions in `tax-export-csv-corruption.spec.mjs`, the first being
@@ -36,21 +37,22 @@
 // overlapping means a vehicle profile — and the tax-method election attached to
 // it — can be dropped.
 //
-// TAGGED `/ NEW`, NOT `/ FIXED`. Per this suite's convention a green `NEW` test
-// means the evidence was captured, not that the defect is repaired. The repair
-// is in `app.js`, which is SHARED and needs a release generation because it
-// changes deployed bytes; it is reported here rather than taken unilaterally.
-// When it lands, V-1-01 flips to asserting one profile and is retagged `/ FIXED`.
+// THE REPAIR (v24.0.15). One module-scope in-flight promise, so concurrent
+// callers await the SAME seeding operation instead of each performing their own.
+// It is cleared on settle — later calls re-read normally — and it deliberately
+// serializes the seed rather than the function's whole lifetime.
 //
-// WHAT THIS SPEC DOES NOT CLAIM. The exact CI interleave — the one where the
-// LOSING write is the operator's, so the election reads back UNSET — was not
-// reproduced here. 30/30 iterations mint two profiles and discard one, but in
-// every one of them the surviving write happened to be the operator's, and a
-// reader head start of 0-4 event-loop ticks did not flip it either. The lost
-// update is proven; the direction that produced the CI failure is inferred from
-// the mechanism and is recorded as inferred. This is the same discipline
-// `FIELD_TEST_CHECKLIST.md` B7 applies to run 35049015938: a mechanism that fits
-// is not the same as a cause that was observed.
+// Proven by the same reproduction that found it: two concurrent callers minted
+// two distinct profiles in 30/30 iterations before, and 0/30 after.
+//
+// WHAT WAS NEVER CLAIMED, and still is not. The exact CI interleave — the one
+// where the LOSING write is the operator's, so the election reads back UNSET —
+// was never reproduced. In all 30 pre-fix iterations the surviving write
+// happened to be the operator's, and a reader head start of 0-4 event-loop ticks
+// did not flip it. The lost update was proven and is now fixed; that this is
+// what Tests run 35084126731 hit remains INFERRED from the mechanism and the
+// exact failure signature. Same discipline `FIELD_TEST_CHECKLIST.md` B7 applies
+// to run 35049015938: a mechanism that fits is not a cause that was observed.
 import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/vehicle-profile-race.spec.mjs');
@@ -63,7 +65,7 @@ const { test, run } = createSuite('integration/vehicle-profile-race.spec.mjs');
 // than injected as a string because the app's own CSP forbids `unsafe-eval`,
 // which is exactly the protection it should be providing.
 
-test('[FINDING V-1 / NEW] two concurrent ensureVehicleProfiles() mint two profiles and silently discard one', async () => {
+test('[FINDING V-1 / FIXED] two concurrent ensureVehicleProfiles() resolve one profile, not two', async () => {
   const app = await launchApp();
   try {
     const runs = await app.page.evaluate(async () => {
@@ -93,23 +95,20 @@ test('[FINDING V-1 / NEW] two concurrent ensureVehicleProfiles() mint two profil
     const minted2 = runs.filter(r => r.distinctIds).length;
     const kept1 = runs.filter(r => r.stored === 1).length;
 
-    console.log(`    [evidence] two distinct profiles minted in ${minted2}/${runs.length} iterations; ` +
+    console.log(`    [evidence] two distinct profiles minted in ${minted2}/${runs.length} iterations ` +
+                `(was ${runs.length}/${runs.length} before the fix); ` +
                 `stored array held exactly one profile in ${kept1}/${runs.length}`);
 
-    // The invariant that SHOULD hold and does not: one lazy seed, one profile.
-    // Asserting the defect keeps this spec green until the repair lands, which
-    // is what `/ NEW` means here.
-    ok(minted2 > 0,
-      'V-1 is reproduced when two concurrent callers mint DIFFERENT profile ids — ' +
-      'if this no longer happens, the app.js repair has landed and this test must be ' +
-      'flipped to assert one profile and retagged / FIXED');
+    // The invariant: one lazy seed, one profile, however many callers race for it.
+    eq(minted2, 0,
+      'concurrent callers must resolve the SAME profile — a second minted id is the ' +
+      'lost update, because only one of the two arrays survives the write');
     eq(kept1, runs.length,
-      'every iteration must still end with a single stored profile — that is the ' +
-      'discard: two were created, one was overwritten');
+      'and exactly one profile is stored, so nothing was created that then vanished');
   } finally { await app.close(); }
 });
 
-test('[FINDING V-1 / NEW] a single, uncontended seed is correct — the defect is concurrency, not the seed', async () => {
+test('[FINDING V-1 / FIXED] a single, uncontended seed is still correct — the fix did not change the seed', async () => {
   const app = await launchApp();
   try {
     const r = await app.page.evaluate(async () => {

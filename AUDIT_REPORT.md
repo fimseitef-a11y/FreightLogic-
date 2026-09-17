@@ -4,17 +4,18 @@
 > (v23.8.3/v23.8.4) and X-series (v23.9) against repository **source**, and — appended at the
 > end — the **P-series (P-01 … P-07) against the DEPLOYED backup/API Worker**.
 >
-> **Two findings are OPEN as of 2026-09-17, both at the very end of this report, and both
-> repairs land in `app.js` — SHARED, needing a release generation — so both are reported
-> rather than fixed.** **V-1**: `ensureVehicleProfiles()` is a read-modify-write with no
-> serialization, so two concurrent callers each mint a vehicle profile and one is silently
-> discarded along with the tax-method election attached to it. **V-2**: `checkFirstRunSetup()`
-> fires 800 ms into boot and `openModal()` focuses what it opens, so the first-run modal takes
-> the keyboard focus away from an open claim wizard — from a driver mid-way through typing a
-> passphrase that cannot be reset.
+> **V-1 and V-2 are CLOSED in v24.0.15 (source).** Both are at the very end of this report,
+> both were found by `main` failing its own release gate and being cleared by a re-run, and
+> neither came from a report. **V-1**: `ensureVehicleProfiles()` was a read-modify-write with
+> no serialization, so two concurrent callers each minted a vehicle profile and one was
+> silently discarded along with the tax-method election that gates the F30 Schedule C export.
+> **V-2**: `checkFirstRunSetup()` fires 800 ms into boot and `openModal()` focuses what it
+> opens, so the first-run modal took the keyboard focus away from a driver mid-way through
+> typing a claim passphrase that by design cannot be reset.
 >
-> Neither came from a report. Both came from `main` failing its own release gate and being
-> cleared by a re-run.
+> **Source-only.** v24.0.15 is not deployed and not live-observed; production serves 24.0.14.
+> A CLOSED-in-source finding is not a CLOSED-in-production finding, which is the distinction
+> the P-series exists to make.
 >
 > The P-series were, until then, the only OPEN findings this report had ever carried, including
 > two live credential exposures and a live violation of the v24.0 decision-authority rule. They were open
@@ -1257,7 +1258,7 @@ corrupt one.
 
 ---
 
-## V-1 — `ensureVehicleProfiles()` is not safe to call concurrently — OPEN
+## V-1 — `ensureVehicleProfiles()` was not safe to call concurrently — CLOSED in v24.0.15 (source)
 
 **Severity: Medium.** A dropped vehicle profile takes the tax-method election
 attached to it, and that election gates the F30 Schedule C export.
@@ -1324,18 +1325,22 @@ signature, not observed.** Recorded as inferred, for the same reason run
 `35049015938` is recorded as undiagnosed rather than explained away: a mechanism that
 fits is not a cause that was seen.
 
-**Fix, not taken here.** Serialize the lazy seed — a module-scope in-flight promise
-so concurrent callers await the same seeding operation rather than each performing
-their own, which is the smallest change that makes the concurrent case equivalent to
-the uncontended case the control test already proves correct. It belongs in `app.js`,
-which is SHARED and changes deployed bytes, so it requires a release generation
-(`verify-release-generation.mjs` RG-03) and a deploy. Reported rather than taken
-unilaterally. When it lands, the first test flips to asserting a single profile and
-is retagged `/ FIXED`.
+**Fix (v24.0.15).** One module-scope in-flight promise, so concurrent callers await the
+SAME seeding operation instead of each performing their own — the smallest change that
+makes the concurrent case equivalent to the uncontended case the control test already
+proved correct. It is cleared on settle, so later calls re-read normally, and it
+serializes the seed rather than the function's whole lifetime.
+
+**Proof.** The same reproduction that found it: two concurrent callers minted two
+distinct profiles in **30/30** iterations before and **0/30** after. The spec is retagged
+`[FINDING V-1 / FIXED]` and now asserts the invariant — one lazy seed, one profile,
+however many callers race for it. Negative control verified: reverting the in-flight
+promise fails it while the uncontended control still passes, which is what keeps a
+failure readable as "they race" rather than "vehicle profiles are broken".
 
 ---
 
-## V-2 — the first-run setup modal takes focus away from an open claim wizard — OPEN
+## V-2 — the first-run setup modal took focus away from an open claim wizard — CLOSED in v24.0.15 (source)
 
 **Severity: Medium.** It lands on a passphrase that by design cannot be reset, at the
 one moment a new driver is typing it.
@@ -1373,10 +1378,17 @@ specifically to outlast the 800 ms timer; a shorter window passes while leaving 
 hazard unobserved. ZTO-15 is the paired control: with the first-run wizard suppressed,
 focus stays exactly where it is put.
 
-**Fix, not taken here.** `checkFirstRunSetup()` should stand down while a claim wizard
-is open — one condition. It is in `app.js`, which is SHARED and changes deployed bytes,
-so it needs a release generation and a deploy. When it lands, V-2 flips to asserting
-`claimPass2` and merges back into ZTO-15.
+**Fix (v24.0.15).** `checkFirstRunSetup()` returns early while a `#claimWizard` is open.
+Deferred, not cancelled, and deliberately **not** marked complete — if the driver
+abandons the claim, the next boot offers setup normally.
+
+**Proof.** The evidence line inverts: `focus after 1500ms in the confirm field:
+claimPass2 (claim wizard open: true, first-run modal open: false)`. The assertion checks
+both halves, because focus alone would still pass if the modal appeared and merely lost
+the race — and the modal must not appear at all. It reads `#modal`'s COMPUTED VISIBILITY
+rather than its existence: `#modal` is static markup in `index.html` and `openModal()`
+only sets `display:block`, so an existence check would fail forever and read as a product
+defect. Negative control verified: reverting the guard restores `modalClose`.
 
 **How it was found, which is the part worth keeping.** Not by a report and not by
 looking for it. ZTO-09 had been failing CI intermittently; the first repair for that —

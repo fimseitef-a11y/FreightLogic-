@@ -158,5 +158,52 @@ test('[OI-14] Home reading an unset MPG first cannot blank the evaluator\'s grad
   ok(!state.text.includes('Economics unavailable'),`a complete load must still grade when MPG was never set; got: ${state.text.slice(0,160)}`);
   ok(state.grade && state.grade!=='✕',`expected a real letter grade, got: ${JSON.stringify(state.grade)}`);
 });
+test('[OI-15] the rendered trip row never shows a loaded-only rate as True RPM',async()=>{
+  // The fourth and last site of the v24.0.11 unknown-deadhead sweep, and the one
+  // still rendering the coercion AS FACT. exportTripsCSV (OI-06), computeLoadScore
+  // (OI-04) and renderLiveScore were closed then; tripRow() still computed
+  // Number(t.loadedMiles||0)+Number(t.emptyMiles||0) and printed the result as a
+  // $/mi figure with a letter-grade chip beside it — on the Home recent-trips list
+  // and the Trips page, which are the two surfaces a driver actually looks at.
+  // CLAUDE.md recorded it as reported-not-fixed and asked for exactly this test.
+  //
+  // Driven through the REAL renderer rather than a helper, because what was wrong
+  // was what the driver SAW. tripRow() is not on __FL_TESTS, so this renders both
+  // modes and reads the DOM.
+  await seed([{orderNo:'OMEGA-UNK',emptyMiles:null},{orderNo:'OMEGA-ZERO',emptyMiles:0}]);
+  const rows = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const all = await T.dumpStore('trips');
+    const pick = o => all.find(t => t.orderNo === o);
+    const read = (node) => ({
+      grade: node.querySelector('.fl-grade-chip')?.textContent?.trim() || '',
+      text: node.textContent || '',
+    });
+    // Both modes: compact is Home, full is the Trips page.
+    const out = {};
+    for (const [key, orderNo] of [['unknown','OMEGA-UNK'],['zero','OMEGA-ZERO']]){
+      const t = pick(orderNo);
+      out[key] = { compact: read(T.tripRow(t,{compact:true})), full: read(T.tripRow(t)) };
+    }
+    return out;
+  });
+
+  // UNKNOWN deadhead: no rate, no grade. `$6.00/mi` is what it used to print —
+  // the loaded-only rate, indistinguishable from a real one.
+  for (const mode of ['compact','full']){
+    ok(!/\$\d+\.\d\d\s*\/\s*mi/.test(rows.unknown[mode].text),
+      `${mode}: an unstated deadhead must not render a $/mi rate, got: ${rows.unknown[mode].text.slice(0,140)}`);
+    ok(['—','?',''].includes(rows.unknown[mode].grade),
+      `${mode}: an unstated deadhead must not earn a letter grade, got "${rows.unknown[mode].grade}"`);
+  }
+
+  // EXPLICIT ZERO is a verified fact and must still grade normally — the control
+  // that keeps the fix from being "hide everything".
+  ok(/\$6\.00/.test(rows.zero.full.text),
+    `an explicit zero deadhead must still show its real $6.00/mi, got: ${rows.zero.full.text.slice(0,140)}`);
+  ok(/^[A-F]$/.test(rows.zero.compact.grade),
+    `an explicit zero deadhead must still earn a real letter grade, got "${rows.zero.compact.grade}"`);
+});
+
 export async function runSpec(){app=await launchApp();await skipFirstRunWizard(app.page);await app.page.reload({waitUntil:'load'});await app.page.waitForFunction(()=>!!window.__FL_TESTS);try{return await run();}finally{await app.close();}}
 if(process.argv[1]?.endsWith('omega-economics.spec.mjs')){const r=await runSpec();process.exit(r.fail?1:0);}

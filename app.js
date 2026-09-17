@@ -1,7 +1,24 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.14 USA ENGINE
+/** FreightLogic v24.0.15 USA ENGINE
+ *  v24.0.15 "Two Findings And A Residue": closes the two OPEN findings in
+ *          AUDIT_REPORT.md and the one residue CLAUDE.md carried as
+ *          reported-not-fixed. V-1 — ensureVehicleProfiles() was a
+ *          read-modify-write with no serialization, so two concurrent callers
+ *          each minted a vehicle profile and one was silently discarded with the
+ *          tax-method election that gates the F30 Schedule C export; one
+ *          in-flight promise now makes them await the same seed (30/30 → 0/30).
+ *          V-2 — checkFirstRunSetup() fires 800ms into boot and openModal()
+ *          focuses what it opens, so the first-run modal took the keyboard from
+ *          a driver mid-way through typing a claim passphrase that cannot be
+ *          reset; it now stands down while a claim wizard is open, deferred
+ *          rather than marked complete. tripRow() was the fourth and last site
+ *          of the v24.0.11 unknown-deadhead sweep and the only one rendering the
+ *          coercion as fact — a loaded-only rate printed as $x.xx/mi with a
+ *          letter grade, on Home and the Trips page; it reads tripAllMiles() now,
+ *          so unstated stays "—"/"?" and an explicit zero still grades. No schema
+ *          change: DB 16, Worker v19. A1-A12 and authentic M6 remain open gates.
  *  v24.0.14 "Post-Onboarding Full Repair": stable internal trip IDs (DB16), UNKNOWN payment
  *          semantics, explicit-speed-only Profit/Hour, header-safe shared filenames, and
  *          Worker v19 proactive legacy-token cleanup. PR #210 zero-token invite/claim
@@ -222,7 +239,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.14';
+const APP_VERSION = '24.0.15';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -383,7 +400,32 @@ function _newVehicleProfile(label){
 /** Ensures at least one vehicle profile + an active pointer exist; creates a
  *  default profile (seeded from existing vehicleYear/vehicleMake settings
  *  when present) on first call. Idempotent — safe to call every render. */
+/** V-1: the lazy seed below is a read-modify-write, and two callers can both be
+ *  parked on the IndexedDB round trip that observes `vehicleProfiles` absent
+ *  before either writes. Both then mint a profile with its own fresh id and each
+ *  overwrites the whole array, so one profile is silently discarded — and with
+ *  it the `vehicleTaxMethod` election that gates the F30 Schedule C export.
+ *  `setSetting` populates SETTINGS_CACHE synchronously before awaiting its
+ *  transaction, which narrows the window but cannot close it: the window
+ *  precedes any cache write.
+ *
+ *  Reachable without a test harness. `refreshVehicleTaxMethodRow()` reads
+ *  through this on any render that populates Settings, and
+ *  `openVehicleTaxMethodModal()` and `openTaxSeasonExport()` read through it
+ *  too; on a fresh install, any two overlapping is enough.
+ *
+ *  One in-flight promise makes concurrent callers await the SAME seeding
+ *  operation instead of each performing their own. It is cleared on settle, so
+ *  later calls re-read normally, and it is deliberately not a lock: this
+ *  serializes the seed, not the whole function's lifetime. */
+let _vehicleProfilesInFlight = null;
 async function ensureVehicleProfiles(){
+  if (_vehicleProfilesInFlight) return _vehicleProfilesInFlight;
+  _vehicleProfilesInFlight = _ensureVehicleProfilesUncontended();
+  try { return await _vehicleProfilesInFlight; }
+  finally { _vehicleProfilesInFlight = null; }
+}
+async function _ensureVehicleProfilesUncontended(){
   let profiles = await getSetting('vehicleProfiles', null);
   if (!Array.isArray(profiles) || !profiles.length){
     const [yr, make] = await Promise.all([getSetting('vehicleYear', ''), getSetting('vehicleMake', '')]);
@@ -5744,6 +5786,17 @@ function openQuickEvalModal(){
 // ════════════════════════════════════════════════════════════════════════════
 
 async function checkFirstRunSetup(){
+  // V-2: never open on top of the claim wizard. openClaimWizard() covers the app
+  // at z-index 12000 and its own comment says the rest of boot continues behind
+  // it — but openModal() ends by focusing the first focusable element it
+  // contains, so a first-run modal arriving on its 800ms timer takes the
+  // keyboard away from a driver who is part-way through typing a passphrase.
+  // That passphrase is masked, its confirmation field will then refuse to match,
+  // and by design it cannot be reset.
+  //
+  // Deferred, not cancelled, and deliberately not marked complete: if the driver
+  // abandons the claim, the next boot offers setup normally.
+  if (document.getElementById('claimWizard')) return;
   const done = await getSetting('f26SetupComplete', false);
   if (done) return;
   // Don't interrupt if user already has trips (migrated from old install)
@@ -6821,7 +6874,19 @@ function _rpmGrade(rpm){
 function tripRow(t, {compact=false}={}){
   const d = document.createElement('div');
   const pay = fmtMoney(t.pay||0);
-  const miles = (Number(t.loadedMiles||0) + Number(t.emptyMiles||0));
+  // An unknown deadhead is not a verified zero. `Number(t.emptyMiles||0)` made
+  // one, so a trip whose deadhead was never stated rendered a LOADED-ONLY rate
+  // as `$x.xx/mi` with a letter grade beside it — on the Home recent-trips list
+  // and the Trips page, the two places a driver looks most. v24.0.11 closed the
+  // same coercion in exportTripsCSV(), computeLoadScore() and renderLiveScore();
+  // this was the fourth site and the one still rendering it as fact.
+  //
+  // tripAllMiles() returns null unless BOTH loaded and deadhead are known, and
+  // an explicit 0 deadhead stays a real zero. Every consumer below already
+  // guards on `miles > 0` / `rpm > 0`, so an unknown trip falls through to the
+  // existing `—` and `?` treatments rather than a confident wrong number.
+  const allMiles = tripAllMiles(t);
+  const miles = allMiles === null ? 0 : allMiles;
   const rpm = miles>0 ? (Number(t.pay||0)/miles) : 0;
 
   // ── Compact mode: grade chip + route + pay (home screen recent trips) ──
@@ -21668,6 +21733,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, exportTripsCSV, invalidateKPICache,
+    // OI-15 drives the REAL row renderer, because what was wrong with the
+    // unknown-deadhead coercion was what the driver SAW, not what a helper
+    // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
+    tripRow,
     generateWeeklyPnL, getWeekId, formatWeeklyReportText, generateWeeklyReport,
     omegaTierForMiles, OMEGA_TIERS,
     mwClassifyRPM, MW, dzClassifySubTier,

@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.14** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.15** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**v24.0.14 repair candidate:** rebased on PR #210 zero-token onboarding. Adds DB16 stable trip identity, UNKNOWN payment semantics, explicit-speed-only Profit/Hour, share-filename hardening, and Worker v19 proactive legacy-token cleanup. Source-only until normal PR CI, deploy parity, and production gates pass; physical iPhone A1-A12 and authentic M6 remain open.
+**v24.0.15 source candidate:** closes the two OPEN findings in `AUDIT_REPORT.md` (V-1 vehicle-profile lost update, V-2 first-run modal stealing focus from the claim wizard) and the `tripRow` unknown-deadhead residue this file carried as reported-not-fixed. No schema change — DB stays **16** and the Worker stays **v19**. **Source-only: not deployed and not live-observed.** Production serves **24.0.14 / DB16 / Worker v19**, which is what the paragraph below records and what `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` certifies. Physical iPhone A1-A12 and authentic M6 remain open.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
@@ -143,7 +143,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.14';
+const APP_VERSION = '24.0.15';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -287,8 +287,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.13` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.13`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.15` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.15`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -3147,3 +3147,93 @@ includes the one thing an automated environment genuinely cannot answer: whether
 claim performed in Safari is still present after **Add to Home Screen**, or whether
 that install is a separate storage partition. If it is separate, the re-claim path is
 the recovery, and it is what the "One more thing" prompt tells the driver to do.
+
+---
+
+## v24.0.15 "Two Findings And A Residue" — the open items, closed
+
+`DB_VERSION` stays **16** and the Worker stays **v19** — no schema and no Worker
+semantics changed. Three defects, all in `app.js`, all previously recorded as
+reported-not-fixed because the repair needed a release generation and that is a deploy
+commitment rather than a cleanup side effect.
+
+**V-1 — two concurrent vehicle-profile seeds minted two profiles and discarded one.**
+`ensureVehicleProfiles()` is a read-modify-write, and two callers could both be parked
+on the IndexedDB round trip that observes `vehicleProfiles` absent before either wrote.
+Both then minted a profile with its own fresh id and each overwrote the whole array, so
+one was silently discarded — and with it the `vehicleTaxMethod` election that gates the
+F30 Schedule C export. `setSetting` populates `SETTINGS_CACHE` synchronously before
+awaiting its transaction, which narrows the window but cannot close it: the window
+*precedes* any cache write.
+
+Reachable without a harness. `refreshVehicleTaxMethodRow()` reads through it on any
+render that populates Settings, and `openVehicleTaxMethodModal()` and
+`openTaxSeasonExport()` read through it too; on a fresh install any two overlapping is
+enough. Fixed with one module-scope in-flight promise so concurrent callers await the
+same seed. Two distinct profiles in **30/30** iterations before, **0/30** after.
+
+**V-2 — the first-run modal took the keyboard from an open claim wizard.**
+`openClaimWizard()`'s own comment says it covers the app at z-index 12000 "while the rest
+of boot continues behind it". The rest of boot includes `checkFirstRunSetup()` on an
+**800 ms** timer, and `openModal()` ends by focusing the first focusable element it
+contains. So ~800 ms after a driver tapped an invite link, mid-way through typing, focus
+jumped to a modal behind the wizard — into a masked field, with a confirmation that would
+then refuse to match, for a passphrase that by design cannot be reset.
+`checkFirstRunSetup()` now returns early while a `#claimWizard` is open: deferred, not
+cancelled, and deliberately **not** marked complete, so an abandoned claim still gets
+setup on the next boot.
+
+**The `tripRow` residue — the fourth site of the unknown-deadhead sweep, and the only one
+rendering the coercion as fact.** `Number(t.loadedMiles||0) + Number(t.emptyMiles||0)`
+made an unstated deadhead into a verified zero, so a trip whose deadhead was never
+entered printed a **loaded-only** rate as `$x.xx/mi` with a letter-grade chip beside it —
+on the Home recent-trips list and the Trips page, the two surfaces a driver looks at
+most. v24.0.11 closed the same coercion in `exportTripsCSV()` (OI-06),
+`computeLoadScore()` (OI-04) and `renderLiveScore()`; this file has carried the fourth as
+reported-not-fixed since. It reads `tripAllMiles()` now, which returns `null` unless BOTH
+loaded and deadhead are known. Every consumer already guarded on `miles > 0` / `rpm > 0`,
+so an unknown trip falls through to the existing `—` and `?` treatments, and an explicit
+zero deadhead still grades normally.
+
+**How all three were found, which is the part worth keeping.** None came from a report.
+`main` was intermittently red and being cleared by re-running: Tests run `35084126731`
+attempt 1 failed four assertions in `tax-export-csv-corruption`, attempt 2 on the same
+SHA passed. Root-causing that instead of re-running produced V-1. A separate intermittent
+failure in the same tree (ZTO-09) produced a repair that **shipped as an empty function**
+— a negative-control edit was never restored, and neither verification could see it
+(`grep -c` counts an identifier; an unloaded re-run passes either way). Widening the
+assertion that the empty body had been hiding, from "does the wizard focus the passphrase
+field" to "does focus *stay* there", is what produced V-2.
+
+**Tests.** `tests/integration/vehicle-profile-race.spec.mjs` retagged `[FINDING V-1 /
+FIXED]`, `[FINDING V-2 / FIXED]` in `zero-token-onboarding.spec.mjs` merged beside
+ZTO-15 as its paired control, and **OI-15** in `omega-economics.spec.mjs` — the
+regression this file asked for by name, rendering a trip with `emptyMiles: null` and
+asserting `—`/`?` with an explicit-zero control, driven through the real `tripRow()`
+rather than a helper because what was wrong was what the driver saw. `tripRow` is
+exposed on `__FL_TESTS` for it, behind `__FL_TESTS_ENABLED` like everything there.
+
+Every negative control verified to fire: reverting the in-flight promise fails V-1 while
+the uncontended control still passes; reverting the claim-wizard guard restores
+`modalClose`; reverting `tripAllMiles(t)` in `tripRow` fails OI-15.
+
+**Two new gates, from the empty-function incident.** `RH-01` scans `tests/unit` and
+`tests/integration` on disk and requires every spec to be both imported and listed in
+`run-all.mjs` — a directory scan, not a maintained list, because a list has the same
+failure mode it is checking. `RH-02` fails any spec carrying an active `NEGATIVE CONTROL`
+comment marker, so a control edit cannot reach `main` again; its own control fires
+against the exact text that shipped.
+
+**Also corrected while bumping:** the PWA section above read `24.0.13` for both the
+manifest `?v=` and the service-worker version — **two generations stale**, and the third
+occurrence of checklist item 10 drifting in this file.
+
+**Source-only.** v24.0.15 is **not deployed and not live-observed**. Production serves
+24.0.14 / DB16 / Worker v19, and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`
+remains the current authority because it certifies exactly that. A superseding document is
+due **the day this deploys**, not the day it merges — which is the rule this release line
+learned the hard way and `FIELD_TEST_CHECKLIST.md` now states. After deploying, re-dispatch
+live parity rather than citing the push-triggered run, which races the Cloudflare deploy.
+
+**Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
+unchanged and remain the operator's.

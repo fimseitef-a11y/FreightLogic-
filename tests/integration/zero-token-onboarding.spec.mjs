@@ -618,32 +618,32 @@ test('[ZTO-15] the wizard puts the cursor in the passphrase field', async () => 
   } finally { await app.close(); }
 });
 
-/* ── V-2: the first-run setup modal steals focus from an open claim wizard ────
+/* ── V-2 (FIXED in v24.0.15): the first-run setup modal took focus from an open
+ *    claim wizard ───────────────────────────────────────────────────────────
  *
  * Deliberately `launchApp()` and NOT `openApp()` — the only invite test here
  * that does not suppress the F26 first-run wizard, because that wizard IS the
- * subject. `openClaimWizard()`'s own comment says the claim wizard "covers the
- * app at z-index 12000 while the rest of boot continues behind it". The rest of
- * boot includes `checkFirstRunSetup()`, armed on an 800ms `setTimeout`, and
- * `openModal()` focuses the first focusable element in whatever it opens.
+ * subject. Suppressing it would make this test pass for the wrong reason, which
+ * is the entire point of keeping it separate from ZTO-15.
  *
- * So ~800ms after a driver taps an invite link, while they are typing a
- * passphrase into a full-screen wizard, the keyboard focus jumps to a modal
- * behind it. Whatever they type next goes somewhere else — and in a field whose
- * value is masked, with a confirmation field that will then refuse to match,
- * against a passphrase that by design cannot be reset.
+ * `openClaimWizard()`'s own comment says the claim wizard "covers the app at
+ * z-index 12000 while the rest of boot continues behind it". The rest of boot
+ * included `checkFirstRunSetup()`, armed on an 800ms `setTimeout`, and
+ * `openModal()` ends by focusing the first focusable element in whatever it
+ * opens. So ~800ms after a driver tapped an invite link, while they were typing
+ * a passphrase into a full-screen wizard, the keyboard focus jumped to a modal
+ * behind it — into a masked field, with a confirmation that would then refuse to
+ * match, for a passphrase that by design cannot be reset.
  *
  * OBSERVED, not inferred. This assertion was first written as part of ZTO-15
  * expecting focus to settle, and it failed with `document.activeElement.id`
  * equal to `modalClose` — the F26 modal's own close button.
  *
- * Tagged `/ NEW`: a green NEW test means the evidence is captured, not that the
- * defect is repaired. The fix is in `app.js` — `checkFirstRunSetup()` should
- * stand down while a claim wizard is open, which is one condition — and `app.js`
- * is SHARED and needs a release generation, so it is reported rather than taken
- * unilaterally. When it lands, this flips to asserting `claimPass2` and merges
- * back into ZTO-15. */
-test('[FINDING V-2 / NEW] the first-run setup modal takes focus away from the claim wizard', async () => {
+ * THE REPAIR (v24.0.15): `checkFirstRunSetup()` returns early while a
+ * `#claimWizard` is open. Deferred, not cancelled, and deliberately not marked
+ * complete — if the driver abandons the claim, the next boot offers setup
+ * normally. */
+test('[FINDING V-2 / FIXED] the first-run setup modal leaves the claim wizard alone', async () => {
   const app = await launchApp();
   try {
     await routeWorker(app.page, { '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_x', name: 'D', token: FAKE_TOKEN } }) });
@@ -660,15 +660,25 @@ test('[FINDING V-2 / NEW] the first-run setup modal takes focus away from the cl
     const state = await app.page.evaluate(() => ({
       focused: document.activeElement?.id || document.activeElement?.tagName,
       wizardStillOpen: !!document.querySelector('#claimWizard'),
-      modalOpen: !!document.querySelector('#modal'),
+      // `#modal` is STATIC markup in index.html — it is always in the DOM and
+      // openModal() merely sets display:block. Asserting on its existence would
+      // fail forever and read as a product defect; visibility is the real signal.
+      modalOpen: (() => {
+        const md = document.querySelector('#modal');
+        return !!md && getComputedStyle(md).display !== 'none';
+      })(),
     }));
     console.log(`    [evidence] focus after 1500ms in the confirm field: ${state.focused}` +
                 ` (claim wizard open: ${state.wizardStillOpen}, first-run modal open: ${state.modalOpen})`);
 
     ok(state.wizardStillOpen, 'the claim wizard must still be open — otherwise this is a different defect');
-    ok(state.focused !== 'claimPass2',
-      'V-2 is reproduced when the driver loses the field they were typing in — if focus now STAYS, ' +
-      'the app.js repair has landed and this test must be flipped to assert claimPass2 and retagged / FIXED');
+    eq(state.focused, 'claimPass2',
+      'the driver must keep the field they were typing in — this read "modalClose" before the fix');
+    // The stronger half: the first-run modal must not have OPENED at all behind
+    // the wizard. Asserting only on focus would still pass if the modal appeared
+    // and merely failed to steal focus, which is not the contract.
+    eq(state.modalOpen, false,
+      'checkFirstRunSetup() must stand down entirely while a claim wizard is open, not just lose the focus race');
   } finally { await app.close(); }
 });
 
