@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | Certification-deferral docs + Today-screen position-conflict investigation on `claude/cert-deferral-position-conflict-xqve1k` (docs-only, no version marker touched, based on `main` `5b28315`). Prior v24.0.15 work on `claude/repo-review-cleanup-yz0c24` @ `07d0520` is unchanged and still unmerged — **v24.0.15 remains claimed, do not open a second generation**. | 2026-09-17 |
-| gpt | — idle — (PR #211 merged as `ef2de47`; v24.0.14 app + SW and Worker v19 live; post-merge Tests, production SW, authenticated Worker, and live Cloudflare parity all PASS; shared lock released. Remaining certification is physical iPhone A1–A12 + authentic M6 raw-history evidence; legacy v7 driver tokens, if any, still require operator rotation/revocation.) | 2026-09-15 |
+| gpt | v24.5 presentation implementation on `agent/gpt/v24-5-presentation`: GPT-owned `styles.css` seam only, plus read-only reference/architecture review. No `app.js`, `modern-shell.js`, release generation, or Claude-owned runtime edits. | 2026-09-17 |
 
 ---
 
