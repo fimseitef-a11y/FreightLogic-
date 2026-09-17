@@ -224,19 +224,27 @@ test('[SQ-01] pending work is derived from the delta watermark, not a parallel l
     await skipFirstRunWizard(page);
     const r = await page.evaluate(async () => {
       const T = window.__FL_TESTS;
-      // Watermark in the past, then one trip written "now".
-      await T.setSetting('lastCloudSyncedAt', 1000);
-      await T.upsertTrip({ ...T.sanitizeTrip({ orderNo: 'SQ-1', revenue: 500, loadedMiles: 300, emptyMiles: 0 }), updatedAt: 5000 });
+      // upsertTrip() ALWAYS stamps its own revision —
+      // `Math.max(Date.now(), before+1)`, the strictly-increasing fix that makes
+      // the compare-and-abort work. A fixture therefore cannot dictate
+      // `updatedAt`, and must not try: read back the revision the app actually
+      // wrote and place the watermark relative to it. Pinning a literal here
+      // would be testing a value the app is designed to override.
+      await T.upsertTrip(T.sanitizeTrip({ orderNo: 'SQ-1', revenue: 500, loadedMiles: 300, emptyMiles: 0 }));
+      const row = (await T.dumpStore('trips')).find(r => r.orderNo === 'SQ-1');
+      const stamped = row.updatedAt;
+
+      await T.setSetting('lastCloudSyncedAt', stamped - 1);
       const after = await T.syncPendingSummary();
       // Advance the watermark past it: the same record must stop being pending,
       // with no queue to drain and nothing to mark done.
-      await T.setSetting('lastCloudSyncedAt', 9000);
+      await T.setSetting('lastCloudSyncedAt', stamped);
       const cleared = await T.syncPendingSummary();
-      return { pending: after.pending, oldestAt: after.oldestAt, clearedPending: cleared.pending,
-               stores: T.SYNC_PENDING_STORES };
+      return { pending: after.pending, oldestAt: after.oldestAt, stamped,
+               clearedPending: cleared.pending, stores: T.SYNC_PENDING_STORES };
     });
     ok(r.pending >= 1, `a record newer than the watermark must count as pending; got ${r.pending}`);
-    eq(r.oldestAt, 5000, 'the oldest pending change is reported so the UI can age it');
+    eq(r.oldestAt, r.stamped, 'the oldest pending change is reported so the UI can age it');
     eq(r.clearedPending, 0, 'advancing the watermark alone must clear pending — the count is derived, not stored');
     ok(!r.stores.includes('settings'),
       'settings must NOT be counted: it has no revision field and is pushed wholesale, so counting it ' +
@@ -251,12 +259,32 @@ test('[SQ-02] a record with no usable updatedAt is not invented as pending work'
     const r = await page.evaluate(async () => {
       const T = window.__FL_TESTS;
       await T.setSetting('lastCloudSyncedAt', 1000);
-      // A legacy-shaped row: no updatedAt at all.
-      await T.upsertTrip({ ...T.sanitizeTrip({ orderNo: 'SQ-2', revenue: 400, loadedMiles: 200, emptyMiles: 0 }), updatedAt: 0 });
-      return (await T.syncPendingSummary()).pending;
+      // A genuinely legacy-shaped row CANNOT be produced through upsertTrip(),
+      // which always stamps a strictly-increasing revision — so it is written
+      // straight into the store, which is the only way this pre-revision shape
+      // actually exists in the field (it predates the stamp).
+      await new Promise((resolve, reject) => {
+        const open = indexedDB.open('FreightLogic_v18');
+        open.onsuccess = () => {
+          const db = open.result;
+          const name = db.objectStoreNames.contains('tripRecords') ? 'tripRecords' : 'trips';
+          const txn = db.transaction(name, 'readwrite');
+          txn.objectStore(name).put({ id: 'sq2-legacy-row', orderNo: 'SQ-2', revenue: 400,
+            loadedMiles: 200, emptyMiles: 0, updatedAt: 0, created: 1 });
+          txn.oncomplete = () => { db.close(); resolve(); };
+          txn.onerror = () => { db.close(); reject(txn.error); };
+        };
+        open.onerror = () => reject(open.error);
+      });
+      const rows = await T.dumpStore('trips');
+      const legacy = rows.find(r => r.orderNo === 'SQ-2');
+      return { pending: (await T.syncPendingSummary()).pending,
+               legacyPresent: !!legacy, legacyUpdatedAt: legacy ? legacy.updatedAt : null };
     });
-    eq(r, 0, 'a row that cannot be PROVEN newer than the watermark must not be counted — otherwise the ' +
-      'status surface cries wolf forever on legacy rows (UNKNOWN is not a value)');
+    eq(r.legacyPresent, true, 'the legacy-shaped row must really be in the store, or this asserts nothing');
+    eq(r.legacyUpdatedAt, 0, 'and it must still carry the pre-revision updatedAt it was written with');
+    eq(r.pending, 0, 'a row that cannot be PROVEN newer than the watermark must not be counted — otherwise ' +
+      'the status surface cries wolf forever on legacy rows (UNKNOWN is not a value)');
   } finally { await close(); }
 });
 
