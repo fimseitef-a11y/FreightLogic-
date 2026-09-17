@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.15 + Issue #216 merged via PR #223 as `ee07297`** after Lanes #184 and Tests #417 both passed. Physical iPhone A1–A12 and authentic M6 remain DEFERRED by operator decision to the final post-v24.5 candidate — see `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.) | 2026-09-17 |
-| gpt | — idle — (**v24.5 GPT-owned presentation review complete with no new CSS commit needed**: the current `NEXT PRESENTATION` layer is the deliberately merged operator-requested PR #206 contribution, so it was not overwritten with an older reference merely to manufacture a delta. Post-v24.0.15 security follow-up #219–#222 is handed to Claude/control-plane in `/.agents/inbox/gpt-to-claude-security-followup-2026-09-17.md`.) | 2026-09-17 |
+| gpt | Issue #204 Safari 27 customizable-select progressive enhancement on a new `agent/gpt/` branch. `styles.css` only; no DOM/runtime/version/service-worker changes. Preserve native `<select>` semantics, >=16px controls, >=44px touch targets, themes, and unchanged fallback when `appearance: base-select` is unsupported. | 2026-09-17 |
 
 ---
 
