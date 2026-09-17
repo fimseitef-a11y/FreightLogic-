@@ -1,6 +1,0 @@
-owner: gpt
-token: 5ee49f39-8fe7-4709-866f-1e7006b1b971
-started_utc: 2026-09-17T08:32:55Z
-expected_release_utc: 2026-09-17T10:32:55Z
-paths: .agents/LANES.md
-task: authorize isolated field certification runner paths and exact regression ownership
