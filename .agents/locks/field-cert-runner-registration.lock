@@ -1,6 +1,0 @@
-owner: gpt
-token: 1cba4f60-4a9a-4888-a816-2d0a1ba77a88
-started_utc: 2026-09-17T08:35:07Z
-expected_release_utc: 2026-09-17T10:35:07Z
-paths: .agents/LANES.md
-task: add exact tests/run-all.mjs registration exception for field certification runner
