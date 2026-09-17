@@ -12480,28 +12480,72 @@ function openQuickAddSheet(){
 let _tesseractReady = false;
 let _tesseractWorker = null;
 
+// Issue #220 — OCR loads self-hosted code or it does not load.
+//
+// WHAT WAS WRONG. `loadTesseract()` fell back to
+// `https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/…` for the engine script, and
+// to jsDelivr again for `workerPath`/`corePath`. That is arbitrary third-party
+// JavaScript executing in the FreightLogic origin, with the same access to
+// IndexedDB as the operator's entire trip history, expenses, receipts and the
+// locally stored cloud credentials. `loadScriptWithFallback()` carried an SRI
+// TODO and no `integrity` attribute, so nothing pinned the bytes either. The
+// only reason `cdn.jsdelivr.net` remained in the CSP at all — after X-10 bundled
+// SheetJS — was this fallback.
+//
+// AND IT WAS ALREADY DEAD. The shipped CSP cannot run that path to completion,
+// which was proved rather than argued (see `OCR-*` in
+// integration/ocr-self-hosted.spec.mjs, which records real
+// `securitypolicyviolation` events):
+//
+//   - `connect-src` has no `tessdata.projectnaptha.com`, and
+//     `Tesseract.createWorker('eng', …)` must fetch `eng.traineddata.gz` from
+//     its default `langPath` there. The fetch raises a real CSP violation.
+//   - `worker-src 'self' blob:` forbids a cross-origin worker, so a jsDelivr
+//     `workerPath` throws `SecurityError` at construction.
+//
+// So the fallback could load and execute a third-party script in the origin —
+// the risk was entirely real — while never actually producing OCR. Removing it
+// takes away no working capability. That is the honest half of the issue's two
+// options, and it is what production already does in practice.
+//
+// WHAT IS KEPT. The local vendor path, unchanged. Dropping the three files into
+// `vendor/` enables OCR with no code change, exactly as README.txt describes,
+// and nothing fetches them from anywhere else. They are deliberately NOT
+// committed here: the engine, the SIMD core and the English model are ~15 MB
+// together, which is an operator-sized decision about a flat-file repo whose
+// service worker precaches its assets — not something to slip into a security
+// fix. See the note in README.txt.
+//
+// Returns a Tesseract worker, or NULL when OCR is not installed. Null rather
+// than a throw because both call sites want to report "not available" rather
+// than surface an engine error, and the receipt path already tested for it.
+const OCR_VENDOR_ENGINE = './vendor/tesseract.min.js';
+const OCR_VENDOR_WORKER = './vendor/worker.min.js';
+const OCR_VENDOR_CORE   = './vendor/tesseract-core-simd-lstm.wasm.js';
+
 async function loadTesseract(){
   if (_tesseractReady && _tesseractWorker) return _tesseractWorker;
   if (typeof Tesseract === 'undefined'){
-    await loadScriptWithFallback([
-      './vendor/tesseract.min.js',
-      'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
-    ], () => {
-      if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
-        throw new Error('Tesseract loaded but createWorker missing — possible CDN tampering');
-      }
-    }, 'Failed to load OCR engine. Add local vendor files or connect to the internet.');
+    try {
+      await loadScriptWithFallback([OCR_VENDOR_ENGINE], () => {
+        if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
+          throw new Error('OCR engine loaded but createWorker is missing');
+        }
+      }, 'OCR engine is not installed on this device.');
+    } catch (err){
+      console.warn('[FL] OCR engine unavailable:', err && err.message);
+      return null;
+    }
   }
   try {
     _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-      workerPath: './vendor/worker.min.js',
-      corePath: './vendor/tesseract-core-simd-lstm.wasm.js',
+      workerPath: OCR_VENDOR_WORKER,
+      corePath: OCR_VENDOR_CORE,
     });
-  } catch (_localErr){
-    _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
-      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd-lstm.wasm.js',
-    });
+  } catch (err){
+    console.warn('[FL] OCR worker could not start:', err && err.message);
+    _tesseractWorker = null;
+    return null;
   }
   _tesseractReady = true;
   return _tesseractWorker;
@@ -14546,11 +14590,14 @@ async function openReceiptCamera(orderNo){
     haptic(20);
     toast('Scanning receipt...');
     try {
-      const Tess = await loadTesseract();
-      if (!Tess){ toast('OCR not available — install Tesseract offline', true); return; }
-      const worker = await Tess.createWorker('eng');
+      // Issue #220: this asked `loadTesseract()` for the Tesseract NAMESPACE and
+      // called `Tess.createWorker('eng')` on it — but the function returns a
+      // ready WORKER, which has no createWorker. So receipt OCR raised a
+      // TypeError even when an engine was present. Found while making the
+      // unavailable path honest; the worker is now used directly.
+      const worker = await loadTesseract();
+      if (!worker){ toast('Receipt scanning needs the offline OCR engine installed — see README.txt.', true); return; }
       const { data: { text } } = await worker.recognize(capturedBlob);
-      await worker.terminate();
       const parsed = parseReceiptOCR(text);
       closeModal();
       setTimeout(()=> openReceiptExpenseForm(parsed, capturedBlob), 200);
@@ -17142,6 +17189,9 @@ function openQuickEvalFlow(){
     setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
     try {
       const worker = await loadTesseract();
+      // Issue #220: this path never tested the result, so an absent engine
+      // surfaced as a TypeError on `worker.recognize` instead of an explanation.
+      if (!worker){ setStatus('❌','OCR not installed','Paste or dictate the load instead — see README.txt for the offline OCR engine'); return; }
       setStatus('🔍','Scanning load…','Reading text from image');
       const { data } = await worker.recognize(file);
       const text = data.text || '';
@@ -22136,6 +22186,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     parseLoadTextEnhanced, parseLoadTextForInbox,
     isSettingExportSafe, exportSafeSettings,
     isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
+    loadTesseract,                             // Issue #220 — null when OCR is not installed
     // v24.0.13 zero-token onboarding. Exported so the regressions can drive the
     // REAL admin/claim paths rather than a reimplementation — the claim wizard
     // and the PIN modal are asserted through the DOM, but "was a rejected token
