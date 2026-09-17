@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | Certification-deferral docs + Today-screen position-conflict investigation on `claude/cert-deferral-position-conflict-xqve1k` (docs-only, no version marker touched, based on `main` `5b28315`). Prior v24.0.15 work on `claude/repo-review-cleanup-yz0c24` @ `07d0520` is unchanged and still unmerged — **v24.0.15 remains claimed, do not open a second generation**. | 2026-09-17 |
+| claude | v24.0.15 position-authority pass on `claude/cert-deferral-position-conflict-xqve1k` — folded the unmerged v24.0.15 (V-1/V-2/tripRow + LANES exception retirement) into ONE generation and added the Issue #216 repair (one driver-position resolver, real UNKNOWN market state, Calgary-as-Tier-1 pricing defect). Lock `claude-v24015-position-authority` held. **Do not open a second generation.** | 2026-09-17 |
 | gpt | v24.5 presentation implementation on `agent/gpt/v24-5-presentation`: GPT-owned `styles.css` seam only, plus read-only reference/architecture review. No `app.js`, `modern-shell.js`, release generation, or Claude-owned runtime edits. | 2026-09-17 |
 
 ---
