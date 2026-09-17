@@ -11,7 +11,7 @@
 //
 // One genuine new finding came out of the GPS section — see F-7 below.
 
-import { launchApp, createSuite, ok, eq, skipFirstRunWizard } from '../lib/harness.mjs';
+import { launchApp, createSuite, ok, eq, skipFirstRunWizard, waitForAppReady } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/field-resilience.spec.mjs');
 let app;
@@ -94,7 +94,7 @@ async function openAddExpense(page) {
 test('[FINDING PHASE-4 / storage-full] proactive quota warning fires when Chromium honors a real CDP-pinned quota; unsupported runners are detected', async () => {
   await skipFirstRunWizard(app.page);
   await app.page.reload();
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
   const usageBefore = await app.page.evaluate(async () => (await navigator.storage.estimate()).usage);
   ok(usageBefore > 0, `sanity: origin already has some usage (IDB + SW cache) — got ${usageBefore}`);
@@ -161,7 +161,7 @@ test('offline: log a trip entirely offline, then reconnect', async () => {
   const onlineAfter = await app.page.evaluate(() => navigator.onLine);
   eq(onlineAfter, true, 'sanity: browser must report back online');
   await app.page.reload();
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 });
 
 test('[FINDING PHASE-4 / offline-reconnect] reconnecting does not duplicate, lose, or corrupt data written while offline', async () => {
@@ -245,7 +245,7 @@ test('[FINDING F-8 / FIXED] Add Expense writes the record, closes the modal, and
 test('[FINDING F-8 / FIXED] Add Fuel writes the record too — and the raw IndexedDB semantics behind the bug are unchanged', async () => {
   await app.context.setOffline(false);
   await app.page.reload();
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
   const pageErrors = [];
   app.page.on('pageerror', (e) => pageErrors.push(e.message));
@@ -330,7 +330,7 @@ test('[FINDING PHASE-4 / DST] isoDate() resolves the correct local calendar date
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();
   await page.goto(`${app.baseUrl}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
   const cases = await page.evaluate(() => {
     const T = window.__FL_TESTS;
@@ -357,7 +357,7 @@ test('[FINDING PHASE-4 / DST] isoDate() resolves correctly across the Mar 2027 s
   await context.addInitScript(() => { window.__FL_TESTS_ENABLED = true; });
   const page = await context.newPage();
   await page.goto(`${app.baseUrl}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
   const cases = await page.evaluate(() => {
     const T = window.__FL_TESTS;
@@ -387,10 +387,10 @@ test('[FINDING PHASE-4 / DST] a trip logged with the app clock faked to the ambi
   const page = await context.newPage();
   await page.clock.install({ time: new Date('2026-11-01T07:30:00Z') }); // 1:30am CST, the repeated hour
   await page.goto(`${app.baseUrl}/index.html`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
   await skipFirstRunWizard(page);
   await page.reload();
-  await page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
   await openAddTrip(page);
   const pickupVal = await page.inputValue('#f_pickup');
@@ -443,7 +443,7 @@ async function launchGpsApp() {
     req.onerror = () => reject(req.error);
   }));
   await gpsApp.page.reload();
-  await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(gpsApp.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
   return gpsApp;
 }
 
@@ -521,7 +521,7 @@ test('[FINDING F-7 / FIXED] a tracking record left behind by an unclean teardown
     // the one where "Start Trip" used to destroy the trip.
     await gpsApp.page.evaluate(() => sessionStorage.removeItem('fl_active_tracking'));
     await gpsApp.page.reload();
-    await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    await waitForAppReady(gpsApp.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
     await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 });
     await gpsApp.page.evaluate((rec) => sessionStorage.setItem('fl_active_tracking', rec), savedRecord);
 
@@ -554,7 +554,7 @@ test('[FINDING F-7 / FIXED] discarding a recovered session is still possible, bu
 
     await gpsApp.page.evaluate(() => sessionStorage.removeItem('fl_active_tracking'));
     await gpsApp.page.reload();
-    await gpsApp.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+    await waitForAppReady(gpsApp.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
     await gpsApp.page.waitForSelector('#f21StartBtn', { timeout: 5000 });
     await gpsApp.page.evaluate((rec) => sessionStorage.setItem('fl_active_tracking', rec), savedRecord);
 

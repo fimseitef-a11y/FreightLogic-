@@ -7,16 +7,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Freight Logic" />
-  <!-- X-10 (v23.9): cdn.jsdelivr.net stays whitelisted ONLY for the optional
-       Tesseract.js OCR fallback (loadTesseract() in app.js) when the local
-       vendor files aren't present — SheetJS no longer needs it. It's now
-       always bundled at ./vendor/xlsx.full.min.js (loadSheetJS() in app.js),
-       precached by the service worker's critical shell (X-08), with no CDN
-       fallback path at all. This directive must stay byte-identical to the
-       one in _headers — scripts/verify-cloudflare-parity.mjs asserts that. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://cdn.jsdelivr.net https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+  <!-- Issue #220: script-src is now 'self' ONLY — no third-party origin may
+       execute code here. cdn.jsdelivr.net was the last one, kept for the
+       Tesseract.js OCR fallback after X-10 bundled SheetJS; that fallback is
+       removed, so the allowance goes with it. Nothing in this app loads
+       executable code from another origin: SheetJS is bundled at
+       ./vendor/xlsx.full.min.js and precached by the install-blocking shell
+       (X-08/X-10), and OCR loads ./vendor/ or reports itself unavailable.
+       connect-src keeps only the four data APIs and the backup Worker.
+       Re-adding an origin here grants it the operator's IndexedDB — trips,
+       expenses, receipts and the stored cloud credential — so it needs the
+       same review a vendored file gets. This directive must stay
+       byte-identical to the one in _headers; scripts/verify-cloudflare-parity
+       .mjs asserts that. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.15">
+  <link rel="manifest" href="manifest.json?v=24.0.16">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -602,8 +608,8 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.15"></script>
-  <script src="voice-load.js?v=24.0.15"></script>
-  <script src="sw-bridge.js?v=24.0.15"></script>
+  <script src="app.js?v=24.0.16"></script>
+  <script src="voice-load.js?v=24.0.16"></script>
+  <script src="sw-bridge.js?v=24.0.16"></script>
 </body>
 </html>

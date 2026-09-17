@@ -2,15 +2,38 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.15** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.16** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**v24.0.15 source candidate:** closes the two OPEN findings in `AUDIT_REPORT.md` (V-1 vehicle-profile lost update, V-2 first-run modal stealing focus from the claim wizard) and the `tripRow` unknown-deadhead residue this file carried as reported-not-fixed. No schema change — DB stays **16** and the Worker stays **v19**. **Source-only: not deployed and not live-observed.** Production serves **24.0.14 / DB16 / Worker v19**, which is what the paragraph below records and what `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` certifies. Physical iPhone A1-A12 and authentic M6 remain open.
+**v24.0.16 source candidate:** three trust-boundary security issues (#219 untrusted
+import installing credentials, #221 the token index outranking the account record plus
+raw `token=` setup links, #220 the jsDelivr executable fallback) and the #224 readiness
+/ diagnostics work. Worker **v19 → v20**; DB stays **16**. **Source-only: not deployed
+and not live-observed.** Issue **#224 is OPEN** — the `db === null` race did not
+reproduce — so `main` must not be described as having all automatable gates green.
+
+**Production serves 24.0.15 / DB16 / Worker v19, and that is OBSERVED.** Live parity job
+`105095664502` on `ee07297` reports `index.html` referencing app/voice/SW-bridge
+**24.0.15**, service worker **24.0.15**, manifest name `FreightLogic v24.0.15`, all
+**23/23** declared runtime assets loading from the production app origin with none served
+as an HTML fallback, and Worker `/health` at **v19** — `VERDICT: PASS`. The production
+service-worker gate passed on the same SHA. Physical iPhone A1-A12 and authentic M6
+remain open, deferred by operator decision to the final post-v24.5 candidate.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
 **Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Production serves app v24.0.14 / DB16 and Worker v19, and that is OBSERVED, not assumed** — live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, VERDICT PASS against an `EXPECTED` block of `24.0.14` / `FreightLogic v24.0.14` / Worker `19`. That gate fails the job on anything but PASS and `UNOBSERVED` is also non-zero, so a success is a positive observation rather than an absence of objections. v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup.
 
-*This paragraph previously read "the v24.0.14 / DB16 / Worker v19 source candidate is not yet deployed or live-observed. Production still serves app v24.0.12 / DB15 and Worker v17." That was true when the candidate was written and stopped being true once the deploys landed. It is corrected rather than quietly overwritten, because a release record that keeps a superseded deployment claim is the drift class this file already records against itself five times — and this instance was worse than cosmetic: it understated production by two app generations and two Worker generations, so anyone reading it would have re-run a deployment sequence that had already happened, or certified against a candidate production stopped serving days earlier.*
+*This overview previously read "**v24.0.15 source candidate** … Source-only: not deployed
+and not live-observed. Production serves **24.0.14 / DB16 / Worker v19**." That was true
+when the candidate was written and stopped being true when 24.0.15 deployed; issue #225
+was opened to correct it. It is corrected rather than quietly overwritten, because a
+release record that keeps a superseded deployment claim is the drift class this file now
+records against itself six times. The instance before this one was worse than cosmetic —
+it understated production by two app generations and two Worker generations, so a reader
+would have re-run a deployment sequence that had already happened, or certified against a
+candidate production had stopped serving days earlier. The rule that prevents it is the
+one the certification documents already state: **a superseding record is due the day a
+shipped file deploys, not the day it merges, and not whenever somebody notices.***
 
 The intermediate generations are part of the record: **Worker v18** deployed (run `35037355686`, every post-deploy check green including `/health` reporting 18) and **app 24.0.13** observed live (parity run `35037460402`) before PR #211 superseded both with v24.0.14 / Worker v19.
 
@@ -143,7 +166,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.15';
+const APP_VERSION = '24.0.16';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -287,8 +310,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.15` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.15`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.16` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.16`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -3335,6 +3358,244 @@ remains the current authority because it certifies exactly that. A superseding d
 due **the day this deploys**, not the day it merges — which is the rule this release line
 learned the hard way and `FIELD_TEST_CHECKLIST.md` now states. After deploying, re-dispatch
 live parity rather than citing the push-triggered run, which races the Cloudflare deploy.
+
+**Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
+unchanged and remain the operator's.
+
+---
+
+## v24.0.16 "Trust Boundaries" — three documented boundaries that nothing enforced
+
+Worker **v19 → v20**. `DB_VERSION` stays **16**. Scope is the four issues the GPT
+lane handed to this lane in `.agents/inbox/gpt-to-claude-security-followup-2026-09-17.md`
+once PR #223 landed, in the order it suggested: the trust-boundary items first,
+then the executable-supply-chain one.
+
+What the three security issues have in common is worth naming, because it is the
+same shape three times: **each boundary was written down and none of it was
+enforced.** The export-side secret policy said in its own comment that the
+import allow-list "is not a defence here"; the CSP kept a CDN whitelisted for a
+fallback that the CSP itself already blocked; the Worker's rotation endpoint
+existed to retire a token while auth would still accept a superseded one. A
+comment describing a boundary is not a boundary — the same finding this file
+records against `ADAPTER_ONLY` (v24.0.4), against checklist item 15 being
+"machine-checked" when nothing read the field (v24.0.12), and against the
+workflow prohibition that held only because the thing violating it was broken.
+
+### #219 — an import may restore data, never install a credential
+
+`importJSON()`'s `ALLOWED_SETTINGS_KEYS` admitted `cloudBackupToken`,
+`cloudBackupUrl`, `appLockPin`, `fmcsaApiKey` and `eiaApiKey`, and the writer put
+every accepted row straight into the `settings` store. `cloudGetConfig()` reads
+back **both** the token and the URL, so a crafted file handed to an operator and
+fed to "Import Data" could silently repoint every later backup at an attacker's
+endpoint using an attacker's bearer token, and replace the device PIN hash on the
+way past.
+
+`isSettingImportSafe()` reuses `isSettingExportSafe()` — a value too sensitive to
+leave the device is too sensitive to accept from a file, and one policy cannot
+drift from itself — plus the **asymmetric half**: `cloudBackupUrl` and
+`appLockEnabled` are safe to *export* and carry security *authority*, so
+accepting them is the defect even though emitting them is not. That asymmetry is
+the part most likely to be "simplified" away later; ICT-06 asserts the subset
+relation directly rather than key by key. Blocking the URL degrades nothing —
+absent it the hardcoded `CLOUD_WORKER_URL` still applies, and the passphrase and
+token are not in any payload regardless. The credential keys are removed from the
+allow-list as well, so reopening the hole takes two edits and either alone fails.
+
+**Second half:** `mode === 'skip'` tested `x.id !== undefined`, but `settings` has
+keyPath `key`, so no settings row ever satisfied it and every one fell through to
+`put()` — `skip` overwrote existing settings on every import, the exact opposite
+of the mode's meaning. `idbRecordHasOwnKey()` reads the store's real keyPath,
+fixing `settings` and `receipts` (`tripOrderNo`) at once rather than adding a
+second hardcoded name the next store would miss.
+
+**Found while fixing that, and PRE-EXISTING:** a duplicate key in `skip` mode
+aborted the whole import. IndexedDB raises `ConstraintError` asynchronously as a
+request error that bubbles to the transaction, so the synchronous `try/catch`
+never saw it — re-importing any file that shared one record id imported
+**nothing**, under a cheerful "Import complete". The old guard already routed
+id-bearing trips through `add()`, so this was reachable before this release; it
+only surfaced now because the keyPath repair lets `settings` reach `add()`, where
+duplicate keys are the normal case rather than the exception.
+
+The add-only settings merge in `mergeRestoreData()` is gated too, labelled as
+defence in depth rather than the reported defect: it could never *overwrite* a
+local credential, but it could *install* one absent locally — which is exactly a
+fresh device mid-disaster-recovery.
+
+A refused key is named in the toast. A withheld credential is a deliberate
+refusal, not a parse failure, and an operator restoring their own file should
+learn why the endpoint did not come back. Key names only; never a value.
+
+### #221 — the token index is not the authority, and a link is not a credential
+
+**Canonical-user token authority.** Driver auth resolved the presented bearer
+token through `tokh:<sha256(token)>` and trusted what it found, checking only
+`tokenData.active`. It never asked the account whether that was still its token.
+`POST /claim` and `/admin/users/:id/rotate` re-key in place: they write a fresh
+`tokh:<newHash>` plus `user:<userId>` and delete the hash they **observed**. KV
+has no transaction and no compare-and-swap, so two overlapping claims can each
+read the same prior state and each write a token record — the last `user:` write
+wins, but the loser's `tokh:` entry survives, because the winner deleted a
+different hash.
+
+That is not cosmetic residue. It is **two simultaneously live bearer credentials
+for one account**, one of which the account does not name and nobody can see,
+valid indefinitely — including after a rotation performed specifically to retire
+it. Backups are keyed by `userId`, so the stale credential reads and writes the
+live driver's real data. Auth now loads `user:<userId>`, requires it active and
+naming the exact hash presented, deletes that superseded index entry, and returns
+403. It does **not** pretend KV became atomic — the claim-count increment is still
+a race and is still documented as one; it makes the user record the only authority
+on which hash is current. A legacy v7 record carrying plaintext `token` and no
+`tokenHash` has its hash derived rather than waved through, so there is no
+fail-open branch; a record with neither is malformed and refused.
+
+**Raw token links retired.** `cloudCheckSetupLink()` accepted `#token=<flk_…>`
+and `?token=<flk_…>`, filled the credential field and navigated to Settings. Both
+were the human credential transport that v24.0.13's zero-token onboarding exists
+to eliminate, kept alive for compatibility with a flow already deliberately
+retired. The query form is strictly worse than the fragment: a query string **is**
+sent to the origin, so the token reaches the access log and any `Referer` before
+any client-side cleanup can run — which is why that case is reported as
+exposed-and-revoke rather than merely unsupported.
+
+**Worse than the issue states, found while testing:** the old cleanup was only
+reachable through `cloudInitUI()`, which runs inside `renderInsights()`. So the
+`history.replaceState` fired only if the operator happened to open Settings, and
+until then a bearer token sat in the address bar, in session history and in any
+screenshot. `flStripLegacyTokenLink()` now runs on the same synchronous line of
+boot as `flCaptureClaimCode()`, for the same documented reason, and returns the
+**transport** rather than the token so the value cannot reach a log this way. A
+legacy link is reported, not ignored: silence would leave an operator holding a
+real invite with no idea why nothing happened. The `#i=` claim flow and the
+Settings field an operator types into themselves are untouched.
+
+**CORS.** The legacy `freightlogic.pages.dev` / `www.` origins are removed. That
+Pages origin is not the live app and has not been for the whole v24.0.x line;
+"accepted during migration" outlived the migration. `env.ALLOWED_ORIGIN` remains
+the exact-match hook, so re-adding an origin is a variable, not a code change.
+
+### #220 — `script-src` is `'self'` alone
+
+`loadTesseract()` fell back to jsDelivr three times over — the engine script,
+`workerPath` and `corePath` — and `loadScriptWithFallback()` carried an SRI TODO
+with no `integrity` attribute, so nothing pinned the bytes. That is unpinned
+third-party JavaScript running in this origin with the same access to IndexedDB
+as the operator's entire trip history, expenses, receipts and the locally stored
+cloud credential. After X-10 bundled SheetJS, this fallback was the only reason
+`cdn.jsdelivr.net` was still in the CSP at all.
+
+**And it was already dead, which is proved rather than argued.** The shipped CSP
+cannot run that path to completion: `connect-src` has no
+`tessdata.projectnaptha.com`, where `Tesseract.createWorker('eng', …)` must fetch
+`eng.traineddata.gz`, and `worker-src 'self' blob:` forbids a cross-origin
+worker. OCR-01/02 record the real `securitypolicyviolation` event naming that
+exact URI and the `SecurityError` at worker construction. OCR-01 carries its own
+discriminator: an **allowed** origin is equally unreachable from the test sandbox
+and produces **no** violation — without that control, "a fetch failed" would
+prove nothing about the policy.
+
+So the CDN path could load and run foreign code while never producing a single
+character of OCR. Removing it takes away no working capability, which is what
+makes this the honest option of the two the issue offers rather than a feature
+deletion dressed as a security fix. `script-src` is now `'self'` alone and
+jsDelivr is gone from `connect-src`, byte-identically in `index.html` and
+`_headers` (checklist item 12).
+
+**The vendored files are deliberately not committed, and that is an operator
+decision left open.** The self-hosted path is unchanged — drop the three files
+into `vendor/` and OCR works with no code change — but together with the English
+model the CSP now also requires be self-hosted they are ~15 MB (engine ~66 KB,
+worker ~124 KB, SIMD LSTM core ~3.9 MB, `eng.traineddata.gz` ~10.9 MB).
+Committing that much third-party binary to a flat-file repo whose service worker
+precaches its assets is not a side effect of a security fix. `README.txt` records
+the exact versions, the sizes, and the requirement that anything added be
+version-reviewed, licensed in `vendor/`, and added to
+`scripts/lib/deploy-assets.mjs` so the parity gate sweeps it.
+
+**Two defects found while making the unavailable path honest,** both of which
+meant OCR raised a `TypeError` rather than an explanation even with an engine
+present: the receipt-camera path called `Tess.createWorker('eng')` on the return
+value of `loadTesseract()`, which is a ready **worker** and has no
+`createWorker`; and the Quick Evaluate screenshot path never checked the result
+at all. Both now report "not installed" and name the alternative.
+
+### #224 — NOT closed, and this section says so
+
+The `db === null` race **did not reproduce here.** The full suite ran green on the
+first attempt on this tree, and targeted probes found no post-readiness
+re-bootstrap: an idle app page over 4 s (0/8), a second tab waiting only for
+`#appMeta` (0/12), and the same under 20× CPU throttling (0/8). The issue forbids
+clearing it with a rerun, so the root cause remains unproven and #224 stays OPEN.
+`main` must not be described as having all automatable gates green.
+
+**What is fixed is real, and there was more of it than reading found.** 15 call
+sites waited only for `#appMeta` to have text on a page the spec itself opened or
+reloaded — insufficient by the harness's own comment, since `appMeta` populates
+*before* `initDB()` assigns the handle. Two were tabs in
+`toctou-concurrent-edit`. The other 13, in `field-resilience` (10),
+`backup-restore-parity` (2) and `batch-a-release-integrity` (1), are the more
+interesting shape: each is a deliberate `page.reload()` followed by that weak
+wait. **A reload IS the re-bootstrap #224 deduces** — it re-runs the IIFE past
+`let db = null` — so those sites were the reported mechanism written into the
+suite in 13 places. Whether that is also the CI failure cannot be claimed: the CI
+failures were in specs that do not reload. `HR-02` found all 13; reading had
+found 2, which is the argument for writing it as a directory sweep rather than a
+list of the sites already known.
+
+**Diagnostics, which is step 1 of the issue.** Every tracked page is stamped per
+document at init-script time; main-frame navigations, page errors and console
+errors are recorded; and `createSuite()` prints all of it for every live page
+whenever an assertion fails, including whether the handle is usable *right now*
+and whether the document changed since readiness. The next CI failure therefore
+arrives with its evidence instead of prompting another rerun. Harness-only — no
+production bytes changed for diagnostics — and deliberately not a retry, a
+timeout bump, a skip or a weakened assertion; the issue forbids all four and each
+would hide the transition being hunted. HR-03 asserts the failure path contains
+no retry or skip.
+
+### Why this is a version bump
+
+`app.js`, `index.html`, `_headers`, `modern-shell.js` and the Worker all changed.
+`scripts/verify-release-generation.mjs` refused the tree at a reused `24.0.15`
+(`"Runtime assets changed without a new release generation"`), which is the gate
+working as designed — `CACHE_NAME` is `freightlogic-${SW_VERSION}` and the `?v=`
+query is the only other identity a child asset carries, so an installed client
+holding the `24.0.15` shell would never fetch the changed files. **CG-07 caught a
+marker the manual pass missed** (`modern-shell.js`'s header), which is exactly
+what item 16 machine-checks it for. All 14 CG assertions and
+`--static-only` parity are green at `24.0.16`.
+
+### One cross-lane blocker, not resolved in this lane
+
+PR #227 added a `tests/run-all.mjs` row to `.agents/LANES.md` owned by **gpt**, as
+an "exact exception limited to registering `field-certification-runner.spec.mjs`".
+The Notes describe a narrow grant; the Owner column is what `lane-guard` reads,
+and it reads `gpt`. That deadlocks with **RH-01**, which fails unless every spec
+on disk is registered in `run-all.mjs`: a Claude regression cannot be registered
+without editing a gpt-owned file, and not registering it fails RH-01. This is not
+specific to this release — it blocks every future Claude regression.
+
+Requested through `/.agents/inbox/claude-to-gpt-run-all-ownership-deadlock-2026-09-17.md`
+rather than edited across lanes, and rather than editing the ownership map to
+grant this lane a path another lane was granted three commits earlier. The four
+registrations this release needs are on the branch and Lanes CI will reject that
+one file until the row is narrowed.
+
+### Not deployed
+
+**Source-only.** v24.0.16 is not deployed and not live-observed. Worker v20 must
+deploy **before** the app generation, as v18 did for v24.0.13: the app is
+unchanged in what it calls, but a driver whose token index is stale gets a 403
+only once v20 is serving, and the CORS narrowing must land with it. After
+deploying, re-dispatch live parity rather than citing the push-triggered run,
+which races the Cloudflare deploy — five recorded occurrences now.
+
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md` is the superseding
+authority for the 24.0.15 production observation that issue #225 asked for, and
+records this candidate as source-only.
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's.

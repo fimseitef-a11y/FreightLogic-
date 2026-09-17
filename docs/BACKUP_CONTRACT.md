@@ -2,7 +2,7 @@
 
 Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
-Current application contract: **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**.
+Current application contract: **FreightLogic v24.0.16 (source) / IndexedDB v16 / Worker v20 (source)**. Production serves **24.0.15 / DB16 / Worker v19** — see `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`.
 
 ## Rule
 
@@ -31,6 +31,38 @@ backup, cloud delta **and every checksum computed over settings**. It withholds 
 named above **or** whose name matches the credential pattern, so a secret added in a
 future release is withheld by default rather than by memory.
 
+### The import direction is a separate, narrower gate (Issue #219)
+
+Export-side stripping governs what a payload **emits**; it never governed what a
+payload is **allowed to install**. Until Issue #219 the local JSON import
+allow-list admitted `cloudBackupToken`, `cloudBackupUrl`, `appLockPin`,
+`fmcsaApiKey` and `eiaApiKey`, and wrote them through a blind `put()` — so a
+crafted file fed to "Import Data" could repoint every later backup at another
+endpoint with another bearer token, or replace the device PIN hash.
+
+`isSettingImportSafe()` is now the gate for both portability inbound paths (local
+JSON import, and the add-only settings merge in `mergeRestoreData()`). It is
+deliberately **strictly narrower** than `isSettingExportSafe()`:
+
+| Key | Exported / backed up | Accepted from an import |
+|---|---|---|
+| every secret in the list above | No | No |
+| `cloudBackupUrl` | **Yes** — it is not a secret | **No** — it is endpoint authority |
+| `appLockEnabled` | Yes | **No** — an import may not switch the lock off |
+| ordinary preferences | Yes | Yes |
+
+The asymmetry is the point and must not be "simplified" away. `cloudBackupUrl`
+is safe to back up and unsafe to accept, because `cloudGetConfig()` reads it
+back: an imported value silently redirects every subsequent backup and restore.
+Nothing is lost by refusing it — absent the setting, the hardcoded
+`CLOUD_WORKER_URL` still applies, and the passphrase and bearer token are not in
+any payload and must be re-entered on a new device regardless.
+
+Import-safe is a strict subset of export-safe, and
+`integration/import-credential-trust-boundary.spec.mjs` ICT-06 asserts that
+relation directly rather than key by key, so a key added to one gate cannot
+quietly widen the other.
+
 Both halves matter together. The filtered array must be the array that is
 checksummed: computing `checksumFull` over an unfiltered dump while shipping a
 filtered payload is the X-05 defect, where every honest export failed its own
@@ -40,7 +72,7 @@ No backup/import path may re-introduce any of them from an export payload.
 `cloudAdminTokenEnc` is deliberately **absent from `ALLOWED_SETTINGS_KEYS`**, so an
 import silently drops it: an admin credential must never arrive from a file.
 
-## Store-level contract — current through v24.0.13 / DB v15 / Worker v18
+## Store-level contract — current through v24.0.16 / DB v16 / Worker v20
 
 | Store | Full backup | Delta backup | Restored | Contract |
 |---|---:|---:|---:|---|
@@ -53,7 +85,7 @@ import silently drops it: an admin credential must never arrive from a file.
 | `bidHistory` | Yes | Yes | Yes | Preserve historical bid evidence. |
 | `documents` | Yes | Yes | Yes | Metadata/document records under existing contract. |
 | `gpsLogs` | Yes | Yes | Yes | Deduplicate on `tripTrackingId` + `timestamp`; incoming numeric ID is not trusted as a write key. |
-| `settings` | Yes | Yes | Yes | Secret keys filtered; merge remains conservative/additive unless a setting has an explicit newer contract. |
+| `settings` | Yes | Yes | Yes | Secret keys filtered on the way out; `isSettingImportSafe()` gates the way back in (Issue #219). Merge remains conservative/additive unless a setting has an explicit newer contract. |
 | `receipts` | Yes | Yes | Yes | File-list union by receipt file `id`; metadata pointer only. |
 | `loadLifecycle` | Yes | Yes | Yes | Protected revisioned lifecycle state; see below. |
 | `normalizedEvidence` | Yes | Yes | Yes | Protected durable normalized opportunity evidence; see below. |
@@ -80,7 +112,7 @@ For competing lifecycle copies, an older delta/import must not roll a newer conf
 
 A legacy payload with no `loadLifecycle` key is valid legacy input and is not corruption.
 
-## `normalizedEvidence` contract — current through v24.0.9 / DB v15
+## `normalizedEvidence` contract — current through v24.0.16 / DB v16
 
 `normalizedEvidence` is the durable evidence layer introduced by the v24.0.2 release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
 

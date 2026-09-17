@@ -8,6 +8,8 @@ import { stopServer } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
+// Issue #224 — suite readiness contract + lifecycle diagnostics
+import { runSpec as harnessReadiness } from './unit/harness-readiness.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
 import { runSpec as liveParityRunner } from './unit/live-parity-runner.spec.mjs';
@@ -21,6 +23,8 @@ import { runSpec as sixWidthLayout } from './integration/six-width-layout.spec.m
 import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spec.mjs';
 import { runSpec as workerPointerRace } from './unit/worker-pointer-race.spec.mjs';
+// Issue #221 — canonical-user token authority (Worker v20)
+import { runSpec as workerTokenAuthority } from './unit/worker-token-authority.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
@@ -36,6 +40,10 @@ import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.spec.mjs';
 import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
+// Issue #219 — untrusted-import credential trust boundary
+import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
+// Issue #220 — self-hosted-only executable code
+import { runSpec as ocrSelfHosted } from './integration/ocr-self-hosted.spec.mjs';
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fuel-concurrency.spec.mjs';
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
@@ -76,6 +84,7 @@ const specs = [
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,
+  harnessReadiness,
   cacheGeneration,
   deployAssetCoverage,
   liveParityRunner,
@@ -89,6 +98,7 @@ const specs = [
   cloudBackupPaused,
   workerTokenRotation,
   workerPointerRace,
+  workerTokenAuthority,
   workerInviteClaim,
   liveInviteClaimGate,
   vehicleProfileRace,
@@ -109,6 +119,8 @@ const specs = [
   vanFitPrecheck,
   pickupFeasibility,
   positionAuthority,
+  importCredentialTrustBoundary,
+  ocrSelfHosted,
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
   m3ConfidenceEvidence,

@@ -10,7 +10,7 @@
 // surface, the real export/import — because the previous coverage asserted
 // helper behaviour and store EXISTENCE, which is exactly why these defects
 // shipped green.
-import { launchApp, launchBlank, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, launchBlank, skipFirstRunWizard, createSuite, ok, eq, waitForAppReady } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/batch-a-release-integrity.spec.mjs');
 let app;
@@ -312,7 +312,7 @@ test('[A-13] the production intake surface persists durable evidence that surviv
     await new Promise(r => setTimeout(r, 400));
   });
   await app.page.reload({ waitUntil: 'load' });
-  await app.page.waitForFunction(() => !!document.getElementById('appMeta')?.textContent, { timeout: 15000 });
+  await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
   const r = await evalIn(async () => {
     const rows = await window.__FL_TESTS.listEvidence();
     const row = rows.find(x => x.orderNo === 'PROD-1');

@@ -450,6 +450,71 @@ test('[ZTO-10] a malformed #i= fragment is stripped and opens no wizard', async 
   } finally { await app.close(); }
 });
 
+/** Issue #221 — a link may no longer INSTALL a bearer credential.
+ *
+ *  `cloudCheckSetupLink()` accepted `#token=<flk_…>` AND `?token=<flk_…>`, filled
+ *  `#cloudBackupToken` and navigated to Settings. Both were the human credential
+ *  transport that zero-token onboarding exists to eliminate, kept alive for
+ *  compatibility with a flow that had already been deliberately retired — and
+ *  the query-string form is strictly worse than the fragment, because a query
+ *  string IS sent to the origin, so the token reaches the access log and any
+ *  `Referer` before any client-side cleanup can run.
+ *
+ *  These assert the FIELD, not just the URL. Stripping the address bar while
+ *  still loading the credential into the form would look identical in a
+ *  URL-only assertion and would leave the whole defect in place. */
+async function openLegacyTokenLink(app, suffix) {
+  await app.page.goto('about:blank');
+  await app.page.goto(`${app.baseUrl}/index.html${suffix}`, { waitUntil: 'load' });
+  await app.page.waitForFunction(() => !!window.__FL_TESTS, null, { timeout: 15000 });
+  await app.page.waitForTimeout(600);
+  return await app.page.evaluate(() => ({
+    url: location.href,
+    field: document.querySelector('#cloudBackupToken')?.value ?? null,
+    stored: null,
+  }));
+}
+
+test('[ZTO-16] a legacy #token= setup link does not install the token', async () => {
+  const app = await openApp();
+  try {
+    const s = await openLegacyTokenLink(app, `#token=${FAKE_TOKEN}`);
+    eq(s.field, '', 'a legacy fragment token must NOT be loaded into the credential field');
+    ok(!s.url.includes('token='), `the credential must be stripped from the URL, got ${s.url}`);
+    ok(!s.url.includes(FAKE_TOKEN), 'the token must not remain anywhere in the address');
+
+    const persisted = await app.page.evaluate(async () => await window.__FL_TESTS.getSetting('cloudBackupToken', ''));
+    eq(persisted, '', 'a link must never persist a bearer token to the settings store');
+  } finally { await app.close(); }
+});
+
+test('[ZTO-17] a legacy ?token= setup link does not install the token either', async () => {
+  const app = await openApp();
+  try {
+    const s = await openLegacyTokenLink(app, `?token=${FAKE_TOKEN}`);
+    eq(s.field, '', 'a legacy query-string token must NOT be loaded into the credential field');
+    ok(!s.url.includes('token='), `the credential must be stripped from the URL, got ${s.url}`);
+
+    const persisted = await app.page.evaluate(async () => await window.__FL_TESTS.getSetting('cloudBackupToken', ''));
+    eq(persisted, '', 'a link must never persist a bearer token to the settings store');
+  } finally { await app.close(); }
+});
+
+test('[ZTO-18] retiring token links did not break the #i= claim flow', async () => {
+  // The paired control for ZTO-16/17: the replacement path must still work, or
+  // "the link does nothing" would be satisfied by breaking onboarding outright.
+  const app = await openApp();
+  try {
+    await routeWorker(app.page, {
+      '/claim': async () => ({ status: 200, body: { ok: true, userId: 'u_zto18', name: 'Dana', token: FAKE_TOKEN } }),
+    });
+    await openInviteLink(app, 'ABCDEFGHJKMNPQRSTVWXYZ23');
+    await app.page.waitForSelector('#claimWizard', { timeout: 15000 });
+    const wizard = await app.page.evaluate(() => !!document.querySelector('#claimWizard'));
+    ok(wizard, 'the claim-code flow must still open the wizard — it is the onboarding authority now');
+  } finally { await app.close(); }
+});
+
 test('[ZTO-13] the claim wizard is a REAL credential form, so the keychain can save it', async () => {
   const app = await openApp();
   try {

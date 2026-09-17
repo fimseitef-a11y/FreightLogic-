@@ -1,7 +1,31 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.15 USA ENGINE
+/** FreightLogic v24.0.16 USA ENGINE
+ *  v24.0.16 "Trust Boundaries": three security issues handed to this lane after
+ *          PR #223, each a trust boundary that was documented but not enforced.
+ *          #219 — importJSON()'s allow-list admitted cloudBackupToken,
+ *          cloudBackupUrl, appLockPin and both API keys and wrote them through a
+ *          blind put(), and cloudGetConfig() reads the token AND the URL back,
+ *          so a crafted file fed to "Import Data" could repoint every later
+ *          backup at another endpoint with another bearer token.
+ *          isSettingImportSafe() reuses the export policy and adds the
+ *          asymmetric half (cloudBackupUrl is exportable, never importable);
+ *          mode='skip' tested x.id on a store keyed by `key`, so skip overwrote
+ *          every existing setting, and a duplicate key aborted the whole import
+ *          because ConstraintError arrives asynchronously past the try/catch.
+ *          #221 — driver auth trusted the tokh: index alone, so two overlapping
+ *          claims could leave two live bearer credentials for one account, the
+ *          stale one valid indefinitely; the canonical user record is now the
+ *          authority on which hash is current (Worker v19 → v20), and raw
+ *          token= setup links are retired at boot rather than in renderInsights.
+ *          #220 — OCR's jsDelivr fallback executed unpinned third-party script
+ *          in this origin; it is removed and script-src is 'self' alone. It was
+ *          already dead: connect-src blocks the language model and worker-src
+ *          forbids a cross-origin worker, proved from real CSP violations.
+ *          #224 is NOT closed — the db===null race did not reproduce — but 15
+ *          weak readiness waits are fixed and a failure now prints the document
+ *          lifecycle that would identify a re-bootstrap.
  *  v24.0.15 "Two Findings And A Residue": closes the two OPEN findings in
  *          AUDIT_REPORT.md and the one residue CLAUDE.md carried as
  *          reported-not-fixed. V-1 — ensureVehicleProfiles() was a
@@ -239,7 +263,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.15';
+const APP_VERSION = '24.0.16';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3592,6 +3616,71 @@ function exportSafeSettings(allSettings){
   return (allSettings || []).filter(s => s && isSettingExportSafe(s.key));
 }
 
+// ── Issue #219: the IMPORT direction is a separate trust domain ────────────────
+//
+// Export-side stripping is not a defence against an import-side overwrite. A
+// local JSON import is UNTRUSTED data — an operator can be handed a file, and
+// `importJSON()` wrote `data.settings` straight into the `settings` store
+// through a blind `put()`. `ALLOWED_SETTINGS_KEYS` admitted `cloudBackupToken`,
+// `cloudBackupUrl`, `appLockPin`, `fmcsaApiKey` and `eiaApiKey`, and
+// `cloudGetConfig()` reads BOTH the token and the URL back — so a crafted file
+// could silently repoint every later backup at an attacker's endpoint with an
+// attacker's bearer token, or replace the app-lock PIN hash.
+//
+// Ordinary data portability and credential provisioning are different
+// operations. Restoring trips must never be a way to install a credential.
+//
+// Two independent reasons a credential cannot arrive this way, deliberately:
+// the credential keys are removed from `ALLOWED_SETTINGS_KEYS` below, AND this
+// gate denies them regardless of what that list says. The list describes what
+// the app writes and is edited by habit whenever a key is added; this gate is
+// the one that has to hold when somebody adds a secret to it without thinking.
+//
+// `isSettingExportSafe()` is reused rather than restated: a value too sensitive
+// to LEAVE the device is also too sensitive to ACCEPT from a file, and one
+// policy cannot drift from itself. The extra names below are the asymmetric
+// half — keys that are perfectly safe to export but carry SECURITY AUTHORITY
+// rather than secrecy, so accepting them from an untrusted file is the defect
+// even though emitting them is not.
+const SETTINGS_NEVER_IMPORT = Object.freeze(new Set([
+  'cloudBackupUrl',     // endpoint authority: cloudGetConfig() reads this, so an
+                        // imported value redirects every subsequent backup and
+                        // restore. Exportable (it is not a secret), never
+                        // importable. Absent, the hardcoded CLOUD_WORKER_URL
+                        // still applies, so blocking it degrades nothing.
+  'appLockEnabled',     // turning the device lock OFF is a security downgrade,
+                        // and an import is not an authenticated request to
+                        // perform one.
+]));
+
+/** Is this settings key safe to accept FROM an untrusted portable payload?
+ *  Strictly narrower than `isSettingExportSafe()` — see the block comment. */
+function isSettingImportSafe(key){
+  const k = String(key || '');
+  if (!isSettingExportSafe(k)) return false;   // every secret, named or by pattern
+  if (SETTINGS_NEVER_IMPORT.has(k)) return false;
+  return true;
+}
+
+/** Does `rec` actually carry a value at `store`'s own key path?
+ *
+ *  Issue #219, second half. The import writer's `mode === 'skip'` guard tested
+ *  `x.id !== undefined` — but `settings` has keyPath `key`, not `id`, so no
+ *  settings record ever satisfied it and every one fell through to `put()`.
+ *  `skip` therefore overwrote existing settings on every import, which is the
+ *  opposite of what the mode means. Reading the store's REAL keyPath fixes it
+ *  for `settings` (`key`) and `receipts` (`tripOrderNo`) at the same time,
+ *  instead of adding a second hardcoded name that the next store would miss. */
+function idbRecordHasOwnKey(store, rec){
+  if (!rec || typeof rec !== 'object') return false;
+  const kp = store && store.keyPath;
+  if (kp == null) return false;   // out-of-line keys: the caller supplies them
+  const paths = Array.isArray(kp) ? kp : [kp];
+  return paths.every(p =>
+    String(p).split('.').reduce((o, seg) => (o == null ? undefined : o[seg]), rec) !== undefined
+  );
+}
+
 async function exportJSON(){
   const trips = await dumpStore('trips');
   const expenses = await dumpStore('expenses');
@@ -3732,9 +3821,9 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','cloudBackupUrl','cloudBackupToken','lastCloudSync','vehicleClass','appLockEnabled','appLockPin','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','lastCloudSync','vehicleClass','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
       // v21 new settings keys
-      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','fmcsaApiKey','eiaApiKey','localUserId',
+      'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','localUserId',
       // v22 F21/F22/F23 onboarding flags
       'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
       // v23 F24 positioning engine flags
@@ -3760,12 +3849,22 @@ async function importJSON(file, opts={}){
       // of gap, so it is allowed through at the same time it is introduced.
       'planningAvgMph']);
     // T5-FIX: Validate settings value types and cap size; allow dynamic-prefix keys for broker notes and lane reviews
+    //
+    // Issue #219: `isSettingImportSafe()` is ANDed in, not substituted. The
+    // allowlist says which keys this app recognises; the gate says which of
+    // them an untrusted file may set. The credential keys are gone from the
+    // list above as well, so a credential now needs BOTH edits to become
+    // importable again — and the regression fails on either one alone.
     const isAllowedSettingsKey = k => {
+      if (!isSettingImportSafe(k)) return false;
       if (ALLOWED_SETTINGS_KEYS.has(k)) return true;
       if (k.startsWith('broker_note_') && k.length <= 80) return true;
       if (k.startsWith('laneReviewDone_') && k.length <= 80) return true;
       return false;
     };
+    const rejectedSettingKeys = arr(data.settings)
+      .filter(s => s && typeof s === 'object' && typeof s.key === 'string' && !isSettingImportSafe(s.key))
+      .map(s => s.key);
     const safeSettingsArr = arr(data.settings).filter(s => s && typeof s === 'object' && typeof s.key === 'string' && isAllowedSettingsKey(s.key) && JSON.stringify(s.value ?? '').length < 50000).map(s => ({
       key: s.key, value: typeof s.value === 'object' && s.value !== null ? deepCleanObj(JSON.parse(JSON.stringify(s.value))) : s.value
     }));
@@ -3838,7 +3937,33 @@ async function importJSON(file, opts={}){
       try{ stores.loadLifecycle.clear(); }catch(e){ console.warn("[FL]", e); }
       try{ stores[EVIDENCE_STORE].clear(); }catch(e){ console.warn("[FL]", e); }
     }
-    const putAll = (store, a) => (a||[]).forEach(x => { try{ if (mode === 'skip' && x && x.id !== undefined) store.add(x); else store.put(x); }catch(e){ console.warn("[FL]", e); } });
+    // Issue #219: `skip` used to test `x.id !== undefined`, which no `settings`
+    // record can satisfy (keyPath `key`) — so `skip` silently overwrote every
+    // existing setting. `idbRecordHasOwnKey()` reads the store's real keyPath,
+    // so `add()` is attempted whenever the record carries its own key and the
+    // ConstraintError on an existing key is what makes `skip` actually skip.
+    const putAll = (store, a) => (a||[]).forEach(x => {
+      try{
+        if (mode === 'skip' && idbRecordHasOwnKey(store, x)){
+          const req = store.add(x);
+          // `skip` means "leave the existing record alone", and the only signal
+          // that one exists is the ConstraintError from add(). IndexedDB raises
+          // that ASYNCHRONOUSLY as a request error event which bubbles to the
+          // transaction and ABORTS IT — the surrounding try/catch is
+          // synchronous and never sees it. So without preventDefault() one
+          // duplicate key rolls back the entire import, including every record
+          // that had already been written.
+          //
+          // That is a PRE-EXISTING defect, not one Issue #219 introduced: the
+          // old guard already routed trips/expenses/fuel with an `id` through
+          // add(), so re-importing any file that shared a single record id
+          // silently imported NOTHING. It only surfaced now because the keyPath
+          // repair finally lets `settings` reach add() too, where duplicate
+          // keys are the normal case rather than the exception.
+          req.onerror = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+        } else store.put(x);
+      }catch(e){ console.warn("[FL]", e); }
+    });
     putAll(stores.trips, safeTripArr);
     putAll(stores.expenses, safeExpArr);
     putAll(stores.fuel, safeFuelArr);
@@ -3879,7 +4004,16 @@ async function importJSON(file, opts={}){
     }
     await waitTxn(txn);
     SETTINGS_CACHE.clear();
-    toast('Import complete');
+    // Issue #219: say so rather than dropping them silently. A withheld
+    // credential is a deliberate refusal, not a parse failure, and an operator
+    // restoring their own file should learn why the cloud endpoint or PIN did
+    // not come back with the rest of it. The KEY NAMES are named; no value is.
+    if (rejectedSettingKeys.length){
+      const shown = [...new Set(rejectedSettingKeys)].slice(0, 4).join(', ');
+      toast(`Import complete — ${rejectedSettingKeys.length} security setting(s) refused (${shown}). Credentials are never imported.`, true);
+    } else {
+      toast('Import complete');
+    }
   }catch(err){ toast('Import failed (invalid JSON or corrupted export).', true); }
 }
 
@@ -12370,28 +12504,72 @@ function openQuickAddSheet(){
 let _tesseractReady = false;
 let _tesseractWorker = null;
 
+// Issue #220 — OCR loads self-hosted code or it does not load.
+//
+// WHAT WAS WRONG. `loadTesseract()` fell back to
+// `https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/…` for the engine script, and
+// to jsDelivr again for `workerPath`/`corePath`. That is arbitrary third-party
+// JavaScript executing in the FreightLogic origin, with the same access to
+// IndexedDB as the operator's entire trip history, expenses, receipts and the
+// locally stored cloud credentials. `loadScriptWithFallback()` carried an SRI
+// TODO and no `integrity` attribute, so nothing pinned the bytes either. The
+// only reason `cdn.jsdelivr.net` remained in the CSP at all — after X-10 bundled
+// SheetJS — was this fallback.
+//
+// AND IT WAS ALREADY DEAD. The shipped CSP cannot run that path to completion,
+// which was proved rather than argued (see `OCR-*` in
+// integration/ocr-self-hosted.spec.mjs, which records real
+// `securitypolicyviolation` events):
+//
+//   - `connect-src` has no `tessdata.projectnaptha.com`, and
+//     `Tesseract.createWorker('eng', …)` must fetch `eng.traineddata.gz` from
+//     its default `langPath` there. The fetch raises a real CSP violation.
+//   - `worker-src 'self' blob:` forbids a cross-origin worker, so a jsDelivr
+//     `workerPath` throws `SecurityError` at construction.
+//
+// So the fallback could load and execute a third-party script in the origin —
+// the risk was entirely real — while never actually producing OCR. Removing it
+// takes away no working capability. That is the honest half of the issue's two
+// options, and it is what production already does in practice.
+//
+// WHAT IS KEPT. The local vendor path, unchanged. Dropping the three files into
+// `vendor/` enables OCR with no code change, exactly as README.txt describes,
+// and nothing fetches them from anywhere else. They are deliberately NOT
+// committed here: the engine, the SIMD core and the English model are ~15 MB
+// together, which is an operator-sized decision about a flat-file repo whose
+// service worker precaches its assets — not something to slip into a security
+// fix. See the note in README.txt.
+//
+// Returns a Tesseract worker, or NULL when OCR is not installed. Null rather
+// than a throw because both call sites want to report "not available" rather
+// than surface an engine error, and the receipt path already tested for it.
+const OCR_VENDOR_ENGINE = './vendor/tesseract.min.js';
+const OCR_VENDOR_WORKER = './vendor/worker.min.js';
+const OCR_VENDOR_CORE   = './vendor/tesseract-core-simd-lstm.wasm.js';
+
 async function loadTesseract(){
   if (_tesseractReady && _tesseractWorker) return _tesseractWorker;
   if (typeof Tesseract === 'undefined'){
-    await loadScriptWithFallback([
-      './vendor/tesseract.min.js',
-      'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
-    ], () => {
-      if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
-        throw new Error('Tesseract loaded but createWorker missing — possible CDN tampering');
-      }
-    }, 'Failed to load OCR engine. Add local vendor files or connect to the internet.');
+    try {
+      await loadScriptWithFallback([OCR_VENDOR_ENGINE], () => {
+        if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
+          throw new Error('OCR engine loaded but createWorker is missing');
+        }
+      }, 'OCR engine is not installed on this device.');
+    } catch (err){
+      console.warn('[FL] OCR engine unavailable:', err && err.message);
+      return null;
+    }
   }
   try {
     _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-      workerPath: './vendor/worker.min.js',
-      corePath: './vendor/tesseract-core-simd-lstm.wasm.js',
+      workerPath: OCR_VENDOR_WORKER,
+      corePath: OCR_VENDOR_CORE,
     });
-  } catch (_localErr){
-    _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
-      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd-lstm.wasm.js',
-    });
+  } catch (err){
+    console.warn('[FL] OCR worker could not start:', err && err.message);
+    _tesseractWorker = null;
+    return null;
   }
   _tesseractReady = true;
   return _tesseractWorker;
@@ -14436,11 +14614,14 @@ async function openReceiptCamera(orderNo){
     haptic(20);
     toast('Scanning receipt...');
     try {
-      const Tess = await loadTesseract();
-      if (!Tess){ toast('OCR not available — install Tesseract offline', true); return; }
-      const worker = await Tess.createWorker('eng');
+      // Issue #220: this asked `loadTesseract()` for the Tesseract NAMESPACE and
+      // called `Tess.createWorker('eng')` on it — but the function returns a
+      // ready WORKER, which has no createWorker. So receipt OCR raised a
+      // TypeError even when an engine was present. Found while making the
+      // unavailable path honest; the worker is now used directly.
+      const worker = await loadTesseract();
+      if (!worker){ toast('Receipt scanning needs the offline OCR engine installed — see README.txt.', true); return; }
       const { data: { text } } = await worker.recognize(capturedBlob);
-      await worker.terminate();
       const parsed = parseReceiptOCR(text);
       closeModal();
       setTimeout(()=> openReceiptExpenseForm(parsed, capturedBlob), 200);
@@ -15858,7 +16039,17 @@ async function mergeRestoreData(parsed){
     // do.
     const {t:wt, stores:ws} = tx('settings','readwrite');
     const existingKeys = new Set((await idbReq(ws.settings.getAll())).map(s => s.key));
-    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key));
+    // Issue #219, defence in depth — NOT the reported defect. This merge is
+    // add-only, so it could never OVERWRITE a local credential the way the
+    // local-import path could; but it could still INSTALL one that happens to
+    // be absent locally (a fresh device mid-disaster-recovery is exactly that
+    // state). `cloudPushBackup()` already strips secrets through
+    // `exportSafeSettings()`, so a legitimate payload never carries them —
+    // which is the point: if one arrives, the payload is not legitimate, and a
+    // restore is not an authenticated request to provision a credential.
+    // Nothing is lost, because the passphrase and token are not in the payload
+    // and must be re-entered on a new device regardless.
+    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key) && isSettingImportSafe(s.key));
     for (const s of toAdd) ws.settings.put(s);
     await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
     stats.settings.added = toAdd.length;
@@ -16204,20 +16395,54 @@ async function cloudRefreshButtons(){
   if (pb) pb.disabled = !enabled; if (pl) pl.disabled = !enabled;
 }
 
-function cloudCheckSetupLink(){
+/** Issue #221 — a link no longer INSTALLS a bearer credential, and a legacy one
+ *  is disarmed at boot rather than whenever Settings happens to render.
+ *
+ *  WHAT THIS REPLACES. `cloudCheckSetupLink()` accepted `#token=<flk_…>` and
+ *  `?token=<flk_…>`, filled `#cloudBackupToken` and navigated to Settings. Both
+ *  halves were the human credential transport that v24.0.13's zero-token
+ *  onboarding exists to eliminate, kept alive for compatibility with a flow that
+ *  had already been deliberately retired:
+ *
+ *    - `?token=` is worse than the fragment form, not merely equivalent. A query
+ *      string IS sent to the origin, so the bearer token reaches the access log,
+ *      the Worker's own request line and any `Referer` header BEFORE any
+ *      client-side cleanup can run. Stripping it afterwards tidies the address
+ *      bar; it cannot un-send it. That is why the toast for this case says the
+ *      token must be treated as exposed rather than merely unsupported.
+ *    - `#token=` never reaches a server, but it still leaves a permanent
+ *      credential in a mail or iMessage thread — exactly the resting place the
+ *      claim-code design removed.
+ *
+ *  WHY IT MOVED TO BOOT. `cloudCheckSetupLink()` was only reachable through
+ *  `cloudInitUI()`, which runs inside `renderInsights()` — the Settings render.
+ *  So the old `history.replaceState` only fired if the operator happened to open
+ *  Settings, and until then a bearer token sat in the address bar, in session
+ *  history, and in any screenshot or share sheet. Found by ZTO-16/17 asserting
+ *  the URL as well as the field; a field-only assertion would have passed.
+ *
+ *  Synchronous, and called before the first await for the same reason
+ *  `flCaptureClaimCode()` is: an await yields to the event loop, and anything
+ *  reading `location.href` in between would capture a live credential.
+ *
+ *  Returns 'query' | 'fragment' | null — the transport, never the token, so the
+ *  value cannot reach a log or an error message through this path. */
+function flStripLegacyTokenLink(){
   try {
-    // Check fragment first (new format — token never sent to servers)
-    const frag = window.location.hash.slice(1);
-    let t = null;
-    if (frag.startsWith('token=')) {
-      t = decodeURIComponent(frag.slice(6));
-    } else {
-      // Legacy: query-param fallback for older invite links
-      const p = new URLSearchParams(window.location.search);
-      t = p.get('token');
-    }
-    if (t && t.startsWith('flk_')){ const el = $('#cloudBackupToken'); if (el) el.value = t; history.replaceState(null, '', window.location.pathname); toast('Token loaded — pick a passphrase and tap Connect'); setTimeout(()=>{ if (typeof navigate === 'function') navigate('#insights'); }, 500); }
-  } catch(e) {}
+    const frag = String(window.location.hash || '').slice(1);
+    const fragToken = frag.startsWith('token=') ? decodeURIComponent(frag.slice(6)) : null;
+    let queryToken = null;
+    try { queryToken = new URLSearchParams(window.location.search).get('token'); } catch(_) {}
+
+    const viaQuery = !!(queryToken && queryToken.startsWith('flk_'));
+    const viaFragment = !!(fragToken && fragToken.startsWith('flk_'));
+    if (!viaQuery && !viaFragment) return null;
+
+    // Strip unconditionally and immediately. Whatever is reported afterwards,
+    // the credential must stop travelling with this page.
+    try { history.replaceState(null, '', window.location.pathname); } catch(_) {}
+    return viaQuery ? 'query' : 'fragment';
+  } catch(_) { return null; }
 }
 
 // ─── v24.0.13 Zero-token driver onboarding ────────────────────────────────────
@@ -16256,6 +16481,10 @@ const CLAIM_CODE_RE = /^[A-Z2-7]{24}$/;
  *  Module-scoped rather than global: `app.js` exports nothing, so this is not
  *  reachable from another script on the page. Cleared the moment it is spent. */
 let _pendingClaimCode = null;
+/** Issue #221: 'query' | 'fragment' | null — which retired setup-link transport
+ *  this page was opened with, recorded so boot can say so once the DOM exists.
+ *  Deliberately never holds the token itself. */
+let _legacyTokenLinkSeen = null;
 
 /* ── Owner: one-time admin setup ─────────────────────────────────────────────
  *
@@ -16833,7 +17062,6 @@ function maybePromptAddToHomeScreen(){
 // direct API use.
 
 function cloudInitUI(){
-  cloudCheckSetupLink();
   var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
   makeToggle('#btnPassToggle', '#cloudBackupPass');
   makeToggle('#btnTokenToggle', '#cloudBackupToken');
@@ -16985,6 +17213,9 @@ function openQuickEvalFlow(){
     setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
     try {
       const worker = await loadTesseract();
+      // Issue #220: this path never tested the result, so an absent engine
+      // surfaced as a TypeError on `worker.recognize` instead of an explanation.
+      if (!worker){ setStatus('❌','OCR not installed','Paste or dictate the load instead — see README.txt for the offline OCR engine'); return; }
       setStatus('🔍','Scanning load…','Reading text from image');
       const { data } = await worker.recognize(file);
       const text = data.text || '';
@@ -21978,6 +22209,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
     isSettingExportSafe, exportSafeSettings,
+    isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
+    loadTesseract,                             // Issue #220 — null when OCR is not installed
     // v24.0.13 zero-token onboarding. Exported so the regressions can drive the
     // REAL admin/claim paths rather than a reimplementation — the claim wizard
     // and the PIN modal are asserted through the DOM, but "was a rejected token
@@ -21997,6 +22230,12 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   // event loop, and anything that reads location.href in between would capture a
   // live invite code. flCaptureClaimCode() is synchronous end to end.
   _pendingClaimCode = flCaptureClaimCode();
+  // Issue #221: disarm a legacy `#token=`/`?token=` setup link on the same
+  // synchronous line of boot. It used to be handled inside renderInsights(), so
+  // a bearer token stayed in the address bar and in session history until the
+  // operator happened to open Settings. Only the TRANSPORT is kept, never the
+  // token, so this cannot become a way for the credential to reach a log.
+  _legacyTokenLinkSeen = flStripLegacyTokenLink();
   try{
     $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
     db = await initDB();
@@ -22011,6 +22250,18 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
       const claimCode = _pendingClaimCode;
       _pendingClaimCode = null;
       openClaimWizard(claimCode).catch(()=>{ console.warn('[FL] claim wizard failed to open'); });
+    }
+    // Issue #221: report the retired setup link now that the DOM exists. Not
+    // silence — silence would leave an operator holding a real invite with no
+    // idea why nothing happened. Deliberately after the claim wizard, so a
+    // genuine `#i=` link is never talked over.
+    if (_legacyTokenLinkSeen && !_pendingClaimCode){
+      const via = _legacyTokenLinkSeen;
+      _legacyTokenLinkSeen = null;
+      toast(via === 'query'
+        ? 'That setup link put a token in the web address, so it must be treated as exposed — ask for it to be revoked, then use a claim link.'
+        : 'Token setup links are retired. Ask the owner for a claim link — tokens are no longer shared.',
+        true);
     }
     const uiMode = await getSetting('uiMode', null);
     if (!uiMode) await setSetting('uiMode','simple');
