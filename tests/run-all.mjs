@@ -35,6 +35,7 @@ import { runSpec as dzGateParity } from './integration/dz-gate-parity.spec.mjs';
 import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.spec.mjs';
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.spec.mjs';
+import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
 import { runSpec as m2ExpenseFuelConcurrency } from './integration/m2-expense-fuel-concurrency.spec.mjs';
 import { runSpec as m3ConfidenceEvidence } from './integration/m3-confidence-evidence.spec.mjs';
@@ -64,6 +65,7 @@ import { runSpec as releaseGenerationDiscipline } from './unit/release-generatio
 import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
 import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
 import { runSpec as liveInviteClaimGate } from './unit/live-invite-claim-gate.spec.mjs';
+import { runSpec as vehicleProfileRace } from './integration/vehicle-profile-race.spec.mjs';
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 
 const specs = [
@@ -88,6 +90,7 @@ const specs = [
   workerPointerRace,
   workerInviteClaim,
   liveInviteClaimGate,
+  vehicleProfileRace,
   zeroTokenOnboarding,
   laneGuard,
   dzGradeCap,
@@ -103,6 +106,7 @@ const specs = [
   xlsxBundledVendor,
   vanFitPrecheck,
   pickupFeasibility,
+  positionAuthority,
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
   m3ConfidenceEvidence,

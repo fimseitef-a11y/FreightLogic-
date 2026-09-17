@@ -4,8 +4,21 @@
 > (v23.8.3/v23.8.4) and X-series (v23.9) against repository **source**, and — appended at the
 > end — the **P-series (P-01 … P-07) against the DEPLOYED backup/API Worker**.
 >
-> The P-series were the only OPEN findings this report has ever carried, including two live
-> credential exposures and a live violation of the v24.0 decision-authority rule. They were open
+> **V-1 and V-2 are CLOSED in v24.0.15 (source).** Both are at the very end of this report,
+> both were found by `main` failing its own release gate and being cleared by a re-run, and
+> neither came from a report. **V-1**: `ensureVehicleProfiles()` was a read-modify-write with
+> no serialization, so two concurrent callers each minted a vehicle profile and one was
+> silently discarded along with the tax-method election that gates the F30 Schedule C export.
+> **V-2**: `checkFirstRunSetup()` fires 800 ms into boot and `openModal()` focuses what it
+> opens, so the first-run modal took the keyboard focus away from a driver mid-way through
+> typing a claim passphrase that by design cannot be reset.
+>
+> **Source-only.** v24.0.15 is not deployed and not live-observed; production serves 24.0.14.
+> A CLOSED-in-source finding is not a CLOSED-in-production finding, which is the distinction
+> the P-series exists to make.
+>
+> The P-series were, until then, the only OPEN findings this report had ever carried, including
+> two live credential exposures and a live violation of the v24.0 decision-authority rule. They were open
 > because production ran Worker **v7**, seven generations behind source. **All seven closed on
 > 2026-09-13 when v14 was deployed** — no code change was needed, exactly as the findings
 > predicted.
@@ -1242,3 +1255,149 @@ the deployed Worker.
 this deploy are not recoverable — the losing write was never stored. Nothing in the
 data identifies them, because a collision leaves one valid key rather than a
 corrupt one.
+
+---
+
+## V-1 — `ensureVehicleProfiles()` was not safe to call concurrently — CLOSED in v24.0.15 (source)
+
+**Severity: Medium.** A dropped vehicle profile takes the tax-method election
+attached to it, and that election gates the F30 Schedule C export.
+
+**How it surfaced.** Not from a report — from `main` failing its own release gate.
+Tests run `35084126731`, **attempt 1**, job `104754806868`, push on `main` @
+`8f90725`: `TOTAL: 523 passed, 4 failed across 56 spec files`, all four in
+`tax-export-csv-corruption.spec.mjs`, the first being its setup:
+
+```js
+await saveActiveVehicleProfile({ vehicleTaxMethod: STANDARD_MILEAGE, firstYearElection: STANDARD_MILEAGE });
+return (await getActiveVehicleProfile()).vehicleTaxMethod;   // !== 'STANDARD_MILEAGE'
+```
+
+The other three are that one setup cascading — X-03 blocks the Schedule C export
+entirely while `vehicleTaxMethod` is UNSET. **Attempt 2 on the same SHA passed, and
+that is the green Tests check standing for `8f90725` today.** A second, unrelated
+intermittent failure (ZTO-09) was found on the same tree and is separately fixed; a
+suite that needs a second attempt to go green stops being evidence, which is why
+neither was written off as a flake.
+
+**Where.** `app.js`, `ensureVehicleProfiles()`. It seeds lazily and is a
+read-modify-write over a settings key with no serialization:
+
+```js
+let profiles = await getSetting('vehicleProfiles', null);     // (1) observed absent
+if (!Array.isArray(profiles) || !profiles.length){
+  ... await Promise.all([getSetting('vehicleYear'), getSetting('vehicleMake')])
+  profiles = [_newVehicleProfile(label)];                      // (2) mint a fresh id
+  await setSetting('vehicleProfiles', profiles);               // (3) overwrite the array
+  await setSetting('activeVehicleId', profiles[0].id);
+}
+```
+
+Two callers can both be parked on the IndexedDB round trip at (1) before either
+reaches (3). Both then mint a profile with its own id and each overwrites the whole
+array, so one profile is silently discarded and the survivor is decided by whichever
+`setSetting` lands last. `setSetting` populates `SETTINGS_CACHE` synchronously before
+awaiting its transaction, which narrows the window without closing it — the window is
+the round trip at (1), which precedes any cache write.
+
+**Reachable in production, not only under a harness.** Three call sites read through
+this function: `refreshVehicleTaxMethodRow()` (any render that populates Settings),
+`openVehicleTaxMethodModal()`, and `openTaxSeasonExport()`. On a fresh install, any
+two overlapping is enough.
+
+**Reproduction.** `tests/integration/vehicle-profile-race.spec.mjs`, tagged
+`[FINDING V-1 / NEW]` per this suite's convention — a green `NEW` test means the
+evidence is captured, not that the defect is repaired. A Settings-side reader and a
+tax-method writer entering the lazy seed together mint **two distinct profile ids in
+8/8 iterations**, and the stored array holds exactly **one** profile in 8/8: two
+created, one overwritten. A scratch run at 30 iterations reproduced it 30/30. The
+second test is the control — the same save and read, serialized, is correct — so a
+failure here can never be misread as "vehicle profiles are broken" rather than "they
+race".
+
+**What is NOT claimed.** The specific direction that produced the CI failure — the
+one where the LOSING write is the operator's, so the election reads back UNSET — was
+**not reproduced**. In all 30 scratch iterations the surviving write happened to be
+the operator's, and giving the reader a head start of 0, 1, 2, 3 or 4 event-loop
+ticks did not flip it (0/10 at each). The lost update is proven; that this is what
+run `35084126731` hit is **inferred from the mechanism and the exact failure
+signature, not observed.** Recorded as inferred, for the same reason run
+`35049015938` is recorded as undiagnosed rather than explained away: a mechanism that
+fits is not a cause that was seen.
+
+**Fix (v24.0.15).** One module-scope in-flight promise, so concurrent callers await the
+SAME seeding operation instead of each performing their own — the smallest change that
+makes the concurrent case equivalent to the uncontended case the control test already
+proved correct. It is cleared on settle, so later calls re-read normally, and it
+serializes the seed rather than the function's whole lifetime.
+
+**Proof.** The same reproduction that found it: two concurrent callers minted two
+distinct profiles in **30/30** iterations before and **0/30** after. The spec is retagged
+`[FINDING V-1 / FIXED]` and now asserts the invariant — one lazy seed, one profile,
+however many callers race for it. Negative control verified: reverting the in-flight
+promise fails it while the uncontended control still passes, which is what keeps a
+failure readable as "they race" rather than "vehicle profiles are broken".
+
+---
+
+## V-2 — the first-run setup modal took focus away from an open claim wizard — CLOSED in v24.0.15 (source)
+
+**Severity: Medium.** It lands on a passphrase that by design cannot be reset, at the
+one moment a new driver is typing it.
+
+**Where.** `openClaimWizard()` covers the app at z-index 12000, and its own comment
+says so: *"the claim wizard … covers the app at z-index 12000 while the rest of boot
+continues behind it."* The rest of boot includes `checkFirstRunSetup()`, armed on an
+**800 ms `setTimeout`**, and `openModal()` ends by focusing the first focusable element
+in whatever it opens:
+
+```js
+setTimeout(()=> checkFirstRunSetup().catch(()=>{}), 800);          // boot
+const focusable = md.querySelector('input:not([type="hidden"]),select,textarea,button,[tabindex]:not([tabindex="-1"])');
+if (focusable) focusable.focus();                                   // openModal
+```
+
+So roughly 800 ms after a driver taps an invite link — while they are typing into a
+full-screen wizard — the keyboard focus jumps to a modal behind it. What they type next
+goes somewhere else, in a masked field, with a confirmation field that will then refuse
+to match.
+
+**Observed, not inferred.** The assertion was first written as part of ZTO-15 expecting
+focus to settle where it was put, and it failed with `document.activeElement.id` equal
+to **`modalClose`** — the first-run modal's own close button — with the claim wizard
+still open. Evidence line from the spec:
+
+```
+[evidence] focus after 1500ms in the confirm field: modalClose (claim wizard open: true, first-run modal open: true)
+```
+
+**Reproduction.** `tests/integration/zero-token-onboarding.spec.mjs`,
+`[FINDING V-2 / NEW]` — the one invite test that deliberately does **not** suppress the
+first-run wizard, because that wizard is the subject. Its settle window is 1500 ms
+specifically to outlast the 800 ms timer; a shorter window passes while leaving the
+hazard unobserved. ZTO-15 is the paired control: with the first-run wizard suppressed,
+focus stays exactly where it is put.
+
+**Fix (v24.0.15).** `checkFirstRunSetup()` returns early while a `#claimWizard` is open.
+Deferred, not cancelled, and deliberately **not** marked complete — if the driver
+abandons the claim, the next boot offers setup normally.
+
+**Proof.** The evidence line inverts: `focus after 1500ms in the confirm field:
+claimPass2 (claim wizard open: true, first-run modal open: false)`. The assertion checks
+both halves, because focus alone would still pass if the modal appeared and merely lost
+the race — and the modal must not appear at all. It reads `#modal`'s COMPUTED VISIBILITY
+rather than its existence: `#modal` is static markup in `index.html` and `openModal()`
+only sets `display:block`, so an existence check would fail forever and read as a product
+defect. Negative control verified: reverting the guard restores `modalClose`.
+
+**How it was found, which is the part worth keeping.** Not by a report and not by
+looking for it. ZTO-09 had been failing CI intermittently; the first repair for that —
+waiting for the wizard's own 120 ms focus timer before typing — was merged in PR #213
+**with its body accidentally emptied by a negative-control edit that was never
+restored**. Two verifications passed anyway: `grep -c` on the helper's name counts an
+identifier and is unchanged by an empty body, and re-running the spec unloaded passes
+either way because unloaded is precisely when the race does not fire. Re-running the
+full suite is what exposed it, and widening the assertion to ask *"does focus stay
+put?"* is what turned a test-harness race into this product finding. `RH-02` now fails
+any spec carrying leftover negative-control scaffolding, so the marker cannot reach
+`main` again.
