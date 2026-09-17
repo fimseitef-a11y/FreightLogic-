@@ -37,7 +37,7 @@
 // check this repository has recorded four times over. Seeding the exact residue
 // state the race produces is the stronger assertion.
 //
-// NEGATIVE CONTROL, verified to fire: removing the canonical-user block from
+// NEGATIVE CONTROLS, verified to fire: removing the canonical-user block from
 // `cloud-backup-worker.js` makes WTA-01, WTA-02, WTA-03 and WTA-06 pass the
 // stale token straight through — WTA-01 returns 200 and the stale credential
 // reads the live driver's backup list.

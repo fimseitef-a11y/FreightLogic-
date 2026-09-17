@@ -79,9 +79,16 @@ split out and run early**. Three reasons, in order of weight:
 
 ## What a future session must not conclude
 
-- Do **not** read `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` as a live
-  test queue. Its "Still HOLD — exactly two things" section is accurate about the facts and
-  silent about the schedule; this document supplies the schedule.
+- Do **not** read the current certification state document as a live test queue. Its
+  "Still HOLD" section is accurate about the facts and silent about the schedule; this
+  document supplies the schedule.
+- **Superseded pointer (2026-09-17):** this document was written against
+  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` (app 24.0.14 / SHA
+  `8f90725`). The current authority is
+  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md` (production 24.0.15 /
+  `ee07297`). **The deferral itself is unchanged** — the operator's decision is about the
+  final post-v24.5 candidate, not about any particular interim generation, so a new
+  production generation does not expire it. Only the document it points at moved.
 - Do **not** read `FIELD_TEST_CHECKLIST.md`'s open A-rows as work due now. The instrument is
   ready and correct; it is deliberately not being run yet.
 - Do **not** treat the deferral as closing either gate. A deferred gate is open. The release

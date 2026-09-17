@@ -1401,3 +1401,183 @@ full suite is what exposed it, and widening the assertion to ask *"does focus st
 put?"* is what turned a test-harness race into this product finding. `RH-02` now fails
 any spec carrying leftover negative-control scaffolding, so the marker cannot reach
 `main` again.
+
+---
+
+## S-1 — An untrusted local import could install a cloud credential — CLOSED in v24.0.16 (source)
+
+**Severity: High.** GitHub issue **#219**. Confirmed against `main` @ `ee07297`; closed in
+v24.0.16, which is **source-only and not deployed** — production still serves 24.0.15, so
+this finding is live in production until v24.0.16 deploys.
+
+`importJSON()`'s `ALLOWED_SETTINGS_KEYS` admitted `cloudBackupToken`, `cloudBackupUrl`,
+`appLockPin`, `fmcsaApiKey` and `eiaApiKey`, and the writer put every accepted row straight
+into the `settings` store through `putAll`. `cloudGetConfig()` reads back **both** the
+bearer token and the endpoint URL:
+
+```js
+const token = await getSetting('cloudBackupToken', '');
+const url = await getSetting('cloudBackupUrl', CLOUD_WORKER_URL) || CLOUD_WORKER_URL;
+```
+
+So a crafted JSON file — the kind an operator can be handed and will reasonably feed to
+"Import Data" — could silently repoint every subsequent backup and restore at an attacker's
+endpoint using an attacker's bearer token, and replace the app-lock PIN hash on the way
+past. No prompt, no diff, and a cheerful "Import complete".
+
+**Reproduction.** `tests/integration/import-credential-trust-boundary.spec.mjs` ICT-01/02/04
+seed a real credential in a real IndexedDB, import a payload carrying attacker values
+through the real `importJSON()`, and compare the stored bytes. Against the pre-fix state the
+attacker token lands in the store verbatim
+(`flk_deadbeefdeadbeefdeadbeefdeadbeef`).
+
+**Why the export-side policy was not a defence,** and this was already written down: the
+comment above `SETTINGS_NEVER_EXPORT` says *"The import-side `ALLOWED_SETTINGS_KEYS` list is
+not a defence here: it governs what an import will ACCEPT, never what an export EMITS, and it
+explicitly names `cloudBackupToken` and `appLockPin`."* The observation was correct and
+nothing acted on it. A comment describing a boundary is not a boundary.
+
+**Fix.** `isSettingImportSafe()` reuses `isSettingExportSafe()` — a value too sensitive to
+leave the device is too sensitive to accept from a file, and one policy cannot drift from
+itself — plus the asymmetric half: `cloudBackupUrl` and `appLockEnabled` are safe to export
+and carry security *authority*, so accepting them is the defect even though emitting them is
+not. Import-safe is a strict subset of export-safe and ICT-06 asserts that relation directly.
+
+### S-1b — `mode = 'skip'` overwrote every existing setting
+
+`putAll`'s guard was `mode === 'skip' && x.id !== undefined`. The `settings` store has keyPath
+**`key`**, not `id`, so no settings record could satisfy it and every one fell through to
+`put()`. `skip` — the mode an operator picks specifically to avoid clobbering local state —
+overwrote existing settings on every import. `receipts` (keyPath `tripOrderNo`) had the same
+gap. `idbRecordHasOwnKey()` reads the store's real keyPath.
+
+### S-1c — one duplicate key aborted the entire import — PRE-EXISTING
+
+Found by ICT-05 failing against the first version of the S-1 fix, and it predates this
+release. In `skip` mode a duplicate key raises `ConstraintError`, and IndexedDB delivers that
+**asynchronously** as a request error event that bubbles to the transaction and **aborts it**.
+The surrounding `try/catch` is synchronous and never sees it. The old guard already routed
+id-bearing trips/expenses/fuel through `add()`, so re-importing any file that shared a single
+record id imported **nothing** — every record already written was rolled back — and still
+reported "Import complete". Fixed with `req.onerror = ev => { ev.preventDefault(); ev.stopPropagation(); }`,
+which is the documented way to keep a failed request from aborting its transaction. ICT-08
+covers it.
+
+---
+
+## S-2 — A superseded driver token stayed live indefinitely — CLOSED in Worker v20 (source)
+
+**Severity: High.** GitHub issue **#221**. Deployed Worker is **v19**, so this is live in
+production until v20 deploys.
+
+Driver authentication resolved the presented bearer token through `tokh:<sha256(token)>` and
+trusted what it found, checking only `tokenData.active`. It never asked the account whether
+that was still its token.
+
+`POST /claim` and `POST /admin/users/:id/rotate` re-key in place: they write a fresh
+`tokh:<newHash>` plus `user:<userId>` and delete the hash they **observed**. Cloudflare KV
+offers no transaction and no compare-and-swap, so two overlapping claims can each read the
+same prior state and each write a token record. The last `user:` write wins — but the losing
+writer's `tokh:` entry survives, because the winner deleted a different hash.
+
+The result is **two simultaneously live bearer credentials for one driver account**, one of
+which the account does not name and no admin surface can see, valid indefinitely — including
+after a rotation performed specifically to retire it. Every backup is keyed
+`user:<userId>:device:<id>:…`, so the stale credential reads and writes the live driver's
+real data.
+
+**Reproduction.** `tests/unit/worker-token-authority.spec.mjs` seeds the exact KV residue an
+interrupted re-key leaves — the account naming the live hash, both index entries present —
+and drives the real exported fetch handler. Against the pre-fix Worker, WTA-01 returns
+**200** and WTA-02 shows the stale token reading the live driver's backup list. The residue is
+seeded directly rather than produced by racing two claims: the race is real but not
+deterministically reproducible single-threaded, and a regression that fails only on an unlucky
+interleaving is the green-check failure mode this report already records four times.
+
+**Fix.** After the index resolves, load `user:<userId>`, require it active and naming the exact
+hash presented, delete that superseded index entry, and return 403. This does **not** make KV
+atomic — the claim-count increment is still a race and is still documented as one. It makes the
+canonical user record the only authority on which hash is current. A legacy v7 record carrying
+plaintext `token` and no `tokenHash` has its hash derived rather than waved through, so there is
+no fail-open branch (WTA-08); a record with neither is refused (WTA-09).
+
+### S-2b — a bearer token rode in the URL until Settings happened to open
+
+`cloudCheckSetupLink()` accepted `#token=<flk_…>` and `?token=<flk_…>`, filled the credential
+field and navigated to Settings — the human credential transport that v24.0.13's zero-token
+onboarding exists to eliminate, kept alive for compatibility with a flow already deliberately
+retired. The query-string form is strictly worse: a query string **is** sent to the origin, so
+the token reaches the access log, the Worker's request line and any `Referer` header before any
+client-side cleanup can run.
+
+**Worse than issue #221 states, and found while testing it:** the cleanup was only reachable
+through `cloudInitUI()`, which runs inside `renderInsights()` — the Settings render. So the
+`history.replaceState` fired only if the operator happened to open Settings, and until then the
+bearer token sat in the address bar, in session history, and in any screenshot or share sheet.
+Found because ZTO-16/17 assert the URL as well as the field; a field-only assertion would have
+passed. `flStripLegacyTokenLink()` now runs on the same synchronous line of boot as
+`flCaptureClaimCode()` and returns the transport, never the token.
+
+---
+
+## S-3 — Unpinned third-party script could execute in the app origin — CLOSED in v24.0.16 (source)
+
+**Severity: High.** GitHub issue **#220**. Source-only; live in production until v24.0.16
+deploys.
+
+`loadTesseract()` fell back to jsDelivr three times over — the engine script, `workerPath` and
+`corePath` — and `loadScriptWithFallback()` carried an SRI TODO with no `integrity` attribute,
+so nothing pinned the bytes. `cdn.jsdelivr.net` sat in `script-src` and `connect-src` purely to
+permit it; after X-10 bundled SheetJS, OCR was the only reason left. Third-party script in this
+origin has the same access to IndexedDB as the operator's entire trip history, expenses,
+receipts and the locally stored cloud credential.
+
+**The path was already dead, and that is proved rather than argued.** `tests/integration/ocr-self-hosted.spec.mjs`
+records real `securitypolicyviolation` events from the shipped CSP:
+
+- `connect-src` has no `tessdata.projectnaptha.com`, where `Tesseract.createWorker('eng', …)`
+  must fetch `eng.traineddata.gz` — a violation fires naming that exact URI (OCR-01);
+- `worker-src 'self' blob:` forbids a cross-origin worker, so a jsDelivr `workerPath` throws
+  `SecurityError` at construction (OCR-02).
+
+OCR-01 carries its own discriminator: an **allowed** origin is equally unreachable from the test
+sandbox and produces **no** violation event. Without that control, "a fetch failed" would prove
+nothing about the policy.
+
+So the fallback could load and run foreign code in the origin while never producing a single
+character of OCR. Removing it takes away no working capability, which is why the issue's
+"remove honestly" option was taken rather than committing ~15 MB of third-party binary on this
+lane's own authority. `script-src` is now `'self'` alone.
+
+### S-3b — two OCR call sites raised a TypeError instead of an explanation
+
+Found while making the unavailable path honest, and independent of the CDN removal: the
+receipt-camera path called `Tess.createWorker('eng')` on the return value of `loadTesseract()`,
+which is a ready **worker** and has no `createWorker`; and the Quick Evaluate screenshot path
+never checked the result at all. Both raised a `TypeError` even with an engine present. Both now
+report "not installed" and name the alternative intake path.
+
+---
+
+## S-4 — the suite's own readiness contract — issue #224 remains OPEN
+
+**Not closed, and this entry exists to say so.** The `db === null` race did not reproduce in
+this environment: the full suite ran green on the first attempt, and targeted probes found no
+post-readiness re-bootstrap (idle app page 0/8 over 4 s, a second tab waiting only for
+`#appMeta` 0/12, the same under 20× CPU throttling 0/8). Issue #224 forbids clearing it with a
+rerun, so the root cause is unproven and `main` must not be described as having all automatable
+gates green.
+
+**What was found and fixed is a real instance of the same class, in 15 places, and `HR-02`
+found 13 that reading had missed.** Two were extra tabs in `toctou-concurrent-edit` waiting only
+for `#appMeta`. The other 13 — `field-resilience` (10), `backup-restore-parity` (2),
+`batch-a-release-integrity` (1) — are each a deliberate `page.reload()` followed by that same
+weak wait. **A reload is the re-bootstrap #224 deduces**: it re-runs the IIFE past
+`let db = null`. Those call sites were therefore the reported mechanism written into the suite.
+Whether they are also the CI failure cannot be claimed, because the CI failures were in specs
+that do not reload.
+
+Lifecycle diagnostics now print on any assertion failure — per-document stamp, navigations,
+page errors, and whether the handle is usable at that moment — so the next CI occurrence
+arrives with evidence instead of prompting another rerun. Deliberately not a retry, a timeout
+bump, a skip or a weakened assertion; `HR-03` asserts the failure path contains none of them.

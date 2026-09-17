@@ -2,11 +2,11 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.14 / IndexedDB v16 / Worker v19.** Observed 2026-09-16 by live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, whose `EXPECTED` block is exactly those generations. Current `main` has advanced through documentation/coordination commits without changing those shipped runtime generations.
+Current runtime synchronization point: **production serves FreightLogic v24.0.15 / IndexedDB v16 / Worker v19.** Observed 2026-09-17 by live parity job `105095664502` on `main` @ `ee07297`, reporting app/voice/SW-bridge and service worker at 24.0.15, manifest name `FreightLogic v24.0.15`, 23/23 declared runtime assets loading with none served as HTML, and Worker `/health` at v19 — `VERDICT: PASS`. Issue #225 opened because this line and the certification state it points at had gone one generation stale; issue **#224 is OPEN**, so the automatable suite gate is NOT green. A further source candidate, **v24.0.16** (Worker v20), exists and is **not deployed** — do not certify against it.
 
-**Not a live test queue.** A1-A12 and the section C private-history reconciliation are **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and run **once** against it. **24.0.14 is not the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A12 and the section C private-history reconciliation are **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and run **once** against it. **Neither 24.0.15 nor the undeployed 24.0.16 is the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 

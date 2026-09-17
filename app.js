@@ -1,7 +1,31 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.15 USA ENGINE
+/** FreightLogic v24.0.16 USA ENGINE
+ *  v24.0.16 "Trust Boundaries": three security issues handed to this lane after
+ *          PR #223, each a trust boundary that was documented but not enforced.
+ *          #219 — importJSON()'s allow-list admitted cloudBackupToken,
+ *          cloudBackupUrl, appLockPin and both API keys and wrote them through a
+ *          blind put(), and cloudGetConfig() reads the token AND the URL back,
+ *          so a crafted file fed to "Import Data" could repoint every later
+ *          backup at another endpoint with another bearer token.
+ *          isSettingImportSafe() reuses the export policy and adds the
+ *          asymmetric half (cloudBackupUrl is exportable, never importable);
+ *          mode='skip' tested x.id on a store keyed by `key`, so skip overwrote
+ *          every existing setting, and a duplicate key aborted the whole import
+ *          because ConstraintError arrives asynchronously past the try/catch.
+ *          #221 — driver auth trusted the tokh: index alone, so two overlapping
+ *          claims could leave two live bearer credentials for one account, the
+ *          stale one valid indefinitely; the canonical user record is now the
+ *          authority on which hash is current (Worker v19 → v20), and raw
+ *          token= setup links are retired at boot rather than in renderInsights.
+ *          #220 — OCR's jsDelivr fallback executed unpinned third-party script
+ *          in this origin; it is removed and script-src is 'self' alone. It was
+ *          already dead: connect-src blocks the language model and worker-src
+ *          forbids a cross-origin worker, proved from real CSP violations.
+ *          #224 is NOT closed — the db===null race did not reproduce — but 15
+ *          weak readiness waits are fixed and a failure now prints the document
+ *          lifecycle that would identify a re-bootstrap.
  *  v24.0.15 "Two Findings And A Residue": closes the two OPEN findings in
  *          AUDIT_REPORT.md and the one residue CLAUDE.md carried as
  *          reported-not-fixed. V-1 — ensureVehicleProfiles() was a
@@ -239,7 +263,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.15';
+const APP_VERSION = '24.0.16';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 

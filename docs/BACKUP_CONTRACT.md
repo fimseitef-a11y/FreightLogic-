@@ -2,7 +2,7 @@
 
 Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
-Current application contract: **FreightLogic v24.0.9 / IndexedDB v15 / Worker v15**.
+Current application contract: **FreightLogic v24.0.16 (source) / IndexedDB v16 / Worker v20 (source)**. Production serves **24.0.15 / DB16 / Worker v19** — see `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`.
 
 ## Rule
 
@@ -72,7 +72,7 @@ No backup/import path may re-introduce any of them from an export payload.
 `cloudAdminTokenEnc` is deliberately **absent from `ALLOWED_SETTINGS_KEYS`**, so an
 import silently drops it: an admin credential must never arrive from a file.
 
-## Store-level contract — current through v24.0.13 / DB v15 / Worker v18
+## Store-level contract — current through v24.0.16 / DB v16 / Worker v20
 
 | Store | Full backup | Delta backup | Restored | Contract |
 |---|---:|---:|---:|---|
@@ -112,7 +112,7 @@ For competing lifecycle copies, an older delta/import must not roll a newer conf
 
 A legacy payload with no `loadLifecycle` key is valid legacy input and is not corruption.
 
-## `normalizedEvidence` contract — current through v24.0.9 / DB v15
+## `normalizedEvidence` contract — current through v24.0.16 / DB v16
 
 `normalizedEvidence` is the durable evidence layer introduced by the v24.0.2 release-integrity correction. It preserves normalized opportunity facts, semantics, source references, confirmation state, and per-field provenance independently of lifecycle linkage.
 

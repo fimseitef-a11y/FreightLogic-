@@ -396,7 +396,7 @@ test('[WIC-14] a revoked driver\'s token is 403 on /backup', async () => {
 
 // ── Endpoint placement ───────────────────────────────────────────────────────
 
-test('[WIC-15] /claim requires NO backup token, and /health reports v19', async () => {
+test('[WIC-15] /claim requires NO backup token, and /health reports this Worker generation', async () => {
   const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
   const { body: inv } = await mintInvite(worker, env, 'Dana');
 
@@ -406,8 +406,17 @@ test('[WIC-15] /claim requires NO backup token, and /health reports v19', async 
   const res = await worker.fetch(claimReq(inv.code), env);
   eq(res.status, 200, `/claim must not require a backup token, got ${res.status}`);
 
+  // Issue #221 (Worker v20): this pinned the literal '19', so it failed on the
+  // very next Worker bump and told the reader nothing about what was wrong.
+  // Read the generation out of the Worker's own header and assert AGREEMENT
+  // instead of a value — the CG-09 convention, so a future bump needs no edit.
+  const { readFileSync } = await import('node:fs');
+  const headerVersion = readFileSync(path.join(ROOT, 'cloud-backup-worker.js'), 'utf8')
+    .match(/Cloud Backup Worker v(\d+)/)?.[1];
+  ok(headerVersion, 'could not read the Worker generation from its own header');
   const health = await (await worker.fetch(REQ('/health'), env)).json();
-  eq(String(health.version), '19', `health should report v19, got ${health.version}`);
+  eq(String(health.version), headerVersion,
+    `/health and the Worker header must name the same generation, got ${health.version} vs ${headerVersion}`);
 });
 
 export async function runSpec() { return run(); }

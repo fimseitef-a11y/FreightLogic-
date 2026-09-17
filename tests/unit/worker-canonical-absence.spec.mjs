@@ -23,24 +23,46 @@ const worker = (await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.
 // Minimal KV stand-in: enough for token auth + the rate-limit counter. The
 // Worker's own storage layer is external infrastructure, not the logic under
 // test (same rationale as tests/lib/mock-worker.mjs).
+const TOKEN = 'flk_' + '0'.repeat(32);
+const TOKEN_HASH = await (async () => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(TOKEN));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+})();
+const USER_ID = 'usr_test';
+
+// Issue #221 (Worker v20): this stub used to answer ANY `tokh:` key with a
+// record naming `usr_test`, and seeded no `user:` record at all — it modelled
+// authentication as "the token index says yes", which is exactly the contract
+// #221 identifies as wrong. Driver auth now treats the canonical user record as
+// the authority on which token hash is current, because the index alone can
+// hold a superseded entry from a raced re-key and authenticate a second live
+// bearer credential for one account.
+//
+// So the fixture is corrected rather than the check relaxed: it seeds the two
+// records every real token-minting path writes together (`POST /admin/users`,
+// `POST /claim`, `POST /admin/users/:id/rotate` all write `tokh:` AND `user:`
+// from the same object), keyed by the real SHA-256 of the presented token. The
+// catch-all prefix match is gone — it is what let this fixture drift from the
+// auth contract it depends on, and none of these assertions is about
+// authentication. They are about how a canonical decision projects.
 function makeEnv({ configured = false } = {}){
   const store = new Map();
+  const account = JSON.stringify({
+    userId: USER_ID, name: 'Test Driver', tokenHash: TOKEN_HASH, active: true, backupCount: 0,
+  });
+  store.set('tokh:' + TOKEN_HASH, account);
+  store.set('user:' + USER_ID, account);
   return {
     ...(configured ? { OPENAI_API_KEY: 'test-key-not-used-outside-the-mocked-model-path' } : {}),
     ALLOWED_ORIGIN: 'http://localhost',
     BACKUPS: {
-      async get(key){
-        if (key.startsWith('tokh:')) return JSON.stringify({ userId: 'usr_test', name: 'Test Driver', active: true });
-        return store.has(key) ? store.get(key) : null;
-      },
+      async get(key){ return store.has(key) ? store.get(key) : null; },
       async put(key, value){ store.set(key, value); },
       async delete(key){ store.delete(key); },
       async list(){ return { keys: [] }; },
     },
   };
 }
-
-const TOKEN = 'flk_' + '0'.repeat(32);
 
 async function evaluate(canonicalDecision, options){
   const req = new Request('https://worker.test/evaluate', {
