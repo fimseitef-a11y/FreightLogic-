@@ -237,11 +237,22 @@ export async function waitForAppReady(page, { timeout = 15000 } = {}) {
   // Issue #224 — why this polls from NODE and not with `page.waitForFunction()`.
   // `waitForFunction` evaluates its predicate and tests the RESULT for truthiness
   // without awaiting it. An `async` predicate always returns a Promise, and a
-  // Promise is always truthy, so the wait satisfied itself on its first poll and
-  // the database probe inside it never decided anything. That is not a deduction:
-  // `probeResolvesWithoutAwaiting()` below drives the real Playwright build this
-  // suite runs on and measures it, and HR-04 fails if the behaviour ever changes
-  // or if this file goes back to the async-predicate form.
+  // Promise is always truthy, so the FIRST probe satisfies the wait whatever that
+  // probe actually found — the polling loop never runs a second time, and the
+  // database check inside it never decides anything.
+  //
+  // Stated that precisely because the observed shape is narrower than "it returns
+  // instantly". Playwright still awaits the accepted Promise while serialising the
+  // result, so the wait lasts as long as ONE probe: it returns after a single
+  // FAILED probe rather than polling until one succeeds. HR-08 measures exactly
+  // that and reports the attempt count — with this form reinstated it reads
+  // `1 attempts`. HR-09 covers the other end: a probe that never settles hangs the
+  // serialisation instead of establishing anything.
+  //
+  // None of this is taken from documentation. `probeResolvesWithoutAwaiting()`
+  // below drives the real Playwright build this suite runs on and measures it
+  // (67ms against a predicate that cannot become true for 3000ms), and HR-06
+  // fails if the behaviour ever changes or if this file goes back to that form.
   //
   // `page.evaluate()` DOES await a returned Promise, so the poll is a Node-side
   // loop over evaluate. This is not a retry of a failed assertion and not a

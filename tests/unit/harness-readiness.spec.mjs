@@ -230,4 +230,120 @@ test('[HR-07] readiness holds until persistence genuinely works, across re-boots
   } finally { await app.close(); }
 });
 
+test('[HR-08] a probe that fails and then succeeds keeps waiting, then resolves', async () => {
+  // Required by the #240 handoff, and it is the control HR-07 could not be.
+  // HR-07 depends on the real initDB() race, which is short on a fast host and
+  // therefore probabilistic. This injects the condition instead: the probe fails
+  // a known number of times and then succeeds, so "did readiness actually wait?"
+  // has a deterministic answer.
+  const app = await launchApp();
+  try {
+    await app.page.evaluate(() => {
+      const T = window.__FL_TESTS;
+      const real = T.dumpStore;
+      window.__HR08 = { attempts: 0 };
+      T.dumpStore = async (...a) => {
+        window.__HR08.attempts++;
+        if (window.__HR08.attempts <= 4) throw new Error('HR-08 induced failure');
+        return real.apply(T, a);
+      };
+    });
+
+    await waitForAppReady(app.page, { timeout: 10000 });
+
+    const attempts = await app.page.evaluate(() => window.__HR08.attempts);
+    ok(attempts >= 5,
+      `readiness must keep polling through a failing probe and return only once it succeeds; ` +
+      `it saw ${attempts} attempts, so it stopped before the probe could succeed`);
+    // With the async-predicate form reinstated this reads exactly `1 attempts`,
+    // which is the #224 mechanism stated as a number: the wait lasted one probe,
+    // not until the probe was true.
+  } finally {
+    await app.page.evaluate(() => { delete window.__HR08; }).catch(() => {});
+    await app.close();
+  }
+});
+
+test('[HR-09] a held probe blocks readiness until it settles SUCCESSFULLY, not merely settles', async () => {
+  // State 2 of the three the #224 acceptance contract names, and the wording of
+  // that contract is load-bearing: readiness must not resolve until the probe
+  // settles *successfully*.
+  //
+  // Holding the probe and then releasing it into a SUCCESS does not discriminate,
+  // and that was established by running it rather than assumed: under the
+  // async-predicate form Playwright accepts the pending Promise but then blocks
+  // serialising it, so the observable ordering is identical and the control stays
+  // silent. Releasing into a FAILURE is what separates the two — the pre-fix form
+  // accepts that one settled probe and calls the app ready (HR-08 measures the
+  // same thing as `1 attempts`), while the repaired wait keeps polling until a
+  // probe actually succeeds.
+  const app = await launchApp();
+  try {
+    await app.page.evaluate(() => {
+      const T = window.__FL_TESTS;
+      const real = T.dumpStore;
+      window.__HR09 = { phase: 'held' };
+      T.dumpStore = (...a) => new Promise((resolve, reject) => {
+        const tick = () => {
+          if (window.__HR09.phase === 'held') return setTimeout(tick, 20);
+          if (window.__HR09.phase === 'fail') return reject(new Error('HR-09 released as failure'));
+          real.apply(T, a).then(resolve, reject);
+        };
+        tick();
+      });
+    });
+
+    let settled = false;
+    const ready = waitForAppReady(app.page, { timeout: 15000 }).then(() => { settled = true; });
+
+    await new Promise(r => setTimeout(r, 800));
+    eq(settled, false,
+      'readiness resolved while its database probe was still PENDING — it accepted a Promise as evidence ' +
+      'rather than the value the Promise had not yet produced');
+
+    // Settle it — as a failure. The probe has now settled; readiness must NOT
+    // treat that as ready.
+    await app.page.evaluate(() => { window.__HR09.phase = 'fail'; });
+    await new Promise(r => setTimeout(r, 800));
+    eq(settled, false,
+      'the held probe settled as a FAILURE and readiness resolved anyway — it waited for the probe to settle ' +
+      'rather than for the database to be usable, which is the #224 defect');
+
+    await app.page.evaluate(() => { window.__HR09.phase = 'ok'; });
+    await ready;
+    eq(settled, true, 'and once a probe finally succeeds, readiness must complete');
+  } finally {
+    await app.page.evaluate(() => { delete window.__HR09; }).catch(() => {});
+    await app.close();
+  }
+});
+
+test('[HR-10] a permanently failing probe hits the bounded timeout and throws', async () => {
+  // State 3. "I could not establish readiness" is not readiness, so the only
+  // correct outcome is a bounded, loud failure naming what was being waited for —
+  // never a resolve on a truthy Promise or JSHandle, and never a silent return
+  // that hands the spec a database the app has not finished opening.
+  const app = await launchApp();
+  try {
+    await app.page.evaluate(() => {
+      window.__FL_TESTS.dumpStore = async () => { throw new Error('HR-10 permanent failure'); };
+    });
+
+    const t0 = Date.now();
+    let threw = null;
+    try { await waitForAppReady(app.page, { timeout: 2500 }); }
+    catch (e) { threw = String(e && e.message || e); }
+    const waited = Date.now() - t0;
+
+    ok(threw, 'a permanently failing probe must FAIL readiness, not satisfy it');
+    ok(/not ready|IndexedDB/i.test(threw),
+      'the failure must name what it was waiting for, so a CI log says "the database never became usable" ' +
+      `rather than a bare Playwright timeout; got: ${threw}`);
+    ok(/HR-10 permanent failure/.test(threw),
+      `and must carry the probe's own error, or the next #224-shaped failure arrives without its cause; got: ${threw}`);
+    ok(waited >= 2000 && waited < 12000,
+      `the timeout must be BOUNDED and actually waited out; it took ${waited}ms`);
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }

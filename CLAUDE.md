@@ -3977,10 +3977,16 @@ root cause was **not** proven. It is now, and it was in the repair itself.
 `waitForAppReady()` polled with `page.waitForFunction(async () => { …await
 dumpStore('settings')… })`. **`waitForFunction` evaluates its predicate and tests the
 RESULT for truthiness without awaiting it.** An `async` function always returns a
-Promise, and a Promise is always truthy — so that wait satisfied itself on its first
-poll and the database probe inside it never decided anything. Readiness returned
-before `db = await initDB()` had assigned the handle, which is the `db === null`
-window #224 reports, written into the harness's own contract.
+Promise, and a Promise is always truthy — so the **first** probe satisfied the wait
+whatever that probe actually found. Readiness returned before `db = await initDB()`
+had assigned the handle, which is the `db === null` window #224 reports, written into
+the harness's own contract.
+
+The shape is narrower than "it returns instantly", and worth stating exactly because
+`HR-08` measures it: Playwright still awaits the accepted Promise while serialising
+the result, so the wait lasts **one probe** — it returns after a single *failed*
+probe rather than polling until one succeeds. With the defect reinstated `HR-08`
+reports `1 attempts`, which is the mechanism as a number.
 
 This was not taken on documentation's word. `probeResolvesWithoutAwaiting()` drives
 the real Playwright build this suite runs on against a predicate that cannot settle
@@ -4000,8 +4006,29 @@ instead of returning quietly when the database never becomes usable.
 **HR-07's negative control does NOT fire, and that is recorded rather than glossed.**
 With the async-predicate wait reinstated it still passed 6/6 — the window is short on a
 fast host, which is precisely why #224 presented as an intermittent CI failure and never
-reproduced locally. `HR-01` and `HR-06` are the assertions that hold the repair. A
-negative control that does not fire is the finding, not a formality.
+reproduced locally. A negative control that does not fire is the finding, not a
+formality, and it is the reason `HR-08`/`HR-09` exist.
+
+**`HR-08`, `HR-09` and `HR-10` are the three probe states #224's acceptance contract
+names**, and they are deterministic precisely because they stop depending on the real
+`initDB()` race and inject the condition instead:
+
+- **`HR-08` — fails, then succeeds.** The probe rejects four times and then works, and
+  the assertion is the *attempt count*: readiness must keep polling rather than accept
+  the first answer.
+- **`HR-09` — held pending, then settles.** The contract's wording is load-bearing:
+  readiness must not resolve until the probe settles **successfully**. Releasing a held
+  probe into a *success* does **not** discriminate, and that was established by running
+  it rather than assumed — under the async-predicate form Playwright accepts the pending
+  Promise but then blocks serialising it, so the observable ordering is identical and
+  the control stayed silent. It is therefore released into a **failure** first, which is
+  what separates the two forms.
+- **`HR-10` — permanently failing.** Readiness must hit its bounded timeout and
+  **throw**, naming what it waited for and carrying the probe's own error, because "I
+  could not establish readiness" is not readiness.
+
+All three fail against the async-predicate form, along with `HR-01` and `HR-06`.
+`HR-08` fails reporting `1 attempts`.
 
 ### #240 defect 1 — two transcriptions of one rule, already drifted
 
@@ -4082,7 +4109,7 @@ real functions against the real database: per-store clocks including the two the
 rule could never see, the structural proof that the push carries no second field list,
 the settings-only case end to end, marker durability across a real reload, and the
 unreadable-store case asserted down to the **rendered row text**, because Home is the
-surface the defect was reported against. `HR-06`/`HR-07` in `harness-readiness.spec.mjs`.
+surface the defect was reported against. `HR-06`…`HR-10` in `harness-readiness.spec.mjs`.
 
 `SQ-12` deliberately does **not** assert that the drain reaches the network. With every
 readable store clean, the push's "Up to date" short circuit is correct — there is
