@@ -2,7 +2,16 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.19** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.20** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+
+**SOURCE IS AT 24.0.20 AND PRODUCTION IS AT 24.0.19 — the paragraph below is still the current
+production fact, not a superseded one.** v24.0.20 is the Issue #205 driver-first UX/IA restructure
+of Today and More. It is **source-only: not deployed and not live-observed**, `DB_VERSION` stays
+**16** and the Worker stays **v20**, so nothing in the deployment record below changed by this
+release merging. This is the ordinary state between a merge and a deploy, and stating it is what
+keeps the two apart: merging leaves a commit, deploying leaves nothing. A superseding record is due
+the day a shipped file **deploys**. After deploying, **re-dispatch** live parity rather than citing
+the push-triggered run, which races the Cloudflare deploy — seven recorded occurrences.
 
 **PRODUCTION SERVES 24.0.19 / DB16 / Worker v20, and BOTH generations are OBSERVED.** This is the
 first fully-green live parity in the whole v24.0.x line, because it is the first time source and
@@ -220,7 +229,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.19';
+const APP_VERSION = '24.0.20';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -364,8 +373,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.19` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.19`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.20` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.20`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4254,3 +4263,159 @@ two tests are independent rather than one contract tested twice.
 
 The 2026-09-18 state document supersedes both remaining current documents, so the chain now
 resolves to exactly one.
+
+---
+
+## v24.0.20 "One Of Each" — the Today surfaces that each said it twice
+
+Issue **#205**'s driver-first scope, applied to the **information architecture** of Today and
+More rather than to a feature. `DB_VERSION` stays **16** and the Worker stays **v20** — no
+schema, no Worker semantics, and **no canonical economics, routing, storage or security
+behaviour changes anywhere in this release**. Every value on screen is the value the same
+function computed before; what changed is which surface says it, and how many times.
+
+The acceptance contract for this slice was recorded by the reviewing lane on the issue before
+the work started (#205 comment `5724324735`), and it is what the assertions below are written
+against rather than a private idea of "tidier".
+
+### The shape of the defect, four times over
+
+Today rendered four pairs where one surface repeated what the surface above it had just said.
+That is not a cosmetic complaint on a phone: the figures a driver opens the app for were below
+the fold on a stationary vehicle, behind duplicates of a sentence they had already read.
+
+**1 — Two surfaces answered "where am I" and both issued a directive.** The position-context
+banner printed `📍 Columbus, OH — Anchor market. Hold for $1.60+`, and immediately beneath it the
+positioning card printed `📍 YOUR POSITION: Columbus, OH`, then `anchor market · Midwest`, then a
+`HOLD` badge. Same city, same market classification, same doctrine, twice.
+
+The banner survives as the single authority for identity and doctrine: it is the surface issue
+**#216** repaired, and `tests/integration/position-authority.spec.mjs` pins all eight of its
+states — including the two the card never had, an unrecognised market and a genuine ambiguity.
+The card becomes what it is actually for, the **next move**: `🧭 NEXT MOVE FROM Columbus, OH`,
+then the command, the outbound lanes, weather and nearby markets. Its duplicated market subtitle
+is **deleted** rather than left computed-but-unused, and `market`/`reloadScore` are dropped from
+the destructure with it — `reloadScore` was already unread there before this change, which is
+checked rather than assumed.
+
+**2 — The card issued a command on a position the app had just said it could not resolve.**
+Issue #216 made the *banner* stand down when two trips tie on every ordering key and disagree
+about the destination: it says "confirm your position before pricing" instead of grounding a
+`$1.60+` directive in what is effectively a coin flip. The card went on printing `HOLD` on that
+same tie, directly below it. A directive built on an ambiguous position is exactly what that
+repair refused, and it is refused on both surfaces now — the pick stays deterministic, because
+that is what stops the two surfaces contradicting each other, but neither prices off it.
+
+**3 — The hero card was headed "This Week" over three TODAY figures.** `kpiTodayNet`,
+`kpiTodayGross` and `kpiTodayExp` are all written from the today window in `computeKPIs()`; only
+the goal bar, the badge and True RPM were weekly, and none of those three said so. So a driver
+reading `This Week / $57 net income` on a Thursday was reading one day's money under a week's
+label, one screen above a Money card stating the real weekly figure. The heading now says
+`Today`, the cells say `Gross today` / `Spent today` / `True RPM wk`, and one visible line names
+the scope of the bar (`This week $1,800.00 of $2,000.00 goal`).
+
+That same weekly goal was then rendered a **second** time in the Money card as its own progress
+bar and its own `$X of $Y (N%)`. The bar and the percentage move out; what stays there is the
+part the hero cannot express in a badge — `$200.00 to go · 2 days left`.
+
+**4 — Onboarding never retired.** The four educational cards (F21 tracking, F22 money, F23
+inbox, F24 positioning) were each gated on an `fNNOnboardingSeen` flag set **only** by tapping
+"Got it". A driver who reads a card and scrolls past it — the ordinary case on a phone — never
+sets it, so all four reappear at the top of Today forever.
+
+A card now also retires after a budget of **displays** (`ONBOARD_VIEW_BUDGET = 3`), and that is
+deliberately the only automatic rule: a display counter records something that demonstrably
+happened, where "no trips, so he must know how" would be an inference from missing data — the
+thing the acceptance contract forbids and the v24.0.1 blank-deadhead class. Exhausting the
+budget sets the card's own `fNNOnboardingSeen`, so retirement is durable and travels through
+export/import exactly like an explicit dismissal. Counts live in **one** settings key,
+`onboardViews`, added to `ALLOWED_SETTINGS_KEYS` in the same change that introduces it — a key
+the app writes but the importer drops is the X-07 class of gap, and this list has needed that
+retrofit three times.
+
+**No warning is touched by any of this.** The cloud-backup paused banner, the sync status row,
+maintenance alerts and overdue-payment alerts are not onboarding and are untouched. An
+informational notice may vanish; "you are not being backed up" may not — the v24.0.6 rule, which
+CBP-07/08 assert.
+
+### Idle GPS shrinks; every active state does not
+
+Idle tracking occupied a two-line card with a permanent explanatory subtitle at the top of
+Today on every launch. It is now one 48px row — same affordance, same touch target, roughly half
+the height, and the iPhone background-tracking caveat still one tap away behind the ⓘ.
+
+`_renderTrackingActive` is deliberately **not** compacted. Shrinking a live trip, an open
+GPS-error streak or a revoked-permission state is the opposite of the point, and the F-7
+contract requires **Stop & Save** to stay reachable in every one of them.
+
+### More is a directory, not a dump
+
+It was eight flat tiles plus a `▶ More Tools` toggle hiding seven more. "More Tools" is not a
+category: a driver looking for the tax export or Diagnostics had no reason to expect either
+behind it, which is how a live surface becomes *functionally* buried while remaining technically
+reachable — the way Market Intel was lost in v24.0.8. Tiles now declare a `group` and render
+under **Money / Business & Tax / Data & Backup / App**, all visible. `section` is retained and
+still means everyday-vs-occasional, but it now orders tiles *within* a group instead of hiding
+half of them. All **15** tiles survive with the same `hash`/`act` bindings; a tile with an
+unrecognised `group` falls into a visible "Other" rather than being filtered away, because a
+silently dropped tile is the orphaning this restructure exists to prevent.
+
+### Found while building it — the counter raced itself
+
+The four cards are fired from one `renderHome()` pass, concurrently and fire-and-forget. The
+first version of `shouldShowOnboarding()` was a plain read-modify-write over the shared
+`onboardViews` map, so two callers both observed it before either wrote and the second clobbered
+the first's increment. **This is the V-1 defect of v24.0.15 exactly** — two concurrent
+`ensureVehicleProfiles()` seeds each minting a profile with one silently discarded — and it is
+fixed the same way, with one module-scope chain serialising every mutation.
+
+It was not found by reading. `TIA-06` asserts that a **real** Today render counts as a display,
+and it reported the F21 card's increment as `0` while F22's had landed, because F22 wrote last.
+A lost increment is not corruption; it is a card that outlives its budget, which is the entire
+thing the helper exists to stop.
+
+### Tests
+
+`tests/integration/today-ia.spec.mjs` (10, new, registered in `run-all.mjs`). Every assertion
+reads **rendered content** through the real app in real Chromium rather than internal state,
+which is the v24.0.8 lesson: the Loads tab shipped green because the hash, the highlighted tab
+and the DOM node were all correct while the surface itself was dead.
+
+All ten negative controls were applied and **verified to fire**, each on exactly the assertion it
+guards and on no other: restoring the card's `YOUR POSITION` header fails TIA-01 and TIA-02;
+removing the ambiguity stand-down fails TIA-03; restoring `<h3>This Week</h3>` fails TIA-04;
+restoring the Money card's second goal bar fails TIA-05; disabling the budget fails TIA-06;
+un-serialising the counter fails TIA-06's real-render assertion with `bootCountedF21=0`;
+restoring the two-line idle card fails TIA-08 at `72px`; and flattening More fails TIA-09. The
+tree was restored from a pristine copy and re-verified by `sha256sum` after every control, so no
+control could outlive the window in which its restore was correct — the v24.0.17 lesson.
+
+**Two fixtures fought the code, and the code was right both times.** TIA-05's first version
+omitted `paymentStatusKnown: true`, so all three seeded trips came back `needsReview` under the
+v24.0.2 payment-UNKNOWN rule, the Money card hid entirely, and the test failed against correct
+code — it now asserts `validTrips === 3` first, so it cannot pass vacuously against a hidden
+card. TIA-06 and TIA-07 first asserted absolute counter values and raced the app's own boot
+render, which legitimately increments the counter; both are now stated as the rules they actually
+mean — the boundary on a probe key no render path touches, and "the counter does not **advance**"
+across a dismissed call.
+
+### Why this is a version bump
+
+`app.js` and `index.html` changed, and v24.0.19 is live. `CACHE_NAME` is
+`freightlogic-${SW_VERSION}` and the `?v=` query is the only other identity a child asset
+carries, so an installed PWA holding the 24.0.19 shell would never fetch either file and the
+restructure would not reach a driver. `scripts/verify-release-generation.mjs` refused the tree at
+a reused `24.0.19` (`"Runtime assets changed without a new release generation"`), which is the
+gate working as designed. Every governed marker moves together; all **14** CG assertions and
+`verify-cloudflare-parity --static-only` are green at `24.0.20`, and the declared runtime asset
+count stays **22**.
+
+### Not deployed
+
+**Source-only.** v24.0.20 is not deployed and not live-observed; production serves **24.0.19 /
+DB16 / Worker v20** and the parity run in the Project Overview above remains the observation of
+record until a 24.0.20 run supersedes it. After deploying, **re-dispatch** live parity rather
+than citing the push-triggered run, which races the Cloudflare deploy.
+
+**Still HOLD.** Physical iPhone **A1-A12** and the M6 conflict review are unchanged and remain
+the operator's. Nothing here touches either.

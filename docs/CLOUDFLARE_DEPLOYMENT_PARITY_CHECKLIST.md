@@ -31,12 +31,20 @@ the day it merges.*
 Current runtime state (what production serves TODAY):
 
 - app / PWA / service worker: **24.0.19**, deployed and observed live (above);
-- repository source generation: **24.0.19** — production and source AGREE;
+- repository source generation: **24.0.20** — SOURCE IS AHEAD OF PRODUCTION by
+  one app generation. v24.0.20 is the Issue #205 driver-first UX/IA restructure
+  of Today and More: source-only, **not deployed and not live-observed**. That
+  does not make the 24.0.19 observation above false, it makes it the current
+  production fact and the 24.0.20 claim a future one — the distinction this
+  document exists to keep. Nothing about the deployed generation changed by
+  merging a newer one, and the parity run cited above is still the observation of
+  record until a 24.0.20 run supersedes it;
 - IndexedDB schema: **16**;
 - backup/API Worker: **20**, deployed and observed live — source and production
   now agree here too, closing the mismatch this document carried for the whole
   24.0.1x line;
-- exact runtime Git candidate: **`eac5994`**;
+- exact runtime Git candidate: **`eac5994`** (the 24.0.19 candidate production is
+  serving — NOT the 24.0.20 source head);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - status: **HOLD**, and now for exactly one reason — the physical-iPhone gate

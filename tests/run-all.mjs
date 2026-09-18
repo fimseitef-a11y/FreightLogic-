@@ -40,6 +40,8 @@ import { runSpec as xlsxBundledVendor } from './integration/xlsx-bundled-vendor.
 import { runSpec as vanFitPrecheck } from './integration/van-fit-precheck.spec.mjs';
 import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.spec.mjs';
 import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
+// Issue #205 — driver-first UX/IA restructure of Today and More
+import { runSpec as todayIA } from './integration/today-ia.spec.mjs';
 // Issue #219 — untrusted-import credential trust boundary
 import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
 // Issue #220 — self-hosted-only executable code
@@ -119,6 +121,7 @@ const specs = [
   vanFitPrecheck,
   pickupFeasibility,
   positionAuthority,
+  todayIA,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,

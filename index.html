@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.19">
+  <link rel="manifest" href="manifest.json?v=24.0.20">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -92,23 +92,32 @@
       <!-- F25: Maintenance alert slot (populated by checkMaintenanceDue) -->
       <div id="homeMaintenanceAlert" style="display:none"></div>
 
-      <!-- Card 1 (active users): This Week Command Center -->
+      <!-- Card 1 (active users): Today command center.
+           #205 UX/IA: this card was headed "This Week" while every figure inside
+           it except the goal strip and True RPM is TODAY's -- kpiTodayNet,
+           kpiTodayGross and kpiTodayExp are all written from the today window in
+           computeKPIs(). A driver reading "This Week / $57 net income" on a
+           Thursday was reading one day's money under a week's label, directly
+           above a Money card stating the real weekly figure. The heading now
+           matches the numbers under it, and the weekly goal strip is labelled as
+           the week it measures. No value changed: this is presentation only. -->
       <div class="card card-hero" style="margin-top:10px" id="homeKPICard">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <h3 style="margin:0">This Week</h3>
+          <h3 style="margin:0">Today</h3>
           <div id="homeWeekBadge" class="fl-goal-badge amber"></div>
         </div>
         <div class="kpi-hero">
           <div class="kpi-hero-value" id="kpiTodayNet">—</div>
-          <div class="kpi-hero-label">net income</div>
+          <div class="kpi-hero-label">net income today</div>
         </div>
         <div class="kpi-progress-bar-wrap" style="margin-bottom:0">
           <div class="kpi-progress-bar" id="pcProgressBar" style="width:0%"></div>
         </div>
+        <div id="homeWeekGoalLine" class="kpi-cell-label" style="margin-top:6px"></div>
         <div class="fl-kpi-3col">
-          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross</div></div>
-          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Expenses</div></div>
-          <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayGross">—</div><div class="kpi-cell-label">Gross today</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="kpiTodayExp">—</div><div class="kpi-cell-label">Spent today</div></div>
+          <div class="kpi-cell"><div class="kpi-cell-value" id="pcRevVel">—</div><div class="kpi-cell-label">True RPM wk</div></div>
         </div>
         <!-- Next Move coaching (populated by renderCommandCenter) -->
         <div id="homeNextMoveBox"></div>
@@ -605,7 +614,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.19"></script>
-  <script src="sw-bridge.js?v=24.0.19"></script>
+  <script src="app.js?v=24.0.20"></script>
+  <script src="sw-bridge.js?v=24.0.20"></script>
 </body>
 </html>

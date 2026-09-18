@@ -1018,6 +1018,21 @@ concerns repository *source*. This series concerns the *deployed* backup/API Wor
 `https://freightlogic-backup.fimseitef.workers.dev`, and it was open because the live service did
 not run the repository's source.
 
+**Heading status corrected 2026-09-18.** Until this date all seven headings below still read
+`— OPEN` while the summary table above them and the RESOLVED banner both read **CLOSED by
+deploy**, which they have since 2026-09-13. A reader scanning headings — which is how anyone
+reads a findings report — would have concluded that seven findings including two live credential
+exposures were still open in production. They are not: Worker v14 closed all seven by deployment
+and production now serves **v20**, deployed and live-verified on 2026-09-18 (run `35291404482`,
+parity run `35291475396`).
+
+The bodies below are **unchanged and are deliberately written in the present tense of the v7
+deployment they describe** — that is what the finding was, and rewriting the evidence to match
+today's Worker would destroy the record of what was actually observed. The heading says the
+status; the body says the observation. The P-01/P-02 residue is real and is not closed by any
+heading: every driver token minted under v7 must be treated as **exposed at rest until rotated**,
+and rotation is an operator action, not a deploy side effect.
+
 **Method.** The deployed script was read through the Cloudflare **control plane**
 (`workers_get_worker_code` for script `freightlogic-backup`, account tag
 `ff7ce16b4a0f4d1b8f99b64c222332f1`, `modified_on 2026-09-12T07:31:05Z`). This matters: the agent
@@ -1056,7 +1071,7 @@ a source change. `scripts/deploy-backup-worker.sh` and
 absence of a safe deploy path was itself the reason this gate stayed open (see DEFERRED D-1 in the
 2026-09-12 ingest reconciliation).
 
-### P-01 — Every driver bearer token is stored in KV in plaintext — OPEN
+### P-01 — Every driver bearer token is stored in KV in plaintext — CLOSED by deploy (residue: rotate)
 
 **Where:** deployed `freightlogic-backup`, `POST /admin/users`:
 
@@ -1080,7 +1095,7 @@ key on that token's next use (`:165-181`).
 driver next authenticates or that user is revoked. Treat every existing driver token as exposed at
 rest until rotated.
 
-### P-02 — `GET /admin/users` returns every driver's bearer token — OPEN
+### P-02 — `GET /admin/users` returns every driver's bearer token — CLOSED by deploy (residue: rotate)
 
 **Where:** deployed `freightlogic-backup`, `GET /admin/users`:
 
@@ -1103,7 +1118,7 @@ the highest-value target on the service.
 users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
 ```
 
-### P-03 — Deployed `/evaluate` is a second decision authority — OPEN
+### P-03 — Deployed `/evaluate` is a second decision authority — CLOSED by deploy
 
 **Where:** deployed `freightlogic-backup`, `POST /evaluate` response:
 
@@ -1129,7 +1144,7 @@ projected from `payload.canonicalDecision`, `authority` is pinned to
 `'CLIENT_UNIFIED_DECISION_ENGINE'`, and an `UNAVAILABLE` decision short-circuits before any OpenAI
 call.
 
-### P-04 — `GET /backup/delta` does not exist in production; X-01 is live — OPEN
+### P-04 — `GET /backup/delta` does not exist in production; X-01 is live — CLOSED by deploy
 
 **Where:** the deployed script has `POST /backup/delta` (writing deltas with a 7-day
 `expirationTtl` and a 20-key cap) and **no** `GET /backup/delta`. Its route table ends at
@@ -1144,7 +1159,7 @@ queries returns 404/401.
 
 Deploying v14 stops further loss. It cannot recover deltas already expired.
 
-### P-05 — Admin compare is not constant-time and has no per-IP rate limit — OPEN
+### P-05 — Admin compare is not constant-time and has no per-IP rate limit — CLOSED by deploy
 
 **Where:** deployed `freightlogic-backup`:
 
@@ -1160,7 +1175,7 @@ returns every driver's token.
 **Source v14 is correct** (`cloud-backup-worker.js:86-90`): a 20-request per-IP limit keyed on
 `CF-Connecting-IP` runs *before* an HMAC-based `timingSafeEqual` compare.
 
-### P-06 — No token format validation before the KV lookup — OPEN
+### P-06 — No token format validation before the KV lookup — CLOSED by deploy
 
 **Where:** deployed `freightlogic-backup`:
 
@@ -1172,7 +1187,7 @@ An arbitrary attacker-supplied header is concatenated into a KV key with no shap
 **Source v14 is correct** (`cloud-backup-worker.js:160`): `/^flk_[a-f0-9]{32}$/` is enforced and a
 malformed token is rejected 403 before any KV access.
 
-### P-07 — `ALLOWED_ORIGIN` is unset, so CORS answers `*`; `/health` is absent — OPEN
+### P-07 — `ALLOWED_ORIGIN` is unset, so CORS answers `*`; `/health` is absent — CLOSED by deploy
 
 **Where:** deployed `freightlogic-backup`, first statement of `fetch`:
 
