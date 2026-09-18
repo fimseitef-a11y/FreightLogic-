@@ -20,6 +20,15 @@ function cleanToken(value) {
   return String(value || '').trim();
 }
 
+export function assertSeparateAdminOrigin(runtimeOrigin, driverOrigin = DEFAULT_DRIVER_ORIGIN) {
+  const runtime = cleanOrigin(runtimeOrigin, '');
+  const driver = cleanOrigin(driverOrigin, DEFAULT_DRIVER_ORIGIN);
+  if (runtime === driver) {
+    throw new Error('Admin Console must run on a separate origin from the driver app.');
+  }
+  return runtime;
+}
+
 function requireUserId(userId) {
   const value = String(userId || '').trim();
   if (!USER_ID_RE.test(value)) throw new Error('Invalid user ID.');
@@ -289,6 +298,17 @@ async function bootstrapBrowser() {
   const cfg = document.documentElement.dataset;
   const apiOrigin = cleanOrigin(cfg.apiOrigin, DEFAULT_API_ORIGIN);
   const driverOrigin = cleanOrigin(cfg.driverOrigin, DEFAULT_DRIVER_ORIGIN);
+  try {
+    assertSeparateAdminOrigin(window.location.origin, driverOrigin);
+  } catch (error) {
+    const adminInput = byId('adminAccess');
+    const connectButton = byId('connectForm')?.querySelector('button[type="submit"]');
+    if (adminInput) adminInput.disabled = true;
+    if (connectButton) connectButton.disabled = true;
+    setConnected(false);
+    setStatus(error.message, 'bad');
+    return;
+  }
   const store = createCredentialStore(window.sessionStorage);
   let api = createAdminApi({ apiOrigin, tokenProvider: () => store.get() });
 
