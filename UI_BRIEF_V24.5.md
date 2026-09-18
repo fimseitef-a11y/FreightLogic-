@@ -10,6 +10,8 @@
 
 **Baseline snapshot when this brief was created:** `main` at `ef2de47ccddd8064c6918ab51cd80edb0e78c167` (v24.0.14 source candidate). This is only a timestamped baseline. Gate 1 must re-read the actual HEAD and deployed production before any implementation begins.
 
+**Current-authority supersession — 2026-09-18:** the baseline and the Gate 1–4 report in §13 are historical snapshots, not current deployment authority. Current observed production is **app/PWA v24.0.19 / IndexedDB DB16 / backup/API Worker v20**; Worker deploy run `35291404482`, manual live-parity run `35291475396`, and exact-main live-parity run `35293596465` are green. Issues **#221, #224, and #240 are closed completed**. Exact `main` `cb0e64c51abda4c8bf97d0d2a8f40e16059b5cf0` passed `640/0` across 64 specs on first attempt in run `35293596434`. **Voice Load was deliberately removed by operator decision in v24.0.17**; do not reintroduce Voice/SpeechRecognition because older passages in this brief predate that decision. Physical iPhone A1–A12 and final private M6 certification remain separate open evidence gates; M6 Gate C structural replay has run, but that does not waive final-candidate adoption/conflict review. Root release-authority documentation drift is tracked in #244.
+
 ---
 
 ## 1. Purpose and authority
@@ -34,7 +36,7 @@ The reference is **not a feature inventory**. A visual element that implies a ca
 - Existing zero-token invite/claim onboarding and credential rules are preserved. The redesign may reskin that flow; it must not replace it with a password/token shortcut.
 - Offline-first behavior and service-worker integrity remain release gates.
 - No feature is deleted solely because the 10-screen mockup omits it.
-- Voice remains an existing capability unless the operator separately approves removing it.
+- Voice Load/SpeechRecognition is intentionally removed by operator decision (2026-09-17, v24.0.17). Do not restore it during the redesign. Preserve the intake capabilities actually present in current source.
 
 ---
 
@@ -99,7 +101,7 @@ At minimum reconcile these known capabilities rather than assuming the 10-screen
 
 - Today/Home command center
 - Loads / Smart Load Inbox
-- Unified Load Intake (photo/screenshot, paste, voice)
+- Unified Load Intake (the photo/screenshot/OCR and paste paths actually available in current source; Voice is retired)
 - Evaluate / OMEGA / canonical freight evaluation
 - Midwest Stack / Dead Zone Exit / Freight Score / market evidence
 - Trips / trip lifecycle / unpaid state
@@ -124,7 +126,7 @@ The approved visual target uses five primary destinations:
 
 **Today · Loads · ⚡ · Trips · Money**
 
-The center **⚡** is the existing **Unified Load Intake**, not a new parallel feature. It should expose the capabilities FreightLogic already has: **Photo/Screenshot · Paste · Voice** (subject to actual current-source reconciliation).
+The center **⚡** must reuse the existing canonical intake/evaluation path rather than create a parallel feature. It should expose only the capabilities actually present in current source: **Photo/Screenshot/OCR where available · Paste**. **Voice is intentionally retired and must not return.**
 
 Before coding, inspect `index.html`, `modern-shell.js`, `app.js`, and the current router/ID bindings. Deliver one of these plans:
 
@@ -400,7 +402,7 @@ Do not use skeletons that imply data is definitely arriving when no fetch is in 
 - New map-tile or turn-by-turn subsystem
 - New account/cloud backend invented only for the redesign
 - Duplicate screenshot parser / duplicate AI evaluator
-- Removing Voice
+- Reintroducing Voice/SpeechRecognition after the operator-approved v24.0.17 removal
 - Removing existing secondary tools because the mockup does not show them
 - Dispatch/dispatcher expansion unless separately authorized
 - Destructive schema cleanup or historical-data migration for aesthetic reasons
@@ -439,7 +441,7 @@ The redesign is not complete until all of these are true for the exact candidate
 6. Every surface from Gate 3 remains intentionally reachable.
 7. Unknown deadhead and incomplete economics remain visibly unknown/unavailable where required.
 8. Today and Money agree on canonical weekly figures.
-9. Unified Load Intake still supports the currently-authorized photo/screenshot, paste, and voice paths after the redesign.
+9. Unified Load Intake still supports the currently-authorized photo/screenshot/OCR and paste paths after the redesign; retired Voice/SpeechRecognition paths do not return.
 10. Owner/driver onboarding still follows the current zero-token invite/claim security contract.
 11. The major screens use one coherent token system, spacing rhythm, type scale, card language, and interaction pattern.
 12. Core operational numbers are legible at a glance without unnecessary scrolling.
@@ -453,7 +455,7 @@ The redesign is not complete until all of these are true for the exact candidate
 
 When beginning the redesign, Claude Code should do **only** this first:
 
-> Read the project instructions, `UI_BRIEF_V24.5.md`, and `FreightLogic_UI_Reference.html`. Work against the exact current `main` HEAD and record its SHA. Do not write UI code and do not change production/runtime files. Complete Gates 1–4 from `UI_BRIEF_V24.5.md`: exact source/deployed-version reconciliation; current-only open-risk reconciliation; full surface-to-destination inventory; and navigation/DOM/ID compatibility plan. Reconcile F27 Unified Load Intake so the center ⚡ reuses the existing photo/screenshot, paste, and voice capability instead of creating a second pipeline. Identify every statement in the brief or reference that current source makes stale, unsupported, or capability-removing. Deliver the report and stop for approval.
+> Read the project instructions, `UI_BRIEF_V24.5.md`, and `FreightLogic_UI_Reference.html`. Work against the exact current `main` HEAD and record its SHA. Re-verify only what may have changed since the last completed Gate 1–4 report; do not restart a completed audit. Reconcile F27 Unified Load Intake so the center ⚡ reuses the existing photo/screenshot/OCR and paste capability instead of creating a second pipeline, and do not reintroduce retired Voice/SpeechRecognition. Identify any statement in the brief or reference that exact current source makes stale, unsupported, or capability-removing, then continue the already-approved redesign workflow under the single-writer/lane rules unless a genuine blocker is found.
 
 That is the start line. No visual implementation begins before that report is reviewed.
 
@@ -474,6 +476,8 @@ The goal is not "make it look modern." The goal is **make the existing FreightLo
 ---
 
 ## 13. Pre-code Gate 1–4 reconciliation — 2026-09-16 / 2026-09-17 UTC
+
+> **Historical snapshot:** this report records the state observed when the redesign gates were first completed. It is retained for provenance and is superseded for current deployment/release facts by the 2026-09-18 current-authority note near the top of this brief. Do not treat the v24.0.14/Worker v19 facts below as current.
 
 This is the report required by §3 and §11. It is a **read-only exact-source reconciliation**; it does not authorize a second runtime writer and it does not claim that the post-v24.5 physical/M6 certification has run.
 
