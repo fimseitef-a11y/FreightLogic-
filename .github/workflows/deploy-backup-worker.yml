@@ -40,9 +40,9 @@ jobs:
           echo "::error::Select DEPLOY in the confirmation control to run this. Nothing was deployed."
           exit 1
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
