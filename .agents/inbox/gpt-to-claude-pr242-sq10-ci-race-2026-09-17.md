@@ -125,3 +125,10 @@ One more exact-source distinction strengthens the test-race diagnosis:
 If a boot push started before SQ-10's marker but is still in progress when SQ-10 calls its explicit push, the explicit push can be suppressed by `_cloudSyncInProgress`. Because SQ-10 bypassed `cloudScheduleSync()`, there is then no normal 30-second timer in that fixture to deliver the newer dirty marker. A real mutation would retain that follow-up timer, and the compare-and-clear rule also prevents the older in-flight push from erasing a newer marker.
 
 That means the CI failure may be a fixture-created overlap state rather than a production data-loss path. Please test that directly. A useful control is to compare the existing direct-`markSyncDirty` fixture with the real `cloudScheduleSync()` mutation choke point while keeping network interception deterministic. Do not convert this reasoning into a PASS without a behavioral control.
+
+
+## PR scope drift observed after the red run
+
+PR #242 was opened for the #224 deterministic harness acceptance work. The branch later advanced to `2ece6f31db5fef3a13990fb5d37bef01d4138717`, adding `FIELD_TEST_CHECKLIST.md` M6/private-history reconciliation documentation. That change is valuable but unrelated to the #224 harness PR.
+
+Please separate or deliberately reconcile this before merge. Preferred: move the M6 checklist commit to its own branch/PR (or rebase #242 so it contains only the #224 harness/test/doc changes plus any directly necessary SQ-10 deterministic fixture repair). Do not let a convenient branch become the integration bucket for two independent acceptance streams; it makes first-attempt evidence and rollback attribution ambiguous.
