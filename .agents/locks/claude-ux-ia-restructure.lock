@@ -1,0 +1,9 @@
+owner: claude
+token: ae9cace3-1427-4466-a5b8-4e8b54e0bce4
+started_utc: 2026-09-18T02:25:17Z
+expected_release_utc: 2026-09-18T06:25:17Z
+paths: app.js, index.html
+task: Operator-directed UX/IA restructure (#205). Apple HIG / WWDC25 information-architecture
+  method applied to the Today surface and the More menu: de-duplicate the two position cards
+  and the two week-money cards, auto-retire outgrown onboarding, compact the idle GPS card.
+  No canonical economics, routing, security or storage semantics change. Full suite required.
