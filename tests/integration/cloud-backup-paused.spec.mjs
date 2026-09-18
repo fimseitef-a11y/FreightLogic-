@@ -588,52 +588,98 @@ test('[SQ-10] a settings-only change is pending, is sent, and is not reported as
   // Defect 2, plus the harder half found while fixing it: the empty-delta guard
   // used to return "Up to date" WITHOUT SENDING when no record had changed, so
   // a settings-only mutation never reached the server on the delta path.
+  //
+  // WHY THIS DRIVES THE BOOT DRAIN INSTEAD OF CALLING cloudPushBackup() DIRECTLY.
+  // The first version configured cloud state on a running page and then called
+  // the push itself, and it was NONDETERMINISTIC IN CI — it failed
+  // `sent === false` on PR #242 run 35290300849 and passed on a head whose only
+  // change was a documentation file. That is a flake, and a green rerun is not
+  // acceptance, so it was root-caused rather than re-run.
+  //
+  // The mechanism is a second actor. Boot fires `resumeSyncIfPending()` as
+  // fire-and-forget right after `await navigate()`, and `launchApp()` returns on
+  // IndexedDB readiness, NOT on that drain settling. With no token at boot the
+  // drain exits early — but it exits early only if it has already passed its
+  // `cloudIsEnabled()` await. If the fixture installs a token while that await
+  // is still pending, the drain proceeds, reaches `cloudPushBackup()` first, and
+  // sets `_cloudSyncInProgress`; the fixture's own push then hits
+  // `if (_cloudSyncInProgress) return` and sends nothing. Same code, same
+  // assertions, different interleaving.
+  //
+  // So the fixture stops racing the boot drain and becomes it: cloud state is
+  // configured, the fetch interceptor is installed as an INIT SCRIPT so it is in
+  // place before any app code runs on the next document, and the page is
+  // reloaded. There is then exactly one actor, and what it exercises is the real
+  // production path — the boot recovery that §3 exists for. No sleep, no retry,
+  // no weakened assertion.
   const { page, close } = await launchApp();
   try {
     await skipFirstRunWizard(page);
-    const r = await page.evaluate(async () => {
+
+    // Configure on THIS document; settings live in IndexedDB and sessionStorage
+    // survives a same-tab reload, so both are still in place after it.
+    const pre = await page.evaluate(async () => {
       const T = window.__FL_TESTS;
       await T.setSetting('cloudBackupToken', 'flk_' + 'a'.repeat(32));
       await T.setSetting('cloudBackupUrl', 'https://sq10.invalid');
       sessionStorage.setItem('fl_cloud_pass', 'passphrase-sq10');
-      // Watermark in the future: no record row can be pending, so the ONLY
+      // Watermark in the future: no RECORD can be pending, so the only
       // outstanding change is the settings one.
       await T.setSetting('lastCloudSyncedAt', Date.now() + 60_000);
       await T.setSetting('syncDirtyAt', 0);
 
       const clean = await T.cloudSyncStatus();
-
-      // The durable marker every mutation site already reaches, awaited here
-      // only so the assertion is not racing an intentionally fire-and-forget write.
+      // The durable marker every mutation site reaches, awaited here only so the
+      // assertion is not racing an intentionally fire-and-forget write.
       await T.markSyncDirty();
       const summary = await T.syncPendingSummary();
       const dirtyStatus = await T.cloudSyncStatus();
-
-      // Does a push with zero changed records actually SEND? Intercept fetch.
-      const calls = [];
-      const realFetch = window.fetch;
-      window.fetch = (...a) => { calls.push(String(a[0])); return Promise.reject(new Error('sq10-blocked')); };
-      try { await T.cloudPushBackup(true); } catch (_) {}
-
-      // And the boot drain must not call this "nothing-pending".
-      const resumed = await T.resumeSyncIfPending();
-      window.fetch = realFetch;
-
-      return { cleanState: clean.state, pending: summary.pending, dirty: summary.dirty,
-               dirtyState: dirtyStatus.state, sent: calls.some(u => /backup/.test(u)),
-               resumeReason: resumed.reason, drained: resumed.drained };
+      return { cleanState: clean.state, pending: summary.pending,
+               dirty: summary.dirty, dirtyState: dirtyStatus.state };
     });
 
-    eq(r.cleanState, 'SYNCED', 'with nothing outstanding the surface must still be able to say Synced');
-    eq(r.pending, 0, 'a settings-only change is deliberately not a counted record — the count is not what represents it');
-    eq(r.dirty, true, 'but it MUST leave a durable marker, or it cannot survive the tab close that loses the 30s timer');
-    eq(r.dirtyState, 'PENDING',
+    // In place before app.js executes on the next document, so the boot drain's
+    // request cannot be missed the way a late interceptor can.
+    await page.addInitScript(() => {
+      window.__SQ10 = { calls: [] };
+      const real = window.fetch;
+      window.fetch = (...a) => {
+        window.__SQ10.calls.push(String(a[0]));
+        return Promise.reject(new Error('sq10-blocked'));
+      };
+      window.__SQ10.real = real;
+    });
+
+    await page.reload({ waitUntil: 'load' });
+    await waitForAppReady(page);
+
+    // Sync predicate on purpose — an async one would resolve on its first poll
+    // without awaiting, which is the #224 mechanism (see HR-06).
+    let sent = true;
+    try {
+      await page.waitForFunction(
+        () => (window.__SQ10?.calls || []).some(u => /backup/.test(u)), { timeout: 10000 });
+    } catch { sent = false; }
+
+    const post = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      const resumed = await T.resumeSyncIfPending();
+      return { resumeReason: resumed.reason, drained: resumed.drained,
+               calls: (window.__SQ10?.calls || []).length };
+    });
+
+    eq(pre.cleanState, 'SYNCED', 'with nothing outstanding the surface must still be able to say Synced');
+    eq(pre.pending, 0, 'a settings-only change is deliberately not a counted record — the count is not what represents it');
+    eq(pre.dirty, true, 'but it MUST leave a durable marker, or it cannot survive the tab close that loses the 30s timer');
+    eq(pre.dirtyState, 'PENDING',
       'Home must not report Synced while a settings mutation has not reached the server — that is the reported defect');
-    eq(r.sent, true,
-      'the push must actually SEND when the only outstanding change is settings; the empty-delta guard used to ' +
-      'return "Up to date" without sending, so the change never reached the server at all');
-    eq(r.drained, true, 'boot recovery must drain it');
-    ok(r.resumeReason !== 'nothing-pending', `boot recovery must not report nothing-pending; got ${r.resumeReason}`);
+
+    eq(sent, true,
+      'boot recovery must actually SEND when the only outstanding change is settings; the empty-delta guard used ' +
+      'to return "Up to date" without sending, so the change never reached the server at all');
+    eq(post.drained, true, 'and the drain must still report that it acted');
+    ok(post.resumeReason !== 'nothing-pending',
+      `boot recovery must not report nothing-pending; got ${post.resumeReason}`);
   } finally { await close(); }
 });
 

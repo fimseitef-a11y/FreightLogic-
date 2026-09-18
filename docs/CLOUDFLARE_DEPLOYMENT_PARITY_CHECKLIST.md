@@ -2,49 +2,47 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**v24.0.19 is SOURCE-ONLY. Nothing below has been observed at 24.0.19, and this
-document does not claim it has.** The lines under "Current runtime candidate" describe
-what production is serving, which is **24.0.18 / DB16 / Worker v19**. The app half of
-that is observed; the Worker half is the outstanding deploy and is a live MISMATCH
-against source v20. v24.0.19 changes no Worker semantics and no schema, so it does not
-alter that ordering constraint — it also does not resolve it. After deploying,
-**re-dispatch** live parity; a push-triggered run races the Cloudflare deploy and its
-FAILURE is evidence about the origin at that instant, not about the release.
+**v24.0.19 IS DEPLOYED AND OBSERVED, and so is Worker v20.** This is the first
+fully-green live parity in the v24.0.x line: every prior run in this release line
+failed at least one check, most recently the Worker v19-vs-v20 mismatch.
 
-*This block previously described 24.0.15 as the source candidate and 24.0.14 as
-production — four app generations stale, with deploys that had since happened. It went
-stale the same way the block before it did (which described 24.0.13 / 24.0.12 / Worker
-v17). It is corrected rather than overwritten, because a parity document that keeps a
-superseded deployment claim is exactly the drift it exists to catch. The rule that
-prevents it is unchanged and is stated below: a superseding record is due the day a
-shipped file deploys, not the day it merges.*
+Observation of record: live parity run `35291475396`, `workflow_dispatch` on `main`
+@ `eac5994`, job `105435050613`, **`VERDICT: PASS`** with every check green —
+`index.html` referencing `app.js` and `sw-bridge.js` at **24.0.19**, `index.html`
+**not** referencing `voice-load.js` (the inverted #230 assertion, observed live),
+service worker **24.0.19**, `sw-bridge` importing and the worker precaching
+`modern-shell.js` at 24.0.19, manifest name `FreightLogic v24.0.19`, Worker
+`/health` returning `{"ok":true,"version":"20"}`, all **22** declared runtime
+assets loading with none served as HTML, CSP byte-identity, the unauthenticated
+admin boundary still denying, and **20 repository-only paths confirmed non-public
+(Issue #228's live half)**.
 
-Current runtime candidate (what production serves TODAY):
+Worker v20 was deployed by run `35291404482` on the same SHA, with its own
+post-deploy checks green: `/health` at the expected version, CORS on the real app
+origin, and both unauthenticated boundaries still returning 401.
 
-- app / PWA / service worker: **24.0.18**, deployed. The app-side observation of record
-  is live-parity run `35284924340` **attempt 2**, `push` on `main` @ `ac04f61`, job
-  `105416938250`. **Read that run carefully: its overall verdict is `FAILURE`, which
-  this document has verified.** It failed on the Worker check below, not on an app-side
-  one; Issue #240 records the app-side and runtime-asset checks in that same run as
-  green. A run whose verdict is FAILURE is not a parity PASS for this generation, and
-  citing it as one would be the error this checklist exists to prevent — what it
-  supports is the narrower claim that the deployed app is at 24.0.18;
-- repository source generation: **24.0.19** — AHEAD of production, not yet deployed;
-- IndexedDB schema: **16** (unchanged by 24.0.19);
-- backup/API Worker: **19** deployed and serving, against **v20 in source**. This is a
-  live, observed MISMATCH and it is the single failing check in the run above. Worker
-  v20 has been dispatched twice (`35211428043`, `35213350763`) and both were refused in
-  ~7 seconds at the typed-`DEPLOY` confirmation guard — the guard working as designed,
-  not a broken workflow. It remains an operator dispatch;
-- exact runtime Git candidate: **`ac04f61`**;
+*Earlier revisions of this block described 24.0.15/24.0.14, and before that
+24.0.13/24.0.12 — four and two app generations stale respectively. Corrected
+rather than overwritten, because a parity document that keeps a superseded
+deployment claim is exactly the drift it exists to catch. The rule that prevents
+it is unchanged: a superseding record is due the day a shipped file deploys, not
+the day it merges.*
+
+Current runtime state (what production serves TODAY):
+
+- app / PWA / service worker: **24.0.19**, deployed and observed live (above);
+- repository source generation: **24.0.19** — production and source AGREE;
+- IndexedDB schema: **16**;
+- backup/API Worker: **20**, deployed and observed live — source and production
+  now agree here too, closing the mismatch this document carried for the whole
+  24.0.1x line;
+- exact runtime Git candidate: **`eac5994`**;
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- certification authority: the current
-  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_*.md`. A superseding document is due the
-  day a shipped file deploys, not the day it merges;
-- status: **HOLD.** Issue **#240** (v24.0.18 could report "Synced" over unsynced data)
-  is fixed in 24.0.19 source and is not yet deployed; issue **#224** is closed by the
-  24.0.19 harness repair. Physical iPhone A1-A12 and authentic M6 remain open.
+- status: **HOLD**, and now for exactly one reason — the physical-iPhone gate
+  **A1-A12**, deferred by the operator's 2026-09-16 decision to the final
+  post-v24.5 candidate. Every automatable and live-origin gate is observed and
+  passing. Section C (M6 private history) has run; see `FIELD_TEST_CHECKLIST.md`.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
 
