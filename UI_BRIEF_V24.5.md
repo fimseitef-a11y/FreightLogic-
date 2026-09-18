@@ -1,6 +1,6 @@
 # FreightLogic Visual Redesign Authority — v24.5 Working Brief
 
-**Status:** Approved visual direction. **Pre-code gates only until reconciliation is reviewed.**
+**Status:** Approved visual direction. **Gates 1–4 were completed and operator-cleared; future sessions re-verify only facts that may have changed and must not restart the completed gate audit.**
 
 **Working label:** `v24.5` is a planning label, not an authorized release-number bump. The actual release generation must follow the repository's current release-generation rules at integration time.
 
@@ -451,13 +451,13 @@ The redesign is not complete until all of these are true for the exact candidate
 
 ---
 
-## 11. First Claude Code task — report only
+## 11. Historical first-gate task — completed; do not restart
 
-When beginning the redesign, Claude Code should do **only** this first:
+This was the original start task and produced the §13 report. It is retained as the reconciliation template, **not** as a command to repeat the audit whenever a new session resumes. On Proceed/Continue/Resume, refresh only facts that may have changed and continue from the current implementation checkpoint:
 
 > Read the project instructions, `UI_BRIEF_V24.5.md`, and `FreightLogic_UI_Reference.html`. Work against the exact current `main` HEAD and record its SHA. Re-verify only what may have changed since the last completed Gate 1–4 report; do not restart a completed audit. Reconcile F27 Unified Load Intake so the center ⚡ reuses the existing photo/screenshot/OCR and paste capability instead of creating a second pipeline, and do not reintroduce retired Voice/SpeechRecognition. Identify any statement in the brief or reference that exact current source makes stale, unsupported, or capability-removing, then continue the already-approved redesign workflow under the single-writer/lane rules unless a genuine blocker is found.
 
-That is the start line. No visual implementation begins before that report is reviewed.
+That was the original start line. The §13 report was reviewed and the operator repeatedly approved continuation; do not stop for duplicate approval unless a new material conflict, unsafe/destructive action, unavailable authorization, or physical user-only gate requires it.
 
 ---
 
