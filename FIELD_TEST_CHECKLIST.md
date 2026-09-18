@@ -28,12 +28,20 @@ Before testing, record the exact frozen production Git SHA/origin, displayed app
 
 Use synthetic/non-sensitive records where practical. Do **not** delete the installed PWA or clear Safari website data merely to make an update test pass; those actions can erase local IndexedDB evidence.
 
+*Before running any row, read `docs/A1_A12_DEVICE_GATE_AUDIT_2026-09-18.md`.* It
+classifies every step into what the same-origin companion can legitimately observe and
+what irreducibly needs a human, and gives a nine-phase sequence that fits the gate into
+one sitting with no reinstalls — A1 first because it establishes the identity every
+later row is measured against, A6 before A7 because A7 revokes the permission A6 needs,
+A5 late because import mutates the data other rows depend on, and A12 last because it
+disturbs install and account state.
+
 ## A1. Safe install / update / launch identity
 
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.12** is active, on the exact candidate SHA named in the certification document.
+4. Close/reopen online and verify **the candidate generation named in the certification document** is active, on the exact candidate SHA it names. *(Deliberately not restated as a number here: this step read `24.0.12` while production served `24.0.19`, which would have had a tester confirming the wrong build — the drift this file already records against itself at 24.0.9, 24.0.11 and 24.0.12. Read it from the candidate, and confirm it against Diagnostics and the companion's observed generation on the device.)*
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -103,7 +111,7 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.12)
+## A10. Pickup-feasibility gate (shipped v24.0.9; run against the current candidate)
 
 Use a synthetic load with an optional pickup cutoff.
 
@@ -133,10 +141,17 @@ PASS requires the exact fail-closed behavior above. A guessed/clamped/default pl
 
 ## A12. Zero-token driver onboarding (added v24.0.13) — **the storage-partition question**
 
-**Prerequisite: Worker v18 AND app 24.0.13 must both be deployed before this runs.**
-The Worker goes first — the app calls `POST /admin/invites` and `POST /claim`, and
-neither exists on v17. Record both generations with the result; an A12 run against a
-v17 Worker certifies nothing.
+**Prerequisite: the Worker carrying invite/claim AND the app generation calling it must
+both be deployed before this runs.** The Worker goes first — the app calls
+`POST /admin/invites` and `POST /claim`, and neither exists on v17. Record both
+generations with the result; an A12 run against a pre-invite Worker certifies nothing.
+
+**This prerequisite is now MET and exceeded.** Worker **v20** and app **24.0.19** are
+deployed and observed live — parity run `35291475396` (`VERDICT: PASS`, Worker
+`/health` reporting `20`) and Worker deploy run `35291404482` with its own post-deploy
+checks green. A12 was previously un-runnable on its own terms; it is runnable now.
+Stated as a condition rather than as two pinned numbers so it cannot go stale the way
+A1 step 4 did.
 
 This gate exists because of one question no headless runner can answer, and the answer
 determines whether a real driver is stranded.
