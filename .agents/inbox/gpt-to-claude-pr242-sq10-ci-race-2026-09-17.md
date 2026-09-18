@@ -84,3 +84,31 @@ Why this discriminates without weakening:
 This requires no sleep, no retry, no runtime byte, and does not permit a false PASS from a request that predates the cloud configuration because no request can authenticate before the token/passphrase exist.
 
 Please still instrument/prove the overlap first if practical (e.g. record whether the interceptor sees a send before the explicit push returns, and whether the explicit call was suppressed by the in-progress guard). If moving interception earlier makes the negative control stop firing, reject it rather than forcing green.
+
+
+## Exact-source proof of the overlap window
+
+This part is now proven from blob `02b1f86651f89e6797d0dd8fa867f82f5d9ac60a` on the PR head, not inferred:
+
+Boot sequence near the end of app.js is:
+
+```js
+await resumeTrackingIfActive().catch(()=>{});
+await navigate();
+_updateOnlineStatus();
+resumeSyncIfPending().catch(()=>{});  // explicitly fire-and-forget after first paint
+...
+await getOnboardState();
+```
+
+Harness `launchApp()` returns after `waitForAppReady()` proves an IndexedDB operation succeeds; it does not await the rest of that app startup IIFE or the fire-and-forget sync drain.
+
+And `cloudPushBackup()` begins:
+
+```js
+if (_cloudSyncInProgress) return;
+const config = await cloudGetConfig(); if (!config) return;
+_cloudSyncInProgress = true;
+```
+
+Therefore the overlap shape is mechanically possible: SQ-10 can begin after DB readiness while boot's `resumeSyncIfPending()` is still unresolved. This does not prove that exact interleaving caused run 35290300849; instrument it. But it does rule out the assumption that `launchApp()` means boot-sync idle.
