@@ -39,6 +39,31 @@
   // that is exactly what makes the root config unsafe here.
   "workers_dev": true,
 
+  // `env.AI` — Workers AI, the DEFAULT vision provider for POST /extract-image
+  // (Issue #252, Worker v21). Without this binding that endpoint is not broken,
+  // it is INERT: the adapter's needs() check reports 501 "Workers AI binding (AI)
+  // is not configured on this Worker" and the app falls back to pasting text.
+  // That is the correct fail-closed behaviour and it is also a dead feature, so
+  // the binding has to be here for screenshot intake to work at all.
+  //
+  // WHY THIS PROVIDER: it runs inside this Worker, so there is no second
+  // provider origin, no API key to leak, and no new browser script origin — the
+  // app CSP is unchanged. Workers AI carries a free daily allocation, which is
+  // what makes screenshot intake cost nothing at this operator's volume.
+  //
+  // COST IS NOT ZERO BY GUARANTEE, only by allocation: sustained use past the
+  // free daily neurons is billable. `POST /extract-image` is rate limited to
+  // 25/hr per driver partly for that reason.
+  //
+  // BOTH CHOICES ARE OVERRIDABLE WITHOUT A CODE CHANGE, which is the point of
+  // the adapter: set the `VISION_PROVIDER` var to `gemini`/`openai`/`deepseek`
+  // (each needs its own secret) and `VISION_MODEL` to pin a different model.
+  // If a deploy ever rejects this binding, drop these two lines and set
+  // VISION_PROVIDER instead — the endpoint keeps working through another adapter.
+  "ai": {
+    "binding": "AI"
+  },
+
   "kv_namespaces": [
     {
       // `env.BACKUPS` — 27 call sites in cloud-backup-worker.js.
@@ -57,6 +82,11 @@
     // incidental config change.
     "ALLOWED_ORIGIN": "https://freightlogic-v2.fimseitef.workers.dev"
 
+    // VISION_PROVIDER / VISION_MODEL are intentionally omitted: the Worker
+    // already defaults to `workers-ai` + Moondream 3.1, and pinning either here
+    // would silently override whatever the operator may have set in the
+    // dashboard — the same reasoning as OPENAI_MODEL below.
+
     // OPENAI_MODEL is intentionally omitted: the Worker already defaults to
     // `gpt-4.1-mini`, and pinning it here would silently override whatever the
     // operator may have set in the dashboard.
@@ -65,6 +95,10 @@
   // SECRETS ARE NOT IN THIS FILE AND MUST NOT BE ADDED TO IT.
   //   ADMIN_TOKEN     — admin endpoint auth
   //   OPENAI_API_KEY  — /evaluate and /extract
+  // Optional, only if VISION_PROVIDER is switched away from the default
+  // `workers-ai` (which needs no secret, just the `ai` binding above):
+  //   GEMINI_API_KEY    — /extract-image via Gemini
+  //   DEEPSEEK_API_KEY  — /extract-image via DeepSeek (token-priced, not free)
   // Both already exist on the live service and are PRESERVED across a
   // `wrangler deploy` (secrets are service state, not config state). Declaring
   // them here would put credentials in git; passing them on a command line

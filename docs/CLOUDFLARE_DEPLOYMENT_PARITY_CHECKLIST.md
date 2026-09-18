@@ -34,19 +34,25 @@ Current runtime state (what production serves TODAY):
   `35329623870` and production service-worker run `35329629590`, both `workflow_dispatch` on
   `main` @ `c72b521`, both `VERDICT: PASS`. The 24.0.19 observation recorded above remains
   permanent provenance for the tree its runs looked at;
-- repository source generation: **24.0.20** — source and production AGREE again. The
-  source-ahead gap this line recorded lasted about one hour, from merge to deploy, and was
-  closed by the two re-dispatched gates named above;
+- repository source generation: **24.0.21** — source is AHEAD of production again, by the
+  Issue #252 screenshot-intake generation, which is **not deployed and not live-observed**.
+  (The 24.0.20 source-ahead gap this line previously recorded lasted about one hour, from
+  merge to deploy, and was closed by the two re-dispatched gates named above.) **Deploy order
+  is not optional here: Worker v21 FIRST.** The app's screenshot path calls
+  `POST /extract-image`, which does not exist on the deployed v20, so shipping the app first
+  gives every driver who taps Screenshot a 404 — the inverse of the v24.0.17 mismatch, and
+  avoidable by sequencing rather than by discovering it in a parity run;
 - IndexedDB schema: **16**;
-- backup/API Worker: **20**, deployed and observed live — source and production
-  now agree here too, closing the mismatch this document carried for the whole
-  24.0.1x line;
+- backup/API Worker: **20 deployed and observed live; 21 in source, NOT deployed.**
+  v21 adds the `POST /extract-image` vision route (#252) and must deploy before the
+  24.0.21 app generation, for the reason given above;
 - exact runtime Git candidate: **`c72b521`** (the 24.0.20 merge, which is what production
   serves and what both live gates observed);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - status: **HOLD**, and now for exactly one reason — the physical-iPhone gate
-  **A1-A12**, deferred by the operator's 2026-09-16 decision to the final
+  **A1-A13** (A13 is #252's screenshot flow, added in v24.0.21), deferred by
+  the operator's 2026-09-16 decision to the final
   post-v24.5 candidate. Every automatable and live-origin gate is observed and
   passing. Section C (M6 private history) has run; see `FIELD_TEST_CHECKLIST.md`.
 
@@ -157,13 +163,25 @@ PASS requires production to serve:
 
 Do not reuse the v24.0.5 or v24.0.8 production observations as exact-generation evidence for v24.0.9.
 
-## 3. Worker v15 live checks
+## 3. Worker live checks
 
-Expected backup/API Worker source generation: **15**.
+**Read the expected generation from `cloud-backup-worker.js`'s own header rather than from this
+heading.** This section stood at **v15** while source reached v21 — six generations stale, in the
+one document whose job is catching exactly that. It is written as a derivation now for the same
+reason `scripts/verify-rollback.mjs` stopped pinning its candidate SHA: a number transcribed here
+goes stale at the next Worker bump, and the release that bumps it is precisely when nobody
+remembers to edit this file. `tests/unit/cache-generation.spec.mjs` CG-09 already asserts that the
+header, `/health` and the parity gate's `workerVersion` all name the same number, so there is one
+source of truth and this is not it.
+
+Current source generation at the time of writing: **21** (adds `POST /extract-image`, Issue #252).
+Production serves **20**.
 
 PASS requires:
 
-- `GET /health` returns HTTP 200 and JSON with `version: "15"`;
+- `GET /health` returns HTTP 200 and JSON whose `version` equals the source header's generation;
+- unauthenticated `POST /extract-image` is denied — it sits **inside** the driver-token gate,
+  unlike `POST /claim`, because it spends a limited provider allocation;
 - requests from `https://freightlogic-v2.fimseitef.workers.dev` receive that exact origin in `Access-Control-Allow-Origin`;
 - unauthorized admin requests are denied;
 - unauthorized driver/evaluate/extract/backup requests are denied;
@@ -266,9 +284,11 @@ Live Cloudflare parity is complete only when the same named final candidate has:
 - exact production app/PWA generation parity PASS;
 - all derived runtime assets fetched successfully from the production origin, with no HTML-shell masquerade;
 - structural-shell parity PASS;
-- backup/API Worker v15 `/health` and CORS parity PASS;
-- auth boundaries PASS;
-- canonical `/evaluate`/`/extract` checks PASS where applicable;
+- backup/API Worker `/health` and CORS parity PASS **at the generation
+  `cloud-backup-worker.js`'s header names** — not at a number written here, for the reason
+  section 3 gives;
+- auth boundaries PASS, including unauthenticated `POST /extract-image` denied;
+- canonical `/evaluate`/`/extract`/`/extract-image` checks PASS where applicable;
 - authenticated backup/delta/restore/rotation smoke PASS;
 - truthful rollback/fix-forward evidence recorded.
 

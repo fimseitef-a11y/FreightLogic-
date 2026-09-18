@@ -42,6 +42,7 @@ import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.s
 import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
 // Issue #205 — driver-first UX/IA restructure of Today and More
 import { runSpec as todayIA } from './integration/today-ia.spec.mjs';
+import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
 // Issue #219 — untrusted-import credential trust boundary
 import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
 // Issue #220 — self-hosted-only executable code
@@ -74,6 +75,7 @@ import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mj
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
 import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
 import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
+import { runSpec as workerVisionExtract } from './unit/worker-vision-extract.spec.mjs';
 import { runSpec as liveInviteClaimGate } from './unit/live-invite-claim-gate.spec.mjs';
 import { runSpec as vehicleProfileRace } from './integration/vehicle-profile-race.spec.mjs';
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
@@ -102,6 +104,7 @@ const specs = [
   workerPointerRace,
   workerTokenAuthority,
   workerInviteClaim,
+  workerVisionExtract,
   liveInviteClaimGate,
   vehicleProfileRace,
   zeroTokenOnboarding,
@@ -122,6 +125,7 @@ const specs = [
   pickupFeasibility,
   positionAuthority,
   todayIA,
+  screenshotIntake,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,
