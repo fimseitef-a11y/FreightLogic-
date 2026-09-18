@@ -2,7 +2,7 @@
 
 Started in Phase 1 of v23.9 "Trust & Recovery" and maintained as the single normative list of what `cloudPushBackup()` uploads and what `cloudPullBackup()` → `mergeRestoreData()` must restore.
 
-Current application contract: **FreightLogic v24.0.16 (source) / IndexedDB v16 / Worker v20 (source)**. Production serves **24.0.15 / DB16 / Worker v19** — see `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`.
+Current application contract: **FreightLogic v24.0.19 / IndexedDB v16 / Worker v20**. Production serves exactly that, and both generations are OBSERVED — see `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`. Source and production agree, so there is no source-versus-deployed split to track here for the first time in the v24.0.x line.
 
 ## Rule
 

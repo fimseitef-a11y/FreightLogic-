@@ -82,13 +82,20 @@ split out and run early**. Three reasons, in order of weight:
 - Do **not** read the current certification state document as a live test queue. Its
   "Still HOLD" section is accurate about the facts and silent about the schedule; this
   document supplies the schedule.
-- **Superseded pointer (2026-09-17):** this document was written against
+- **Superseded pointer (2026-09-18):** this document was written against
   `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-16.md` (app 24.0.14 / SHA
-  `8f90725`). The current authority is
-  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md` (production 24.0.15 /
-  `ee07297`). **The deferral itself is unchanged** — the operator's decision is about the
-  final post-v24.5 candidate, not about any particular interim generation, so a new
-  production generation does not expire it. Only the document it points at moved.
+  `8f90725`), and was repointed once at the 2026-09-17 state (production 24.0.15 /
+  `ee07297`). The current authority is
+  `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` (production **24.0.19 /
+  DB16 / Worker v20**, observed at `eac5994`). **The deferral itself is unchanged** — the
+  operator's decision is about the final post-v24.5 candidate, not about any particular
+  interim generation, so a new production generation does not expire it. Only the document
+  it points at moved.
+- **Gate C is no longer deferred, and this is the one part of the schedule that did
+  change.** Section C's deferral was conditioned on the raw M6 files being unavailable. The
+  operator supplied all five on 2026-09-18, the reconciliation ran, and all six criteria
+  pass. That condition is gone. **A1-A12's deferral is untouched** and stands on its own
+  rationale below — five of the twelve rows measure surfaces the v24.5 redesign rewrites.
 - Do **not** read `FIELD_TEST_CHECKLIST.md`'s open A-rows as work due now. The instrument is
   ready and correct; it is deliberately not being run yet.
 - Do **not** treat the deferral as closing either gate. A deferred gate is open. The release

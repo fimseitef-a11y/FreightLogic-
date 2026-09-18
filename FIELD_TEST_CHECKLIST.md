@@ -2,7 +2,7 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
 Current runtime synchronization point: **production serves FreightLogic v24.0.19 / IndexedDB v16 / Worker v20**, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
 
@@ -14,7 +14,7 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A12 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Neither 24.0.15 nor the undeployed 24.0.16 / 24.0.17 is the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A12 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.19 / DB16 / Worker v20 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
@@ -33,7 +33,7 @@ Use synthetic/non-sensitive records where practical. Do **not** delete the insta
 1. Record Diagnostics/install identity before changing anything.
 2. Open `https://freightlogic-v2.fimseitef.workers.dev` in Safari.
 3. Launch the existing Home Screen app, or install only if it is not already present.
-4. Close/reopen online and verify **24.0.12** is active, on the exact candidate SHA named in the certification document.
+4. Close/reopen online and verify **the frozen candidate's declared app generation** is active, on the exact candidate SHA named in the certification document. Read both out of that document immediately before testing — this step named `24.0.12` for five generations, which is the drift the rule two sections above exists to prevent, sitting inside the row that enforces it.
 5. If updating from an older installed generation, use the normal non-destructive service-worker/PWA update path.
 6. Confirm the primary shell is **Today / Loads / Evaluate / Trips / Money** and More still exposes the secondary surfaces.
 
@@ -103,7 +103,7 @@ Use synthetic values only.
 
 PASS requires blank/underspecified markets to fail closed, Gary to retain U.S. Tier-1 doctrine, the length/wheel-well/payload boundaries to fail closed by default, and precise True Profit to become unavailable/explicitly estimated when cost-per-mile is not defensible.
 
-## A10. Pickup-feasibility gate (shipped v24.0.9, current in v24.0.12)
+## A10. Pickup-feasibility gate (shipped v24.0.9; run against the frozen candidate)
 
 Use a synthetic load with an optional pickup cutoff.
 
@@ -114,6 +114,9 @@ Use a synthetic load with an optional pickup cutoff.
 5. Move the cutoff to a comfortably reachable time and confirm normal economics return.
 6. Clear deadhead entirely and verify UNKNOWN deadhead does not become zero or a false reachable result.
 7. Enter explicit deadhead `0` and verify it is treated as real zero distance.
+8. Create a reachable but under-30-minute-slack case and verify it is advisory/tight only; it must not independently alter grade/verdict/bid authority.
+
+PASS requires the exact fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
 
 ## A11. iOS 27 / Safari 27 regression pass (added 2026-09-15)
 
@@ -127,16 +130,17 @@ Use a synthetic load with an optional pickup cutoff.
 6. **Background sync is still absent — confirm nothing depends on it.** iOS 27 does **not** add Background Sync, despite secondary coverage claiming otherwise. Close the app fully, reopen the next day, and confirm the cloud-backup paused banner appears with a working one-tap Resume. That banner is the mitigation and it must not have regressed.
 
 PASS requires no visual regression in the SVG surfaces, no zoom-on-focus, persisted storage granted, and the cloud-backup paused banner behaving as specified. Record the iOS and Safari versions with the result — an A11 PASS on iOS 26 certifies nothing about iOS 27.
-8. Create a reachable but under-30-minute-slack case and verify it is advisory/tight only; it must not independently alter grade/verdict/bid authority.
-
-PASS requires the exact fail-closed behavior above. A guessed/clamped/default planning speed is a failure.
 
 ## A12. Zero-token driver onboarding (added v24.0.13) — **the storage-partition question**
 
-**Prerequisite: Worker v18 AND app 24.0.13 must both be deployed before this runs.**
-The Worker goes first — the app calls `POST /admin/invites` and `POST /claim`, and
-neither exists on v17. Record both generations with the result; an A12 run against a
-v17 Worker certifies nothing.
+**Prerequisite: the frozen candidate's declared app AND Worker generations must both be
+deployed before this runs**, with the Worker first — the app calls `POST /admin/invites` and
+`POST /claim`, and a Worker generation that predates them cannot answer. The historical minimum
+this row was written against (Worker v18 / app 24.0.13) is met and long exceeded; production has
+served **24.0.19 / Worker v20** since 2026-09-18. Do not treat that minimum as the bar. Read both
+generations out of the certification document, confirm them against Diagnostics and Worker
+`/health` on the device itself, and record both with the result — an A12 run against generations
+other than the candidate's certifies nothing.
 
 This gate exists because of one question no headless runner can answer, and the answer
 determines whether a real driver is stranded.

@@ -4,56 +4,71 @@
 
 **FreightLogic v24.0.19** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**v24.0.19 source candidate:** the Issue #240 P0 — v24.0.18, which is LIVE in
-production, could report **Synced** over genuinely unsynced data. One change-clock
-authority now serves both the delta push and the pending summary, a durable
-`syncDirtyAt` marker carries the settings-only case the record count cannot represent,
-and an unreadable store fails closed to `UNKNOWN` instead of a confident zero. It also
-closes **#224**: `waitForFunction` does not await an `async` predicate, so the harness's
-own readiness probe had been resolving on its first poll and waiting for nothing —
-measured against the real Playwright build, not deduced. App **24.0.18 → 24.0.19**; DB
-stays **16**; Worker stays **v20 source / v19 deployed**. **Source-only: not deployed
-and not live-observed.** The Worker deploy blocker is separate and unchanged.
+**PRODUCTION SERVES 24.0.19 / DB16 / Worker v20, and BOTH generations are OBSERVED.** This is the
+first fully-green live parity in the whole v24.0.x line, because it is the first time source and
+production agreed on both generations at once. Live parity run `35291475396`, `workflow_dispatch`
+on `main` @ `eac5994`, job `105435050613`, `VERDICT: PASS`: `app.js`, `sw-bridge.js`, the service
+worker, `modern-shell.js` and the manifest all at **24.0.19**; `index.html` does **not** reference
+`voice-load.js` (the inverted #230 assertion, observed live rather than asserted statically);
+Worker `/health` returning `{"ok":true,"version":"20"}`; all **22** declared runtime assets loading
+with none served as an HTML fallback; CSP byte-identical; and **20** repository-only paths
+confirmed non-public, which is Issue **#228**'s live half. Worker v20 was deployed by run
+`35291404482` with its own post-deploy checks green, and the authenticated Worker gate passed on
+the same generation (run `35291452993` — authority 5/0, backup/delta/restore 21/0, invite/claim
+12/0). The production service-worker gate and the full suite are green on the current `main` head
+`cb0e64c` (runs `35293596430` and `35293596434`), whose diff from `eac5994` touches no declared
+runtime asset. That gate fails the job on anything but PASS and `UNOBSERVED` (exit 2) is also
+non-zero, so a success is a **positive observation**, not an absence of objections.
 
-**v24.0.17 source candidate:** Voice Load removed completely by operator decision
-(#230), the import ceiling enforced before materialization (#232), and internal
-audit/certification documents withheld from the public asset origin (#228). App
-**24.0.16 → 24.0.17**; DB stays **16**; Worker stays **v20 source**. **Source-only: not
-deployed and not live-observed.** It STACKS ON an undeployed v24.0.16 — Worker v20 still
-must deploy before the app generation, exactly as the v24.0.16 section requires. Issue
-**#224 remains OPEN** (the `db === null` race did not reproduce), so `main` must not be
-described as having all automatable gates green.
+**Issues #224, #240 and #221 are CLOSED.** `main` may now be described as having all automatable
+gates green — which it could not be for the whole preceding stretch of this file, and the
+paragraphs below that said so were correct when written.
 
-**v24.0.16 source candidate:** three trust-boundary security issues (#219 untrusted
-import installing credentials, #221 the token index outranking the account record plus
-raw `token=` setup links, #220 the jsDelivr executable fallback) and the #224 readiness
-/ diagnostics work. Worker **v19 → v20**; DB stays **16**. **Source-only: not deployed
-and not live-observed.** Issue **#224 is OPEN** — the `db === null` race did not
-reproduce — so `main` must not be described as having all automatable gates green.
+**Exactly one gate remains: physical iPhone A1-A12**, deferred by the operator's 2026-09-16
+decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconciliation) is no
+longer part of that wait** — it was blocked on access, the operator supplied the five raw
+2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
+review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` is the certification
+authority.
 
-**Production serves 24.0.15 / DB16 / Worker v19, and that is OBSERVED.** Live parity job
-`105095664502` on `ee07297` reports `index.html` referencing app/voice/SW-bridge
-**24.0.15**, service worker **24.0.15**, manifest name `FreightLogic v24.0.15`, all
-**23/23** declared runtime assets loading from the production app origin with none served
-as an HTML fallback, and Worker `/health` at **v19** — `VERDICT: PASS`. The production
-service-worker gate passed on the same SHA. Physical iPhone A1-A12 and authentic M6
-remain open, deferred by operator decision to the final post-v24.5 candidate.
+**Recent generations, as history.** Each of these shipped with a "source-only: not deployed"
+note that was true on the day it was written; all three are now live and the notes are superseded:
+
+- **v24.0.19** — the Issue #240 P0. v24.0.18 could report **Synced** over genuinely unsynced
+  data. One change-clock authority now serves both the delta push and the pending summary, a
+  durable `syncDirtyAt` marker carries the settings-only case the record count cannot represent,
+  and an unreadable store fails closed to `UNKNOWN` instead of a confident zero. It also closes
+  **#224**: `waitForFunction` does not await an `async` predicate, so the harness's own readiness
+  probe had been resolving after a single failed poll — measured against the real Playwright
+  build, not deduced. App **24.0.18 → 24.0.19**; DB stays **16**.
+- **v24.0.17** — Voice Load removed completely by operator decision (#230), the import ceiling
+  enforced before materialization (#232), and internal audit/certification documents withheld
+  from the public asset origin (#228). App **24.0.16 → 24.0.17**; DB stays **16**. Declared
+  runtime assets went 23 → **22** with the Voice Load removal, so a 404 for `voice-load.js` is
+  the removal working, not a failed deploy.
+- **v24.0.16** — three trust-boundary security issues (#219 untrusted import installing
+  credentials, #221 the token index outranking the account record plus raw `token=` setup links,
+  #220 the jsDelivr executable fallback) and the #224 readiness / diagnostics work. Worker
+  **v19 → v20**; DB stays **16**.
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. **Production serves app v24.0.14 / DB16 and Worker v19, and that is OBSERVED, not assumed** — live all-asset parity run `35087770010`, `workflow_dispatch` on `main` @ `8f90725`, VERDICT PASS against an `EXPECTED` block of `24.0.14` / `FreightLogic v24.0.14` / Worker `19`. That gate fails the job on anything but PASS and `UNOBSERVED` is also non-zero, so a success is a positive observation rather than an absence of objections. v24.0.14 inherits PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`) and adds Worker v19's proactive legacy-plaintext cleanup.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker v20 carries PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
-*This overview previously read "**v24.0.15 source candidate** … Source-only: not deployed
-and not live-observed. Production serves **24.0.14 / DB16 / Worker v19**." That was true
-when the candidate was written and stopped being true when 24.0.15 deployed; issue #225
-was opened to correct it. It is corrected rather than quietly overwritten, because a
-release record that keeps a superseded deployment claim is the drift class this file now
-records against itself six times. The instance before this one was worse than cosmetic —
-it understated production by two app generations and two Worker generations, so a reader
-would have re-run a deployment sequence that had already happened, or certified against a
-candidate production had stopped serving days earlier. The rule that prevents it is the
-one the certification documents already state: **a superseding record is due the day a
-shipped file deploys, not the day it merges, and not whenever somebody notices.***
+*This overview has now carried a superseded production claim **seven** times. Before this
+correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
+live-observed" and "Production serves 24.0.15 / DB16 / Worker v19", while a second paragraph
+further down still said **24.0.14 / Worker v19** — three different answers to one question, none
+of them current. Issue #244 was opened to correct it, as #225 was for the instance before. It is
+corrected rather than quietly overwritten, because a release record that keeps a superseded
+deployment claim is the drift class this file records against itself. Two instances understated
+production by two app generations and two Worker generations at once, so a reader would have
+re-run a deployment sequence that had already happened, or certified against a candidate
+production had stopped serving days earlier. The rule that prevents it is the one the
+certification documents already state: **a superseding record is due the day a shipped file
+deploys, not the day it merges, and not whenever somebody notices.** Merging leaves a commit;
+deploying leaves nothing, which is the entire mechanism.*
 
 The intermediate generations are part of the record: **Worker v18** deployed (run `35037355686`, every post-deploy check green including `/health` reporting 18) and **app 24.0.13** observed live (parity run `35037460402`) before PR #211 superseded both with v24.0.14 / Worker v19.
 
@@ -3954,7 +3969,10 @@ which races the Cloudflare deploy — five recorded occurrences now.
 
 `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md` is the superseding
 authority for the 24.0.15 production observation that issue #225 asked for, and
-records this candidate as source-only.
+records this candidate as source-only. *(Both statements were true when written.
+That document is itself superseded by
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`, and this candidate is
+no longer source-only — Worker v20 and app 24.0.19 are both live and observed.)*
 
 **Still HOLD.** Physical iPhone A1-A12 and authentic M6 raw-data certification are
 unchanged and remain the operator's.
@@ -4125,3 +4143,94 @@ reachable from this fixture and is not claimed.
 asset carries, so an installed PWA holding the 24.0.18 shell would never fetch the
 repaired file — a live app would keep reporting Synced over unsynced data indefinitely.
 The v24.0.3 lesson applied rather than relearned; every governed marker moves together.
+
+### DEPLOYED and OBSERVED LIVE 2026-09-18 — and the first time BOTH generations agreed
+
+This section shipped saying the Worker stayed **v20 source / v19 deployed**. That was true when
+written and stopped being true the same day. It is corrected here rather than quietly
+overwritten, for the reason this file now records against itself seven times.
+
+**Worker v20 went first, as the v24.0.16 section required** — run `35291404482` on `main` @
+`eac5994`, post-deploy checks green: `/health` at the expected version, CORS echoing the real app
+origin rather than `*`, and both unauthenticated boundaries still 401. The two earlier dispatches
+that refused in ~7 seconds (`35211428043`, `35213350763`) were the typed-`DEPLOY` confirmation
+guard working exactly as designed, not a broken workflow.
+
+**The app generation followed and live parity was re-dispatched** rather than citing the
+push-triggered run: run `35291475396`, job `105435050613`, `VERDICT: PASS`. Every app-side check
+at 24.0.19, Worker `/health` `{"ok":true,"version":"20"}`, all **22** declared runtime assets
+loading with none served as HTML, CSP byte-identical, and **20** repository-only paths confirmed
+non-public — Issue **#228**'s live half, which is the condition that section had been waiting on.
+
+**This is the first fully-green live parity in the v24.0.x line.** Every prior PASS was green on
+the app half while the Worker generation lagged, or vice versa. Source and production now agree
+on both.
+
+The authenticated Worker gate re-ran on v20 (run `35291452993` — authority 5/0,
+backup/delta/restore 21/0, invite/claim 12/0), which matters because v20 is the generation that
+changed the driver-auth path B7 exercises. The production service-worker gate and the full suite
+are green on the current head `cb0e64c` (`35293596430`, `35293596434`).
+
+**The push race did not occur this time, and that is the mechanism confirming itself.** The
+`cb0e64c` merge changed no declared runtime asset, so there was nothing for Cloudflare to deploy
+and nothing for the push-triggered run to race — it passed (`35293596465`). A re-dispatch that
+fails *the same way* remains evidence rather than a race, which is what made the v24.0.17
+Worker-generation mismatch a real finding instead of a seventh occurrence.
+
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` is the superseding certification
+authority for this observation, and it supersedes the orphaned 2026-09-12 addendum along with the
+2026-09-17 state so the chain resolves to exactly one current document.
+
+**Still HOLD, and now on exactly one gate.** Physical iPhone **A1-A12**, deferred by the
+operator's 2026-09-16 decision to the final post-v24.5 candidate. **Gate C is no longer part of
+that wait**: the operator supplied the five raw 2026-08-27 files on 2026-09-18, the reconciliation
+ran, and all six criteria pass — adoption still requires the conflict review, the separate 125-row
+master CSV remains unavailable and must not be reconstructed from summaries, and the single
+`in_progress` row carrying `awarded: true` is flagged for operator confirmation rather than
+absorbed.
+
+---
+
+## The supersession chain that resolved seven documents as current
+
+Tooling and documentation. No shipped file changed, so no version marker moved: `APP_VERSION` and
+`SW_VERSION` stay `24.0.19`, `DB_VERSION` 16, Worker v20.
+
+**The defect.** `scripts/m7-certify.mjs` resolves the canonical certification state by explicit
+supersession — blocker 5's rule, deliberately *not* date ordering, because several documents can
+share a date and "newest filename wins" would let an unrelated addendum silently clear a blocking
+state. A document supersedes another only by naming it. The resolver compares that name against a
+bare basename.
+
+Every real document in `docs/` writes the value as `` `docs/NAME.md` `` — backticked and
+directory-prefixed — because that is what reads correctly as prose. **Every one of those
+references was inert.** Seven documents resolved as "current" when exactly one should have.
+
+It cost nothing while every document held, which is precisely why it survived: the runner still
+returned HOLD, by a different route, and the document it *named* as the source was right by
+accident of sort order. The day one of them was meant to clear, six stale HOLDs — the newest of
+them a generation behind — would have held the release, and the reported blocker would have been
+a document nobody had read in two weeks.
+
+**It had been seen once before and worked around rather than fixed.** The 2026-09-12 addendum
+says in its own text that it exists partly to close a branch "left by the 2026-09-03 record's
+path-formatted supersession value." A document was hand-written to route around a parser bug, and
+the parser kept the bug. That addendum was itself then orphaned — nothing ever named it — which
+is how it stayed "current" for six days describing v24.0.5 / Worker v14.
+
+**The fix normalizes the reference, not the documents.** `supersededBasename()` strips surrounding
+backticks or quotes and any directory prefix. The historical files are untouched, which is what
+blocker 5 requires: editing six documents to match a parser is the rewriting-history move that
+rule exists to forbid.
+
+**M7-11 is the assertion that would have caught it**, and it uses the exact form the real
+documents use. **M7-06 could not**, and the reason is worth keeping: its fixture writes bare
+filenames — the one form the repository does not use anywhere. A regression that exercises a shape
+the production data never takes is green for a reason unrelated to the thing it guards.
+
+Negative control, verified to fire: reverting the normalization fails M7-11 on the exact
+assertion, **while M7-06, M7-07 and M7-08 all stay green** — which is the demonstration that the
+two tests are independent rather than one contract tested twice.
+
+The 2026-09-18 state document supersedes both remaining current documents, so the chain now
+resolves to exactly one.
