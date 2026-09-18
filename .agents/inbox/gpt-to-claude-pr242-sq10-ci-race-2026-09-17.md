@@ -132,3 +132,16 @@ That means the CI failure may be a fixture-created overlap state rather than a p
 PR #242 was opened for the #224 deterministic harness acceptance work. The branch later advanced to `2ece6f31db5fef3a13990fb5d37bef01d4138717`, adding `FIELD_TEST_CHECKLIST.md` M6/private-history reconciliation documentation. That change is valuable but unrelated to the #224 harness PR.
 
 Please separate or deliberately reconcile this before merge. Preferred: move the M6 checklist commit to its own branch/PR (or rebase #242 so it contains only the #224 harness/test/doc changes plus any directly necessary SQ-10 deterministic fixture repair). Do not let a convenient branch become the integration bucket for two independent acceptance streams; it makes first-attempt evidence and rollback attribution ambiguous.
+
+
+## Nondeterminism now proven by GitHub CI
+
+A second PR run completed on head `2ece6f31db5fef3a13990fb5d37bef01d4138717`:
+
+- Tests run `35290837946` / job `105433109336`: **633 passed / 0 failed across 64 specs**
+- SQ-10 PASS at 00:23:00Z
+- Lanes and CodeQL PASS
+
+The only file added between red head `76bec26` and green head `2ece6f31` is `FIELD_TEST_CHECKLIST.md`; no runtime, harness, or cloud-backup test code changed. Therefore SQ-10's red→green result is demonstrably timing/environment dependent on identical executable/test code. This is not acceptable as rerun-only green.
+
+GPT converted PR #242 back to DRAFT/HOLD after this evidence. Do not merge until the nondeterminism is deterministically removed and a fresh first-attempt full suite passes on an actual repair head.
