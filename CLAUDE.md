@@ -15,10 +15,30 @@ with none served as an HTML fallback; CSP byte-identical; and **20** repository-
 confirmed non-public, which is Issue **#228**'s live half. Worker v20 was deployed by run
 `35291404482` with its own post-deploy checks green, and the authenticated Worker gate passed on
 the same generation (run `35291452993` — authority 5/0, backup/delta/restore 21/0, invite/claim
-12/0). The production service-worker gate and the full suite are green on the current `main` head
-`cb0e64c` (runs `35293596430` and `35293596434`), whose diff from `eac5994` touches no declared
-runtime asset. That gate fails the job on anything but PASS and `UNOBSERVED` (exit 2) is also
-non-zero, so a success is a **positive observation**, not an absence of objections.
+12/0). That gate fails the job on anything but PASS and `UNOBSERVED` (exit 2) is also non-zero, so
+a success is a **positive observation**, not an absence of objections. The production
+service-worker gate and the full suite were green on `cb0e64c` (runs `35293596430` and
+`35293596434`), whose diff from `eac5994` touches no declared runtime asset.
+
+**Where `main` is now is deliberately not recorded here — re-read it every session.** The SHAs
+above are provenance for runs that happened: they name the exact tree a gate actually looked at,
+and they stay correct permanently. A "current `main` head" is the opposite kind of fact — it is
+wrong again at the next merge, and it went stale within the hour when this very repair merged.
+That is the same drift class this section has now recorded against itself seven times, so the
+head is a lookup, not an entry:
+
+| Fact | Read it from | Never |
+|---|---|---|
+| current `main` head | `git rev-parse origin/main` | a SHA written in this file |
+| app / PWA generation | `APP_VERSION` in `app.js`, `SW_VERSION` in `service-worker.js` | prose in a release section |
+| deployed Worker generation | `GET /health` on the backup Worker origin | the source header alone |
+| certified candidate + its SHA | the one `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_*.md` nothing supersedes | an older state document still on disk |
+| live production agreement | re-dispatch **Verify Live Parity**; `VERDICT: PASS` | a push-triggered run that raced the deploy |
+
+The generation claim at the top of this section holds until a shipped file **deploys** — a
+different event from a merge, which is the entire mechanism: merging leaves a commit, deploying
+leaves nothing. Source moving ahead of production does not make that claim false, it makes it
+*superseded*, and re-verify before repeating it in any release or certification claim.
 
 **Issues #224, #240 and #221 are CLOSED.** `main` may now be described as having all automatable
 gates green — which it could not be for the whole preceding stretch of this file, and the
@@ -4169,7 +4189,7 @@ on both.
 The authenticated Worker gate re-ran on v20 (run `35291452993` — authority 5/0,
 backup/delta/restore 21/0, invite/claim 12/0), which matters because v20 is the generation that
 changed the driver-auth path B7 exercises. The production service-worker gate and the full suite
-are green on the current head `cb0e64c` (`35293596430`, `35293596434`).
+were green on `main` @ `cb0e64c` (`35293596430`, `35293596434`).
 
 **The push race did not occur this time, and that is the mechanism confirming itself.** The
 `cb0e64c` merge changed no declared runtime asset, so there was nothing for Cloudflare to deploy
