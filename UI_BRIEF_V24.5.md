@@ -126,7 +126,7 @@ The approved visual target uses five primary destinations:
 
 **Today · Loads · ⚡ · Trips · Money**
 
-The center **⚡** must reuse the existing canonical intake/evaluation path rather than create a parallel feature. It should expose only the capabilities actually present in current source: **Photo/Screenshot/OCR where available · Paste**. **Voice is intentionally retired and must not return.**
+The center **⚡** must reuse the existing canonical intake/evaluation path rather than create a parallel feature. **Current production routes it to Evaluate/`#omega`; that is the current behavior, not a mandate that the final redesign can never change the entry point.** If the redesign makes the center action intake-first, it must call the existing Load Intake/evaluator path and preserve one canonical pipeline. Expose only capabilities actually present in current source: **Photo/Screenshot/OCR where available · Paste**. **Voice is intentionally retired and must not return.**
 
 Before coding, inspect `index.html`, `modern-shell.js`, `app.js`, and the current router/ID bindings. Deliver one of these plans:
 
@@ -455,7 +455,7 @@ The redesign is not complete until all of these are true for the exact candidate
 
 This was the original start task and produced the §13 report. It is retained as the reconciliation template, **not** as a command to repeat the audit whenever a new session resumes. On Proceed/Continue/Resume, refresh only facts that may have changed and continue from the current implementation checkpoint:
 
-> Read the project instructions, `UI_BRIEF_V24.5.md`, and `FreightLogic_UI_Reference.html`. Work against the exact current `main` HEAD and record its SHA. Re-verify only what may have changed since the last completed Gate 1–4 report; do not restart a completed audit. Reconcile F27 Unified Load Intake so the center ⚡ reuses the existing photo/screenshot/OCR and paste capability instead of creating a second pipeline, and do not reintroduce retired Voice/SpeechRecognition. Identify any statement in the brief or reference that exact current source makes stale, unsupported, or capability-removing, then continue the already-approved redesign workflow under the single-writer/lane rules unless a genuine blocker is found.
+> Read the project instructions, `UI_BRIEF_V24.5.md`, and `FreightLogic_UI_Reference.html`. Work against the exact current `main` HEAD and record its SHA. Re-verify only what may have changed since the last completed Gate 1–4 report; do not restart a completed audit. Reconcile the center ⚡ against exact current behavior (currently Evaluate/`#omega`) and the approved reference; whichever entry behavior is chosen must reuse the existing Load Intake/evaluation pipeline, not create a second one, and must not reintroduce retired Voice/SpeechRecognition. Identify any statement in the brief or reference that exact current source makes stale, unsupported, or capability-removing, then continue the already-approved redesign workflow under the single-writer/lane rules unless a genuine blocker is found.
 
 That was the original start line. The §13 report was reviewed and the operator repeatedly approved continuation; do not stop for duplicate approval unless a new material conflict, unsafe/destructive action, unavailable authorization, or physical user-only gate requires it.
 
