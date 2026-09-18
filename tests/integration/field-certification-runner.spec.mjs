@@ -48,7 +48,7 @@ async function completeBaseEvidence(page, id, observation = 'Observed on the req
   for (let i = 0; i < count; i++) await checks.nth(i).check();
 }
 
-test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A12 as NOT_RUN', async () => {
+test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A13 as NOT_RUN', async () => {
   const app = await launchBlank();
   try {
     const page = await openRunner(app);
@@ -56,9 +56,9 @@ test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A12 as NOT_RU
       id: node.getAttribute('data-gate'),
       status: node.getAttribute('data-status'),
     })));
-    eq(gates.length, 12, 'the companion must render exactly the twelve physical-device gates');
-    eq(gates.map(g => g.id).join(','), 'A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12',
-      'the companion must preserve the canonical A1-A12 identity and order');
+    eq(gates.length, 13, 'the companion must render exactly the thirteen physical-device gates');
+    eq(gates.map(g => g.id).join(','), 'A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13',
+      'the companion must preserve the canonical A1-A13 identity and order');
     eq(gates.every(g => g.status === 'NOT_RUN'), true,
       'every physical-device gate must start in the canonical NOT_RUN state; nothing is pre-certified');
   } finally {
@@ -313,12 +313,12 @@ test('[FIELD CERT / NEW] FC-11 a RUNNING physical row resumes locally only under
   }
 });
 
-test('[FIELD CERT / NEW] FC-12 every A1-A12 row is a guided evidence instrument, not an empty PASS button', async () => {
+test('[FIELD CERT / NEW] FC-12 every A1-A13 row is a guided evidence instrument, not an empty PASS button', async () => {
   const app = await launchBlank();
   try {
     const page = await openRunner(app);
     await waitEnvironment(page);
-    for (const id of ['A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12']) {
+    for (const id of ['A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12','A13']) {
       const row = gate(page, id);
       eq(await row.locator('[data-expected]').count(), 1, `${id} must state expected behavior`);
       eq((await row.locator('[data-required-check]').count()) > 0, true, `${id} must expose required physical checkpoints`);
@@ -334,6 +334,9 @@ test('[FIELD CERT / NEW] FC-12 every A1-A12 row is a guided evidence instrument,
     eq(await gate(page, 'A6').locator('[data-real-device]').count(), 1, 'A6 must explicitly attest a real-device run');
     eq(await gate(page, 'A11').locator('[data-required-check]').count() >= 6, true, 'A11 must enumerate the iOS 27 visual/regression checkpoints');
     eq(await gate(page, 'A12').locator('[data-storage-partition]').count(), 1, 'A12 must record Safari-to-PWA storage behavior');
+    eq(await gate(page, 'A13').locator('[data-a13-camera]').count(), 1, 'A13 must record the screenshot/camera delivery result');
+    eq(await gate(page, 'A13').locator('[data-a13-clipboard]').count(), 1, 'A13 must record the clipboard-image delivery result');
+    eq(await gate(page, 'A13').locator('[data-a13-unknown-deadhead]').count(), 1, 'A13 must separately record the UNKNOWN-deadhead outcome');
   } finally {
     await app.close();
   }
@@ -431,6 +434,84 @@ test('[FIELD CERT / NEW] FC-14 A5 export inspection is structure-only, detects p
     for (const value of protectedValues) {
       eq(stored.includes(value), false, 'persisted certification evidence must not retain inspected export value ' + value);
     }
+  } finally {
+    await app.close();
+  }
+});
+
+
+test('[FIELD CERT / NEGATIVE] FC-15 A13 blocks below Worker v21 and accepts recorded iOS non-delivery without accepting fabricated deadhead zero', async () => {
+  const oldWorkerApp = await launchBlank();
+  try {
+    await oldWorkerApp.page.route('https://freightlogic-backup.fimseitef.workers.dev/health', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, version: '20' }),
+    }));
+    const page = await openRunner(oldWorkerApp);
+    await startCertification(page);
+    await startGate(page, 'A13');
+    eq(await gateStatus(page, 'A13'), 'BLOCKED', 'A13 must be BLOCKED, not FAIL or RUNNING, when /extract-image cannot exist on Worker v20');
+    const reason = await gate(page, 'A13').locator('[data-reason]').inputValue();
+    eq(/Worker v21/i.test(reason), true, 'the Worker-generation block must name the v21 prerequisite');
+  } finally {
+    await oldWorkerApp.close();
+  }
+
+  const app = await launchBlank();
+  try {
+    await app.page.route('https://freightlogic-backup.fimseitef.workers.dev/health', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, version: '21' }),
+    }));
+    const page = await openRunner(app);
+    await startCertification(page);
+    await startGate(page, 'A13');
+    eq(await gateStatus(page, 'A13'), 'RUNNING', 'Worker v21 makes A13 eligible for physical observation');
+    await completeBaseEvidence(page, 'A13');
+    const row = gate(page, 'A13');
+
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A13'), 'RUNNING', 'A13 cannot pass while camera/clipboard outcomes are merely assumed');
+    await row.locator('[data-a13-camera]').selectOption('NOT_DELIVERED');
+    await row.locator('[data-a13-clipboard]').selectOption('NOT_DELIVERED');
+    await row.locator('[data-a13-unknown-deadhead]').selectOption('FABRICATED_ZERO');
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A13'), 'RUNNING', 'recorded camera/clipboard non-delivery is valid, but fabricated deadhead zero must still block PASS');
+    const deadheadError = (await row.locator('[data-gate-error]').textContent()) || '';
+    eq(/blank\/UNKNOWN/i.test(deadheadError), true, 'UNKNOWN-deadhead failure must be explicit');
+
+    await row.locator('[data-a13-unknown-deadhead]').selectOption('BLANK_PROMPTED');
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A13'), 'PASS', 'A13 may pass once image-path outcomes are recorded and UNKNOWN deadhead is directly observed fail-closed');
+  } finally {
+    await app.close();
+  }
+});
+
+test('[FIELD CERT / NEGATIVE] FC-16 an A1-A12 saved session cannot resume or masquerade as complete after A13 is added', async () => {
+  const app = await launchBlank();
+  try {
+    let page = await openRunner(app);
+    await waitEnvironment(page);
+    const observed = await page.locator('#candidateExpected').inputValue();
+    await page.evaluate(({ key, candidate }) => {
+      localStorage.setItem(key, JSON.stringify({
+        schemaVersion: 1,
+        checklistVersion: 'A1-A12-2026-09-17',
+        sessionState: 'COMPLETE',
+        candidate,
+        deviceModel: 'old fixture',
+        iosVersion: '27.0',
+        gates: {},
+      }));
+    }, { key: STORE_KEY, candidate: observed });
+    await page.reload({ waitUntil: 'load' });
+    await waitEnvironment(page);
+    eq(await page.locator('body').getAttribute('data-session-state'), 'IDLE',
+      'an older checklist session must be discarded rather than resumed as COMPLETE');
+    eq(await gateStatus(page, 'A13'), 'NOT_RUN', 'the newly-added physical gate must start unobserved');
   } finally {
     await app.close();
   }
