@@ -4,7 +4,7 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.18 / IndexedDB v16 / Worker v19.** The app half is observed by live-parity run `35284924340` **attempt 2** on `main` @ `ac04f61` (job `105416938250`). Read that run carefully: its overall verdict is **`FAILURE`** — it failed on the Worker check, not an app-side one, and Issue #240 records the app-side and runtime-asset checks in it as green. A FAILURE run is not a parity PASS for this generation; what it supports is the narrower claim that the deployed app is at 24.0.18. The Worker is a live, observed **MISMATCH**: v19 deployed against **v20 in source**. Declared runtime assets are **22** from v24.0.17 onward (Voice Load was removed by operator decision, Issue #230) — a 404 for `voice-load.js` is the removal working, not a failed deploy. Source candidate **v24.0.19** (Issue #240: v24.0.18 could report "Synced" over genuinely unsynced data; and the #224 harness repair) is **not deployed** — do not certify against it. Issue **#224 is CLOSED** by that repair: `waitForFunction` does not await an `async` predicate, so the suite's readiness probe had been resolving on its first poll, measured against the real Playwright build rather than deduced.
+Current runtime synchronization point: **production serves FreightLogic v24.0.19 / IndexedDB v16 / Worker v20**, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
 
 **Voice Load was deliberately REMOVED in v24.0.17 by operator decision (Issue #230).** The
 evaluator microphone, the Load Intake and Smart Load Inbox voice buttons, the voice status
@@ -14,13 +14,13 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A12 and the section C private-history reconciliation are **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and run **once** against it. **Neither 24.0.15 nor the undeployed 24.0.16 / 24.0.17 is the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A12 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Neither 24.0.15 nor the undeployed 24.0.16 / 24.0.17 is the certification candidate.** See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. When the deferral lifts, read the SHA out of the then-current superseding certification document immediately before testing and confirm the generation strings against Diagnostics and Worker `/health` on the device itself. If any disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, and **section C private-history reconciliation**. Their execution is deferred as stated above.
+All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, deferred as stated above. **Section C has now run** — see that section for the structural result, and for the two things it deliberately does not cover: the separate 125-row 2026-08-24 master, and conflict review before adoption.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
@@ -225,17 +225,51 @@ Its verdict is deliberately incapable of naming a safe rollback target. Older ge
 
 It states its own limit rather than implying otherwise: **the offline navigation itself is not observed there.** A navigation restarts the service worker outside the network emulation that covered it, which was tested, not assumed. That is precisely what **A4** on a real device is for, and why B6 does not replace it.
 
-# C. Private-history reconciliation blocker
+# C. Private-history reconciliation — **RECONCILIATION RUN, criteria PASS**
 
-The original August 27 five-file M6 bundle was recovered privately in prior evidence. Preflight reports 216 source rows and the unchanged adapter deterministically produces 149 candidate records. Raw rows remain outside the public repository.
+The five raw 2026-08-27 files were supplied by the operator on 2026-09-18 and the
+reconciliation was run. **Raw rows stay outside the public repository** — nothing below
+is a cell value; this is the non-sensitive structural result the gate asks to be recorded
+publicly.
 
-Status: **BUNDLE PREVIOUSLY RECOVERED / RAW FILES NOT AVAILABLE IN CURRENT SESSION / APPLICATION ROUND TRIP + IDEMPOTENCE + CONFLICT REVIEW NOT RUN**.
+**The bundle is the authentic recovered source, not a reconstruction**, and that is
+asserted on independent evidence rather than on the supplier's manifest. This section
+already recorded, from the earlier private recovery, that preflight reports **216 source
+rows** and that the unchanged adapter deterministically produces **149 candidate
+records**. Both numbers reproduced exactly, on a run that had no access to the previous
+one. The two documented per-file row counts (`text 2.csv` 58, `RECOVERED_…` 26) also
+matched independently, and the supplied manifest's SHA-256 for all five files matched the
+bytes actually present.
 
-The current execution session does not have the five raw files mounted, and filename searches across the accessible File Library, Dropbox, and Google Drive found no copy. Do not reconstruct the bundle from chat summaries merely to make this gate pass.
+`node scripts/verify-history-bundle.mjs <bundle>` → **0 blocking problems, 0 warnings**,
+5 of 5 required files, 216 data rows. `node scripts/m6-import.mjs` → 149 records.
 
-Do not reconstruct the separate unavailable 125-row master from summaries. Once the actual raw M6 files are regained, run the isolated import/re-export and reconciliation machinery outside the public repository, then record only non-sensitive results publicly.
+PASS criteria, each verified against the produced records rather than assumed:
 
-PASS requires no invented broker identity, no unsupported WON/completed promotion, no UNKNOWN-to-zero coercion, preserved source timestamps/semantics, no collapse of distinct shipments sharing external IDs, deterministic re-import/idempotence, and reviewed conflicts before adoption.
+| Criterion | Result |
+|---|---|
+| No invented broker identity | **PASS** — `broker` is set only from `COMPLETE-UNIFIED-DATA.csv` (50) and `All_Trips_App_Import_v1.csv` (32), never from `text 2.csv`'s `Carrier`, which stays in its own `carrierLabel` field on 58 records. 67 records keep broker deliberately empty rather than inferred. |
+| No unsupported WON/completed promotion | **PASS** — `dry_run` → `awarded:false` (2), `live_quote` → `awarded:false` (4), `chat_captured` → `awarded:null` (2, tri-state preserved, no award invented), unrecognized statuses 0. The 116 rows with no status column are all `kind: ORDER` / `opportunity: WON`, 114 of them `execution: DELIVERED`, from the three historical-trip files — the award is inherent to the record class, not a promotion. |
+| No UNKNOWN-to-zero coercion | **PASS, exactly** — `deadMi` is null on 141 and positive on 8, with **zero zeros**: not one unknown became 0. `trueRpmDefensible` false on 139 = the reported `missingDeadhead` and `withheldFromTrueRpm` counts, and 139 + 4 true + 6 null = 149. |
+| Preserved source timestamps/semantics | **PASS** — 138 timestamps retained as 13-digit epoch ms; 11 records carry no timestamp and are left **null** rather than defaulted to import time. All 138 are midnight UTC because **the source files are date-only**; nothing was truncated, there was no clock precision to lose. |
+| No collapse of distinct shipments sharing an external ID | **PASS** — 5 external order numbers appear on more than one record, retaining 5 extra records, matching the adapter's own `reusedIdKeptSeparate: 5`. `withheld.json` carries the withheld row with its `reason`. |
+| Deterministic re-import / idempotence | **PASS** — a second import into a clean directory produced **byte-identical** `import-report.json`, `records-for-import.json` and `withheld.json`. |
+
+**One judgement call for the operator, flagged rather than absorbed:** a single
+`in_progress` row carries `awarded: true`. That is defensible — *awarded* means the bid
+was won, not that delivery finished, and its `execution` is `NOT_STARTED` rather than
+`DELIVERED` — but it is the one award in the set that rests on reading the status that
+way, so confirm it before adoption.
+
+**Still open, and not covered by this bundle.** The separate **125-row 2026-08-24 master
+CSV** is not in it; the supplied README says so explicitly and this run neither contains
+nor substitutes for it. Do not reconstruct that master from summaries. Adoption also
+still requires the conflict review before records are imported into a live database —
+this run produced the candidate set and its evidence; it did not adopt them.
+
+Re-run this gate against the final post-v24.5 candidate if the adapter changes, since the
+result is a statement about that adapter. What is no longer true is the previous status:
+the source files are no longer missing and the reconciliation is no longer un-run.
 
 # D. Six-width browser-layout gate — **PASS**
 

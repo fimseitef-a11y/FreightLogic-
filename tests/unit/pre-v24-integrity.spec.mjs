@@ -80,8 +80,37 @@ test('[PRE24-05] CI toolchain is reproducible', () => {
   const wf = source('.github/workflows/tests.yml');
   ok(/npm\s+install\s+-g\s+playwright@1\.62\.1(?:\s|$)/.test(wf), 'Playwright install command must be pinned to the validated version');
   ok(!/npm\s+install\s+-g\s+playwright@latest(?:\s|$)/.test(wf), 'CI install command must never float on Playwright latest');
-  ok(wf.includes('actions/checkout@v6'), 'checkout should use a Node24-capable action runtime');
-  ok(wf.includes('actions/setup-node@v6'), 'setup-node should use a Node24-capable action runtime');
+  // Issue #222. These two used to pin the literal `@v6` while their own messages
+  // stated the requirement as "a Node24-capable action runtime". Those are not the
+  // same assertion, and the difference was not academic: Dependabot's first
+  // grouped Actions update moved both to `@v7` — which IS Node24-capable and DID
+  // execute successfully — and this spec failed it anyway (Tests run 35282000119,
+  // 615/1). A literal pin turns every routine, correct dependency bump into a red
+  // build, which is how a security-update pipeline gets switched off.
+  //
+  // So test the SEMANTIC, bounded by review rather than by floating: a major in
+  // the reviewed set passes, anything older is rejected because it is not
+  // Node24-capable, and anything newer is rejected because nobody has reviewed it
+  // yet. A future v8 is a deliberate one-line decision here, not a silent upgrade.
+  const REVIEWED_MAJORS = [5, 6, 7];
+  for (const action of ['actions/checkout', 'actions/setup-node']) {
+    const refs = [...wf.matchAll(new RegExp(`${action}@([^\\s'"]+)`, 'g'))].map(m => m[1]);
+    ok(refs.length > 0, `${action} must be used by the tests workflow`);
+    for (const ref of refs) {
+      ok(!/^latest$/i.test(ref),
+        `${action} must never float on @latest — CI reproducibility is the point of this test`);
+      const major = /^v(\d+)$/.exec(ref);
+      ok(major,
+        `${action}@${ref} is not a plain major tag; pin a reviewed major (${REVIEWED_MAJORS.map(v => 'v' + v).join(', ')}) ` +
+        'or a full commit SHA reviewed the same way');
+      const n = Number(major[1]);
+      ok(REVIEWED_MAJORS.includes(n),
+        `${action}@${ref} is outside the reviewed set ${REVIEWED_MAJORS.map(v => 'v' + v).join(', ')}. ` +
+        (n < Math.min(...REVIEWED_MAJORS)
+          ? 'Majors below that set are not Node24-capable.'
+          : 'A newer major may be fine, but it has not been reviewed — widen REVIEWED_MAJORS deliberately.'));
+    }
+  }
 });
 
 export async function runSpec(){ return await run(); }
