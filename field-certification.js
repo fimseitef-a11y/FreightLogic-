@@ -3,7 +3,7 @@
 
   const STORE_KEY = 'freightlogic_field_cert_v1';
   const SCHEMA_VERSION = 1;
-  const CHECKLIST_VERSION = 'A1-A12-2026-09-17';
+  const CHECKLIST_VERSION = 'A1-A13-2026-09-18';
   const BACKUP_WORKER_HEALTH = 'https://freightlogic-backup.fimseitef.workers.dev/health';
 
   const GATES = {
@@ -116,6 +116,16 @@
         'Confirmed the same canonical user/backup history was preserved.',
         'Observed the real-device delivery/reclaim behavior without recording any token, code, PIN, or passphrase.'
       ]
+    },
+    A13: {
+      expected: 'Screenshot intake reaches the existing canonical evaluator on the real iPhone, preserves UNKNOWN versus explicit-zero deadhead, and records iOS image-delivery behavior without assuming unsupported paths worked.',
+      checks: [
+        'Photos / Files delivered a screenshot to extraction and opened the review step.',
+        'Explicit deadhead 0 survived review and reached the canonical evaluator as a known zero.',
+        'A manual edit to an extracted value overrode the model before canonical scoring.',
+        'The result was the ordinary canonical evaluator output, not an AI-authored grade, RPM, bid, or recommendation.',
+        'With the network unavailable, screenshot extraction failed plainly while paste/type manual intake remained usable and no empty review form opened.'
+      ]
     }
   };
 
@@ -170,7 +180,7 @@
       const raw = localStorage.getItem(STORE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      return parsed && parsed.schemaVersion === SCHEMA_VERSION ? parsed : null;
+      return parsed && parsed.schemaVersion === SCHEMA_VERSION && parsed.checklistVersion === CHECKLIST_VERSION ? parsed : null;
     } catch (_err) { return null; }
   }
 
@@ -460,6 +470,11 @@
       rec.backgroundMinutes = Number(qs('[data-background-minutes]', row)?.value || 0);
     }
     if (row.dataset.gate === 'A12') rec.storagePartition = qs('[data-storage-partition]', row)?.value || 'UNANSWERED';
+    if (row.dataset.gate === 'A13') {
+      rec.cameraCaptureOutcome = qs('[data-a13-camera]', row)?.value || 'UNANSWERED';
+      rec.clipboardImageOutcome = qs('[data-a13-clipboard]', row)?.value || 'UNANSWERED';
+      rec.unknownDeadheadOutcome = qs('[data-a13-unknown-deadhead]', row)?.value || 'UNANSWERED';
+    }
   }
 
   function restoreGateInputs(row, rec) {
@@ -481,6 +496,14 @@
     if (row.dataset.gate === 'A12') {
       const storage = qs('[data-storage-partition]', row);
       if (storage) storage.value = rec.storagePartition || 'UNANSWERED';
+    }
+    if (row.dataset.gate === 'A13') {
+      const camera = qs('[data-a13-camera]', row);
+      const clipboard = qs('[data-a13-clipboard]', row);
+      const unknownDeadhead = qs('[data-a13-unknown-deadhead]', row);
+      if (camera) camera.value = rec.cameraCaptureOutcome || 'UNANSWERED';
+      if (clipboard) clipboard.value = rec.clipboardImageOutcome || 'UNANSWERED';
+      if (unknownDeadhead) unknownDeadhead.value = rec.unknownDeadheadOutcome || 'UNANSWERED';
     }
     renderAutomatedObservations(row, rec);
   }
@@ -512,6 +535,17 @@
     if (row.dataset.gate === 'A12' && (!rec.storagePartition || rec.storagePartition === 'UNANSWERED')) {
       return 'A12 requires the observed Safari → Home Screen storage-partition answer.';
     }
+    if (row.dataset.gate === 'A13') {
+      if (!rec.cameraCaptureOutcome || rec.cameraCaptureOutcome === 'UNANSWERED') {
+        return 'A13 requires the actual camera/screenshot-control outcome to be recorded, including a no-image result.';
+      }
+      if (!rec.clipboardImageOutcome || rec.clipboardImageOutcome === 'UNANSWERED') {
+        return 'A13 requires the actual clipboard-image paste outcome to be recorded, including a no-image result.';
+      }
+      if (rec.unknownDeadheadOutcome !== 'BLANK_PROMPTED') {
+        return 'A13 requires direct observation that unstated deadhead stayed blank/UNKNOWN and scoring requested the figure instead of inventing zero.';
+      }
+    }
     return null;
   }
 
@@ -534,6 +568,9 @@
       rec.realDevice = false;
       rec.backgroundMinutes = 0;
       rec.storagePartition = 'UNANSWERED';
+      rec.cameraCaptureOutcome = 'UNANSWERED';
+      rec.clipboardImageOutcome = 'UNANSWERED';
+      rec.unknownDeadheadOutcome = 'UNANSWERED';
       rec.environmentFingerprint = null;
       if (id === 'A5') {
         rec.automatedObservations = (rec.automatedObservations || []).filter(item => !String(item).startsWith('A5 export structure:'));
@@ -552,6 +589,15 @@
       if (rec.status !== 'NOT_RUN') return;
       rec.startedAt = nowIso();
       rec.environmentFingerprint = session.environmentFingerprint;
+      if (id === 'A13') {
+        const workerVersion = Number.parseInt(String(session.environment?.workerGeneration || '').match(/\d+/)?.[0] || '0', 10);
+        if (!Number.isFinite(workerVersion) || workerVersion < 21) {
+          rec.reason = `A13 requires Worker v21 or later; observed ${session.environment?.workerGeneration || 'UNAVAILABLE'}.`;
+          rec.completedAt = nowIso();
+          setGateStatus(id, 'BLOCKED');
+          return;
+        }
+      }
       setGateStatus(id, 'RUNNING');
       return;
     }
@@ -589,7 +635,7 @@
     const statuses = Object.values(session.gates).map(g => g.status);
     if (statuses.every(status => status === 'PASS')) {
       session.completedAt = nowIso();
-      setSessionState('COMPLETE', 'A1–A12 all show operator-recorded PASS for the frozen candidate.');
+      setSessionState('COMPLETE', 'A1–A13 all show operator-recorded PASS for the frozen candidate.');
     }
   }
 
@@ -620,6 +666,12 @@
         ${id === 'A5' ? `<div class="special"><label>Optional structure-only check of a synthetic export <input type="file" accept="application/json,.json" data-a5-export></label><p class="safety">This parses JSON locally and records matched field names plus null/zero counts only. Payload values are never copied into certification evidence.</p></div>` : ''}
         ${id === 'A6' ? `<div class="special"><label><input type="checkbox" data-real-device> This was executed on the real physical iPhone.</label><label>Measured background/lock minutes <input type="number" min="0" step="1" inputmode="numeric" data-background-minutes></label><p class="safety">Safety: make all phone interactions while safely parked/stationary; never interact with this runner while driving.</p></div>` : ''}
         ${id === 'A12' ? `<div class="special"><label>Safari → Home Screen credential storage observation <select data-storage-partition><option value="UNANSWERED">Not answered yet</option><option value="SHARED">Shared credential/storage state observed</option><option value="PARTITIONED">Partitioned storage / reclaim required</option><option value="OTHER">Other observed behavior</option></select></label></div>` : ''}
+        ${id === 'A13' ? `<div class="special">
+          <label>📷 Screenshot / camera control outcome <select data-a13-camera><option value="UNANSWERED">Not recorded yet</option><option value="ARRIVED">Image arrived</option><option value="NOT_DELIVERED">No image delivered</option><option value="OTHER">Other observed behavior</option></select></label>
+          <label>Clipboard image paste outcome <select data-a13-clipboard><option value="UNANSWERED">Not recorded yet</option><option value="ARRIVED">Image arrived</option><option value="NOT_DELIVERED">No image delivered</option><option value="OTHER">Other observed behavior</option></select></label>
+          <label>Posting with no stated deadhead <select data-a13-unknown-deadhead><option value="UNANSWERED">Not recorded yet</option><option value="BLANK_PROMPTED">Stayed blank/UNKNOWN and scoring requested the figure</option><option value="FABRICATED_ZERO">A zero was fabricated or scoring proceeded as zero</option><option value="OTHER">Other observed behavior</option></select></label>
+          <p class="safety">Camera and clipboard results are observations, not assumptions: “no image delivered” is a valid recorded result. UNKNOWN deadhead is stricter and must remain blank through review until the operator supplies the figure.</p>
+        </div>` : ''}
         <label class="field">Operator observation<textarea data-operator-observation rows="3" placeholder="Describe only the non-sensitive physical-device observation. Never paste credentials."></textarea></label>
         <label class="attestation"><input type="checkbox" data-attestation> I personally observed the required physical-device behavior described above.</label>
         <label class="field">Optional local screenshot/reference metadata<input data-reference placeholder="e.g. screenshot filename or local note — no secret values"></label>
@@ -666,7 +718,10 @@
         environmentFingerprint: null,
         realDevice: false,
         backgroundMinutes: 0,
-        storagePartition: 'UNANSWERED'
+        storagePartition: 'UNANSWERED',
+        cameraCaptureOutcome: 'UNANSWERED',
+        clipboardImageOutcome: 'UNANSWERED',
+        unknownDeadheadOutcome: 'UNANSWERED'
       };
     }
     return {
