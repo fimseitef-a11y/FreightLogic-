@@ -210,6 +210,9 @@
       swScript: 'UNAVAILABLE',
       swScope: 'UNAVAILABLE',
       swCache: 'UNAVAILABLE',
+      generationCaches: 'UNAVAILABLE',
+      cacheGenerationStatus: 'UNAVAILABLE',
+      storagePersisted: 'UNAVAILABLE',
       workerGeneration: 'UNAVAILABLE',
       gitSha: 'UNAVAILABLE',
       launchMode: launchMode(),
@@ -258,6 +261,23 @@
         const keys = await caches.keys();
         const freight = keys.filter(key => /freightlogic|fl-/i.test(key));
         observed.swCache = freight.length ? freight.sort().join(', ') : 'NONE_OBSERVED';
+
+        // Only version-shaped app caches count toward A1. The share-target cache
+        // (for example freightlogic-share-v2) is intentionally not a generation.
+        const generationCaches = keys.filter(key => /^freightlogic-v?\d+\.\d+\.\d+$/i.test(key)).sort();
+        observed.generationCaches = generationCaches.length ? generationCaches.join(', ') : 'NONE_OBSERVED';
+        if (observed.appGeneration !== 'UNAVAILABLE') {
+          const matching = generationCaches.filter(key => normalizeGeneration(key) === observed.appGeneration);
+          observed.cacheGenerationStatus = generationCaches.length === 1 && matching.length === 1
+            ? 'MATCH'
+            : `MISMATCH generationCaches=${generationCaches.length} matchingCandidate=${matching.length}`;
+        }
+      }
+    } catch (_err) { /* informational */ }
+
+    try {
+      if (navigator.storage && typeof navigator.storage.persisted === 'function') {
+        observed.storagePersisted = (await navigator.storage.persisted()) ? 'GRANTED' : 'NOT_GRANTED';
       }
     } catch (_err) { /* informational */ }
 
@@ -294,6 +314,101 @@
       el.textContent = env?.[key] ?? 'UNAVAILABLE';
     }
     body.dataset.observedGeneration = env?.appGeneration || 'UNAVAILABLE';
+  }
+
+  function upsertAutomatedObservation(rec, label, message) {
+    if (!rec) return;
+    const prefix = `${label}:`;
+    const list = Array.isArray(rec.automatedObservations) ? rec.automatedObservations : [];
+    rec.automatedObservations = list.filter(item => !String(item).startsWith(prefix));
+    rec.automatedObservations.push(`${prefix} ${sanitizeText(message)}`);
+  }
+
+  function renderAutomatedObservations(row, rec) {
+    const el = qs('[data-automated-observation]', row);
+    if (!el || !rec) return;
+    const list = Array.isArray(rec.automatedObservations) ? rec.automatedObservations : [];
+    el.textContent = list.join(' • ');
+  }
+
+  function applyEnvironmentObservations(env) {
+    const a1 = gateRecord('A1');
+    const a11 = gateRecord('A11');
+    upsertAutomatedObservation(
+      a1,
+      'A1 generation cache',
+      `status=${env?.cacheGenerationStatus || 'UNAVAILABLE'}; version-shaped caches=${env?.generationCaches || 'UNAVAILABLE'}; freightlogic-share-v2 is excluded from generation counting.`
+    );
+    upsertAutomatedObservation(
+      a11,
+      'A11 persistent storage',
+      `navigator.storage.persisted(): ${env?.storagePersisted || 'UNAVAILABLE'}.`
+    );
+  }
+
+  function isProtectedExportField(key) {
+    const normalized = String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (['cloudbackuptoken', 'applockpin', 'cloudadmintokenenc'].includes(normalized)) return true;
+    return /lockout|failedpin|pinfail|pinattempt|applockfail/.test(normalized);
+  }
+
+  function isDeadheadField(key) {
+    const normalized = String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    return ['emptymiles', 'deadhead', 'deadheadmiles', 'deadmi'].includes(normalized);
+  }
+
+  function inspectExportStructure(value) {
+    const protectedFieldNames = new Set();
+    const deadheadFieldNames = new Set();
+    let deadheadNull = 0;
+    let deadheadZero = 0;
+    let deadheadOther = 0;
+
+    const visit = node => {
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item);
+        return;
+      }
+      if (!node || typeof node !== 'object') return;
+      for (const [key, child] of Object.entries(node)) {
+        if (isProtectedExportField(key)) protectedFieldNames.add(key);
+        if (isDeadheadField(key)) {
+          deadheadFieldNames.add(key);
+          if (child === null) deadheadNull++;
+          else if (child === 0) deadheadZero++;
+          else deadheadOther++;
+        }
+        visit(child);
+      }
+    };
+    visit(value);
+    return {
+      protectedFieldNames: Array.from(protectedFieldNames).sort(),
+      deadheadFieldNames: Array.from(deadheadFieldNames).sort(),
+      deadheadNull,
+      deadheadZero,
+      deadheadOther
+    };
+  }
+
+  async function inspectA5Export(row, file) {
+    const rec = gateRecord('A5');
+    if (!rec || !file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const info = inspectExportStructure(parsed);
+      const protectedNames = info.protectedFieldNames.length ? info.protectedFieldNames.join(', ') : 'none';
+      const deadheadNames = info.deadheadFieldNames.length ? info.deadheadFieldNames.join(', ') : 'none';
+      upsertAutomatedObservation(
+        rec,
+        'A5 export structure',
+        `protected field names detected=${protectedNames}; deadhead field names=${deadheadNames}; deadhead null=${info.deadheadNull}; deadhead zero=${info.deadheadZero}; deadhead other=${info.deadheadOther}; structure-only inspection retained no field values.`
+      );
+    } catch (_err) {
+      upsertAutomatedObservation(rec, 'A5 export structure', 'JSON could not be parsed; no payload values were retained.');
+    }
+    renderAutomatedObservations(row, rec);
+    saveSession();
   }
 
   function setSessionState(state, message) {
@@ -367,6 +482,7 @@
       const storage = qs('[data-storage-partition]', row);
       if (storage) storage.value = rec.storagePartition || 'UNANSWERED';
     }
+    renderAutomatedObservations(row, rec);
   }
 
   function captureGateProgress(row) {
@@ -419,6 +535,9 @@
       rec.backgroundMinutes = 0;
       rec.storagePartition = 'UNANSWERED';
       rec.environmentFingerprint = null;
+      if (id === 'A5') {
+        rec.automatedObservations = (rec.automatedObservations || []).filter(item => !String(item).startsWith('A5 export structure:'));
+      }
       restoreGateInputs(row, rec);
       setGateStatus(id, 'NOT_RUN');
       return;
@@ -498,6 +617,7 @@
         <fieldset class="checks"><legend>Required physical checkpoints</legend>
           ${def.checks.map((label, index) => `<label><input type="checkbox" data-required-check="${index}"> <span>${label}</span></label>`).join('')}
         </fieldset>
+        ${id === 'A5' ? `<div class="special"><label>Optional structure-only check of a synthetic export <input type="file" accept="application/json,.json" data-a5-export></label><p class="safety">This parses JSON locally and records matched field names plus null/zero counts only. Payload values are never copied into certification evidence.</p></div>` : ''}
         ${id === 'A6' ? `<div class="special"><label><input type="checkbox" data-real-device> This was executed on the real physical iPhone.</label><label>Measured background/lock minutes <input type="number" min="0" step="1" inputmode="numeric" data-background-minutes></label><p class="safety">Safety: make all phone interactions while safely parked/stationary; never interact with this runner while driving.</p></div>` : ''}
         ${id === 'A12' ? `<div class="special"><label>Safari → Home Screen credential storage observation <select data-storage-partition><option value="UNANSWERED">Not answered yet</option><option value="SHARED">Shared credential/storage state observed</option><option value="PARTITIONED">Partitioned storage / reclaim required</option><option value="OTHER">Other observed behavior</option></select></label></div>` : ''}
         <label class="field">Operator observation<textarea data-operator-observation rows="3" placeholder="Describe only the non-sensitive physical-device observation. Never paste credentials."></textarea></label>
@@ -515,6 +635,15 @@
       });
       row.addEventListener('input', () => captureGateProgress(row));
       row.addEventListener('change', () => captureGateProgress(row));
+      if (id === 'A5') {
+        const fileInput = qs('[data-a5-export]', row);
+        fileInput?.addEventListener('change', async () => {
+          const file = fileInput.files?.[0];
+          if (file) await inspectA5Export(row, file);
+          // Do not retain even a synthetic payload in the input control after inspection.
+          fileInput.value = '';
+        });
+      }
     }
   }
 
@@ -645,6 +774,7 @@
     session.startedAt = nowIso();
     session.environment = { ...currentEnvironment, deviceModel, iosVersion };
     session.environmentFingerprint = environmentFingerprint(session.environment);
+    applyEnvironmentObservations(session.environment);
     setSessionState('ACTIVE', `Certification active for FreightLogic v${candidate}. Physical-device evidence is required for every PASS.`);
     restoreSessionUI();
     saveSession();
