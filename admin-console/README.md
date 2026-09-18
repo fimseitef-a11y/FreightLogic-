@@ -4,6 +4,7 @@ This directory is the isolated administrative onboarding surface approved by iss
 
 Security contract:
 - separate origin from the driver PWA;
+- runtime defense-in-depth refuses to initialize admin authentication if this bundle is accidentally served from the driver origin;
 - online-only MVP with no offline credential cache;
 - admin access is supplied at runtime and retained only in browser session storage;
 - only identity/onboarding operations are available: list, invite, re-invite, revoke;
@@ -13,4 +14,4 @@ Security contract:
 
 ## Deployment hold
 
-Do not deploy or merge this surface as production-ready until a real distinct admin origin exists, that exact origin is configured in the Worker CORS allowlist, and live admin-auth/list/invite/re-invite/revoke smoke tests pass. Phase C removal of the legacy driver-app admin surface remains gated on that live proof.
+Do not deploy or merge this surface as production-ready until a real distinct admin origin exists, that exact origin is configured in the Worker CORS allowlist, and live admin-auth/list/invite/re-invite/revoke smoke tests pass. The runtime same-origin guard is defense-in-depth only; the driver deployment must still exclude this privileged surface rather than treating a hidden /admin-console/ path as separation. Phase C removal of the legacy driver-app admin surface remains gated on that live proof.
