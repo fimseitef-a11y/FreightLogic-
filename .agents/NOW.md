@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.20 DEPLOYED and OBSERVED LIVE.** Merged `c72b521` (PR #249); re-dispatched live parity `35329623870` and production SW `35329629590` both PASS; superseding record merged as `54e36f2` (PR #251). Production serves **24.0.20 / DB16 / Worker v20** — source and production agree. Still HOLD on physical iPhone A1-A12 only.) | 2026-09-18 |
-| gpt | A13 physical certification runner row for v24.0.21 screenshot intake; GPT-owned field-certification.html/js + exact runner spec only. | 2026-09-18 |
+| gpt | — idle — (A13 runner implementation is PR #254 @ b3eaa9b; Lanes/CodeQL green, full Tests still running at checkpoint. Reclaim only if CI reports a real failure.) | 2026-09-18 |
 
 ---
 
