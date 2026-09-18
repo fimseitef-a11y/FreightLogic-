@@ -4,14 +4,33 @@
 
 **FreightLogic v24.0.20** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**SOURCE IS AT 24.0.20 AND PRODUCTION IS AT 24.0.19 — the paragraph below is still the current
-production fact, not a superseded one.** v24.0.20 is the Issue #205 driver-first UX/IA restructure
-of Today and More. It is **source-only: not deployed and not live-observed**, `DB_VERSION` stays
-**16** and the Worker stays **v20**, so nothing in the deployment record below changed by this
-release merging. This is the ordinary state between a merge and a deploy, and stating it is what
-keeps the two apart: merging leaves a commit, deploying leaves nothing. A superseding record is due
-the day a shipped file **deploys**. After deploying, **re-dispatch** live parity rather than citing
-the push-triggered run, which races the Cloudflare deploy — seven recorded occurrences.
+**PRODUCTION SERVES 24.0.20 / DB16 / Worker v20, and BOTH generations are OBSERVED.** v24.0.20 is
+the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
+deployed and observed the same day: live parity run `35329623870` (`workflow_dispatch` on `main`,
+job `105550696482`, `VERDICT: PASS`) and the production service-worker gate run `35329629590`
+(job `105550715072`, `VERDICT: PASS`). `DB_VERSION` stays **16** and the Worker stays **v20**, so
+the Worker evidence in the paragraph below is unchanged and still current.
+
+Parity observed: `app.js` and `sw-bridge.js` at **24.0.20**, `index.html` not referencing
+`voice-load.js`, service worker 24.0.20, `sw-bridge` importing and the worker precaching
+`modern-shell.js` at 24.0.20, manifest `FreightLogic v24.0.20`, Worker `/health`
+`{"ok":true,"version":"20"}`, all **22** declared runtime assets loading with none served as HTML,
+CSP byte-identical, **20** repository-only paths non-public. The service-worker gate adds the half
+delivery cannot prove: precache `freightlogic-24.0.20` with all 22 assets, both injected scripts
+fetchable as script, an offline subresource miss `504 text/plain`, a drifted `?v=` self-healing,
+exactly one generation cache, and **after reload the driver shell renders five tabs and a visible
+Today surface with no uncaught errors** — the restructure observed in production, not asserted
+from source.
+
+**The push race recurred for the eighth time and must not be cited.** Both live workflows also
+fired on the merge push and both FAILED — `35328708869` fourteen seconds after the merge and
+`35328708543` at thirty-three seconds — observing the previous generation while Cloudflare was
+still deploying. The re-dispatched runs above are the observation of record. `Tests`
+(`35328708573`) and `CodeQL` (`35328708610`) passed on the same SHA.
+
+*The paragraph immediately below certified **24.0.19** and was the current production fact until
+this deploy. It is kept because the runs it names are permanent provenance for a tree a gate
+actually looked at.*
 
 **PRODUCTION SERVES 24.0.19 / DB16 / Worker v20, and BOTH generations are OBSERVED.** This is the
 first fully-green live parity in the whole v24.0.x line, because it is the first time source and
@@ -4410,12 +4429,29 @@ gate working as designed. Every governed marker moves together; all **14** CG as
 `verify-cloudflare-parity --static-only` are green at `24.0.20`, and the declared runtime asset
 count stays **22**.
 
-### Not deployed
+### DEPLOYED and OBSERVED LIVE 2026-09-18
 
-**Source-only.** v24.0.20 is not deployed and not live-observed; production serves **24.0.19 /
-DB16 / Worker v20** and the parity run in the Project Overview above remains the observation of
-record until a 24.0.20 run supersedes it. After deploying, **re-dispatch** live parity rather
-than citing the push-triggered run, which races the Cloudflare deploy.
+This section shipped reading *"Source-only. v24.0.20 is not deployed and not live-observed."*
+That was true when written and stopped being true within the hour, which is the ordinary gap
+between a merge and a deploy. It is corrected here rather than quietly overwritten, for the
+reason this file now records against itself eight times.
+
+Merged as `c72b521`; deployed by Cloudflare; observed by **two re-dispatched gates on that exact
+SHA** — live parity `35329623870` (job `105550696482`) and production service worker
+`35329629590` (job `105550715072`), both `VERDICT: PASS`. `Tests` `35328708573` and `CodeQL`
+`35328708610` passed on the same commit. Every generation marker reads 24.0.20, Worker `/health`
+reports v20, all 22 declared assets load, 20 repository-only paths stay non-public, and the
+driver shell renders five tabs with a visible Today surface after reload — which is this
+release's own restructure, seen in production.
+
+Both push-triggered runs FAILED fourteen and thirty-three seconds after the merge
+(`35328708869`, `35328708543`), racing the Cloudflare deploy for the eighth recorded time. They
+are real evidence about the origin at that instant and are **not** evidence about the release.
+
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` carries the superseding record as an
+appended same-day section — `m7-certify`'s resolver matches an exact `YYYY-MM-DD` filename with
+no suffix, so two certification events on one day cannot be two documents. That limitation is
+written into the document rather than routed around silently.
 
 **Still HOLD.** Physical iPhone **A1-A12** and the M6 conflict review are unchanged and remain
 the operator's. Nothing here touches either.
