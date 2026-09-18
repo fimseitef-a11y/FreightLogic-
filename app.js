@@ -1,7 +1,35 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.19 USA ENGINE
+/** FreightLogic v24.0.20 USA ENGINE
+ *  v24.0.20 "One Of Each": Issue #205's driver-first scope, applied to the
+ *          information architecture of Today and More rather than to a feature.
+ *          Four surfaces each said something a neighbouring surface had just
+ *          said, so the figures a driver opens the app for sat below the fold.
+ *          (1) The position-context banner and the positioning card each printed
+ *          the city, a market classification and a hold/reposition directive,
+ *          one above the other. The banner keeps identity and doctrine — it is
+ *          the surface issue #216 repaired — and the card becomes the next-move
+ *          brief. (2) That card also issued HOLD/REPOSITION/HUNT on an AMBIGUOUS
+ *          position, directly beneath the banner's "confirm your position before
+ *          pricing"; issue #216 refused to price off that coin flip on one
+ *          surface and it is refused on both now. (3) The hero card was headed
+ *          "This Week" over three TODAY figures, and its weekly-goal bar was
+ *          repeated as a second bar and a second percentage one screen below.
+ *          The heading now matches the numbers under it; the Money card keeps
+ *          the part the hero cannot express — what is left and by when.
+ *          (4) The four educational cards retired only when tapped, so a driver
+ *          who read one and scrolled past it saw it forever; they now retire
+ *          after a display budget, promoted to the same durable flag an explicit
+ *          dismissal sets. Idle GPS tracking becomes one 48px row while every
+ *          active and degraded state stays prominent (the F-7 contract is
+ *          untouched), and More becomes a labelled directory instead of eight
+ *          tiles plus an unlabelled "More Tools" dump — no tile removed, none
+ *          orphaned. NO canonical economics, routing, storage or security
+ *          semantics change. Found while building it: the shared onboarding
+ *          counter was a read-modify-write raced by the concurrent Today
+ *          renders, losing increments exactly as V-1's vehicle-profile seed did
+ *          in v24.0.15, and it is serialised the same way.
  *  v24.0.19 "Synced Is A Claim": Issue #240 — v24.0.18 could report "Synced"
  *          over genuinely unsynced data. Three defects of one family, a surface
  *          saying something reassuring about a fact it never established.
@@ -302,7 +330,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.19';
+const APP_VERSION = '24.0.20';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -3883,6 +3911,9 @@ async function importJSON(file, opts={}){
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','localUserId',
       // v22 F21/F22/F23 onboarding flags
       'f21OnboardingSeen','f21PermissionSeen','f22OnboardingSeen','f23OnboardingSeen',
+      // v24.0.20 #205: one durable map of onboarding display counts, so a card that
+      // was read but never tapped retires itself. One key rather than four.
+      'onboardViews',
       // v23 F24 positioning engine flags
       'f24PostDeliveryCount','f24AutoBriefDisabled','f24OnboardingSeen',
       // v23.1 F25 maintenance tracker
@@ -6829,6 +6860,20 @@ async function renderCommandCenter(){
       ? `${fmtMoney(wkGross)} of ${fmtMoney(weeklyTarget)}${userGoal > 0 ? ' goal' : ' target'} (${targetPct.toFixed(0)}%)`
       : 'Set a weekly goal in Settings \u2192 Insights';
 
+    // #205 UX/IA: the progress bar sitting under a hero value that is TODAY's net
+    // measures the WEEK, and nothing on the card said so -- the bar and the badge
+    // were the only weekly things in it and both were unlabelled. One visible
+    // line now names the scope, so the mixed card is honest rather than merely
+    // relabelled. It reads the same `wkGross` / `weeklyTarget` the bar and badge
+    // already use; no second computation and no new number.
+    const goalLine = $('#homeWeekGoalLine');
+    if (goalLine){
+      goalLine.textContent = weeklyTarget > 0
+        ? `This week ${fmtMoney(wkGross)} of ${fmtMoney(weeklyTarget)}${userGoal > 0 ? ' goal' : ' target'}`
+        : '';
+      goalLine.style.display = weeklyTarget > 0 ? '' : 'none';
+    }
+
     // Goal coaching \u2192 Next Move box (v4 "Command")
     const coachEl = $('#pcCoaching');
     const nmBox   = $('#homeNextMoveBox');
@@ -7749,30 +7794,61 @@ const INTEL_TILES = [
   { icon:'📨', title:'Opportunity Intake', sub:'Log a quote / email offer with its real semantics', act:'opportunityIntake' },
 ];
 
+// #205 UX/IA -- More is a directory, not a dump.
+//
+// It was one flat grid of eight PRIMARY tiles followed by a "More Tools" toggle
+// hiding seven ADVANCED ones. Two problems, both about finding things rather
+// than about what exists:
+//
+//  * The flat eight mixed money, business paperwork, data portability and app
+//    settings with nothing saying which was which, so the only way to find a
+//    tool was to read all eight.
+//  * "More Tools" is not a category. A driver looking for the tax export or
+//    Diagnostics had no reason to expect either behind that label, which is how
+//    a real surface ends up functionally buried while technically reachable --
+//    the exact way Market Intel was lost in v24.0.8.
+//
+// Tiles now declare a `group`, and groups render under their own headings, all
+// visible -- a directory shows its contents. `section` is retained and still
+// means everyday vs occasional, but it now orders tiles WITHIN a group instead
+// of hiding half of them behind "More Tools". Every tile that existed still
+// exists, with the same `hash`/`act` binding: this is a regrouping, not a cull. `tests/integration/
+// modern-shell-routing.spec.mjs` MS-12 asserts that structurally, with no
+// exceptions list, so a regroup that orphaned a route would fail rather than
+// ship.
+const MORE_GROUPS = [
+  { id:'money',    label:'Money' },
+  { id:'business', label:'Business & Tax' },
+  { id:'data',     label:'Data & Backup' },
+  { id:'app',      label:'App' },
+];
+
 const MORE_TILES = [
-  // PRIMARY — visible immediately
-  { icon:'💵', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY' },
-  { icon:'💰', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY' },
-  { icon:'📅', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY' },
-  { icon:'📁', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY' },
-  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY' },
+  // Money
+  { icon:'\uD83D\uDCB5', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY', group:'money' },
+  { icon:'\uD83D\uDCB0', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY', group:'money' },
+  { icon:'\u26FD', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY', group:'money' },
+  { icon:'\uD83D\uDCC5', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY', group:'money' },
+  // Business & Tax
   // v24.0.8: Intel lost its bottom-nav tab when the five-surface shell replaced
   // the old Home/Trips/Omega/Intel/More bar, and `index.html`'s nav anchor was
   // the ONLY link to `#intel` anywhere in the app. The route, its renderer and
   // all five of its tabs stayed intact and became reachable only by typing the
   // hash. This tile is what makes "secondary tools remain accessible through
   // More" true rather than assumed.
-  { icon:'🧠', title:'Market Intel', sub:'Lanes, reloads, brokers, tools', hash:'#intel', section:'PRIMARY' },
-  { icon:'⚙️', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY' },
-  // ADVANCED — hidden behind toggle
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED' },
-  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED' },
-  { icon:'📦', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED' },
-  { icon:'🗂️', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED' },
-  { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED' },
-  { icon:'💿', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED' },
-  { icon:'🔬', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED' },
+  { icon:'\uD83E\uDDE0', title:'Market Intel', sub:'Lanes, reloads, brokers, tools', hash:'#intel', section:'PRIMARY', group:'business' },
+  { icon:'\uD83D\uDCC1', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY', group:'business' },
+  { icon:'\uD83D\uDCCA', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED', group:'business' },
+  { icon:'\uD83D\uDCE6', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED', group:'business' },
+  { icon:'\uD83D\uDDC2\uFE0F', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
+  // Data & Backup
+  { icon:'\uD83D\uDCBE', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
+  { icon:'\uD83D\uDCE5', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
+  { icon:'\uD83D\uDCBF', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
+  // App
+  { icon:'\u2699\uFE0F', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY', group:'app' },
+  { icon:'\uD83D\uDD12', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED', group:'app' },
+  { icon:'\uD83D\uDD2C', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED', group:'app' },
 ];
 
 // ── Intel Page Renderer ──
@@ -8069,36 +8145,43 @@ async function renderMore(){
       return el;
     };
 
-    // Render PRIMARY tiles
+    // Render one labelled group per MORE_GROUPS entry. A tile with an unknown or
+    // missing `group` still renders, in a final "Other" group -- a tile that
+    // silently disappeared because somebody added it without a group would be
+    // the orphaning this restructure exists to prevent, so the fallback is a
+    // visible group rather than a filter.
+    const grouped = new Map(MORE_GROUPS.map(g => [g.id, []]));
+    const ungrouped = [];
     for (const tile of MORE_TILES){
-      if (tile.section === 'PRIMARY') grid.appendChild(makeTileEl(tile));
+      const bucket = grouped.get(tile.group);
+      (bucket || ungrouped).push(tile);
     }
 
-    // Advanced toggle
-    const advToggle = document.createElement('div');
-    advToggle.style.cssText = 'grid-column:1/-1;cursor:pointer;display:flex;align-items:center;gap:8px;padding:14px 4px 6px;color:var(--text-secondary);font-size:13px;font-weight:600';
-    const advArrow = document.createElement('span');
-    advArrow.textContent = '▶';
-    advArrow.style.cssText = 'font-size:10px;transition:transform .2s';
-    advToggle.appendChild(advArrow);
-    advToggle.appendChild(document.createTextNode(' More Tools'));
-    grid.appendChild(advToggle);
+    const sections = MORE_GROUPS
+      .map(g => ({ label: g.label, tiles: grouped.get(g.id) || [] }))
+      .concat(ungrouped.length ? [{ label: 'Other', tiles: ungrouped }] : [])
+      .filter(sec => sec.tiles.length);
 
-    // Advanced tiles container
-    const advGrid = document.createElement('div');
-    advGrid.className = 'menu-grid';
-    advGrid.style.cssText = 'display:none;grid-column:1/-1';
-    for (const tile of MORE_TILES){
-      if (tile.section === 'ADVANCED') advGrid.appendChild(makeTileEl(tile));
+    for (const sec of sections){
+      const heading = document.createElement('div');
+      heading.className = 'fl-more-group';
+      heading.style.cssText = 'grid-column:1/-1;padding:14px 4px 6px;color:var(--text-tertiary);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px';
+      heading.textContent = sec.label;
+      grid.appendChild(heading);
+
+      // Each group is its own `.menu-grid`, which is also what keeps MS-12's
+      // reachability sweep able to reveal and read every tile.
+      const groupGrid = document.createElement('div');
+      groupGrid.className = 'menu-grid';
+      groupGrid.style.cssText = 'grid-column:1/-1';
+      // `section` no longer controls visibility -- nothing in More is hidden
+      // behind an unlabelled toggle any more. It now orders tiles WITHIN a
+      // group, so the everyday ones sit first and the occasional ones after.
+      const ordered = sec.tiles.slice().sort((a, b) =>
+        (a.section === 'PRIMARY' ? 0 : 1) - (b.section === 'PRIMARY' ? 0 : 1));
+      for (const tile of ordered) groupGrid.appendChild(makeTileEl(tile));
+      grid.appendChild(groupGrid);
     }
-    grid.appendChild(advGrid);
-
-    advToggle.addEventListener('click', ()=>{
-      const open = advGrid.style.display !== 'none';
-      advGrid.style.display = open ? 'none' : '';
-      advArrow.style.transform = open ? '' : 'rotate(90deg)';
-      haptic(10);
-    });
   }
   // Populate current values
   $('#moreWeeklyGoal').value = await getSetting('weeklyGoal', '') || '';
@@ -8268,6 +8351,94 @@ async function countStore(name){ try{ const {stores} = tx(name); return (await i
 async function getOnboardState(){
   const [trips, exps, fuel] = await Promise.all([countStore('trips'), countStore('expenses'), countStore('fuel')]);
   return { trips, exps, fuel, isEmpty: trips === 0, isBeginner: trips > 0 && trips < 4, isActive: trips >= 4 };
+}
+
+// ---- Onboarding auto-retirement (#205 driver-first) ----
+//
+// The four educational cards (F21 tracking, F22 money, F23 inbox, F24
+// positioning) were each gated on a single `fNNOnboardingSeen` flag that is set
+// ONLY when the driver taps "Got it". A driver who reads a card and scrolls past
+// it -- the ordinary case on a phone -- never sets that flag, so the card
+// reappears on every launch forever. Four permanent cards at the top of Today is
+// the "dump" the #205 driver-first scope is about, and it pushes the numbers a
+// driver actually opens the app for below the fold.
+//
+// A card now also retires after a small budget of DISPLAYS. That is deliberately
+// the only automatic rule here:
+//
+//   * It is evidence of exposure, not an inference. The #205 acceptance
+//     checklist says not to "make setup completion infer from missing data" --
+//     concluding "no trips, so he must know how" is exactly that, and it is the
+//     v24.0.1 blank-deadhead class. A display counter records something that
+//     demonstrably happened.
+//   * It never applies to a warning. Only these four educational cards call it.
+//     The cloud-backup paused banner, the sync status row, maintenance alerts and
+//     overdue-payment alerts are not onboarding and are untouched -- an
+//     informational notice may vanish, "you are not being backed up" may not,
+//     which is the rule v24.0.6 established and CBP asserts.
+//   * Exhausting the budget sets the card's own `fNNOnboardingSeen` flag, so
+//     retirement is durable, is expressed in the vocabulary the rest of the app
+//     already reads, and survives export/import like an explicit dismissal.
+//
+// Counts live in ONE settings key rather than four, so the allow-list gains one
+// entry instead of four. `onboardViews` is added to ALLOWED_SETTINGS_KEYS in the
+// same change that introduces it -- a settings key the app writes but the
+// importer drops is the X-07 class of gap, and this repository has had to
+// retrofit that list three times.
+const ONBOARD_VIEW_BUDGET = 3;
+
+// All four cards are fired from one renderHome() pass, concurrently and
+// fire-and-forget (`renderMoneyCard().catch(()=>{})` and friends). A plain
+// read-modify-write over the shared `onboardViews` map therefore loses
+// increments: two callers both observe the map before either writes, and the
+// second write clobbers the first's count. Observed, not theorised -- the
+// regression that asserts a real Today render is counted reported the F21 card's
+// increment as 0 while F22's had landed, because F22 wrote last.
+//
+// This is the same defect shape as V-1 (v24.0.15), where two concurrent
+// ensureVehicleProfiles() seeds each minted a profile and one was silently
+// discarded, and it is fixed the same way: one module-scope chain serialises
+// every mutation, so each caller reads a map that already includes every earlier
+// caller's write. A lost increment here is not corruption, but it is a card that
+// outlives its budget -- which is the whole thing this helper exists to stop.
+let _onboardViewsChain = Promise.resolve();
+function _queueOnboardViews(fn){
+  const next = _onboardViewsChain.then(fn, fn);
+  // The chain itself must never reject, or every later caller inherits the
+  // rejection and onboarding silently stops being counted for the session.
+  _onboardViewsChain = next.then(() => {}, () => {});
+  return next;
+}
+
+/**
+ * Should an educational onboarding card render this time?
+ *
+ * Returns false once the driver dismissed it explicitly, or once it has already
+ * been shown ONBOARD_VIEW_BUDGET times. Counting happens here, so a caller that
+ * asks is a caller that is about to display.
+ *
+ * Fails OPEN on a storage error: if the count cannot be read the card is shown,
+ * because losing an explanation is a smaller harm than hiding one the driver has
+ * never seen. The explicit `seen` flag is still honoured first, so a dismissal
+ * is never undone by a failed read.
+ */
+async function shouldShowOnboarding(seenKey){
+  return _queueOnboardViews(async () => {
+    try {
+      if (await getSetting(seenKey, false)) return false;
+      const views = await getSetting('onboardViews', null);
+      const map = (views && typeof views === 'object' && !Array.isArray(views)) ? views : {};
+      const n = intNum(map[seenKey], 0, 1e6) || 0;
+      if (n >= ONBOARD_VIEW_BUDGET){
+        // Budget spent. Promote to the durable flag so this is the last time the
+        // count is consulted for this card at all.
+        await setSetting(seenKey, true);
+        return false;
+      }
+      await setSetting('onboardViews', { ...map, [seenKey]: n + 1 });
+      return true;
+    } catch(e){ return true; }
+  });
 }
 
 function renderWelcomeCard(){
@@ -20865,8 +21036,8 @@ async function renderTripTrackingUI() {
   const slot = $('#homeTripTrackCard');
   if (!slot) return;
   // One-time onboarding
-  const onboardSeen = await getSetting('f21OnboardingSeen', false);
-  if (!onboardSeen && !slot.querySelector('#f21OnboardingCard')) {
+  const showF21Onboarding = !slot.querySelector('#f21OnboardingCard') && await shouldShowOnboarding('f21OnboardingSeen');
+  if (showF21Onboarding) {
     const ob = document.createElement('div');
     ob.id = 'f21OnboardingCard';
     ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
@@ -20891,12 +21062,27 @@ async function renderTripTrackingUI() {
   else { _renderTrackingIdle(trackDiv); }
 }
 
+// #205 UX/IA -- the idle state is a standing offer, not news.
+//
+// Idle tracking occupied a two-line card with an explanatory subtitle at the top
+// of Today on EVERY launch, above the driver's money and above the next-move
+// brief. The subtitle ("Tap when you pick up a load") is onboarding text that
+// does not stop being rendered after the first trip, so it competes for the same
+// glance as figures that change hourly.
+//
+// It is now one 48px row: the affordance is unchanged and the touch target is
+// unchanged, and it takes roughly half the vertical space. The (i) control keeps
+// the iPhone background-tracking caveat one tap away rather than deleting it.
+//
+// The ACTIVE state is deliberately NOT compacted -- see _renderTrackingActive.
+// Shrinking a live trip, a lost-signal streak or a revoked-permission state is
+// the opposite of what this slice is for, and the F-7 contract requires Stop &
+// Save to stay reachable in every one of them.
 function _renderTrackingIdle(container) {
-  container.innerHTML = '<div style="display:flex;align-items:center;gap:10px;background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:14px 16px;min-height:48px;cursor:pointer" id="f21StartBtn">'
-    + '<span style="font-size:20px">\u{1F69B}</span>'
-    + '<div style="flex:1"><div style="font-weight:700;font-size:15px;color:var(--text)">Start Trip</div>'
-    + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:1px">Tap when you pick up a load</div></div>'
-    + '<span id="f21InfoBtn" style="font-size:18px;cursor:pointer;color:var(--text-tertiary);padding:4px" title="About GPS tracking">\u24d8</span>'
+  container.innerHTML = '<div style="display:flex;align-items:center;gap:10px;background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:0 14px;min-height:48px;cursor:pointer" id="f21StartBtn">'
+    + '<span style="font-size:17px">\u{1F69B}</span>'
+    + '<div style="flex:1;font-weight:700;font-size:14px;color:var(--text)">Start Trip</div>'
+    + '<span id="f21InfoBtn" style="font-size:17px;cursor:pointer;color:var(--text-tertiary);padding:4px;min-width:28px;text-align:center" title="About GPS tracking">\u24d8</span>'
     + '</div>';
   container.querySelector('#f21StartBtn')?.addEventListener('click', (e) => {
     if (e.target.id === 'f21InfoBtn' || e.target.closest('#f21InfoBtn')) return;
@@ -21294,10 +21480,10 @@ async function renderPositioningCard(overrideCity, isExploring) {
   if (myGen !== _positionCardRenderSeq) return;   // getPositioningBrief does live NWS I/O
 
   // Onboarding check
-  const f24seen = await getSetting('f24OnboardingSeen', false);
-  if (!f24seen) {
-    const slot = card.parentNode;
-    if (slot && !slot.querySelector('#f24OnboardingCard')) {
+  const f24Slot = card.parentNode;
+  if (f24Slot && !f24Slot.querySelector('#f24OnboardingCard') && await shouldShowOnboarding('f24OnboardingSeen')) {
+    {
+      const slot = f24Slot;
       const ob = document.createElement('div');
       ob.id = 'f24OnboardingCard';
       ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
@@ -21312,7 +21498,12 @@ async function renderPositioningCard(overrideCity, isExploring) {
     }
   }
 
-  const { market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
+  // `market` is deliberately not destructured any more: its only consumer in this
+  // function was the duplicated market subtitle removed below. `reloadScore` was
+  // already unread here before this change -- it is checked, not assumed: the
+  // name appears exactly once in the function, in the destructure itself. It
+  // stays on the brief object, which getPositioningBrief()'s other callers use.
+  const { outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
 
   // Command badge styles
   const cmdStyles = {
@@ -21321,14 +21512,6 @@ async function renderPositioningCard(overrideCity, isExploring) {
     HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
   };
   const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
-
-  // Market subtitle
-  let marketSub = 'Unknown market';
-  if (market) {
-    const USA_ZONES_MAP = typeof USA_ZONES !== 'undefined' ? USA_ZONES : {};
-    const zoneLabel = (USA_ZONES_MAP[market.zone] && USA_ZONES_MAP[market.zone].label) ? USA_ZONES_MAP[market.zone].label : (market.zone || '');
-    marketSub = `${escapeHtml(market.role || '')} market \u00B7 ${escapeHtml(zoneLabel)}`;
-  }
 
   // Best day line
   const bestDayLine = patterns.bestDay
@@ -21399,17 +21582,40 @@ async function renderPositioningCard(overrideCity, isExploring) {
 
   // Render card
   const cityDisplay = pos.display;  // Issue #216: one resolver owns the display name too
-  if (myGen !== _positionCardRenderSeq) return;   // last guard before the paint
-  card.innerHTML = `<div class="card" style="padding:16px 14px">
-    <div style="font-size:16px;font-weight:700;margin-bottom:2px">\uD83D\uDCCD YOUR POSITION: ${escapeHtml(cityDisplay)}</div>
-    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">${marketSub}</div>
-    ${timeWindowHtml}
-    ${cvsaBannerHtml}
-    <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
+
+  // #205 UX/IA: this card no longer repeats the position-context banner's
+  // identity line. The banner is the single authority for "where are you and
+  // what kind of market is it"; this card answers "what do I do from here".
+  // The card's own market subtitle (`<role> market \u00B7 <zone>`) was a verbatim
+  // second printing of what the banner states one card above, so it is DELETED
+  // rather than left computed-but-unused -- a dead local that still looks load
+  // bearing is the next reader's wasted hour. The nearby-market drill-down
+  // builds its own subtitle in its own scope and is untouched.
+  //
+  // Issue #216 closed the ambiguity case on the BANNER, which stands down from
+  // its pricing directive when two trips tie and disagree. This card kept
+  // issuing HOLD / REPOSITION / HUNT on the very same coin flip, so the driver
+  // could read "confirm your position before pricing" immediately above a
+  // confident command. A directive grounded in an ambiguous position is exactly
+  // what that repair refused; it refuses it here too.
+  const ambiguityHtml = pos.ambiguous
+    ? `<div style="padding:8px 12px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn);font-size:12px;color:var(--warn);margin-bottom:8px">\u26A0\uFE0F Two trips tie for most recent. Confirm your position before acting on this.</div>`
+    : '';
+  const commandBlockHtml = pos.ambiguous
+    ? ''
+    : `<div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
       <div style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(command)}</div>
       <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
       ${bestDayLine}
-    </div>
+    </div>`;
+
+  if (myGen !== _positionCardRenderSeq) return;   // last guard before the paint
+  card.innerHTML = `<div class="card" style="padding:16px 14px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">\uD83E\uDDED NEXT MOVE FROM ${escapeHtml(cityDisplay)}</div>
+    ${ambiguityHtml}
+    ${timeWindowHtml}
+    ${cvsaBannerHtml}
+    ${commandBlockHtml}
     ${lanesHtml}
     ${weatherHtml}
     ${nearbyHtml}
@@ -21767,10 +21973,10 @@ async function renderMoneyCard() {
   if (!card) return;
 
   // One-time onboarding tooltip
-  const f22seen = await getSetting('f22OnboardingSeen', false);
-  if (!f22seen) {
-    const slot = card.parentNode;
-    if (slot && !slot.querySelector('#f22OnboardingCard')) {
+  const f22Slot = card.parentNode;
+  if (f22Slot && !f22Slot.querySelector('#f22OnboardingCard') && await shouldShowOnboarding('f22OnboardingSeen')) {
+    {
+      const slot = f22Slot;
       const ob = document.createElement('div');
       ob.id = 'f22OnboardingCard';
       ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
@@ -21867,14 +22073,27 @@ async function renderMoneyCard() {
   const collectedColor = collectedPct >= 80 ? 'var(--good)' : collectedPct >= 50 ? 'var(--accent)' : 'var(--bad)';
   const daysPayColor = avgDaysToPay !== null ? (avgDaysToPay <= 15 ? 'var(--good)' : avgDaysToPay <= 30 ? 'var(--warn)' : 'var(--bad)') : 'var(--text-tertiary)';
 
+  // #205 UX/IA -- ONE weekly-goal progress surface on Today.
+  //
+  // This block used to render a second progress bar and a second "$X of $Y
+  // (N%)" for the same week the hero card was already showing as a bar plus a
+  // "N% to goal" badge, roughly one screen apart. Two bars for one number is
+  // presentation duplication, and when they were computed in different functions
+  // from different windows they were also a chance to disagree on screen.
+  //
+  // The bar and the percentage move OUT of here -- the hero card owns them. What
+  // stays is the part the hero does NOT say and cannot say in a badge: how much
+  // is left and how many days are left to earn it. Nothing is computed
+  // differently; `goalPct`, `wkGross` and `weeklyGoal` are unchanged, and
+  // `goalColor` still colours the remaining-amount text so the at-a-glance
+  // signal survives without a second bar.
   const goalHtml = weeklyGoal > 0
     ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
-      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Weekly Goal</div>'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Weekly Goal</div>'
       + (goalPct >= 100
           ? `<div style="color:var(--good);font-weight:700;font-size:14px">&#10003; Goal reached! ${escapeHtml(fmtMoney(wkGross - weeklyGoal))} above target</div>`
-          : `<div style="font-size:15px;font-weight:700">${escapeHtml(fmtMoney(wkGross))} of ${escapeHtml(fmtMoney(weeklyGoal))} (${goalPct}%)</div>`)
-      + _pbar(goalPct, goalColor)
-      + (goalPct < 100 ? `<div style="font-size:12px;color:var(--text-tertiary)">${escapeHtml(fmtMoney(Math.max(0, weeklyGoal - wkGross)))} to go &nbsp;&bull;&nbsp; ${escapeHtml(String(daysLeft))} day${daysLeft !== 1 ? 's' : ''} left</div>` : '')
+          : `<div style="font-size:14px;font-weight:700;color:${escapeHtml(goalColor)}">${escapeHtml(fmtMoney(Math.max(0, weeklyGoal - wkGross)))} to go`
+            + ` <span style="font-size:12px;font-weight:400;color:var(--text-tertiary)">&bull; ${escapeHtml(String(daysLeft))} day${daysLeft !== 1 ? 's' : ''} left</span></div>`)
       + '</div>'
     : '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
       + '<div style="font-size:13px;color:var(--text-tertiary)">No weekly goal set &mdash; '
@@ -22182,8 +22401,7 @@ async function renderLoadInbox() {
   card.dataset.inboxInit = '1';
 
   // One-time onboarding
-  const f23seen = await getSetting('f23OnboardingSeen', false);
-  if (!f23seen) {
+  if (await shouldShowOnboarding('f23OnboardingSeen')) {
     const ob = document.createElement('div');
     ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
     ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
@@ -22516,6 +22734,13 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     checkPickupFeasibility, getPlanningAvgMph, PICKUP_FEASIBILITY,
     // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
     naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
+    // #205 UX/IA restructure. The Today/More surfaces are asserted through
+    // RENDERED CONTENT in tests/integration/today-ia.spec.mjs -- the v24.0.8
+    // lesson is that a dead surface can leave every other signal correct. These
+    // two are exported because the onboarding view BUDGET is a durable counter
+    // whose exhaustion a DOM test can only observe by relaunching three times;
+    // asserting the rule directly is what makes the boundary exact.
+    shouldShowOnboarding, ONBOARD_VIEW_BUDGET, MORE_TILES, MORE_GROUPS,
     // Issue #216 — the single position resolver and the market classifier both
     // surfaces share. Exposed so a regression can assert the ORDERING and the
     // UNKNOWN state directly, not only through two rendered surfaces agreeing.

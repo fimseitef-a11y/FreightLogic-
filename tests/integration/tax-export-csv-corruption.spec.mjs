@@ -67,13 +67,26 @@ async function openTaxExportUI(page, year) {
   await page.evaluate(() => { location.hash = '#more'; });
   await page.waitForSelector('.menu-tile .tt', { state: 'attached', timeout: 10000 });
   await page.waitForTimeout(300);
-  const expanded = await page.evaluate(() => {
-    const toggles = Array.from(document.querySelectorAll('div'));
-    const t = toggles.find(el => el.textContent?.trim() === '▶ More Tools' || /More Tools/.test(el.textContent || '') && el.children.length <= 2);
-    if (t) { t.click(); return true; }
-    return false;
+  // Reveal any collapsed tile group. Until v24.0.20 the ADVANCED tiles sat behind
+  // a single "▶ More Tools" toggle and this step CLICKED it; Issue #205's UX/IA
+  // restructure replaced that unlabelled dump with named groups that are all
+  // visible, so there is no longer a toggle to click.
+  //
+  // What changed here is how this helper REACHES the tile, not what this spec
+  // asserts. The three [FINDING F-3 / FIXED] assertions below -- comma
+  // round-trip, three-way reconciliation, year-boundary bucketing -- are
+  // untouched, and the requirement that actually matters is still asserted, by
+  // the `ok(clicked, ...)` immediately after this: the Tax Season Export tile
+  // must be reachable from More. That is strictly stronger than asserting a
+  // particular widget exists, because it is the capability rather than the
+  // chrome. (Same shape as v24.0.1, where three specs' fixtures were updated to
+  // enter deadhead 0 explicitly and no assertion was changed or weakened.)
+  //
+  // The un-hide is written to be correct under either layout and asserts
+  // nothing: it is a no-op when every group is already visible.
+  await page.evaluate(() => {
+    document.querySelectorAll('#moreMenu .menu-grid').forEach((g) => { g.style.display = ''; });
   });
-  ok(expanded, 'could not find/click the "More Tools" advanced-section toggle');
   await page.waitForTimeout(300);
   const clicked = await page.evaluate(() => {
     const tiles = Array.from(document.querySelectorAll('.menu-tile'));
