@@ -67,3 +67,20 @@ If boot-drain overlap is confirmed, repair the TEST/HARNESS synchronization or i
 - no rerun-only acceptance.
 
 Evidence: GitHub Actions run 35290300849 / job 105431475308.
+
+
+## Deterministic fixture repair candidate (stronger than a sleep)
+
+After tracing the exact SQ-10 sequence, the cleanest test-side experiment is to install the `window.fetch` interceptor **before** introducing `cloudBackupToken`, the passphrase, watermark and dirty marker — not immediately before the explicit `cloudPushBackup()` call as SQ-10 does now.
+
+Why this discriminates without weakening:
+
+- before the token exists, a boot `resumeSyncIfPending()` cannot legitimately send;
+- if that boot drain resumes after credentials are written but before the dirty marker, it should see nothing pending and not send;
+- if it resumes after the dirty marker, any send is the product behavior SQ-10 wants to prove and the early interceptor will capture it;
+- if the explicit push wins, the same interceptor captures it;
+- therefore `sent` becomes about whether the settings-only dirty state actually caused a backup request, not about which legitimate producer won the race to `_cloudSyncInProgress`.
+
+This requires no sleep, no retry, no runtime byte, and does not permit a false PASS from a request that predates the cloud configuration because no request can authenticate before the token/passphrase exist.
+
+Please still instrument/prove the overlap first if practical (e.g. record whether the interceptor sees a send before the explicit push returns, and whether the explicit call was suppressed by the in-progress guard). If moving interception earlier makes the negative control stop firing, reject it rather than forcing green.
