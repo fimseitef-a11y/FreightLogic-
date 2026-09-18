@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (**v24.0.15 + Issue #216 merged via PR #223 as `ee07297`** after Lanes #184 and Tests #417 both passed. Physical iPhone A1–A12 and authentic M6 remain DEFERRED by operator decision to the final post-v24.5 candidate — see `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.) | 2026-09-17 |
+| claude | — idle — (**v24.0.20 "One Of Each" pushed as `2b4da4b`** on `claude/complete-app-8vd89a`: Issue #205 Today/More UX-IA restructure, full suite 651/0 across 65 specs, lock released. SOURCE-ONLY — production still serves 24.0.19 / DB16 / Worker v20.) | 2026-09-18 |
 | gpt | Issue #204 Safari 27 customizable-select progressive enhancement on a new `agent/gpt/` branch. `styles.css` only; no DOM/runtime/version/service-worker changes. Preserve native `<select>` semantics, >=16px controls, >=44px touch targets, themes, and unchanged fallback when `appearance: base-select` is unsupported. | 2026-09-17 |
 
 ---
