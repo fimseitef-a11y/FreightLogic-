@@ -1,0 +1,6 @@
+owner: gpt
+token: 7f4d8c19-2a31-4c88-9b56-3de71f6240ad
+started_utc: 2026-09-18T04:15:00Z
+expected_release_utc: 2026-09-18T05:45:00Z
+paths: .agents/LANES.md
+task: Reserve an isolated GPT lane for issue #231 Admin Console paths only; no app.js, index.html, Worker, or Claude-owned runtime edits.
