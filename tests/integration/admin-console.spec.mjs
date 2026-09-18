@@ -157,6 +157,32 @@ test('[ADMIN-09] production Worker CORS remains exact-match, never wildcard', as
   ok(!/Access-Control-Allow-Origin['\"]?\s*:\s*['\"]\*/.test(worker), 'Worker must never emit wildcard CORS');
 });
 
+test('[ADMIN-10] console refuses to initialize on the driver origin', async () => {
+  const mod = await loadConsoleModule();
+  let blocked = false;
+  try {
+    mod.assertSeparateAdminOrigin('https://driver.example', 'https://driver.example');
+  } catch (error) {
+    blocked = /separate origin/i.test(String(error?.message || error));
+  }
+  eq(blocked, true, 'same-origin admin + driver hosting must fail closed');
+  eq(
+    mod.assertSeparateAdminOrigin('https://admin.example', 'https://driver.example'),
+    'https://admin.example',
+    'a distinct HTTPS admin origin must remain eligible'
+  );
+
+  const source = await text('admin-console/app.js');
+  ok(
+    source.includes('assertSeparateAdminOrigin(window.location.origin, driverOrigin)'),
+    'browser bootstrap must enforce the separate-origin guard before session storage/auth setup'
+  );
+  ok(
+    source.includes('adminInput.disabled = true') && source.includes('connectButton.disabled = true'),
+    'same-origin failure must disable credential entry rather than leave an apparently usable form'
+  );
+});
+
 export async function runSpec() {
   for (const { name, fn } of tests) {
     try { await fn(); pass += 1; console.log(`  PASS ${name}`); }
