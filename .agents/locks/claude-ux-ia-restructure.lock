@@ -1,9 +1,13 @@
 owner: claude
 token: ae9cace3-1427-4466-a5b8-4e8b54e0bce4
 started_utc: 2026-09-18T02:25:17Z
-expected_release_utc: 2026-09-18T06:25:17Z
-paths: app.js, index.html
+expected_release_utc: 2026-09-18T16:30:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json
 task: Operator-directed UX/IA restructure (#205). Apple HIG / WWDC25 information-architecture
   method applied to the Today surface and the More menu: de-duplicate the two position cards
   and the two week-money cards, auto-retire outgrown onboarding, compact the idle GPS card.
   No canonical economics, routing, security or storage semantics change. Full suite required.
+  EXTENDED 2026-09-18T08:05Z by the same owner+token, resuming the same slice: the original
+  window lapsed with no work committed (branch was identical to main). Release-marker paths
+  added because a runtime change requires a generation bump (RG-03) and the v24.0.16 lane-guard
+  finding says a lock must declare what is actually edited, not what was first intended.
