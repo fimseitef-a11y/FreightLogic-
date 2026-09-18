@@ -30,10 +30,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.20",
-  manifestName: "FreightLogic v24.0.20",
-  workerVersion: "20",
-  overlayScript: "midwest-stack-authority.js?v=24.0.20"
+  serviceWorkerVersion: "24.0.21",
+  manifestName: "FreightLogic v24.0.21",
+  workerVersion: "21",
+  overlayScript: "midwest-stack-authority.js?v=24.0.21"
 };
 
 // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
@@ -191,16 +191,16 @@ function report(checks) {
 async function runLiveChecks(checks) {
   const index = await fetchText(`${appOrigin}/`);
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
-  assert(checks, 'Index references app.js v24.0.20', index.text.includes('app.js?v=24.0.20'));
+  assert(checks, 'Index references app.js v24.0.21', index.text.includes('app.js?v=24.0.21'));
   // Voice Load was removed completely by operator decision (Issue #230,
-  // v24.0.20). The positive reference assertion is replaced by its absence:
+  // v24.0.21). The positive reference assertion is replaced by its absence:
   // a reintroduced tag or a stale deployed index must fail, not pass quietly.
   assert(checks, 'Index does not reference voice-load.js (removed, Issue #230)', !index.text.includes('voice-load.js'));
-  assert(checks, 'Index references sw-bridge.js v24.0.20', index.text.includes('sw-bridge.js?v=24.0.20'));
+  assert(checks, 'Index references sw-bridge.js v24.0.21', index.text.includes('sw-bridge.js?v=24.0.21'));
 
   const sw = await fetchText(`${appOrigin}/service-worker.js?verify=${Date.now()}`);
   assert(checks, 'Service worker loads', sw.ok, `${sw.status}`);
-  assert(checks, 'Service worker version 24.0.20', sw.text.includes("SW_VERSION = '24.0.20'"));
+  assert(checks, 'Service worker version 24.0.21', sw.text.includes("SW_VERSION = '24.0.21'"));
   assert(checks, 'Service worker caches Midwest overlay', sw.text.includes(EXPECTED.overlayScript));
   // X-08/X-10 (v23.9, Amendment 4): the install-blocking `critical` array — not
   // just the broader, non-blocking CORE list — must include both files, or a
@@ -216,26 +216,26 @@ async function runLiveChecks(checks) {
   assert(checks, 'Service worker caches authority JSON', sw.text.includes('midwest-stack-config.json'));
   assert(checks, 'Service worker no longer precaches removed rate-overrides JSON', !sw.text.includes('rate-overrides'));
 
-  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.20`);
+  const overlay = await fetchText(`${appOrigin}/midwest-stack-authority.js?v=24.0.21`);
   assert(checks, 'Midwest Stack overlay loads', overlay.ok, `${overlay.status}`);
   assert(checks, 'Overlay exposes FreightLogicMidwestStack', overlay.text.includes('window.FreightLogicMidwestStack'));
 
-  // v24.0.20: the structural navigation adapter is a release-bound asset and was
+  // v24.0.21: the structural navigation adapter is a release-bound asset and was
   // not covered here. It is requested by sw-bridge.js rather than index.html, so
   // the index-side `?v=` assertions above cannot see it — a stale import string
   // would ship an old tab bar with every other marker reporting green.
-  const bridge = await fetchText(`${appOrigin}/sw-bridge.js?v=24.0.20`);
+  const bridge = await fetchText(`${appOrigin}/sw-bridge.js?v=24.0.21`);
   assert(checks, 'SW bridge loads', bridge.ok, `${bridge.status}`);
-  assert(checks, 'SW bridge imports modern-shell.js v24.0.20', bridge.text.includes("modern-shell.js?v=24.0.20"));
+  assert(checks, 'SW bridge imports modern-shell.js v24.0.21', bridge.text.includes("modern-shell.js?v=24.0.21"));
 
-  const shell = await fetchText(`${appOrigin}/modern-shell.js?v=24.0.20`);
+  const shell = await fetchText(`${appOrigin}/modern-shell.js?v=24.0.21`);
   assert(checks, 'Modern shell adapter loads', shell.ok, `${shell.status}`);
   assert(checks, 'Modern shell exposes FreightLogicModernShell', shell.text.includes('window.FreightLogicModernShell'));
-  assert(checks, 'Service worker precaches modern-shell.js v24.0.20', sw.text.includes('modern-shell.js?v=24.0.20'));
+  assert(checks, 'Service worker precaches modern-shell.js v24.0.21', sw.text.includes('modern-shell.js?v=24.0.21'));
 
-  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.20`);
+  const manifest = await fetchJson(`${appOrigin}/manifest.json?v=24.0.21`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
-  assert(checks, 'Manifest name v24.0.20', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
+  assert(checks, 'Manifest name v24.0.21', manifest.json && manifest.json.name === EXPECTED.manifestName, manifest.json && manifest.json.name);
 
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);

@@ -4,7 +4,7 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.19 / IndexedDB v16 / Worker v20**, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
+Current runtime synchronization point: **production serves FreightLogic v24.0.20 / IndexedDB v16 / Worker v20**, superseding the 24.0.19 observation described below (live parity `35329623870` and production service worker `35329629590`, both `VERDICT: PASS` on `c72b521`). **Source is ahead of it at 24.0.21 / Worker v21 and is NOT deployed** — A13 below requires Worker v21, so it is BLOCKED until that lands. The 24.0.19 evidence that follows is kept because it is permanent provenance for a tree a gate actually looked at, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
 
 **Voice Load was deliberately REMOVED in v24.0.17 by operator decision (Issue #230).** The
 evaluator microphone, the Load Intake and Smart Load Inbox voice buttons, the voice status
@@ -14,13 +14,13 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A12 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.19 / DB16 / Worker v20 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.19 / DB16 / Worker v20 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. When the deferral lifts, read the SHA out of the then-current superseding certification document immediately before testing and confirm the generation strings against Diagnostics and Worker `/health` on the device itself. If any disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A12 on a physical iPhone**, deferred as stated above. **Section C has now run** — see that section for the structural result, and for the two things it deliberately does not cover: the separate 125-row 2026-08-24 master, and conflict review before adoption.
+All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A13 on a physical iPhone**, deferred as stated above. **Section C has now run** — see that section for the structural result, and for the two things it deliberately does not cover: the separate 125-row 2026-08-24 master, and conflict review before adoption.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
@@ -183,9 +183,54 @@ PASS requires the answer to step 5 recorded explicitly, one driver account survi
 the whole sequence with its backup count intact, and no token or code visible to
 either person at any point.
 
+## A13. Screenshot intake on a real iPhone (added v24.0.21, Issue #252)
+
+**Requires Worker v21 deployed.** The screenshot path calls `POST /extract-image`, which does
+not exist on Worker v20; against a v20 Worker every attempt fails and this row is BLOCKED, not
+FAIL. Confirm `/health` reports **21** before starting.
+
+This row exists because the three ways an image can reach the app behave differently in an
+**installed** Home Screen PWA than in a Safari tab, and no headless environment can tell you
+which ones actually deliver a file. The picker is the designed-guaranteed path; the other two
+are additions.
+
+1. **Photos / Files picker.** More → Load Intake → **Photos / Files**. Choose a real
+   DispatchLand (or comparable) screenshot. Confirm an extraction returns and the review step
+   opens with values in it.
+2. **Screenshot / camera capture.** Repeat through the **📷 Screenshot** control. Record
+   whether iOS offers the share/photo sheet and whether the chosen image arrives.
+3. **Clipboard paste.** Copy a screenshot, long-press the text box, Paste. Record whether an
+   image is delivered or whether iOS pastes nothing — **either answer is a valid result**, and
+   a "nothing" here is the reason the picker exists. Do not record this as a failure of the row.
+4. **UNKNOWN deadhead survives to the evaluator.** Use a posting that does **not** state a
+   deadhead. Confirm the Deadhead box is **blank**, that the review note says blank means
+   unknown rather than zero, and that scoring it asks for the figure instead of grading on an
+   invented zero. This is the assertion that matters most on a device: a fabricated `0`
+   overstates True RPM invisibly.
+5. **Explicit zero survives.** Use a posting stating zero deadhead (or type `0`). Confirm the
+   evaluator receives `0` and grades, rather than asking again.
+6. **Review beats the model.** Change one extracted value by hand before scoring. Confirm the
+   canonical result reflects **your** value, not the extracted one.
+7. **No second evaluator.** Confirm the decision card is the ordinary canonical result —
+   verdict, grade, True RPM, bid range — and that nothing on screen is an AI-authored grade,
+   rate-per-mile or recommendation.
+8. **Failure falls back.** Turn Airplane Mode on and try a screenshot. Confirm a plain error
+   that points at pasting/typing, that the text path still works, and that no empty review
+   form opens.
+
+PASS requires step 1 working, steps 4 and 5 both correct, step 6 correct, and steps 2/3
+**recorded with whatever they actually did** rather than marked PASS by assumption.
+
+**The certification runner does not carry this row yet.** `field-certification.js` exposes
+exactly A1-A12 and `FC-01`/`FC-12` assert that identity and order; both that file and that spec
+are GPT-owned under `.agents/LANES.md`, so A13 was added to this checklist — the instrument of
+record — and requested through `/.agents/inbox/` rather than edited across lanes. Until it lands
+there, record A13 manually against this section. A13 is **not** satisfied by the runner reporting
+A1-A12 complete, and a runner that has never heard of A13 cannot report it missing.
+
 # B. Live deployment blockers
 
-Run these against the same final production candidate used for A1-A12. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
+Run these against the same final production candidate used for A1-A13. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
 ## B1. Exact production app generation — **PASS**
 
@@ -286,7 +331,7 @@ Two measurement traps are worth knowing, because the first version of this gate 
 - `document.documentElement.scrollWidth` **cannot** detect overflow in this app — `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a scrollWidth wider than the viewport however far content spills. Injecting `min-width: 900px` left a scrollWidth assertion green.
 - Under mobile emulation the layout viewport **expands** to fit content wider than the device (`innerWidth` read 900 at a 320px device), so geometry compared against `innerWidth` is compared against a viewport that already grew to accommodate the overflow. Measure against the device width the test set.
 
-This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A12.
+This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A13.
 
 # E. Non-blocking resilience watch list
 
@@ -309,4 +354,4 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A12) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.
+The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A13) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.

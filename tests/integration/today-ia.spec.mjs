@@ -208,7 +208,21 @@ test('[ISSUE #205] TIA-05 the weekly goal bar is rendered once, not twice', asyn
 });
 
 // ── TIA-06 — onboarding retires itself after its display budget ─────────────
-test('[ISSUE #205] TIA-06 an undismissed onboarding card retires after its budget', async () => {
+// v24.0.21 UPDATED THIS TEST, and the reason matters. Two of its four assertions
+// encoded the rule v24.0.20 shipped -- that a shouldShowOnboarding() CALL spends
+// budget -- and that rule was the defect: the four cards mount at the top of
+// surfaces a driver routinely never scrolls to, so a card retired after three
+// launches having never been on screen. The assertions are restated against
+// EXPOSURE, which is what the budget was always meant to count.
+//
+// It is restated, not weakened. Every guarantee it made is still made here --
+// an unspent card renders, a spent one stops and promotes the durable flag, and
+// a REAL Today render still has to count, which is the assertion that stops this
+// becoming a helper talking to itself. It gains one the old version could not
+// make: asking must spend NOTHING. Same shape as v24.0.1 updating three specs'
+// fixtures to enter deadhead 0 explicitly, and v24.0.2 changing five assertions
+// that each encoded a defect its release fixed.
+test('[ISSUE #205] TIA-06 an undismissed onboarding card retires after its EXPOSURE budget', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
@@ -221,30 +235,48 @@ test('[ISSUE #205] TIA-06 an undismissed onboarding card retires after its budge
       // render already spent, and the first version of this test did exactly
       // that and reported [true,true,false] against correct code.
       const probe = 'tiaProbeOnboardingSeen';
-      const shown = [];
-      for (let i = 0; i < budget + 2; i++) shown.push(await T.shouldShowOnboarding(probe));
-      // The real path, asserted separately: booting Today DISPLAYS the F21 card,
-      // and a display is what the budget is supposed to count. If boot did not
-      // count, the budget would never retire anything in production.
+
+      // (a) Asking must be free. Five calls, no budget spent, still rendering.
+      const askedBefore = [];
+      for (let i = 0; i < budget + 2; i++) askedBefore.push(await T.shouldShowOnboarding(probe));
+      const afterAsking = await T.getSetting('onboardViews', null);
+      const spentByAsking = (afterAsking && typeof afterAsking === 'object' && afterAsking[probe]) || 0;
+
+      // (b) Real exposures spend it, and the last one retires the card durably.
+      for (let i = 0; i < budget; i++) await T._countOnboardingExposure(probe);
+      const shownAfter = [];
+      for (let i = 0; i < 2; i++) shownAfter.push(await T.shouldShowOnboarding(probe));
+
+      // (c) The real path: booting Today DISPLAYS the F21 card on screen, and a
+      // real on-screen display is what the budget is supposed to count. If boot
+      // did not count, the budget would never retire anything in production and
+      // this test would only prove a helper talks to itself.
       const views = await T.getSetting('onboardViews', null);
       return {
-        budget, shown,
+        budget, askedBefore, spentByAsking, shownAfter,
         seen: await T.getSetting(probe, false),
         realCount: (views && typeof views === 'object' && views.f21OnboardingSeen) || 0,
       };
     });
-    console.log(`    [evidence] budget=${r.budget} shown=${JSON.stringify(r.shown)} seen=${r.seen} bootCountedF21=${r.realCount}`);
+    console.log(`    [evidence] budget=${r.budget} askedBefore=${JSON.stringify(r.askedBefore)} ` +
+      `spentByAsking=${r.spentByAsking} shownAfter=${JSON.stringify(r.shownAfter)} ` +
+      `seen=${r.seen} bootCountedF21=${r.realCount}`);
 
-    eq(r.shown.slice(0, r.budget).every(Boolean), true,
-      'a card the driver has not yet seen its budget of must still render');
-    eq(r.shown.slice(r.budget).some(Boolean), false,
-      'and once the budget is spent it must stop rendering, with no further displays');
+    eq(r.askedBefore.every(Boolean), true,
+      'a card the driver has not yet been EXPOSED to its budget of must still render, ' +
+      'however many times the render path asks');
+    eq(r.spentByAsking, 0,
+      'asking must spend NO budget — a render is not an impression, and counting the call is ' +
+      'what let a card below the fold retire after three launches without ever being seen');
+    eq(r.shownAfter.some(Boolean), false,
+      'once the budget is spent BY EXPOSURE it must stop rendering, with no further displays');
     eq(r.seen, true,
       'retirement must be promoted to the durable fNNOnboardingSeen flag, so it survives ' +
       'a reload and travels through export/import like an explicit dismissal');
     ok(r.realCount >= 1,
-      'a real Today render must count as a display — a budget nothing increments in production ' +
-      'retires nothing, and this test would otherwise only prove a helper talks to itself');
+      'a real Today render that puts the card ON SCREEN must still count — a budget nothing ' +
+      'increments in production retires nothing, and this test would otherwise only prove a ' +
+      'helper talks to itself');
   } finally { await app.close(); }
 });
 

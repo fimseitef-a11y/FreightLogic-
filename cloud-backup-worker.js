@@ -1,4 +1,22 @@
-// FreightLogic Cloud Backup Worker v20 - Multi-User + AI Evaluate + AI Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v21 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// v21: SCREENSHOT/VISION EXTRACTION (Issue #252). POST /extract-image accepts a
+// single compressed screenshot and returns OBSERVATIONAL fields only, through a
+// pluggable server-side provider adapter (VISION_PROVIDER: workers-ai default,
+// gemini, openai, deepseek). The provider key never reaches the browser and no
+// new script origin is added, which is what keeps the #220 CSP repair intact --
+// the browser-side Tesseract CDN fallback was removed precisely because unpinned
+// third-party JavaScript shared an origin with the operator's financial history.
+// AUTHORITY IS UNCHANGED: the model reports what is legible and nothing else.
+// True RPM, economics, grade, verdict, bid range, cargo-fit and pickup
+// feasibility stay app.js's, exactly as the v24.0 rule already constrains
+// /evaluate. Any field the model returns that is not on the observational list
+// is DROPPED by the normalizer rather than passed through, so a volunteered
+// grade cannot ride in as an observation. Fields are tri-state
+// (OBSERVED/UNCERTAIN/ABSENT) and an ABSENT deadhead stays null: `intPositive`
+// could not express this, because it maps an explicit 0 to null and a stated
+// zero deadhead is a VERIFIED fact, not a missing one. Unparseable or
+// empty-of-content provider output fails CLOSED to manual entry (422) rather
+// than handing the evaluator a confidently-empty load.
 // v20: CANONICAL-USER TOKEN AUTHORITY (Issue #221). Driver auth no longer trusts
 // the `tokh:<hash>` index alone. After resolving the index it loads
 // `user:<userId>` and requires that record to be active and to name the exact
@@ -393,7 +411,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '20', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '21', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -784,6 +802,98 @@ export default {
             notes:         String(parsed.notes        || '').slice(0, 300),
           },
           model,
+          user: tokenData.name
+        }, 200, cors);
+      }
+
+
+      // POST /extract-image — vision/OCR field extraction from a load screenshot
+      // (Issue #252). Sits inside the driver-token gate, unlike /claim: this
+      // endpoint spends a paid/limited provider allocation, so it is never
+      // reachable unauthenticated.
+      if (request.method === 'POST' && path === '/extract-image') {
+        // Tighter than /extract's 50/hr: an image costs far more provider
+        // allocation than a text parse, and the free Workers AI daily budget is
+        // the thing standing between screenshot intake and a bill.
+        const imgRateLimited = await checkRateLimit(env, driverUserId, 25, 'extract-image');
+        if (imgRateLimited) {
+          const _m = new Date().getMinutes();
+          const resetMins = _m === 0 ? '<1' : String(60 - _m);
+          return json({ ok: false, error: `Image extraction limit reached (25/hr). Resets in ~${resetMins} min. Paste the load text instead.` }, 429, cors);
+        }
+
+        const providerName = String(env.VISION_PROVIDER || VISION_DEFAULT_PROVIDER);
+        const provider = VISION_PROVIDERS[providerName];
+        if (!provider) {
+          return json({ ok: false, error: 'Image extraction provider is misconfigured on the server.' }, 500, cors);
+        }
+        const missing = provider.needs(env);
+        if (missing) {
+          // Named honestly rather than reported as a failed extraction: the
+          // operator can act on "not configured" and cannot act on "AI error".
+          return json({ ok: false, error: 'Image extraction is not configured on the server. ' + missing }, 501, cors);
+        }
+
+        // Bound the body BEFORE reading it. The ceiling has to bind before
+        // materialization, which is the #232 rule applied to the upload path.
+        const clImg = parseInt(request.headers.get('Content-Length') || '0', 10);
+        const MAX_IMAGE_REQUEST = 3 * 1024 * 1024;
+        if (clImg > MAX_IMAGE_REQUEST) {
+          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+        }
+
+        const imgPayload = await request.json().catch(() => null);
+        if (!imgPayload || !imgPayload.image) {
+          return json({ ok: false, error: 'Missing required field: image' }, 400, cors);
+        }
+
+        let mime = String(imgPayload.mime || '').toLowerCase().trim();
+        let b64 = String(imgPayload.image);
+        const dataUrl = /^data:([a-z0-9.+/-]+);base64,(.*)$/is.exec(b64);
+        if (dataUrl) { mime = mime || dataUrl[1].toLowerCase(); b64 = dataUrl[2]; }
+        if (!mime) mime = 'image/jpeg';
+        if (!VISION_ALLOWED_MIME.includes(mime)) {
+          return json({ ok: false, error: 'Unsupported image type. Use JPEG, PNG or WebP.' }, 415, cors);
+        }
+
+        let bytes;
+        try {
+          const bin = atob(b64.replace(/\s/g, ''));
+          if (bin.length > MAX_IMAGE_REQUEST) {
+            return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+          }
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        } catch {
+          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
+        }
+        if (!bytes.length) {
+          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
+        }
+
+        const visionModel = provider.model(env);
+        let rawOut = '';
+        try {
+          rawOut = await provider.run(env, bytes, mime, visionModel);
+        } catch (e) {
+          console.error('[FL] vision provider error:', providerName, String(e).slice(0, 200));
+          return json({ ok: false, error: 'Image extraction service error. Paste the load text instead.' }, 502, cors);
+        }
+
+        const norm = normalizeVisionExtraction(rawOut);
+        if (!norm.ok) {
+          // Fail closed to manual entry. An empty-but-confident load is worse
+          // than no load: the evaluator would price whatever survived.
+          return json({ ok: false, error: norm.error, provider: providerName, model: visionModel }, 422, cors);
+        }
+
+        return json({
+          ok: true,
+          fields: norm.fields,
+          fieldMeta: norm.fieldMeta,
+          observedCount: norm.observedCount,
+          provider: providerName,
+          model: visionModel,
           user: tokenData.name
         }, 200, cors);
       }
@@ -1245,6 +1355,322 @@ function canonicalBidAdvice(bid){
 function sanitizeList(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.slice(0, 6).map(s => String(s).replace(/[<>&"']/g, '').slice(0, 150));
+}
+
+
+// ─── Vision extraction (Issue #252) ───────────────────────────────────────────
+//
+// A screenshot of a load posting reaches the driver's phone far more often than
+// clean text does, and the phone is the wrong place to run OCR: the in-browser
+// Tesseract path was removed in v24.0.17 (#220) because its CDN fallback was
+// unpinned third-party JavaScript sharing an origin with the operator's entire
+// financial history. So the image goes to THIS Worker, the provider key stays a
+// server-side secret, and the browser never gains a new script origin.
+//
+// WHAT THIS LAYER MAY AND MAY NOT DO is the whole design. It extracts
+// OBSERVATIONS — what characters are on the screen — and nothing else. True RPM,
+// total-mile economics, operating cost, the Midwest Stack ladder, grade, verdict,
+// bid range, cargo-fit and pickup-feasibility gates all remain `app.js`'s, exactly
+// as the v24.0 authority rule requires of `/evaluate`. A vision model that
+// volunteered a rate-per-mile would be a second evaluator, so the prompt forbids
+// it and the normalizer below drops any field not on the observational list.
+//
+// Provider choice is CONFIGURATION, not doctrine: `VISION_PROVIDER` selects one
+// adapter and every adapter returns the same raw JSON string to one shared
+// parser. That is what lets the sanitized-screenshot corpus in #252 benchmark
+// Moondream against Gemini without touching intake or the evaluator.
+
+const VISION_SYSTEM_PROMPT = `You read screenshots of freight load postings for an expedited cargo van operator.
+You are an OBSERVER, not an advisor. Report only what is legibly visible in the image.
+
+Return ONLY a JSON object, no prose, with exactly this shape:
+{
+  "fields": {
+    "orderNo": string|null, "broker": string|null, "customer": string|null,
+    "origin": string|null, "destination": string|null,
+    "pay": number|null, "loadedMiles": number|null, "deadheadMiles": number|null,
+    "pickupDate": "YYYY-MM-DD"|null, "pickupTime": "HH:MM"|null,
+    "deliveryDate": "YYYY-MM-DD"|null, "deliveryTime": "HH:MM"|null,
+    "timezone": string|null, "weight": number|null, "pieces": number|null,
+    "dimensions": string|null, "commodity": string|null, "notes": string|null
+  },
+  "confidence": { "<fieldName>": 0.0-1.0 }
+}
+
+RULES — these matter more than completeness:
+1. NEVER guess. A field you cannot read is null. An absent field is null.
+2. NEVER infer a value from another value. Do not compute miles, rates or dates.
+3. "deadheadMiles" is the empty/deadhead distance TO the pickup. If the posting
+   does not state one, it is null. Do NOT write 0 for "not shown" — 0 means the
+   posting explicitly says zero deadhead, which is a different fact.
+4. Report money as a plain number with no currency symbol or thousands separator.
+5. Give each field you report a confidence: 1.0 you read it cleanly, 0.5 the
+   characters are ambiguous or cropped, below 0.4 you are unsure it is that field.
+   Digits that are easily confused (3/8, 5/6, 1/7) lower confidence.
+6. Do NOT output rate-per-mile, profit, grade, verdict, recommendation, or any
+   opinion about whether the load is good. Those are computed elsewhere and an
+   opinion here is discarded.`;
+
+// Every provider returns the model's raw text, which the shared normalizer then
+// parses. An adapter that throws is a provider failure, not an extraction result.
+const VISION_PROVIDERS = {
+  // Default candidate: runs inside this Worker through the AI binding, so there
+  // is no second provider origin and no API key to leak. Workers AI carries a
+  // free daily allocation, which is what makes screenshot intake cost nothing.
+  'workers-ai': {
+    needs: (env) => (env.AI ? null : 'Workers AI binding (AI) is not configured on this Worker.'),
+    model: (env) => env.VISION_MODEL || '@cf/moondream/moondream3.1-9B-A2B',
+    async run(env, bytes, mime, model) {
+      const out = await env.AI.run(model, {
+        // Workers AI vision models take raw bytes, not a data URL.
+        image: [...bytes],
+        prompt: VISION_SYSTEM_PROMPT + '\n\nExtract the load from this screenshot.',
+        max_tokens: 700,
+      });
+      return String(out?.description ?? out?.response ?? out?.text ?? '');
+    },
+  },
+
+  // Quality benchmark. Free-tier submissions are eligible for Google product
+  // improvement, so #252 requires that tradeoff be an explicit operator choice —
+  // which is why this is never the default and must be named in VISION_PROVIDER.
+  'gemini': {
+    needs: (env) => (env.GEMINI_API_KEY ? null : 'GEMINI_API_KEY is not configured on this Worker.'),
+    model: (env) => env.VISION_MODEL || 'gemini-2.5-flash-lite',
+    async run(env, bytes, mime, model) {
+      const res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: VISION_SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [
+              { text: 'Extract the load from this screenshot.' },
+              { inline_data: { mime_type: mime, data: bytesToBase64(bytes) } },
+            ] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 700, responseMimeType: 'application/json' },
+          }),
+        }
+      );
+      if (!res.ok) throw new Error('gemini ' + res.status);
+      const j = await res.json();
+      return String(j?.candidates?.[0]?.content?.parts?.[0]?.text || '');
+    },
+  },
+
+  'openai': {
+    needs: (env) => (env.OPENAI_API_KEY ? null : 'OPENAI_API_KEY is not configured on this Worker.'),
+    model: (env) => env.VISION_MODEL || 'gpt-4.1-mini',
+    async run(env, bytes, mime, model) {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model, temperature: 0.1, max_tokens: 700,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: VISION_SYSTEM_PROMPT },
+            { role: 'user', content: [
+              { type: 'text', text: 'Extract the load from this screenshot.' },
+              { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + bytesToBase64(bytes) } },
+            ] },
+          ],
+        }),
+      });
+      if (!res.ok) throw new Error('openai ' + res.status);
+      const j = await res.json();
+      return String(j?.choices?.[0]?.message?.content || '');
+    },
+  },
+
+  // Kept pluggable because the operator rates its extraction highly, but the
+  // hosted API is token-priced (the free consumer app is not a free API) and
+  // self-hosted DeepSeek-OCR needs a GPU, so it is never the default and is inert
+  // without an explicitly supplied key and base URL.
+  'deepseek': {
+    needs: (env) => (env.DEEPSEEK_API_KEY ? null : 'DEEPSEEK_API_KEY is not configured on this Worker.'),
+    model: (env) => env.VISION_MODEL || 'deepseek-chat',
+    async run(env, bytes, mime, model) {
+      const base = (env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '');
+      const res = await fetch(base + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + env.DEEPSEEK_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model, temperature: 0.1, max_tokens: 700,
+          messages: [
+            { role: 'system', content: VISION_SYSTEM_PROMPT },
+            { role: 'user', content: [
+              { type: 'text', text: 'Extract the load from this screenshot.' },
+              { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + bytesToBase64(bytes) } },
+            ] },
+          ],
+        }),
+      });
+      if (!res.ok) throw new Error('deepseek ' + res.status);
+      const j = await res.json();
+      return String(j?.choices?.[0]?.message?.content || '');
+    },
+  },
+};
+
+const VISION_DEFAULT_PROVIDER = 'workers-ai';
+const VISION_ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+
+// The exact observational field list. Anything the model returns that is not on
+// this list is DROPPED rather than passed through — that is what mechanically
+// stops a provider volunteering a grade, a verdict or a rate-per-mile and having
+// it ride into the app as if it were an observation.
+const VISION_FIELD_SPEC = {
+  orderNo:       { kind: 'str', max: 40 },
+  broker:        { kind: 'str', max: 80 },
+  customer:      { kind: 'str', max: 80 },
+  origin:        { kind: 'str', max: 100 },
+  destination:   { kind: 'str', max: 100 },
+  pay:           { kind: 'money' },
+  loadedMiles:   { kind: 'int', max: 100000 },
+  deadheadMiles: { kind: 'int', max: 100000 },
+  pickupDate:    { kind: 'date' },
+  pickupTime:    { kind: 'time' },
+  deliveryDate:  { kind: 'date' },
+  deliveryTime:  { kind: 'time' },
+  timezone:      { kind: 'str', max: 12 },
+  weight:        { kind: 'int', max: 200000 },
+  pieces:        { kind: 'int', max: 10000 },
+  dimensions:    { kind: 'str', max: 60 },
+  commodity:     { kind: 'str', max: 80 },
+  notes:         { kind: 'str', max: 300 },
+};
+
+// Below this the value is reported but flagged UNCERTAIN so the review step can
+// make the driver look at it before it reaches the evaluator.
+const VISION_UNCERTAIN_BELOW = 0.75;
+
+function bytesToBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+// A tri-state integer. `intPositive` above cannot express this: it maps an
+// explicit 0 to null, which is exactly the distinction the whole app is built
+// around — a stated "0 deadhead" is a VERIFIED ZERO and an unstated one is
+// UNKNOWN, and collapsing them is the v24.0.1 blank-deadhead defect.
+function visionIntOrNull(v, max) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseInt(String(v).replace(/[, ]/g, ''), 10);
+  return (Number.isFinite(n) && n >= 0 && n <= max) ? Math.round(n) : null;
+}
+
+function visionMoneyOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$, ]/g, ''));
+  return (Number.isFinite(n) && n >= 0 && n <= 1000000) ? Math.round(n * 100) / 100 : null;
+}
+
+function visionStrOrNull(v, max) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).replace(/[<>]/g, '').trim().slice(0, max);
+  if (!s) return null;
+  // A model asked for a value it cannot see sometimes answers with the word for
+  // absence instead of null. Those are absences, not values.
+  if (/^(n\/?a|none|null|unknown|not (shown|listed|specified|visible)|--?)$/i.test(s)) return null;
+  return s;
+}
+
+function visionDateOrNull(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(s + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  return (y >= 2020 && y <= 2035) ? s : null;
+}
+
+function visionTimeOrNull(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  return String(h).padStart(2, '0') + ':' + m[2];
+}
+
+function visionConfidence(raw, key) {
+  const c = raw && typeof raw === 'object' ? raw[key] : undefined;
+  const n = typeof c === 'number' ? c : parseFloat(c);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, n));
+}
+
+/**
+ * Parse and normalize one provider's raw output into the strict contract.
+ *
+ * Fails CLOSED: unparseable output, or output with no usable field at all,
+ * returns `ok:false` so the app falls back to review/manual entry rather than
+ * handing the evaluator a confidently-empty load.
+ *
+ * Every field lands in exactly one of three states, and they stay distinct all
+ * the way to the UI:
+ *   OBSERVED  — read cleanly
+ *   UNCERTAIN — read, but the model flagged it or the characters are ambiguous
+ *   ABSENT    — not in the image. The VALUE IS null, never 0 and never ''.
+ */
+function normalizeVisionExtraction(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return { ok: false, error: 'Vision provider returned no output.' };
+  }
+  // Models wrap JSON in prose or fences often enough that refusing on the first
+  // stray character would fail loads the extraction actually succeeded on.
+  let src = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let parsed = null;
+  try { parsed = JSON.parse(src); } catch { parsed = null; }
+  if (!parsed) {
+    const a = src.indexOf('{'), b = src.lastIndexOf('}');
+    if (a >= 0 && b > a) { try { parsed = JSON.parse(src.slice(a, b + 1)); } catch { parsed = null; } }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ok: false, error: 'Vision output was not valid JSON.' };
+  }
+
+  const inFields = (parsed.fields && typeof parsed.fields === 'object') ? parsed.fields : parsed;
+  const inConf = parsed.confidence;
+
+  const fields = {};
+  const fieldMeta = {};
+  let observedCount = 0;
+
+  for (const key of Object.keys(VISION_FIELD_SPEC)) {
+    const spec = VISION_FIELD_SPEC[key];
+    const raw = inFields ? inFields[key] : undefined;
+    let val = null;
+    if (spec.kind === 'int') val = visionIntOrNull(raw, spec.max);
+    else if (spec.kind === 'money') val = visionMoneyOrNull(raw);
+    else if (spec.kind === 'date') val = visionDateOrNull(raw);
+    else if (spec.kind === 'time') val = visionTimeOrNull(raw);
+    else val = visionStrOrNull(raw, spec.max);
+
+    const conf = visionConfidence(inConf, key);
+    if (val === null) {
+      fieldMeta[key] = { state: 'ABSENT', confidence: null };
+    } else {
+      // No confidence reported is not the same as high confidence. A provider
+      // that omits the block gets UNCERTAIN, so the review step still asks.
+      const state = (conf !== null && conf >= VISION_UNCERTAIN_BELOW) ? 'OBSERVED' : 'UNCERTAIN';
+      fieldMeta[key] = { state, confidence: conf };
+      observedCount++;
+    }
+    fields[key] = val;
+  }
+
+  if (observedCount === 0) {
+    return { ok: false, error: 'Nothing readable was extracted from that image.' };
+  }
+  return { ok: true, fields, fieldMeta, observedCount };
 }
 
 // ─── Extract system prompt ────────────────────────────────────────────────────

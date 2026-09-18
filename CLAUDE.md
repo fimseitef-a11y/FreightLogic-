@@ -4,6 +4,16 @@
 
 **FreightLogic v24.0.20** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
+**SOURCE IS 24.0.21 / DB16 / Worker v21. PRODUCTION SERVES 24.0.20 / DB16 / Worker v20.**
+v24.0.21 is the Issue #252 P0 screenshot-intake generation and is **source-only: not deployed and
+not live-observed.** Source being ahead of production does not make the observation below false, it
+makes it the current production fact until v24.0.21 deploys — which is the distinction this file
+has had to record against itself eight times. **Deploy order matters and is not optional:
+Worker v21 FIRST**, because the app's screenshot path calls `POST /extract-image`, which does not
+exist on the deployed v20 and would 404 for every driver who tapped it; then the app generation;
+then **re-dispatch** live parity rather than citing the push-triggered run, which races the
+Cloudflare deploy. The paragraph below certifies **24.0.20** and is the production fact until then.
+
 **PRODUCTION SERVES 24.0.20 / DB16 / Worker v20, and BOTH generations are OBSERVED.** v24.0.20 is
 the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
 deployed and observed the same day: live parity run `35329623870` (`workflow_dispatch` on `main`,
@@ -102,7 +112,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker v20 carries PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v21 source / v20 deployed** carries #252's `POST /extract-image` vision route, PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -248,7 +258,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.20';
+const APP_VERSION = '24.0.21';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -371,6 +381,7 @@ plaintext localStorage credentials must never be promoted back into a live sessi
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
 - `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
+- `POST /extract-image` — vision/OCR field extraction from ONE load screenshot (Worker v21, Issue #252); rate limited 25 req/hr per user; provider selected server-side by `VISION_PROVIDER` (`workers-ai` default, `gemini`, `openai`, `deepseek`); returns `{ ok, fields, fieldMeta, observedCount, provider, model }` where every field is tri-state `OBSERVED` / `UNCERTAIN` / `ABSENT` and an ABSENT value is `null`, never `0`. **Observational fields only** — anything else the model returns is dropped by the normalizer, so it can never become a second evaluator
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 - `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
@@ -392,8 +403,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.20` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.20`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.21` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.21`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4455,3 +4466,153 @@ written into the document rather than routed around silently.
 
 **Still HOLD.** Physical iPhone **A1-A12** and the M6 conflict review are unchanged and remain
 the operator's. Nothing here touches either.
+
+---
+
+## v24.0.21 "Read The Screenshot" — Issue #252 P0, and the budget that counted the wrong thing
+
+Worker **v20 → v21**. `DB_VERSION` stays **16**. Two pieces, one generation, because both change
+`app.js` and two generations for one deploy is the thing this file tells both lanes not to do.
+
+### The operator's actual workflow was the one path the app did not have
+
+A load posting reaches this operator as a **screenshot** far more often than as clean text —
+DispatchLand on a phone, shared or captured — and the app's only intake was paste/type. The
+operator had been pasting screenshots into ChatGPT to read them and then retyping the numbers into
+FreightLogic, which is the workflow #252 exists to collapse.
+
+The phone is the wrong place to fix that. The in-browser Tesseract path was removed in v24.0.17
+(#220) precisely because its CDN fallback was **unpinned third-party JavaScript sharing an origin
+with the operator's entire financial history**, and #252 forbids reopening it. So the image goes
+to the FreightLogic Worker instead: `POST /extract-image`, provider key in a server-side secret,
+**no new browser script origin and the CSP byte-identical** — `connect-src` already allowed this
+exact endpoint, so the parity gate's CSP check needed no change at all.
+
+**Provider choice is configuration, not doctrine.** One adapter table, one shared normalizer:
+`workers-ai` (default — Moondream 3.1 through the `AI` binding, inside the Worker already running,
+with a free daily neuron allocation), `gemini` (the quality benchmark; free-tier submissions are
+eligible for Google product improvement, so it is never the default and must be named explicitly),
+`openai`, and `deepseek` (kept pluggable because the operator rates its extraction highly, but the
+hosted API is token-priced and self-hosted DeepSeek-OCR needs a GPU, so it is inert without an
+explicitly supplied key). That is what lets #252's sanitized screenshot corpus benchmark providers
+without touching intake or the evaluator.
+
+### AI extracts; FreightLogic decides — enforced, not asserted
+
+The v24.0 authority rule already constrains `/evaluate` to *project* the canonical decision rather
+than recalculate it. A vision endpoint is a **new door into the same building**, so the same rule
+is enforced structurally rather than by prompt:
+
+- The normalizer iterates a fixed **observational** field list. Anything else the model returns is
+  **DROPPED**, so a volunteered `grade`, `verdict`, `ratePerMile` or `bidRange` cannot ride in as
+  an observation. `VEX-06` sends all six and greps the whole response for them.
+- Fields are **tri-state**: `OBSERVED` / `UNCERTAIN` / `ABSENT`, and an `ABSENT` value is `null` —
+  never `0`, never `''`. **No reported confidence is UNCERTAIN, not high confidence**: silence is
+  not an endorsement, so an unscored field still sends the driver to review.
+- Unparseable output, or valid JSON with every field null, **fails closed** (422) to manual entry.
+  An empty-but-confident load is worse than no load, because the evaluator would price whatever
+  survived.
+- The extraction lands in the **same draft-review stage** a pasted parse lands in and leaves
+  through the **same "Score This Load" button** into the **same canonical evaluator**. There is no
+  second pipeline, and `SSI-06` asserts the handoff by rendered content rather than by internal
+  state — the v24.0.8 lesson, where a dead surface left every other signal correct.
+
+`intPositive` could not express the deadhead rule at all: it maps an explicit `0` to `null`. A
+stated "0 deadhead" is a **verified fact** (the driver is at the pickup) and an unstated one is
+UNKNOWN, so `visionIntOrNull` is a real tri-state and `VEX-04`/`VEX-05` assert both directions.
+
+### Found while wiring it: the F27 intake chain could express NEITHER
+
+Not a hypothetical, and not reported by anyone. `intNum('')` returns **0** (`Number('')` is 0) and
+`intNum(0) || ''` returns `''`, so in `openLoadIntake()`:
+
+- `populateDraft()` rendered an unstated deadhead and a verified zero as the **same empty box**;
+- `readDraftFields()` then returned `0` for that empty box, and `liSaveTrip` wrote a
+  **fabricated `deadMiles: 0`** onto the trip draft — a verified zero the operator never supplied;
+- `"Score This Load"` tested `if (f.deadheadMiles)`, so an **explicit 0 was dropped** on a falsy
+  check, leaving `#mwDeadMi` blank and the evaluator asking again for a figure the driver had
+  already given.
+
+That is the fifth site of the class v24.0.4 fixed in four intake paths and v24.0.5 fixed in
+persistence. The whole chain reads through `knownNum()` now, and the review step **names** the gap
+rather than leaving a blank box to speak for itself: *"Deadhead was left blank on purpose — that
+means unknown, not zero."*
+
+### A render is not an impression
+
+The carried-forward repair. v24.0.20 shipped the onboarding view budget counting **inside**
+`shouldShowOnboarding()`, so *asking* spent the budget — and the four cards mount at the top of
+surfaces a driver routinely never scrolls to on a phone. Three launches later a card retired
+having **never occupied a pixel anyone looked at**, which is the exact inversion of what a view
+budget is for: it hid a card that was never seen, while treating it identically to one the driver
+read and ignored.
+
+Exposure is **measured** now — `IntersectionObserver` at ≥50% — and `shouldShowOnboarding()`
+decides only. Durable retirement, explicit dismissal, the warning exclusions (the cloud-backup
+paused banner and the sync row are not onboarding and are untouched) and the serialized
+`onboardViews` writes are all unchanged. **No dwell requirement, deliberately**: "half the card was
+on screen" is the claim this repair needs to make honest, and "on screen for N milliseconds" is a
+second, stricter claim with no evidence behind it and a timing dependency that would make the
+regression flaky.
+
+Without `IntersectionObserver` it falls back to counting on render. That is worse than measuring
+and much better than a budget that never retires anything: a card that can never be counted is a
+card that renders forever.
+
+### Tests
+
+`tests/unit/worker-vision-extract.spec.mjs` (15, new) drives the **real exported fetch handler**
+against an in-memory KV with a stub provider injected through the same `env` Cloudflare supplies,
+so the route, the auth gate, the ceilings and the normalizer under test are the shipped ones —
+only the model call is stubbed, and there is no network and no provider key. Driver credentials are
+minted through the **real invite/claim path** rather than a seeded fixture that could drift from it.
+
+`tests/integration/screenshot-intake.spec.mjs` (13, new) drives the real app in real Chromium with
+`/extract-image` intercepted at the network boundary, so the picker, the canvas downscale, the
+review step and the evaluator handoff are all shipped code. It asserts **rendered content**.
+`SSI-02` additionally pins the upload contract: the image must arrive re-encoded as **JPEG**,
+because that canvas round trip is what strips EXIF — including GPS — and what keeps the upload
+small, and it is easy to remove by accident while "optimizing" the function later.
+
+Both are registered in `tests/run-all.mjs`, which `RH-01` requires and which is Claude-owned again
+since PR #234 retired the spent exception — so the deadlock recorded at the end of the v24.0.16
+section no longer applies and no cross-lane edit was needed.
+
+**All five negative controls were applied and verified to fire, each on exactly the assertion it
+guards and on no other**, with the tree restored from a pristine copy and re-verified by
+`sha256sum` after every one — the v24.0.17 lesson, where a control's restore was overwritten
+mid-run and a suite result described a tree that never existed. Reverting the Worker's tri-state
+integer fails `VEX-05` **while `VEX-04` stays green**, which is the demonstration that the two
+deadhead directions are independently tested rather than one rule tested twice; passing the model's
+output through unfiltered fails `VEX-06`; restoring count-on-call fails `SSI-09` only; counting on
+mount instead of on visibility fails `SSI-11` only; and reverting the app-side deadhead chain fails
+`SSI-05` while `SSI-04` and `SSI-06` stay green.
+
+**`RH-04` fired on this release's own author, for the third consecutive release.** The gate is a
+raw `/SpeechRecognition/` regex over `app.js`, and a new comment promising not to reintroduce a
+speech recognizer contained the literal token. The **comment was reworded, not the gate**: a guard
+that fires on its own documentation gets disabled, and loosening a working check to accommodate
+prose is how the next real remnant gets through.
+
+### Why this is a version bump
+
+`app.js`, `index.html` and the Worker all changed, and v24.0.20 is **live**. `CACHE_NAME` is
+`freightlogic-${SW_VERSION}` and the `?v=` query is the only other identity a child asset carries,
+so an installed PWA holding the 24.0.20 shell would never fetch either file and the screenshot path
+would not reach a driver. Every governed marker moves together; all **14** CG assertions and
+`verify-cloudflare-parity --static-only` are green at `24.0.21`, and the declared runtime asset
+count stays **22** — the new capability is a Worker route, not a new shipped file.
+
+### Not deployed, and one thing genuinely outstanding
+
+**Source-only.** Deploy **Worker v21 first**, then the app generation, then **re-dispatch** live
+parity. #252's provider **benchmark against the sanitized DispatchLand corpus is not done** — it
+needs real screenshots, which are operator data and are deliberately not in this repository. The
+adapter exists so that benchmark can pick the default; `workers-ai` is the zero-cost **candidate**,
+not a measured winner, and this section does not claim otherwise.
+
+**Still HOLD.** Physical iPhone **A1-A12** and the M6 conflict review are unchanged and remain the
+operator's. The device gate for this release additionally includes the one thing no automated
+environment can answer: whether the Photos/Files picker, the share-sheet capture and clipboard-image
+paste each actually deliver an image in the **installed** iOS PWA, which is why the picker is the
+guaranteed path and the clipboard is only ever an addition to it.

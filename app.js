@@ -1,7 +1,39 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.20 USA ENGINE
+/** FreightLogic v24.0.21 USA ENGINE
+ *  v24.0.21 "Read The Screenshot": Issue #252's P0 screenshot intake, plus the
+ *          carried-forward onboarding-exposure repair. (1) A load posting reaches
+ *          the driver as a SCREENSHOT far more often than as clean text, and the
+ *          phone is the wrong place to OCR it -- the in-browser Tesseract path
+ *          was removed in v24.0.17 (#220) because its CDN fallback was unpinned
+ *          third-party JavaScript sharing an origin with the operator's entire
+ *          financial history. So the image goes to the FreightLogic Worker
+ *          (v21, POST /extract-image) behind a pluggable provider adapter, the
+ *          provider key stays a server-side secret, and the browser gains no new
+ *          script origin: the CSP is UNCHANGED. What comes back is
+ *          OBSERVATIONS ONLY. Fields are tri-state (OBSERVED / UNCERTAIN /
+ *          ABSENT), an absent deadhead stays null rather than becoming a
+ *          verified zero, a review step makes the driver confirm anything
+ *          uncertain, and the load then leaves through the SAME "Score This
+ *          Load" button into the SAME canonical evaluator. AI extracts;
+ *          FreightLogic decides. Any field the model returns that is not on the
+ *          observational list is DROPPED by the normalizer, so a volunteered
+ *          grade or rate-per-mile cannot ride in as an observation.
+ *          (2) Found while wiring that: the F27 intake chain could express
+ *          NEITHER an unknown deadhead nor a verified zero. `intNum('')` is 0
+ *          (Number('') is 0) and `intNum(0) || ''` is '', so a blank box and a
+ *          typed 0 both arrived as empty, readDraftFields() then handed a
+ *          FABRICATED 0 to the trip draft, and "Score This Load" dropped an
+ *          explicit 0 on a falsy check -- leaving the evaluator to ask again for
+ *          a figure the driver had already given. Fifth site of the v24.0.4/
+ *          v24.0.5 unknown-deadhead class; the whole chain reads through
+ *          knownNum() now. (3) The v24.0.20 onboarding view budget counted a
+ *          shouldShowOnboarding() CALL as a view, so a card mounted below the
+ *          fold retired after three launches having never been on screen.
+ *          Exposure is MEASURED now, via IntersectionObserver at >=50%; durable
+ *          retirement, explicit dismissal, warning exclusions and the serialized
+ *          onboardViews writes are all unchanged.
  *  v24.0.20 "One Of Each": Issue #205's driver-first scope, applied to the
  *          information architecture of Today and More rather than to a feature.
  *          Four surfaces each said something a neighbouring surface had just
@@ -330,7 +362,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.20';
+const APP_VERSION = '24.0.21';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -8410,12 +8442,32 @@ function _queueOnboardViews(fn){
   return next;
 }
 
+// A RENDER IS NOT AN IMPRESSION. v24.0.20 shipped the budget counting inside
+// shouldShowOnboarding(), so asking the question spent the budget -- and the
+// four cards mount at the top of surfaces the driver routinely never scrolls to
+// on a phone. Three launches later the card retired having never occupied a
+// pixel the driver looked at, which is the exact opposite of what a view budget
+// is for: it made a card that was never seen disappear, while a card the driver
+// actually read and ignored was treated identically.
+//
+// Exposure is therefore measured, not assumed. IntersectionObserver is the only
+// thing in the platform that answers "was this actually on screen", and it is
+// the signal the budget now spends against.
+//
+// NO DWELL REQUIREMENT, deliberately. "Half the card was on screen" is the claim
+// this repair needs to make honest; "on screen for N milliseconds" is a second,
+// stricter claim with no evidence behind it and a timing dependency that would
+// make the regression flaky. If a scroll-past turns out to over-count, that is a
+// threshold change with its own test, not a reason to guess now.
+const ONBOARD_EXPOSURE_RATIO = 0.5;
+
 /**
  * Should an educational onboarding card render this time?
  *
- * Returns false once the driver dismissed it explicitly, or once it has already
- * been shown ONBOARD_VIEW_BUDGET times. Counting happens here, so a caller that
- * asks is a caller that is about to display.
+ * DECIDES ONLY -- it no longer counts. Returns false once the driver dismissed
+ * it explicitly, or once it has already been EXPOSED ONBOARD_VIEW_BUDGET times.
+ * The caller must pass the mounted element to markOnboardingExposed() for the
+ * budget to move at all.
  *
  * Fails OPEN on a storage error: if the count cannot be read the card is shown,
  * because losing an explanation is a smaller harm than hiding one the driver has
@@ -8435,10 +8487,68 @@ async function shouldShowOnboarding(seenKey){
         await setSetting(seenKey, true);
         return false;
       }
-      await setSetting('onboardViews', { ...map, [seenKey]: n + 1 });
       return true;
     } catch(e){ return true; }
   });
+}
+
+/** Record one real exposure, and retire the card once the budget is spent.
+ *
+ *  Retirement stays DURABLE and stays in the vocabulary the rest of the app
+ *  reads: the last exposure promotes the card's own `fNNOnboardingSeen` flag, so
+ *  it survives export/import exactly like an explicit dismissal, and no other
+ *  reader needs to know the budget exists.
+ *
+ *  Writes go through the same _queueOnboardViews chain as everything else --
+ *  the four cards mount concurrently from one renderHome() pass, and a plain
+ *  read-modify-write loses increments (the V-1 defect shape, v24.0.15).
+ */
+function _countOnboardingExposure(seenKey){
+  return _queueOnboardViews(async () => {
+    try {
+      if (await getSetting(seenKey, false)) return;
+      const views = await getSetting('onboardViews', null);
+      const map = (views && typeof views === 'object' && !Array.isArray(views)) ? views : {};
+      const next = (intNum(map[seenKey], 0, 1e6) || 0) + 1;
+      await setSetting('onboardViews', { ...map, [seenKey]: next });
+      if (next >= ONBOARD_VIEW_BUDGET) await setSetting(seenKey, true);
+    } catch(e){
+      // A lost count shows the card again. That is the safe direction: the
+      // failure mode of this whole helper must be "explained twice", never
+      // "retired unread", which is the defect it exists to fix.
+    }
+  });
+}
+
+/** Spend one exposure when `el` is genuinely on screen. */
+function markOnboardingExposure(el, seenKey){
+  if (!el || !seenKey) return null;
+  // One card, one exposure per mount, however many observer callbacks fire.
+  if (el.dataset && el.dataset.flOnboardExposure === '1') return null;
+  if (el.dataset) el.dataset.flOnboardExposure = '1';
+
+  let spent = false;
+  let obs = null;
+  const spend = () => {
+    if (spent) return;
+    spent = true;
+    try { obs && obs.disconnect(); } catch(e){}
+    _countOnboardingExposure(seenKey);
+  };
+
+  // Without IntersectionObserver there is no way to tell seen from rendered, so
+  // fall back to the old count-on-render rule. That is worse than measuring, and
+  // it is much better than a budget that never retires anything: a card that can
+  // never be counted is a card that renders forever.
+  if (typeof IntersectionObserver !== 'function'){ spend(); return null; }
+
+  obs = new IntersectionObserver((entries) => {
+    for (const e of entries){
+      if (e.isIntersecting && e.intersectionRatio >= ONBOARD_EXPOSURE_RATIO){ spend(); return; }
+    }
+  }, { threshold: [ONBOARD_EXPOSURE_RATIO] });
+  obs.observe(el);
+  return obs;
 }
 
 function renderWelcomeCard(){
@@ -15501,10 +15611,19 @@ function openLoadIntake(){
   // Stage 1: Input pane
   const stage1 = document.createElement('div');
   stage1.innerHTML = `
-    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Paste a load confirmation or type load details. We'll parse it and show you exactly what was found before scoring.</p>
-    <textarea id="liRawText" class="input" rows="7" placeholder="Paste load text here — rate confirmation, load board copy, or free text…" style="width:100%;box-sizing:border-box;resize:vertical;font-size:13px;line-height:1.5;font-family:monospace"></textarea>
+    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Share a screenshot of the load, or paste the text. Either way you review what was found before anything is scored.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn" id="liShot" style="flex:1;font-size:13px;min-height:44px">📷 Screenshot</button>
+      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:44px">🖼️ Photos / Files</button>
+    </div>
+    <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
+    <input type="file" id="liImgFile" accept="image/jpeg,image/png,image/webp" style="display:none" />
+    <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
+    <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
+    <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
+    <textarea id="liRawText" class="input" rows="7" placeholder="…or paste load text here — rate confirmation, load board copy, or free text" style="width:100%;box-sizing:border-box;resize:vertical;font-size:16px;line-height:1.5;font-family:monospace"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn primary" id="liParse" style="flex:1;font-size:13px">Parse Load →</button>
+      <button class="btn primary" id="liParse" style="flex:1;font-size:13px;min-height:44px">Parse Load →</button>
     </div>
     <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
   body.appendChild(stage1);
@@ -15558,7 +15677,8 @@ function openLoadIntake(){
       <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Commodity / Notes</label>
       <input id="liNotes" type="text" class="input" style="width:100%;box-sizing:border-box" />
     </div>
-    <div id="liConfidence" style="margin-bottom:14px;font-size:11px;color:var(--text-tertiary)"></div>
+    <div id="liConfidence" style="margin-bottom:6px;font-size:11px;color:var(--text-tertiary)"></div>
+    <div id="liReviewNote" style="display:none;margin-bottom:14px;padding:9px 11px;background:rgba(255,149,0,.10);border:1px solid rgba(255,149,0,.35);border-radius:8px;font-size:11.5px;line-height:1.45"></div>
     <div style="display:flex;gap:8px">
       <button class="btn" id="liBack" style="flex:1">← Edit Text</button>
       <button class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
@@ -15573,11 +15693,25 @@ function openLoadIntake(){
   function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
   function getField(id){ return body.querySelector('#'+id); }
 
+  // Deadhead is the one field where blank and 0 are DIFFERENT FACTS, and this
+  // path could express neither. `intNum('')` returns 0 (Number('') is 0), and
+  // `intNum(0) || ''` returns '' -- so an unstated deadhead and an operator's
+  // verified "I am sitting on the pickup" zero both arrived here as an empty
+  // box, and readDraftFields() then handed a fabricated 0 to the trip draft.
+  // That is the v24.0.4 item-2 defect (four intake paths) and the v24.0.5
+  // persistence defect, in a fifth place. #252 requires an absent deadhead to
+  // stay UNKNOWN through extraction, review and evaluation, so the whole chain
+  // reads through knownNum() now: null renders blank, 0 renders "0".
+  function deadheadToInput(v){
+    const n = knownNum(v);
+    return (n === null || n < 0) ? '' : String(Math.trunc(n));
+  }
+
   function populateDraft(fields){
     const get = k => fields[k] ?? '';
     getField('liRevenue').value  = posNum(get('pay')) || posNum(get('revenue')) || '';
     getField('liMiles').value    = intNum(get('loadedMiles')) || '';
-    getField('liDead').value     = intNum(get('deadheadMiles')) || '';
+    getField('liDead').value     = deadheadToInput(fields.deadheadMiles);
     getField('liWeight').value   = intNum(get('weight')) || '';
     getField('liOrigin').value   = clampStr(get('origin'),80);
     getField('liDest').value     = clampStr(get('destination'),80);
@@ -15590,7 +15724,9 @@ function openLoadIntake(){
     return {
       pay:           posNum(getField('liRevenue')?.value),
       loadedMiles:   intNum(getField('liMiles')?.value),
-      deadheadMiles: intNum(getField('liDead')?.value),
+      // knownNum, not intNum: a blank box is UNKNOWN and must not become a
+      // verified zero on the trip draft, while a typed 0 must survive as one.
+      deadheadMiles: knownNum(getField('liDead')?.value),
       weight:        intNum(getField('liWeight')?.value),
       origin:        clampStr(getField('liOrigin')?.value.trim(),80),
       destination:   clampStr(getField('liDest')?.value.trim(),80),
@@ -15617,8 +15753,14 @@ function openLoadIntake(){
     }
     const fields = result?.fields || result || {};
     const confidence = result?.confidence ?? result?.score ?? 0;
-    parsed = { fields, confidence, rawText };
+    parsed = { fields, confidence, rawText, source: 'text' };
     populateDraft(fields);
+    // Stage 2 is shared with the screenshot path, so a note from an earlier
+    // image attempt would otherwise describe fields this text parse never saw.
+    const noteEl = getField('liReviewNote');
+    if (noteEl){ noteEl.style.display = 'none'; noteEl.innerHTML = ''; }
+    const imgPrev = getField('liImgPreview');
+    if (imgPrev){ imgPrev.style.display = 'none'; imgPrev.removeAttribute('src'); }
     const confEl = getField('liConfidence');
     if (confEl){
       const color = confidence >= 70 ? 'var(--good)' : confidence >= 40 ? 'var(--warn)' : 'var(--bad)';
@@ -15628,8 +15770,109 @@ function openLoadIntake(){
     stage2.style.display = '';
   });
 
+  // ── Screenshot intake (Issue #252) ─────────────────────────────────────────
+  //
+  // Three ways in, because iOS gives no single reliable one: the camera/share
+  // capture, the Photos/Files picker, and a clipboard paste onto the text box.
+  // The picker is the guaranteed path -- programmatic clipboard-image read is
+  // NOT dependable in an installed iOS PWA, so #252 forbids depending on it.
+  //
+  // The image goes to the FreightLogic Worker and comes back as OBSERVATIONS.
+  // It then lands in the SAME draft-review stage a pasted text parse lands in,
+  // and leaves through the SAME "Score This Load" button into the SAME canonical
+  // evaluator. There is deliberately no second pipeline and no second evaluator:
+  // extraction only decides what goes in the boxes, never what the load is worth.
+
+  const CRITICAL_EXTRACT_FIELDS = {
+    pay: 'Revenue', loadedMiles: 'Loaded miles', deadheadMiles: 'Deadhead',
+    origin: 'Origin', destination: 'Destination',
+  };
+
+  function setImgBusy(msg){
+    const el = getField('liImgBusy');
+    if (!el) return;
+    if (!msg){ el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = ''; el.textContent = msg;
+  }
+
+  /** Render what the extractor could and could not read.
+   *
+   *  ABSENT is shown as plainly as UNCERTAIN, and neither is shown as a value.
+   *  A field the model could not see must not be quietly indistinguishable from
+   *  one it read -- that conflation is the defect class this repo keeps finding
+   *  (a blank deadhead scored as zero, an unrecognised market rendered as a
+   *  confident directive), so the review step names the gap instead.
+   */
+  function renderExtractionReview(fieldMeta, provider){
+    const note = getField('liReviewNote');
+    if (!note) return;
+    const uncertain = [], absent = [];
+    for (const key of Object.keys(CRITICAL_EXTRACT_FIELDS)){
+      const st = fieldMeta?.[key]?.state;
+      if (st === 'UNCERTAIN') uncertain.push(CRITICAL_EXTRACT_FIELDS[key]);
+      else if (st === 'ABSENT') absent.push(CRITICAL_EXTRACT_FIELDS[key]);
+    }
+    const parts = [];
+    if (uncertain.length) parts.push(`<b>Check these — read but not clearly:</b> ${escapeHtml(uncertain.join(', '))}.`);
+    if (absent.length)    parts.push(`<b>Not found in the image:</b> ${escapeHtml(absent.join(', '))}. Fill in anything you know.`);
+    if (absent.includes('Deadhead')) parts.push(`Deadhead was left <b>blank on purpose</b> — that means unknown, not zero. Enter <b>0</b> only if you are already at the pickup.`);
+    if (!parts.length) parts.push(`<b>Every key field was read clearly.</b> Confirm them anyway — you are the one who sees the posting.`);
+    note.innerHTML = parts.join('<br>');
+    note.style.display = '';
+    const confEl = getField('liConfidence');
+    if (confEl) confEl.innerHTML = `Read from screenshot${provider ? ' · ' + escapeHtml(String(provider)) : ''} — FreightLogic scores it, not the reader.`;
+  }
+
+  async function handleIntakeImage(file){
+    if (!file) return;
+    hideError();
+    const preview = getField('liImgPreview');
+    try {
+      setImgBusy('Preparing image…');
+      const shrunk = await downscaleImageForExtraction(file);
+      if (preview){ preview.src = shrunk.dataUrl; preview.style.display = ''; }
+      setImgBusy('Reading the load…');
+      const out = await cloudExtractLoadImage(shrunk.dataUrl, shrunk.mime);
+      setImgBusy('');
+      parsed = { fields: out.fields, confidence: null, rawText: '', fieldMeta: out.fieldMeta, source: 'image' };
+      populateDraft(out.fields);
+      renderExtractionReview(out.fieldMeta, out.provider);
+      stage1.style.display = 'none';
+      stage2.style.display = '';
+      haptic();
+    } catch(e){
+      setImgBusy('');
+      if (preview){ preview.style.display = 'none'; preview.removeAttribute('src'); }
+      // Fail closed to the path that always works, and say so.
+      showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.');
+    }
+  }
+
+  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
+  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  for (const id of ['liImgCamera','liImgFile']){
+    stage1.querySelector('#'+id)?.addEventListener('change', (ev)=>{
+      const f = ev.target?.files?.[0];
+      // Reset the input so choosing the SAME file twice still fires change.
+      if (ev.target) ev.target.value = '';
+      handleIntakeImage(f);
+    });
+  }
+  // Clipboard paste: a convenience on top of the picker, never the only way in.
+  stage1.querySelector('#liRawText')?.addEventListener('paste', (ev)=>{
+    const items = ev.clipboardData?.items || [];
+    for (const it of items){
+      if (it.kind === 'file' && String(it.type||'').startsWith('image/')){
+        const f = it.getAsFile();
+        if (f){ ev.preventDefault(); handleIntakeImage(f); return; }
+      }
+    }
+  });
+
   // The Load Intake voice control was removed with the rest of Voice Load
-  // (Issue #230, v24.0.17). Paste and type remain the intake paths.
+  // (Issue #230, v24.0.17). Paste, type and screenshot are the intake paths;
+  // nothing here reintroduces a speech recognizer or any Voice wording, and
+  // RH-04 asserts that by absence rather than taking this comment's word for it.
 
   // Back to edit text
   stage2.querySelector('#liBack').addEventListener('click', ()=>{
@@ -15647,7 +15890,10 @@ function openLoadIntake(){
     const orig = $('#mwOrigin'), dest = $('#mwDest'), brk = $('#mwBroker');
     if (rev && f.pay)          { rev.value  = f.pay;          rev.dispatchEvent(new Event('input')); }
     if (mi  && f.loadedMiles)  { mi.value   = f.loadedMiles;  mi.dispatchEvent(new Event('input')); }
-    if (dead && f.deadheadMiles){ dead.value = f.deadheadMiles; dead.dispatchEvent(new Event('input')); }
+    // `if (f.deadheadMiles)` dropped an explicit 0, leaving #mwDeadMi blank --
+    // which the evaluator correctly reads as UNKNOWN, so a driver who told us
+    // the deadhead was zero got asked for it again and the load went ungraded.
+    if (dead && knownNum(f.deadheadMiles) !== null){ dead.value = String(knownNum(f.deadheadMiles)); dead.dispatchEvent(new Event('input')); }
     if (orig && f.origin)      { orig.value = f.origin;       orig.dispatchEvent(new Event('input')); }
     if (dest && f.destination) { dest.value = f.destination;  dest.dispatchEvent(new Event('input')); }
     if (brk && f.broker)       { brk.value  = f.broker;       brk.dispatchEvent(new Event('input')); }
@@ -15989,6 +16235,77 @@ async function cloudExtractLoad(rawText){
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
   return data.fields;
+}
+
+/** Downscale and re-encode a screenshot before upload (Issue #252).
+ *
+ *  A modern iPhone screenshot is a 3-4MB PNG; the legible text in a load posting
+ *  survives 1600px on the long edge at JPEG q0.82 with room to spare. This is
+ *  deliberately the ONLY image processing done on the device: #252 requires no
+ *  heavyweight browser OCR, and the v24.0.17 removal of the Tesseract CDN
+ *  fallback is what that requirement protects.
+ *
+ *  Re-encoding through a canvas also strips EXIF -- including GPS -- as a side
+ *  effect of drawing pixels into a new bitmap, which is the privacy handling
+ *  #252 asks for. It is stated here because it is easy to remove by accident
+ *  while "optimizing" this function later.
+ *
+ *  Returns { dataUrl, mime, bytes } or throws a user-facing message.
+ */
+async function downscaleImageForExtraction(file, maxEdge = 1600, quality = 0.82){
+  if (!file) throw new Error('No image selected.');
+  if (file.size > LIMITS.MAX_RECEIPT_BYTES * 4){
+    throw new Error('That image is too large to send. Take a screenshot rather than a photo of the screen.');
+  }
+  const bitmapUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('That file could not be read as an image.'));
+      i.src = bitmapUrl;
+    });
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error('That file could not be read as an image.');
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('This browser cannot process images.');
+    ctx.drawImage(img, 0, 0, cw, ch);
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    const b64 = dataUrl.split(',')[1] || '';
+    // Rough decoded size; the Worker enforces the real ceiling before it reads.
+    const bytes = Math.floor(b64.length * 3 / 4);
+    return { dataUrl, mime: 'image/jpeg', bytes };
+  } finally {
+    URL.revokeObjectURL(bitmapUrl);
+  }
+}
+
+/** Call /extract-image on the Worker to read a load screenshot (Issue #252).
+ *
+ *  Returns { fields, fieldMeta, provider, model }. The provider key lives only in
+ *  Worker secrets, so the browser gains no new script origin and the CSP is
+ *  untouched -- `connect-src` already allows this exact endpoint.
+ *
+ *  Throws with a user-facing message. Every failure path here is a fall back to
+ *  typing or pasting, never a partially-trusted extraction: an empty-but-confident
+ *  load is worse than no load, because the evaluator would price whatever survived.
+ */
+async function cloudExtractLoadImage(dataUrl, mime){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) throw new Error('Cloud backup is not connected. Screenshot reading runs on the FreightLogic server — connect in Settings, or paste the load text instead.');
+  const url = (await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL;
+  const res = await cloudFetch(url + '/extract-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
+    body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
+  }, 45000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not read that screenshot.');
+  return { fields: data.fields || {}, fieldMeta: data.fieldMeta || {}, provider: data.provider, model: data.model };
 }
 
 async function cloudTestConnection(){
@@ -21051,6 +21368,7 @@ async function renderTripTrackingUI() {
     ob.querySelector('#f21ObDismiss')?.addEventListener('click', f21Dismiss);
     ob.addEventListener('click', f21Dismiss);
     slot.insertBefore(ob, slot.firstChild);
+    markOnboardingExposure(ob, 'f21OnboardingSeen');
   }
   let trackDiv = $('#f21TrackArea');
   if (!trackDiv) {
@@ -21495,6 +21813,7 @@ async function renderPositioningCard(overrideCity, isExploring) {
       const f24Dismiss = async () => { await setSetting('f24OnboardingSeen', true); ob.remove(); };
       ob.querySelector('#f24ObDismiss')?.addEventListener('click', f24Dismiss);
       slot.insertBefore(ob, card);
+      markOnboardingExposure(ob, 'f24OnboardingSeen');
     }
   }
 
@@ -21989,6 +22308,7 @@ async function renderMoneyCard() {
       ob.querySelector('#f22ObDismiss')?.addEventListener('click', f22Dismiss);
       ob.addEventListener('click', f22Dismiss);
       slot.insertBefore(ob, card);
+      markOnboardingExposure(ob, 'f22OnboardingSeen');
     }
   }
 
@@ -22413,6 +22733,7 @@ async function renderLoadInbox() {
       await setSetting('f23OnboardingSeen', true); ob.remove();
     });
     card.appendChild(ob);
+    markOnboardingExposure(ob, 'f23OnboardingSeen');
   }
 
   _renderInboxInput(card);
@@ -22741,6 +23062,12 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // whose exhaustion a DOM test can only observe by relaunching three times;
     // asserting the rule directly is what makes the boundary exact.
     shouldShowOnboarding, ONBOARD_VIEW_BUDGET, MORE_TILES, MORE_GROUPS,
+    // Issue #252 + the carried-forward onboarding-exposure repair. Exposure is
+    // now MEASURED, so the regression needs the measuring seam itself, not just
+    // the decision helper -- asserting shouldShowOnboarding() alone would pass
+    // against the very defect this repair fixes.
+    markOnboardingExposure, _countOnboardingExposure, ONBOARD_EXPOSURE_RATIO,
+    downscaleImageForExtraction, cloudExtractLoadImage, openLoadIntake, knownNum,
     // Issue #216 — the single position resolver and the market classifier both
     // surfaces share. Exposed so a regression can assert the ORDERING and the
     // UNKNOWN state directly, not only through two rendered surfaces agreeing.
