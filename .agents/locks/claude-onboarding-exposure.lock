@@ -1,0 +1,11 @@
+owner: claude
+token: 6f1c2b7e-9d3a-4a05-8e17-2c4b9f0d58aa
+started_utc: 2026-09-18T09:45:00Z
+expected_release_utc: 2026-09-18T15:45:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js
+task: GPT handoff claude-to-gpt... v24020-onboarding-exposure-2026-09-18. The v24.0.20 onboarding
+  budget counts a shouldShowOnboarding() call as exposure, so a card below the fold can retire
+  after three launches without ever being seen. Tighten the signal to real on-screen exposure,
+  keep durable retirement / explicit dismissal / warning exclusions / serialized onboardViews
+  writes, and prove an unobserved card does not spend its budget. Runtime change on a LIVE
+  generation, so a generation bump and the full suite are both required.
