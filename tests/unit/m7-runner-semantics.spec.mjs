@@ -209,6 +209,48 @@ test('[M7-08] a state document with no parseable Status fails closed', () => {
   ok(/NOT CERTIFIABLE/.test(out), 'an unparseable state document must never read as permission to proceed');
 });
 
+test('[M7-11] a Supersedes: reference written the way the real documents write it actually registers', () => {
+  // Every real document in docs/ writes its Supersedes: value as `docs/NAME.md`
+  // — backticked, directory-prefixed — because that is what reads correctly as
+  // prose. The resolver compares against bare basenames, so every one of those
+  // references was inert. M7-06 could not see it: its fixture writes bare
+  // filenames, which is the one form the repository does not use.
+  //
+  // This is not hypothetical. The 2026-09-12 addendum exists because a document
+  // had to be written by hand to close a branch "left by the 2026-09-03 record's
+  // path-formatted supersession value" — the defect was observed once, worked
+  // around in prose, and left in the parser.
+  const dir = path.join(ROOT, 'docs');
+  const held = readdirSync(dir).filter(f =>
+    /^COMPLETION_RELEASE_CERTIFICATION_(STATE|ADDENDUM)_\d{4}-\d{2}-\d{2}\.md$/.test(f));
+
+  ok(/NOT CERTIFIABLE/.test(runCertify().out), 'the real current HOLD blocks certification');
+
+  const synthetic = path.join(dir, 'COMPLETION_RELEASE_CERTIFICATION_STATE_2099-01-04.md');
+  const before = held.map(f => readFileSync(path.join(dir, f), 'utf8'));
+  writeFileSync(synthetic, [
+    '# Synthetic certification state (test fixture)',
+    '',
+    'Date: 2099-01-04',
+    // The exact shape the repository uses, not the shape the parser happened to accept.
+    `Supersedes: ${held.map(f => '`docs/' + f + '`').join(', ')}`,
+    'Status: **CERTIFIED — completion release approved**',
+    '',
+  ].join('\n'));
+  let out;
+  try { out = runCertifyFresh().out; } finally { unlinkSync(synthetic); }
+
+  ok(!/canonical release state is HOLD/.test(out),
+     'a backticked docs/-prefixed Supersedes: reference must resolve to the document it names');
+  ok(/CERTIFIED/.test(out), 'and the superseding state becomes the current one');
+
+  held.forEach((f, i) => {
+    eq(readFileSync(path.join(dir, f), 'utf8'), before[i],
+       `${f} must not be edited — normalizing the reference is what keeps history immutable`);
+  });
+  ok(/NOT CERTIFIABLE/.test(runCertifyFresh().out), 'removing the superseding state restores the hold');
+});
+
 export async function runSpec(){ return await run(); }
 if (import.meta.url === `file://${process.argv[1]}`){
   const r = await runSpec();

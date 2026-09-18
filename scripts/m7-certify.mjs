@@ -58,6 +58,23 @@ const ok = (name, pass, detail='') => gate(name, pass ? PASS : FAIL, detail);
 // A superseded file remains on disk as evidence and stops being current state.
 // The release is held while ANY non-superseded document declares a hold.
 // Missing, unreadable or unparseable state fails closed.
+// A `Supersedes:` value is compared against a BARE BASENAME, so the reference has
+// to be reduced to one. Every real document in `docs/` writes it the way prose
+// wants it — `` `docs/NAME.md` `` — and every one of those references was
+// therefore inert: the supersession silently did not register and the superseded
+// document stayed "current". It cost nothing while every document held, which is
+// exactly why it survived: the resolver still returned held=true, by a different
+// route. The day one of them was meant to clear, six stale HOLDs would have held
+// the release and the reported source would have been a document nobody had read
+// in two weeks. Normalizing the REFERENCE keeps the historical files untouched,
+// which blocker 5 requires; editing six documents to match a parser is the
+// rewriting-history move this rule exists to forbid.
+function supersededBasename(raw){
+  const t = String(raw).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
+  const slash = t.lastIndexOf('/');
+  return slash === -1 ? t : t.slice(slash + 1);
+}
+
 function readCanonicalReleaseState(){
   const dir = path.join(ROOT, 'docs');
   let files = [];
@@ -77,7 +94,7 @@ function readCanonicalReleaseState(){
     const status = (text.match(/^Status:\s*(.+)$/m) || [,''])[1].trim();
     if (!status) return { held: true, source: f, status: `certification-state document ${f} declares no Status:` };
     const sup = (text.match(/^Supersedes:\s*(.+)$/m) || [,''])[1].trim();
-    for (const name of sup.split(',').map(x => x.trim()).filter(Boolean)) superseded.add(name);
+    for (const name of sup.split(',').map(supersededBasename).filter(Boolean)) superseded.add(name);
     docs.push({ file: f, status });
   }
 
