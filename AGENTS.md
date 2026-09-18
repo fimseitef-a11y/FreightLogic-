@@ -156,7 +156,13 @@ A red baseline is evidence, not permission to alter the safety net. If the basel
 
 - Claude task branches: `agent/claude/<task>` or `claude/<task>`; commit prefix `[claude]`.
 - GPT task branches: `agent/gpt/<task>` or `chatgpt/<task>`; commit prefix `[gpt]`.
-- Those four namespaces are the complete set. A branch outside them fails the `commit-prefix` CI check rather than being silently accepted; add the namespace here first if a new one is genuinely needed.
+- Those four namespaces are the complete set **for agents**. A branch outside them fails the `commit-prefix` CI check rather than being silently accepted; add the namespace here first if a new one is genuinely needed.
+- **Managed bots are not agents** (Issue #222). Dependabot opens `dependabot/github_actions/<group>` with the `[deps]` prefix its `.github/dependabot.yml` configures. It gets a lane of its own because both obvious alternatives are wrong: mapping it to `claude` would hand a bot an entire agent lane, and exempting it from Lanes would remove the check from the one privileged path here — workflows run with repository credentials, which is why `tests/unit/workflow-authority.spec.mjs` exists at all. Its lane is strictly narrower than either agent's:
+  - matched **only** on `dependabot/github_actions/*`, never `dependabot/*`, so an ecosystem this repository does not configure still fails closed;
+  - may edit **only** `.github/workflows/**` — a permission ceiling, never ownership, so it applies regardless of who owns those paths in `.agents/LANES.md`;
+  - **cannot** edit `.github/dependabot.yml`, because a bot that can rewrite its own configuration can widen its own ceiling;
+  - cannot hold a lock, cannot own a `LANES.md` row, and cannot touch a `SHARED` path.
+  `MANAGED_BOTS` in `scripts/lane-guard.mjs` is the enforcement and `tests/unit/lane-guard.spec.mjs` `LG-BOT-01`…`LG-BOT-05` keep it narrow. Adding a bot or widening a ceiling is a deliberate edit in both places, never a silent one.
 - Never force-push.
 - Never push to the other agent's branch namespace.
 - Rebase task branches onto current `main` before integration when safe to do so; locks do not live on task branches.
