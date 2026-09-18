@@ -339,6 +339,103 @@ test('[FIELD CERT / NEW] FC-12 every A1-A12 row is a guided evidence instrument,
   }
 });
 
+
+test('[FIELD CERT / NEW] FC-13 safe automated environment observations record cache-generation and persistent-storage facts without auto-passing rows', async () => {
+  const app = await launchBlank();
+  try {
+    await app.page.addInitScript(() => {
+      try {
+        if (navigator.storage) {
+          Object.defineProperty(navigator.storage, 'persisted', { configurable: true, value: async () => true });
+        }
+      } catch {}
+      try {
+        if (typeof CacheStorage !== 'undefined') {
+          Object.defineProperty(CacheStorage.prototype, 'keys', {
+            configurable: true,
+            value: async () => ['freightlogic-24.0.19', 'freightlogic-share-v2']
+          });
+        } else if (window.caches) {
+          window.caches.keys = async () => ['freightlogic-24.0.19', 'freightlogic-share-v2'];
+        }
+      } catch {}
+    });
+    await app.page.route('**/manifest.json*', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ name: 'FreightLogic v24.0.19', short_name: 'FreightLogic' }),
+    }));
+    const page = await openRunner(app);
+    await startCertification(page, { candidate: '24.0.19' });
+
+    const a1Auto = (await gate(page, 'A1').locator('[data-automated-observation]').textContent()) || '';
+    eq(/generation cache/i.test(a1Auto), true, 'A1 must record the generation-cache observation');
+    eq(/MATCH/i.test(a1Auto), true, 'exactly one matching generation cache should be reported as MATCH');
+    eq(/freightlogic-share-v2.*excluded/i.test(a1Auto), true, 'the share cache must be explicitly excluded from generation counting');
+
+    const a11Auto = (await gate(page, 'A11').locator('[data-automated-observation]').textContent()) || '';
+    eq(/storage\.persisted\(\).*GRANTED/i.test(a11Auto), true,
+      'A11 must record the browser persistent-storage grant directly');
+
+    eq(await gateStatus(page, 'A1'), 'NOT_RUN', 'automated A1 observations must never auto-certify the physical row');
+    eq(await gateStatus(page, 'A11'), 'NOT_RUN', 'automated A11 observations must never auto-certify the physical row');
+  } finally {
+    await app.close();
+  }
+});
+
+test('[FIELD CERT / NEW] FC-14 A5 export inspection is structure-only, detects protected field names, and preserves null-vs-zero deadhead evidence', async () => {
+  const app = await launchBlank();
+  try {
+    const page = await openRunner(app);
+    await startCertification(page);
+    await startGate(page, 'A5');
+    const row = gate(page, 'A5');
+
+    const protectedValues = ['TOP_SECRET_TOKEN', '1234', 'cipher-secret', '1700000000'];
+    const payload = {
+      settings: {
+        cloudBackupToken: protectedValues[0],
+        appLockPin: protectedValues[1],
+        cloudAdminTokenEnc: protectedValues[2],
+        appLockoutUntil: protectedValues[3],
+      },
+      trips: [
+        { id: 'synthetic-null', emptyMiles: null },
+        { id: 'synthetic-zero', emptyMiles: 0 },
+      ],
+    };
+
+    await row.locator('[data-a5-export]').setInputFiles({
+      name: 'synthetic-export.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(payload)),
+    });
+    await page.waitForFunction(() => {
+      const text = document.querySelector('[data-gate="A5"] [data-automated-observation]')?.textContent || '';
+      return text.includes('A5 export structure');
+    });
+
+    const auto = (await row.locator('[data-automated-observation]').textContent()) || '';
+    for (const key of ['cloudBackupToken', 'appLockPin', 'cloudAdminTokenEnc', 'appLockoutUntil']) {
+      eq(auto.includes(key), true, 'A5 may report protected field name ' + key);
+    }
+    for (const value of protectedValues) {
+      eq(auto.includes(value), false, 'A5 structure-only observation must never retain protected value ' + value);
+    }
+    eq(/deadhead null=1/i.test(auto), true, 'A5 must report one preserved UNKNOWN/null deadhead');
+    eq(/deadhead zero=1/i.test(auto), true, 'A5 must report one explicit zero deadhead');
+    eq(await gateStatus(page, 'A5'), 'RUNNING', 'A5 export automation remains advisory and cannot close the physical row');
+
+    const stored = await page.evaluate(key => localStorage.getItem(key) || '', STORE_KEY);
+    for (const value of protectedValues) {
+      eq(stored.includes(value), false, 'persisted certification evidence must not retain inspected export value ' + value);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
