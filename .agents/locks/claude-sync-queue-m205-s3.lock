@@ -2,5 +2,5 @@ owner: claude
 token: 9713abd3-3411-41e1-863a-0feb19205084
 started_utc: 2026-09-17T22:15:00Z
 expected_release_utc: 2026-09-18T06:15:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json, .agents/inbox/, .agents/STATUS.md
-task: Issue #205 section 3 - automatic cloud sync. Durable pending-change queue so manual Backup is never the normal workflow: auto-enqueue on every listed mutation, offline-durable, idempotent retry-safe drain, and the Synced / N changes waiting / Offline / Sync problem status surface. Preserves session-scoped passphrase rule and existing delta/conflict semantics.
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json, .agents/inbox/, .agents/STATUS.md, AGENTS.md
+task: Issue #205 section 3 + its #240 P0 follow-up + #224 harness + #222 managed-bot lane. Issue #205 section 3 - automatic cloud sync. Durable pending-change queue so manual Backup is never the normal workflow: auto-enqueue on every listed mutation, offline-durable, idempotent retry-safe drain, and the Synced / N changes waiting / Offline / Sync problem status surface. Preserves session-scoped passphrase rule and existing delta/conflict semantics.
