@@ -1,4 +1,4 @@
-# Completion release certification state — production 24.0.19 / DB16 / Worker v20
+# Completion release certification state — production 24.0.20 / DB16 / Worker v20
 
 Date: 2026-09-18
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-17.md, COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-12.md
@@ -207,3 +207,66 @@ This is the third consecutive document written to correct that exact lapse. The 
 inattention; it is that deploying leaves no commit. Until something in the pipeline writes the
 observation down automatically, the superseding document is part of the deploy, not part of the
 merge.
+
+---
+
+## Update, later the same day — production is 24.0.20, observed
+
+Everything above was written when production served **24.0.19**, and it is left exactly as it
+was: that observation happened and the runs it cites are permanent provenance. This section
+records what happened next on the same date, which is what this document's own rule requires —
+a superseding record is due **the day a shipped file deploys**, not the day it merges.
+
+**v24.0.20 "One Of Each"** (Issue #205, the driver-first UX/IA restructure of Today and More)
+merged as `c72b521` and is **DEPLOYED and OBSERVED LIVE**. `DB_VERSION` stays **16** and the
+Worker stays **v20** — no schema and no Worker semantics changed, so nothing in the Worker
+evidence above is superseded.
+
+| Gate | Run | Result |
+|---|---|---|
+| Verify Live Parity (`workflow_dispatch`, `main` @ `c72b521`, job `105550696482`) | `35329623870` | **VERDICT: PASS** |
+| Verify Production Service Worker (`workflow_dispatch`, same SHA, job `105550715072`) | `35329629590` | **VERDICT: PASS** |
+| Tests (push, same SHA) | `35328708573` | success |
+| CodeQL (push, same SHA) | `35328708610` | success |
+
+Parity observed, in the verifier's own words: `app.js` and `sw-bridge.js` at **24.0.20**,
+`index.html` **not** referencing `voice-load.js`, service worker **24.0.20**, `sw-bridge`
+importing and the worker precaching `modern-shell.js` at 24.0.20, manifest name
+`FreightLogic v24.0.20`, Worker `/health` `{"ok":true,"version":"20"}`, **all 22** declared
+runtime assets loading with none served as HTML, CSP byte-identical, and **20** repository-only
+paths confirmed non-public.
+
+The service-worker gate adds what delivery alone cannot prove: the precache is
+`freightlogic-24.0.20` carrying all 22 assets, `admin-driver-ui.js` and
+`midwest-stack-authority.js` are injected **and fetchable as script**, an offline subresource
+miss is `504 text/plain` rather than the HTML shell, a drifted `?v=` self-heals offline, the
+cached shell requests `?v=24.0.20`, exactly one generation cache survives, and **after reload
+the driver shell renders five tabs and a visible Today surface with no uncaught page errors** —
+which is the restructure itself, observed in production rather than asserted from source.
+
+**The push race recurred, for the eighth recorded time, and must not be cited.** Both live
+workflows also fired on the merge push and both FAILED — `35328708869` at 09:17:07Z (14 seconds
+after the merge) and `35328708543` at 09:17:26Z (33 seconds). They observed the previous
+generation while Cloudflare was still deploying. The re-dispatched runs above are the
+observation of record. A re-dispatch that failed *the same way* would be evidence, as it was
+for the v24.0.17 Worker-generation mismatch; these passed.
+
+### Status is unchanged, and that is the point
+
+**HOLD**, on exactly one gate: physical iPhone **A1-A12**, deferred by the operator's
+2026-09-16 decision to the final post-v24.5 candidate. Deploying a generation does not promote
+it into a certification candidate, and nothing in this update changes the deferral, Gate C's
+outstanding conflict review, or the P-01/P-02 token-rotation residue in `AUDIT_REPORT.md`.
+
+### One limitation in the resolver, recorded rather than worked around
+
+`readCanonicalReleaseState()` in `scripts/m7-certify.mjs` discovers documents matching
+`COMPLETION_RELEASE_CERTIFICATION_(STATE|ADDENDUM)_YYYY-MM-DD.md` — an exact date, no suffix.
+**Two certification events on one calendar day are therefore unrepresentable as two documents**:
+a `…_2026-09-18b.md` would not be discovered at all, and would supersede nothing while appearing
+to. That is why this is an appended section in the same-date document rather than a new file,
+and it is written down instead of being quietly routed around — the same file's own history
+records a document hand-written to dodge a parser bug while the parser kept the bug. The
+alternatives were worse: a future-dated filename would be false, and rewriting the sections
+above would destroy the 24.0.19 observation, which blocker 5 forbids. Widening the pattern needs
+its own regression and negative control and is not done under a release observation.
