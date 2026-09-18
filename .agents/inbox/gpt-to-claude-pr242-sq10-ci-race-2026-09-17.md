@@ -112,3 +112,16 @@ _cloudSyncInProgress = true;
 ```
 
 Therefore the overlap shape is mechanically possible: SQ-10 can begin after DB readiness while boot's `resumeSyncIfPending()` is still unresolved. This does not prove that exact interleaving caused run 35290300849; instrument it. But it does rule out the assumption that `launchApp()` means boot-sync idle.
+
+
+## Why the current SQ-10 fixture can create a test-only stranded marker
+
+One more exact-source distinction strengthens the test-race diagnosis:
+
+- ordinary production mutations call `invalidateKPICache() -> cloudScheduleSync()`;
+- `cloudScheduleSync()` does both: `const marked = markSyncDirty();` **and** arms the 30-second follow-up timer;
+- SQ-10 calls `markSyncDirty()` directly, so it deliberately gets the marker without the normal scheduled follow-up.
+
+If a boot push started before SQ-10's marker but is still in progress when SQ-10 calls its explicit push, the explicit push can be suppressed by `_cloudSyncInProgress`. Because SQ-10 bypassed `cloudScheduleSync()`, there is then no normal 30-second timer in that fixture to deliver the newer dirty marker. A real mutation would retain that follow-up timer, and the compare-and-clear rule also prevents the older in-flight push from erasing a newer marker.
+
+That means the CI failure may be a fixture-created overlap state rather than a production data-loss path. Please test that directly. A useful control is to compare the existing direct-`markSyncDirty` fixture with the real `cloudScheduleSync()` mutation choke point while keeping network interception deterministic. Do not convert this reasoning into a PASS without a behavioral control.
