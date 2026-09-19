@@ -22,7 +22,7 @@ the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c
 deployed and observed the same day: live parity run `35329623870` (`workflow_dispatch` on `main`,
 job `105550696482`, `VERDICT: PASS`) and the production service-worker gate run `35329629590`
 (job `105550715072`, `VERDICT: PASS`). `DB_VERSION` stays **16** and the Worker stays **v20**, so
-the Worker evidence in the paragraph below is unchanged and still current.
+the Worker evidence in this historical paragraph was current for that observation; the later v24.0.21 / Worker v21 production observation above supersedes it as current state.
 
 Parity observed: `app.js` and `sw-bridge.js` at **24.0.20**, `index.html` not referencing
 `voice-load.js`, service worker 24.0.20, `sw-bridge` importing and the worker precaching
