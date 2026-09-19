@@ -418,6 +418,7 @@ async function scoreLoad(page, { revenue, loaded, dead, origin, dest }) {
     return {
       all: (out?.innerText || ''),
       upFront: (clone?.innerText || ''),
+      detailsText: (details?.innerText || ''),
       detailsOpen: details ? details.hasAttribute('open') : null,
     };
   });
@@ -460,7 +461,8 @@ test('[SSI-15] the compact facts are READ from the canonical decision, never rec
     const upFrontRpm = /\$(\d+\.\d{2})/.exec(r.upFront.slice(r.upFront.search(/True RPM/i)));
     ok(upFrontRpm, `no True RPM found up front: ${r.upFront.slice(0, 300)}`);
     eq(upFrontRpm[1], '3.00', 'the compact strip must print the canonical total-mile True RPM');
-    ok(r.all.includes('3.00'), 'and the detailed math must agree with it');
+    ok(/3\.00/.test(r.detailsText),
+      `the collapsed detailed math must independently contain the same 3.00 True RPM, got: ${r.detailsText.slice(0, 500)}`);
   } finally { await app.close(); }
 });
 
