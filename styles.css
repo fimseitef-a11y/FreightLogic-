@@ -2225,3 +2225,46 @@ html, body, button, input, select, textarea {
   padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
 }
+
+.fl-eval-bid-grid {
+  display: grid;
+  grid-template-columns: .85fr 1.3fr .85fr;
+  gap: 7px;
+  margin-top: 5px;
+  align-items: stretch;
+}
+.fl-eval-bid {
+  display: grid;
+  align-content: center;
+  min-height: 58px;
+  padding: 7px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  background: var(--surface-1);
+}
+.fl-eval-bid.primary {
+  min-height: 68px;
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+}
+.fl-eval-bid-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .45px;
+  text-transform: uppercase;
+}
+.fl-eval-bid-value {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+.fl-eval-bid.primary .fl-eval-bid-label {
+  color: var(--accent);
+}
+.fl-eval-bid.primary .fl-eval-bid-value {
+  font-size: 22px;
+  color: var(--accent);
+}
