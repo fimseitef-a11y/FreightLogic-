@@ -77,6 +77,7 @@ import { runSpec as releaseGenerationDiscipline } from './unit/release-generatio
 import { runSpec as fullRepairRegressions } from './integration/full-repair-regressions.spec.mjs';
 import { runSpec as workerInviteClaim } from './unit/worker-invite-claim.spec.mjs';
 import { runSpec as workerVisionExtract } from './unit/worker-vision-extract.spec.mjs';
+import { runSpec as visionBenchmark } from './unit/vision-benchmark.spec.mjs';
 import { runSpec as liveInviteClaimGate } from './unit/live-invite-claim-gate.spec.mjs';
 import { runSpec as vehicleProfileRace } from './integration/vehicle-profile-race.spec.mjs';
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
@@ -109,6 +110,7 @@ const specs = [
   workerTokenAuthority,
   workerInviteClaim,
   workerVisionExtract,
+  visionBenchmark,
   liveInviteClaimGate,
   vehicleProfileRace,
   zeroTokenOnboarding,
