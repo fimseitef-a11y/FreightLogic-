@@ -49,19 +49,50 @@ const LIVE_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.png':'image/png', '.webmanifest':'application/manifest+json' };
 
+/**
+ * Serve the working copy on an ephemeral loopback port.
+ *
+ * The request path is CONTAINED to ROOT rather than joined onto it. CodeQL
+ * flagged the join form as a high-severity path traversal on this file's own
+ * PR, and it was right: `path.join(ROOT, '../../etc/passwd')` escapes ROOT
+ * happily, and percent-encoding hides the dots from any naive `..` scan.
+ *
+ * "It only binds to 127.0.0.1 and lives for one run" is a reason the blast
+ * radius is small, not a reason the hole is closed — and that argument is
+ * exactly how holes stay open. Containment is three cheap lines.
+ */
 async function serveLocal() {
   const server = http.createServer(async (req, res) => {
-    const url = (req.url || '/').split('?')[0];
-    const rel = url === '/' ? 'index.html' : url.replace(/^\/+/, '');
+    const deny = (code, msg) => { res.writeHead(code, { 'Content-Type': 'text/plain' }); res.end(msg); };
+    let rel;
     try {
-      const buf = await fs.readFile(path.join(ROOT, rel));
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(rel)] || 'application/octet-stream' });
+      // Decode BEFORE resolving, or %2e%2e%2f walks straight past the check.
+      rel = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]);
+    } catch { return deny(400, 'bad request'); }
+    if (rel === '/' || rel === '') rel = '/index.html';
+
+    // Resolve, then prove containment with path.relative: a result that is
+    // empty, starts with '..', or is absolute means the path left ROOT.
+    const full = path.resolve(ROOT, '.' + (rel.startsWith('/') ? rel : '/' + rel));
+    const inside = path.relative(ROOT, full);
+    if (inside !== '' && (inside.startsWith('..') || path.isAbsolute(inside))) {
+      return deny(403, 'forbidden');
+    }
+    try {
+      const st = await fsp_stat(full);
+      if (!st.isFile()) return deny(404, 'not found');
+      const buf = await fs.readFile(full);
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(full)] || 'application/octet-stream' });
       res.end(buf);
-    } catch { res.writeHead(404); res.end('not found'); }
+    } catch { deny(404, 'not found'); }
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   return { origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
 }
+
+// A directory read succeeds on some platforms and returns junk; stat first so
+// only regular files are ever served.
+async function fsp_stat(p) { return fs.stat(p); }
 
 // ─── the split, stated honestly ──────────────────────────────────────────────
 
