@@ -74,3 +74,77 @@ Please create a Claude integration branch from current main, bring in the final 
 - Current deploy config still points `ALLOWED_ORIGIN` at the driver origin, so ADMIN-09 intentionally requires the integration change above.
 
 Do not merge/deploy PR #250 as a finished privileged surface until the registered full suite, dedicated-origin deploy, exact CORS and live auth smoke all pass.
+
+## Exact mechanical edits
+
+### `tests/run-all.mjs`
+
+Add this import immediately after the field-certification runner import:
+
+```js
+import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
+```
+
+Add this entry immediately after `fieldCertificationRunner,` in `specs`:
+
+```js
+  adminConsole,
+```
+
+### `.github/workflows/deploy-admin-console.yml`
+
+Use this exact thin workflow; deployment logic stays in GPT-owned `admin-console/deploy.sh`:
+
+```yaml
+name: Deploy Admin Console
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Select DEPLOY to confirm the separate Admin Console deployment'
+        required: true
+        type: choice
+        default: CANCEL
+        options:
+          - CANCEL
+          - DEPLOY
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless explicitly confirmed
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Select DEPLOY to run this. Nothing was deployed."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Deploy and verify isolated Admin Console
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
+        run: bash admin-console/deploy.sh
+```
+
+### `scripts/wrangler.backup-worker.jsonc`
+
+Change only this var value:
+
+```jsonc
+"ALLOWED_ORIGIN": "https://freightlogic-admin-console.fimseitef.workers.dev"
+```
+
+Do not add wildcard CORS. The driver production origin remains built into `ALLOWED_ORIGINS` in Worker source.
+
+After these edits, run the full suite before any deploy. ADMIN-09/14 are designed to prove these exact cross-lane edits exist.
+
