@@ -244,12 +244,10 @@ test('[ADMIN-14] repository exposes a confirmed manual deploy path for the separ
   ok(/workflow_dispatch:/.test(workflow), 'Admin Console deployment must be manual-dispatch only');
   ok(/confirm:/.test(workflow) && /DEPLOY/.test(workflow), 'manual deploy must require an explicit DEPLOY confirmation');
   ok(/CLOUDFLARE_API_TOKEN/.test(workflow), 'deploy workflow must use the existing Cloudflare secret rather than a committed credential');
-  ok(/wrangler@4\s+deploy\s+-c\s+admin-console\/wrangler\.jsonc/.test(workflow),
-    'workflow must deploy the isolated admin-console Wrangler config, never the driver/root config');
-  ok(/freightlogic-admin-console\.fimseitef\.workers\.dev/.test(workflow),
-    'post-deploy verification must target the dedicated Admin Console origin');
-  ok(/node\s+admin-console\/verify-live\.mjs/.test(workflow),
-    'workflow must run the committed no-secret live verifier after deployment');
+  ok(/bash\s+admin-console\/deploy\.sh/.test(workflow),
+    'workflow must delegate to the fail-closed Admin Console deployment wrapper');
+  ok(!/wrangler@4\s+deploy/.test(workflow),
+    'workflow must not duplicate Wrangler deployment logic already owned by admin-console/deploy.sh');
 });
 
 
