@@ -150,11 +150,17 @@ test('[ADMIN-08] revoke uses only DELETE /admin/users/:id and no freight-data en
   }
 });
 
-test('[ADMIN-09] production Worker CORS remains exact-match, never wildcard', async () => {
+test('[ADMIN-09] production Worker CORS remains exact-match and names the dedicated admin origin', async () => {
   const worker = await text('cloud-backup-worker.js');
   ok(worker.includes('requestOrigin === configuredOrigin'), 'Worker must exact-match the configured admin origin');
   ok(worker.includes("ALLOWED_ORIGINS.has(requestOrigin)"), 'Worker must exact-match built-in approved origins');
   ok(!/Access-Control-Allow-Origin['\"]?\s*:\s*['\"]\*/.test(worker), 'Worker must never emit wildcard CORS');
+
+  const deployConfig = await text('scripts/wrangler.backup-worker.jsonc');
+  ok(
+    deployConfig.includes('"ALLOWED_ORIGIN": "https://freightlogic-admin-console.fimseitef.workers.dev"'),
+    'backup/API Worker deploy config must allow exactly the dedicated Admin Console origin; the driver production origin remains built into ALLOWED_ORIGINS'
+  );
 });
 
 test('[ADMIN-10] console refuses to initialize on the driver origin', async () => {
@@ -230,6 +236,18 @@ test('[ADMIN-13] Cloudflare asset upload excludes deployment/control-plane files
   for (const file of ['worker.js', 'wrangler.jsonc', 'README.md', '_headers', '.assetsignore']) {
     ok(ignore.split(/\r?\n/).map(x => x.trim()).includes(file), `${file} must not be published as a client static asset`);
   }
+});
+
+
+test('[ADMIN-14] repository exposes a confirmed manual deploy path for the separate Admin Console Worker', async () => {
+  const workflow = await text('.github/workflows/deploy-admin-console.yml');
+  ok(/workflow_dispatch:/.test(workflow), 'Admin Console deployment must be manual-dispatch only');
+  ok(/confirm:/.test(workflow) && /DEPLOY/.test(workflow), 'manual deploy must require an explicit DEPLOY confirmation');
+  ok(/CLOUDFLARE_API_TOKEN/.test(workflow), 'deploy workflow must use the existing Cloudflare secret rather than a committed credential');
+  ok(/wrangler@4\s+deploy\s+-c\s+admin-console\/wrangler\.jsonc/.test(workflow),
+    'workflow must deploy the isolated admin-console Wrangler config, never the driver/root config');
+  ok(/freightlogic-admin-console\.fimseitef\.workers\.dev/.test(workflow),
+    'post-deploy verification must target the dedicated Admin Console origin');
 });
 
 
