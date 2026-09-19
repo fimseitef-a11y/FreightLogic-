@@ -80,7 +80,7 @@
     // `Access-Control-Allow-Origin: *` — which PROVES this var is currently
     // unset in production. Setting it is part of the v14 repair, not an
     // incidental config change.
-    "ALLOWED_ORIGIN": "https://freightlogic-v2.fimseitef.workers.dev"
+    "ALLOWED_ORIGIN": "https://freightlogic-admin-console.fimseitef.workers.dev"
 
     // VISION_PROVIDER / VISION_MODEL are intentionally omitted: the Worker
     // already defaults to `workers-ai` + Moondream 3.1, and pinning either here
