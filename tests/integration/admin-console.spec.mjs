@@ -302,8 +302,8 @@ test('[ADMIN-16] deploy wrapper refuses config drift, dry-runs first, and verifi
   ok(/freightlogic-admin-console/.test(deploy), 'wrapper must pin the dedicated admin Worker identity');
   ok(/wrangler@4\s+deploy\s+-c\s+["']?\$CONFIG["']?\s+--dry-run/.test(deploy),
     'wrapper must dry-run the exact isolated config before deployment');
-  ok(/wrangler@4\s+deploy\s+-c\s+["']?\$CONFIG["']?(?:\s|$)/.test(deploy),
-    'wrapper must deploy the exact isolated config');
+  ok(/^npx --yes wrangler@4 deploy -c "\$CONFIG"$/m.test(deploy),
+    'wrapper must contain a separate real deploy command for the exact isolated config');
   ok(/verify-live\.mjs/.test(deploy), 'wrapper must run the no-secret live verifier after deploy');
   ok(!/deploy\s+-c\s+(?:\.\/)?wrangler\.jsonc/.test(deploy),
     'wrapper must never deploy the repository root/driver Wrangler config');
