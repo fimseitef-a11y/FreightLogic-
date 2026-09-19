@@ -2,23 +2,261 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.22 candidate** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.22 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
 **SOURCE CANDIDATE IS 24.0.22 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.21 / DB16 / Worker v21.**
-v24.0.22 is the governed integration generation for the decision-first compact evaluator result,
-the operator-controlled Standard/Large/Extra Large text-size contract, Driver/Glance Mode, and
-provenance-honest positioning language. It is **source-only until merged, deployed, and observed**.
-DB_VERSION remains 16 and Worker source remains v21; no database migration or Worker generation
-change belongs to this release.
+v24.0.22 integrates the decision-first compact evaluator result, the operator-controlled
+Standard/Large/Extra Large text-size contract, Driver/Glance Mode, and provenance-honest
+positioning language. It is **source-only until merged, deployed, and observed**. DB_VERSION
+remains 16 and Worker source remains v21; no database migration or Worker generation change
+belongs to this release.
 
 The last runtime observation of record before this candidate is v24.0.21 / DB16 / Worker v21:
-main at the post-A13 baseline had full Tests and CodeQL green, live parity run `35408665704`
-PASS, and production service-worker run `35408665721` PASS. Those runs remain evidence for the
-tree they observed; they are not evidence that v24.0.22 is live. After this candidate merges,
-re-dispatch both live gates after Cloudflare propagation rather than citing a push-triggered race.
+live parity run `35408665704` PASS and production service-worker run `35408665721` PASS.
+Those runs remain evidence for the exact tree they observed; they are not evidence that v24.0.22
+is live. After this candidate merges, re-dispatch both live gates after Cloudflare propagation
+rather than citing a push-triggered run that may race deployment.
 
-**HISTORICAL OBSERVATION — v24.0.20.** v24.0.20 was the Issue #205 driver-first UX/IA restructure of Today and More. Its live evidence remains historical evidence for that exact generation; it is superseded as the current production fact by the later v24.0.21 / DB16 / Worker v21 observation above.
+**HISTORICAL OBSERVATION — PRODUCTION SERVED 24.0.20 / DB16 / Worker v20, and BOTH generations were observed.** v24.0.20 is
+the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
+deployed and observed the same day: live parity run `35329623870` (`workflow_dispatch` on `main`,
+job `105550696482`, `VERDICT: PASS`) and the production service-worker gate run `35329629590`
+(job `105550715072`, `VERDICT: PASS`). `DB_VERSION` stays **16** and the Worker stays **v20**, so
+the Worker evidence in the paragraph below is unchanged and still current.
 
+Parity observed: `app.js` and `sw-bridge.js` at **24.0.20**, `index.html` not referencing
+`voice-load.js`, service worker 24.0.20, `sw-bridge` importing and the worker precaching
+`modern-shell.js` at 24.0.20, manifest `FreightLogic v24.0.20`, Worker `/health`
+`{"ok":true,"version":"20"}`, all **22** declared runtime assets loading with none served as HTML,
+CSP byte-identical, **20** repository-only paths non-public. The service-worker gate adds the half
+delivery cannot prove: precache `freightlogic-24.0.20` with all 22 assets, both injected scripts
+fetchable as script, an offline subresource miss `504 text/plain`, a drifted `?v=` self-healing,
+exactly one generation cache, and **after reload the driver shell renders five tabs and a visible
+Today surface with no uncaught errors** — the restructure observed in production, not asserted
+from source.
+
+**The push race recurred for the eighth time and must not be cited.** Both live workflows also
+fired on the merge push and both FAILED — `35328708869` fourteen seconds after the merge and
+`35328708543` at thirty-three seconds — observing the previous generation while Cloudflare was
+still deploying. The re-dispatched runs above are the observation of record. `Tests`
+(`35328708573`) and `CodeQL` (`35328708610`) passed on the same SHA.
+
+*The paragraph immediately below certified **24.0.19** and was the current production fact until
+this deploy. It is kept because the runs it names are permanent provenance for a tree a gate
+actually looked at.*
+
+**PRODUCTION SERVES 24.0.19 / DB16 / Worker v20, and BOTH generations are OBSERVED.** This is the
+first fully-green live parity in the whole v24.0.x line, because it is the first time source and
+production agreed on both generations at once. Live parity run `35291475396`, `workflow_dispatch`
+on `main` @ `eac5994`, job `105435050613`, `VERDICT: PASS`: `app.js`, `sw-bridge.js`, the service
+worker, `modern-shell.js` and the manifest all at **24.0.19**; `index.html` does **not** reference
+`voice-load.js` (the inverted #230 assertion, observed live rather than asserted statically);
+Worker `/health` returning `{"ok":true,"version":"20"}`; all **22** declared runtime assets loading
+with none served as an HTML fallback; CSP byte-identical; and **20** repository-only paths
+confirmed non-public, which is Issue **#228**'s live half. Worker v20 was deployed by run
+`35291404482` with its own post-deploy checks green, and the authenticated Worker gate passed on
+the same generation (run `35291452993` — authority 5/0, backup/delta/restore 21/0, invite/claim
+12/0). That gate fails the job on anything but PASS and `UNOBSERVED` (exit 2) is also non-zero, so
+a success is a **positive observation**, not an absence of objections. The production
+service-worker gate and the full suite were green on `cb0e64c` (runs `35293596430` and
+`35293596434`), whose diff from `eac5994` touches no declared runtime asset.
+
+**Where `main` is now is deliberately not recorded here — re-read it every session.** The SHAs
+above are provenance for runs that happened: they name the exact tree a gate actually looked at,
+and they stay correct permanently. A "current `main` head" is the opposite kind of fact — it is
+wrong again at the next merge, and it went stale within the hour when this very repair merged.
+That is the same drift class this section has now recorded against itself seven times, so the
+head is a lookup, not an entry:
+
+| Fact | Read it from | Never |
+|---|---|---|
+| current `main` head | `git rev-parse origin/main` | a SHA written in this file |
+| app / PWA generation | `APP_VERSION` in `app.js`, `SW_VERSION` in `service-worker.js` | prose in a release section |
+| deployed Worker generation | `GET /health` on the backup Worker origin | the source header alone |
+| certified candidate + its SHA | the one `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_*.md` nothing supersedes | an older state document still on disk |
+| live production agreement | re-dispatch **Verify Live Parity**; `VERDICT: PASS` | a push-triggered run that raced the deploy |
+
+The generation claim at the top of this section holds until a shipped file **deploys** — a
+different event from a merge, which is the entire mechanism: merging leaves a commit, deploying
+leaves nothing. Source moving ahead of production does not make that claim false, it makes it
+*superseded*, and re-verify before repeating it in any release or certification claim.
+
+**Issues #224, #240 and #221 are CLOSED.** `main` may now be described as having all automatable
+gates green — which it could not be for the whole preceding stretch of this file, and the
+paragraphs below that said so were correct when written.
+
+**Exactly one device gate remains: physical iPhone A1-A13**, deferred by the operator's 2026-09-16
+decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconciliation) is no
+longer part of that wait** — it was blocked on access, the operator supplied the five raw
+2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
+review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` is the certification
+authority.
+
+**Recent generations, as history.** Each of these shipped with a "source-only: not deployed"
+note that was true on the day it was written; all three are now live and the notes are superseded:
+
+- **v24.0.19** — the Issue #240 P0. v24.0.18 could report **Synced** over genuinely unsynced
+  data. One change-clock authority now serves both the delta push and the pending summary, a
+  durable `syncDirtyAt` marker carries the settings-only case the record count cannot represent,
+  and an unreadable store fails closed to `UNKNOWN` instead of a confident zero. It also closes
+  **#224**: `waitForFunction` does not await an `async` predicate, so the harness's own readiness
+  probe had been resolving after a single failed poll — measured against the real Playwright
+  build, not deduced. App **24.0.18 → 24.0.19**; DB stays **16**.
+- **v24.0.17** — Voice Load removed completely by operator decision (#230), the import ceiling
+  enforced before materialization (#232), and internal audit/certification documents withheld
+  from the public asset origin (#228). App **24.0.16 → 24.0.17**; DB stays **16**. Declared
+  runtime assets went 23 → **22** with the Voice Load removal, so a 404 for `voice-load.js` is
+  the removal working, not a failed deploy.
+- **v24.0.16** — three trust-boundary security issues (#219 untrusted import installing
+  credentials, #221 the token index outranking the account record plus raw `token=` setup links,
+  #220 the jsDelivr executable fallback) and the #224 readiness / diagnostics work. Worker
+  **v19 → v20**; DB stays **16**.
+
+**Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
+
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v21 source / v21 deployed** carries #252's `POST /extract-image` vision route, PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+
+*This overview has now carried a superseded production claim **seven** times. Before this
+correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
+live-observed" and "Production serves 24.0.15 / DB16 / Worker v19", while a second paragraph
+further down still said **24.0.14 / Worker v19** — three different answers to one question, none
+of them current. Issue #244 was opened to correct it, as #225 was for the instance before. It is
+corrected rather than quietly overwritten, because a release record that keeps a superseded
+deployment claim is the drift class this file records against itself. Two instances understated
+production by two app generations and two Worker generations at once, so a reader would have
+re-run a deployment sequence that had already happened, or certified against a candidate
+production had stopped serving days earlier. The rule that prevents it is the one the
+certification documents already state: **a superseding record is due the day a shipped file
+deploys, not the day it merges, and not whenever somebody notices.** Merging leaves a commit;
+deploying leaves nothing, which is the entire mechanism.*
+
+The intermediate generations are part of the record: **Worker v18** deployed (run `35037355686`, every post-deploy check green including `/health` reporting 18) and **app 24.0.13** observed live (parity run `35037460402`) before PR #211 superseded both with v24.0.14 / Worker v19.
+
+**No build system.** No npm, no bundler, no transpiler. Everything ships as flat files.
+
+**v24.0 authority rule:** `app.js` is the sole deterministic owner of load verdict, grade, economics, and bid range. USA scoring and `midwest-stack-authority.js` are evidence/advisory layers. Cloud Worker `/evaluate` may explain or challenge assumptions, but it must project—not recalculate—the canonical decision.
+
+---
+
+## File Structure
+
+```
+index.html                 — Single-page app shell: every `#view-*` section the canonical
+                             router owns (`views` in app.js is built from this markup at
+                             parse time, so a view added at runtime cannot be routed to)
+styles.css                 — Extracted presentation layer, Design System v3.0 "Command".
+                             gpt-owned; carries no version string by design (CG-11)
+app.js                     — Core application (~1.1MB, all logic in one IIFE). Nothing in it
+                             is a global — other scripts cannot call into it
+modern-shell.js            — Driver-facing structural shell: the Today/Loads/Evaluate/Trips/
+                             Money tab bar and the More entry. Loaded by dynamic import from
+                             sw-bridge.js. Structural ONLY — it owns no route, renderer or
+                             state; tabs are plain hrefs into the canonical hash router
+admin-driver-ui.js         — Admin driver management UI (injected via service worker)
+midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
+                             (injected via service worker, not referenced from index.html)
+sw-bridge.js               — Service worker auto-update bridge (SKIP_WAITING + reload)
+service-worker.js          — PWA offline caching; injects admin-driver-ui.js and
+                             midwest-stack-authority.js into HTML responses; precaches
+                             modern-shell.js in the install-blocking critical shell
+cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
+manifest.json              — PWA manifest
+midwest-stack-config.json  — Midwest Stack tuning config (precached, offline-available)
+_headers                   — Cloudflare Pages security headers (CSP, X-Frame-Options, Permissions-Policy)
+wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`freightlogic-v2`)
+favicon*.png / icon*.png   — App icons
+README.txt                 — Notes on optional offline vendor files (Tesseract OCR only, v23.9)
+vendor/                    — Bundled third-party scripts committed to the repo (v23.9, X-10):
+                             `xlsx.full.min.js` (SheetJS v0.18.5) + its Apache-2.0
+                             `xlsx.full.min.js.LICENSE`. Precached by the service worker's
+                             critical shell — see PWA / Service Worker below.
+docs/                      — Deployment parity checklist, source authority, release notes,
+                             `BACKUP_CONTRACT.md`, `DEFERRED.md` (v23.9)
+schemas/                   — JSON schemas (broker memory, positioning memory, screenshot intake)
+scripts/                   — `verify-cloudflare-parity.mjs` deploy-parity checker;
+                             `lib/deploy-assets.mjs` is the shared runtime-asset inventory +
+                             `.assetsignore` matcher it and `tests/unit/deploy-asset-coverage.spec.mjs`
+                             both read, so the gate and its regression cannot drift apart
+tests/                     — Playwright suite (real headless Chromium, real IndexedDB).
+                             `run-all.mjs` runs everything; see `tests/README.md`
+AUDIT_REPORT.md            — Adversarial audit findings F-1…F-8 (v23.8.x) and X-01…X-12 (v23.9)
+                             with reproductions
+FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
+```
+
+### Bundled vs. optional offline vendor files
+- `vendor/xlsx.full.min.js` — SheetJS v0.18.5 (Excel import). **Bundled, not optional**
+  as of v23.9 (X-10) — no CDN fallback exists; `loadSheetJS()` (`app.js`) loads only this
+  file, and the service worker precaches it in the install-blocking critical shell.
+- `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js
+  v5.1.1 (OCR receipts). Still **optional** — drop these in the repo root to avoid the
+  `cdn.jsdelivr.net` fallback `loadTesseract()` (`app.js`) otherwise uses. This is why
+  `cdn.jsdelivr.net` is still in the CSP's `script-src`/`connect-src` (`index.html`,
+  `_headers`) even though SheetJS no longer needs it.
+
+---
+
+## Architecture
+
+### app.js structure (in order)
+1. **Constants & config** — `APP_VERSION`, `DB_NAME`, `LIMITS`, `IRS` tax constants
+2. **Security utilities** — `escapeHtml`, `deepCleanObj`, `csvSafeCell`, `sanitizeImportValue`
+3. **Numeric hardening** — `finiteNum`, `posNum`, `intNum`, `validateRecordSize`
+4. **Storage** — `requestPersistentStorage`, `checkStorageQuota`, ITP/Safari detection
+5. **Navigation** — `openTripNavigation` (Apple Maps on iOS, Google Maps otherwise)
+6. **UI utilities** — `toast`, `openModal`, `closeModal`, `haptic`, autocomplete
+7. **IndexedDB layer** — `initDB` (current DB16 schema), `migrateFromLegacyDB`, `ensureLocalUserId`, `tx`, `idbReq`, CRUD for all stores
+8. **Data stores:** logical `trips` (DB16 maps to `tripRecords`), `expenses`, `fuel`, `receipts`, `receiptBlobs`, `settings`, `auditLog`, `marketBoard`, `laneHistory`, `weeklyReports`, `reloadOutcomes`, `bidHistory`, `documents`, `gpsLogs`
+9. **Export/Import** — JSON, CSV, XLSX (trips/expenses/fuel), receipt blobs
+10. **Freight evaluator** — Market Feed, Tomorrow Signal, Strategic Floor A–E scoring; auto-triggers OpenAI analysis via `/evaluate`
+11. **Cloud backup** — encrypt/decrypt, push/pull, user identity, AI evaluate call
+12. **UI rendering** — Trip list, expense list, fuel log, dashboard, settings panel
+13. **F21 GPS Trip Tracking** — `startTripTracking`, `stopTripTracking`, `nearestMarketCity`, `renderTripTrackingUI`, `resumeTrackingIfActive`
+14. **F22 Money Dashboard** — `renderMoneyCard` with weekly P&L, unpaid summary, goal progress, quarterly tax estimate
+15. **F23 Smart Load Inbox** — `parseLoadTextForInbox`, `renderLoadInbox`, auto-fills evaluator fields
+16. **F24 Proactive Positioning Engine** — `getPositioningBrief`, `renderPositioningCard`, `_triggerPostDeliveryBrief`
+17. **F25 Vehicle Maintenance Tracker** — `openMaintenanceTracker`, `checkMaintenanceDue`, `_getMaintenanceSchedule`
+18. **F26 First-Time Setup Wizard** — `checkFirstRunSetup`, `openSetupWizard`, `_saveSetupWizardResults`
+19. **F27 Unified Load Intake** — `openLoadIntake`; paste/voice/photo → parsed draft review → score or save as trip
+20. **F28 Diagnostics Panel** — `openDiagnosticsPanel`; SW, cache, IDB counts, voice, cloud, AI endpoint self-test
+21. **F29 Post-Trip Lane & Broker Review** — `openPostTripReview`, `_savePostTripReview`; 6-question chip UI after delivery
+
+### IndexedDB schema (`DB_VERSION = 16`, `DB_NAME = 'FreightLogic_v18'`)
+- `trips` — retained legacy/rollback store from pre-v16; old keyPath: `orderNo`
+- `tripRecords` — authoritative v16 trip store; keyPath: `id`, non-unique `orderNo` index. Runtime `tx('trips')` maps here when present
+- `expenses` — keyPath: `id`
+- `fuel` — keyPath: `id`
+- `receipts` — keyPath: `tripOrderNo`
+- `receiptBlobs` — keyPath: `id`
+- `settings` — keyPath: `key`
+- `auditLog` — keyPath: `id`
+- `marketBoard` — keyPath: `id`
+- `laneHistory` — keyPath: `id`
+- `weeklyReports` — keyPath: `weekId`
+- `reloadOutcomes` — keyPath: `id`
+- `bidHistory` — keyPath: `id`
+- `documents` — keyPath: `id`
+- `gpsLogs` — keyPath: `id`, autoIncrement
+- `loadLifecycle` — keyPath: `lifecycleId` (v14; indexes `updatedAt`, `orderNo`, `broker`)
+- `normalizedEvidence` — keyPath: `evidenceId` (v15; indexes `recordedAt`, `lifecycleId`,
+  `fingerprint`, `observedAt`) — the durable normalized-evidence store
+
+### DB migration
+On first boot after upgrade from any prior version, `migrateFromLegacyDB()` opens
+`XpediteOps_v1` read-only, copies all stores into `FreightLogic_v18`, records
+`legacyMigrated` in settings, and never runs again. The old DB is not deleted.
+DB16 additionally creates `tripRecords` with stable internal `id` identity and a
+non-unique `orderNo` index, then copies surviving pre-v16 `trips` rows into it.
+The legacy `trips` store is deliberately retained for rollback; external order
+numbers are evidence/lookup values, never authoritative record identity. Migrated
+rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
+
+### User namespace
+`ensureLocalUserId()` generates a stable `usr_<16hex>` on first boot, stored in
+`settings['localUserId']`. Foundation for multi-user import/restore isolation.
+
+---
 
 ## Key Constants
 
@@ -4406,8 +4644,8 @@ environment can answer: whether the Photos/Files picker, the share-sheet capture
 paste each actually deliver an image in the **installed** iOS PWA, which is why the picker is the
 guaranteed path and the clipboard is only ever an addition to it.
 
-
 ---
+
 
 ## v24.0.22 "Road-Readable Decisions" — Driver/Glance + decision-first integration
 
