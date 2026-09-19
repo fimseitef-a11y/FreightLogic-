@@ -16,7 +16,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **v24.0.23 final PWA presentation integration takeover — RETIRED 2026-09-19.** The bounded operator-directed lane completed when PR #265 merged as `8e722522`, delivering the single presentation authority and governed v24.0.23 cache generation. The temporary marker exceptions are retired here: `CLAUDE.md`, `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` return to Claude ownership. Persistent GPT-owned seams remain `styles.css`, the isolated Admin Console subtree/regression, and the field-certification companion paths.
 
-**Issue #268 accessibility completion exception (2026-09-19, operator-directed).** To complete the Apple/iOS accessibility remediation without waiting on an idle foreign lane, GPT temporarily owns only `tests/integration/six-width-layout.spec.mjs`, a new exact `tests/integration/apple-ios-accessibility.spec.mjs` regression file, and the minimal `tests/run-all.mjs` registration for that spec. This exception is regression-first and bounded to issue #268. It does not transfer other `tests/`, release workflows, physical iPhone certification, or any Claude core path. It expires when the reviewed #268 repair lands and its exact-main full suite/release gates are green. Headless evidence must not mark A1-A13 physical certification PASS.
+**Issue #268 accessibility completion exception — RETIRED 2026-09-19.** PR #275 merged the reviewed repair as `f75f9cc9`; exact-main Tests, CodeQL, post-deploy Live Parity, and Production Service Worker verification are green. The temporary test/run-all and release-marker exceptions are therefore retired. Physical iPhone A1-A13 remains a separate evidence gate under #226.
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
@@ -27,8 +27,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | gpt | Temporary #268 release-generation marker exception only; retire after v24.0.24 accessibility release lands green. |
-| `midwest-stack-authority.js` | gpt | Temporary #268 release-generation marker exception only; no doctrine/decision changes; retire after v24.0.24 lands green. |
+| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #268 release-marker exception retired after v24.0.24 landed green. |
+| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #268 release-marker exception retired after v24.0.24 landed green. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
 | `CLAUDE.md` | claude | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
@@ -70,14 +70,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary #268 release-generation expected-marker exception only; retire after v24.0.24 lands green. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/integration/apple-ios-accessibility.spec.mjs` | gpt | Temporary exact #268 accessibility regression exception; retire after #268 lands green. |
-| `tests/integration/six-width-layout.spec.mjs` | gpt | Temporary exact #268 More/Settings width regression exception; retire after #268 lands green. |
-| `tests/run-all.mjs` | gpt | Temporary #268 exception limited to registering the accessibility spec; retire after #268 lands green. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
