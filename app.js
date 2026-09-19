@@ -1,7 +1,17 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.22 USA ENGINE
+/** FreightLogic v24.0.23 USA ENGINE
+ *  v24.0.23 "One CSS Authority": presentation-only delivery correction for the
+ *          final driver-first PWA. The operator-approved reference presentation
+ *          used to live twice: base/design rules in styles.css plus a second
+ *          REFERENCE_UI_CSS string injected by modern-shell.js at runtime.
+ *          The same reference rules now live once in styles.css, immediately
+ *          before the Driver/Glance contract, so text-size/Glance preferences
+ *          remain the final cascade authority and the shell owns navigation only.
+ *          No freight economics, evaluator math, storage, routing, DB schema or
+ *          Worker semantics change. Runtime bytes do change, so the app/SW cache
+ *          generation advances coherently; DB stays 16 and Worker stays v21.
  *  v24.0.22 "Delivery, Again": a GENERATION CORRECTION, not new behaviour. The
  *          decision-first compact strip (#252's output contract) landed in a
  *          second commit that changed app.js while leaving every marker at
@@ -376,7 +386,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.22';
+const APP_VERSION = '24.0.23';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
