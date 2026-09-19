@@ -2,17 +2,20 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.20** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
+**FreightLogic v24.0.22 candidate** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**SOURCE IS 24.0.21 / DB16 / Worker v21. PRODUCTION SERVES 24.0.20 / DB16 / Worker v20.**
-v24.0.21 is the Issue #252 P0 screenshot-intake generation and is **source-only: not deployed and
-not live-observed.** Source being ahead of production does not make the observation below false, it
-makes it the current production fact until v24.0.21 deploys — which is the distinction this file
-has had to record against itself eight times. **Deploy order matters and is not optional:
-Worker v21 FIRST**, because the app's screenshot path calls `POST /extract-image`, which does not
-exist on the deployed v20 and would 404 for every driver who tapped it; then the app generation;
-then **re-dispatch** live parity rather than citing the push-triggered run, which races the
-Cloudflare deploy. The paragraph below certifies **24.0.20** and is the production fact until then.
+**SOURCE CANDIDATE IS 24.0.22 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.21 / DB16 / Worker v21.**
+v24.0.22 is the governed integration generation for the decision-first compact evaluator result,
+the operator-controlled Standard/Large/Extra Large text-size contract, Driver/Glance Mode, and
+provenance-honest positioning language. It is **source-only until merged, deployed, and observed**.
+DB_VERSION remains 16 and Worker source remains v21; no database migration or Worker generation
+change belongs to this release.
+
+The last runtime observation of record before this candidate is v24.0.21 / DB16 / Worker v21:
+main at the post-A13 baseline had full Tests and CodeQL green, live parity run `35408665704`
+PASS, and production service-worker run `35408665721` PASS. Those runs remain evidence for the
+tree they observed; they are not evidence that v24.0.22 is live. After this candidate merges,
+re-dispatch both live gates after Cloudflare propagation rather than citing a push-triggered race.
 
 **PRODUCTION SERVES 24.0.20 / DB16 / Worker v20, and BOTH generations are OBSERVED.** v24.0.20 is
 the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
@@ -258,7 +261,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.21';
+const APP_VERSION = '24.0.22';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -403,8 +406,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.21` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.21`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.22` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.22`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4559,6 +4562,29 @@ Without `IntersectionObserver` it falls back to counting on render. That is wors
 and much better than a budget that never retires anything: a card that can never be counted is a
 card that renders forever.
 
+### Decision-first output — the last half of #252's contract
+
+The hero card already carried the ACTION, the grade and the bid triple. #252's output
+contract also asks for **True RPM with its ladder label, the mile breakdown, positioning /
+reload quality, and one critical alert** — and all four sat behind **Show Details**. So the
+numbers a driver decides on were one tap away while the decision itself was not, which is the
+same complaint #205 made about Today and the reason that release exists.
+
+The strip is **additive**: the detailed Omega math below it is unchanged and still
+authoritative, the `<details>` still starts collapsed, and nothing in the strip computes
+economics. Every value is read from the canonical decision already derived above.
+**`SSI-15` asserts that as agreement rather than as prose** — the True RPM in the compact strip
+and the True RPM the detailed math prints must be the same number, because a second derivation
+would be a second evaluator, which is exactly what #252 and the v24.0 authority rule forbid.
+
+Deadhead is always KNOWN at that point (`mwEvaluateLoad()` returns early and asks for it when
+it is null), so the strip can never print an invented zero — and `SSI-16` pins the other
+direction, that a verified `0` renders as `0 DH` rather than as a gap.
+
+`SSI-14` deliberately asserts against the text **outside** the collapsed `<details>`. "It is
+somewhere in the DOM" is the check that would have passed while the surface was still buried,
+which is the v24.0.8 lesson restated.
+
 ### Tests
 
 `tests/unit/worker-vision-extract.spec.mjs` (15, new) drives the **real exported fetch handler**
@@ -4567,7 +4593,7 @@ so the route, the auth gate, the ceilings and the normalizer under test are the 
 only the model call is stubbed, and there is no network and no provider key. Driver credentials are
 minted through the **real invite/claim path** rather than a seeded fixture that could drift from it.
 
-`tests/integration/screenshot-intake.spec.mjs` (13, new) drives the real app in real Chromium with
+`tests/integration/screenshot-intake.spec.mjs` (16, new) drives the real app in real Chromium with
 `/extract-image` intercepted at the network boundary, so the picker, the canvas downscale, the
 review step and the evaluator handoff are all shipped code. It asserts **rendered content**.
 `SSI-02` additionally pins the upload contract: the image must arrive re-encoded as **JPEG**,
@@ -4578,15 +4604,16 @@ Both are registered in `tests/run-all.mjs`, which `RH-01` requires and which is 
 since PR #234 retired the spent exception — so the deadlock recorded at the end of the v24.0.16
 section no longer applies and no cross-lane edit was needed.
 
-**All five negative controls were applied and verified to fire, each on exactly the assertion it
+**All six negative controls were applied and verified to fire, each on exactly the assertion it
 guards and on no other**, with the tree restored from a pristine copy and re-verified by
 `sha256sum` after every one — the v24.0.17 lesson, where a control's restore was overwritten
 mid-run and a suite result described a tree that never existed. Reverting the Worker's tri-state
 integer fails `VEX-05` **while `VEX-04` stays green**, which is the demonstration that the two
 deadhead directions are independently tested rather than one rule tested twice; passing the model's
 output through unfiltered fails `VEX-06`; restoring count-on-call fails `SSI-09` only; counting on
-mount instead of on visibility fails `SSI-11` only; and reverting the app-side deadhead chain fails
-`SSI-05` while `SSI-04` and `SSI-06` stay green.
+mount instead of on visibility fails `SSI-11` only; reverting the app-side deadhead chain fails
+`SSI-05` while `SSI-04` and `SSI-06` stay green; and burying the compact facts back behind
+`Show Details` fails `SSI-14`/`15`/`16` and nothing else.
 
 **`RH-04` fired on this release's own author, for the third consecutive release.** The gate is a
 raw `/SpeechRecognition/` regex over `app.js`, and a new comment promising not to reintroduce a
@@ -4616,3 +4643,52 @@ operator's. The device gate for this release additionally includes the one thing
 environment can answer: whether the Photos/Files picker, the share-sheet capture and clipboard-image
 paste each actually deliver an image in the **installed** iOS PWA, which is why the picker is the
 guaranteed path and the clipboard is only ever an addition to it.
+
+
+---
+
+## v24.0.22 "Road-Readable Decisions" — Driver/Glance + decision-first integration
+
+**Source candidate only until merged/deployed/observed.** DB_VERSION stays **16** and Worker stays
+**v21**. This generation intentionally combines the final presentation contract with PR #255's
+last decision-output slice so one driver-facing change spends one governed app generation.
+
+### Decision-first evaluator output, without a second evaluator
+
+The canonical evaluator now exposes the facts the driver needs before opening **Show Details**:
+True RPM and its canonical grade label, total miles with loaded/deadhead split, positioning context,
+and the first critical warning. The compact strip reads values from the already-computed canonical
+decision; it does not derive grade, economics, bid, or recommendation independently. SSI-14/15/16
+pin the visible placement, canonical True RPM agreement, and explicit-zero deadhead behavior.
+
+The positioning line is deliberately provenance-honest. Tier 1 / Tier 2 membership is a **static
+market-classification fact**, not proof of current outbound load strength. SSI-17 rejects wording
+such as "strong reloads" / "workable reloads" unless live evidence actually exists; the compact
+card names the static market class instead.
+
+### Text size and Driver/Glance Mode
+
+The operator can select **Standard, Large, or Extra Large** and can explicitly enable
+**Driver/Glance Mode** from Settings. These are device-local presentation preferences, applied to
+the document root through `data-fl-text-size` and `data-fl-driver-mode`. They change hierarchy
+and road-use geometry only; they do not hide evidence, change economics, change route authority, or
+create a second UI data model.
+
+The final CSS contract scales primary route, money, RPM, KPI, evaluator input and next-action
+hierarchy; keeps iPhone form controls at or above 16px; and raises opt-in road-use targets to
+48–52px. Driver/Glance Mode remains opt-in and secondary tools stay reachable. DD-01..DD-04 cover
+the shipped controls, all text-size choices, reload persistence, Glance persistence, road-target
+geometry, secondary navigation reachability, and fail-closed handling of corrupt persisted values.
+
+### Release discipline
+
+This slice changes runtime assets, so every governed app-generation marker moves together to
+**24.0.22**: app header/APP_VERSION, service worker/cache-busters, index URLs, sw-bridge and
+modern-shell headers/import, manifest name/link, Midwest overlay VERSION, appTarget, and live-parity
+expectations. `styles.css` carries no version literal by design. DB remains 16 and Worker remains
+v21 unless Worker source changes independently.
+
+Do not call this release live or certified from source tests. Merge only with CG/RG/full suite
+green on the exact candidate, then let Cloudflare deploy, re-dispatch live parity and the production
+service-worker gate, and finally perform the physical A1–A13 iPhone checklist on the selected final
+candidate.
