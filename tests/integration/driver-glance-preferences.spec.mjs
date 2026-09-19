@@ -30,6 +30,8 @@ test('[DRIVER DISPLAY] DD-01 Settings exposes all text sizes and Glance Mode wit
       nodes.map(n => ({ value: n.value, text: (n.textContent || '').trim() })));
     eq(options.map(x => x.value).join(','), 'standard,large,xlarge',
       'the shipped text-size preference must expose exactly Standard, Large and Extra Large');
+    eq(options.map(x => x.text).join(','), 'Standard,Large,Extra Large',
+      'the operator-facing text-size labels must stay explicit and understandable');
     ok(await app.page.locator('#driverGlanceMode').isVisible(),
       'Driver/Glance Mode must be an explicit visible operator control');
 
