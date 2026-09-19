@@ -1,0 +1,6 @@
+owner: gpt
+token: c4e7f83b-6a21-4df4-8f2a-7b9c1350d6e1
+started_utc: 2026-09-19T03:53:00Z
+expected_release_utc: 2026-09-19T07:30:00Z
+paths: .agents/LANES.md
+task: retire temporary Admin integration exceptions and grant bounded runtime integration exceptions while Claude is idle
