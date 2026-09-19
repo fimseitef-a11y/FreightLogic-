@@ -7700,8 +7700,6 @@ function expenseRow(e){
     <div class="right"><div class="v">${fmtMoney(e.amount||0)}</div><div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openExpenseForm(e));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
-    const mode = await getSetting('uiMode','simple');
-    if (mode !== 'pro'){ toast('Delete is Pro-only (prevents accidents)', true); return; }
     d.remove();
     showUndoToast(
       `${escapeHtml(e.category || 'Expense')}`,
@@ -7738,8 +7736,6 @@ function fuelRow(f){
     <div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openFuelForm(f));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
-    const mode = await getSetting('uiMode','simple');
-    if (mode !== 'pro'){ toast('Delete is Pro-only', true); return; }
     d.remove();
     showUndoToast(
       `Fuel ${escapeHtml(f.date || '')}`,
@@ -13460,7 +13456,7 @@ function openTripWizard(existing=null){
       <div><label>Empty miles</label><input id="f_empty" type="number" step="1" placeholder="Deadhead to pickup" /></div></div>
     <div class="btn-row" style="margin-top:12px"><button class="btn" id="toStep2">Next (optional)</button>
       <button class="btn primary" id="saveTrip">Save</button>
-      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
+      ${mode==='edit' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
     <div class="muted" id="tripHint" style="font-size:12px;margin-top:10px"></div></div>`;
 
   step2.style.display = 'none';
@@ -13796,8 +13792,6 @@ function openTripWizard(existing=null){
   if (mode==='edit'){
     const delBtn = $('#delTrip', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `Trip ${escapeHtml(String(trip.orderNo))}`,
@@ -13916,8 +13910,6 @@ function openExpenseForm(existing=null){
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `${escapeHtml(e.category || 'Expense')}`,
@@ -14027,8 +14019,6 @@ function openFuelForm(existing=null){
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `Fuel ${escapeHtml(f.date || '')}`,
@@ -14316,7 +14306,6 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
 });
 addManagedListener($('#btnHardReset'), 'click', async ()=>{
-  if ((await getSetting('uiMode','simple')) !== 'pro'){ toast('Hard reset is Pro-only', true); return; }
   if (!confirm('Hard reset will delete all local data on this device. Continue?')) return;
   indexedDB.deleteDatabase(DB_NAME);
   toast('Database deleted. Reloading...'); setTimeout(()=> location.reload(), 1200);
