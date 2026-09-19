@@ -11453,18 +11453,18 @@ function _mwRenderDecision(out, d){
     <div class="fl-eval-grade" style="color:${_heroColor}">${dispGrade}${isDZActive ? '<span style="font-size:20px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
     <div style="margin-bottom:10px"><span class="fl-eval-verdict ${_verdictClass}">${escapeHtml(_verdictBadgeLabel)}</span></div>
     <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:12px;line-height:1.4">${escapeHtml(_verdictSentence)}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border-subtle)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Min / Accept</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--text)">${fmtMoney(_quickAcceptH)}</div>
+    <div class="fl-eval-bid-grid">
+      <div class="fl-eval-bid secondary">
+        <div class="fl-eval-bid-label">Accept</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_quickAcceptH)}</div>
       </div>
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Professional</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:#58a6ff">${fmtMoney(_strongFinalH)}</div>
+      <div class="fl-eval-bid primary">
+        <div class="fl-eval-bid-label">Ask</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_strongFinalH)}</div>
       </div>
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Strong Ask</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
+      <div class="fl-eval-bid secondary">
+        <div class="fl-eval-bid-label">Stretch</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_premiumFinalH)}</div>
       </div>
     </div>
     ${_compactFacts}
