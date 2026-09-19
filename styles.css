@@ -1655,13 +1655,13 @@ html[data-fl-text-size="xlarge"] {
    remain available; primary route, money, RPM and next-action text simply win
    the visual competition. */
 html[data-fl-driver-mode="glance"] {
-  --fl-primary-size: max(18px, var(--fl-primary-size));
-  --fl-route-size: max(18px, var(--fl-route-size));
-  --fl-money-size: max(22px, var(--fl-money-size));
-  --fl-eval-input-size: max(24px, var(--fl-eval-input-size));
-  --fl-eval-rpm-size: max(28px, var(--fl-eval-rpm-size));
-  --fl-kpi-number-size: max(56px, var(--fl-kpi-number-size));
-  --fl-road-target: max(50px, var(--fl-road-target));
+  --fl-primary-size: 19px;
+  --fl-route-size: 19px;
+  --fl-money-size: 23px;
+  --fl-eval-input-size: 25px;
+  --fl-eval-rpm-size: 29px;
+  --fl-kpi-number-size: 58px;
+  --fl-road-target: 52px;
 }
 
 html[data-fl-text-size] body,
