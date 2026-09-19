@@ -1,6 +1,0 @@
-owner: gpt
-token: c4d6e1b0-2f38-4a57-a3fe-9b15f0762d91
-started_utc: 2026-09-19T00:32:00Z
-expected_release_utc: 2026-09-19T02:32:00Z
-paths: .agents/NOW.md, .agents/STATUS.md
-task: Claim GPT parallel Driver/Glance presentation contract work in styles.css and record completion state.
