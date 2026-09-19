@@ -1923,7 +1923,6 @@ html, body, button, input, select, textarea {
 
 /* Header: one screen title + status only when status actually needs space. */
 #mainHeader .logo,
-#mainHeader #themeToggle,
 #mainHeader #pillWeekNet,
 #mainHeader #pillUnpaid {
   display: none !important;
