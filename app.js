@@ -15551,7 +15551,7 @@ function initCollapsibleSettings(){
     haptic(10);
   });
 
-  $('#settingsDirectory [data-settings-target]').forEach(btn => {
+  $$('#settingsDirectory [data-settings-target]').forEach(btn => {
     addManagedListener(btn, 'click', ()=>{
       const target = document.getElementById(btn.dataset.settingsTarget || '');
       if (!target) return;
