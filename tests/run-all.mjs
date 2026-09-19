@@ -81,6 +81,7 @@ import { runSpec as vehicleProfileRace } from './integration/vehicle-profile-rac
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 import { runSpec as fieldCertificationRunner } from './integration/field-certification-runner.spec.mjs';
 import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
+import { runSpec as driverGlancePreferences } from './integration/driver-glance-preferences.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -111,6 +112,7 @@ const specs = [
   zeroTokenOnboarding,
   fieldCertificationRunner,
   adminConsole,
+  driverGlancePreferences,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,

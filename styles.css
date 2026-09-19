@@ -1586,3 +1586,287 @@ html[data-theme="light"] body :is(header#mainHeader,.bottom) { background: var(-
   body :is(.card,.item,.btn,.chip,.fl-quick-btn,.bottom) { border: 1px solid CanvasText; box-shadow: none; }
   body .bottom .nav a.active { outline: 2px solid Highlight; outline-offset: -4px; }
 }
+
+
+/* DRIVER / GLANCE PRESENTATION CONTRACT
+   Presentation-only seam for the driver-first PWA. Runtime code may opt in by
+   setting data-fl-text-size="standard|large|xlarge" and/or
+   data-fl-driver-mode="glance" on <html>. No economics, routing, storage or
+   evaluator authority lives here.
+
+   The variables below are deliberately semantic rather than page-specific so
+   app.js/modern-shell.js can expose one user preference without hard-coding
+   font sizes into rendered markup. */
+html:root {
+  --fl-body-size: 15px;
+  --fl-label-size: 12px;
+  --fl-secondary-size: 13px;
+  --fl-primary-size: 16px;
+  --fl-route-size: 15px;
+  --fl-money-size: 18px;
+  --fl-eval-input-size: 20px;
+  --fl-eval-rpm-size: 22px;
+  --fl-kpi-number-size: 48px;
+  --fl-road-target: 44px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html[data-fl-text-size="standard"] {
+  --fl-body-size: 15px;
+  --fl-label-size: 12px;
+  --fl-secondary-size: 13px;
+  --fl-primary-size: 16px;
+  --fl-route-size: 15px;
+  --fl-money-size: 18px;
+  --fl-eval-input-size: 20px;
+  --fl-eval-rpm-size: 22px;
+  --fl-kpi-number-size: 48px;
+  --fl-road-target: 44px;
+}
+
+html[data-fl-text-size="large"] {
+  --fl-body-size: 16px;
+  --fl-label-size: 13px;
+  --fl-secondary-size: 14px;
+  --fl-primary-size: 18px;
+  --fl-route-size: 17px;
+  --fl-money-size: 21px;
+  --fl-eval-input-size: 23px;
+  --fl-eval-rpm-size: 26px;
+  --fl-kpi-number-size: 54px;
+  --fl-road-target: 48px;
+}
+
+html[data-fl-text-size="xlarge"] {
+  --fl-body-size: 17px;
+  --fl-label-size: 14px;
+  --fl-secondary-size: 15px;
+  --fl-primary-size: 19px;
+  --fl-route-size: 18px;
+  --fl-money-size: 23px;
+  --fl-eval-input-size: 25px;
+  --fl-eval-rpm-size: 29px;
+  --fl-kpi-number-size: 58px;
+  --fl-road-target: 50px;
+}
+
+/* Glance mode raises road-use hierarchy without hiding data. Secondary facts
+   remain available; primary route, money, RPM and next-action text simply win
+   the visual competition. */
+html[data-fl-driver-mode="glance"] {
+  --fl-primary-size: 19px;
+  --fl-route-size: 19px;
+  --fl-money-size: 23px;
+  --fl-eval-input-size: 25px;
+  --fl-eval-rpm-size: 29px;
+  --fl-kpi-number-size: 58px;
+  --fl-road-target: 52px;
+}
+
+html[data-fl-text-size] body,
+html[data-fl-driver-mode="glance"] body {
+  font-size: var(--fl-body-size) !important;
+}
+
+/* Labels/supporting copy stay readable but subordinate. */
+html[data-fl-text-size] body :is(
+  label,
+  .muted,
+  .item .sub,
+  .fl-tc .fl-tc-meta,
+  .fl-trip-full .fl-tf-sub,
+  .fl-alert-text,
+  .fl-nm-text,
+  #mwAutoFillStatus
+) {
+  font-size: var(--fl-secondary-size) !important;
+  line-height: 1.5;
+}
+
+html[data-fl-text-size] body :is(
+  .item .k,
+  .kpi-hero-label,
+  .kpi-cell-label,
+  .fl-nm-label,
+  .fl-alert-title
+) {
+  font-size: var(--fl-label-size) !important;
+}
+
+/* Primary driver facts. */
+html[data-fl-text-size] body :is(
+  .item .v,
+  .fl-tc .fl-tc-route,
+  .fl-trip-full .fl-tf-origin,
+  [data-fl-primary]
+) {
+  font-size: var(--fl-primary-size) !important;
+  line-height: 1.35;
+}
+
+html[data-fl-text-size] body :is(
+  .fl-tc .fl-tc-route,
+  .fl-trip-full .fl-tf-origin,
+  [data-fl-route]
+) {
+  font-size: var(--fl-route-size) !important;
+  font-weight: 760;
+}
+
+html[data-fl-text-size] body :is(
+  .fl-tc .fl-tc-pay,
+  .fl-trip-full .fl-tf-pay,
+  .pill b,
+  [data-fl-money]
+) {
+  font-size: var(--fl-money-size) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-fl-text-size] body :is(
+  .eval-rpm-hero,
+  [data-fl-rpm]
+) {
+  font-size: var(--fl-eval-rpm-size) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-fl-text-size] body .kpi-hero-value,
+html[data-fl-driver-mode="glance"] body .kpi-hero-value {
+  font-size: var(--fl-kpi-number-size) !important;
+  line-height: 1;
+}
+
+/* Existing evaluator fields already carry inline/overlay sizing. This opt-in
+   selector intentionally wins only when the operator has selected a text-size
+   mode or Glance Mode. */
+html:is([data-fl-text-size],[data-fl-driver-mode="glance"]) body :is(
+  #mwRevenue,
+  #mwLoadedMi,
+  #mwDeadMi
+) {
+  min-height: var(--fl-road-target) !important;
+  font-size: var(--fl-eval-input-size) !important;
+}
+
+/* One semantic hook set for the compact evaluator result. Claude/runtime code
+   can render these classes instead of inline 10/11/13px declarations, keeping
+   the strip governed by the same user text-size preference. */
+body .fl-eval-facts {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+  gap: 10px;
+  text-align: left;
+}
+body .fl-eval-fact-label {
+  font-size: var(--fl-label-size);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 700;
+}
+body .fl-eval-fact-value,
+body .fl-eval-positioning {
+  font-size: var(--fl-primary-size);
+  line-height: 1.4;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+body .fl-eval-fact-value .mono,
+body .fl-eval-fact-value[data-fl-rpm] {
+  font-size: var(--fl-eval-rpm-size);
+}
+body .fl-eval-positioning,
+body .fl-eval-alert {
+  grid-column: 1 / -1;
+}
+body .fl-eval-alert {
+  font-size: var(--fl-secondary-size);
+  line-height: 1.5;
+}
+
+/* Road-use actions: opt-in scaling preserves the normal dense layout until the
+   operator asks for larger text or Glance Mode. */
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body :is(
+  .btn,
+  .chip,
+  .fl-quick-btn,
+  .settings-collapse-btn,
+  .theme-btn,
+  .nav a,
+  [data-fl-road-action]
+) {
+  min-height: var(--fl-road-target) !important;
+}
+
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body :is(
+  .btn,
+  .chip,
+  .fl-quick-btn,
+  .settings-collapse-btn
+) {
+  font-size: var(--fl-secondary-size) !important;
+}
+
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body :is(
+  input,
+  select,
+  textarea
+) {
+  min-height: var(--fl-road-target);
+  font-size: var(--fl-body-size) !important;
+}
+
+html[data-fl-driver-mode="glance"] body .fl-quick-btn {
+  min-height: 72px;
+  font-size: var(--fl-secondary-size) !important;
+}
+
+html[data-fl-driver-mode="glance"] body :is(
+  #btnLoadIntake,
+  #btnLoadsIntake,
+  #btnTripAdd,
+  #btnAddExp2,
+  [data-fl-primary-action]
+) {
+  min-height: 54px !important;
+  font-size: var(--fl-primary-size) !important;
+  font-weight: 800;
+}
+
+/* Keep bottom navigation legible when text grows; labels may wrap, but targets
+   remain one-hand sized and the center Evaluate action stays dominant. */
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav {
+  height: max(72px, calc(var(--fl-road-target) + 22px));
+}
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a .nl,
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a[data-nav="home"] .nl::after {
+  font-size: var(--fl-label-size) !important;
+}
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a.nav-eval-center .ni {
+  width: max(52px, var(--fl-road-target));
+  height: max(52px, var(--fl-road-target));
+}
+
+/* Glance mode makes primary sections visually decisive without removing
+   diagnostics, evidence or secondary routes. */
+html[data-fl-driver-mode="glance"] body #homeKPICard,
+html[data-fl-driver-mode="glance"] body #view-omega > .card:first-of-type,
+html[data-fl-driver-mode="glance"] body #view-money > .card:first-child {
+  border-width: 2px;
+}
+html[data-fl-driver-mode="glance"] body .fl-next-move {
+  padding: 16px;
+}
+html[data-fl-driver-mode="glance"] body .fl-nm-text {
+  font-size: var(--fl-primary-size) !important;
+  font-weight: 760;
+}
+
+/* iPhone focus zoom protection is an invariant in every text-size mode. */
+@media (max-width: 480px) {
+  html:is([data-fl-text-size],[data-fl-driver-mode="glance"]) body :is(input,select,textarea) {
+    font-size: max(16px, var(--fl-body-size)) !important;
+  }
+}
