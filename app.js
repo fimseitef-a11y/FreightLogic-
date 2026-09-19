@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.23 USA ENGINE
+/** FreightLogic v24.0.24 USA ENGINE
  *  v24.0.23 "One CSS Authority": presentation-only delivery correction for the
  *          final driver-first PWA. The operator-approved reference presentation
  *          used to live twice: base/design rules in styles.css plus a second
@@ -386,7 +386,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.23';
+const APP_VERSION = '24.0.24';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
