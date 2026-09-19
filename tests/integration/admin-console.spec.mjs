@@ -279,6 +279,10 @@ test('[ADMIN-15] live verifier proves dedicated-origin headers, exact API CORS a
   const result = await mod.verifyLiveAdmin({ adminOrigin, apiOrigin, fetchImpl });
   eq(result.ok, true, 'all safe live-contract checks should pass');
   eq(result.checks.filter(x => x.ok).length, result.checks.length, 'every live check must be individually true');
+  ok(
+    result.checks.some(x => x.name === 'control asset hidden: /deploy.sh' && x.ok),
+    'live verifier must prove the deployment wrapper is not exposed as a browser asset'
+  );
 
   const wildcardFetch = async (url, init = {}) => {
     const u = new URL(url);
