@@ -183,6 +183,20 @@ test('[ADMIN-10] console refuses to initialize on the driver origin', async () =
   );
 });
 
+test('[ADMIN-11] distinct-origin deployment declares fail-closed response headers', async () => {
+  const headers = await text('admin-console/_headers');
+  ok(/Content-Security-Policy:/i.test(headers), 'deployment must send a response-level CSP, not rely only on a meta tag');
+  ok(/frame-ancestors\s+'none'/i.test(headers), 'response CSP must prevent framing');
+  ok(/X-Content-Type-Options:\s*nosniff/i.test(headers), 'admin assets must opt out of MIME sniffing');
+  ok(/Referrer-Policy:\s*no-referrer/i.test(headers), 'admin requests must not leak referrer data');
+  ok(/Cache-Control:\s*no-store/i.test(headers), 'privileged console documents must not be cached by shared intermediaries');
+  ok(/Permissions-Policy:/i.test(headers), 'admin deployment must explicitly deny unused device capabilities');
+  ok(/camera=\(\)/i.test(headers) && /microphone=\(\)/i.test(headers) && /geolocation=\(\)/i.test(headers),
+    'MVP admin surface must deny camera, microphone and geolocation');
+  ok(!/Access-Control-Allow-Origin/i.test(headers), 'static admin origin must not invent CORS headers; Worker owns API CORS');
+});
+
+
 export async function runSpec() {
   for (const { name, fn } of tests) {
     try { await fn(); pass += 1; console.log(`  PASS ${name}`); }
