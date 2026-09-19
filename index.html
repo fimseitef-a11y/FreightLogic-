@@ -228,8 +228,18 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="btnExpMore" style="flex:1">Load more</button><button class="btn" id="btnExpExport" style="flex:1">Export JSON</button><button class="btn" id="btnExpExportCSV" style="flex:1">Export CSV</button><button class="btn" id="btnExpImport" style="flex:1">Import</button></div>
     </section>
     <section id="view-money" class="view" style="display:none">
+      <div class="card fl-money-nav">
+        <h2 style="margin:0 0 4px">Money</h2>
+        <div class="muted" style="font-size:12px;margin-bottom:12px">Receivables, expenses and fuel in one place.</div>
+        <div class="fl-money-links">
+          <a href="#expenses">Expenses</a>
+          <a href="#fuel">Fuel</a>
+          <a href="#insights">Reports &amp; Settings</a>
+        </div>
+      </div>
+      <div class="spacer"></div>
       <div class="card">
-        <h3>Money Owed To You</h3>
+        <h3>Receivables</h3>
         <div class="muted" style="font-size:13px;line-height:1.5">Unpaid trips by age. Tap "Mark Paid" when the check arrives.</div>
         <div class="row" style="margin-top:12px">
           <div class="pill"><span class="muted">0–15d</span> <b id="ar0_15m">$0</b></div>
@@ -280,14 +290,22 @@
 </div>
 <div class="muted" style="font-size:11px;margin-top:2px">Stored on this device only. Glance Mode is opt-in and never hides the More menu.</div>
 
-<!-- ── Advanced Settings (collapsed) ── -->
+<!-- Driver-first settings directory. The actual fields remain single-source below. -->
+<div id="settingsDirectory" class="settings-directory" aria-label="Settings categories">
+  <button type="button" data-settings-target="settingsVehicle"><span>Vehicle &amp; Capacity</span><small>Home base, van profile, trip planning</small></button>
+  <button type="button" data-settings-target="settingsCosts"><span>Costs &amp; Goals</span><small>Fixed costs, per-mile cost, weekly target</small></button>
+  <button type="button" data-settings-target="settingsConnections"><span>Connections &amp; Backup</span><small>Cross-border, data services, cloud backup</small></button>
+  <button type="button" data-settings-target="settingsPrivacy"><span>Privacy &amp; Data</span><small>Storage, reset and recovery controls</small></button>
+</div>
+
+<!-- ── All Settings (collapsed) ── -->
 <div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
-  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>Advanced Settings</span></span>
+  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>All Settings</span></span>
   <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
 </div>
 <div id="advSettingsBody" style="display:none">
 <div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
-<div class="settings-section-head"><span class="settings-section-icon">🚐</span>Vehicle</div>
+<div class="settings-section-head" id="settingsVehicle"><span class="settings-section-icon">🚐</span>Vehicle &amp; Capacity</div>
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
 <label for="opCostPerMile">Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
@@ -323,7 +341,7 @@
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
-<div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>
+<div class="settings-section-head" id="settingsCosts"><span class="settings-section-icon">📋</span>Costs &amp; Goals</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
 <div class="grid2" style="gap:10px">
 <div><label for="monthlyInsurance">Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
@@ -340,33 +358,41 @@
 <div><label for="brokerWindow">Broker window</label><select id="brokerWindow"><option value="90">90 days</option><option value="180">6 months</option><option value="365">1 year</option><option value="0">All time</option></select></div>
 </div>
 
-<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
-<div class="settings-section-head"><span class="settings-section-icon">⚙️</span>App</div>
-<div class="grid2" style="gap:10px">
-<div><label for="uiMode">UI Mode</label><select id="uiMode"><option value="simple">Simple</option><option value="pro">Pro</option></select></div>
+<div class="settings-legacy-control" hidden aria-hidden="true">
+  <select id="uiMode"><option value="simple">Simple</option><option value="pro">Pro</option></select>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
-<div class="settings-section-head"><span class="settings-section-icon">📡</span>Integrations</div>
+<div class="settings-section-head" id="settingsConnections"><span class="settings-section-icon">📡</span>Connections</div>
 <label for="canadaEnabled">🇨🇦 Canada Cross-Border</label><select id="canadaEnabled"><option value="off">Off — US only</option><option value="on">On — score cross-border loads</option></select>
 <div id="canadaFields" style="display:none"><label for="cadUsdRate">CAD→USD Rate</label><input id="cadUsdRate" type="number" step="0.001" placeholder="0.735" /><label for="borderAdminCost">Border admin cost (USD)</label><input id="borderAdminCost" type="number" step="1" placeholder="50" /><label class="chk" style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="canadaDocsReady"> Cross-border docs ready</label></div>
+<details class="settings-subdetails">
+  <summary>Developer &amp; data connections <span>Optional</span></summary>
+  <div class="settings-subdetails-body">
 <label for="datApiEnabled">DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
 <div id="datApiFields" style="display:none"><label for="datApiBaseUrl">DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
 <label for="fmcsaApiKey">FMCSA API Key (broker verification)</label><input id="fmcsaApiKey" type="password" placeholder="Get free key at ai.fmcsa.dot.gov" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables broker authority status lookup in evaluator</div>
 <label for="eiaApiKey">EIA API Key (free — eia.gov/opendata)</label><input id="eiaApiKey" type="password" placeholder="Get free key at eia.gov/opendata" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables live Midwest gas price lookup for fuel cost estimates</div>
+  </div>
+</details>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
+<details class="settings-subdetails settings-engine-advanced">
+  <summary>Decision engine advanced <span>Usually leave automatic</span></summary>
+  <div class="settings-subdetails-body">
 <div class="settings-section-head" style="color:var(--warn)"><span class="settings-section-icon" style="background:var(--warn-muted);border-color:var(--warn-border)">🟠</span>Dead Zone Exit</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Survival-tier scoring ($0.90–$1.24 RPM) unlocked only when stranded 1,500+ miles from home with no viable reloads above the normal floor. Keeps below-floor loads from polluting your RPM history.</div>
 <label for="dzEnabled">Dead Zone Exit mode</label><select id="dzEnabled"><option value="on">On — survival scoring enabled</option><option value="off">Off — disabled</option></select>
 <label for="dzActivationDistance">Activation distance from home (miles)</label><input id="dzActivationDistance" type="number" step="1" placeholder="1500" /><div class="muted" style="font-size:11px;margin-top:2px">DZ scoring only unlocks at or beyond this distance. Default: 1500.</div>
 <label for="dzFloorRPM">Absolute floor RPM ($)</label><input id="dzFloorRPM" type="number" step="0.01" placeholder="0.90" /><div class="muted" style="font-size:11px;margin-top:2px">Below this RPM, loads are rejected even in Dead Zone mode. Default: $0.90. Never set above $1.24.</div>
+  </div>
+</details>
 
 </div>
 <!-- ── end advanced ── -->
 <div style="height:20px"></div><button class="btn primary" id="btnSaveSettings" style="width:100%;margin-bottom:8px;font-size:15px;font-weight:800;min-height:52px">Save Settings</button><button class="btn danger" id="btnHardReset" style="width:100%">Hard Reset All Data</button><div class="muted" style="font-size:11px;margin-top:8px;text-align:center">Hard reset permanently clears all local data.</div></div>        <div class="card" id="cloudBackupCard"><h3>☁️ Cloud Backup</h3><div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Encrypted backups — your data is encrypted on your phone before upload. Your passphrase never leaves this device.</div><div id="cloudStatusPanel" class="cloud-status-panel" style="display:none"><div class="cloud-status-row"><span class="label">Status</span><span class="value" id="cloudStatusDot"><span class="cloud-dot off"></span> Not connected</span></div><div class="cloud-status-row"><span class="label">Last sync</span><span class="value" id="cloudStatusTime">—</span></div><div class="cloud-status-row"><span class="label">User</span><span class="value" id="cloudStatusUser">—</span></div><div class="cloud-status-row"><span class="label">Backups</span><span class="value" id="cloudStatusCount">—</span></div></div><div id="cloudSetupSection"><label for="cloudBackupToken">Your Token</label><div class="pass-wrap"><input id="cloudBackupToken" type="password" placeholder="flk_... (given to you)" autocomplete="off" /><button type="button" class="pass-toggle" id="btnTokenToggle" aria-label="Show token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Paste the token you received</div><label for="cloudBackupPass">Encryption Passphrase</label><div class="pass-wrap"><input id="cloudBackupPass" type="password" placeholder="Min 8 characters — pick your own" autocomplete="off" /><button type="button" class="pass-toggle" id="btnPassToggle" aria-label="Show passphrase">👁</button></div><div class="pass-strength" id="passStrength"><div class="pass-strength-fill" id="passStrengthFill"></div></div><div class="muted" style="font-size:11px;margin-top:4px" id="passStrengthLabel">If you forget this, backups cannot be recovered.</div><div class="cloud-actions"><button class="btn" id="btnCloudTest">🔌 Test</button><button class="btn primary" id="btnCloudSave" style="font-weight:700">Connect</button></div></div><div class="cloud-actions"><button class="btn" id="btnCloudPush" disabled>☁️ Backup Now</button><button class="btn" id="btnCloudPull" disabled>📥 Restore</button></div><div id="cloudSyncStatus" class="muted" style="font-size:12px;margin-top:8px;min-height:18px"></div><div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px"><button class="btn sm" id="btnAdminToggle" style="font-size:12px;width:100%">👑 Admin — Add / Manage Drivers</button><div id="adminPanel" style="display:none;margin-top:12px"><div id="adminAccessState" class="muted" style="font-size:12px;margin-bottom:10px;min-height:18px"></div><div id="adminSetupBlock"><label for="adminToken">Admin access</label><div class="pass-wrap"><input id="adminToken" type="password" placeholder="Paste it once" autocomplete="off" style="font-size:16px" /><button type="button" class="pass-toggle" id="btnAdminTokenToggle" aria-label="Show admin access value">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Checked with the server before it is saved, then stored encrypted under your PIN. It is never shown again.</div><button class="btn primary" id="btnAdminSaveAccess" style="margin-top:10px;width:100%;min-height:48px">Save admin access</button></div><div id="adminDriversBlock" style="display:none"><button class="btn primary" id="btnAdminCreate" style="margin-top:4px;width:100%;min-height:48px">📨 Invite driver</button><div class="muted" style="font-size:11px;margin-top:6px">Sends a link that works for 72 hours. They pick their own passphrase; nothing else to hand over.</div><div id="adminUserList" style="margin-top:14px"></div><button class="btn sm" id="btnAdminRefresh" style="font-size:11px;margin-top:8px;min-height:44px;color:var(--text-tertiary)">Refresh driver list</button></div></div></div><div style="margin-top:8px"><button class="btn sm" id="btnCloudClear" style="font-size:11px;color:var(--text-tertiary)">Disconnect Cloud Backup</button></div></div>
       </div>
       <div class="spacer"></div>
-      <div class="card"><h3>Storage &amp; Recovery</h3><div class="row"><div class="pill"><span class="muted">Trips</span> <b id="stTrips">0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="stExpenses">0</b></div><div class="pill"><span class="muted">Fuel</span> <b id="stFuel">0</b></div><div class="pill"><span class="muted">Receipts</span> <b id="stReceiptSets">0</b></div><div class="pill"><span class="muted">Blobs</span> <b id="stReceiptBlobs">0</b></div></div><div class="spacer"></div><div class="btn-row"><button class="btn" id="btnStorageRefresh">Refresh</button><button class="btn" id="btnStorageAnalyze">Analyze</button><button class="btn" id="btnStorageRebuild">Rebuild Index</button><button class="btn danger" id="btnStorageClearCache">Clear Cache</button></div><div class="muted" style="font-size:11px;margin-top:8px" id="stStatus">—</div></div>
+      <div class="card" id="settingsPrivacy"><h3>Privacy &amp; Data</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Storage health, recovery tools and local-data controls.</div><h4 style="margin:0 0 8px">Storage &amp; Recovery</h4><div class="row"><div class="pill"><span class="muted">Trips</span> <b id="stTrips">0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="stExpenses">0</b></div><div class="pill"><span class="muted">Fuel</span> <b id="stFuel">0</b></div><div class="pill"><span class="muted">Receipts</span> <b id="stReceiptSets">0</b></div><div class="pill"><span class="muted">Blobs</span> <b id="stReceiptBlobs">0</b></div></div><div class="spacer"></div><div class="btn-row"><button class="btn" id="btnStorageRefresh">Refresh</button><button class="btn" id="btnStorageAnalyze">Analyze</button><button class="btn" id="btnStorageRebuild">Rebuild Index</button><button class="btn danger" id="btnStorageClearCache">Clear Cache</button></div><div class="muted" style="font-size:11px;margin-top:8px" id="stStatus">—</div></div>
       <div class="spacer"></div>
       <div class="card"><h3>Money &amp; AR</h3><div class="muted" style="font-size:12px;margin-bottom:10px">Track unpaid trips and aging.</div><a class="btn" href="#money">View AR / Unpaid</a></div>
       <div class="spacer"></div>
@@ -384,7 +410,7 @@
       <!-- F27: Load Intake button — unified entry point -->
       <div style="margin-bottom:10px">
         <button class="btn primary" id="btnLoadIntake" style="width:100%;font-size:15px;font-weight:700;padding:14px;border-radius:14px">
-          📋 Load Intake — Paste or Type
+          Scan / Paste / Type Load
         </button>
       </div>
 
@@ -419,7 +445,7 @@
         <!-- ── Advanced toggle ── -->
         <div class="eval-advanced-toggle" id="evalAdvToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="evalAdvBody">
           <div class="adv-arrow">▶</div>
-          <span>More Details</span>
+          <span>Route &amp; Load Details</span>
           <span class="muted" style="font-size:11px;margin-left:auto" id="evalAdvSummary"></span>
         </div>
         <div class="eval-advanced-body" id="evalAdvBody">
@@ -432,6 +458,9 @@
           </div>
           <div class="field"><label for="mwDest">Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
           <div class="field"><label for="mwBroker">Broker / Customer <span class="muted" style="font-size:10px;font-weight:400">(optional — enables broker history)</span></label><input id="mwBroker" list="mwBrokerList" placeholder="e.g. Acme Logistics" /><datalist id="mwBrokerList"></datalist></div>
+          <details class="eval-secondary-details">
+            <summary>Decision overrides <span>Automatic by default</span></summary>
+            <div class="eval-secondary-body">
           <div class="grid2" style="gap:10px">
             <div class="field"><label for="mwCurrency">Currency</label><select id="mwCurrency" style="font-size:16px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
             <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
@@ -486,6 +515,8 @@
               </select>
             </div>
           </div>
+            </div>
+          </details>
         </div>
 
       </div>
