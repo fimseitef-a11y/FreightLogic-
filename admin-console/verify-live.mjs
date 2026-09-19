@@ -49,7 +49,7 @@ export async function verifyLiveAdmin({
   check(checks, 'unused device permissions denied', /camera=\(\)/i.test(root.headers.get('Permissions-Policy') || ''));
   check(checks, 'static origin does not set API CORS', !root.headers.has('Access-Control-Allow-Origin'));
 
-  for (const path of ['/worker.js', '/wrangler.jsonc', '/README.md', '/_headers', '/.assetsignore', '/verify-live.mjs']) {
+  for (const path of ['/worker.js', '/wrangler.jsonc', '/README.md', '/_headers', '/.assetsignore', '/verify-live.mjs', '/deploy.sh']) {
     try {
       const res = await fetchImpl(admin + path, {
         method: 'GET',
