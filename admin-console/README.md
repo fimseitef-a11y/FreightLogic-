@@ -15,3 +15,10 @@ Security contract:
 ## Deployment hold
 
 Do not deploy or merge this surface as production-ready until a real distinct admin origin exists, that exact origin is configured in the Worker CORS allowlist, and live admin-auth/list/invite/re-invite/revoke smoke tests pass. The runtime same-origin guard is defense-in-depth only; the driver deployment must still exclude this privileged surface rather than treating a hidden /admin-console/ path as separation. Phase C removal of the legacy driver-app admin surface remains gated on that live proof.
+
+
+## Static-host deployment contract
+
+Deploy this directory as the **site root** of its own project/origin so `_headers` is applied as response metadata rather than served as an ordinary nested file. The response policy intentionally adds controls a CSP `<meta>` element cannot provide reliably, including `frame-ancestors 'none'`, plus `no-store`, `nosniff`, no-referrer, clickjacking defense, and denial of device capabilities the admin MVP does not use.
+
+Do not add `Access-Control-Allow-Origin` here. API CORS remains the Worker's exact-origin security boundary and must explicitly allow the deployed admin origin.
