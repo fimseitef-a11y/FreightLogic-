@@ -1685,7 +1685,6 @@ html[data-fl-text-size] body :is(
 }
 
 html[data-fl-text-size] body :is(
-  .card h3,
   .item .k,
   .kpi-hero-label,
   .kpi-cell-label,
@@ -1798,7 +1797,25 @@ html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver
   .nav a,
   [data-fl-road-action]
 ) {
+  min-height: var(--fl-road-target) !important;
+}
+
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body :is(
+  .btn,
+  .chip,
+  .fl-quick-btn,
+  .settings-collapse-btn
+) {
+  font-size: var(--fl-secondary-size) !important;
+}
+
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body :is(
+  input,
+  select,
+  textarea
+) {
   min-height: var(--fl-road-target);
+  font-size: var(--fl-body-size) !important;
 }
 
 html[data-fl-driver-mode="glance"] body .fl-quick-btn {
