@@ -251,6 +251,51 @@ test('[ADMIN-14] repository exposes a confirmed manual deploy path for the separ
 });
 
 
+test('[ADMIN-15] live verifier proves dedicated-origin headers, exact API CORS and unauthenticated admin denial', async () => {
+  const mod = await import(pathToFileURL(path.join(ROOT, 'admin-console/verify-live.mjs')).href + `?t=${Date.now()}`);
+  const adminOrigin = 'https://freightlogic-admin-console.fimseitef.workers.dev';
+  const apiOrigin = 'https://freightlogic-backup.fimseitef.workers.dev';
+  const security = {
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  };
+  const fetchImpl = async (url, init = {}) => {
+    const u = new URL(url);
+    if (u.origin === adminOrigin && u.pathname === '/') {
+      return new Response('<title>FreightLogic Admin Console</title>', { status: 200, headers: security });
+    }
+    if (u.origin === adminOrigin) return new Response('missing', { status: 404, headers: security });
+    if (u.origin === apiOrigin && u.pathname === '/health') {
+      return new Response('{"ok":true}', { status: 200, headers: { 'Access-Control-Allow-Origin': adminOrigin } });
+    }
+    if (u.origin === apiOrigin && u.pathname === '/admin/users') {
+      return new Response('{"ok":false}', { status: 401, headers: { 'Access-Control-Allow-Origin': adminOrigin } });
+    }
+    throw new Error(`unexpected URL ${url}`);
+  };
+  const result = await mod.verifyLiveAdmin({ adminOrigin, apiOrigin, fetchImpl });
+  eq(result.ok, true, 'all safe live-contract checks should pass');
+  eq(result.checks.filter(x => x.ok).length, result.checks.length, 'every live check must be individually true');
+
+  const wildcardFetch = async (url, init = {}) => {
+    const u = new URL(url);
+    if (u.origin === adminOrigin && u.pathname === '/') {
+      return new Response('<title>FreightLogic Admin Console</title>', { status: 200, headers: security });
+    }
+    if (u.origin === adminOrigin) return new Response('missing', { status: 404, headers: security });
+    if (u.origin === apiOrigin && u.pathname === '/health') {
+      return new Response('{}', { status: 200, headers: { 'Access-Control-Allow-Origin': '*' } });
+    }
+    return new Response('{}', { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } });
+  };
+  const bad = await mod.verifyLiveAdmin({ adminOrigin, apiOrigin, fetchImpl: wildcardFetch });
+  eq(bad.ok, false, 'wildcard API CORS must fail the live verifier');
+});
+
+
 export async function runSpec() {
   for (const { name, fn } of tests) {
     try { await fn(); pass += 1; console.log(`  PASS ${name}`); }
