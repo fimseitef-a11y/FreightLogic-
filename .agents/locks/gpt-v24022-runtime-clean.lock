@@ -1,0 +1,6 @@
+owner: gpt
+token: 7d41b0c6-2f8e-4b0a-b7d4-6c9e3a1f5b72
+started_utc: 2026-09-19T05:04:21Z
+expected_release_utc: 2026-09-19T06:34:21Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js
+task: Rebuild PR #260's already-tested v24.0.22 integrated runtime tree on a clean GPT branch after Claude completed and released the SHARED runtime lock; preserve Claude's runtime bytes exactly, run unchanged Lanes/CodeQL/full suite, then merge only an exact green candidate.
