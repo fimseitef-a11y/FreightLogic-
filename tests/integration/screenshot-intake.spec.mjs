@@ -393,6 +393,89 @@ test('[SSI-13] an explicitly dismissed card is never re-counted or re-shown', as
   } finally { await app.close(); }
 });
 
+// ── Decision-first compact result (Issue #252, output-presentation contract) ──
+
+/** Drive the REAL canonical evaluator and return what the decision card renders. */
+async function scoreLoad(page, { revenue, loaded, dead, origin, dest }) {
+  await page.evaluate(() => { location.hash = '#omega'; });
+  await page.waitForSelector('#evalAdvToggle', { timeout: 15000 });
+  const open = await page.isVisible('#mwOrigin').catch(() => false);
+  if (!open) await page.click('#evalAdvToggle');
+  await page.waitForSelector('#mwOrigin', { state: 'visible', timeout: 15000 });
+  await page.fill('#mwRevenue', String(revenue));
+  await page.fill('#mwLoadedMi', String(loaded));
+  await page.fill('#mwDeadMi', String(dead));
+  if (origin) await page.fill('#mwOrigin', origin);
+  if (dest) await page.fill('#mwDest', dest);
+  await page.dispatchEvent('#mwRevenue', 'input');
+  await page.waitForTimeout(1400);
+  return page.evaluate(() => {
+    const out = document.querySelector('#mwEvalOutput');
+    const details = out?.querySelector('#mwEvalDetails');
+    // Everything OUTSIDE the collapsed <details> is what the driver sees first.
+    const clone = out?.cloneNode(true);
+    clone?.querySelector('#mwEvalDetails')?.remove();
+    return {
+      all: (out?.innerText || ''),
+      upFront: (clone?.innerText || ''),
+      detailsOpen: details ? details.hasAttribute('open') : null,
+    };
+  });
+}
+
+test('[SSI-14] the decision card states True RPM, miles and positioning WITHOUT opening details', async () => {
+  // #252's output contract. All four of these were behind "Show Details", so
+  // the numbers a driver decides on were one tap away while the decision was
+  // not. Asserted against the text OUTSIDE the collapsed <details>, because
+  // "it is somewhere in the DOM" is exactly the check that would have passed
+  // while the surface was still buried.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await scoreLoad(app.page, {
+      revenue: 1250, loaded: 355, dead: 42, origin: 'Columbus, OH', dest: 'Chicago, IL',
+    });
+    eq(r.detailsOpen, false, 'the detailed Omega math must still start COLLAPSED');
+    ok(/True RPM/i.test(r.upFront), 'True RPM must be stated up front');
+    // 1250 / (355 + 42) = 3.148..., so the card must show the TOTAL-mile rate.
+    ok(/\$3\.1[0-9]/.test(r.upFront), `True RPM must be the total-mile figure, got: ${r.upFront.slice(0, 300)}`);
+    ok(/397/.test(r.upFront), 'total miles must be stated up front');
+    ok(/355/.test(r.upFront) && /42/.test(r.upFront), 'the loaded + deadhead split must be stated');
+    ok(/Positioning/i.test(r.upFront), 'positioning / reload quality must be stated up front');
+  } finally { await app.close(); }
+});
+
+test('[SSI-15] the compact facts are READ from the canonical decision, never recomputed', async () => {
+  // The authority rule, asserted as agreement rather than asserted in prose: the
+  // True RPM in the compact strip and the True RPM the detailed Omega math
+  // prints must be the same number. A second derivation would be a second
+  // evaluator, which is the thing #252 forbids and v24.0 already forbade.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await scoreLoad(app.page, {
+      revenue: 900, loaded: 300, dead: 0, origin: 'Columbus, OH', dest: 'Toledo, OH',
+    });
+    // 900 / 300 = 3.00 with a verified zero deadhead.
+    const upFrontRpm = /\$(\d+\.\d{2})/.exec(r.upFront.slice(r.upFront.search(/True RPM/i)));
+    ok(upFrontRpm, `no True RPM found up front: ${r.upFront.slice(0, 300)}`);
+    eq(upFrontRpm[1], '3.00', 'the compact strip must print the canonical total-mile True RPM');
+    ok(r.all.includes('3.00'), 'and the detailed math must agree with it');
+  } finally { await app.close(); }
+});
+
+test('[SSI-16] an explicit zero deadhead renders as 0 in the card, not as a gap', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await scoreLoad(app.page, {
+      revenue: 900, loaded: 300, dead: 0, origin: 'Columbus, OH', dest: 'Toledo, OH',
+    });
+    ok(/300 loaded \+ 0 DH/.test(r.upFront),
+      `a verified zero deadhead must render as 0, got: ${r.upFront.slice(0, 300)}`);
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
