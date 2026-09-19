@@ -56,6 +56,14 @@ Required SHARED changes, once the lock is released/expired+reaped:
 6. manifest.json
 - name -> FreightLogic v24.0.22; preserve all capabilities/shortcuts.
 
+Release-generation invariants from the actual CG suite:
+- CG-03/04: every ?v= marker in service-worker.js and index.html must equal APP_VERSION.
+- CG-05/06: every versioned URL requested by index.html must be the exact URL precached by the service worker; critical must retain app.js, Midwest authority, modern shell, and bundled SheetJS as currently required.
+- CG-07/12: SW, bridge, overlay and modern-shell header comments must all name 24.0.22; sw-bridge's exact modern-shell import URL must be precached and install-critical.
+- CG-10: DO NOT alter the index.html CSP meta bytes while adding the controls/version markers; it must remain byte-identical to _headers.
+- CG-11: styles.css must continue carrying NO release-version literal.
+- CG-14: midwest-stack-config appTarget is already staged at 24.0.22.
+
 Verification after SHARED patch:
 - run exact-head full suite; do not weaken DD/SSI/RG/CG assertions.
 - RG/CG must be green.
