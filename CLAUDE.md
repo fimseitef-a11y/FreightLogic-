@@ -4559,6 +4559,29 @@ Without `IntersectionObserver` it falls back to counting on render. That is wors
 and much better than a budget that never retires anything: a card that can never be counted is a
 card that renders forever.
 
+### Decision-first output — the last half of #252's contract
+
+The hero card already carried the ACTION, the grade and the bid triple. #252's output
+contract also asks for **True RPM with its ladder label, the mile breakdown, positioning /
+reload quality, and one critical alert** — and all four sat behind **Show Details**. So the
+numbers a driver decides on were one tap away while the decision itself was not, which is the
+same complaint #205 made about Today and the reason that release exists.
+
+The strip is **additive**: the detailed Omega math below it is unchanged and still
+authoritative, the `<details>` still starts collapsed, and nothing in the strip computes
+economics. Every value is read from the canonical decision already derived above.
+**`SSI-15` asserts that as agreement rather than as prose** — the True RPM in the compact strip
+and the True RPM the detailed math prints must be the same number, because a second derivation
+would be a second evaluator, which is exactly what #252 and the v24.0 authority rule forbid.
+
+Deadhead is always KNOWN at that point (`mwEvaluateLoad()` returns early and asks for it when
+it is null), so the strip can never print an invented zero — and `SSI-16` pins the other
+direction, that a verified `0` renders as `0 DH` rather than as a gap.
+
+`SSI-14` deliberately asserts against the text **outside** the collapsed `<details>`. "It is
+somewhere in the DOM" is the check that would have passed while the surface was still buried,
+which is the v24.0.8 lesson restated.
+
 ### Tests
 
 `tests/unit/worker-vision-extract.spec.mjs` (15, new) drives the **real exported fetch handler**
@@ -4567,7 +4590,7 @@ so the route, the auth gate, the ceilings and the normalizer under test are the 
 only the model call is stubbed, and there is no network and no provider key. Driver credentials are
 minted through the **real invite/claim path** rather than a seeded fixture that could drift from it.
 
-`tests/integration/screenshot-intake.spec.mjs` (13, new) drives the real app in real Chromium with
+`tests/integration/screenshot-intake.spec.mjs` (16, new) drives the real app in real Chromium with
 `/extract-image` intercepted at the network boundary, so the picker, the canvas downscale, the
 review step and the evaluator handoff are all shipped code. It asserts **rendered content**.
 `SSI-02` additionally pins the upload contract: the image must arrive re-encoded as **JPEG**,
@@ -4578,15 +4601,16 @@ Both are registered in `tests/run-all.mjs`, which `RH-01` requires and which is 
 since PR #234 retired the spent exception — so the deadlock recorded at the end of the v24.0.16
 section no longer applies and no cross-lane edit was needed.
 
-**All five negative controls were applied and verified to fire, each on exactly the assertion it
+**All six negative controls were applied and verified to fire, each on exactly the assertion it
 guards and on no other**, with the tree restored from a pristine copy and re-verified by
 `sha256sum` after every one — the v24.0.17 lesson, where a control's restore was overwritten
 mid-run and a suite result described a tree that never existed. Reverting the Worker's tri-state
 integer fails `VEX-05` **while `VEX-04` stays green**, which is the demonstration that the two
 deadhead directions are independently tested rather than one rule tested twice; passing the model's
 output through unfiltered fails `VEX-06`; restoring count-on-call fails `SSI-09` only; counting on
-mount instead of on visibility fails `SSI-11` only; and reverting the app-side deadhead chain fails
-`SSI-05` while `SSI-04` and `SSI-06` stay green.
+mount instead of on visibility fails `SSI-11` only; reverting the app-side deadhead chain fails
+`SSI-05` while `SSI-04` and `SSI-06` stay green; and burying the compact facts back behind
+`Show Details` fails `SSI-14`/`15`/`16` and nothing else.
 
 **`RH-04` fired on this release's own author, for the third consecutive release.** The gate is a
 raw `/SpeechRecognition/` regex over `app.js`, and a new comment promising not to reintroduce a

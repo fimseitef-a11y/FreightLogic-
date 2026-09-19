@@ -11318,8 +11318,41 @@ function _mwRenderDecision(out, d){
   const _quickAcceptH = _roundTo25h(revenue);
   const _verdictSentence = _genVerdictSentence(d);
 
+  const _heroColorEarly = isDZActive ? '#f0a500' : dispGradeColor;
+
+  // ── Issue #252: decision-first compact facts ─────────────────────────────
+  // The hero already carried the ACTION, the grade and the bid triple. #252's
+  // output contract also asks for True RPM with its ladder label, the mile
+  // breakdown, positioning/reload quality and ONE critical alert, and all four
+  // were behind "Show Details" — so the numbers a driver decides on were one
+  // tap away while the decision itself was not. This is ADDITIVE: the detailed
+  // Omega math below is unchanged and still authoritative, and nothing here is
+  // AI-authored. Every value is read from the canonical decision that has
+  // already been computed above; this block computes no economics of its own.
+  //
+  // Deadhead is always KNOWN here — mwEvaluateLoad() returns early and asks for
+  // it when it is null, so this strip can never print an invented zero.
+  const _posLabel = geo.dT1 ? 'Tier 1 anchor — strong reloads'
+    : geo.dT2 ? 'Tier 2 market — workable reloads'
+    : 'Outside density — reload risk is real';
+  const _posColor = (geo.dT1 || geo.dT2) ? 'var(--good)' : 'var(--warn)';
+  const _topWarning = warnings.length ? warnings[0] : null;
+  const _factCell = (label, value) => `<div style="min-width:0">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">${escapeHtml(label)}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis">${value}</div>
+    </div>`;
+  const _compactFacts = `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-subtle);display:grid;grid-template-columns:1fr 1fr;gap:9px;text-align:left">
+    ${_factCell('True RPM', `<span style="font-family:var(--font-mono)">$${trueRPM.toFixed(2)}</span> <span style="font-size:11px;font-weight:600;color:${_heroColorEarly}">${escapeHtml(dispGradeLabel)}</span>`)}
+    ${_factCell('Miles', `<span style="font-family:var(--font-mono)">${totalMi}</span> <span style="font-size:11px;font-weight:600;color:var(--text-tertiary)">${loadedMi} loaded + ${deadMi} DH</span>`)}
+    <div style="grid-column:1/-1;min-width:0">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Positioning</div>
+      <div style="font-size:13px;font-weight:700;color:${_posColor}">${escapeHtml(_posLabel)}</div>
+    </div>
+    ${_topWarning ? `<div style="grid-column:1/-1;margin-top:1px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.09);border:1px solid rgba(240,165,0,.28);font-size:12px;line-height:1.45;color:var(--text)">${escapeHtml(_topWarning.icon)} ${escapeHtml(_topWarning.text)}</div>` : ''}
+  </div>`;
+
   // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
-  const _heroColor = isDZActive ? '#f0a500' : dispGradeColor;
+  const _heroColor = _heroColorEarly;
   const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
   const _verdictBadgeLabel = isDZActive ? 'DZ EXIT' : verdictLabels[verdict] || verdict;
   let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
@@ -11341,6 +11374,7 @@ function _mwRenderDecision(out, d){
         <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
       </div>
     </div>
+    ${_compactFacts}
   </div>
   <details id="mwEvalDetails" style="margin-bottom:12px">
     <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
