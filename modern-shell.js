@@ -7,6 +7,10 @@
 
   const PRIMARY_ROUTES = new Set(['home', 'loads', 'omega', 'trips', 'money']);
   const ROUTE_ALIASES = { today: 'home', evaluate: 'omega' };
+  const ROUTE_TITLES = {
+    home: 'Today', loads: 'Loads', omega: 'Evaluate', trips: 'Trips', money: 'Money',
+    expenses: 'Expenses', fuel: 'Fuel', intel: 'Market Intel', insights: 'Settings', more: 'More'
+  };
   let installed = false;
 
   const icon = {
@@ -30,6 +34,11 @@
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
+
+    // The header behaves like an iPhone screen title, not a permanent marketing
+    // banner. The brand still lives in the install icon/about surface.
+    const title = document.querySelector('#mainHeader .brand .title strong');
+    if (title) title.textContent = ROUTE_TITLES[route] || 'FreightLogic';
   }
 
   function rebuildPrimaryNav() {
@@ -144,7 +153,10 @@
     if (home) home.setAttribute('aria-label', 'Today');
     rebuildPrimaryNav();
     addSecondaryMenuAccess();
-    window.addEventListener('hashchange', normalizeAliasHash);
+    window.addEventListener('hashchange', () => {
+      normalizeAliasHash();
+      syncActiveFromHash();
+    });
     normalizeAliasHash();
     syncActiveFromHash();
     installA11yRepairs();
