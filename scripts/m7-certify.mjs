@@ -213,6 +213,19 @@ for (const [g, cmd] of [
   ['Production M5B intake durability check', 'manual — More → Opportunity Intake, save evidence, reload, export, re-import'],
   ['iOS 27 / Safari 27 regression pass (A11)', 'manual — on iOS 27+: F31 SVG chart, tab-bar icons, select zoom-on-focus, persisted storage granted, cloud-backup paused banner (FIELD_TEST_CHECKLIST.md A11)'],
   ['Zero-token driver onboarding (A12)', `manual — prerequisite SATISFIED: the invite/claim contract is deployed and live-observed (B7 PASS, run 35049144080). Run A12 against app ${appV} / Worker v${workerV} and record BOTH generations with the result. Owner sets admin access once under the PIN; invite by iMessage and by Mail; claim in Safari; then ADD TO HOME SCREEN and record whether the token is present or the install is a separate storage partition. If separate, walk the re-claim and confirm the owner still sees ONE driver with their backup count intact (FIELD_TEST_CHECKLIST.md A12)`],
+  // A13 exists in FIELD_TEST_CHECKLIST.md as of v24.0.21 and was missing from
+  // this list until now. That is not cosmetic: this runner is what a reader
+  // consults to learn what the physical gate IS, and a runner that has never
+  // heard of A13 cannot report it missing — the checklist says so in its own
+  // words.
+  //
+  // The prerequisite is stated as a CAPABILITY rather than a version number,
+  // and that is the honest form as well as the one M7-10 permits. What actually
+  // blocks the row is the deployed Worker not exposing POST /extract-image; the
+  // generation is only a proxy for that, and writing the proxy as a literal is
+  // the pinned-generation drift this file already refuses in M7-09/M7-10 — it
+  // fired on this very line when it was first written that way.
+  ['Screenshot intake on a real iPhone (A13)', `manual — requires a DEPLOYED Worker exposing POST /extract-image; source carries v${workerV}, so confirm /health reports that generation or later before starting. Below it every attempt fails and the row is BLOCKED, not FAIL. Photos/Files picker is the guaranteed path; record the camera/screenshot control and clipboard-image outcomes separately rather than assuming either delivers a file in an INSTALLED PWA. A posting with no stated deadhead must stay blank/UNKNOWN and prompt for the figure; an explicit 0 must survive as a known zero; a manual correction must override the model; and the result must be the ordinary canonical evaluator, not an AI-authored grade/RPM/bid (FIELD_TEST_CHECKLIST.md A13)`],
 ]) console.log(`  PENDING  ${g}\n           → ${cmd}`);
 
 /* ---- the verdict. Certification requires ALL of: canonical state clear,
