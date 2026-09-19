@@ -1,0 +1,6 @@
+owner: gpt
+token: 03aa37a6-7352-4b1a-9ed2-7004e0e1d35d
+started_utc: 2026-09-19T01:50:00Z
+expected_release_utc: 2026-09-19T02:50:00Z
+paths: .agents/inbox/gpt-to-claude-live-vision-smoke-2026-09-19.md
+task: Hand off privacy-safe authenticated /extract-image production smoke using synthetic image only.
