@@ -1,7 +1,21 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.21 USA ENGINE
+/** FreightLogic v24.0.22 USA ENGINE
+ *  v24.0.22 "Delivery, Again": a GENERATION CORRECTION, not new behaviour. The
+ *          decision-first compact strip (#252's output contract) landed in a
+ *          second commit that changed app.js while leaving every marker at
+ *          24.0.21 -- and Cloudflare had ALREADY built freightlogic-v2 from the
+ *          first commit, so a real 24.0.21 shell existed. A client holding it
+ *          would never have fetched the changed file: CACHE_NAME is
+ *          freightlogic-${SW_VERSION} and the `?v=` query is the only other
+ *          identity a child asset carries. RG-03 caught it in CI (681/1) and was
+ *          right. The commit that did it argued "still undeployed, nothing
+ *          cached yet" -- which is an argument about BEHAVIOUR, and the
+ *          generation rule is about DELIVERY. v24.0.12 records that exact
+ *          rationalization being wrong for a change that was genuinely inert in
+ *          production; this one was not even inert. No source semantics change
+ *          here and the Worker stays v21; every governed marker moves together.
  *  v24.0.21 "Read The Screenshot": Issue #252's P0 screenshot intake, plus the
  *          carried-forward onboarding-exposure repair. (1) A load posting reaches
  *          the driver as a SCREENSHOT far more often than as clean text, and the
@@ -362,7 +376,86 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.21';
+const APP_VERSION = '24.0.22';
+// ── Driver display preferences (Issue #205 section 1) ────────────────────────
+//
+// Text size and Glance Mode describe THIS PHONE, not the business, so they are
+// localStorage — not the settings store. That keeps them out of export
+// payloads, cloud backup and the import allow-list by construction rather than
+// by a filter somebody has to remember: a driver restoring a backup onto a
+// second device should not inherit the first device's text size.
+//
+// APPLIED SYNCHRONOUSLY, before anything awaits. The <html> attributes are what
+// styles.css keys on, so deferring this to an async boot step would paint one
+// frame at the wrong size on every launch — most visibly for the operator who
+// chose Extra Large because Standard is hard to read.
+//
+// FAILS CLOSED. An unrecognised persisted value normalizes to Standard with
+// Glance off rather than being trusted or thrown away: a corrupt string must
+// never silently enable a road mode the operator did not choose. DD-04 writes
+// `gigantic` / `force-on` and requires exactly that.
+const FL_TEXT_SIZES = ['standard', 'large', 'xlarge'];
+const FL_DRIVER_MODES = ['glance'];
+
+function flReadDisplayPref(key, allowed, fallback){
+  let raw = null;
+  // Private mode and blocked site data both throw here rather than returning
+  // null, and neither is a reason to fail boot.
+  try { raw = localStorage.getItem(key); } catch(e){ raw = null; }
+  return allowed.includes(raw) ? raw : fallback;
+}
+
+/** Push the persisted (or normalized) preferences onto <html>. Returns them. */
+function applyDriverDisplayPrefs(){
+  const root = document.documentElement;
+  if (!root) return { size: 'standard', mode: null };
+  const size = flReadDisplayPref('fl_text_size', FL_TEXT_SIZES, 'standard');
+  const mode = flReadDisplayPref('fl_driver_mode', FL_DRIVER_MODES, null);
+  // Standard is written explicitly rather than left absent: styles.css uses
+  // `html[data-fl-text-size]` as its hook, and a missing attribute would mean
+  // the contract simply does not apply.
+  root.setAttribute('data-fl-text-size', size);
+  if (mode) root.setAttribute('data-fl-driver-mode', mode);
+  else root.removeAttribute('data-fl-driver-mode');
+  return { size, mode };
+}
+
+function flWriteDisplayPref(key, value){
+  try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+  catch(e){ /* storage unavailable: the attribute still applies for this session */ }
+}
+
+/** Wire the Settings controls. Idempotent — renderInsights() runs on every visit. */
+function wireDriverDisplayControls(){
+  const sizeEl = $('#driverTextSize'), modeEl = $('#driverGlanceMode');
+  const current = applyDriverDisplayPrefs();
+  if (sizeEl){
+    sizeEl.value = current.size;
+    if (sizeEl.dataset.flDisplayBound !== '1'){
+      sizeEl.dataset.flDisplayBound = '1';
+      addManagedListener(sizeEl, 'change', () => {
+        const v = FL_TEXT_SIZES.includes(sizeEl.value) ? sizeEl.value : 'standard';
+        flWriteDisplayPref('fl_text_size', v);
+        applyDriverDisplayPrefs();
+        haptic(8);
+      });
+    }
+  }
+  if (modeEl){
+    modeEl.checked = current.mode === 'glance';
+    if (modeEl.dataset.flDisplayBound !== '1'){
+      modeEl.dataset.flDisplayBound = '1';
+      addManagedListener(modeEl, 'change', () => {
+        flWriteDisplayPref('fl_driver_mode', modeEl.checked ? 'glance' : null);
+        applyDriverDisplayPrefs();
+        haptic(8);
+      });
+    }
+  }
+}
+
+applyDriverDisplayPrefs();
+
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
@@ -7702,6 +7795,8 @@ async function renderAR(){
 
 // ---- UI: Insights ----
 async function renderInsights(){
+  // Issue #205 section 1: reflect and bind the device-local display controls.
+  wireDriverDisplayControls();
   const uiMode = await getSetting('uiMode','simple');
   const vClass = await getSetting('vehicleClass', 'cargo_van');
   const vcEl = $('#vehicleClass');
@@ -11169,7 +11264,7 @@ async function mwEvaluateLoad(){
   if (verdict === 'REJECT'){
     postDeliveryCmd = 'SKIP'; postDeliveryDetail = 'Do not take this load';
   } else if (geo.dT1){
-    postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Delivering into Tier 1 — wait for strong reload';
+    postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Delivering into Tier 1 — hold for a better outbound';
   } else if (geo.dT2){
     postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Tier 2 destination — reload within 90 min or micro-reposition';
   } else if (geo.intoDensity){
@@ -11279,8 +11374,10 @@ function _genVerdictSentence(d){
   const { grade, verdict, trueRPM, geo, isDZActive, dzSubTier, effectiveStrategic } = d;
   if (isDZActive) return `DZ Exit — gets you closer to home corridor`;
   if (verdict === 'REJECT') return `Skip — trap lane, low reload probability`;
-  if (grade === 'A') return `Take it — premium rate, strong reload market ahead`;
-  if (grade === 'B') return geo && geo.dT1 ? `Take it — strong reload market ahead` : `Take it — solid economics`;
+  // SSI-17: Tier 1 membership is a STATIC classification. Saying "strong
+  // reload market" asserts a live measurement this sentence never made.
+  if (grade === 'A') return `Take it — premium rate into a Tier 1 market`;
+  if (grade === 'B') return geo && geo.dT1 ? `Take it — solid economics into a Tier 1 market` : `Take it — solid economics`;
   if (grade === 'C') return `Marginal — only if nothing better in 2 hours`;
   if (grade === 'D') return effectiveStrategic ? `Strategic only — bridges you toward density` : `Negotiate up or pass`;
   if (grade === 'E') return `Strategic floor only — use with caution`;
@@ -11318,8 +11415,51 @@ function _mwRenderDecision(out, d){
   const _quickAcceptH = _roundTo25h(revenue);
   const _verdictSentence = _genVerdictSentence(d);
 
+  const _heroColorEarly = isDZActive ? '#f0a500' : dispGradeColor;
+
+  // ── Issue #252: decision-first compact facts ─────────────────────────────
+  // The hero already carried the ACTION, the grade and the bid triple. #252's
+  // output contract also asks for True RPM with its ladder label, the mile
+  // breakdown, positioning/reload quality and ONE critical alert, and all four
+  // were behind "Show Details" — so the numbers a driver decides on were one
+  // tap away while the decision itself was not. This is ADDITIVE: the detailed
+  // Omega math below is unchanged and still authoritative, and nothing here is
+  // AI-authored. Every value is read from the canonical decision that has
+  // already been computed above; this block computes no economics of its own.
+  //
+  // Deadhead is always KNOWN here — mwEvaluateLoad() returns early and asks for
+  // it when it is null, so this strip can never print an invented zero.
+  // SSI-17: these tiers are a STATIC market classification table, not a live
+  // reload observation. The first version said "strong reloads" / "workable
+  // reloads", which claims evidence this line does not have -- the same class
+  // as an unrecognised market rendered as a confident directive (#216) and a
+  // blank deadhead rendered as a verified zero. The label now discloses what it
+  // actually is, so a driver can weigh it accordingly.
+  const _posLabel = geo.dT1 ? 'Tier 1 anchor (static market class)'
+    : geo.dT2 ? 'Tier 2 market (static market class)'
+    : 'Outside density (static market class)';
+  const _posColor = (geo.dT1 || geo.dT2) ? 'var(--good)' : 'var(--warn)';
+  const _topWarning = warnings.length ? warnings[0] : null;
+  // SSI-18: the strip renders through the SHARED presentation seam
+  // (.fl-eval-facts / -fact-label / -fact-value / -positioning / [data-fl-rpm])
+  // that styles.css owns, rather than inline 10/11/13px declarations. That is
+  // what lets the Driver/Glance text-size preference reach these numbers: an
+  // inline font-size cannot be scaled by a user preference, and the driver who
+  // chooses Extra Large is exactly the driver who needs True RPM legible.
+  const _factCell = (label, value, attr = '') => `<div style="min-width:0">
+      <div class="fl-eval-fact-label">${escapeHtml(label)}</div>
+      <div class="fl-eval-fact-value"${attr}>${value}</div>
+    </div>`;
+  const _compactFacts = `<div class="fl-eval-facts" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-subtle)">
+    ${_factCell('True RPM', `<span class="mono">$${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${_heroColorEarly}">${escapeHtml(dispGradeLabel)}</span>`, ' data-fl-rpm')}
+    ${_factCell('Miles', `<span class="mono">${totalMi}</span> <span style="font-weight:600;color:var(--text-tertiary)">${loadedMi} loaded + ${deadMi} DH</span>`)}
+    <div class="fl-eval-fact-label" style="grid-column:1/-1">Positioning</div>
+    <div class="fl-eval-positioning" style="color:${_posColor}">${escapeHtml(_posLabel)}</div>
+    ${_topWarning ? `<div class="fl-eval-alert" style="margin-top:1px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.09);border:1px solid rgba(240,165,0,.28);color:var(--text)">${escapeHtml(_topWarning.icon)} ${escapeHtml(_topWarning.text)}</div>` : ''}
+  </div>`;
+
   // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
-  const _heroColor = isDZActive ? '#f0a500' : dispGradeColor;
+  const _heroColor = _heroColorEarly;
   const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
   const _verdictBadgeLabel = isDZActive ? 'DZ EXIT' : verdictLabels[verdict] || verdict;
   let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
@@ -11341,6 +11481,7 @@ function _mwRenderDecision(out, d){
         <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
       </div>
     </div>
+    ${_compactFacts}
   </div>
   <details id="mwEvalDetails" style="margin-bottom:12px">
     <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
