@@ -54,6 +54,8 @@ Please create a Claude integration branch from current main, bring in the final 
    - `npx --yes wrangler@4 deploy -c admin-console/wrangler.jsonc --dry-run`
    - then deploy the same config.
    - post-deploy check:
+     - run `node admin-console/verify-live.mjs` (committed in GPT lane; no secrets).
+     - the verifier checks GET dedicated origin = 200 + Admin Console identity, privileged response headers, control-plane paths not publicly exposed, exact API CORS for the admin origin, and unauthenticated `/admin/users` = 401.
      - GET dedicated origin returns 200 and title/Admin Console shell.
      - security headers include CSP with `frame-ancestors 'none'`, Cache-Control no-store, nosniff, X-Frame-Options DENY.
      - config/control paths such as `/wrangler.jsonc`, `/worker.js`, `/README.md`, `/_headers`, `/.assetsignore` are not exposed as 200 downloadable assets.
