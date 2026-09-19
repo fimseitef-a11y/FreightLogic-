@@ -7,8 +7,6 @@
 import { launchApp, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/driver-glance-preferences.spec.mjs');
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
 async function openDriverDisplaySettings(page) {
   await page.evaluate(() => { location.hash = '#insights'; });
   await page.waitForSelector('#driverTextSize', { state: 'visible', timeout: 15000 });
@@ -114,7 +112,8 @@ test('[DRIVER DISPLAY / NEGATIVE] DD-04 corrupt persisted display values fail cl
       localStorage.setItem('fl_driver_mode', 'force-on');
     });
     await app.page.reload({ waitUntil: 'load' });
-    await sleep(100);
+    await app.page.waitForFunction(() =>
+      document.documentElement.getAttribute('data-fl-text-size') === 'standard');
     const prefs = await rootPrefs(app.page);
     eq(prefs.size, 'standard', 'unknown text-size values must normalize to Standard');
     eq(prefs.mode, null, 'unknown Glance values must not enable road mode');
