@@ -418,7 +418,10 @@ async function scoreLoad(page, { revenue, loaded, dead, origin, dest }) {
     return {
       all: (out?.innerText || ''),
       upFront: (clone?.innerText || ''),
-      detailsText: (details?.innerText || ''),
+      // A closed <details> exposes only its visible <summary> through innerText.
+      // textContent reads the still-present detailed Omega DOM without opening it,
+      // so SSI-15 can compare the two independent render locations honestly.
+      detailsText: (details?.textContent || ''),
       detailsOpen: details ? details.hasAttribute('open') : null,
     };
   });
