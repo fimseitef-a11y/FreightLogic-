@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.20 DEPLOYED and OBSERVED LIVE.** Merged `c72b521` (PR #249); re-dispatched live parity `35329623870` and production SW `35329629590` both PASS; superseding record merged as `54e36f2` (PR #251). Production serves **24.0.20 / DB16 / Worker v20** — source and production agree. Still HOLD on physical iPhone A1-A12 only.) | 2026-09-18 |
-| gpt | Operator-directed bounded Admin integration takeover: update lane authority, register Admin spec, exact Admin CORS config, add manual Admin deploy workflow; no app.js/runtime edits in this slice. | 2026-09-19 |
+| gpt | Operator-directed runtime takeover: integrate PR #255 onto current main, add final Driver/Glance CSS, fix positioning provenance, advance governed app generation, run exact-head suite/live gates. | 2026-09-19 |
 
 ---
 
