@@ -2,24 +2,33 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**PRODUCTION LAST VERIFIED AT 24.0.22 / DB16 / Worker v21.** Observation of
-record: live parity run `35424880453` (`workflow_dispatch` on `main` @ `11cc8b7`)
-and `35426397099` (push on `main` @ `ca8677d`), with the production service-worker
-gate green on both (`35424882781`, `35426397089`). The `ca8677d` run is worth
-keeping as the pair: its merge changed only `.agents/LANES.md`, so Cloudflare had
-nothing to deploy and the push-triggered run had no deploy to race — which is the
-race mechanism confirming itself rather than an exception to it.
+**PRODUCTION SERVES 24.0.24 / DB16 / Worker v21, and BOTH generations are
+OBSERVED.** Observation of record, both `workflow_dispatch` on `main` @
+`f75f9cc` (PR #275, the Issue #268 accessibility completion):
 
-**Worker v21 is deployed and observed**, which is what discharges the
-`POST /extract-image` prerequisite that gated `FIELD_TEST_CHECKLIST.md` A13.
+- live all-asset parity run `35434716935`, job `105875325854`, `VERDICT: PASS` —
+  Worker `/health` `{"ok":true,"version":"21"}`, all **22** declared runtime
+  assets loading, none served as HTML, and **20** repository-only paths
+  confirmed non-public (Issue #228's live half);
+- production service worker run `35434719454`, job `105875332085`,
+  `VERDICT: PASS`, 16 checks / 0 failures — precache `freightlogic-24.0.24`
+  carrying all 22 assets, both injected scripts fetchable as script, an offline
+  subresource miss `504 text/plain`, a drifted `?v=` self-healing, and exactly
+  one generation cache.
 
-**Source is ahead again at 24.0.23** — the presentation-authority consolidation,
-PR #265 `8e72252`, moving the reference presentation out of `modern-shell.js` into
-`styles.css`. It has **no live observation yet**. Source running ahead of
-production does not make the claim above false; it makes it the production fact
-until 24.0.23 deploys and both gates are **re-dispatched** on its exact SHA. Do
-not cite a push-triggered run that fires on the merge: it races the Cloudflare
-deploy, and this file records eight occurrences of exactly that.
+**The push race recurred for the ninth time and must not be cited.** Live parity
+also fired on the merge push (`35434651294`) and FAILED eleven seconds later,
+observing the previous generation while Cloudflare was still deploying. The
+re-dispatch ninety seconds afterwards is the observation of record. A re-dispatch
+that fails *the same way* is a real finding, not a race — that is what made the
+v24.0.17 Worker-generation mismatch evidence rather than noise.
+
+The certification authority for this observation is
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md`.
+
+*The 24.0.22 block this replaced, and the 24.0.19 block below it, are kept as
+history. Those run IDs are permanent provenance for trees a gate actually looked
+at.*
 
 *The block below certified **24.0.19** and was the production fact until this
 correction. It is kept because the runs it names are permanent provenance for a
