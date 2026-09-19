@@ -1,6 +1,0 @@
-owner: gpt
-token: 8b3cf06e-2c7a-4b61-9f8c-3f1c9a7e5d42
-started_utc: 2026-09-19T03:12:00Z
-expected_release_utc: 2026-09-19T06:30:00Z
-paths: .agents/LANES.md
-task: operator-directed bounded takeover of exact Admin integration paths while Claude is idle
