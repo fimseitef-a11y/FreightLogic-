@@ -83,6 +83,36 @@ test('disclosure controls expose keyboard semantics and state', async () => {
   } finally { await app.close(); }
 });
 
+
+test('representative controls keep their expected visible/programmatic label text', async () => {
+  const app = await launchApp();
+  try {
+    const { page } = app;
+    await ready(page);
+    const expected = {
+      fuelPrice: 'Fuel price', vehicleMpg: 'Vehicle MPG', weeklyGoal: 'Weekly goal',
+      settingsHomeLocation: 'Home Location', vanPayloadLbs: 'Payload',
+      mwRevenue: 'Revenue', mwLoadedMi: 'Loaded Miles', mwOrigin: 'Origin',
+      omMiles: 'Total miles', mbLocation: 'Current location', mbRpmLow: 'Visible RPM range low'
+    };
+    const got = await page.evaluate((map) => {
+      const out = {};
+      for (const id of Object.keys(map)) {
+        const el = document.getElementById(id);
+        const by = el?.getAttribute('aria-labelledby');
+        out[id] = el?.getAttribute('aria-label')
+          || (by ? by.split(/\\s+/).map(x => document.getElementById(x)?.textContent || '').join(' ') : '')
+          || document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent
+          || el?.closest('label')?.textContent || '';
+      }
+      return out;
+    }, expected);
+    for (const [id, text] of Object.entries(expected)) {
+      ok(String(got[id] || '').includes(text), `#${id} accessible name must retain "${text}", got "${got[id] || ''}"`);
+    }
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await runSpec();
