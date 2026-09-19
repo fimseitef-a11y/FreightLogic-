@@ -7700,8 +7700,6 @@ function expenseRow(e){
     <div class="right"><div class="v">${fmtMoney(e.amount||0)}</div><div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openExpenseForm(e));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
-    const mode = await getSetting('uiMode','simple');
-    if (mode !== 'pro'){ toast('Delete is Pro-only (prevents accidents)', true); return; }
     d.remove();
     showUndoToast(
       `${escapeHtml(e.category || 'Expense')}`,
@@ -7738,8 +7736,6 @@ function fuelRow(f){
     <div class="split"><button class="btn sm" data-act="edit">Edit</button><button class="btn sm danger" data-act="del">Del</button></div></div>`;
   $('[data-act="edit"]', d).addEventListener('click', ()=> openFuelForm(f));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
-    const mode = await getSetting('uiMode','simple');
-    if (mode !== 'pro'){ toast('Delete is Pro-only', true); return; }
     d.remove();
     showUndoToast(
       `Fuel ${escapeHtml(f.date || '')}`,
@@ -7954,38 +7950,18 @@ const INTEL_TILES = [
 // exceptions list, so a regroup that orphaned a route would fail rather than
 // ship.
 const MORE_GROUPS = [
-  { id:'money',    label:'Money' },
-  { id:'business', label:'Business & Tax' },
-  { id:'data',     label:'Data & Backup' },
-  { id:'app',      label:'App' },
+  { id:'work', label:'Work & Records' },
+  { id:'app',  label:'App' },
 ];
 
 const MORE_TILES = [
-  // Money
-  { icon:'\uD83D\uDCB5', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY', group:'money' },
-  { icon:'\uD83D\uDCB0', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY', group:'money' },
-  { icon:'\u26FD', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY', group:'money' },
-  { icon:'\uD83D\uDCC5', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY', group:'money' },
-  // Business & Tax
-  // v24.0.8: Intel lost its bottom-nav tab when the five-surface shell replaced
-  // the old Home/Trips/Omega/Intel/More bar, and `index.html`'s nav anchor was
-  // the ONLY link to `#intel` anywhere in the app. The route, its renderer and
-  // all five of its tabs stayed intact and became reachable only by typing the
-  // hash. This tile is what makes "secondary tools remain accessible through
-  // More" true rather than assumed.
-  { icon:'\uD83E\uDDE0', title:'Market Intel', sub:'Lanes, reloads, brokers, tools', hash:'#intel', section:'PRIMARY', group:'business' },
-  { icon:'\uD83D\uDCC1', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY', group:'business' },
-  { icon:'\uD83D\uDCCA', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED', group:'business' },
-  { icon:'\uD83D\uDCE6', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED', group:'business' },
-  { icon:'\uD83D\uDDC2\uFE0F', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
-  // Data & Backup
-  { icon:'\uD83D\uDCBE', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
-  { icon:'\uD83D\uDCE5', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
-  { icon:'\uD83D\uDCBF', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
-  // App
-  { icon:'\u2699\uFE0F', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY', group:'app' },
-  { icon:'\uD83D\uDD12', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED', group:'app' },
-  { icon:'\uD83D\uDD2C', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED', group:'app' },
+  // Keep secondary destinations deliberately small. The five-tab bar owns the
+  // daily workflow; More is a short directory, not a second home screen.
+  { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
+  { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'work' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'work' },
+  { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
+  { icon:'⚙', title:'Settings', sub:'Vehicle, costs, display, backup and privacy', hash:'#insights', section:'PRIMARY', group:'app' },
 ];
 
 // ── Intel Page Renderer ──
@@ -11477,18 +11453,18 @@ function _mwRenderDecision(out, d){
     <div class="fl-eval-grade" style="color:${_heroColor}">${dispGrade}${isDZActive ? '<span style="font-size:20px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
     <div style="margin-bottom:10px"><span class="fl-eval-verdict ${_verdictClass}">${escapeHtml(_verdictBadgeLabel)}</span></div>
     <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:12px;line-height:1.4">${escapeHtml(_verdictSentence)}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border-subtle)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Min / Accept</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--text)">${fmtMoney(_quickAcceptH)}</div>
+    <div class="fl-eval-bid-grid">
+      <div class="fl-eval-bid secondary">
+        <div class="fl-eval-bid-label">Accept</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_quickAcceptH)}</div>
       </div>
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Professional</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:#58a6ff">${fmtMoney(_strongFinalH)}</div>
+      <div class="fl-eval-bid primary">
+        <div class="fl-eval-bid-label">Ask</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_strongFinalH)}</div>
       </div>
-      <div style="padding:8px 6px;border-radius:10px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)">
-        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Strong Ask</div>
-        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
+      <div class="fl-eval-bid secondary">
+        <div class="fl-eval-bid-label">Stretch</div>
+        <div class="fl-eval-bid-value">${fmtMoney(_premiumFinalH)}</div>
       </div>
     </div>
     ${_compactFacts}
@@ -13480,7 +13456,7 @@ function openTripWizard(existing=null){
       <div><label>Empty miles</label><input id="f_empty" type="number" step="1" placeholder="Deadhead to pickup" /></div></div>
     <div class="btn-row" style="margin-top:12px"><button class="btn" id="toStep2">Next (optional)</button>
       <button class="btn primary" id="saveTrip">Save</button>
-      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
+      ${mode==='edit' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
     <div class="muted" id="tripHint" style="font-size:12px;margin-top:10px"></div></div>`;
 
   step2.style.display = 'none';
@@ -13816,8 +13792,6 @@ function openTripWizard(existing=null){
   if (mode==='edit'){
     const delBtn = $('#delTrip', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `Trip ${escapeHtml(String(trip.orderNo))}`,
@@ -13936,8 +13910,6 @@ function openExpenseForm(existing=null){
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `${escapeHtml(e.category || 'Expense')}`,
@@ -14047,8 +14019,6 @@ function openFuelForm(existing=null){
   if (mode==='edit'){
     const delBtn = $('#f_del', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
-      const ui = await getSetting('uiMode','simple');
-      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
       closeModal();
       showUndoToast(
         `Fuel ${escapeHtml(f.date || '')}`,
@@ -14336,7 +14306,6 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
 });
 addManagedListener($('#btnHardReset'), 'click', async ()=>{
-  if ((await getSetting('uiMode','simple')) !== 'pro'){ toast('Hard reset is Pro-only', true); return; }
   if (!confirm('Hard reset will delete all local data on this device. Continue?')) return;
   indexedDB.deleteDatabase(DB_NAME);
   toast('Database deleted. Reloading...'); setTimeout(()=> location.reload(), 1200);
@@ -15559,13 +15528,49 @@ function initCollapsibleSettings(){
   const arrow = $('#advSettingsArrow');
   if (!toggle || !body) return;
   _settingsBound = true;
+
+  const setOpen = (open)=>{
+    body.style.display = open ? '' : 'none';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+  };
+
   toggle.addEventListener('click', ()=>{
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : '';
-    if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+    setOpen(body.style.display === 'none');
     haptic(10);
   });
+
+  $$('#settingsDirectory [data-settings-target]').forEach(btn => {
+    addManagedListener(btn, 'click', ()=>{
+      const target = document.getElementById(btn.dataset.settingsTarget || '');
+      if (!target) return;
+      setOpen(true);
+      haptic(8);
+      setTimeout(()=> target.scrollIntoView({behavior:'smooth', block:'start'}), 30);
+    });
+  });
 }
+
+  addManagedListener($('#settingsMaintenanceBtn'), 'click', async ()=>{
+    haptic(10);
+    await openMaintenanceTracker();
+  });
+  addManagedListener($('#settingsExportData'), 'click', async ()=>{
+    haptic(10);
+    await exportJSON();
+  });
+  addManagedListener($('#settingsImportData'), 'click', ()=>{
+    haptic(10);
+    openUniversalImport();
+  });
+  addManagedListener($('#settingsSecurityLock'), 'click', ()=>{
+    haptic(10);
+    openSecurityLockModal();
+  });
+  addManagedListener($('#settingsDiagnostics'), 'click', async ()=>{
+    haptic(10);
+    await openDiagnosticsPanel();
+  });
 
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
