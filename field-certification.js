@@ -593,6 +593,8 @@
         const workerVersion = Number.parseInt(String(session.environment?.workerGeneration || '').match(/\d+/)?.[0] || '0', 10);
         if (!Number.isFinite(workerVersion) || workerVersion < 21) {
           rec.reason = `A13 requires Worker v21 or later; observed ${session.environment?.workerGeneration || 'UNAVAILABLE'}.`;
+          const reasonField = qs('[data-reason]', row);
+          if (reasonField) reasonField.value = rec.reason;
           rec.completedAt = nowIso();
           setGateStatus(id, 'BLOCKED');
           return;
