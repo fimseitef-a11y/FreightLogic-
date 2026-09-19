@@ -20,6 +20,7 @@ import { runSpec as swSubresourceSemantics } from './integration/sw-subresource-
 import { runSpec as v2404FailClosed } from './integration/v2404-fail-closed.spec.mjs';
 import { runSpec as modernShellRouting } from './integration/modern-shell-routing.spec.mjs';
 import { runSpec as sixWidthLayout } from './integration/six-width-layout.spec.mjs';
+import { runSpec as appleIosAccessibility } from './integration/apple-ios-accessibility.spec.mjs';
 import { runSpec as cloudBackupPaused } from './integration/cloud-backup-paused.spec.mjs';
 import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spec.mjs';
 import { runSpec as workerPointerRace } from './unit/worker-pointer-race.spec.mjs';
@@ -101,6 +102,7 @@ const specs = [
   v2404FailClosed,
   modernShellRouting,
   sixWidthLayout,
+  appleIosAccessibility,
   cloudBackupPaused,
   workerTokenRotation,
   workerPointerRace,
