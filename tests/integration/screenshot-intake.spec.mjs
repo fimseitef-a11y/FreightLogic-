@@ -476,6 +476,22 @@ test('[SSI-16] an explicit zero deadhead renders as 0 in the card, not as a gap'
   } finally { await app.close(); }
 });
 
+
+test('[SSI-17] compact positioning labels disclose static market classification rather than claiming live reload strength', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const r = await scoreLoad(app.page, {
+      revenue: 1250, loaded: 355, dead: 42, origin: 'Columbus, OH', dest: 'Chicago, IL',
+    });
+    ok(/Positioning/i.test(r.upFront), 'the compact card must retain the positioning fact');
+    ok(/static market class/i.test(r.upFront),
+      `Tier classification must identify itself as static doctrine context, got: ${r.upFront.slice(0, 400)}`);
+    ok(!/strong reloads|workable reloads/i.test(r.upFront),
+      'static Tier 1/2 membership must not be phrased as if live reload strength was measured');
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
