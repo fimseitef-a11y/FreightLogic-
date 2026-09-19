@@ -443,7 +443,7 @@ test('[FIELD CERT / NEW] FC-14 A5 export inspection is structure-only, detects p
 test('[FIELD CERT / NEGATIVE] FC-15 A13 blocks below Worker v21 and accepts recorded iOS non-delivery without accepting fabricated deadhead zero', async () => {
   const oldWorkerApp = await launchBlank();
   try {
-    await oldWorkerApp.page.route('https://freightlogic-backup.fimseitef.workers.dev/health', route => route.fulfill({
+    await oldWorkerApp.page.route(/https:\/\/freightlogic-backup\.fimseitef\.workers\.dev\/health(?:\?.*)?$/, route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ ok: true, version: '20' }),
@@ -460,7 +460,7 @@ test('[FIELD CERT / NEGATIVE] FC-15 A13 blocks below Worker v21 and accepts reco
 
   const app = await launchBlank();
   try {
-    await app.page.route('https://freightlogic-backup.fimseitef.workers.dev/health', route => route.fulfill({
+    await app.page.route(/https:\/\/freightlogic-backup\.fimseitef\.workers\.dev\/health(?:\?.*)?$/, route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ ok: true, version: '21' }),
