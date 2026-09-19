@@ -193,7 +193,7 @@ async function runLiveChecks(checks) {
   assert(checks, 'Pages index loads', index.ok, `${index.status} ${index.url}`);
   assert(checks, 'Index references app.js v24.0.22', index.text.includes('app.js?v=24.0.22'));
   // Voice Load was removed completely by operator decision (Issue #230,
-  // v24.0.22). The positive reference assertion is replaced by its absence:
+  // v24.0.21). The positive reference assertion is replaced by its absence:
   // a reintroduced tag or a stale deployed index must fail, not pass quietly.
   assert(checks, 'Index does not reference voice-load.js (removed, Issue #230)', !index.text.includes('voice-load.js'));
   assert(checks, 'Index references sw-bridge.js v24.0.22', index.text.includes('sw-bridge.js?v=24.0.22'));
