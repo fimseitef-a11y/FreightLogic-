@@ -1,6 +1,0 @@
-owner: gpt
-token: f3c7e9a1-8d42-4b6f-a571-2c9e34d0b8fa
-started_utc: 2026-09-19T09:02:00Z
-expected_release_utc: 2026-09-19T13:00:00Z
-paths: .agents/LANES.md, app.js, index.html, modern-shell.js, service-worker.js, sw-bridge.js, manifest.json
-task: Issue #268 Apple/iOS accessibility product remediation after regression-first coverage is available.
