@@ -38,6 +38,11 @@ test('[DRIVER DISPLAY] DD-01 Settings exposes all text sizes and Glance Mode wit
     const prefs = await rootPrefs(app.page);
     eq(prefs.size, 'standard', 'a fresh profile must fail to the standard text-size contract');
     eq(prefs.mode, null, 'Glance Mode must be opt-in, never silently enabled');
+
+    const bodySize = await app.page.locator('body').evaluate(el =>
+      parseFloat(getComputedStyle(el).fontSize));
+    ok(bodySize >= 15,
+      `Standard must preserve the shipped 15px body baseline, got ${bodySize}px`);
   } finally { await app.close(); }
 });
 
