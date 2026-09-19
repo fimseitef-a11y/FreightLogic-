@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const { test, run } = createSuite('integration/six-width-layout.spec.mjs');
 const WIDTHS = [320, 375, 390, 393, 430, 440];
-const ROUTES = ['home', 'loads', 'omega', 'trips', 'money'];
+const ROUTES = ['home', 'loads', 'omega', 'trips', 'money', 'more'];
 const HEIGHT = 844;
 
 async function waitForShell(page) {
@@ -108,7 +108,7 @@ async function injectLongContentProbe(page) {
   });
 }
 
-test('all six release widths pass five-surface geometry in both theme states', async () => {
+test('all six release widths pass primary plus More geometry in both theme states', async () => {
   const app = await launchApp();
   try {
     const { page } = app;
