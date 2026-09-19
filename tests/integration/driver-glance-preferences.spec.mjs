@@ -63,6 +63,9 @@ test('[DRIVER DISPLAY] DD-02 every text-size preference applies immediately and 
       document.documentElement.getAttribute('data-fl-text-size') === 'xlarge');
     eq((await rootPrefs(app.page)).size, 'xlarge',
       'Extra Large must survive a real reload on the same device profile');
+    await openDriverDisplaySettings(app.page);
+    eq(await app.page.locator('#driverTextSize').inputValue(), 'xlarge',
+      'the Settings control must reflect the persisted Extra Large preference after reload');
 
     const inputSize = await app.page.locator('#mwRevenue').evaluate(el =>
       parseFloat(getComputedStyle(el).fontSize));
@@ -86,6 +89,9 @@ test('[DRIVER DISPLAY] DD-03 Glance Mode applies immediately, survives reload an
     await app.page.waitForFunction(() =>
       document.documentElement.getAttribute('data-fl-driver-mode') === 'glance');
     eq((await rootPrefs(app.page)).mode, 'glance', 'Glance Mode must survive reload');
+    await openDriverDisplaySettings(app.page);
+    eq(await app.page.locator('#driverGlanceMode').isChecked(), true,
+      'the Settings control must remain checked when persisted Glance Mode is active');
 
     const primaryTarget = await app.page.locator('.bottom .nav a').first().evaluate(el =>
       parseFloat(getComputedStyle(el).minHeight));
