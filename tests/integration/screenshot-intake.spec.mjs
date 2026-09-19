@@ -487,8 +487,8 @@ test('[SSI-17] compact positioning labels disclose static market classification 
     ok(/Positioning/i.test(r.upFront), 'the compact card must retain the positioning fact');
     ok(/static market class/i.test(r.upFront),
       `Tier classification must identify itself as static doctrine context, got: ${r.upFront.slice(0, 400)}`);
-    ok(!/strong reloads|workable reloads/i.test(r.upFront),
-      'static Tier 1/2 membership must not be phrased as if live reload strength was measured');
+    ok(!/strong reload(?:s|\s+market)|workable reloads|reload strength/i.test(r.upFront),
+      'static Tier 1/2 membership must not be phrased as if live reload strength was measured anywhere in the up-front decision');
   } finally { await app.close(); }
 });
 
