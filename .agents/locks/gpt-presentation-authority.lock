@@ -1,0 +1,6 @@
+owner: gpt
+token: 6f6cb7a8-57dd-4a84-bbe4-84cf1ab0e9a3
+started_utc: 2026-09-19T06:45:00Z
+expected_release_utc: 2026-09-19T08:30:00Z
+paths: modern-shell.js
+task: Consolidate duplicate runtime-injected presentation CSS into styles.css without changing app logic.
