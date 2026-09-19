@@ -14,7 +14,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **v24.0.22 runtime integration takeover — RETIRED 2026-09-19.** The bounded GPT integration lane completed when clean successor PR #262 merged as `11cc8b78` after exact-head Lanes, CodeQL and full-suite success. The temporary ownership exceptions used only for that release are retired here: `CLAUDE.md`, `midwest-stack-config.json`, and `midwest-stack-authority.js` return to Claude; the temporary parity/test/run-all rows fall back to their Claude-owned parent lanes. `styles.css` remains GPT-owned under the separate UI-redesign directive, and the Admin Console plus field-certification exceptions are unaffected.
 
-**v24.0.23 final PWA presentation integration takeover (2026-09-19, operator-directed, bounded).** The operator directed GPT to complete the app in one sweep after v24.0.22 was exact-head green and no Claude lock or PR remained. The final in-repo PWA gap is the duplicated runtime-injected reference stylesheet in `modern-shell.js`; removing it changes deployed runtime bytes and therefore requires one governed cache-generation advance. SHARED runtime paths remain protected by the normal lock protocol. This temporary exception covers only the otherwise-Claude-owned release-marker files needed to advance that presentation-only release coherently: `CLAUDE.md`, `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs`. It does not transfer Worker source, tests, docs, importer semantics, economics/decision authority, or any other Claude lane. The exception expires when the v24.0.23 successor PR lands and must then be retired.
+**v24.0.23 final PWA presentation integration takeover — RETIRED 2026-09-19.** The bounded operator-directed lane completed when PR #265 merged as `8e722522`, delivering the single presentation authority and governed v24.0.23 cache generation. The temporary marker exceptions are retired here: `CLAUDE.md`, `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` return to Claude ownership. Persistent GPT-owned seams remain `styles.css`, the isolated Admin Console subtree/regression, and the field-certification companion paths.
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
@@ -25,10 +25,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | gpt | Temporary v24.0.23 final-PWA release-marker exception only; no doctrine changes; retire after successor PR lands. |
-| `midwest-stack-authority.js` | gpt | Temporary v24.0.23 final-PWA release-marker exception only; version/header markers only; retire after successor PR lands. |
+| `midwest-stack-config.json` | claude | Versioned application-target configuration; temporary v24.0.23 GPT release-marker authority is retired. |
+| `midwest-stack-authority.js` | claude | Versioned Midwest Stack authority wrapper; temporary v24.0.23 GPT release-marker authority is retired. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | Temporary v24.0.23 final-PWA release-record exception only; retire after successor PR lands. |
+| `CLAUDE.md` | claude | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -68,7 +68,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary v24.0.23 release-marker exception only; expected app/SW/manifest/overlay generation values, no verifier logic changes; retire after successor PR lands. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
