@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-api-origin="https://freightlogic-backup.fimseitef.workers.dev" data-driver-origin="https://freightlogic-v2.fimseitef.workers.dev">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://freightlogic-backup.fimseitef.workers.dev; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'">
+  <title>FreightLogic Admin Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-connected="false">
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">FreightLogic</p>
+        <h1>Admin Console</h1>
+        <p class="muted">Driver onboarding and access only. Online connection required.</p>
+      </div>
+      <span class="security-pill">Session-only admin access</span>
+    </header>
+
+    <div id="status" class="status" data-tone="neutral" role="status" aria-live="polite">Not connected.</div>
+
+    <section id="connectCard" class="card">
+      <form id="connectForm" autocomplete="off">
+        <label for="adminAccess">Admin access</label>
+        <div class="input-row">
+          <input id="adminAccess" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+          <button type="submit">Connect</button>
+        </div>
+        <p class="muted small">The value is verified before use and retained only for this browser tab.</p>
+      </form>
+    </section>
+
+    <div id="workspace" hidden>
+      <section class="card section-head">
+        <div>
+          <p class="eyebrow">Access</p>
+          <h2>Drivers <span id="driverCount" class="count">0</span></h2>
+        </div>
+        <div class="actions compact">
+          <button id="refresh" type="button" class="secondary">Refresh</button>
+          <button id="disconnect" type="button" class="secondary">Disconnect</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Create invite</h2>
+        <form id="inviteForm" autocomplete="off">
+          <label for="driverName">Driver name</label>
+          <div class="input-row">
+            <input id="driverName" maxlength="50" autocomplete="off" required>
+            <button type="submit">Create claim link</button>
+          </div>
+        </form>
+        <div id="inviteResult" class="invite-result" hidden></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head flat">
+          <div>
+            <p class="eyebrow">Current access</p>
+            <h2>Driver list</h2>
+          </div>
+        </div>
+        <div id="driverList" class="driver-list"></div>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
