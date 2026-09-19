@@ -213,7 +213,16 @@ test('[ADMIN-12] Cloudflare separate-origin deploy wrapper applies security head
 
   const workerPath = pathToFileURL(path.join(ROOT, 'admin-console/worker.js')).href + `?t=${Date.now()}`;
   const worker = await import(workerPath);
-  const assetHeaders = new Headers({ 'Content-Type': 'text/html', 'X-Upstream': 'kept' });
+  const assetHeaders = new Headers({
+    'Content-Type': 'text/html',
+    'X-Upstream': 'kept',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET, POST',
+    'Access-Control-Allow-Headers': 'X-Test',
+    'Access-Control-Expose-Headers': 'X-Test',
+    'Access-Control-Max-Age': '86400',
+  });
   const env = {
     ASSETS: {
       fetch: async () => new Response('<h1>Admin</h1>', { status: 200, headers: assetHeaders }),
@@ -228,7 +237,30 @@ test('[ADMIN-12] Cloudflare separate-origin deploy wrapper applies security head
   eq(result.headers.get('X-Frame-Options'), 'DENY', 'admin responses must deny legacy framing');
   ok(/frame-ancestors 'none'/.test(result.headers.get('Content-Security-Policy') || ''), 'response CSP must deny framing');
   ok(/camera=\(\)/.test(result.headers.get('Permissions-Policy') || ''), 'admin response must deny unused camera permission');
-  ok(!result.headers.has('Access-Control-Allow-Origin'), 'static admin Worker must not invent API CORS');
+  for (const header of [
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Credentials',
+    'Access-Control-Allow-Methods',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Expose-Headers',
+    'Access-Control-Max-Age',
+  ]) {
+    ok(!result.headers.has(header), `static Admin Worker must strip upstream CORS authority: ${header}`);
+  }
+
+  let postAssetCalls = 0;
+  const post = await worker.default.fetch(new Request('https://admin.example/', { method: 'POST' }), {
+    ASSETS: {
+      fetch: async () => {
+        postAssetCalls += 1;
+        return new Response('must not be reached');
+      },
+    },
+  });
+  eq(post.status, 405, 'privileged static Admin origin must reject non-read methods explicitly');
+  eq(post.headers.get('Allow'), 'GET, HEAD', '405 response must name the only accepted static methods');
+  eq(postAssetCalls, 0, 'rejected methods must never reach the static asset binding');
+  eq(post.headers.get('Cache-Control'), 'no-store', 'method-denial responses must retain the Admin security policy');
 });
 
 test('[ADMIN-13] Cloudflare asset upload excludes deployment/control-plane files', async () => {
@@ -260,11 +292,14 @@ test('[ADMIN-15] live verifier proves dedicated-origin headers, exact API CORS a
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
   };
   const fetchImpl = async (url, init = {}) => {
     const u = new URL(url);
     if (u.origin === adminOrigin && u.pathname === '/') {
+      if ((init.method || 'GET') === 'POST') {
+        return new Response('method not allowed', { status: 405, headers: { ...security, Allow: 'GET, HEAD' } });
+      }
       return new Response('<title>FreightLogic Admin Console</title>', { status: 200, headers: security });
     }
     if (u.origin === adminOrigin) return new Response('missing', { status: 404, headers: security });
@@ -283,10 +318,35 @@ test('[ADMIN-15] live verifier proves dedicated-origin headers, exact API CORS a
     result.checks.some(x => x.name === 'control asset hidden: /deploy.sh' && x.ok),
     'live verifier must prove the deployment wrapper is not exposed as a browser asset'
   );
+  ok(
+    result.checks.some(x => x.name === 'admin origin rejects non-read methods' && x.ok),
+    'live verifier must prove the privileged static origin rejects POST instead of routing it to assets'
+  );
+
+  const incompleteSecurity = { ...security, 'Permissions-Policy': 'camera=()' };
+  const incompletePolicyFetch = async (url, init = {}) => {
+    const u = new URL(url);
+    if (u.origin === adminOrigin && u.pathname === '/') {
+      if ((init.method || 'GET') === 'POST') {
+        return new Response('method not allowed', { status: 405, headers: { ...incompleteSecurity, Allow: 'GET, HEAD' } });
+      }
+      return new Response('<title>FreightLogic Admin Console</title>', { status: 200, headers: incompleteSecurity });
+    }
+    if (u.origin === adminOrigin) return new Response('missing', { status: 404, headers: incompleteSecurity });
+    if (u.origin === apiOrigin && u.pathname === '/health') {
+      return new Response('{}', { status: 200, headers: { 'Access-Control-Allow-Origin': adminOrigin } });
+    }
+    return new Response('{}', { status: 401, headers: { 'Access-Control-Allow-Origin': adminOrigin } });
+  };
+  const incomplete = await mod.verifyLiveAdmin({ adminOrigin, apiOrigin, fetchImpl: incompletePolicyFetch });
+  eq(incomplete.ok, false, 'live verifier must reject a Permissions-Policy that denies camera but leaves other unused capabilities unproven');
 
   const wildcardFetch = async (url, init = {}) => {
     const u = new URL(url);
     if (u.origin === adminOrigin && u.pathname === '/') {
+      if ((init.method || 'GET') === 'POST') {
+        return new Response('method not allowed', { status: 405, headers: { ...security, Allow: 'GET, HEAD' } });
+      }
       return new Response('<title>FreightLogic Admin Console</title>', { status: 200, headers: security });
     }
     if (u.origin === adminOrigin) return new Response('missing', { status: 404, headers: security });
