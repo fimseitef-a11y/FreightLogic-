@@ -458,19 +458,6 @@
           </div>
           <div class="field"><label for="mwDest">Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
           <div class="field"><label for="mwBroker">Broker / Customer <span class="muted" style="font-size:10px;font-weight:400">(optional — enables broker history)</span></label><input id="mwBroker" list="mwBrokerList" placeholder="e.g. Acme Logistics" /><datalist id="mwBrokerList"></datalist></div>
-          <details class="eval-secondary-details">
-            <summary>Decision overrides <span>Automatic by default</span></summary>
-            <div class="eval-secondary-body">
-          <div class="grid2" style="gap:10px">
-            <div class="field"><label for="mwCurrency">Currency</label><select id="mwCurrency" style="font-size:16px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
-            <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
-              <select id="mwDayOfWeek" aria-label="Day of week"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
-            </div>
-          </div>
-          <div class="grid2" style="gap:10px">
-            <div class="field"><label for="mwFatigue">Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
-            <div class="field"><label for="mwWeeklyGross">Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
-          </div>
           <!-- 7D: dimensional/payload pre-check (v23.9) — optional; only checked
                against the configured van profile (Settings → Vehicle) when a
                value is actually entered. See checkVanFit() in app.js. -->
@@ -492,6 +479,19 @@
             <div class="muted" style="font-size:11px;margin-top:2px">Latest you can still be loaded. Leave blank to score on economics alone.</div>
           </div>
           <div class="field"><label for="mwLoadNotes">Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
+          <details class="eval-secondary-details">
+            <summary>Decision overrides <span>Automatic by default</span></summary>
+            <div class="eval-secondary-body">
+<div class="grid2" style="gap:10px">
+            <div class="field"><label for="mwCurrency">Currency</label><select id="mwCurrency" style="font-size:16px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
+            <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
+              <select id="mwDayOfWeek" aria-label="Day of week"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
+            </div>
+          </div>
+          <div class="grid2" style="gap:10px">
+            <div class="field"><label for="mwFatigue">Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
+            <div class="field"><label for="mwWeeklyGross">Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+          </div>
           <div class="field">
             <label class="chk" style="display:flex;align-items:center;gap:10px">
               <input type="checkbox" id="mwStrategic"> Allow Strategic Floor ($1.25 True RPM)
