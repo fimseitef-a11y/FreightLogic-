@@ -1,0 +1,6 @@
+owner: gpt
+token: c8a2f3d1-7f6b-4d0f-9e27-3b5d8c1a4e62
+started_utc: 2026-09-19T05:01:48Z
+expected_release_utc: 2026-09-19T06:01:48Z
+paths: .agents/LANES.md
+task: Add one bounded v24.0.22 integration ownership exception for tests/integration/today-ia.spec.mjs so the clean GPT integration PR can preserve Claude's legitimate TIA-06 regression without weakening lane enforcement.
