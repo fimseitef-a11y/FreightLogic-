@@ -562,3 +562,10 @@ OPEN FOR GPT / OPERATOR (see
 [2026-09-19T06:20:00Z][gpt][PR#264][lane-retirement-merged] Governance-only cleanup merged as ca8677d7670343e98cc8fd3ed75fa598c64afdea after PR head 3035adec passed Lanes, CodeQL and Tests. Temporary v24.0.22 ownership exceptions are retired; parent/Claude ownership restored. No runtime or test bytes changed. Released gpt-v24022-lane-retire lock and returned GPT NOW row to idle.
 
 [2026-09-19T06:28:08Z][gpt][final-candidate][main-green-after-lane-retirement] Current main ca8677d7670343e98cc8fd3ed75fa598c64afdea is fully green after governance-only PR #264: Tests 35426397097 = 706/0 across 69 specs; CodeQL 35426397095 PASS; Live Parity 35426397099 PASS; Production SW 35426397089 PASS. Compare against runtime integration 11cc8b78 changes only .agents/LANES.md; no runtime/test bytes changed. Open PRs are empty. Remaining work is external/physical evidence only: iPhone A1-A13, authentic private M6 final-candidate replay (ZIP located but not materializable through current file connector), Admin Console manual workflow dispatch + live proof, and repo-admin protection/ruleset controls.
+
+
+### 2026-09-19 — GPT — reaped stale v24.0.23 lock / started #268
+- Reaped `.agents/locks/gpt-v24023-final-pwa.lock` after `expected_release_utc 2026-09-19T09:30:00Z + 2h`; stale token `9c822f50-2143-4751-89e7-6e975ef0754c` grants nothing and will not be reused.
+- Exact main at start: `656444e20d709479413de5508a3b98ac6f757bf1`; no open PRs; exact-main Tests, CodeQL, live parity, production SW, and Workers build green.
+- Began issue #268 Apple/iOS accessibility remediation. Physical iPhone A1-A13 remains a separate evidence gate.
+- Regression-first contract requires Claude-owned test paths; cross-lane request will be recorded before product behavior changes.
