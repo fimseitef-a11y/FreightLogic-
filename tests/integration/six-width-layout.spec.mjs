@@ -207,6 +207,31 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
   }
 });
 
+
+test('More and Settings stay usable with Extra Large text plus Glance Mode', async () => {
+  const app = await launchApp();
+  try {
+    const { page } = app;
+    await skipFirstRunWizard(page);
+    await page.waitForTimeout(900);
+    await waitForShell(page);
+
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: HEIGHT });
+      await openRoute(page, 'insights');
+      await page.locator('#driverTextSize').selectOption('xlarge');
+      const glance = page.locator('#driverGlanceMode');
+      if (!(await glance.isChecked())) await glance.check();
+      await page.waitForTimeout(60);
+      await assertGeometry(page, width, 'insights', 'xlarge-glance');
+      await openRoute(page, 'more');
+      await assertGeometry(page, width, 'more', 'xlarge-glance');
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 export async function runSpec() { return run(); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await runSpec();
