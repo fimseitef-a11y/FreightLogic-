@@ -492,6 +492,32 @@ test('[SSI-17] compact positioning labels disclose static market classification 
   } finally { await app.close(); }
 });
 
+
+test('[SSI-18] compact decision facts consume the Driver/Glance semantic presentation seam', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await scoreLoad(app.page, {
+      revenue: 1250, loaded: 355, dead: 42, origin: 'Columbus, OH', dest: 'Chicago, IL',
+    });
+    const shape = await app.page.locator('#mwEvalOutput').evaluate(out => {
+      const facts = out.querySelector('.fl-eval-facts');
+      return {
+        facts: Boolean(facts),
+        labels: facts?.querySelectorAll('.fl-eval-fact-label').length || 0,
+        values: facts?.querySelectorAll('.fl-eval-fact-value').length || 0,
+        positioning: Boolean(facts?.querySelector('.fl-eval-positioning')),
+        rpmHook: Boolean(facts?.querySelector('[data-fl-rpm]')),
+      };
+    });
+    eq(shape.facts, true, 'the up-front facts must use the shared .fl-eval-facts presentation seam');
+    ok(shape.labels >= 3, 'the fact strip must expose semantic labels rather than inline-only typography');
+    ok(shape.values >= 2, 'the fact strip must expose semantic value cells');
+    eq(shape.positioning, true, 'positioning must use the shared semantic positioning class');
+    eq(shape.rpmHook, true, 'True RPM must use the semantic RPM hook so text-size/Glance scaling can reach it');
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
