@@ -2,20 +2,22 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.22 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.23 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE CANDIDATE IS 24.0.22 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.21 / DB16 / Worker v21.**
-v24.0.22 integrates the decision-first compact evaluator result, the operator-controlled
-Standard/Large/Extra Large text-size contract, Driver/Glance Mode, and provenance-honest
-positioning language. It is **source-only until merged, deployed, and observed**. DB_VERSION
-remains 16 and Worker source remains v21; no database migration or Worker generation change
-belongs to this release.
+**SOURCE CANDIDATE IS 24.0.23 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.22 / DB16 / Worker v21.**
+v24.0.23 is the presentation-authority consolidation release: the reference presentation CSS
+moves out of the runtime-injected `modern-shell.js` string and into `styles.css`, ahead of the
+Driver/Glance contract so operator text-size/Glance preferences remain the final cascade authority.
+No freight economics, evaluator math, storage, routing, database, or Worker semantics change.
+It is **source-only until merged, deployed, and observed**. DB_VERSION remains 16 and Worker
+source remains v21.
 
-The last runtime observation of record before this candidate is v24.0.21 / DB16 / Worker v21:
-live parity run `35408665704` PASS and production service-worker run `35408665721` PASS.
-Those runs remain evidence for the exact tree they observed; they are not evidence that v24.0.22
-is live. After this candidate merges, re-dispatch both live gates after Cloudflare propagation
-rather than citing a push-triggered run that may race deployment.
+The last runtime observation of record before this candidate is v24.0.22 / DB16 / Worker v21:
+exact-main live parity run `35426397099` PASS, production service-worker run `35426397089`
+PASS, Tests `35426397097` 706/0, and CodeQL `35426397095` PASS on
+`ca8677d7670343e98cc8fd3ed75fa598c64afdea`. Those runs remain evidence for that exact tree;
+they are not evidence that v24.0.23 is live. After this candidate merges, re-observe live parity
+and production service-worker state on the new exact main SHA.
 
 **HISTORICAL OBSERVATION — PRODUCTION SERVED 24.0.20 / DB16 / Worker v20, and BOTH generations were observed.** v24.0.20 is
 the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
@@ -261,7 +263,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.22';
+const APP_VERSION = '24.0.23';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -406,8 +408,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.22` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.22`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.23` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.23`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4646,6 +4648,26 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.23 "One CSS Authority" — final PWA presentation consolidation
+
+**Source candidate only until merged/deployed/observed.** DB_VERSION stays **16** and Worker stays
+**v21**. This release changes presentation delivery only.
+
+The operator-approved reference presentation previously existed as a second large CSS string inside
+`modern-shell.js`, injected after page load, while `styles.css` also owned the design system and
+the Driver/Glance scaling contract. That split created two presentation authorities and made cascade
+order depend on runtime injection. v24.0.23 moves the identical reference rules into `styles.css`
+and removes the injection code from `modern-shell.js`. The reference rules are placed immediately
+before the Driver/Glance contract so Standard/Large/Extra Large and Glance Mode remain the final
+operator-controlled presentation authority.
+
+No canonical freight calculations, bid logic, UNKNOWN-deadhead semantics, sync/storage behavior,
+routing, DB schema, or Worker API semantics change. Because deployed runtime bytes do change, every
+governed app/SW/cache marker advances to **24.0.23**. Physical A1–A13 remains real-device evidence
+and is not replaced by headless CI.
+
+---
 
 ## v24.0.22 "Road-Readable Decisions" — Driver/Glance + decision-first integration
 
