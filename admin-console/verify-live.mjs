@@ -46,8 +46,41 @@ export async function verifyLiveAdmin({
   check(checks, 'cache disabled', /no-store/i.test(root.headers.get('Cache-Control') || ''));
   check(checks, 'MIME sniffing disabled', /^nosniff$/i.test(root.headers.get('X-Content-Type-Options') || ''));
   check(checks, 'legacy framing denied', /^DENY$/i.test(root.headers.get('X-Frame-Options') || ''));
-  check(checks, 'unused device permissions denied', /camera=\(\)/i.test(root.headers.get('Permissions-Policy') || ''));
+  const permissionsPolicy = root.headers.get('Permissions-Policy') || '';
+  check(
+    checks,
+    'unused device permissions denied',
+    ['camera', 'microphone', 'geolocation', 'payment'].every(capability =>
+      new RegExp(`${capability}=\\(\\)`, 'i').test(permissionsPolicy)
+    ),
+    permissionsPolicy || 'missing'
+  );
   check(checks, 'static origin does not set API CORS', !root.headers.has('Access-Control-Allow-Origin'));
+
+  try {
+    const deniedMethod = await fetchImpl(admin + '/', {
+      method: 'POST',
+      redirect: 'manual',
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+    check(
+      checks,
+      'admin origin rejects non-read methods',
+      deniedMethod.status === 405 && /\bGET\b/i.test(deniedMethod.headers.get('Allow') || '') && /\bHEAD\b/i.test(deniedMethod.headers.get('Allow') || ''),
+      `HTTP ${deniedMethod.status}; Allow=${deniedMethod.headers.get('Allow') || 'missing'}`
+    );
+    check(
+      checks,
+      'method denial keeps no-store policy',
+      /no-store/i.test(deniedMethod.headers.get('Cache-Control') || ''),
+      deniedMethod.headers.get('Cache-Control') || 'missing'
+    );
+  } catch (error) {
+    check(checks, 'admin origin rejects non-read methods', false, error?.message || error);
+    check(checks, 'method denial keeps no-store policy', false, 'method probe failed');
+  }
 
   for (const path of ['/worker.js', '/wrangler.jsonc', '/README.md', '/_headers', '/.assetsignore', '/verify-live.mjs', '/deploy.sh']) {
     try {
