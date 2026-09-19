@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.23">
+  <link rel="manifest" href="manifest.json?v=24.0.24">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -34,7 +34,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body>\n  <h1 class="sr-only">FreightLogic driver workspace</h1>
   <header id="mainHeader">
     <div class="hdr-row">
       <div class="brand">
@@ -43,8 +43,8 @@
       </div>
       <div class="row">
         <button id="themeToggle" class="theme-btn" title="Toggle theme" aria-label="Toggle dark/light theme">🌙</button>
-        <span id="cloudIndicator" style="font-size:12px;display:none;cursor:pointer" title="Cloud backup status" aria-label="Cloud backup status">☁️</span>
-        <span id="syncIndicator" style="font-size:12px;display:none;cursor:pointer;display:flex;align-items:center" title="Sync status" aria-label="Sync status"></span>
+        <span id="cloudIndicator" role="status" aria-live="polite" aria-atomic="true" style="font-size:12px;display:none" title="Cloud backup status">☁️</span>
+        <span id="syncIndicator" role="status" aria-live="polite" aria-atomic="true" style="font-size:12px;display:none;align-items:center" title="Sync status"></span>
         <div class="pill" id="pillWeekNet"><span class="muted">Week</span> <b id="kpiWeekNet">—</b></div>
         <div class="pill" id="pillUnpaid"><span class="muted">AR</span> <b id="kpiUnpaid">—</b></div>
       </div>
@@ -254,10 +254,10 @@
         <div class="card"><h3>Settings</h3>
 <!-- ── 3 Essential Settings (always visible) ── -->
 <div class="grid2" style="gap:10px;margin-bottom:6px">
-<div><label>Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
-<div><label>Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" /></div>
+<div><label for="fuelPrice">Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
+<div><label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" /></div>
 </div>
-<div class="field" style="margin-bottom:0"><label>Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
+<div class="field" style="margin-bottom:0"><label for="weeklyGoal">Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
 
 <!-- Driver Display (Issue #205 section 1). Deliberately OUTSIDE the collapsed
      Advanced block: these are road-legibility controls a driver reaches for at
@@ -281,16 +281,16 @@
 <div class="muted" style="font-size:11px;margin-top:2px">Stored on this device only. Glance Mode is opt-in and never hides the More menu.</div>
 
 <!-- ── Advanced Settings (collapsed) ── -->
-<div id="advSettingsToggle" class="settings-collapse-btn" style="margin-top:14px">
+<div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
   <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>Advanced Settings</span></span>
   <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
 </div>
 <div id="advSettingsBody" style="display:none">
 <div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">🚐</span>Vehicle</div>
-<label>Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
-<label>Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
-<label>Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
+<label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
+<label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
+<label for="opCostPerMile">Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
 <!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
 <div id="vehicleTaxMethodRow" style="margin-top:10px;display:none">
   <button class="btn" id="btnVerifyVehicleTaxMethod" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -302,68 +302,68 @@
 <div class="settings-section-head"><span class="settings-section-icon">📐</span>Van Profile <span class="muted" style="font-size:10px;font-weight:400">(7D — dimensional/payload pre-check)</span></div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">A load exceeding these blocks scoring with "CAN'T TAKE" before any economics are shown. Cargo length defaults to the operator-confirmed <b>121&quot;</b> usable floor length for this van, not the published brochure figure. Remaining defaults are published 2016 Ford Transit T250 148&quot; figures — verify each against your own van's spec sheet or door sticker before relying on this.</div>
 <div class="grid2" style="gap:10px">
-<div><label>Cargo length (in)</label><input id="vanCargoLengthIn" type="number" step="0.5" placeholder="121" /></div>
-<div><label>Cargo width (in)</label><input id="vanCargoWidthIn" type="number" step="0.5" placeholder="65" /></div>
-<div><label>Width between wheel wells (in)</label><input id="vanWheelWellWidthIn" type="number" step="0.1" placeholder="54.8" /></div>
+<div><label for="vanCargoLengthIn">Cargo length (in)</label><input id="vanCargoLengthIn" type="number" step="0.5" placeholder="121" /></div>
+<div><label for="vanCargoWidthIn">Cargo width (in)</label><input id="vanCargoWidthIn" type="number" step="0.5" placeholder="65" /></div>
+<div><label for="vanWheelWellWidthIn">Width between wheel wells (in)</label><input id="vanWheelWellWidthIn" type="number" step="0.1" placeholder="54.8" /></div>
 </div>
 <div class="grid2" style="gap:10px">
-<div><label>Cargo height (in)</label><input id="vanCargoHeightIn" type="number" step="0.5" placeholder="56" /></div>
-<div><label>Payload (lbs)</label><input id="vanPayloadLbs" type="number" step="10" placeholder="3000" /></div>
+<div><label for="vanCargoHeightIn">Cargo height (in)</label><input id="vanCargoHeightIn" type="number" step="0.5" placeholder="56" /></div>
+<div><label for="vanPayloadLbs">Payload (lbs)</label><input id="vanPayloadLbs" type="number" step="10" placeholder="3000" /></div>
 </div>
 <div class="grid2" style="gap:10px">
-<div><label>Door opening width (in)</label><input id="vanDoorWidthIn" type="number" step="0.5" placeholder="60" /></div>
-<div><label>Door opening height (in)</label><input id="vanDoorHeightIn" type="number" step="0.5" placeholder="52" /></div>
+<div><label for="vanDoorWidthIn">Door opening width (in)</label><input id="vanDoorWidthIn" type="number" step="0.5" placeholder="60" /></div>
+<div><label for="vanDoorHeightIn">Door opening height (in)</label><input id="vanDoorHeightIn" type="number" step="0.5" placeholder="52" /></div>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">⏱️</span>Trip Planning <span class="muted" style="font-size:10px;font-weight:400">(pickup-feasibility pre-check)</span></div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Your realistic door-to-door average, including fuel and rest stops — not a speed limit. It is used only to work out whether a deadhead fits before a pickup cutoff. <b>There is no default on purpose:</b> a guessed speed would reject loads you could actually make, so this check stays switched off until you set your own figure. Leave it blank to keep it off.</div>
 <div class="grid2" style="gap:10px">
-<div><label>Planning average speed (mph)</label><input id="planningAvgMph" type="number" step="1" min="5" max="85" placeholder="off — not set" /></div>
+<div><label for="planningAvgMph">Planning average speed (mph)</label><input id="planningAvgMph" type="number" step="1" min="5" max="85" placeholder="off — not set" /></div>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📋</span>Monthly Fixed Costs</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
 <div class="grid2" style="gap:10px">
-<div><label>Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
-<div><label>Vehicle payment</label><input id="monthlyVehicle" type="number" step="1" placeholder="$/mo" /></div>
-<div><label>Maintenance</label><input id="monthlyMaintenance" type="number" step="1" placeholder="$/mo" /></div>
-<div><label>Other fixed</label><input id="monthlyOther" type="number" step="1" placeholder="$/mo" /></div>
+<div><label for="monthlyInsurance">Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
+<div><label for="monthlyVehicle">Vehicle payment</label><input id="monthlyVehicle" type="number" step="1" placeholder="$/mo" /></div>
+<div><label for="monthlyMaintenance">Maintenance</label><input id="monthlyMaintenance" type="number" step="1" placeholder="$/mo" /></div>
+<div><label for="monthlyOther">Other fixed</label><input id="monthlyOther" type="number" step="1" placeholder="$/mo" /></div>
 </div>
-<label>Est. monthly miles</label><input id="monthlyMiles" type="number" step="1" placeholder="e.g., 8000" />
+<label for="monthlyMiles">Est. monthly miles</label><input id="monthlyMiles" type="number" step="1" placeholder="e.g., 8000" />
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">💰</span>Financial</div>
 <div class="grid2" style="gap:10px">
-<div><label>Per diem rate</label><input id="perDiemRate" type="number" step="0.01" placeholder="80.00" /></div>
-<div><label>Broker window</label><select id="brokerWindow"><option value="90">90 days</option><option value="180">6 months</option><option value="365">1 year</option><option value="0">All time</option></select></div>
+<div><label for="perDiemRate">Per diem rate</label><input id="perDiemRate" type="number" step="0.01" placeholder="80.00" /></div>
+<div><label for="brokerWindow">Broker window</label><select id="brokerWindow"><option value="90">90 days</option><option value="180">6 months</option><option value="365">1 year</option><option value="0">All time</option></select></div>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">⚙️</span>App</div>
 <div class="grid2" style="gap:10px">
-<div><label>UI Mode</label><select id="uiMode"><option value="simple">Simple</option><option value="pro">Pro</option></select></div>
+<div><label for="uiMode">UI Mode</label><select id="uiMode"><option value="simple">Simple</option><option value="pro">Pro</option></select></div>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head"><span class="settings-section-icon">📡</span>Integrations</div>
-<label>🇨🇦 Canada Cross-Border</label><select id="canadaEnabled"><option value="off">Off — US only</option><option value="on">On — score cross-border loads</option></select>
-<div id="canadaFields" style="display:none"><label>CAD→USD Rate</label><input id="cadUsdRate" type="number" step="0.001" placeholder="0.735" /><label>Border admin cost (USD)</label><input id="borderAdminCost" type="number" step="1" placeholder="50" /><label class="chk" style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="canadaDocsReady"> Cross-border docs ready</label></div>
-<label>DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
-<div id="datApiFields" style="display:none"><label>DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
-<label>FMCSA API Key (broker verification)</label><input id="fmcsaApiKey" type="password" placeholder="Get free key at ai.fmcsa.dot.gov" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables broker authority status lookup in evaluator</div>
-<label>EIA API Key (free — eia.gov/opendata)</label><input id="eiaApiKey" type="password" placeholder="Get free key at eia.gov/opendata" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables live Midwest gas price lookup for fuel cost estimates</div>
+<label for="canadaEnabled">🇨🇦 Canada Cross-Border</label><select id="canadaEnabled"><option value="off">Off — US only</option><option value="on">On — score cross-border loads</option></select>
+<div id="canadaFields" style="display:none"><label for="cadUsdRate">CAD→USD Rate</label><input id="cadUsdRate" type="number" step="0.001" placeholder="0.735" /><label for="borderAdminCost">Border admin cost (USD)</label><input id="borderAdminCost" type="number" step="1" placeholder="50" /><label class="chk" style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="canadaDocsReady"> Cross-border docs ready</label></div>
+<label for="datApiEnabled">DAT Integration</label><select id="datApiEnabled"><option value="off">Off</option><option value="on">On</option></select>
+<div id="datApiFields" style="display:none"><label for="datApiBaseUrl">DAT API Base URL</label><input id="datApiBaseUrl" type="url" placeholder="https://power.dat.com/api/v2" /></div>
+<label for="fmcsaApiKey">FMCSA API Key (broker verification)</label><input id="fmcsaApiKey" type="password" placeholder="Get free key at ai.fmcsa.dot.gov" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables broker authority status lookup in evaluator</div>
+<label for="eiaApiKey">EIA API Key (free — eia.gov/opendata)</label><input id="eiaApiKey" type="password" placeholder="Get free key at eia.gov/opendata" /><div class="muted" style="font-size:11px;margin-top:2px">Optional — enables live Midwest gas price lookup for fuel cost estimates</div>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" style="color:var(--warn)"><span class="settings-section-icon" style="background:var(--warn-muted);border-color:var(--warn-border)">🟠</span>Dead Zone Exit</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Survival-tier scoring ($0.90–$1.24 RPM) unlocked only when stranded 1,500+ miles from home with no viable reloads above the normal floor. Keeps below-floor loads from polluting your RPM history.</div>
-<label>Dead Zone Exit mode</label><select id="dzEnabled"><option value="on">On — survival scoring enabled</option><option value="off">Off — disabled</option></select>
-<label>Activation distance from home (miles)</label><input id="dzActivationDistance" type="number" step="1" placeholder="1500" /><div class="muted" style="font-size:11px;margin-top:2px">DZ scoring only unlocks at or beyond this distance. Default: 1500.</div>
-<label>Absolute floor RPM ($)</label><input id="dzFloorRPM" type="number" step="0.01" placeholder="0.90" /><div class="muted" style="font-size:11px;margin-top:2px">Below this RPM, loads are rejected even in Dead Zone mode. Default: $0.90. Never set above $1.24.</div>
+<label for="dzEnabled">Dead Zone Exit mode</label><select id="dzEnabled"><option value="on">On — survival scoring enabled</option><option value="off">Off — disabled</option></select>
+<label for="dzActivationDistance">Activation distance from home (miles)</label><input id="dzActivationDistance" type="number" step="1" placeholder="1500" /><div class="muted" style="font-size:11px;margin-top:2px">DZ scoring only unlocks at or beyond this distance. Default: 1500.</div>
+<label for="dzFloorRPM">Absolute floor RPM ($)</label><input id="dzFloorRPM" type="number" step="0.01" placeholder="0.90" /><div class="muted" style="font-size:11px;margin-top:2px">Below this RPM, loads are rejected even in Dead Zone mode. Default: $0.90. Never set above $1.24.</div>
 
 </div>
 <!-- ── end advanced ── -->
-<div style="height:20px"></div><button class="btn primary" id="btnSaveSettings" style="width:100%;margin-bottom:8px;font-size:15px;font-weight:800;min-height:52px">Save Settings</button><button class="btn danger" id="btnHardReset" style="width:100%">Hard Reset All Data</button><div class="muted" style="font-size:11px;margin-top:8px;text-align:center">Hard reset permanently clears all local data.</div></div>        <div class="card" id="cloudBackupCard"><h3>☁️ Cloud Backup</h3><div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Encrypted backups — your data is encrypted on your phone before upload. Your passphrase never leaves this device.</div><div id="cloudStatusPanel" class="cloud-status-panel" style="display:none"><div class="cloud-status-row"><span class="label">Status</span><span class="value" id="cloudStatusDot"><span class="cloud-dot off"></span> Not connected</span></div><div class="cloud-status-row"><span class="label">Last sync</span><span class="value" id="cloudStatusTime">—</span></div><div class="cloud-status-row"><span class="label">User</span><span class="value" id="cloudStatusUser">—</span></div><div class="cloud-status-row"><span class="label">Backups</span><span class="value" id="cloudStatusCount">—</span></div></div><div id="cloudSetupSection"><label>Your Token</label><div class="pass-wrap"><input id="cloudBackupToken" type="password" placeholder="flk_... (given to you)" autocomplete="off" /><button type="button" class="pass-toggle" id="btnTokenToggle" aria-label="Show token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Paste the token you received</div><label>Encryption Passphrase</label><div class="pass-wrap"><input id="cloudBackupPass" type="password" placeholder="Min 8 characters — pick your own" autocomplete="off" /><button type="button" class="pass-toggle" id="btnPassToggle" aria-label="Show passphrase">👁</button></div><div class="pass-strength" id="passStrength"><div class="pass-strength-fill" id="passStrengthFill"></div></div><div class="muted" style="font-size:11px;margin-top:4px" id="passStrengthLabel">If you forget this, backups cannot be recovered.</div><div class="cloud-actions"><button class="btn" id="btnCloudTest">🔌 Test</button><button class="btn primary" id="btnCloudSave" style="font-weight:700">Connect</button></div></div><div class="cloud-actions"><button class="btn" id="btnCloudPush" disabled>☁️ Backup Now</button><button class="btn" id="btnCloudPull" disabled>📥 Restore</button></div><div id="cloudSyncStatus" class="muted" style="font-size:12px;margin-top:8px;min-height:18px"></div><div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px"><button class="btn sm" id="btnAdminToggle" style="font-size:12px;width:100%">👑 Admin — Add / Manage Drivers</button><div id="adminPanel" style="display:none;margin-top:12px"><div id="adminAccessState" class="muted" style="font-size:12px;margin-bottom:10px;min-height:18px"></div><div id="adminSetupBlock"><label for="adminToken">Admin access</label><div class="pass-wrap"><input id="adminToken" type="password" placeholder="Paste it once" autocomplete="off" style="font-size:16px" /><button type="button" class="pass-toggle" id="btnAdminTokenToggle" aria-label="Show admin access value">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Checked with the server before it is saved, then stored encrypted under your PIN. It is never shown again.</div><button class="btn primary" id="btnAdminSaveAccess" style="margin-top:10px;width:100%;min-height:48px">Save admin access</button></div><div id="adminDriversBlock" style="display:none"><button class="btn primary" id="btnAdminCreate" style="margin-top:4px;width:100%;min-height:48px">📨 Invite driver</button><div class="muted" style="font-size:11px;margin-top:6px">Sends a link that works for 72 hours. They pick their own passphrase; nothing else to hand over.</div><div id="adminUserList" style="margin-top:14px"></div><button class="btn sm" id="btnAdminRefresh" style="font-size:11px;margin-top:8px;min-height:44px;color:var(--text-tertiary)">Refresh driver list</button></div></div></div><div style="margin-top:8px"><button class="btn sm" id="btnCloudClear" style="font-size:11px;color:var(--text-tertiary)">Disconnect Cloud Backup</button></div></div>
+<div style="height:20px"></div><button class="btn primary" id="btnSaveSettings" style="width:100%;margin-bottom:8px;font-size:15px;font-weight:800;min-height:52px">Save Settings</button><button class="btn danger" id="btnHardReset" style="width:100%">Hard Reset All Data</button><div class="muted" style="font-size:11px;margin-top:8px;text-align:center">Hard reset permanently clears all local data.</div></div>        <div class="card" id="cloudBackupCard"><h3>☁️ Cloud Backup</h3><div class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.5">Encrypted backups — your data is encrypted on your phone before upload. Your passphrase never leaves this device.</div><div id="cloudStatusPanel" class="cloud-status-panel" style="display:none"><div class="cloud-status-row"><span class="label">Status</span><span class="value" id="cloudStatusDot"><span class="cloud-dot off"></span> Not connected</span></div><div class="cloud-status-row"><span class="label">Last sync</span><span class="value" id="cloudStatusTime">—</span></div><div class="cloud-status-row"><span class="label">User</span><span class="value" id="cloudStatusUser">—</span></div><div class="cloud-status-row"><span class="label">Backups</span><span class="value" id="cloudStatusCount">—</span></div></div><div id="cloudSetupSection"><label for="cloudBackupToken">Your Token</label><div class="pass-wrap"><input id="cloudBackupToken" type="password" placeholder="flk_... (given to you)" autocomplete="off" /><button type="button" class="pass-toggle" id="btnTokenToggle" aria-label="Show token">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Paste the token you received</div><label for="cloudBackupPass">Encryption Passphrase</label><div class="pass-wrap"><input id="cloudBackupPass" type="password" placeholder="Min 8 characters — pick your own" autocomplete="off" /><button type="button" class="pass-toggle" id="btnPassToggle" aria-label="Show passphrase">👁</button></div><div class="pass-strength" id="passStrength"><div class="pass-strength-fill" id="passStrengthFill"></div></div><div class="muted" style="font-size:11px;margin-top:4px" id="passStrengthLabel">If you forget this, backups cannot be recovered.</div><div class="cloud-actions"><button class="btn" id="btnCloudTest">🔌 Test</button><button class="btn primary" id="btnCloudSave" style="font-weight:700">Connect</button></div></div><div class="cloud-actions"><button class="btn" id="btnCloudPush" disabled>☁️ Backup Now</button><button class="btn" id="btnCloudPull" disabled>📥 Restore</button></div><div id="cloudSyncStatus" class="muted" style="font-size:12px;margin-top:8px;min-height:18px"></div><div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px"><button class="btn sm" id="btnAdminToggle" style="font-size:12px;width:100%">👑 Admin — Add / Manage Drivers</button><div id="adminPanel" style="display:none;margin-top:12px"><div id="adminAccessState" class="muted" style="font-size:12px;margin-bottom:10px;min-height:18px"></div><div id="adminSetupBlock"><label for="adminToken">Admin access</label><div class="pass-wrap"><input id="adminToken" type="password" placeholder="Paste it once" autocomplete="off" style="font-size:16px" /><button type="button" class="pass-toggle" id="btnAdminTokenToggle" aria-label="Show admin access value">👁</button></div><div class="muted" style="font-size:11px;margin-top:4px">Checked with the server before it is saved, then stored encrypted under your PIN. It is never shown again.</div><button class="btn primary" id="btnAdminSaveAccess" style="margin-top:10px;width:100%;min-height:48px">Save admin access</button></div><div id="adminDriversBlock" style="display:none"><button class="btn primary" id="btnAdminCreate" style="margin-top:4px;width:100%;min-height:48px">📨 Invite driver</button><div class="muted" style="font-size:11px;margin-top:6px">Sends a link that works for 72 hours. They pick their own passphrase; nothing else to hand over.</div><div id="adminUserList" style="margin-top:14px"></div><button class="btn sm" id="btnAdminRefresh" style="font-size:11px;margin-top:8px;min-height:44px;color:var(--text-tertiary)">Refresh driver list</button></div></div></div><div style="margin-top:8px"><button class="btn sm" id="btnCloudClear" style="font-size:11px;color:var(--text-tertiary)">Disconnect Cloud Backup</button></div></div>
       </div>
       <div class="spacer"></div>
       <div class="card"><h3>Storage &amp; Recovery</h3><div class="row"><div class="pill"><span class="muted">Trips</span> <b id="stTrips">0</b></div><div class="pill"><span class="muted">Expenses</span> <b id="stExpenses">0</b></div><div class="pill"><span class="muted">Fuel</span> <b id="stFuel">0</b></div><div class="pill"><span class="muted">Receipts</span> <b id="stReceiptSets">0</b></div><div class="pill"><span class="muted">Blobs</span> <b id="stReceiptBlobs">0</b></div></div><div class="spacer"></div><div class="btn-row"><button class="btn" id="btnStorageRefresh">Refresh</button><button class="btn" id="btnStorageAnalyze">Analyze</button><button class="btn" id="btnStorageRebuild">Rebuild Index</button><button class="btn danger" id="btnStorageClearCache">Clear Cache</button></div><div class="muted" style="font-size:11px;margin-top:8px" id="stStatus">—</div></div>
@@ -402,22 +402,22 @@
 
         <!-- ── Primary 3 Fields ── -->
         <div class="field" style="margin-bottom:10px">
-          <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Revenue ($)</label>
+          <label for="mwRevenue" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Revenue ($)</label>
           <input id="mwRevenue" inputmode="decimal" placeholder="420" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px;letter-spacing:-0.5px" />
         </div>
         <div class="grid2" style="gap:10px;margin-bottom:10px">
           <div class="field" style="margin-bottom:0">
-            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Loaded Miles</label>
+            <label for="mwLoadedMi" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Loaded Miles</label>
             <input id="mwLoadedMi" inputmode="numeric" placeholder="185" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
           </div>
           <div class="field" style="margin-bottom:0">
-            <label style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Deadhead Miles</label>
+            <label for="mwDeadMi" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Deadhead Miles</label>
             <input id="mwDeadMi" inputmode="numeric" placeholder="22" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
           </div>
         </div>
 
         <!-- ── Advanced toggle ── -->
-        <div class="eval-advanced-toggle" id="evalAdvToggle">
+        <div class="eval-advanced-toggle" id="evalAdvToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="evalAdvBody">
           <div class="adv-arrow">▶</div>
           <span>More Details</span>
           <span class="muted" style="font-size:11px;margin-left:auto" id="evalAdvSummary"></span>
@@ -425,22 +425,22 @@
         <div class="eval-advanced-body" id="evalAdvBody">
           <div class="field"><label>Origin</label>
             <div style="display:flex;gap:6px;align-items:center">
-              <input id="mwOrigin" placeholder="e.g. Chicago" style="flex:1" />
-              <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:40px;min-height:40px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
+              <input id="mwOrigin" aria-label="Origin" placeholder="e.g. Chicago" style="flex:1" />
+              <button id="mwGpsBtn" title="Estimate deadhead from GPS" style="background:none;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:16px;cursor:pointer;min-width:44px;min-height:44px;color:var(--text-secondary)" aria-label="Use GPS location">📍</button>
             </div>
             <div id="mwGpsHint" style="font-size:11px;color:var(--text-tertiary);margin-top:3px"></div>
           </div>
-          <div class="field"><label>Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
-          <div class="field"><label>Broker / Customer <span class="muted" style="font-size:10px;font-weight:400">(optional — enables broker history)</span></label><input id="mwBroker" list="mwBrokerList" placeholder="e.g. Acme Logistics" /><datalist id="mwBrokerList"></datalist></div>
+          <div class="field"><label for="mwDest">Destination</label><input id="mwDest" placeholder="e.g. Indianapolis" /></div>
+          <div class="field"><label for="mwBroker">Broker / Customer <span class="muted" style="font-size:10px;font-weight:400">(optional — enables broker history)</span></label><input id="mwBroker" list="mwBrokerList" placeholder="e.g. Acme Logistics" /><datalist id="mwBrokerList"></datalist></div>
           <div class="grid2" style="gap:10px">
-            <div class="field"><label>Currency</label><select id="mwCurrency" style="font-size:16px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
+            <div class="field"><label for="mwCurrency">Currency</label><select id="mwCurrency" style="font-size:16px;padding:8px"><option value="USD">USD</option><option value="CAD">CAD</option></select></div>
             <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
-              <select id="mwDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
+              <select id="mwDayOfWeek" aria-label="Day of week"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
             </div>
           </div>
           <div class="grid2" style="gap:10px">
-            <div class="field"><label>Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
-            <div class="field"><label>Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
+            <div class="field"><label for="mwFatigue">Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
+            <div class="field"><label for="mwWeeklyGross">Weekly gross ($) <span id="mwGrossAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label><input id="mwWeeklyGross" inputmode="decimal" placeholder="auto" /></div>
           </div>
           <!-- 7D: dimensional/payload pre-check (v23.9) — optional; only checked
                against the configured van profile (Settings → Vehicle) when a
@@ -462,13 +462,13 @@
             <input id="mwPickupCutoff" type="datetime-local" aria-label="Latest pickup date and time" />
             <div class="muted" style="font-size:11px;margin-top:2px">Latest you can still be loaded. Leave blank to score on economics alone.</div>
           </div>
-          <div class="field"><label>Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
+          <div class="field"><label for="mwLoadNotes">Load notes</label><input id="mwLoadNotes" placeholder="Paste load details for urgency detection" /><div class="muted" style="font-size:11px;margin-top:2px">Scans for ASAP, Hot, Rush, Line Down, etc.</div></div>
           <div class="field">
             <label class="chk" style="display:flex;align-items:center;gap:10px">
               <input type="checkbox" id="mwStrategic"> Allow Strategic Floor ($1.25 True RPM)
             </label>
             <div style="display:flex;gap:8px;margin-top:8px">
-              <select id="mwStrategicReason" style="flex:1" disabled>
+              <select id="mwStrategicReason" aria-label="Allow Strategic Floor" style="flex:1" disabled>
                 <option value="">Reason (required)</option>
                 <option value="home">Going home</option>
                 <option value="slow">Escaping slow market</option>
@@ -478,7 +478,7 @@
           </div>
           <div style="margin-bottom:2px">
             <div class="field"><label>Mode <span class="muted" style="font-size:10px;font-weight:400">(auto-detected)</span></label>
-              <select id="mwModeSelector" style="font-size:16px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)">
+              <select id="mwModeSelector" aria-label="Mode" style="font-size:16px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-1);color:var(--text)">
                 <option value="HARVEST">🟢 Harvest — in density</option>
                 <option value="REPOSITION">🔵 Reposition — move to density</option>
                 <option value="ESCAPE">🟡 Escape — exit bad zone</option>
@@ -522,17 +522,17 @@
         <div class="card" style="margin-bottom:12px"><div class="muted" style="font-size:12px">Pricing reflects <b>total miles (loaded + empty)</b>. Net columns subtract fuel + operating cost.</div></div>
         <div class="grid2">
           <div class="card"><h3>Inputs</h3>
-            <div class="field"><label>Total miles (loaded + empty)</label><input id="omMiles" inputmode="numeric" placeholder="e.g. 420" /></div>
-            <div class="field"><label>Empty miles</label><input id="omEmpty" inputmode="numeric" placeholder="e.g. 15" /></div>
-            <div class="field"><label>Drop tier</label><select id="omDropTier"><option value="1">Tier-1 (dense)</option><option value="2">Tier-2 (controlled)</option><option value="3">Tier-3 (thin/rural)</option></select></div>
-            <div class="field"><label>Day of week</label><select id="omDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select></div>
-            <div class="field"><label>Drive time increase %</label><input id="omDelayPct" inputmode="decimal" placeholder="e.g. 0 or 15" /><div class="muted" style="margin-top:4px;font-size:11px">≥15% = next mileage tier up</div></div>
+            <div class="field"><label for="omMiles">Total miles (loaded + empty)</label><input id="omMiles" inputmode="numeric" placeholder="e.g. 420" /></div>
+            <div class="field"><label for="omEmpty">Empty miles</label><input id="omEmpty" inputmode="numeric" placeholder="e.g. 15" /></div>
+            <div class="field"><label for="omDropTier">Drop tier</label><select id="omDropTier"><option value="1">Tier-1 (dense)</option><option value="2">Tier-2 (controlled)</option><option value="3">Tier-3 (thin/rural)</option></select></div>
+            <div class="field"><label for="omDayOfWeek">Day of week</label><select id="omDayOfWeek"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select></div>
+            <div class="field"><label for="omDelayPct">Drive time increase %</label><input id="omDelayPct" inputmode="decimal" placeholder="e.g. 0 or 15" /><div class="muted" style="margin-top:4px;font-size:11px">≥15% = next mileage tier up</div></div>
             <div class="field"><label>Risk conditions</label>
               <div class="grid2" style="margin-top:8px"><label class="chk"><input type="checkbox" id="omOvernight"> Overnight</label><label class="chk"><input type="checkbox" id="om250"> Over 250 mi</label></div>
-              <div style="margin-top:8px"><select id="omRisk"><option value="none">No risk adder</option><option value="mod">Moderate rain/wind (+0.05)</option><option value="winter">Winter advisory (+0.10)</option><option value="ice">Ice / storm (+0.15)</option><option value="closure">Major closure (PASS)</option></select></div>
+              <div style="margin-top:8px"><select id="omRisk" aria-label="Risk conditions"><option value="none">No risk adder</option><option value="mod">Moderate rain/wind (+0.05)</option><option value="winter">Winter advisory (+0.10)</option><option value="ice">Ice / storm (+0.15)</option><option value="closure">Major closure (PASS)</option></select></div>
             </div>
-            <div class="field"><label>Load notes (urgency detection)</label><textarea id="omLoadNotes" rows="2" placeholder="e.g. hot load, must deliver today, team driver needed" style="width:100%;font-size:13px"></textarea></div>
-            <div class="field"><label>Day-3 weekly gross (erosion check)</label><input id="omDay3Gross" inputmode="decimal" placeholder="e.g. 1800" /><label class="chk" style="margin-top:8px"><input type="checkbox" id="omErosionOk"> Allow lower tier if below 50% of weekly goal</label></div>
+            <div class="field"><label for="omLoadNotes">Load notes (urgency detection)</label><textarea id="omLoadNotes" rows="2" placeholder="e.g. hot load, must deliver today, team driver needed" style="width:100%;font-size:13px"></textarea></div>
+            <div class="field"><label for="omDay3Gross">Day-3 weekly gross (erosion check)</label><input id="omDay3Gross" inputmode="decimal" placeholder="e.g. 1800" /><label class="chk" style="margin-top:8px"><input type="checkbox" id="omErosionOk"> Allow lower tier if below 50% of weekly goal</label></div>
             <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary" id="omCalcBtn">Calculate</button><button class="btn" id="omResetBtn">Reset</button><button class="btn" id="omSaveBidBtn" style="display:none">Save to Bid History</button></div>
           </div>
           <div class="card"><h3>Bid Recommendations</h3>
@@ -543,17 +543,17 @@
       <div id="mwTabBoard" class="mw-tab-panel" style="display:none;margin-top:12px">
         <div class="grid2">
           <div class="card"><h3>Log Market Observation</h3>
-            <div class="field"><label>Current location</label><input id="mbLocation" placeholder="e.g. Chicago" /></div>
-            <div class="field"><label>Board volume</label><select id="mbVolume"><option value="light">Light</option><option value="moderate">Moderate</option><option value="heavy">Heavy</option></select></div>
-            <div class="field"><label>Dominant direction</label><select id="mbDirection"><option value="mixed">Mixed</option><option value="N">North</option><option value="S">South</option><option value="E">East</option><option value="W">West</option></select></div>
-            <div class="field"><label>Density direction</label><select id="mbDensityDir"><option value="into-t1">Into Tier 1</option><option value="into-t2">Into Tier 2</option><option value="out">Out of Density</option></select></div>
+            <div class="field"><label for="mbLocation">Current location</label><input id="mbLocation" placeholder="e.g. Chicago" /></div>
+            <div class="field"><label for="mbVolume">Board volume</label><select id="mbVolume"><option value="light">Light</option><option value="moderate">Moderate</option><option value="heavy">Heavy</option></select></div>
+            <div class="field"><label for="mbDirection">Dominant direction</label><select id="mbDirection"><option value="mixed">Mixed</option><option value="N">North</option><option value="S">South</option><option value="E">East</option><option value="W">West</option></select></div>
+            <div class="field"><label for="mbDensityDir">Density direction</label><select id="mbDensityDir"><option value="into-t1">Into Tier 1</option><option value="into-t2">Into Tier 2</option><option value="out">Out of Density</option></select></div>
             <div class="field"><label>Visible RPM range (low–high)</label>
-              <div style="display:flex;gap:8px"><input id="mbRpmLow" inputmode="decimal" placeholder="Low" style="flex:1" /><input id="mbRpmHigh" inputmode="decimal" placeholder="High" style="flex:1" /></div>
+              <div style="display:flex;gap:8px"><input id="mbRpmLow" aria-label="Visible RPM range low" inputmode="decimal" placeholder="Low" style="flex:1" /><input id="mbRpmHigh" aria-label="Visible RPM range high" inputmode="decimal" placeholder="High" style="flex:1" /></div>
             </div>
-            <div class="field"><label>Compression score (0–100)</label><input id="mbCompression" inputmode="numeric" placeholder="e.g. 65" /></div>
-            <div class="field"><label>Reload probability (0–100)</label><input id="mbReload" inputmode="numeric" placeholder="e.g. 80" /></div>
-            <div class="field"><label>Deadhead risk (0–100)</label><input id="mbDeadRisk" inputmode="numeric" placeholder="e.g. 20" /></div>
-            <div class="field"><label>Notes</label><textarea id="mbNotes" rows="2" placeholder="Board feel, action taken…"></textarea></div>
+            <div class="field"><label for="mbCompression">Compression score (0–100)</label><input id="mbCompression" inputmode="numeric" placeholder="e.g. 65" /></div>
+            <div class="field"><label for="mbReload">Reload probability (0–100)</label><input id="mbReload" inputmode="numeric" placeholder="e.g. 80" /></div>
+            <div class="field"><label for="mbDeadRisk">Deadhead risk (0–100)</label><input id="mbDeadRisk" inputmode="numeric" placeholder="e.g. 20" /></div>
+            <div class="field"><label for="mbNotes">Notes</label><textarea id="mbNotes" rows="2" placeholder="Board feel, action taken…"></textarea></div>
             <div style="display:flex;gap:8px;margin-top:14px">
               <button class="btn primary" id="mbSaveBtn" style="flex:1">Save Entry</button>
               <button class="btn" id="mbClearBtn">Clear</button>
@@ -635,7 +635,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.23"></script>
-  <script src="sw-bridge.js?v=24.0.23"></script>
+  <script src="app.js?v=24.0.24"></script>
+  <script src="sw-bridge.js?v=24.0.24"></script>
 </body>
 </html>

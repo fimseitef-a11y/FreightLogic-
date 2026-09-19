@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.23 — service worker update bridge */
+/* FreightLogic v24.0.24 — service worker update bridge */
 (function(){
   if (!('serviceWorker'in navigator)) return;
 
@@ -63,6 +63,6 @@
 // Keep structural navigation out of the 1 MB decision engine. Loading the
 // adapter here lets app.js remain canonical while the shell can evolve in a
 // small, reviewable file. Dynamic import is same-origin and CSP-compatible.
-import('./modern-shell.js?v=24.0.23').catch((e) => {
+import('./modern-shell.js?v=24.0.24').catch((e) => {
   console.warn('[FL] modern shell adapter failed to load:', e);
 });

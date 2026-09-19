@@ -1889,3 +1889,18 @@ html[data-fl-driver-mode="glance"] body .fl-nm-text {
     font-size: max(16px, var(--fl-body-size)) !important;
   }
 }
+
+
+/* Issue #268 — Apple/iOS keyboard and touch accessibility.
+   Presentation only; behavior remains owned by the existing click handlers. */
+#f21StartBtn[role="button"] { min-height: 48px; }
+#f21InfoBtn[role="button"],
+#fuelNudgeCard[role="button"],
+#maintAlertBanner[role="button"],
+#f22TaxToggle[role="button"] { min-width: 44px; min-height: 44px; }
+[role="button"][tabindex="0"]:focus-visible,
+#evalAdvToggle:focus-visible,
+#advSettingsToggle:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}

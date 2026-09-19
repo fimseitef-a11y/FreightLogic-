@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.23 — modern five-surface navigation adapter
+/* FreightLogic v24.0.24 — modern five-surface navigation adapter
  * Structural navigation; presentation is owned by styles.css.
  * Canonical routing, state, evaluation and data ownership remain in app.js.
  */
@@ -79,6 +79,64 @@
     if (ROUTE_ALIASES[raw]) window.location.hash = ROUTE_ALIASES[raw];
   }
 
+  function installA11yRepairs() {
+    const buttonIds = ['fuelNudgeCard', 'maintAlertBanner', 'f22TaxToggle'];
+    const disclosureBodies = { evalAdvToggle: 'evalAdvBody', advSettingsToggle: 'advSettingsBody', f22TaxToggle: 'f22TaxBody' };
+
+    const isExpanded = (body) => {
+      if (!body) return false;
+      const style = getComputedStyle(body);
+      return style.display !== 'none' && style.visibility !== 'hidden' && !body.hidden;
+    };
+
+    const makeKeyboardButton = (el) => {
+      if (!el || el.dataset.flA11yButton === '1') return;
+      if (el.tagName !== 'BUTTON' && el.tagName !== 'A') {
+        el.setAttribute('role', 'button');
+        el.setAttribute('tabindex', '0');
+        el.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          el.click();
+        });
+      }
+      el.dataset.flA11yButton = '1';
+    };
+
+    const syncDisclosure = (el, bodyId) => {
+      if (!el) return;
+      makeKeyboardButton(el);
+      const update = () => el.setAttribute('aria-expanded', isExpanded(document.getElementById(bodyId)) ? 'true' : 'false');
+      el.setAttribute('aria-controls', bodyId);
+      update();
+      if (el.dataset.flA11yDisclosure !== '1') {
+        el.addEventListener('click', () => setTimeout(update, 0));
+        el.dataset.flA11yDisclosure = '1';
+      }
+    };
+
+    const repair = () => {
+      for (const id of buttonIds) makeKeyboardButton(document.getElementById(id));
+      for (const [id, bodyId] of Object.entries(disclosureBodies)) syncDisclosure(document.getElementById(id), bodyId);
+
+      const start = document.getElementById('f21StartBtn');
+      const info = document.getElementById('f21InfoBtn');
+      if (start && info && start.contains(info)) start.insertAdjacentElement('afterend', info);
+      makeKeyboardButton(start);
+      makeKeyboardButton(info);
+      if (start) start.setAttribute('aria-label', start.getAttribute('aria-label') || 'Start trip');
+      if (info) info.setAttribute('aria-label', info.getAttribute('aria-label') || 'GPS tracking information');
+
+      // Dynamic report/lane rows use pointer affordance for activation. Give any
+      // such visible non-native row keyboard semantics without changing its click contract.
+      document.querySelectorAll('[data-weekly-report-action], [data-lane-action], #laneList [onclick]').forEach(makeKeyboardButton);
+    };
+
+    repair();
+    const observer = new MutationObserver(repair);
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   function install() {
     if (installed) return;
     installed = true;
@@ -89,6 +147,7 @@
     window.addEventListener('hashchange', normalizeAliasHash);
     normalizeAliasHash();
     syncActiveFromHash();
+    installA11yRepairs();
   }
 
   window.FreightLogicModernShell = { install, navigate, primaryRoutes: () => [...PRIMARY_ROUTES] };
