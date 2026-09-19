@@ -7954,38 +7954,15450 @@ const INTEL_TILES = [
 // exceptions list, so a regroup that orphaned a route would fail rather than
 // ship.
 const MORE_GROUPS = [
-  { id:'money',    label:'Money' },
-  { id:'business', label:'Business & Tax' },
-  { id:'data',     label:'Data & Backup' },
-  { id:'app',      label:'App' },
+  { id:'work', label:'Work & Records' },
+  { id:'app',  label:'App' },
 ];
 
 const MORE_TILES = [
-  // Money
-  { icon:'\uD83D\uDCB5', title:'Money / AR', sub:'Unpaid trips & aging', hash:'#money', section:'PRIMARY', group:'money' },
-  { icon:'\uD83D\uDCB0', title:'Expenses', sub:'Track fuel, tolls, repairs', hash:'#expenses', section:'PRIMARY', group:'money' },
-  { icon:'\u26FD', title:'Fuel Log', sub:'Fill-ups & cost tracking', hash:'#fuel', section:'PRIMARY', group:'money' },
-  { icon:'\uD83D\uDCC5', title:'Monthly Costs', sub:'Fixed expenses auto-logged', act:'monthlyCosts', section:'PRIMARY', group:'money' },
-  // Business & Tax
-  // v24.0.8: Intel lost its bottom-nav tab when the five-surface shell replaced
-  // the old Home/Trips/Omega/Intel/More bar, and `index.html`'s nav anchor was
-  // the ONLY link to `#intel` anywhere in the app. The route, its renderer and
-  // all five of its tabs stayed intact and became reachable only by typing the
-  // hash. This tile is what makes "secondary tools remain accessible through
-  // More" true rather than assumed.
-  { icon:'\uD83E\uDDE0', title:'Market Intel', sub:'Lanes, reloads, brokers, tools', hash:'#intel', section:'PRIMARY', group:'business' },
-  { icon:'\uD83D\uDCC1', title:'Documents', sub:'Insurance, MC, W-9', act:'documents', section:'PRIMARY', group:'business' },
-  { icon:'\uD83D\uDCCA', title:'Tax & Reports', sub:'Quick tax view, accountant export', hash:'#insights', section:'ADVANCED', group:'business' },
-  { icon:'\uD83D\uDCE6', title:'CPA Package', sub:'Quarterly breakdown & export', act:'cpaPackage', section:'ADVANCED', group:'business' },
-  { icon:'\uD83D\uDDC2\uFE0F', title:'Tax Season Export', sub:'Schedule C + mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
-  // Data & Backup
-  { icon:'\uD83D\uDCBE', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
-  { icon:'\uD83D\uDCE5', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
-  { icon:'\uD83D\uDCBF', title:'Storage Health', sub:'IndexedDB usage & cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
-  // App
-  { icon:'\u2699\uFE0F', title:'Settings', sub:'Vehicle, costs, integrations', hash:'#insights', section:'PRIMARY', group:'app' },
-  { icon:'\uD83D\uDD12', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED', group:'app' },
-  { icon:'\uD83D\uDD2C', title:'Diagnostics', sub:'App, SW, cache & AI self-test', act:'diagnostics', section:'ADVANCED', group:'app' },
+  // Keep secondary destinations deliberately small. The five-tab bar owns the
+  // daily workflow; More is a short directory, not a second home screen.
+  { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
+  { icon:' ──
+let _intelBound = false;
+async function renderIntel(){
+  const grid = $('#intelMenu');
+  if (!grid || _intelBound) return;
+  _intelBound = true;
+
+  const container = grid.parentElement;
+
+  // ── Tab bar ──────────────────────────────────────────────────────
+  const tabs = ['Overview','Lanes','Reloads','Brokers','Tools'];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'fl-intel-tabs';
+  tabs.forEach((name, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'fl-intel-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = name;
+    btn.dataset.intelTab = name.toLowerCase();
+    tabBar.appendChild(btn);
+  });
+  const liveSection = $('#intelLiveSection');
+  if (liveSection) container.insertBefore(tabBar, liveSection);
+  else container.insertBefore(tabBar, grid);
+
+  // ── Panels (one div per tab) ──────────────────────────────────────
+  const panelOverview  = document.createElement('div'); panelOverview.dataset.intelPanel  = 'overview';
+  const panelLanes     = document.createElement('div'); panelLanes.dataset.intelPanel     = 'lanes';     panelLanes.style.display     = 'none';
+  const panelReloads   = document.createElement('div'); panelReloads.dataset.intelPanel   = 'reloads';   panelReloads.style.display   = 'none';
+  const panelBrokers   = document.createElement('div'); panelBrokers.dataset.intelPanel   = 'brokers';   panelBrokers.style.display   = 'none';
+  const panelTools     = document.createElement('div'); panelTools.dataset.intelPanel     = 'tools';     panelTools.style.display     = 'none';
+  [panelOverview, panelLanes, panelReloads, panelBrokers, panelTools].forEach(p => container.insertBefore(p, grid));
+  grid.style.display = 'none'; // tools panel replaces grid
+
+  // ── Tab switcher ─────────────────────────────────────────────────
+  let _lanesLoaded = false, _reloadsLoaded = false, _brokersLoaded = false;
+  function switchIntelTab(name){
+    tabBar.querySelectorAll('.fl-intel-tab').forEach(b => b.classList.toggle('active', b.dataset.intelTab === name));
+    [panelOverview, panelLanes, panelReloads, panelBrokers, panelTools].forEach(p => {
+      p.style.display = p.dataset.intelPanel === name ? '' : 'none';
+    });
+    if (name === 'lanes'   && !_lanesLoaded)   { _lanesLoaded   = true; _renderIntelLanes(panelLanes); }
+    if (name === 'reloads' && !_reloadsLoaded) { _reloadsLoaded = true; _renderIntelReloads(panelReloads); }
+    if (name === 'brokers' && !_brokersLoaded) { _brokersLoaded = true; _renderIntelBrokers(panelBrokers); }
+    haptic(8);
+  }
+  tabBar.addEventListener('click', e => {
+    const btn = e.target.closest('.fl-intel-tab');
+    if (btn) switchIntelTab(btn.dataset.intelTab);
+  });
+
+  // ── Overview panel: live week stats + top lanes ───────────────────
+  if (liveSection){
+    panelOverview.appendChild(liveSection);
+    liveSection.style.display = '';
+    liveSection.innerHTML = `<div class="card"><div class="skel" style="height:90px;margin-bottom:0"></div></div>`;
+    (async () => {
+      try {
+        const { trips } = await _getTripsAndExps();
+        const now = new Date();
+        const dow = now.getDay();
+        const wk0 = new Date(now);
+        wk0.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+        wk0.setHours(0,0,0,0);
+        const wkTrips = trips.filter(t => {
+          const dt = t.pickupDate || t.deliveryDate;
+          return dt && new Date(dt) >= wk0 && !t.isDZExit;
+        });
+        const wkGross = wkTrips.reduce((s,t) => s + Number(t.pay||t.revenue||0), 0);
+        const wkMiAll = wkTrips.reduce((s,t) => s + Number(t.loadedMiles||t.loadedMi||0) + Number(t.emptyMiles||t.deadMi||0), 0);
+        const wkRpm = wkMiAll > 0 ? '$' + (wkGross / wkMiAll).toFixed(2) : '—';
+        const lanes = computeLaneStats(trips).slice(0,3);
+        const _lGrade = (r) => r >= 1.60 ? 'A' : r >= 1.40 ? 'B' : 'C';
+        const lanesHtml = lanes.length ? `
+          <div style="border-top:1px solid var(--border-subtle);margin:14px 0 12px"></div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">Top Lanes</div>
+          ${lanes.map((l,i) => {
+            const g = _lGrade(l.avgRpm);
+            const trendColor = l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+            return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface-0);border:1px solid var(--border);border-radius:14px;margin-bottom:6px;cursor:pointer" data-lane-idx="${i}">
+              <div class="fl-grade-chip ${g.toLowerCase()}">${g}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(l.display)}</div>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.trips} run${l.trips>1?'s':''} &middot; $${l.avgRpm} avg/mi</div>
+              </div>
+              <div style="font-size:12px;font-weight:700;color:${trendColor}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'}</div>
+            </div>`;
+          }).join('')}` : '';
+        liveSection.innerHTML = `
+          <div class="card card-hero">
+            <h3>This Week</h3>
+            <div class="fl-kpi-3col">
+              <div class="kpi-cell"><div class="kpi-cell-value" style="color:var(--accent)">${fmtMoney(wkGross)}</div><div class="kpi-cell-label">Gross</div></div>
+              <div class="kpi-cell"><div class="kpi-cell-value">${wkRpm}</div><div class="kpi-cell-label">True RPM</div></div>
+              <div class="kpi-cell"><div class="kpi-cell-value">${wkTrips.length}</div><div class="kpi-cell-label">Trips</div></div>
+            </div>
+            ${lanesHtml}
+          </div>`;
+        if (lanes.length){
+          liveSection.querySelectorAll('[data-lane-idx]').forEach(el => {
+            const idx = Number(el.getAttribute('data-lane-idx'));
+            el.addEventListener('click', () => { haptic(10); openLaneBreakdown(lanes[idx], trips); });
+          });
+        }
+      } catch(e){ if (liveSection) liveSection.innerHTML = ''; }
+    })();
+  }
+
+  // ── Tools panel ───────────────────────────────────────────────────
+  const toolsCard = document.createElement('div');
+  toolsCard.className = 'intel-list card';
+  toolsCard.style.cssText = 'padding:8px';
+  panelTools.appendChild(toolsCard);
+
+  INTEL_TILES.forEach((tile, idx) => {
+    const el = document.createElement('div');
+    el.className = 'intel-row';
+    el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); el.setAttribute('aria-label', tile.title);
+    if (idx > 0){ const sep = document.createElement('div'); sep.style.cssText = 'height:1px;background:var(--border-subtle);margin:0 -4px'; toolsCard.appendChild(sep); }
+    el.innerHTML = `
+      <div class="intel-row-icon">${escapeHtml(tile.icon)}</div>
+      <div class="intel-row-body"><div class="intel-row-title">${escapeHtml(tile.title)}</div><div class="intel-row-sub">${escapeHtml(tile.sub)}</div></div>
+      <svg class="intel-row-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const tileAction = async () => {
+      try {
+        haptic(15);
+        if (tile.act === 'weeklyReports') await openWeeklyReports();
+        else if (tile.act === 'rateTrends') await openRateTrends();
+        else if (tile.act === 'reloadScoring') await openReloadScoring();
+        else if (tile.act === 'chainAnalysis') await openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
+        else if (tile.act === 'costPerDay') await openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
+        else if (tile.act === 'omegaTiers'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="omega"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
+        else if (tile.act === 'marketBoard'){ location.hash='#omega'; setTimeout(()=>{ document.querySelector('#mwTabs [data-mwtab="board"]')?.click(); window.scrollTo({top:0,behavior:'instant'}); },100); }
+        else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        else if (tile.act === 'opportunityIntake') await openOpportunityIntake();
+      } catch(e){ console.warn('[FL] Intel tile error:', e); }
+    };
+    el.addEventListener('click', tileAction);
+    el.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' '){ e.preventDefault(); tileAction(); } });
+    toolsCard.appendChild(el);
+  });
+}
+
+// ── Intel lazy tab renderers ──────────────────────────────────────────────────
+async function _renderIntelLanes(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:80px"></div><div class="skel" style="height:80px"></div><div class="skel" style="height:80px"></div></div>`;
+  try {
+    const { trips } = await _getTripsAndExps();
+    const lanes = computeLaneStats(trips);
+    if (!lanes.length){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px;padding:10px 0">No lane history yet. Complete trips to build lane data.</div></div>`; return; }
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<h3>Your Lane History</h3>`;
+    lanes.forEach((l, i) => {
+      const g = l.avgRpm >= 1.60 ? 'A' : l.avgRpm >= 1.40 ? 'B' : l.avgRpm >= 1.25 ? 'C' : 'D';
+      const trendColor = l.trend > 0 ? 'var(--good)' : l.trend < 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+      const bar = Math.min(100, Math.round((l.avgRpm / 2.0) * 100));
+      const barColor = g === 'A' ? 'var(--good)' : g === 'B' ? 'var(--accent)' : 'var(--warn)';
+      if (i > 0){ const sep = document.createElement('div'); sep.style.cssText='height:1px;background:var(--border-subtle);margin:12px 0'; card.appendChild(sep); }
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;cursor:pointer';
+      row.innerHTML = `
+        <div class="fl-grade-chip ${g.toLowerCase()}">${g}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700">${escapeHtml(l.display)}</div>
+          <div style="display:flex;gap:10px;margin-top:4px;font-size:11px;color:var(--text-tertiary)">
+            <span>${l.trips} run${l.trips>1?'s':''}</span>
+            <span style="font-family:var(--font-mono);color:var(--accent)">$${l.avgRpm}/mi avg</span>
+          </div>
+          <div style="margin-top:8px;height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden">
+            <div style="height:100%;border-radius:2px;width:${bar}%;background:${barColor}"></div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:${trendColor}">${l.trend > 0 ? '↑' : l.trend < 0 ? '↓' : '→'} $${Math.abs(l.trend).toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">30d trend</div>
+        </div>`;
+      row.addEventListener('click', () => { haptic(10); openLaneBreakdown(l, trips); });
+      card.appendChild(row);
+    });
+    container.innerHTML = ''; container.appendChild(card);
+  } catch(e){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px">Could not load lane data.</div></div>`; }
+}
+
+async function _renderIntelReloads(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:60px"></div><div class="skel" style="height:60px"></div><div class="skel" style="height:60px"></div></div>`;
+  try { haptic(8); await openReloadScoring(); container.innerHTML = ''; } catch(e){ container.innerHTML = ''; }
+}
+
+async function _renderIntelBrokers(container){
+  container.innerHTML = `<div class="card"><div class="skel" style="height:70px"></div><div class="skel" style="height:70px"></div></div>`;
+  try {
+    const { trips } = await _getTripsAndExps();
+    const today = isoDate();
+    const brokerDays = Number(await getSetting('brokerWindow', 90) || 90);
+    const brokers = computeBrokerStats(trips, today, brokerDays);
+    if (!brokers.length){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px;padding:10px 0">No broker data yet. Tag brokers on your trips to build history.</div></div>`; return; }
+    const globalMiles = brokers.reduce((s,b) => s+b.miles, 0);
+    const globalPay   = brokers.reduce((s,b) => s+b.pay, 0);
+    const globalAvgRpm = globalMiles > 0 ? globalPay / globalMiles : 0;
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<div class="fl-card-hdr"><h3>Broker Performance</h3><span style="font-size:11px;color:var(--text-tertiary)">${brokerDays > 0 ? `last ${brokerDays}d` : 'all time'}</span></div>`;
+    brokers.slice(0,8).forEach((b, i) => {
+      const gradeObj = computeBrokerGrade(b, globalAvgRpm);
+      const g = gradeObj?.letter || '?';
+      const gClass = g.toLowerCase() !== '?' ? g.toLowerCase() : 'c';
+      if (i > 0){ const sep = document.createElement('div'); sep.style.cssText='height:1px;background:var(--border-subtle);margin:12px 0'; card.appendChild(sep); }
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:12px';
+      row.innerHTML = `
+        <div class="fl-grade-chip ${gClass}">${g}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">${escapeHtml(b.name||'Unknown')}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${b.count} load${b.count>1?'s':''} &middot; ${fmtMoney(b.miles>0?b.pay/b.count:0)} avg</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--accent)">${b.miles>0?'$'+(b.pay/b.miles).toFixed(2)+'/mi':'—'}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${b.avgDtp!==null?Math.round(b.avgDtp)+'d pay':'—'}</div>
+        </div>`;
+      card.appendChild(row);
+    });
+    container.innerHTML = ''; container.appendChild(card);
+  } catch(e){ container.innerHTML = `<div class="card"><div class="muted" style="font-size:13px">Could not load broker data.</div></div>`; }
+}
+
+let _moreBound = false;
+let _vtmBound = false; // X-03: "Verify vehicle tax method" Settings button, bound once
+async function renderMore(){
+  const grid = $('#moreMenu');
+  if (!_moreBound){
+    _moreBound = true;
+    grid.innerHTML = '';
+
+    // v20.1: Two-tier layout — PRIMARY tiles always visible, ADVANCED behind toggle
+    const makeTileEl = (tile) => {
+      const el = document.createElement('div');
+      el.className = 'menu-tile';
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('aria-label', tile.title);
+      el.innerHTML = `<div class="ti">${escapeHtml(tile.icon)}</div><div class="tt">${escapeHtml(tile.title)}</div><div class="ts">${escapeHtml(tile.sub)}</div>`;
+      const tileAction = async ()=>{
+        try {
+        haptic(15);
+        if (tile.hash) location.hash = tile.hash;
+        else if (tile.act === 'import') openUniversalImport();
+        else if (tile.act === 'export') await exportJSON();
+        else if (tile.act === 'security') openSecurityLockModal();
+        else if (tile.act === 'weeklyReports') await openWeeklyReports();
+        else if (tile.act === 'documents') await openDocumentVault();
+        else if (tile.act === 'rateTrends') await openRateTrends();
+        else if (tile.act === 'reloadScoring') await openReloadScoring();
+        else if (tile.act === 'chainAnalysis') await openChainAnalysis();
+        else if (tile.act === 'weeklyStrategy') await openWeeklyStrategy();
+        else if (tile.act === 'seasonalIntel') await openSeasonalIntel();
+        else if (tile.act === 'costPerDay') await openCostPerDay();
+        else if (tile.act === 'counterOfferMemory') await openCounterOfferMemory();
+        else if (tile.act === 'cpaPackage') await openCPAPackage();
+        else if (tile.act === 'omegaTiers'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="omega"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
+        else if (tile.act === 'marketBoard'){
+          location.hash = '#omega';
+          setTimeout(()=>{
+            const btn = document.querySelector('#mwTabs [data-mwtab="board"]');
+            if (btn) btn.click();
+            window.scrollTo({top:0,behavior:'instant'});
+          }, 100);
+        }
+        else if (tile.act === 'maintenance') await openMaintenanceTracker();
+        else if (tile.act === 'opportunityIntake') await openOpportunityIntake();
+        else if (tile.act === 'monthlyCosts') await openMonthlyExpenseManager();
+        else if (tile.act === 'taxExport') await openTaxSeasonExport();
+        else if (tile.act === 'diagnostics') await openDiagnosticsPanel();
+        else if (tile.act === 'storageHealth'){
+          location.hash = '#insights';
+          setTimeout(()=>{
+            const el = $('#stTrips')?.closest('.card');
+            if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+            refreshStorageHealth();
+          }, 200);
+        }
+        } catch(e){ console.warn('[FL] More tile error:', e); }
+      };
+      el.addEventListener('click', tileAction);
+      el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tileAction(); } });
+      return el;
+    };
+
+    // Render one labelled group per MORE_GROUPS entry. A tile with an unknown or
+    // missing `group` still renders, in a final "Other" group -- a tile that
+    // silently disappeared because somebody added it without a group would be
+    // the orphaning this restructure exists to prevent, so the fallback is a
+    // visible group rather than a filter.
+    const grouped = new Map(MORE_GROUPS.map(g => [g.id, []]));
+    const ungrouped = [];
+    for (const tile of MORE_TILES){
+      const bucket = grouped.get(tile.group);
+      (bucket || ungrouped).push(tile);
+    }
+
+    const sections = MORE_GROUPS
+      .map(g => ({ label: g.label, tiles: grouped.get(g.id) || [] }))
+      .concat(ungrouped.length ? [{ label: 'Other', tiles: ungrouped }] : [])
+      .filter(sec => sec.tiles.length);
+
+    for (const sec of sections){
+      const heading = document.createElement('div');
+      heading.className = 'fl-more-group';
+      heading.style.cssText = 'grid-column:1/-1;padding:14px 4px 6px;color:var(--text-tertiary);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px';
+      heading.textContent = sec.label;
+      grid.appendChild(heading);
+
+      // Each group is its own `.menu-grid`, which is also what keeps MS-12's
+      // reachability sweep able to reveal and read every tile.
+      const groupGrid = document.createElement('div');
+      groupGrid.className = 'menu-grid';
+      groupGrid.style.cssText = 'grid-column:1/-1';
+      // `section` no longer controls visibility -- nothing in More is hidden
+      // behind an unlabelled toggle any more. It now orders tiles WITHIN a
+      // group, so the everyday ones sit first and the occasional ones after.
+      const ordered = sec.tiles.slice().sort((a, b) =>
+        (a.section === 'PRIMARY' ? 0 : 1) - (b.section === 'PRIMARY' ? 0 : 1));
+      for (const tile of ordered) groupGrid.appendChild(makeTileEl(tile));
+      grid.appendChild(groupGrid);
+    }
+  }
+  // Populate current values
+  $('#moreWeeklyGoal').value = await getSetting('weeklyGoal', '') || '';
+  $('#moreVehicleMpg').value = await getSetting('vehicleMpg', '') || '';
+  $('#moreFuelPrice').value = await getSetting('fuelPrice', '') || '';
+  $('#morePerDiem').value = await getSetting('perDiemRate', '') || '';
+  $('#moreVersion').textContent = APP_VERSION;
+}
+
+
+
+function openSecurityLockModal(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Protect this device with a local PIN. This locks the app UI on this browser only.</div>
+    <label><input type="checkbox" id="lockEnabled" style="width:auto;margin-right:8px" /> Enable profile lock</label>
+    <label>PIN</label><input id="lockPin" type="password" inputmode="numeric" placeholder="4 to 8 digits" maxlength="8" />
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="saveLockBtn">Save</button><button class="btn" id="clearLockBtn">Disable</button></div>
+  </div>`;
+  openModal('Security Lock', body);
+  getSetting('appLockEnabled', false).then(v => { const el = document.getElementById('lockEnabled'); if (el) el.checked = !!v; });
+  document.getElementById('saveLockBtn')?.addEventListener('click', async ()=>{
+    const enabled = !!document.getElementById('lockEnabled')?.checked;
+    const pin = String(document.getElementById('lockPin')?.value || '').trim();
+    if (enabled && !/^\d{4,8}$/.test(pin)){ toast('PIN must be 4–8 digits', true); return; }
+    await setSetting('appLockEnabled', enabled);
+    if (enabled) await setSetting('appLockPin', await hashPin(pin));
+    toast(enabled ? 'Profile lock enabled' : 'Profile lock disabled');
+    closeModal();
+  });
+  document.getElementById('clearLockBtn')?.addEventListener('click', async ()=>{
+    await setSetting('appLockEnabled', false);
+    await setSetting('appLockPin', '');
+    toast('Profile lock disabled');
+    closeModal();
+  });
+}
+
+// F-4 fix: App Lock brute-force throttle. Policy (approved by the app
+// owner — a driver who fat-fingers their OWN pin one-handed in a moving
+// vehicle must never be stranded, so this never wipes data and never
+// locks out permanently; it only makes each additional wrong guess after
+// the free allowance progressively slower to attempt):
+//   attempts 1-5:   free, no delay (normal fat-finger tolerance)
+//   attempts 6-10:  10s delay before the NEXT attempt is even accepted
+//   attempts 11-15: 60s delay
+//   attempts 16+:   5min delay — the cap; never grows further
+// State (appLockFailCount / appLockLockedUntil) persists in settings so a
+// reload doesn't reset the counter, and resets to 0 on any successful
+// unlock. Deliberately NOT added to ALLOWED_SETTINGS_KEYS (app.js:1457) —
+// a restored backup should never re-import a stale lockout from another
+// device/session.
+function _appLockDelayForAttempt(failCount){
+  if (failCount <= 5) return 0;
+  if (failCount <= 10) return 10_000;
+  if (failCount <= 15) return 60_000;
+  return 300_000; // cap — never grows past 5 minutes
+}
+async function requireAppUnlock(){
+  const enabled = !!(await getSetting('appLockEnabled', false));
+  const pin = String(await getSetting('appLockPin', '') || '');
+  if (!enabled || !pin) return true;
+  return await new Promise((resolve)=>{
+    const body = document.createElement('div');
+    body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+      <div class="muted" style="font-size:12px;margin-bottom:12px">Enter your profile PIN to unlock this device.</div>
+      <label>PIN</label><input id="unlockPin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" />
+      <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="unlockNow">Unlock</button></div>
+      <div id="unlockHint" class="muted" style="font-size:12px;margin-top:10px"></div>
+      <div style="margin-top:14px;text-align:center"><a href="#" id="unlockForgotPin" style="font-size:12px;color:var(--text-tertiary)">Forgot PIN?</a></div>
+    </div>`;
+    openModal('Unlock Freight Logic', body);
+    let countdownTimer = null;
+    const unlockBtn = () => document.getElementById('unlockNow');
+    const pinInput = () => document.getElementById('unlockPin');
+    const hintEl = () => document.getElementById('unlockHint');
+    const setLockedUI = (msUntilFree) => {
+      const secs = Math.ceil(msUntilFree / 1000);
+      if (unlockBtn()) unlockBtn().disabled = true;
+      if (pinInput()) pinInput().disabled = true;
+      if (hintEl()) hintEl().textContent = `Too many attempts. Try again in ${secs}s.`;
+    };
+    const clearLockedUI = () => {
+      if (unlockBtn()) unlockBtn().disabled = false;
+      if (pinInput()) pinInput().disabled = false;
+      if (hintEl()) hintEl().textContent = '';
+    };
+    const armCountdown = (lockedUntil) => {
+      if (countdownTimer) clearInterval(countdownTimer);
+      const tick = () => {
+        const remaining = lockedUntil - Date.now();
+        if (remaining <= 0){ clearInterval(countdownTimer); countdownTimer = null; clearLockedUI(); return; }
+        setLockedUI(remaining);
+      };
+      tick();
+      countdownTimer = setInterval(tick, 1000);
+    };
+    (async () => {
+      const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+      if (lockedUntil > Date.now()) armCountdown(lockedUntil);
+    })();
+    let unlockInFlight = false;
+    const tryUnlock = async ()=>{
+      // Reentrancy guard: without this, rapid concurrent calls (button-mash,
+      // or a scripted loop calling .click() faster than one verifyPin+
+      // setSetting round-trip) could each read the same pre-increment
+      // failCount before any of them writes the incremented value back,
+      // silently undercounting attempts and diluting the whole throttle.
+      if (unlockInFlight) return;
+      unlockInFlight = true;
+      try{
+        const lockedUntil = Number(await getSetting('appLockLockedUntil', 0) || 0);
+        if (lockedUntil > Date.now()){ armCountdown(lockedUntil); return; } // still locked — ignore the click
+        const val = String(document.getElementById('unlockPin')?.value || '');
+        const match = await verifyPin(pin, val);
+        // Migrate legacy hash formats to PBKDF2 on successful unlock
+        if (match && !pin.startsWith('pbkdf2v1:')){
+          setSetting('appLockPin', await hashPin(val)).catch(()=>{});
+        }
+        if (match){
+          if (countdownTimer) clearInterval(countdownTimer);
+          setSetting('appLockFailCount', 0).catch(()=>{});
+          setSetting('appLockLockedUntil', 0).catch(()=>{});
+          closeModal(); resolve(true);
+        } else {
+          const failCount = Number(await getSetting('appLockFailCount', 0) || 0) + 1;
+          await setSetting('appLockFailCount', failCount).catch(()=>{});
+          const delay = _appLockDelayForAttempt(failCount);
+          if (delay > 0){
+            const until = Date.now() + delay;
+            await setSetting('appLockLockedUntil', until).catch(()=>{});
+            armCountdown(until);
+          } else if (hintEl()) hintEl().textContent = 'Incorrect PIN';
+          haptic(35);
+        }
+      }finally{ unlockInFlight = false; }
+    };
+    document.getElementById('unlockNow')?.addEventListener('click', ()=>{ tryUnlock().catch(()=>{}); });
+    document.getElementById('unlockPin')?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock().catch(()=>{}); });
+    document.getElementById('unlockForgotPin')?.addEventListener('click', (e)=>{
+      e.preventDefault();
+      // Local-only PIN, not a data encryption key (CLAUDE.md credential
+      // table — it gates app UI access, not disk encryption) and the
+      // driver must never be permanently stranded out of their own trip
+      // data. Resetting removes the lock; it does NOT touch trip/expense
+      // data. A technical user could already achieve the same result by
+      // clearing site data, so this doesn't weaken the PIN against a
+      // sophisticated attacker — it just gives the legitimate owner an
+      // honest, immediate way back in instead of waiting out a timer.
+      const ok = confirm('Reset your App Lock PIN?\n\nThis removes the lock screen — it does NOT delete any trips, expenses, or fuel records. You can set a new PIN afterward in Settings.');
+      if (!ok) return;
+      if (countdownTimer) clearInterval(countdownTimer);
+      Promise.all([
+        setSetting('appLockEnabled', false),
+        setSetting('appLockPin', ''),
+        setSetting('appLockFailCount', 0),
+        setSetting('appLockLockedUntil', 0),
+      ]).catch(()=>{}).finally(()=>{ closeModal(); resolve(true); });
+    });
+  });
+}
+
+// Storage health
+async function countStore(name){ try{ const {stores} = tx(name); return (await idbReq(stores[name].count())) || 0; }catch{ return 0; } }
+
+/** Onboarding: detect app state */
+async function getOnboardState(){
+  const [trips, exps, fuel] = await Promise.all([countStore('trips'), countStore('expenses'), countStore('fuel')]);
+  return { trips, exps, fuel, isEmpty: trips === 0, isBeginner: trips > 0 && trips < 4, isActive: trips >= 4 };
+}
+
+// ---- Onboarding auto-retirement (#205 driver-first) ----
+//
+// The four educational cards (F21 tracking, F22 money, F23 inbox, F24
+// positioning) were each gated on a single `fNNOnboardingSeen` flag that is set
+// ONLY when the driver taps "Got it". A driver who reads a card and scrolls past
+// it -- the ordinary case on a phone -- never sets that flag, so the card
+// reappears on every launch forever. Four permanent cards at the top of Today is
+// the "dump" the #205 driver-first scope is about, and it pushes the numbers a
+// driver actually opens the app for below the fold.
+//
+// A card now also retires after a small budget of DISPLAYS. That is deliberately
+// the only automatic rule here:
+//
+//   * It is evidence of exposure, not an inference. The #205 acceptance
+//     checklist says not to "make setup completion infer from missing data" --
+//     concluding "no trips, so he must know how" is exactly that, and it is the
+//     v24.0.1 blank-deadhead class. A display counter records something that
+//     demonstrably happened.
+//   * It never applies to a warning. Only these four educational cards call it.
+//     The cloud-backup paused banner, the sync status row, maintenance alerts and
+//     overdue-payment alerts are not onboarding and are untouched -- an
+//     informational notice may vanish, "you are not being backed up" may not,
+//     which is the rule v24.0.6 established and CBP asserts.
+//   * Exhausting the budget sets the card's own `fNNOnboardingSeen` flag, so
+//     retirement is durable, is expressed in the vocabulary the rest of the app
+//     already reads, and survives export/import like an explicit dismissal.
+//
+// Counts live in ONE settings key rather than four, so the allow-list gains one
+// entry instead of four. `onboardViews` is added to ALLOWED_SETTINGS_KEYS in the
+// same change that introduces it -- a settings key the app writes but the
+// importer drops is the X-07 class of gap, and this repository has had to
+// retrofit that list three times.
+const ONBOARD_VIEW_BUDGET = 3;
+
+// All four cards are fired from one renderHome() pass, concurrently and
+// fire-and-forget (`renderMoneyCard().catch(()=>{})` and friends). A plain
+// read-modify-write over the shared `onboardViews` map therefore loses
+// increments: two callers both observe the map before either writes, and the
+// second write clobbers the first's count. Observed, not theorised -- the
+// regression that asserts a real Today render is counted reported the F21 card's
+// increment as 0 while F22's had landed, because F22 wrote last.
+//
+// This is the same defect shape as V-1 (v24.0.15), where two concurrent
+// ensureVehicleProfiles() seeds each minted a profile and one was silently
+// discarded, and it is fixed the same way: one module-scope chain serialises
+// every mutation, so each caller reads a map that already includes every earlier
+// caller's write. A lost increment here is not corruption, but it is a card that
+// outlives its budget -- which is the whole thing this helper exists to stop.
+let _onboardViewsChain = Promise.resolve();
+function _queueOnboardViews(fn){
+  const next = _onboardViewsChain.then(fn, fn);
+  // The chain itself must never reject, or every later caller inherits the
+  // rejection and onboarding silently stops being counted for the session.
+  _onboardViewsChain = next.then(() => {}, () => {});
+  return next;
+}
+
+// A RENDER IS NOT AN IMPRESSION. v24.0.20 shipped the budget counting inside
+// shouldShowOnboarding(), so asking the question spent the budget -- and the
+// four cards mount at the top of surfaces the driver routinely never scrolls to
+// on a phone. Three launches later the card retired having never occupied a
+// pixel the driver looked at, which is the exact opposite of what a view budget
+// is for: it made a card that was never seen disappear, while a card the driver
+// actually read and ignored was treated identically.
+//
+// Exposure is therefore measured, not assumed. IntersectionObserver is the only
+// thing in the platform that answers "was this actually on screen", and it is
+// the signal the budget now spends against.
+//
+// NO DWELL REQUIREMENT, deliberately. "Half the card was on screen" is the claim
+// this repair needs to make honest; "on screen for N milliseconds" is a second,
+// stricter claim with no evidence behind it and a timing dependency that would
+// make the regression flaky. If a scroll-past turns out to over-count, that is a
+// threshold change with its own test, not a reason to guess now.
+const ONBOARD_EXPOSURE_RATIO = 0.5;
+
+/**
+ * Should an educational onboarding card render this time?
+ *
+ * DECIDES ONLY -- it no longer counts. Returns false once the driver dismissed
+ * it explicitly, or once it has already been EXPOSED ONBOARD_VIEW_BUDGET times.
+ * The caller must pass the mounted element to markOnboardingExposed() for the
+ * budget to move at all.
+ *
+ * Fails OPEN on a storage error: if the count cannot be read the card is shown,
+ * because losing an explanation is a smaller harm than hiding one the driver has
+ * never seen. The explicit `seen` flag is still honoured first, so a dismissal
+ * is never undone by a failed read.
+ */
+async function shouldShowOnboarding(seenKey){
+  return _queueOnboardViews(async () => {
+    try {
+      if (await getSetting(seenKey, false)) return false;
+      const views = await getSetting('onboardViews', null);
+      const map = (views && typeof views === 'object' && !Array.isArray(views)) ? views : {};
+      const n = intNum(map[seenKey], 0, 1e6) || 0;
+      if (n >= ONBOARD_VIEW_BUDGET){
+        // Budget spent. Promote to the durable flag so this is the last time the
+        // count is consulted for this card at all.
+        await setSetting(seenKey, true);
+        return false;
+      }
+      return true;
+    } catch(e){ return true; }
+  });
+}
+
+/** Record one real exposure, and retire the card once the budget is spent.
+ *
+ *  Retirement stays DURABLE and stays in the vocabulary the rest of the app
+ *  reads: the last exposure promotes the card's own `fNNOnboardingSeen` flag, so
+ *  it survives export/import exactly like an explicit dismissal, and no other
+ *  reader needs to know the budget exists.
+ *
+ *  Writes go through the same _queueOnboardViews chain as everything else --
+ *  the four cards mount concurrently from one renderHome() pass, and a plain
+ *  read-modify-write loses increments (the V-1 defect shape, v24.0.15).
+ */
+function _countOnboardingExposure(seenKey){
+  return _queueOnboardViews(async () => {
+    try {
+      if (await getSetting(seenKey, false)) return;
+      const views = await getSetting('onboardViews', null);
+      const map = (views && typeof views === 'object' && !Array.isArray(views)) ? views : {};
+      const next = (intNum(map[seenKey], 0, 1e6) || 0) + 1;
+      await setSetting('onboardViews', { ...map, [seenKey]: next });
+      if (next >= ONBOARD_VIEW_BUDGET) await setSetting(seenKey, true);
+    } catch(e){
+      // A lost count shows the card again. That is the safe direction: the
+      // failure mode of this whole helper must be "explained twice", never
+      // "retired unread", which is the defect it exists to fix.
+    }
+  });
+}
+
+/** Spend one exposure when `el` is genuinely on screen. */
+function markOnboardingExposure(el, seenKey){
+  if (!el || !seenKey) return null;
+  // One card, one exposure per mount, however many observer callbacks fire.
+  if (el.dataset && el.dataset.flOnboardExposure === '1') return null;
+  if (el.dataset) el.dataset.flOnboardExposure = '1';
+
+  let spent = false;
+  let obs = null;
+  const spend = () => {
+    if (spent) return;
+    spent = true;
+    try { obs && obs.disconnect(); } catch(e){}
+    _countOnboardingExposure(seenKey);
+  };
+
+  // Without IntersectionObserver there is no way to tell seen from rendered, so
+  // fall back to the old count-on-render rule. That is worse than measuring, and
+  // it is much better than a budget that never retires anything: a card that can
+  // never be counted is a card that renders forever.
+  if (typeof IntersectionObserver !== 'function'){ spend(); return null; }
+
+  obs = new IntersectionObserver((entries) => {
+    for (const e of entries){
+      if (e.isIntersecting && e.intersectionRatio >= ONBOARD_EXPOSURE_RATIO){ spend(); return; }
+    }
+  }, { threshold: [ONBOARD_EXPOSURE_RATIO] });
+  obs.observe(el);
+  return obs;
+}
+
+function renderWelcomeCard(){
+  return `<div class="card" style="text-align:center;padding:28px 20px">
+    <img src="icon192.png" alt="FreightLogic" style="width:72px;height:72px;border-radius:16px;margin-bottom:12px" />
+    <h2 style="margin:0 0 8px 0;font-size:20px">Welcome to Freight Logic</h2>
+    <p class="muted" style="font-size:14px;line-height:1.5;margin-bottom:20px;max-width:340px;margin-left:auto;margin-right:auto">Your personal freight command center. Track loads, expenses, and fuel — see exactly where your money goes.</p>
+    <div style="text-align:left;max-width:320px;margin:0 auto 20px auto">
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
+        <div style="font-size:20px;line-height:1">①</div>
+        <div><div style="font-weight:700;font-size:13px">Log your first trip</div><div class="muted" style="font-size:12px">Tap the ＋ button below, then "＋ Trip"</div></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
+        <div style="font-size:20px;line-height:1">②</div>
+        <div><div style="font-weight:700;font-size:13px">Add any expenses</div><div class="muted" style="font-size:12px">Fuel, tolls, insurance — anything you spend</div></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div style="font-size:20px;line-height:1">③</div>
+        <div><div style="font-weight:700;font-size:13px">Watch your dashboard light up</div><div class="muted" style="font-size:12px">RPM, profit scores, broker grades — all automatic</div></div>
+      </div>
+    </div>
+    <button class="btn primary" id="welcomeAddTrip" style="font-size:15px;padding:12px 32px">＋ Add Your First Trip</button>
+    <div class="muted" style="font-size:11px;margin-top:14px">Or paste a load in the Evaluator to grade it instantly</div>
+  </div>`;
+}
+
+function renderEmptyState(icon, title, subtitle, btnLabel, btnAction){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'text-align:center;padding:40px 20px';
+  const iconHTML = icon.startsWith('<') ? `<div style="margin-bottom:10px">${icon}</div>` : `<div style="font-size:40px;margin-bottom:10px;opacity:.7">${icon}</div>`;
+  wrap.innerHTML = `${iconHTML}
+    <div style="font-weight:700;font-size:14px;margin-bottom:6px">${escapeHtml(title)}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:16px;max-width:280px;margin-left:auto;margin-right:auto">${escapeHtml(subtitle)}</div>
+    ${btnLabel ? `<button class="btn primary emptyBtn">${escapeHtml(btnLabel)}</button>` : ''}`;
+  if (btnLabel && btnAction){
+    wrap.querySelector('.emptyBtn').addEventListener('click', ()=> { haptic(); btnAction(); });
+  }
+  return wrap;
+}
+async function storageHealthSnapshot(){
+  return { trips: await countStore('trips'), expenses: await countStore('expenses'), fuel: await countStore('fuel'), receiptSets: await countStore('receipts'), receiptBlobs: await countStore('receiptBlobs') };
+}
+async function refreshStorageHealth(statusText=''){
+  try{
+    const snap = await storageHealthSnapshot();
+    $('#stTrips').textContent = String(snap.trips);
+    $('#stExpenses').textContent = String(snap.expenses);
+    $('#stFuel').textContent = String(snap.fuel);
+    $('#stReceiptSets').textContent = String(snap.receiptSets);
+    $('#stReceiptBlobs').textContent = String(snap.receiptBlobs);
+    $('#stStatus').textContent = statusText || 'OK';
+  }catch(e){ console.error('[FL] Storage health error:', e); $('#stStatus').textContent = 'Error — check console for details'; }
+}
+async function analyzeReceiptBlobSizes(){
+  const status = $('#stStatus'); status.textContent = 'Analyzing…';
+  try{
+    const all = await idbReq(tx('receiptBlobs').stores.receiptBlobs.getAll());
+    let total = 0;
+    for (const rec of (all||[])) total += (rec?.blob?.size || 0);
+    status.textContent = `Receipt blobs: ${(all||[]).length} • Total ~${(total/1024/1024).toFixed(1)} MB`;
+  }catch(e){ console.error('[FL] Receipt analysis error:', e); status.textContent = 'Analysis failed — check console for details'; }
+}
+async function clearReceiptCache(){
+  try{
+    if (hasCacheStorage()) await caches.delete(RECEIPT_CACHE);
+    const {t:txn, stores} = tx('receiptBlobs','readwrite');
+    stores.receiptBlobs.clear(); await waitTxn(txn);
+    await refreshStorageHealth('Receipt cache cleared.');
+  }catch(e){ $('#stStatus').textContent = 'Clear failed: ' + (e?.message || e); }
+}
+async function rebuildReceiptIndex(){
+  const status = $('#stStatus'); status.textContent = 'Rebuilding…';
+  try{
+    const all = await getAllReceipts();
+    const idsInMeta = new Set();
+    for (const set of all){
+      const files = Array.isArray(set.files) ? set.files : [];
+      let changed = false;
+      for (const f of files){ if (!f.id){ f.id = randId(); changed = true; } idsInMeta.add(f.id); }
+      if (changed) await putReceipts(set.tripOrderNo, files);
+    }
+    const metas = await idbListReceiptBlobMeta();
+    for (const m of metas) if (!idsInMeta.has(m.id)) await idbDeleteReceiptBlob(m.id);
+    await refreshStorageHealth('Receipt index rebuilt.');
+  }catch(e){ status.textContent = 'Rebuild failed: ' + (e?.message || e); }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// USA FREIGHT ENGINE v1.0 — Nationwide Cargo-Van Market Intelligence
+// Two-layer architecture: National geography + Operator strategy profile
+// ═══════════════════════════════════════════════════════════════════════
+
+const USA_ZONES = {
+  MIDWEST:     { label: 'Midwest',       anchors: ['chicago','indianapolis','columbus','detroit','cleveland'] },
+  SOUTHEAST:   { label: 'Southeast',     anchors: ['atlanta','nashville','charlotte'] },
+  TEXAS:       { label: 'Texas',         anchors: ['dallas'] },
+  NORTHEAST:   { label: 'Northeast',     anchors: ['pittsburgh','harrisburg','allentown'] },
+  MIDATLANTIC: { label: 'Mid-Atlantic',  anchors: ['newark','baltimore','richmond'] },
+  PLAINS:      { label: 'Plains',        anchors: ['kansas city','omaha'] },
+  MOUNTAIN:    { label: 'Mountain',      anchors: ['denver','salt lake city'] },
+  WEST_COAST:  { label: 'West Coast',    anchors: ['los angeles','seattle','portland'] },
+  FLORIDA:     { label: 'Florida',       anchors: [] },
+  SOUTH_TEXAS: { label: 'South Texas',   anchors: [] },
+};
+
+const USA_MARKET_ROLES = { anchor: 18, support: 9, feeder: 2, transitional: -6, trap: -18 };
+
+const USA_MARKETS = {
+  // ── Midwest ──
+  'chicago':       { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:41.8781, lng:-87.6298 },
+  'gary':          { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:41.5955922, lng:-87.3452279 },
+  'indianapolis':  { zone:'MIDWEST', role:'anchor',       bias:'very_strong', lat:39.7684, lng:-86.1581 },
+  'columbus':      { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:39.9612, lng:-82.9988 },
+  'detroit':       { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:42.3314, lng:-83.0458 },
+  'cleveland':     { zone:'MIDWEST', role:'anchor',       bias:'strong',      lat:41.4993, lng:-81.6944 },
+  'louisville':    { zone:'MIDWEST', role:'support',      bias:'strong',      lat:38.2527, lng:-85.7585 },
+  'cincinnati':    { zone:'MIDWEST', role:'support',      bias:'strong',      lat:39.1031, lng:-84.5120 },
+  'dayton':        { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:39.7589, lng:-84.1916 },
+  'toledo':        { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:41.6639, lng:-83.5552 },
+  'st. louis':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:38.6270, lng:-90.1994 },
+  'grand rapids':  { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:42.9634, lng:-85.6681 },
+  'fort wayne':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:41.0793, lng:-85.1394 },
+  'evansville':    { zone:'MIDWEST', role:'feeder',       bias:'moderate',    lat:37.9716, lng:-87.5711 },
+  'milwaukee':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:43.0389, lng:-87.9065 },
+  'lexington':     { zone:'MIDWEST', role:'support',      bias:'moderate',    lat:38.0406, lng:-84.5037 },
+  // ── Southeast ──
+  'atlanta':       { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:33.7490, lng:-84.3880 },
+  'nashville':     { zone:'SOUTHEAST', role:'anchor',     bias:'strong',      lat:36.1627, lng:-86.7816 },
+  'charlotte':     { zone:'SOUTHEAST', role:'anchor',     bias:'moderate',    lat:35.2271, lng:-80.8431 },
+  'memphis':       { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.1495, lng:-90.0490 },
+  'knoxville':     { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.9606, lng:-83.9207 },
+  'greenville':    { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:34.8526, lng:-82.3940 },
+  'raleigh':       { zone:'SOUTHEAST', role:'support',    bias:'moderate',    lat:35.7796, lng:-78.6382 },
+  'chattanooga':   { zone:'SOUTHEAST', role:'feeder',     bias:'moderate',    lat:35.0456, lng:-85.3097 },
+  'savannah':      { zone:'SOUTHEAST', role:'feeder',     bias:'weak',        lat:32.0835, lng:-81.0998 },
+  'jacksonville':  { zone:'SOUTHEAST', role:'transitional', bias:'weak',      lat:30.3322, lng:-81.6557 },
+  // ── Texas ──
+  'dallas':        { zone:'TEXAS', role:'anchor',         bias:'strong',      lat:32.7767, lng:-96.7970 },
+  'houston':       { zone:'TEXAS', role:'support',        bias:'moderate',    lat:29.7604, lng:-95.3698, notes:'compression risk' },
+  'austin':        { zone:'TEXAS', role:'support',        bias:'moderate',    lat:30.2672, lng:-97.7431 },
+  'san antonio':   { zone:'TEXAS', role:'support',        bias:'moderate',    lat:29.4241, lng:-98.4936 },
+  'fort worth':    { zone:'TEXAS', role:'support',        bias:'moderate',    lat:32.7555, lng:-97.3308 },
+  // ── Northeast / Mid-Atlantic ──
+  'pittsburgh':    { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.4406, lng:-79.9959 },
+  'harrisburg':    { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.2732, lng:-76.8867 },
+  'allentown':     { zone:'NORTHEAST', role:'anchor',     bias:'strong',      lat:40.6023, lng:-75.4714 },
+  'newark':        { zone:'MIDATLANTIC', role:'anchor',   bias:'strong',      lat:40.7357, lng:-74.1724 },
+  'baltimore':     { zone:'MIDATLANTIC', role:'anchor',   bias:'strong',      lat:39.2904, lng:-76.6122 },
+  'richmond':      { zone:'MIDATLANTIC', role:'anchor',   bias:'moderate',    lat:37.5407, lng:-77.4360 },
+  'philadelphia':  { zone:'MIDATLANTIC', role:'support',  bias:'moderate',    lat:39.9526, lng:-75.1652 },
+  'norfolk':       { zone:'MIDATLANTIC', role:'feeder',   bias:'weak',        lat:36.8508, lng:-76.2859 },
+  // ── Plains ──
+  'kansas city':   { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:39.0997, lng:-94.5786, notes:'feeder not anchor' },
+  'wichita':       { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:37.6872, lng:-97.3301, notes:'secondary Plains feeder toward KC/OKC' },
+  'topeka':        { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:39.0558, lng:-95.6890, notes:'small feeder — usually pair with KC' },
+  'joplin':        { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:37.0842, lng:-94.5133, notes:'crossroads but not a hold market' },
+  'springfield':   { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:37.2090, lng:-93.2923, notes:'MO feeder — use to reposition, not anchor' },
+  'oklahoma city': { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:35.4676, lng:-97.5164, notes:'acceptable escape/reposition market, not anchor' },
+  'okc':           { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:35.4676, lng:-97.5164, notes:'acceptable escape/reposition market, not anchor' },
+  'tulsa':         { zone:'PLAINS', role:'transitional',  bias:'weak',        lat:36.1540, lng:-95.9928, notes:'watch southbound compression — secondary only' },
+  'omaha':         { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:41.2565, lng:-95.9345 },
+  'des moines':    { zone:'PLAINS', role:'feeder',        bias:'weak',        lat:41.5868, lng:-93.6250 },
+  'minneapolis':   { zone:'PLAINS', role:'support',       bias:'moderate',    lat:44.9778, lng:-93.2650 },
+  // ── Mountain ──
+  'denver':        { zone:'MOUNTAIN', role:'transitional', bias:'weak',       lat:39.7392, lng:-104.9903 },
+  'salt lake city':{ zone:'MOUNTAIN', role:'transitional', bias:'weak',       lat:40.7608, lng:-111.8910 },
+  // ── West Coast ──
+  'los angeles':   { zone:'WEST_COAST', role:'anchor',    bias:'moderate',    lat:34.0522, lng:-118.2437 },
+  'seattle':       { zone:'WEST_COAST', role:'support',   bias:'moderate',    lat:47.6062, lng:-122.3321 },
+  'portland':      { zone:'WEST_COAST', role:'support',   bias:'moderate',    lat:45.5051, lng:-122.6750 },
+  'phoenix':       { zone:'WEST_COAST', role:'transitional', bias:'weak',     lat:33.4484, lng:-112.0740 },
+  // ── TRAP MARKETS ──
+  'miami':         { zone:'FLORIDA', role:'trap',         bias:'very_weak',   lat:25.7617, lng:-80.1918 },
+  'fort lauderdale':{ zone:'FLORIDA', role:'trap',        bias:'very_weak',   lat:26.1224, lng:-80.1373 },
+  'west palm beach':{ zone:'FLORIDA', role:'trap',        bias:'very_weak',   lat:26.7153, lng:-80.0534 },
+  'orlando':       { zone:'FLORIDA', role:'transitional', bias:'weak',        lat:28.5383, lng:-81.3792 },
+  'tampa':         { zone:'FLORIDA', role:'transitional', bias:'weak',        lat:27.9506, lng:-82.4572 },
+  'laredo':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:27.5036, lng:-99.5075 },
+  'mcallen':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:26.2034, lng:-98.2300 },
+  'brownsville':   { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:25.9017, lng:-97.4975 },
+  'midland':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.9973, lng:-102.0779 },
+  'odessa':        { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.8457, lng:-102.3676 },
+  'el paso':       { zone:'SOUTH_TEXAS', role:'trap',     bias:'very_weak',   lat:31.7619, lng:-106.4850 },
+  'duluth':        { zone:'PLAINS', role:'trap',          bias:'very_weak',   lat:46.7867, lng:-92.1005 },
+  'marquette':     { zone:'MIDWEST', role:'trap',         bias:'very_weak',   lat:46.5436, lng:-87.3954 },
+  'portland me':   { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:43.6591, lng:-70.2568 },
+  'bangor':        { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:44.8016, lng:-68.7712 },
+  'burlington vt': { zone:'NORTHEAST', role:'trap',       bias:'very_weak',   lat:44.4759, lng:-73.2121 },
+  'spokane':       { zone:'MOUNTAIN', role:'trap',        bias:'very_weak',   lat:47.6588, lng:-117.4260 },
+};
+
+const USA_CORRIDORS = [
+  { id:'mw_mw',    name:'Midwest ↔ Midwest',         orZones:['MIDWEST'], deZones:['MIDWEST'],               laneClass:'favorable',     bonus: 15 },
+  { id:'mw_se',    name:'Midwest → Southeast',        orZones:['MIDWEST'], deZones:['SOUTHEAST'],             laneClass:'favorable',     bonus: 10 },
+  { id:'se_mw',    name:'Southeast → Midwest',        orZones:['SOUTHEAST'], deZones:['MIDWEST'],             laneClass:'favorable',     bonus: 12 },
+  { id:'mw_ne',    name:'Midwest → Northeast',        orZones:['MIDWEST'], deZones:['NORTHEAST','MIDATLANTIC'], laneClass:'favorable',   bonus: 10 },
+  { id:'ne_mw',    name:'Northeast → Midwest',        orZones:['NORTHEAST','MIDATLANTIC'], deZones:['MIDWEST'], laneClass:'favorable',   bonus: 12 },
+  { id:'tx_mw',    name:'Texas → Midwest',            orZones:['TEXAS'], deZones:['MIDWEST'],                 laneClass:'favorable',     bonus: 10 },
+  { id:'mw_tx',    name:'Midwest → Texas',            orZones:['MIDWEST'], deZones:['TEXAS'],                 laneClass:'neutral',       bonus: 0 },
+  { id:'pl_mw',    name:'Plains → Midwest',           orZones:['PLAINS'], deZones:['MIDWEST'],                laneClass:'favorable',     bonus: 8 },
+  { id:'mw_pl',    name:'Midwest → Plains',           orZones:['MIDWEST'], deZones:['PLAINS'],                laneClass:'neutral',       bonus: -2 },
+  { id:'pl_tx',    name:'Plains → Texas',             orZones:['PLAINS'], deZones:['TEXAS'],                  laneClass:'risky',         bonus: -8 },
+  { id:'tx_pl',    name:'Texas → Plains',             orZones:['TEXAS'], deZones:['PLAINS'],                  laneClass:'neutral',       bonus: 0 },
+  { id:'se_fl',    name:'Southeast → Florida',        orZones:['SOUTHEAST'], deZones:['FLORIDA'],             laneClass:'risky',         bonus: -12 },
+  { id:'any_fl',   name:'Any → Deep Florida',         orZones:['MIDWEST','NORTHEAST','TEXAS','PLAINS'], deZones:['FLORIDA'], laneClass:'risky', bonus: -15 },
+  { id:'stx_int',  name:'South Texas internal',       orZones:['SOUTH_TEXAS','TEXAS'], deZones:['SOUTH_TEXAS'], laneClass:'risky',       bonus: -18 },
+  { id:'mw_wc',    name:'Midwest → West Coast',       orZones:['MIDWEST'], deZones:['WEST_COAST'],            laneClass:'premium_only',  bonus: -8 },
+  { id:'wc_mw',    name:'West Coast → Midwest',       orZones:['WEST_COAST'], deZones:['MIDWEST'],            laneClass:'favorable',     bonus: 8 },
+  { id:'mtn_any',  name:'Mountain corridors',         orZones:['MOUNTAIN'], deZones:['MOUNTAIN','PLAINS','WEST_COAST'], laneClass:'neutral', bonus: -5 },
+  { id:'se_se',    name:'Southeast ↔ Southeast',      orZones:['SOUTHEAST'], deZones:['SOUTHEAST'],           laneClass:'neutral',       bonus: 4 },
+  { id:'ne_ne',    name:'Northeast ↔ Northeast',      orZones:['NORTHEAST','MIDATLANTIC'], deZones:['NORTHEAST','MIDATLANTIC'], laneClass:'neutral', bonus: 4 },
+  { id:'tx_tx',    name:'Texas ↔ Texas (core)',       orZones:['TEXAS'], deZones:['TEXAS'],                   laneClass:'neutral',       bonus: 2 },
+];
+
+const USA_MODES = {
+  HARVEST:       { label:'Harvest',       rpmFloor:1.60, deadheadCap:80,  desc:'In density — maximize yield',         trapMult:1.4, transitionalMult:1.3 },
+  REPOSITION:    { label:'Reposition',    rpmFloor:1.45, deadheadCap:120, desc:'Move toward target density',           trapMult:1.1, transitionalMult:0.8 },
+  ESCAPE:        { label:'Escape',        rpmFloor:1.40, deadheadCap:150, desc:'Exit oversupplied region',             trapMult:0.9, transitionalMult:0.7 },
+  FLOOR_PROTECT: { label:'Floor Protect', rpmFloor:1.50, deadheadCap:100, desc:'Late-week revenue stabilization',      trapMult:1.2, transitionalMult:1.0 },
+};
+
+const USA_PROFILES = {
+  MIDWEST_STACK: {
+    label: 'Midwest Stack',
+    homeZone: 'MIDWEST',
+    preferredZones: ['MIDWEST'],
+    secondaryZones: ['SOUTHEAST','NORTHEAST','MIDATLANTIC','TEXAS'],
+    avoidZones: ['MOUNTAIN'],
+    trapPenaltyMultiplier: 1.25,
+    outOfPreferredZonePenalty: 10,
+    returnToHomeBonus: 12,
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// CANADA ENGINE — North America Cross-Border Intelligence v1
+// Extends the USA engine with country-aware scoring.
+// Exchange rate: Bank of Canada / FRED. Border data: BTS / CBSA.
+// ════════════════════════════════════════════════════════════════
+
+const CA = Object.freeze({
+  /** Default CAD→USD conversion. User-adjustable in settings. */
+  DEFAULT_CAD_USD: 0.735,   // ~1 CAD = $0.735 USD (March 2026, FRED DEXCAUS ~1.36)
+  BORDER_ADMIN_COST_DEFAULT: 50,  // USD, user-adjustable, covers tolls + customs broker fee avg
+});
+
+const CA_ZONES = {
+  ON_CORE:    { label: 'Ontario Core',     country: 'CA', province: 'ON', anchors: ['toronto','mississauga','brampton'] },
+  QC_CORE:    { label: 'Quebec Core',      country: 'CA', province: 'QC', anchors: ['montreal'] },
+  PRAIRIE_CA: { label: 'Prairie Canada',   country: 'CA', province: 'MB', anchors: ['winnipeg'] },
+  ALBERTA:    { label: 'Alberta Corridor', country: 'CA', province: 'AB', anchors: ['calgary','edmonton'] },
+  BC_LOWER:   { label: 'BC Lower Mainland',country: 'CA', province: 'BC', anchors: ['vancouver'] },
+  ATLANTIC_CA:{ label: 'Atlantic Canada',  country: 'CA', province: 'NB', anchors: [] },
+};
+
+const CA_MARKETS = {
+  // ── Ontario Core ──
+  'toronto':      { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong', lat:43.6532, lng:-79.3832 },
+  'mississauga':  { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'very_strong', lat:43.5890, lng:-79.6441 },
+  'brampton':     { zone:'ON_CORE', role:'anchor',       country:'CA', province:'ON', bias:'strong',      lat:43.7315, lng:-79.7624 },
+  'hamilton':     { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'strong',      lat:43.2557, lng:-79.8711 },
+  'london on':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:42.9849, lng:-81.2453 },
+  'kitchener':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.4516, lng:-80.4925 },
+  'cambridge':    { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.3616, lng:-80.3144 },
+  'windsor on':   { zone:'ON_CORE', role:'transitional', country:'CA', province:'ON', bias:'moderate',    lat:42.3149, lng:-83.0364 },
+  'oshawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:43.8971, lng:-78.8658 },
+  'ottawa':       { zone:'ON_CORE', role:'support',      country:'CA', province:'ON', bias:'moderate',    lat:45.4215, lng:-75.6972 },
+  // ── Quebec Core ──
+  'montreal':     { zone:'QC_CORE', role:'anchor',       country:'CA', province:'QC', bias:'strong',      lat:45.5017, lng:-73.5673 },
+  'laval':        { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate',    lat:45.5720, lng:-73.6920 },
+  'drummondville':{ zone:'QC_CORE', role:'feeder',       country:'CA', province:'QC', bias:'weak',        lat:45.8797, lng:-72.4847 },
+  'quebec city':  { zone:'QC_CORE', role:'support',      country:'CA', province:'QC', bias:'moderate',    lat:46.8139, lng:-71.2080 },
+  // ── Prairie Canada ──
+  'winnipeg':     { zone:'PRAIRIE_CA', role:'transitional',country:'CA', province:'MB', bias:'weak',      lat:49.8951, lng:-97.1384 },
+  'regina':       { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak',  lat:50.4452, lng:-104.6189 },
+  'saskatoon':    { zone:'PRAIRIE_CA', role:'feeder',     country:'CA', province:'SK', bias:'very_weak',  lat:52.1332, lng:-106.6700 },
+  // ── Alberta Corridor ──
+  'calgary':      { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate',   lat:51.0447, lng:-114.0719 },
+  'edmonton':     { zone:'ALBERTA', role:'support',       country:'CA', province:'AB', bias:'moderate',   lat:53.5461, lng:-113.4938 },
+  'red deer':     { zone:'ALBERTA', role:'feeder',        country:'CA', province:'AB', bias:'weak',        lat:52.2681, lng:-113.8112 },
+  // ── BC Lower Mainland ──
+  'vancouver':    { zone:'BC_LOWER', role:'anchor',       country:'CA', province:'BC', bias:'strong',      lat:49.2827, lng:-123.1207 },
+  'surrey':       { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.1044, lng:-122.8011 },
+  'burnaby':      { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.2488, lng:-122.9805 },
+  'richmond bc':  { zone:'BC_LOWER', role:'support',      country:'CA', province:'BC', bias:'moderate',    lat:49.1666, lng:-123.1336 },
+  'abbotsford':   { zone:'BC_LOWER', role:'feeder',       country:'CA', province:'BC', bias:'weak',        lat:49.0504, lng:-122.3045 },
+  // ── Atlantic Canada ──
+  'moncton':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NB', bias:'weak',      lat:46.0878, lng:-64.7782 },
+  'halifax':      { zone:'ATLANTIC_CA', role:'transitional',country:'CA', province:'NS', bias:'weak',      lat:44.6488, lng:-63.5752 },
+};
+
+/** Border gateways — scored by commercial truck volume, efficiency, and expedite suitability.
+ *  Source: BTS Border Crossing Data 2025, CBSA service standards 2025–2026. */
+const CA_GATEWAYS = {
+  'detroit_windsor':    { name:'Detroit ↔ Windsor',        usCity:'detroit',    caCity:'windsor on', friction:'low',    volume:'very_high', expediteFit:'excellent', notes:'Ambassador Bridge + Gordie Howe (2026). #1 US-CA truck crossing by value.' },
+  'port_huron_sarnia':  { name:'Port Huron ↔ Sarnia',      usCity:'port huron', caCity:'sarnia',     friction:'low',    volume:'high',      expediteFit:'good',      notes:'Blue Water Bridge. Growing +17% YoY. Good alt to Detroit congestion.' },
+  'buffalo_fort_erie':  { name:'Buffalo ↔ Fort Erie',      usCity:'buffalo',    caCity:'fort erie',  friction:'moderate',volume:'high',      expediteFit:'good',      notes:'Peace Bridge. Gateway to GTA from Northeast.' },
+  'champlain_montreal': { name:'Champlain ↔ Lacolle',      usCity:'champlain',  caCity:'montreal',   friction:'moderate',volume:'high',      expediteFit:'good',      notes:'I-87 corridor into Quebec. Primary Montreal gateway.' },
+  'pembina_emerson':    { name:'Pembina ↔ Emerson',        usCity:'pembina',    caCity:'winnipeg',   friction:'moderate',volume:'moderate',  expediteFit:'fair',      notes:'Prairie gateway. Lower volume, longer waits possible.' },
+  'blaine_vancouver':   { name:'Blaine ↔ Pacific Hwy',     usCity:'blaine',     caCity:'vancouver',  friction:'moderate',volume:'moderate',  expediteFit:'fair',      notes:'Pacific crossing into BC. Seasonal congestion.' },
+};
+
+const CA_FRICTION_SCORES = { low: 0, moderate: -5, high: -12, severe: -20 };
+const CA_VOLUME_SCORES = { very_high: 6, high: 3, moderate: 0, low: -4 };
+
+/** Cross-border corridors (US→CA and CA→US) */
+const CA_CORRIDORS = [
+  { id:'mw_on',    name:'Midwest → Ontario Core',       orZones:['MIDWEST'],                 deZones:['ON_CORE'],    laneClass:'favorable',     bonus: 10, crossBorder: true },
+  { id:'on_mw',    name:'Ontario Core → Midwest',       orZones:['ON_CORE'],                 deZones:['MIDWEST'],    laneClass:'favorable',     bonus: 12, crossBorder: true },
+  { id:'ne_qc',    name:'Northeast → Quebec',           orZones:['NORTHEAST','MIDATLANTIC'], deZones:['QC_CORE'],    laneClass:'favorable',     bonus: 8,  crossBorder: true },
+  { id:'qc_ne',    name:'Quebec → Northeast',           orZones:['QC_CORE'],                 deZones:['NORTHEAST','MIDATLANTIC','MIDWEST'], laneClass:'favorable', bonus: 10, crossBorder: true },
+  { id:'on_on',    name:'Ontario ↔ Ontario',            orZones:['ON_CORE'],                 deZones:['ON_CORE'],    laneClass:'favorable',     bonus: 8,  crossBorder: false },
+  { id:'mw_qc',    name:'Midwest → Quebec (long)',      orZones:['MIDWEST'],                 deZones:['QC_CORE'],    laneClass:'neutral',       bonus: 0,  crossBorder: true },
+  { id:'pl_pr',    name:'Plains → Prairie Canada',      orZones:['PLAINS'],                  deZones:['PRAIRIE_CA'], laneClass:'risky',         bonus: -8, crossBorder: true },
+  { id:'wc_bc',    name:'West Coast → BC',              orZones:['WEST_COAST'],              deZones:['BC_LOWER'],   laneClass:'neutral',       bonus: 2,  crossBorder: true },
+  { id:'any_atl',  name:'Any → Atlantic Canada',        orZones:['MIDWEST','NORTHEAST','MIDATLANTIC','SOUTHEAST'], deZones:['ATLANTIC_CA'], laneClass:'risky', bonus: -12, crossBorder: true },
+  { id:'on_qc',    name:'Ontario → Quebec',             orZones:['ON_CORE'],                 deZones:['QC_CORE'],    laneClass:'neutral',       bonus: 4,  crossBorder: false },
+  { id:'any_ab',   name:'Any → Alberta (long-haul)',    orZones:['MIDWEST','PLAINS','MOUNTAIN'], deZones:['ALBERTA'],laneClass:'premium_only',  bonus: -10, crossBorder: true },
+];
+
+/** Normalize Canadian city names */
+function caNormCity(s){
+  return (s || '').trim().toLowerCase()
+    .replace(/(?:,\s*|\s+)(on|qc|bc|ab|mb|sk|nb|ns|pe|nl|nt|yt|nu|ont|que|canada)\s*$/i, '')
+    .replace(/[.,;]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// v24.0.4 item 1: the shortest input the fuzzy substring pass may be trusted
+// with. Below this an underspecified fragment matches a real market by
+// coincidence rather than by evidence — `''` matches EVERY key (every string
+// contains the empty string, so the first table entry always won), and one- or
+// two-character fragments match on a stray letter: 'a' matched 'mississauga',
+// 'x' matched 'halifax'. A blank origin and destination therefore both resolved
+// to Toronto and earned a +8 "favorable" Ontario↔Ontario corridor bonus for a
+// lane the operator never supplied. Three characters is the shortest prefix
+// that identifies a real city in these tables without colliding.
+const NA_MIN_FUZZY_CHARS = 3;
+
+/** Is a normalized place string specific enough to fuzzy-match against a market table? */
+function naPlaceIsSpecific(norm){
+  return typeof norm === 'string' && norm.trim().length >= NA_MIN_FUZZY_CHARS;
+}
+
+/** One fuzzy place comparison, used by both table lookups.
+ *
+ *  The two substring directions are NOT equally safe:
+ *
+ *    norm.includes(key)   — the input carries extra qualifiers around a real key
+ *                           ("chicago il" contains "chicago"). Trustworthy.
+ *    key.includes(norm)   — the input appears ANYWHERE inside a longer key. This
+ *                           is what resolved "Gary" (Gary, Indiana — a Tier 1
+ *                           Midwest market) to "calgary" (ALBERTA), because
+ *                           'calgary'.endsWith('gary'). The load then scored
+ *                           against the premium_only "Any → Alberta" corridor
+ *                           (bonus -10) instead of the Midwest it was actually in.
+ *
+ *  A genuine abbreviation is a PREFIX of the full name ("indianapol" →
+ *  "indianapolis"), never an arbitrary infix or suffix. Requiring startsWith in
+ *  that direction keeps abbreviation support and drops the coincidences. */
+function naFuzzyPlaceMatch(norm, key){
+  return norm === key || norm.startsWith(key + ' ') || key.startsWith(norm);
+}
+
+/** Lookup a city — check Canada first, then USA. Returns { city, ...data, country }
+ *  or null. Fails CLOSED on blank/whitespace/underspecified input: an unknown
+ *  location must contribute no market identity at all, never a coincidental one. */
+function naLookupMarket(city){
+  const norm = caNormCity(city);
+  // Exact table hits are always trustworthy, however short the key.
+  if (CA_MARKETS[norm]) return { city: norm, ...CA_MARKETS[norm] };
+  // Everything below here is substring guesswork. Refuse to guess from a
+  // fragment that carries no identifying information.
+  if (!naPlaceIsSpecific(norm)) {
+    const usExact = USA_MARKETS[usaNormCity(city)];
+    return usExact ? { city: usaNormCity(city), ...usExact, country: 'US' } : null;
+  }
+  // Fuzzy match in Canada
+  for (const [key, data] of Object.entries(CA_MARKETS)){
+    if (naFuzzyPlaceMatch(norm, key)) return { city: key, ...data };
+  }
+  // Fall through to USA
+  const usNorm = usaNormCity(city);
+  if (USA_MARKETS[usNorm]) return { city: usNorm, ...USA_MARKETS[usNorm], country: 'US' };
+  if (!naPlaceIsSpecific(usNorm)) return null;
+  for (const [key, data] of Object.entries(USA_MARKETS)){
+    if (naFuzzyPlaceMatch(usNorm, key)) return { city: key, ...data, country: 'US' };
+  }
+  return null;
+}
+
+/** Find best gateway for a cross-border lane */
+function caFindGateway(origMarket, destMarket){
+  if (!origMarket || !destMarket) return null;
+  const origCA = origMarket.country === 'CA';
+  const destCA = destMarket.country === 'CA';
+  if (origCA === destCA) return null; // Not cross-border
+  // Find closest gateway by matching cities
+  const usMarket = origCA ? destMarket : origMarket;
+  const caMarket = origCA ? origMarket : destMarket;
+  // Try direct gateway match
+  for (const [id, gw] of Object.entries(CA_GATEWAYS)){
+    const gwUsNorm = usaNormCity(gw.usCity);
+    const gwCaNorm = caNormCity(gw.caCity);
+    // Match if origin/dest is a gateway city or in same zone
+    if (usMarket.city === gwUsNorm || caMarket.city === gwCaNorm) return { id, ...gw };
+  }
+  // Zone-based fallback: find best gateway for the destination zone
+  const zoneGateways = {
+    'ON_CORE':     'detroit_windsor',
+    'QC_CORE':     'champlain_montreal',
+    'PRAIRIE_CA':  'pembina_emerson',
+    'BC_LOWER':    'blaine_vancouver',
+    'ATLANTIC_CA': 'champlain_montreal',
+    'ALBERTA':     'pembina_emerson',
+  };
+  const targetZone = destCA ? destMarket.zone : origMarket.zone;
+  const gwId = zoneGateways[targetZone];
+  if (gwId && CA_GATEWAYS[gwId]) return { id: gwId, ...CA_GATEWAYS[gwId] };
+  return null;
+}
+
+/** Find corridor — checks both USA and Canada corridors */
+function naFindCorridor(origZone, destZone){
+  if (!origZone || !destZone) return null;
+  // Check Canada corridors first
+  for (const c of CA_CORRIDORS){
+    if (c.orZones.includes(origZone) && c.deZones.includes(destZone)) return c;
+  }
+  // Fall back to USA corridors
+  for (const c of USA_CORRIDORS){
+    if (c.orZones.includes(origZone) && c.deZones.includes(destZone)) return c;
+  }
+  return null;
+}
+
+/** Cross-border scoring module. Returns adjustment object to add to base score.
+ *  Only applies when one end is CA and the other is US. */
+
+function applyCanadaSettingsToCrossBorder(crossBorder, revenue, revenueCurrency, caSettings={}){
+  if (!crossBorder?.isCrossBorder) return crossBorder || { isCrossBorder:false, normalizedRevenue: revenue };
+  const rate = Number(caSettings.cadUsdRate || 0) > 0 ? Number(caSettings.cadUsdRate) : CA.DEFAULT_CAD_USD;
+  const borderAdminCost = Number(caSettings.borderAdminCost || 0) >= 0 ? Number(caSettings.borderAdminCost) : CA.BORDER_ADMIN_COST_DEFAULT;
+  const docsReady = !!caSettings.canadaDocsReady;
+  if (revenueCurrency === 'CAD'){
+    crossBorder.normalizedRevenue = roundCents(revenue * rate);
+    const currencyAdj = crossBorder.adjustments?.find(a => a.label === 'Currency (CAD→USD)');
+    if (currencyAdj) currencyAdj.detail = `CAD $${revenue.toFixed(0)} → USD $${crossBorder.normalizedRevenue.toFixed(0)} (@${rate})`;
+    else crossBorder.adjustments.push({ label: 'Currency (CAD→USD)', impact: 0, detail: `CAD $${revenue.toFixed(0)} → USD $${crossBorder.normalizedRevenue.toFixed(0)} (@${rate})` });
+  }
+  const docsAdj = crossBorder.adjustments?.find(a => a.label === 'Customs/docs overhead');
+  const docsImpact = docsReady ? 0 : -8;
+  if (docsAdj){
+    crossBorder.totalAdj -= (docsAdj.impact || 0);
+    docsAdj.impact = docsImpact;
+    docsAdj.detail = docsReady ? 'Docs ready — paperwork penalty removed' : 'Docs not confirmed ready — elevated paperwork / border delay risk';
+  } else {
+    crossBorder.adjustments.push({ label: 'Customs/docs overhead', impact: docsImpact, detail: docsReady ? 'Docs ready — paperwork penalty removed' : 'Docs not confirmed ready — elevated paperwork / border delay risk' });
+  }
+  crossBorder.totalAdj += docsImpact;
+  const adminAdj = crossBorder.adjustments?.find(a => a.label === 'Estimated border cost');
+  if (adminAdj) adminAdj.detail = `~$${borderAdminCost} configured border cost`; else crossBorder.adjustments.push({ label:'Estimated border cost', impact:0, detail:`~$${borderAdminCost} configured border cost` });
+  crossBorder.borderAdminCost = borderAdminCost;
+  crossBorder.docsReady = docsReady;
+  return crossBorder;
+}
+
+function caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, gateway){
+  const result = { isCrossBorder: false, adjustments: [], totalAdj: 0, normalizedRevenue: revenue, gateway: null, frictionLevel: null };
+  if (!origMarket || !destMarket) return result;
+  const origCA = origMarket.country === 'CA';
+  const destCA = destMarket.country === 'CA';
+  if (!origCA && !destCA) return result; // Domestic US
+  if (origCA && destCA){ result.isCrossBorder = false; return result; } // Domestic CA
+
+  result.isCrossBorder = true;
+  result.gateway = gateway;
+
+  // 1. Currency normalization
+  if (revenueCurrency === 'CAD'){
+    const rate = CA.DEFAULT_CAD_USD;
+    result.normalizedRevenue = roundCents(revenue * rate);
+    result.adjustments.push({ label: 'Currency (CAD→USD)', impact: 0, detail: `CAD $${revenue.toFixed(0)} → USD $${result.normalizedRevenue.toFixed(0)} (@${rate})` });
+  }
+
+  // 2. Gateway friction
+  if (gateway){
+    const frictionAdj = CA_FRICTION_SCORES[gateway.friction] || 0;
+    const volumeAdj = CA_VOLUME_SCORES[gateway.volume] || 0;
+    result.frictionLevel = gateway.friction;
+    result.totalAdj += frictionAdj + volumeAdj;
+    result.adjustments.push({ label: 'Border friction', impact: frictionAdj, detail: `${gateway.name} — ${gateway.friction} friction` });
+    result.adjustments.push({ label: 'Crossing volume', impact: volumeAdj, detail: `${gateway.volume} commercial volume` });
+  } else {
+    result.totalAdj -= 8;
+    result.adjustments.push({ label: 'Unknown gateway', impact: -8, detail: 'No known gateway — elevated risk' });
+  }
+
+  // 3. Documentation / customs complexity
+  result.totalAdj -= 3;
+  result.adjustments.push({ label: 'Customs/docs overhead', impact: -3, detail: 'Cross-border paperwork + possible delay' });
+
+  // 4. Admin cost deduction (informational — already affects profitability)
+  result.adjustments.push({ label: 'Estimated border cost', impact: 0, detail: `~$${CA.BORDER_ADMIN_COST_DEFAULT} (tolls, broker, customs)` });
+
+  // 5. Return-to-US corridor strength (for loads going into Canada)
+  if (destCA){
+    const reloadStrength = destMarket.bias || 'weak';
+    const reloadMap = { very_strong: 5, strong: 2, moderate: 0, weak: -5, very_weak: -10 };
+    const reloadAdj = reloadMap[reloadStrength] || -5;
+    result.totalAdj += reloadAdj;
+    result.adjustments.push({ label: 'CA reload strength', impact: reloadAdj, detail: `${destMarket.city} reload: ${reloadStrength}` });
+  }
+
+  return result;
+}
+
+// ── USA Engine: Market Lookup (original — kept for backward compatibility) ──
+function usaNormCity(s){
+  return (s || '').trim().toLowerCase()
+    .replace(/(?:,\s*|\s+)(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)\.?$/i, '')
+    .replace(/[.,;]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function usaLookupMarket(city){
+  if (!city) return null;
+  const norm = usaNormCity(city);
+  // Direct match
+  if (USA_MARKETS[norm]) return { city: norm, ...USA_MARKETS[norm] };
+  // Partial match — check if any market key is contained in or contains the input.
+  // v24.0.4 item 1: same fail-closed rule as naLookupMarket. This function is the
+  // FALLBACK at the `naLookupMarket(x) || usaLookupMarket(x)` call sites, so
+  // without this guard it would re-admit exactly the underspecified fragments
+  // naLookupMarket just refused, and the fail-closed fix would be a no-op.
+  if (!naPlaceIsSpecific(norm)) return null;
+  for (const [key, data] of Object.entries(USA_MARKETS)){
+    if (naFuzzyPlaceMatch(norm, key)) return { city: key, ...data };
+  }
+  return null;
+}
+
+function usaFindCorridor(origZone, destZone){
+  if (!origZone || !destZone) return null;
+  // Find most specific corridor match
+  for (const c of USA_CORRIDORS){
+    if (c.orZones.includes(origZone) && c.deZones.includes(destZone)) return c;
+  }
+  return null;
+}
+
+// ── North America Engine: Score a Load ──
+function usaScoreLoad(opts){
+  const { origin, dest, trueRPM, deadMi, loadedMi, mode, profileId, revenue, revenueCurrency, crossBorder: precomputedCrossBorder } = opts;
+  const profile = USA_PROFILES[profileId || 'MIDWEST_STACK'];
+  const modeConf = USA_MODES[mode || 'HARVEST'];
+  const origMarket = naLookupMarket(origin) || usaLookupMarket(origin);
+  const destMarket = naLookupMarket(dest) || usaLookupMarket(dest);
+  const origZone = origMarket?.zone || null;
+  const destZone = destMarket?.zone || null;
+  const corridor = naFindCorridor(origZone, destZone) || usaFindCorridor(origZone, destZone);
+  const totalMi = (loadedMi || 0) + (deadMi || 0);
+
+  // Cross-border detection
+  const gateway = caFindGateway(origMarket, destMarket);
+  const crossBorder = precomputedCrossBorder || caScoreCrossBorder(origMarket, destMarket, revenue || 0, revenueCurrency || 'USD', gateway);
+  // If currency was CAD, use normalized revenue for RPM
+  const effectiveRPM = crossBorder.isCrossBorder && revenueCurrency === 'CAD' && totalMi > 0
+    ? roundCents(crossBorder.normalizedRevenue / totalMi) : trueRPM;
+
+  const bullets = [];
+  let score = 50; // base
+
+  // 1. Economics — True RPM
+  let econScore = 0;
+  if (effectiveRPM >= 2.00)      econScore = 28;
+  else if (effectiveRPM >= 1.75)  econScore = 22;
+  else if (effectiveRPM >= 1.60)  econScore = 16;
+  else if (effectiveRPM >= 1.50)  econScore = 10;
+  else if (effectiveRPM >= 1.40)  econScore = 2;
+  else                             econScore = -20;
+  score += econScore;
+  bullets.push({ icon: effectiveRPM >= 1.50 ? '✓' : '✕', text: `True RPM $${effectiveRPM.toFixed(2)}${effectiveRPM !== trueRPM ? ' normalized' : ''} — ${effectiveRPM >= 1.60 ? 'strong' : effectiveRPM >= 1.50 ? 'acceptable' : effectiveRPM >= 1.40 ? 'marginal' : 'below floor'}` });
+
+  // 2. Deadhead
+  let dhScore = 0;
+  if (deadMi <= 35)          dhScore = 8;
+  else if (deadMi <= 75)     dhScore = 4;
+  else if (deadMi <= 120)    dhScore = -4;
+  else                        dhScore = -12;
+  if (deadMi > modeConf.deadheadCap) dhScore -= 6;
+  score += dhScore;
+  if (deadMi > 0) bullets.push({ icon: deadMi <= 75 ? '✓' : '✕', text: `${deadMi} deadhead miles${deadMi > modeConf.deadheadCap ? ' — exceeds ' + modeConf.label + ' cap (' + modeConf.deadheadCap + ')' : ''}` });
+
+  // 3. Destination market role
+  let roleScore = 0;
+  if (destMarket){
+    roleScore = USA_MARKET_ROLES[destMarket.role] || 0;
+    if (destMarket.role === 'trap') roleScore = Math.round(roleScore * (profile?.trapPenaltyMultiplier || 1) * (modeConf.trapMult || 1));
+    if (destMarket.role === 'transitional') roleScore = Math.round(roleScore * (modeConf.transitionalMult || 1));
+    score += roleScore;
+    const roleIcon = ['anchor','support'].includes(destMarket.role) ? '✓' : destMarket.role === 'trap' ? '✕' : '–';
+    bullets.push({ icon: roleIcon, text: `Destination: ${escapeHtml(destMarket.city)} — ${destMarket.role} market (${USA_ZONES[destMarket.zone]?.label || destMarket.zone})` });
+  } else if (dest) {
+    score -= 5;
+    bullets.push({ icon: '–', text: `Destination "${escapeHtml(dest)}" not in market database` });
+  }
+
+  if (origMarket) {
+    bullets.push({ icon: '–', text: `Origin: ${escapeHtml(origMarket.city)} — ${origMarket.role} (${USA_ZONES[origMarket.zone]?.label || origMarket.zone})` });
+  }
+
+  // 4. Corridor
+  let corrScore = 0;
+  if (corridor){
+    corrScore = corridor.bonus;
+    score += corrScore;
+    const corrIcon = corridor.bonus > 0 ? '✓' : corridor.bonus < -5 ? '✕' : '–';
+    bullets.push({ icon: corrIcon, text: `Corridor: ${escapeHtml(corridor.name)} (${corridor.laneClass}${corridor.bonus > 0 ? ', +' + corridor.bonus : corridor.bonus < 0 ? ', ' + corridor.bonus : ''})` });
+  } else if (origZone && destZone) {
+    bullets.push({ icon: '–', text: `No specific corridor rule for ${USA_ZONES[origZone]?.label || origZone} → ${USA_ZONES[destZone]?.label || destZone}` });
+  }
+
+  // 5. Profile preferred-zone bias
+  if (destZone && profile){
+    if (profile.preferredZones.includes(destZone)){
+      score += profile.returnToHomeBonus;
+      bullets.push({ icon: '✓', text: `Destination in preferred zone (${USA_ZONES[destZone]?.label})` });
+    } else if (profile.secondaryZones.includes(destZone)){
+      // Small penalty for secondary
+      score -= Math.round(profile.outOfPreferredZonePenalty * 0.4);
+      bullets.push({ icon: '–', text: `Destination in secondary zone (${USA_ZONES[destZone]?.label})` });
+    } else if (profile.avoidZones.includes(destZone)){
+      score -= profile.outOfPreferredZonePenalty;
+      bullets.push({ icon: '✕', text: `Destination in avoid zone (${USA_ZONES[destZone]?.label})` });
+    } else {
+      score -= profile.outOfPreferredZonePenalty;
+      bullets.push({ icon: '–', text: `Destination outside preferred zones` });
+    }
+  }
+
+  // 6. Mode RPM floor
+  if (trueRPM < modeConf.rpmFloor){
+    const floorPenalty = Math.round((modeConf.rpmFloor - trueRPM) * 40);
+    score -= floorPenalty;
+    bullets.push({ icon: '✕', text: `Below ${modeConf.label} RPM floor ($${modeConf.rpmFloor.toFixed(2)})` });
+  }
+
+  // ── Cross-border adjustments ──
+  if (crossBorder && crossBorder.isCrossBorder){
+    score += crossBorder.totalAdj;
+    for (const adj of crossBorder.adjustments){
+      if (adj.impact !== 0){
+        const icon = adj.impact > 0 ? '✓' : '✕';
+        bullets.push({ icon, text: `🇨🇦 ${adj.label}: ${adj.detail}` });
+      } else if (adj.detail){
+        bullets.push({ icon: '–', text: `🇨🇦 ${adj.label}: ${adj.detail}` });
+      }
+    }
+    if (crossBorder.gateway){
+      bullets.push({ icon: '–', text: `🛂 Gateway: ${crossBorder.gateway.name} — ${crossBorder.gateway.notes || ''}` });
+    }
+  }
+
+  // ── Personal Intelligence Adjustments ──
+  // v24.0.0: tracked separately from market-structure score (econ/dh/role/corridor)
+  // so callers can react to "your own trip history disagrees" distinctly from
+  // "this lane/corridor is generally weak". See personalScore/personalBullets below.
+  let personalScore = 0;
+  const personalBullets = [];
+  if (opts.laneIntel && opts.laneIntel.count >= 3) {
+    const li = opts.laneIntel;
+    if (li.avgRPM > 0) {
+      const rpmRatio = effectiveRPM / li.avgRPM;
+      if (rpmRatio >= 1.10) { const d = 6; score += d; personalScore += d; const b = { icon:'✓', text:`Paying ${((rpmRatio-1)*100).toFixed(0)}% above your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }; bullets.push(b); personalBullets.push(b); }
+      else if (rpmRatio < 0.85) { const d = -6; score += d; personalScore += d; const b = { icon:'✕', text:`${((1-rpmRatio)*100).toFixed(0)}% below your avg $${li.avgRPM.toFixed(2)} on this lane — hold for better` }; bullets.push(b); personalBullets.push(b); }
+      else { const b = { icon:'–', text:`In line with your avg $${li.avgRPM.toFixed(2)} on this lane (${li.count} trips)` }; bullets.push(b); personalBullets.push(b); }
+    }
+    if (li.dzExitCount >= 3) { const d = -8; score += d; personalScore += d; const b = { icon:'✕', text:`⚠ Trap lane: ${li.dzExitCount} Dead Zone exits from origin — market repeatedly strands you` }; bullets.push(b); personalBullets.push(b); }
+  }
+
+  if (opts.destReloadScore) {
+    const rs = opts.destReloadScore;
+    if (rs.grade === 'A') { const d = 5; score += d; personalScore += d; const b = { icon:'✓', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+    else if (rs.grade === 'D') { const d = -8; score += d; personalScore += d; const b = { icon:'✕', text:`Destination reload: ${rs.label} — avg ${rs.avg}h to reload. Demand premium or avoid.` }; bullets.push(b); personalBullets.push(b); }
+    else if (rs.grade === 'C') { const d = -3; score += d; personalScore += d; const b = { icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+    else { const b = { icon:'–', text:`Destination reload: ${rs.label} — avg ${rs.avg}h (${rs.count} records)` }; bullets.push(b); personalBullets.push(b); }
+  }
+
+  if (opts.brokerIntel && opts.brokerIntel.sampleSize >= 2) {
+    const bi = opts.brokerIntel;
+    if (bi.slowPayPct >= 60) { const d = -6; score += d; personalScore += d; const b = { icon:'✕', text:`Broker pay history: ${bi.slowPayPct}% rated slow-to-pay by you (${bi.paySpeedSamples} reviews)` }; bullets.push(b); personalBullets.push(b); }
+    else if (bi.fastPayPct >= 60) { const b = { icon:'✓', text:`Broker pay history: ${bi.fastPayPct}% rated fast-to-pay by you (${bi.paySpeedSamples} reviews)` }; bullets.push(b); personalBullets.push(b); }
+    if (bi.acceptedPct !== null && bi.acceptedPct <= 20) { const d = -4; score += d; personalScore += d; const b = { icon:'✕', text:`Counter-offer history with this broker: only ${bi.acceptedPct}% accepted (${bi.outcomeSamples} bids) — expect a hard line` }; bullets.push(b); personalBullets.push(b); }
+  }
+
+  // Clamp
+  score = Math.max(0, Math.min(100, score));
+
+  // Verdict
+  let usaGrade, usaVerdict, usaColor;
+  if (score >= 80)      { usaGrade = 'A'; usaVerdict = 'ACCEPT';    usaColor = 'var(--good)'; }
+  else if (score >= 68) { usaGrade = 'B'; usaVerdict = 'ACCEPT';    usaColor = '#58a6ff'; }
+  else if (score >= 56) { usaGrade = 'C'; usaVerdict = 'STRATEGIC'; usaColor = 'var(--warn)'; }
+  else if (score >= 45) { usaGrade = 'D'; usaVerdict = 'CAUTION';   usaColor = '#ff8c42'; }
+  else                  { usaGrade = 'F'; usaVerdict = 'REJECT';    usaColor = 'var(--bad)'; }
+
+  return {
+    authorityRole: 'EVIDENCE_ONLY',
+    score, usaGrade, usaVerdict, usaColor,
+    origMarket, destMarket, origZone, destZone,
+    corridor, mode: mode || 'HARVEST', profileId: profileId || 'MIDWEST_STACK',
+    modeConf, profile,
+    econScore, dhScore, roleScore, corrScore,
+    personalScore, personalBullets,
+    bullets, crossBorder,
+  };
+}
+
+
+// ---- Ω Calculator (P2-4: saves last inputs) ----
+/* ═══════════════════════════════════════════════════════════════
+   MIDWEST STACK — Sustainable Density Operator Engine v3
+   90-second load filter, market board, reposition triggers
+   ═══════════════════════════════════════════════════════════════ */
+
+const MW = {
+  // M1: fallback only. Gate 0 docs/OPERATOR_TRUTH.md records the operator-
+  // confirmed loaded baseline as ~17.5 MPG; the prior 16.5 was labelled
+  // "field-confirmed" but predates that. An explicit vehicleMpg setting is
+  // higher priority and overrides this in canonical economics.
+  mpg: 17.5,           // Operator-confirmed loaded baseline (Gate 0), fallback only
+  fuelBaseline: 3.55,  // Midwest regular gas, EIA wk of Jul 6 2026; user override via settings
+  weekTarget: { low: 3800, high: 4200, stretch: 5000 },
+  monWed: { low: 2200, high: 2600 },
+  thuFri: { low: 1200, high: 1600 },
+  surgeFloor: 3000,
+  stabilizeFloor: 2000,
+  // Pre-v24 integrity gate: one protective doctrine across decision surfaces.
+  preferredFloorRPM: 1.50,
+  normalFloorRPM: 1.40,
+  hardRejectRPM: 1.25,
+  // Strategic floor — ONLY when replacing deadhead / going home / escaping slow market
+  strategicFloorRPM: 1.25,
+  longHaulMinRPM: 1.45,
+  surgeMinRPM: 1.70,
+  // M1: Level X+ doctrine puts Gary, Cincinnati and Toledo in Tier 1. Mirrored in
+  // midwest-stack-authority.js and midwest-stack-config.json.
+  tier1: ['chicago','gary','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
+  tier2: ['nashville','louisville','st. louis','st louis','stl','dayton','fort wayne','grand rapids','milwaukee','lexington'],
+  avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
+  rpmTiers: [
+    { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
+    { min: 1.25, max: 1.39, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
+    { min: 1.40, max: 1.49, label: 'Weak — Negotiate',   color: '#ff8c42',     verdict: 'ACCEPT' },
+    { min: 1.50, max: 1.59, label: 'Professional',       color: 'var(--text)', verdict: 'ACCEPT' },
+    { min: 1.60, max: 1.74, label: 'Strong',             color: 'var(--good)', verdict: 'ACCEPT' },
+    { min: 1.75, max: 1.99, label: 'Very Strong',        color: 'var(--good)', verdict: 'ACCEPT' },
+    { min: 2.00, max: 99,   label: 'Premium',            color: 'var(--accent-text)', verdict: 'ACCEPT' }
+  ],
+  // F20: Dead Zone Exit sub-tiers (below normal $1.25 hard floor)
+  dzFloorRPM: 0.90,
+  // X-04: canonical gate — aligned to 1000mi (was 1500 pre-v23.9, drifted from
+  // the figure midwest-stack-authority.js's own DEAD_ZONE mode description had
+  // always claimed: "Requires 1000+ miles from home..."). isDeadZoneEligible()
+  // is the single function both this evaluator and the standalone overlay call
+  // to enforce this and the other DZ gates identically — see its doc comment.
+  dzActivationDistanceMi: 1000,
+  dzMinDistanceSaved: 200, // "meaningful movement toward stronger freight"
+};
+
+// ════════════════════════════════════════════════════
+// TIME WINDOWS — Field-calibrated cargo-van auction-app
+// timing. Different from DAT TL behavior.
+// ════════════════════════════════════════════════════
+const TIME_WINDOWS = {
+  EARLY_MORNING: {
+    range: [5, 8],
+    label: 'Early Morning',
+    desc: 'High volume new posts, cheap bids dominate',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.20,
+    advice: 'Bid only at $1.40+. Volume is high but auction undercutting peaks here.',
+  },
+  MORNING: {
+    range: [8, 11],
+    label: 'Morning',
+    desc: 'Best matching window — pickups for same-day still negotiable',
+    cargoVanBias: 'firming',
+    expectedFloor: 1.35,
+    advice: 'Strongest acceptance window for fair-priced bids.',
+  },
+  MIDDAY: {
+    range: [11, 14],
+    label: 'Midday',
+    desc: 'Soft. Brokers wait. Drivers undercut.',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.20,
+    advice: 'Hold bids unless rate is already at $1.50+. Patience pays.',
+  },
+  AFTERNOON: {
+    range: [14, 17],
+    label: 'Afternoon',
+    desc: 'Premium emerges IF dry-van capacity is tight. Cargo van often lags 1 hr.',
+    cargoVanBias: 'mixed',
+    expectedFloor: 1.40,
+    advice: 'Watch for desperation posts. Verify with multi-broker check before assuming premium.',
+  },
+  DESPERATION: {
+    range: [17, 20],
+    label: 'Desperation',
+    desc: 'Brokers must move freight today. Real premium fires here on tight days.',
+    cargoVanBias: 'firm',
+    expectedFloor: 1.60,
+    advice: 'If $1.75+/mi appears, accept fast. Sub-60s decisions.',
+  },
+  EVENING: {
+    range: [20, 24],
+    label: 'Evening',
+    desc: 'Tomorrow-pickup posts at normal rates',
+    cargoVanBias: 'soft',
+    expectedFloor: 1.35,
+    advice: 'Plan tomorrow. Bid only on geographic anchors.',
+  },
+};
+
+function getCurrentTimeWindow() {
+  const h = new Date().getHours();
+  for (const [key, w] of Object.entries(TIME_WINDOWS)) {
+    if (h >= w.range[0] && h < w.range[1]) return { key, ...w };
+  }
+  return { key: 'OVERNIGHT', label: 'Overnight', advice: 'Sleep. Hunt at 6 AM.', expectedFloor: 1.25, cargoVanBias: 'soft', desc: 'Overnight — market dormant' };
+}
+
+// ════════════════════════════════════════════════════
+// CVSA / BLITZ WEEK CALENDAR
+// Predictable 72-hour inspection blitzes. ~5–10% of
+// carriers park. Cargo van sees premium spike.
+// Source: cvsa.org official calendar
+// ════════════════════════════════════════════════════
+const CVSA_EVENTS_2026 = [
+  { name: 'International Roadcheck', start: '2026-05-12', end: '2026-05-14',
+    cargoVanPremiumMult: 1.15, peakDay: '2026-05-13' },
+  { name: 'Brake Safety Week', start: '2026-08-17', end: '2026-08-23',
+    cargoVanPremiumMult: 1.08, peakDay: '2026-08-19' },
+  { name: 'Operation Safe Driver Week', start: '2026-07-13', end: '2026-07-19',
+    cargoVanPremiumMult: 1.05, peakDay: '2026-07-15' },
+];
+
+function getActiveCVSAEvent(today = new Date()) {
+  const d = today.toISOString().slice(0, 10);
+  for (const e of CVSA_EVENTS_2026) {
+    if (d >= e.start && d <= e.end) return { ...e, status: 'active' };
+    const preStart = new Date(e.start);
+    preStart.setDate(preStart.getDate() - 5);
+    const preStartStr = preStart.toISOString().slice(0, 10);
+    if (d >= preStartStr && d < e.start) return { ...e, status: 'pre' };
+  }
+  return null;
+}
+
+function getBlitzAdjustedFloor(baseFloor) {
+  const ev = getActiveCVSAEvent();
+  if (!ev) return baseFloor;
+  if (ev.status === 'active') return Math.round((baseFloor * ev.cargoVanPremiumMult) * 100) / 100;
+  if (ev.status === 'pre')    return Math.round((baseFloor * 1.05) * 100) / 100;
+  return baseFloor;
+}
+
+// ════════════════════════════════════════════════════
+// OPPORTUNITY COST — DZ commitments during blitz prep
+// or weekly peak windows forfeit premium revenue.
+// ════════════════════════════════════════════════════
+function computeOpportunityCost(loadMiles, daysCommitted, today = new Date()) {
+  const NORMAL_DAILY_REV = 600;
+  const ev = getActiveCVSAEvent(today);
+  const blitzMult = ev?.status === 'active' ? 1.4 : ev?.status === 'pre' ? 1.15 : 1.0;
+  const expectedNormalRev = NORMAL_DAILY_REV * daysCommitted * blitzMult;
+  return Math.round(expectedNormalRev);
+}
+
+function evaluateLoadWithOpportunityCost(grossPay, loadMiles, daysCommitted) {
+  const opCost = computeOpportunityCost(loadMiles, daysCommitted);
+  const netAfterOpCost = grossPay - opCost;
+  const realRate = loadMiles > 0 ? netAfterOpCost / loadMiles : 0;
+  return { grossPay, opportunityCost: opCost, netAfterOpCost, realRate };
+}
+
+// ════════════════════════════════════════════════════
+// AUCTION APP STRATEGY — Sylectus / 123LoadBoard /
+// Truckstop Auction. Race-to-bottom dynamics differ
+// from DAT broker-direct.
+// ════════════════════════════════════════════════════
+const AUCTION_RULES = {
+  postedTargetIsCeiling: true,
+  winningBidTypicalDiscount: 0.92,
+  walkAfterMinutes: 30,
+  multiPostDumpThreshold: 3,
+};
+
+function suggestAuctionBid(postedTarget, marketRate, urgency = 'normal') {
+  if (!Number.isFinite(postedTarget)) return null;
+  const undercut = urgency === 'high' ? 0.96 : urgency === 'low' ? 0.90 : AUCTION_RULES.winningBidTypicalDiscount;
+  const suggested = Math.round(postedTarget * undercut);
+  const minFloor = Math.round(postedTarget * 0.85);
+  return {
+    ceiling: postedTarget,
+    suggested,
+    minFloor,
+    rationale: `Auction posts: bid ~${Math.round((1 - undercut) * 100)}% below target ($${suggested}). Posting target ($${postedTarget}) usually loses.`,
+  };
+}
+
+function detectDesperationDump(broker, destination, recentPosts) {
+  const matches = recentPosts.filter(p =>
+    (p.broker || '').toLowerCase() === (broker || '').toLowerCase() &&
+    (p.destination || '').toLowerCase().includes((destination || '').toLowerCase())
+  );
+  return matches.length >= AUCTION_RULES.multiPostDumpThreshold;
+}
+
+// ════════════════════════════════════════════════════
+// EMPTY-DAY DECISION TREE — After N hours of zero
+// accepts, gives clear stay / go-home / take-DZ
+// guidance accounting for fuel, hotel, and blitz prep.
+// ════════════════════════════════════════════════════
+function emptyDayDecision({
+  hoursHunting,
+  bidsAttempted,
+  bidsAccepted,
+  currentCity,
+  homeBaseDistMi,
+  fuelCostHome,
+  hotelCostEstimate = 75,
+  hourOfDay,
+  daysToBlitzPeak,
+}) {
+  const window = getCurrentTimeWindow();
+  const isInDesperationWindow = window.key === 'DESPERATION' || window.key === 'AFTERNOON';
+
+  if (isInDesperationWindow && hoursHunting < 7 && hourOfDay < 19) {
+    return {
+      verdict: 'HOLD',
+      reason: 'Still in desperation window. Premium can fire at any moment.',
+      action: 'Maintain position. Filter aggressively. Do not bid below $1.40.',
+    };
+  }
+
+  const hotelSaves = fuelCostHome - hotelCostEstimate;
+  if (hourOfDay >= 19 || hoursHunting >= 6) {
+    if (hotelSaves > 0 && daysToBlitzPeak !== null && daysToBlitzPeak > 1) {
+      return {
+        verdict: 'STAY_OVERNIGHT',
+        reason: `Hotel ($${hotelCostEstimate}) beats fuel home ($${fuelCostHome}). Save $${hotelSaves}.`,
+        action: `Find lodging in ${currentCity} area. Reset 5 AM tomorrow in this hub.`,
+      };
+    }
+    if (homeBaseDistMi < 200) {
+      return {
+        verdict: 'GO_HOME',
+        reason: 'Close to home base. DH cheaper than hotel. Reset properly.',
+        action: 'Run home empty. Sleep in own bed. Fresh hunt tomorrow.',
+      };
+    }
+    return {
+      verdict: 'STAY_OVERNIGHT',
+      reason: 'Far from home + late in day. Hotel preserves blitz week positioning.',
+      action: `Find lodging in ${currentCity}. Resume hunt 5 AM.`,
+    };
+  }
+
+  return {
+    verdict: 'CONTINUE',
+    reason: 'Window still has time. Hunt continues.',
+    action: 'Refresh board every 5 min. Filter to ≥$1.40/mi within 500mi of base.',
+  };
+}
+
+function getMWWeekTarget(){
+  const userGoal = Number(getCachedSetting('weeklyGoal', 0) || 0);
+  const high = userGoal > 0 ? Math.max(2500, Math.round(userGoal)) : MW.weekTarget.high;
+  const low = Math.max(MW.stabilizeFloor, userGoal > 0 ? Math.round(high * 0.9) : MW.weekTarget.low);
+  const stretchBase = MW.weekTarget.stretch || 5000;
+  const stretch = Math.max(stretchBase, Math.round(high * 1.15));
+  return { low, high, stretch };
+}
+
+function mwClassifyRPM(rpm){
+  for (let i = MW.rpmTiers.length - 1; i >= 0; i--){
+    if (rpm >= MW.rpmTiers[i].min) return MW.rpmTiers[i];
+  }
+  return MW.rpmTiers[0];
+}
+
+function mwNormCity(s){
+  return (s || '').trim().toLowerCase().replace(/[^a-z\s.]/g,'');
+}
+
+function mwGeoCheck(origin, dest){
+  const o = usaNormCity(origin), d = usaNormCity(dest);
+  const densityStates = {chicago:'IL',gary:'IN',indianapolis:'IN',cleveland:'OH',columbus:'OH',detroit:'MI',cincinnati:'OH',toledo:'OH',nashville:'TN',louisville:'KY','st louis':'MO',stl:'MO',dayton:'OH','fort wayne':'IN','grand rapids':'MI',milwaukee:'WI',lexington:'KY'};
+  const inTier = (place, tier, raw) => {
+    const qualifier = String(raw || '').match(/(?:,\s*|\s+)([a-z]{2})\.?$/i)?.[1]?.toUpperCase();
+    return tier.some(c => place === usaNormCity(c) && (!qualifier || qualifier === densityStates[place]));
+  };
+  const oT1 = inTier(o, MW.tier1, origin);
+  const dT1 = inTier(d, MW.tier1, dest);
+  const oT2 = inTier(o, MW.tier2, origin);
+  const dT2 = inTier(d, MW.tier2, dest);
+  const destDensity = dT1 ? 'Tier 1' : dT2 ? 'Tier 2' : 'Out of Density';
+  const origDensity = oT1 ? 'Tier 1' : oT2 ? 'Tier 2' : 'Out of Density';
+  const intoDensity = dT1 || dT2;
+  return { origDensity, destDensity, intoDensity, dT1, dT2, oT1, oT2 };
+}
+
+
+// ════════════════════════════════════════════════════
+// F20: DEAD ZONE EXIT — Helper functions
+// ════════════════════════════════════════════════════
+const DZ_HOME_LAT_DEFAULT = 42.8856; // Oak Creek, WI
+const DZ_HOME_LNG_DEFAULT = -87.8632;
+
+async function dzGetHomeCoords(){
+  const lat = Number(await getSetting('homeBaseLat', DZ_HOME_LAT_DEFAULT) || DZ_HOME_LAT_DEFAULT);
+  const lng = Number(await getSetting('homeBaseLng', DZ_HOME_LNG_DEFAULT) || DZ_HOME_LNG_DEFAULT);
+  return {
+    lat: Number.isFinite(lat) && lat !== 0 ? lat : DZ_HOME_LAT_DEFAULT,
+    lng: Number.isFinite(lng) && lng !== 0 ? lng : DZ_HOME_LNG_DEFAULT,
+  };
+}
+
+function dzFindNearestAnchor(lat, lng){
+  const anchorNames = [...MW.tier1, ...MW.tier2];
+  let nearest = null, nearestDist = Infinity;
+  for (const name of anchorNames){
+    const coords = getMarketCoords(name);
+    if (!coords) continue;
+    const d = haversineDistanceMi(lat, lng, coords.lat, coords.lng) * 1.3;
+    if (d < nearestDist){ nearestDist = d; nearest = name; }
+  }
+  return { name: nearest, distMi: nearestDist };
+}
+
+/** X-04: pure geo-distance resolver shared by the async (dzCheckEligibility)
+ *  and synchronous (dzCheckEligibilitySync, exposed to midwest-stack-
+ *  authority.js) entry points — one geo computation, two settings-resolution
+ *  paths (await getSetting vs. the synchronous SETTINGS_CACHE), since the
+ *  standalone overlay can't await app.js's async settings layer from its own
+ *  synchronous render cycle. Applies the activationMi/minDistanceSaved gates
+ *  (reading from MW's canonical constants unless overridden) so both callers
+ *  return an identically-gated "eligible" flag — the actual final DZ
+ *  activation decision (which also needs trueRPM + manual confirmation)
+ *  is isDeadZoneEligible(), below. */
+function _dzGeoEligibility(origin, dest, activationMi, homeCoords, minDistanceSaved = MW.dzMinDistanceSaved){
+  const origCoords = getMarketCoords(origin);
+  if (!origCoords) return { eligible: false, reason: 'Origin not in market database' };
+
+  const distanceFromHome = Math.round(haversineDistanceMi(origCoords.lat, origCoords.lng, homeCoords.lat, homeCoords.lng) * 1.3);
+  if (distanceFromHome < activationMi){
+    return { eligible: false, distanceFromHome, reason: `${distanceFromHome}mi from home (${activationMi}+ required)` };
+  }
+
+  const destCoords = getMarketCoords(dest);
+  if (!destCoords) return { eligible: false, distanceFromHome, reason: 'Destination not in market database' };
+
+  const origAnchor = dzFindNearestAnchor(origCoords.lat, origCoords.lng);
+  const destAnchor = dzFindNearestAnchor(destCoords.lat, destCoords.lng);
+  const distanceSaved = Math.round(origAnchor.distMi - destAnchor.distMi);
+
+  if (distanceSaved < minDistanceSaved){
+    return { eligible: false, distanceFromHome, distanceSaved, reason: `Saves only ${distanceSaved}mi toward home corridor (${minDistanceSaved}+ required)` };
+  }
+
+  return {
+    eligible: true,
+    distanceFromHome,
+    distanceSaved,
+    nearestAnchor: destAnchor.name || origAnchor.name || 'Midwest corridor',
+  };
+}
+
+async function dzCheckEligibility(origin, dest){
+  const dzEnabled = (await getSetting('dzEnabled', true)) !== false && (await getSetting('dzEnabled', true)) !== 'false';
+  if (!dzEnabled) return { eligible: false };
+  const activationMi = Number(await getSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const homeCoords = await dzGetHomeCoords();
+  return _dzGeoEligibility(origin, dest, activationMi, homeCoords);
+}
+
+/** X-04: synchronous twin of dzCheckEligibility(), reading settings from the
+ *  synchronous SETTINGS_CACHE (getCachedSetting) instead of awaiting
+ *  getSetting(). Exposed as window.flDzGeoCheck so midwest-stack-
+ *  authority.js — a separate script with no async plumbing into app.js's
+ *  settings layer — can get the same geo-eligibility numbers on its own
+ *  synchronous input-change render cycle. Falls back to MW's defaults (the
+ *  same defaults dzCheckEligibility falls back to) if settings haven't been
+ *  cached yet.
+ */
+function dzCheckEligibilitySync(origin, dest){
+  const dzEnabledRaw = getCachedSetting('dzEnabled', true);
+  if (dzEnabledRaw === false || dzEnabledRaw === 'false') return { eligible: false };
+  const activationMi = Number(getCachedSetting('dzActivationDistance', MW.dzActivationDistanceMi) || MW.dzActivationDistanceMi);
+  const lat = Number(getCachedSetting('homeBaseLat', DZ_HOME_LAT_DEFAULT) || DZ_HOME_LAT_DEFAULT);
+  const lng = Number(getCachedSetting('homeBaseLng', DZ_HOME_LNG_DEFAULT) || DZ_HOME_LNG_DEFAULT);
+  const homeCoords = { lat: Number.isFinite(lat) && lat !== 0 ? lat : DZ_HOME_LAT_DEFAULT, lng: Number.isFinite(lng) && lng !== 0 ? lng : DZ_HOME_LNG_DEFAULT };
+  return _dzGeoEligibility(origin, dest, activationMi, homeCoords);
+}
+if (typeof window !== 'undefined') window.flDzGeoCheck = dzCheckEligibilitySync;
+
+function dzClassifySubTier(trueRPM, distanceSaved, dzFloor){
+  if (!Number.isFinite(trueRPM) || trueRPM >= MW.hardRejectRPM || trueRPM < dzFloor) return null;
+  if (trueRPM >= 1.10) return 'DZ-STANDARD';
+  if (trueRPM >= 1.00) return 'DZ-ACCEPTABLE';
+  // DZ-FLOOR ($0.90–$0.99): only valid if load moves 500+ miles toward home
+  if ((distanceSaved || 0) >= 500) return 'DZ-FLOOR';
+  return null;
+}
+
+/** X-04: single source of truth for whether Dead Zone Exit can legitimately
+ *  produce a TAKE_IF_LIVE/active-DZ verdict at the survival floor. Both the
+ *  main evaluator (mwEvaluateLoad) and the standalone midwest-stack-
+ *  authority.js overlay (via window.isDeadZoneEligible) call this — before
+ *  this fix the standalone engine had NO equivalent gate at all: its
+ *  `trueRpm >= floorRpm && (tier1||tier2)` check alone could produce
+ *  TAKE_IF_LIVE at $0.91/mi with no distance, reload, or confirmation check
+ *  whatsoever. All four gates below must pass for eligible:true:
+ *   1. distanceFromHome >= activationMi (MW.dzActivationDistanceMi, 1000mi)
+ *   2. distanceSaved >= minDistanceSaved (MW.dzMinDistanceSaved, 200mi) —
+ *      "meaningful movement toward stronger freight"
+ *   3. dzFloor <= trueRPM < hardRejectRpm — "no viable reload above the
+ *      standard floor ($1.25) nearby": a load already clearing hardRejectRpm
+ *      doesn't need survival mode at all
+ *   4. noReloadConfirmed === true — manual; DZ mode never self-activates
+ *  Returns { eligible, gradeCap: 'C', reasons }. gradeCap is structural, not
+ *  just documentation: any caller activating DZ mode from this result MUST
+ *  cap the displayed grade at 'C' (the F-1 fix) rather than the raw grade,
+ *  which is always 'F' in the DZ RPM range by construction.
+ *  This is deliberately narrow — the gate check only, not the full scoring/
+ *  verdict/bid-range computation either file does around it. */
+function isDeadZoneEligible({ distanceFromHome, distanceSaved, trueRPM, noReloadConfirmed, dzFloor = MW.dzFloorRPM, hardRejectRpm = MW.hardRejectRPM, activationMi = MW.dzActivationDistanceMi, minDistanceSaved = MW.dzMinDistanceSaved }){
+  const reasons = [];
+  if (!(Number.isFinite(distanceFromHome) && distanceFromHome >= activationMi)){
+    reasons.push(`${Number.isFinite(distanceFromHome) ? distanceFromHome : '?'}mi from home (${activationMi}+ required)`);
+  }
+  if (!(Number.isFinite(distanceSaved) && distanceSaved >= minDistanceSaved)){
+    reasons.push(`saves only ${Number.isFinite(distanceSaved) ? distanceSaved : '?'}mi toward stronger freight (${minDistanceSaved}+ required)`);
+  }
+  if (!(Number.isFinite(trueRPM) && trueRPM >= dzFloor && trueRPM < hardRejectRpm)){
+    reasons.push(`$${Number.isFinite(trueRPM) ? trueRPM.toFixed(2) : '?'}/mi not in the DZ survival band [$${dzFloor.toFixed(2)}, $${hardRejectRpm.toFixed(2)})`);
+  }
+  if (!noReloadConfirmed){
+    reasons.push('manual no-viable-reload confirmation not given');
+  }
+  return { eligible: reasons.length === 0, gradeCap: 'C', reasons };
+}
+if (typeof window !== 'undefined') window.isDeadZoneEligible = isDeadZoneEligible;
+
+
+// ================================================================================
+// v24.0 — Unified Decision Engine contract
+// The client is the single verdict/grade authority. Existing USA/Midwest/AI
+// systems are evidence/adapters and must not publish a competing authoritative
+// decision. This first v24 slice centralizes the result contract + grade
+// authority while the remaining hard-gate math is migrated behind it in-place.
+// No timestamps or ambient reads occur here: identical inputs yield identical
+// output, which makes this object suitable for regression tests and later
+// predicted-vs-actual calibration.
+// ================================================================================
+const UNIFIED_DECISION_SCHEMA_VERSION = '24.0.0';
+
+function deriveUnifiedGrade(trueRPM, { isDZActive = false, dzSubTier = null } = {}){
+  // M1: an unknown True RPM used to coerce to 0 and fall through to grade F —
+  // a REJECT that looks calculated but was only ever a missing input.
+  const rpm = knownNum(trueRPM);
+  if (rpm === null){
+    const unknown = { grade: '?', gradeLabel: 'UNKNOWN — insufficient data', gradeColor: 'var(--text-tertiary)', gradeEmoji: '⚪', known: false };
+    return { raw: { ...unknown }, display: { ...unknown } };
+  }
+  let raw;
+  if (rpm >= 1.75) raw = { grade:'A', gradeLabel:'PREMIUM WIN', gradeColor:'#34d399', gradeEmoji:'🟢' };
+  else if (rpm >= 1.60) raw = { grade:'B', gradeLabel:'STRONG ACCEPT', gradeColor:'var(--good)', gradeEmoji:'🟢' };
+  else if (rpm >= 1.50) raw = { grade:'C', gradeLabel:'CONDITIONAL', gradeColor:'var(--warn)', gradeEmoji:'🟡' };
+  else if (rpm >= 1.40) raw = { grade:'D', gradeLabel:'WEAK — NEGOTIATE', gradeColor:'#fb923c', gradeEmoji:'🟠' };
+  else if (rpm >= 1.25) raw = { grade:'E', gradeLabel:'STRATEGIC ONLY', gradeColor:'#f87171', gradeEmoji:'🔴' };
+  else raw = { grade:'F', gradeLabel:'REJECT', gradeColor:'var(--bad)', gradeEmoji:'🔴' };
+
+  raw.known = true;
+  const display = isDZActive
+    ? { grade:'C', gradeLabel:dzSubTier || 'DZ-EXIT', gradeColor:'#f0a500', gradeEmoji:'🟠', known: true }
+    : { ...raw };
+  return { raw, display };
+}
+
+// M1: mileage semantics stay distinct. Loaded, deadhead/empty, the figure a
+// platform displayed, and post-delivery reposition miles are four different
+// numbers and are never merged or substituted for one another.
+const MILEAGE_PROVENANCE = Object.freeze({ VERIFIED:'VERIFIED', ESTIMATED:'ESTIMATED', UNKNOWN:'UNKNOWN' });
+function normalizeMileageProvenance(value, isKnown){
+  if (!isKnown) return MILEAGE_PROVENANCE.UNKNOWN;
+  const v = String(value || '').toUpperCase();
+  return MILEAGE_PROVENANCE[v] || MILEAGE_PROVENANCE.VERIFIED;
+}
+
+// The canonical economics shape when a material fact is missing. Every money
+// field is null rather than 0, so nothing downstream can render a
+// calculated-looking $0.00 that was never calculated.
+const UNAVAILABLE_ECONOMICS_FIELDS = Object.freeze([
+  'revenue','effectiveRevenue','loadedMi','deadMi','totalMi','trueRPM','loadedRPM','deadheadPct',
+  'mpg','fuelPrice','fuel','netAfterFuel','opCPM','operatingCost','borderAdminCost','totalCost',
+  'operationalProfit','trueProfit','profitMarginPct','breakEvenRPM','profitPerMile','estHours',
+  'profitPerHour','fuelPerMile',
+]);
+
+function deriveUnifiedEconomics(facts){
+  const f = facts || {};
+  // M1: read material facts through knownNum. `Number(f.loadedMi || 0)` turned
+  // every missing input into a confident zero, which then produced a precise
+  // True RPM, a real grade, and a bid range out of nothing.
+  const loadedMiK = knownNum(f.loadedMi);
+  const deadMiK = knownNum(f.deadMi);
+  const revenueK = knownNum(f.revenue);
+  const effectiveRevenueK = f.effectiveRevenue === undefined || f.effectiveRevenue === null
+    ? revenueK
+    : knownNum(f.effectiveRevenue);
+
+  const mileageProvenance = Object.freeze({
+    loaded: normalizeMileageProvenance(f.loadedMiProvenance, loadedMiK !== null),
+    deadhead: normalizeMileageProvenance(f.deadMiProvenance, deadMiK !== null),
+    platformDisplayedMi: knownNum(f.platformDisplayedMi),
+    repositionMi: knownNum(f.repositionMi),
+  });
+
+  const unknownFacts = [];
+  if (loadedMiK === null || loadedMiK <= 0 || loadedMiK > 300000) unknownFacts.push('loadedMi');
+  if (deadMiK === null || deadMiK < 0 || deadMiK > 300000) unknownFacts.push('deadMi');
+  if (effectiveRevenueK === null || effectiveRevenueK < 0 || (revenueK !== null && revenueK < 0)) unknownFacts.push('revenue');
+  const mpgK = knownNum(f.mpg), fuelPriceK = knownNum(f.fuelPrice);
+  if (mpgK === null || mpgK <= 0) unknownFacts.push('mpg');
+  if (fuelPriceK === null || fuelPriceK < 0) unknownFacts.push('fuelPrice');
+  for (const key of ['opCPM', 'borderAdminCost']){
+    if (f[key] !== undefined && (knownNum(f[key]) === null || knownNum(f[key]) < 0)) unknownFacts.push(key);
+  }
+  if (unknownFacts.length){
+    const out = { available: false, unknownFacts: Object.freeze(unknownFacts), mileageProvenance };
+    for (const key of UNAVAILABLE_ECONOMICS_FIELDS) out[key] = null;
+    return Object.freeze(out);
+  }
+
+  const loadedMi = Math.max(0, loadedMiK);
+  const deadMi = Math.max(0, deadMiK);
+  const totalMi = loadedMi + deadMi;
+  const revenue = Math.max(0, revenueK === null ? effectiveRevenueK : revenueK);
+  const effectiveRevenue = Math.max(0, effectiveRevenueK === null ? revenue : effectiveRevenueK);
+  const mpg = mpgK;
+  const fuelPrice = fuelPriceK;
+  const opCPM = Math.max(0, Number(f.opCPM || 0));
+  const borderAdminCost = Math.max(0, Number(f.borderAdminCost || 0));
+  const trueRPM = totalMi > 0 ? (effectiveRevenue / totalMi) : 0;
+  const loadedRPM = loadedMi > 0 ? (effectiveRevenue / loadedMi) : 0;
+  const fuel = (totalMi > 0 && mpg > 0) ? roundCents((totalMi / mpg) * fuelPrice) : 0;
+  const netAfterFuel = roundCents(effectiveRevenue - fuel);
+  const operatingCost = roundCents(totalMi * opCPM);
+  const totalCost = roundCents(fuel + operatingCost + borderAdminCost);
+  const operationalProfit = netAfterFuel;
+  const trueProfit = roundCents(effectiveRevenue - totalCost);
+  const profitMarginPct = effectiveRevenue > 0 ? roundCents((trueProfit / effectiveRevenue) * 100) : 0;
+  const breakEvenRPM = totalMi > 0 ? roundCents(totalCost / totalMi) : 0;
+  const profitPerMile = totalMi > 0 ? roundCents(trueProfit / totalMi) : 0;
+  const avgMphK = knownNum(f.avgMph);
+  const avgMph = (avgMphK !== null && avgMphK >= PICKUP_FEASIBILITY.MIN_MPH && avgMphK <= PICKUP_FEASIBILITY.MAX_MPH) ? avgMphK : null;
+  const estHours = avgMph === null ? null : roundCents(totalMi / avgMph);
+  const profitPerHour = estHours && estHours > 0 ? roundCents(trueProfit / estHours) : null;
+  const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
+  const deadheadPct = totalMi > 0 ? ((deadMi / totalMi) * 100) : 0;
+  return Object.freeze({
+    available: true,
+    unknownFacts: Object.freeze([]),
+    mileageProvenance,
+    revenue, effectiveRevenue, loadedMi, deadMi, totalMi,
+    trueRPM, loadedRPM, deadheadPct,
+    mpg, fuelPrice, fuel, netAfterFuel,
+    opCPM, operatingCost, borderAdminCost, totalCost,
+    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, estHours, profitPerHour, fuelPerMile,
+  });
+}
+
+function deriveUnifiedBid(totalMiles, opts={}){
+  const miles = Math.max(0, Number(totalMiles || 0));
+  const rawUrgencyBoost = Number(opts.urgencyBoost || 0);
+  const urgencyBoost = Number.isFinite(rawUrgencyBoost) ? Math.max(0, Math.min(0.30, rawUrgencyBoost)) : 0;
+  const crossBorder = !!opts.crossBorder;
+  const rawRange = generateBidRange(miles, { urgencyBoost, crossBorder });
+  let range = null;
+  if (rawRange){
+    const entries = Object.entries(rawRange).map(([key, value]) => [key, Object.freeze({ ...value })]);
+    range = Object.freeze(Object.fromEntries(entries));
+  }
+  return Object.freeze({
+    authority: 'CLIENT_UNIFIED_DECISION_ENGINE',
+    basis: 'TRUE_MILES',
+    totalMiles: miles,
+    urgencyBoost,
+    crossBorder,
+    range,
+  });
+}
+
+const UNIFIED_DECISION_POLICY = Object.freeze({
+  version: '24.0.0-hard-gates-1',
+  normalFloorRPM: MW.normalFloorRPM,
+  preferredFloorRPM: MW.preferredFloorRPM,
+  strategicFloorRPM: MW.strategicFloorRPM,
+  longHaulMinRPM: MW.longHaulMinRPM,
+  longHaulMiles: 250,
+  strongRPM: 1.60,
+  healthyTrueMarginPct: 25,
+  healthyFuelMarginPct: 30,
+  rejectTrueMarginPct: 10,
+  rejectFuelMarginPct: 20,
+  healthyDeadheadPct: 20,
+  rejectDeadheadPct: 35,
+  fatigueOkayMax: 6,
+  fatigueRejectAt: 8,
+});
+
+/**
+ * v24 canonical verdict authority. Pure/deterministic: every external fact,
+ * user setting and historical signal needed for the decision is passed in.
+ * It does not read DOM/storage/time/network and it does not mutate its input.
+ * The step order intentionally preserves v23.9 behavior while moving ownership
+ * into one testable function.
+ */
+function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
+  const f = facts || {};
+  const geo = f.geo || {};
+  const steps = [];
+  let verdict = f.initialVerdict || 'REJECT';
+  let verdictReason = '';
+
+  // M1: the hard-gate layer must not manufacture material facts. Previously
+  // every one of these read `Number(x || 0)`, so a load with no revenue or no
+  // deadhead figure still produced a full, authoritative-looking verdict —
+  // typically REJECT "under floor", derived from inputs that were never there.
+  const trueRPMKnown = knownNum(f.trueRPM);
+  const totalMiKnown = knownNum(f.totalMi);
+  const deadheadPctKnown = knownNum(f.deadheadPct);
+  const effectiveRevenueKnown = knownNum(f.effectiveRevenue);
+  const unknownFacts = [];
+  if (trueRPMKnown === null) unknownFacts.push('trueRPM');
+  if (totalMiKnown === null) unknownFacts.push('totalMi');
+  if (deadheadPctKnown === null) unknownFacts.push('deadheadPct');
+  if (effectiveRevenueKnown === null) unknownFacts.push('effectiveRevenue');
+  if (unknownFacts.length){
+    return Object.freeze({
+      policyVersion: policy.version,
+      available: false,
+      unknownFacts: Object.freeze(unknownFacts),
+      verdict: 'UNAVAILABLE',
+      verdictReason: `Cannot decide — missing: ${unknownFacts.join(', ')}`,
+      steps: Object.freeze([Object.freeze({
+        pass: null,
+        label: 'Canonical facts',
+        detail: `Incomplete — ${unknownFacts.join(', ')} unknown. No verdict, grade, or bid is derived from missing facts.`,
+      })]),
+      repoSuggestion: '',
+    });
+  }
+
+  const trueRPM = trueRPMKnown;
+  const totalMi = totalMiKnown;
+  const deadheadPct = deadheadPctKnown;
+  const effectiveRevenue = effectiveRevenueKnown;
+  const netAfterFuel = Number(f.netAfterFuel || 0);
+  const profitMarginPct = Number(f.profitMarginPct || 0);
+  const opCPM = Number(f.opCPM || 0);
+  const fatigue = Number(f.fatigue || 0);
+  const weeklyGross = Number(f.weeklyGross || 0);
+  const floorRPM = Number(f.floorRPM || policy.normalFloorRPM);
+  const dzFloor = Number(f.dzFloor || 0);
+  const isDZActive = !!f.isDZActive;
+  const effectiveStrategic = !!f.effectiveStrategic;
+  const effectiveReason = String(f.effectiveReason || '');
+  const origin = String(f.origin || '');
+  const dest = String(f.dest || '');
+
+  // STEP 1: Geography
+  if (geo.intoDensity){
+    steps.push({ pass: true, label: 'Geography', detail: `→ ${geo.destDensity || 'known'} density (${dest})` });
+  } else if (origin && dest){
+    steps.push({ pass: false, label: 'Geography', detail: 'Out of density — rate must be strong' });
+    if (trueRPM < policy.strongRPM){ verdict = 'REJECT'; verdictReason = 'Out of density + RPM below Strong'; }
+  } else {
+    steps.push({ pass: null, label: 'Geography', detail: 'No origin/dest — skipping geo check' });
+  }
+
+  // STEP 2: True RPM + survival gate result
+  const rpmPass = isDZActive ? trueRPM >= dzFloor : trueRPM >= floorRPM;
+  steps.push({ pass: rpmPass, label: 'True RPM', detail: `$${trueRPM.toFixed(2)} — ${isDZActive ? `${f.dzSubTier || 'DZ-EXIT'} (DZ mode)` : (f.tierLabel || '')}` });
+  if (!isDZActive && trueRPM < floorRPM){
+    verdict = 'REJECT';
+    verdictReason = `Under $${floorRPM.toFixed(2)} floor`;
+  }
+  if (isDZActive){
+    verdict = 'DZ-EXIT';
+    verdictReason = `Dead Zone Exit — ${f.dzSubTier || 'DZ-EXIT'} (${Number(f.dzCheck?.distanceFromHome || 0)}mi from home)`;
+    steps.push({ pass: true, label: 'Dead Zone Exit', detail: `${Number(f.dzCheck?.distanceSaved || 0)}mi saved toward home corridor • Survival scoring active` });
+  }
+
+  // Long-haul minimum — only home/replace strategic exceptions or active DZ.
+  if (!isDZActive && totalMi > policy.longHaulMiles && trueRPM < policy.longHaulMinRPM){
+    const allowLongHaulStrategic = effectiveStrategic && (effectiveReason === 'home' || effectiveReason === 'replace');
+    if (!allowLongHaulStrategic){
+      verdict = 'REJECT';
+      verdictReason = `Long haul under $${policy.longHaulMinRPM}`;
+    }
+  }
+
+  // Explicit strategic band.
+  if (effectiveStrategic && trueRPM >= policy.strategicFloorRPM && trueRPM < policy.normalFloorRPM && verdict !== 'REJECT'){
+    verdict = 'STRATEGIC';
+    const reasonLabel = effectiveReason === 'home' ? 'Going home'
+      : effectiveReason === 'slow' ? 'Escaping slow market'
+      : effectiveReason === 'replace' ? 'Replacing deadhead'
+      : 'Strategic mode';
+    verdictReason = verdictReason || `${reasonLabel} — strategic floor active`;
+  }
+
+  if (!effectiveStrategic && trueRPM >= policy.normalFloorRPM && trueRPM < policy.preferredFloorRPM && verdict === 'ACCEPT'){
+    verdictReason = verdictReason || `Below preferred $${policy.preferredFloorRPM.toFixed(2)} floor — acceptable only if it improves position or stabilizes the week`;
+  }
+
+  // STEP 3: Profit margin
+  const fuelMarginPct = effectiveRevenue > 0 ? ((netAfterFuel / effectiveRevenue) * 100) : 0;
+  const marginPass = opCPM > 0 ? profitMarginPct >= policy.healthyTrueMarginPct : fuelMarginPct >= policy.healthyFuelMarginPct;
+  steps.push({
+    pass: marginPass,
+    label: 'Profit Margin',
+    detail: opCPM > 0
+      ? `${profitMarginPct.toFixed(0)}% true margin (after all costs)`
+      : `${fuelMarginPct.toFixed(0)}% margin (fuel only — set op cost in settings for full analysis)`,
+  });
+  if (opCPM > 0 && profitMarginPct < policy.rejectTrueMarginPct){
+    verdict = 'REJECT'; verdictReason = `True profit margin below ${policy.rejectTrueMarginPct}%`;
+  } else if (!opCPM && effectiveRevenue > 0 && fuelMarginPct < policy.rejectFuelMarginPct){
+    verdict = 'REJECT'; verdictReason = `Fuel margin below ${policy.rejectFuelMarginPct}%`;
+  }
+
+  // STEP 4: Deadhead
+  const dhPass = deadheadPct <= policy.healthyDeadheadPct;
+  steps.push({ pass: dhPass, label: 'Deadhead', detail: `${deadheadPct.toFixed(1)}% empty${deadheadPct > 30 ? ' — excessive' : deadheadPct > policy.healthyDeadheadPct ? ' — elevated' : ''}` });
+  if (deadheadPct > policy.rejectDeadheadPct && trueRPM < policy.strongRPM){
+    verdict = 'REJECT'; verdictReason = 'High deadhead + weak RPM';
+  }
+
+  // STEP 5: Weekly position
+  if (weeklyGross > 0){
+    const target = Math.max(1, Number(f.weekTargetHigh || 0));
+    if (weeklyGross < Number(f.stabilizeFloor || 0) && !!f.isMonWed){
+      const weekNote = `Below $${Number(f.stabilizeFloor || 0).toLocaleString()} by mid-week — STABILIZE`;
+      if (verdict === 'ACCEPT' && trueRPM < policy.preferredFloorRPM){
+        verdict = 'STRATEGIC'; verdictReason = 'Below preferred floor mid-week — take only if it positions into density';
+      }
+      steps.push({ pass: false, label: 'Weekly Position', detail: weekNote });
+    } else if (weeklyGross >= Number(f.surgeFloor || 0) && !!f.isMonWed){
+      steps.push({ pass: true, label: 'Weekly Position', detail: `Above $${Number(f.surgeFloor || 0).toLocaleString()} by mid-week — controlled push allowed` });
+    } else {
+      const pct = Math.min(100, Math.round((weeklyGross / target) * 100));
+      steps.push({ pass: pct >= 50, label: 'Weekly Position', detail: `$${weeklyGross.toLocaleString()} / $${target.toLocaleString()} target (${pct}%)` });
+    }
+  } else {
+    steps.push({ pass: null, label: 'Weekly Position', detail: 'No weekly gross entered' });
+  }
+
+  // STEP 6: Fatigue — safety may override economics/DZ.
+  if (fatigue > 0){
+    const fatigueOk = fatigue <= policy.fatigueOkayMax;
+    steps.push({ pass: fatigueOk, label: 'Fatigue', detail: `Level ${fatigue}/10${fatigue >= 7 ? ' — DO NOT SIGN TIRED' : fatigue >= 5 ? ' — elevated' : ''}` });
+    if (fatigue >= policy.fatigueRejectAt){ verdict = 'REJECT'; verdictReason = 'Fatigue too high — rest first'; }
+  }
+
+  // Strategic positioning check (survival DZ is handled separately).
+  if (!isDZActive && verdict === 'STRATEGIC'){
+    if (geo.intoDensity && trueRPM >= policy.normalFloorRPM){
+      verdictReason = verdictReason || 'Strategic — positions into density';
+    } else if (!geo.intoDensity){
+      verdict = 'REJECT'; verdictReason = verdictReason || 'Strategic RPM but out of density';
+    }
+  }
+
+  // STEP 7: Personal Intelligence is evidence and downgrade-only.
+  const personalBullets = Array.isArray(f.personalBullets) ? f.personalBullets : [];
+  const personalScore = Number(f.personalScore || 0);
+  if ((verdict === 'ACCEPT' || verdict === 'STRATEGIC') && personalBullets.length){
+    const negatives = personalBullets.filter(b => b?.icon === '✕').map(b => String(b?.text || '')).filter(Boolean);
+    if (personalScore <= -6){
+      steps.push({ pass: false, label: 'Personal Intelligence', detail: negatives.join(' • ') });
+      if (verdict === 'ACCEPT'){
+        verdict = 'STRATEGIC';
+        verdictReason = `Downgraded from ACCEPT — your own history disagrees: ${negatives[0] || 'negative historical signal'}`;
+      }
+    } else if (personalScore >= 6){
+      const positives = personalBullets.filter(b => b?.icon === '✓').map(b => String(b?.text || '')).filter(Boolean);
+      steps.push({ pass: true, label: 'Personal Intelligence', detail: positives.join(' • ') });
+    } else {
+      steps.push({ pass: null, label: 'Personal Intelligence', detail: 'Your history on this lane/broker is roughly neutral' });
+    }
+  }
+
+  const repoSuggestion = verdict === 'REJECT' && !geo.intoDensity
+    ? 'Consider repositioning toward: Indianapolis, Chicago, Cleveland, or St. Louis corridor.'
+    : '';
+
+  return Object.freeze({
+    policyVersion: policy.version,
+    available: true,
+    unknownFacts: Object.freeze([]),
+    verdict,
+    verdictReason,
+    steps: Object.freeze(steps.map(s => Object.freeze({ ...s }))),
+    repoSuggestion,
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   v24.1 — CONFIDENCE + EVIDENCE
+   Governing contract: docs/V24_1_CONFIDENCE_EVIDENCE_SPEC.md
+   Source map:         docs/V24_1_IMPLEMENTATION_MAP.md
+
+   Confidence is DESCRIPTIVE ONLY. Nothing in this section is read by
+   deriveUnifiedAuthority/Grade/Economics/Bid — it is attached to the canonical
+   decision after those have already run, and never fed back. That is the
+   structural guarantee behind spec rule 1 and 3: a LOW label cannot relax a
+   protective floor, because no floor ever looks at a label.
+
+   UNKNOWN / UNAVAILABLE / source failure stay visibly distinct from "no risk"
+   and from a favorable value (spec rule 6).
+   ═══════════════════════════════════════════════════════════════ */
+
+const EVIDENCE_CONFIDENCE = Object.freeze({ HIGH:'HIGH', MEDIUM:'MEDIUM', LOW:'LOW' });
+const EVIDENCE_FRESHNESS = Object.freeze({ CURRENT:'CURRENT', AGING:'AGING', STALE:'STALE', UNKNOWN:'UNKNOWN' });
+const EVIDENCE_CATEGORY = Object.freeze({
+  MARKET:'MARKET', BROKER:'BROKER', FUEL:'FUEL', WEATHER:'WEATHER',
+  SAFETY:'SAFETY', OPERATIONS:'OPERATIONS', VEHICLE:'VEHICLE', OTHER:'OTHER',
+});
+// The spec's normalization fallback. The existing LIVE_SOURCE_STATUS vocabulary
+// (which also carries STALE) is preserved as-is; UNKNOWN is only used when no
+// health record exists at all.
+const EVIDENCE_SOURCE_STATUS_UNKNOWN = 'UNKNOWN';
+
+// Centralized thresholds — the spec explicitly asks for these not to be
+// scattered as magic numbers.
+const EVIDENCE_THRESHOLDS = Object.freeze({
+  historicalCurrentDays: 14,   // CURRENT <= 14d
+  historicalAgingDays: 30,     // AGING 15-30d, STALE > 30d
+  sampleHigh: 10,              // HIGH >= 10
+  sampleMedium: 3,             // MEDIUM 3-9, LOW <= 2
+});
+
+// Source-specific freshness windows, taken from the runtime behavior the
+// implementation map documents. Applied BEFORE the generic 14/30-day
+// historical fallback, because a 30-minute weather cache is not "CURRENT for
+// 14 days".
+const EVIDENCE_SOURCE_FRESHNESS_SEC = Object.freeze({
+  EIA: 3 * 24 * 3600,   // three-day fetch throttle
+  NWS: 30 * 60,         // 30-minute route-point cache
+  FMCSA: 24 * 3600,     // 24-hour DOT cache
+  CBP: 30 * 60,         // 30-minute port cache
+});
+
+function normalizeEvidenceSourceStatus(status){
+  if (typeof status !== 'string' || !status) return EVIDENCE_SOURCE_STATUS_UNKNOWN;
+  return Object.prototype.hasOwnProperty.call(LIVE_SOURCE_STATUS, status)
+    ? status
+    : EVIDENCE_SOURCE_STATUS_UNKNOWN;
+}
+
+// A status other than OK means the fact is not independently supported by that
+// source. UNCONFIGURED and OFFLINE are honest "we never asked" states rather
+// than failures, but they are still not evidence.
+function evidenceStatusIsHealthy(status){
+  return normalizeEvidenceSourceStatus(status) === LIVE_SOURCE_STATUS.OK;
+}
+
+function classifyEvidenceFreshness(ageSeconds, sourceKey){
+  const age = knownNum(ageSeconds);
+  if (age === null || age < 0) return EVIDENCE_FRESHNESS.UNKNOWN;
+  const specific = EVIDENCE_SOURCE_FRESHNESS_SEC[sourceKey];
+  if (Number.isFinite(specific)){
+    if (age <= specific) return EVIDENCE_FRESHNESS.CURRENT;
+    if (age <= specific * 2) return EVIDENCE_FRESHNESS.AGING;
+    return EVIDENCE_FRESHNESS.STALE;
+  }
+  const days = age / 86400;
+  if (days <= EVIDENCE_THRESHOLDS.historicalCurrentDays) return EVIDENCE_FRESHNESS.CURRENT;
+  if (days <= EVIDENCE_THRESHOLDS.historicalAgingDays) return EVIDENCE_FRESHNESS.AGING;
+  return EVIDENCE_FRESHNESS.STALE;
+}
+
+function classifyEvidenceSample(sampleSize){
+  const n = knownNum(sampleSize);
+  if (n === null) return null; // not an aggregate — sample size says nothing
+  if (n >= EVIDENCE_THRESHOLDS.sampleHigh) return EVIDENCE_CONFIDENCE.HIGH;
+  if (n >= EVIDENCE_THRESHOLDS.sampleMedium) return EVIDENCE_CONFIDENCE.MEDIUM;
+  return EVIDENCE_CONFIDENCE.LOW;
+}
+
+const _EVIDENCE_RANK = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+function _worstConfidence(a, b){
+  if (!a) return b; if (!b) return a;
+  return _EVIDENCE_RANK[a] <= _EVIDENCE_RANK[b] ? a : b;
+}
+
+// Deterministic: identical inputs always produce an identical item.
+function buildEvidenceItem(spec){
+  const src = spec || {};
+  const status = normalizeEvidenceSourceStatus(src.sourceStatus);
+  const observedAt = knownNum(src.observedAt);
+  const evaluatedAt = knownNum(src.evaluatedAt);
+  const ageSeconds = (observedAt !== null && evaluatedAt !== null && evaluatedAt >= observedAt)
+    ? Math.floor((evaluatedAt - observedAt) / 1000)
+    : null;
+  const freshness = src.freshness || classifyEvidenceFreshness(ageSeconds, src.sourceKey);
+  const sampleSize = knownNum(src.sampleSize);
+  const windowDays = knownNum(src.windowDays);
+  const reasons = [];
+
+  let confidence = EVIDENCE_CONFIDENCE.HIGH;
+
+  if (!evidenceStatusIsHealthy(status)){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(status === EVIDENCE_SOURCE_STATUS_UNKNOWN
+      ? 'No source-health record — treated as unverified, not as no risk'
+      : `Source status ${status} — not independently corroborated`);
+  }
+
+  if (freshness === EVIDENCE_FRESHNESS.STALE){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Observation is stale');
+  } else if (freshness === EVIDENCE_FRESHNESS.AGING){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation is aging but within an approved window');
+  } else if (freshness === EVIDENCE_FRESHNESS.UNKNOWN && observedAt === null){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Observation age unknown');
+  }
+
+  const sampleConfidence = classifyEvidenceSample(sampleSize);
+  if (sampleConfidence){
+    confidence = _worstConfidence(confidence, sampleConfidence);
+    if (sampleConfidence === EVIDENCE_CONFIDENCE.LOW) reasons.push(`Only ${sampleSize} observation(s)`);
+    else if (sampleConfidence === EVIDENCE_CONFIDENCE.MEDIUM) reasons.push(`${sampleSize} observations — moderate sample`);
+    else reasons.push(`${sampleSize} observations`);
+  }
+
+  // Unresolved broker identity can never be HIGH, whatever the sample size.
+  if (src.identityResolved === false){
+    confidence = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('Broker identity unresolved (legacyUnkeyed) — excluded from broker confidence claims');
+  }
+
+  // Static fallback standing in for absent live evidence is never HIGH.
+  if (src.isStaticFallback === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.LOW);
+    reasons.push('Static fallback data, not a live observation');
+  }
+
+  if (src.isIndirect === true){
+    confidence = _worstConfidence(confidence, EVIDENCE_CONFIDENCE.MEDIUM);
+    reasons.push('Fact is indirect rather than directly observed');
+  }
+
+  if (!reasons.length) reasons.push('Healthy source within its freshness window');
+
+  return Object.freeze({
+    key: String(src.key || ''),
+    category: EVIDENCE_CATEGORY[src.category] || EVIDENCE_CATEGORY.OTHER,
+    source: String(src.source || ''),
+    sourceStatus: status,
+    observedAt, evaluatedAt, ageSeconds,
+    sampleSize, windowDays,
+    freshness,
+    confidence,
+    valueSummary: String(src.valueSummary || ''),
+    provenance: Object.freeze({ ...(src.provenance || {}) }),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// Reads the existing v23.9.1 registry. Deliberately NOT a second health
+// registry — the map forbids one.
+function evidenceFromLiveSource(sourceKey, spec = {}){
+  const health = (typeof LIVE_SOURCE_HEALTH !== 'undefined' && LIVE_SOURCE_HEALTH.get)
+    ? LIVE_SOURCE_HEALTH.get(sourceKey)
+    : null;
+  const evaluatedAt = knownNum(spec.evaluatedAt) ?? Date.now();
+  return buildEvidenceItem({
+    ...spec,
+    sourceKey,
+    source: spec.source || sourceKey,
+    sourceStatus: health ? health.status : EVIDENCE_SOURCE_STATUS_UNKNOWN,
+    observedAt: knownNum(spec.observedAt) ?? knownNum(health?.lastSuccess),
+    evaluatedAt,
+    provenance: {
+      ...(spec.provenance || {}),
+      // Never provenance a credential — spec: no tokens, no secrets.
+      registered: !!health,
+      lastAttempt: knownNum(health?.lastAttempt),
+    },
+  });
+}
+
+const EVIDENCE_DOMAIN_BY_CATEGORY = Object.freeze({
+  MARKET: 'market', BROKER: 'broker', FUEL: 'operatingCosts',
+  WEATHER: 'weatherSafety', SAFETY: 'weatherSafety', VEHICLE: 'vehicleFit',
+  OPERATIONS: 'operatingCosts', OTHER: null,
+});
+
+// Overall confidence must not average away a material LOW domain (spec rule 2
+// of the aggregation section). Domains with no applicable evidence are
+// UNKNOWN and are EXCLUDED rather than counted as HIGH.
+function summarizeEvidenceConfidence(items, materialDomains){
+  const list = Array.isArray(items) ? items : [];
+  const domains = { market:'UNKNOWN', broker:'UNKNOWN', operatingCosts:'UNKNOWN', weatherSafety:'UNKNOWN', vehicleFit:'UNKNOWN' };
+  const reasons = [];
+
+  for (const item of list){
+    const domain = EVIDENCE_DOMAIN_BY_CATEGORY[item.category];
+    if (!domain) continue;
+    domains[domain] = domains[domain] === 'UNKNOWN'
+      ? item.confidence
+      : _worstConfidence(domains[domain], item.confidence);
+  }
+
+  const material = Array.isArray(materialDomains) && materialDomains.length
+    ? materialDomains
+    : Object.keys(domains).filter(d => domains[d] !== 'UNKNOWN');
+
+  const considered = material.filter(d => domains[d] && domains[d] !== 'UNKNOWN');
+  let overall;
+  if (!considered.length){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push('No material evidence available — absence of evidence is not favorable evidence');
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.LOW)){
+    overall = EVIDENCE_CONFIDENCE.LOW;
+    reasons.push(`Capped at LOW by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.LOW).join(', ')}`);
+  } else if (considered.some(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM)){
+    overall = EVIDENCE_CONFIDENCE.MEDIUM;
+    reasons.push(`Limited by: ${considered.filter(d => domains[d] === EVIDENCE_CONFIDENCE.MEDIUM).join(', ')}`);
+  } else {
+    overall = EVIDENCE_CONFIDENCE.HIGH;
+    reasons.push(`All material domains healthy: ${considered.join(', ')}`);
+  }
+
+  return Object.freeze({
+    overall,
+    ...domains,
+    materialDomains: Object.freeze([...material]),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+// v24.1: normalize this evaluation's actual inputs into evidence items. Purely
+// descriptive — see the CONFIDENCE + EVIDENCE header. Anything we genuinely do
+// not have becomes an explicit UNKNOWN-status item rather than being omitted,
+// because a silently missing row reads as "nothing to worry about".
+function buildEvaluationEvidence(ctx = {}){
+  const items = [];
+  const now = Date.now();
+  const fuelPrice = Number(ctx.economicsResult?.fuelPrice ?? 0).toFixed(2);
+
+  // ── Fuel price ────────────────────────────────────────────────────────────
+  // Issue #119 Batch A, item 7: provenance is about ORIGIN, not coincidence.
+  // This used to claim EIA whenever an EIA health record merely EXISTED — so a
+  // price the driver typed by hand was attributed to EIA, and doubly so when
+  // the two numbers happened to be equal. The recorded provenance now decides.
+  const fuelProv = ctx.fuelProvenance || null;
+  if (fuelProv?.source === 'EIA'){
+    items.push(evidenceFromLiveSource('EIA', {
+      key: 'fuel.price', category: 'FUEL', evaluatedAt: now,
+      // The EIA observation's OWN period, not when we stored it.
+      observedAt: fuelProv.observedAt,
+      valueSummary: `Fuel $${fuelPrice}/gal (EIA observation)`,
+    }));
+  } else if (fuelProv?.source === 'OPERATOR'){
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (driver)',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      // When the operator set it — a real, known observation instant.
+      observedAt: fuelProv.at,
+      valueSummary: `Fuel $${fuelPrice}/gal (your setting)`,
+    }));
+  } else {
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
+      sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+      isStaticFallback: true,
+      valueSummary: `Fuel $${fuelPrice}/gal (static baseline)`,
+    }));
+  }
+
+  // ── Personal lane history ─────────────────────────────────────────────────
+  // Read from the ACTUAL laneHistory record the evaluator fetched, not from
+  // fields the USA engine never returned (`laneSampleSize`/`laneLastSeenAt`
+  // did not exist, so every evaluation reported an unknown sample).
+  const laneIntel = ctx.laneIntel || null;
+  const laneSample = knownNum(laneIntel?.count);
+  items.push(buildEvidenceItem({
+    key: 'market.laneHistory', category: 'MARKET', source: 'laneHistory',
+    sourceStatus: laneSample === null ? EVIDENCE_SOURCE_STATUS_UNKNOWN : LIVE_SOURCE_STATUS.OK,
+    sampleSize: laneSample, windowDays: 90, evaluatedAt: now,
+    // The lane's own last-run date is its observation instant. Unknown stays
+    // unknown — it is never backfilled with "now".
+    observedAt: _evidenceInstantMs(laneIntel?.lastDate),
+    valueSummary: laneSample === null
+      ? 'No personal lane history for this corridor'
+      : `${laneSample} personal observation(s) on this lane`,
+  }));
+
+  // ── Broker history ────────────────────────────────────────────────────────
+  // With no broker entered there is no broker DOMAIN to be confident or
+  // unconfident about. Emitting an UNKNOWN-status row made the broker domain
+  // material and capped overall confidence at LOW — a synthetic penalty for a
+  // question nobody asked. An inapplicable domain is omitted so it stays
+  // UNKNOWN and is excluded from the aggregate; a FAILED observation, by
+  // contrast, is still emitted (see weather below).
+  const brokerName = String(ctx.broker || '').trim();
+  if (brokerName){
+    const bi = ctx.brokerIntel || null;
+    items.push(buildEvidenceItem({
+      key: 'broker.history', category: 'BROKER', source: 'bidHistory',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      sampleSize: knownNum(bi?.sampleSize),
+      observedAt: knownNum(bi?.lastSeenAt),
+      // Never infer identity from an ambiguous customer field; an unresolved
+      // (legacyUnkeyed) identity can never be HIGH whatever the sample size.
+      identityResolved: bi?.identityResolved === false ? false : undefined,
+      evaluatedAt: now,
+      valueSummary: knownNum(bi?.sampleSize) === null
+        ? `No recorded history with ${brokerName}`
+        : `${bi.sampleSize} recorded interaction(s) with ${brokerName}`,
+    }));
+  }
+
+  // ── Route weather ─────────────────────────────────────────────────────────
+  // A successful route observation reporting ZERO alerts is a real fact and
+  // must read as one. No fetch, an offline device, a timeout or an HTTP error
+  // is an ABSENCE and must never render as "0 alerts". Both cases are emitted,
+  // because a failed observation is exactly the thing a silent omission would
+  // disguise as "nothing to worry about".
+  const wx = ctx.weatherObservation || null;
+  if (wx && wx.observed){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: wx.observedAt, evaluatedAt: now,
+      // Deliberately NO sampleSize: the number of route POINTS answered is not
+      // an aggregate sample of observations, and running it through the
+      // sample-size rule (HIGH >=10) would score a perfectly healthy two-point
+      // route observation as LOW purely because a route has two ends.
+      // A partially observed route is a real but incomplete observation.
+      isIndirect: wx.partial === true ? true : undefined,
+      valueSummary: wx.alertCount === 0
+        ? `No active NWS alerts on ${wx.pointsObserved} route point(s)`
+        : `${wx.alertCount} active NWS alert(s) on route`,
+    }));
+  } else if (wx){
+    items.push(buildEvidenceItem({
+      key: 'weather.route', category: 'WEATHER', source: 'NWS', sourceKey: 'NWS',
+      sourceStatus: wx.status === 'NO_ROUTE_POINTS' ? EVIDENCE_SOURCE_STATUS_UNKNOWN : wx.status,
+      observedAt: null, evaluatedAt: now,
+      valueSummary: 'Route weather NOT observed — this is unknown, not "no alerts"',
+    }));
+  }
+
+  // ── Vehicle fit ───────────────────────────────────────────────────────────
+  // `vanFitChecked: true` was hardcoded at the call site, so this claimed a
+  // completed dimensional check on every load — including the common case
+  // where the posting carried no dimensions at all. With nothing measured
+  // there is no vehicleFit domain, so nothing is emitted.
+  const fit = ctx.vanFit || null;
+  if (fit && fit.checked){
+    const known = Number(fit.knownDims || 0);
+    items.push(buildEvidenceItem({
+      key: 'vehicle.fit', category: 'VEHICLE', source: 'checkVanFit + vanProfile',
+      sourceStatus: LIVE_SOURCE_STATUS.OK,
+      observedAt: now, evaluatedAt: now,
+      // A partial measurement cannot support a full-confidence fit claim. It
+      // does NOT soften a hard rejection: a load that violated a limit never
+      // reaches here — mwEvaluateLoad returns before economics.
+      isIndirect: fit.complete === true ? undefined : true,
+      valueSummary: fit.complete
+        ? `Fits the configured van profile on all 4 measured limits`
+        : `Fits on the ${known} dimension(s) actually supplied — the rest are unmeasured`,
+    }));
+  }
+
+  return Object.freeze(items);
+}
+
+// v24.1 minimum UI. One compact line plus an on-demand evidence list. The
+// spec defers the visual overhaul to v24.5 and asks only that confidence be
+// inspectable — and that "no data", "bad data" and "source unavailable" stay
+// visually distinct. No percentage is ever shown: v24.1 has no calibrated odds.
+function _renderConfidenceLine(decision){
+  const c = decision?.confidence;
+  if (!c) return '';
+  const color = c.overall === 'HIGH' ? 'var(--good)' : c.overall === 'MEDIUM' ? 'var(--warn)' : 'var(--bad)';
+  const items = Array.isArray(decision.evidence) ? decision.evidence : [];
+  const rows = items.map(e => {
+    const badge = e.sourceStatus === 'OK' ? '' : ` · ${escapeHtml(e.sourceStatus)}`;
+    const fresh = e.freshness && e.freshness !== 'UNKNOWN' ? ` · ${escapeHtml(e.freshness)}` : '';
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--text-secondary)">${escapeHtml(e.valueSummary || e.key)}</span>
+      <span style="white-space:nowrap;color:var(--text-tertiary)">${escapeHtml(e.confidence)}${fresh}${badge}</span>
+    </div>`;
+  }).join('');
+  return `<details style="margin-top:8px;text-align:left">
+    <summary style="font-size:11px;color:${color};cursor:pointer;list-style:none">
+      Confidence: <b>${escapeHtml(c.overall)}</b>${c.reasons?.[0] ? ` — ${escapeHtml(c.reasons[0])}` : ''}
+    </summary>
+    <div style="margin-top:6px;font-size:10px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
+    <div style="font-size:9px;color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
+  </details>`;
+}
+
+function buildUnifiedDecisionContract(input){
+  if (!input?.authorityResult?.verdict) throw new Error('Canonical authorityResult is required');
+  if (!input?.economicsResult) throw new Error('Canonical economicsResult is required');
+  if (!input?.bidResult) throw new Error('Canonical bidResult is required');
+  const authorityResult = input.authorityResult;
+  const economics = Object.freeze({ ...input.economicsResult });
+  const bid = Object.freeze({ ...input.bidResult });
+  const deadZone = Object.freeze({
+    active: !!input.isDZActive, eligible: !!input.isDZEligible,
+    subTier: input.dzSubTier || null, check: input.dzCheck || null,
+    floorRPM: input.dzFloor, noReloadConfirmed: !!input.noReloadConfirmed,
+  });
+  const grades = deriveUnifiedGrade(economics.trueRPM, { isDZActive: deadZone.active, dzSubTier: deadZone.subTier });
+  // M1: incomplete canonical facts cannot produce a normal authoritative
+  // payload. The contract records exactly which facts were missing so a caller
+  // can say so, rather than rendering a confident verdict over holes.
+  const unknownFacts = Object.freeze([...new Set([
+    ...(economics.unknownFacts || []),
+    ...(authorityResult.unknownFacts || []),
+  ])]);
+  const factsComplete = economics.available !== false
+    && authorityResult.available !== false
+    && unknownFacts.length === 0;
+  const authority = Object.freeze({
+    source: 'CLIENT_UNIFIED_DECISION_ENGINE',
+    policyVersion: authorityResult.policyVersion || UNIFIED_DECISION_POLICY.version,
+    factsComplete,
+    unknownFacts,
+    verdict: authorityResult.verdict,
+    reason: authorityResult.verdictReason || '',
+    grade: grades.display.grade,
+    gradeLabel: grades.display.gradeLabel,
+    gradeColor: grades.display.gradeColor,
+    gradeEmoji: grades.display.gradeEmoji,
+    rawGrade: grades.raw.grade,
+    rawGradeLabel: grades.raw.gradeLabel,
+    rawGradeColor: grades.raw.gradeColor,
+    rawGradeEmoji: grades.raw.gradeEmoji,
+    tier: input.tier,
+    floorRPM: input.floorRPM,
+  });
+  const usaEvidence = input.usaResult ? Object.freeze({ ...input.usaResult, authorityRole: 'EVIDENCE_ONLY' }) : null;
+
+  // v24.1 evidence assembly. A caller may supply pre-built items (tests, or a
+  // future intake path); otherwise we normalize from what this evaluation
+  // actually had. Nothing here can fail the decision — evidence is commentary.
+  const evidenceItems = Object.freeze(
+    Array.isArray(input.evidenceItems) ? input.evidenceItems.map(i => Object.freeze({ ...i })) : []
+  );
+  const confidence = summarizeEvidenceConfidence(evidenceItems, input.materialEvidenceDomains);
+  const decision = {
+    schemaVersion: UNIFIED_DECISION_SCHEMA_VERSION,
+    factsComplete,
+    unknownFacts,
+    mileageProvenance: economics.mileageProvenance || null,
+    authority,
+    economics,
+    route: Object.freeze({ origin: input.origin || '', destination: input.dest || '', geo: input.geo || null }),
+    market: Object.freeze({ usaEvidence, crossBorder: input.crossBorder || null, urgency: input.urgency || null }),
+    personalIntel: Object.freeze({
+      score: Number(input.usaResult?.personalScore || 0),
+      bullets: Array.isArray(input.usaResult?.personalBullets) ? input.usaResult.personalBullets.slice() : [],
+    }),
+    risk: Object.freeze({
+      steps: Array.isArray(authorityResult.steps) ? authorityResult.steps.slice() : [],
+      warnings: Array.isArray(input.warnings) ? input.warnings.slice() : [],
+    }),
+    bid: factsComplete ? bid : Object.freeze({ ...bid, range: null, suppressed: true, suppressedReason: 'Incomplete canonical facts' }),
+    // v24.1: additive and descriptive only. Computed AFTER authority/grade/
+    // economics/bid have already been decided above, and never read back into
+    // them — that ordering is what makes "confidence cannot relax a floor"
+    // structural rather than a promise.
+    evidence: evidenceItems,
+    confidence,
+    operations: Object.freeze({
+      velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
+      velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
+      postDeliveryDetail: input.postDeliveryDetail, turnoverType: input.turnoverType,
+      repoSuggestion: authorityResult.repoSuggestion || '',
+    }),
+    context: Object.freeze({
+      weeklyGross: input.weeklyGross, fatigue: input.fatigue,
+      effectiveStrategic: !!input.effectiveStrategic, effectiveReason: input.effectiveReason || '',
+      verdictColors: input.verdictColors, verdictLabels: input.verdictLabels,
+    }),
+    deadZone,
+  };
+  return Object.freeze(decision);
+}
+
+function unifiedDecisionToLegacy(decision){
+  const a = decision.authority, e = decision.economics, r = decision.route;
+  const m = decision.market, o = decision.operations, c = decision.context, dz = decision.deadZone;
+  return {
+    trueRPM:e.trueRPM, loadedRPM:e.loadedRPM, totalMi:e.totalMi, loadedMi:e.loadedMi, deadMi:e.deadMi,
+    deadheadPct:e.deadheadPct, revenue:e.revenue, effectiveRevenue:e.effectiveRevenue,
+    tier:a.tier,
+    grade:a.rawGrade, gradeLabel:a.rawGradeLabel, gradeColor:a.rawGradeColor, gradeEmoji:a.rawGradeEmoji,
+    verdict:a.verdict, verdictReason:a.reason, verdictColors:c.verdictColors, verdictLabels:c.verdictLabels,
+    steps:decision.risk.steps,
+    fuel:e.fuel, netAfterFuel:e.netAfterFuel, operatingCost:e.operatingCost, totalCost:e.totalCost,
+    operationalProfit:e.operationalProfit, trueProfit:e.trueProfit, profitMarginPct:e.profitMarginPct,
+    breakEvenRPM:e.breakEvenRPM, profitPerMile:e.profitPerMile, profitPerHour:e.profitPerHour,
+    fuelPerMile:e.fuelPerMile, estHours:e.estHours, opCPM:e.opCPM,
+    weeklyGross:c.weeklyGross, repoSuggestion:o.repoSuggestion, geo:r.geo, fatigue:c.fatigue,
+    origin:r.origin, dest:r.destination, floorRPM:a.floorRPM,
+    effectiveStrategic:c.effectiveStrategic, effectiveReason:c.effectiveReason,
+    usaResult:m.usaEvidence, urgency:m.urgency, bidRange:decision.bid.range, crossBorder:m.crossBorder,
+    velocityMode:o.velocityMode, velocityDetail:o.velocityDetail, velocityFloor:o.velocityFloor,
+    postDeliveryCmd:o.postDeliveryCmd, postDeliveryDetail:o.postDeliveryDetail,
+    turnoverType:o.turnoverType, warnings:decision.risk.warnings,
+    isDZActive:dz.active, isDZEligible:dz.eligible, dzSubTier:dz.subTier, dzCheck:dz.check, dzFloor:dz.floorRPM,
+    dzDisplayGrade:a.grade, dzDisplayGradeLabel:a.gradeLabel, dzDisplayGradeColor:a.gradeColor, dzDisplayGradeEmoji:a.gradeEmoji,
+    noReloadConfirmed:dz.noReloadConfirmed,
+    _canonicalDecision: decision,
+  };
+}
+
+function unifiedDecisionForAI(decision){
+  if (!decision) return null;
+  return {
+    schemaVersion: decision.schemaVersion,
+    // Issue #119 Batch A, item 6: absence must be VISIBLE to the reviewer. The
+    // projection previously omitted these, so a Worker receiving an UNAVAILABLE
+    // decision saw only null numbers and had nothing telling it that the client
+    // deliberately declined to decide.
+    factsComplete: decision.factsComplete,
+    unknownFacts: Array.isArray(decision.unknownFacts) ? decision.unknownFacts.slice(0, 8) : [],
+    authority: {
+      source: decision.authority.source,
+      verdict: decision.authority.verdict,
+      reason: decision.authority.reason,
+      grade: decision.authority.grade,
+      gradeLabel: decision.authority.gradeLabel,
+      floorRPM: decision.authority.floorRPM,
+    },
+    economics: {
+      available: decision.economics.available,
+      trueRPM: decision.economics.trueRPM,
+      loadedRPM: decision.economics.loadedRPM,
+      totalMi: decision.economics.totalMi,
+      deadMi: decision.economics.deadMi,
+      profitMarginPct: decision.economics.profitMarginPct,
+      breakEvenRPM: decision.economics.breakEvenRPM,
+    },
+    bid: {
+      authority: decision.bid.authority,
+      basis: decision.bid.basis,
+      suppressed: decision.bid.suppressed === true,
+      range: decision.bid.range,
+    },
+    route: decision.route,
+    personalIntel: { score: decision.personalIntel.score },
+    risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
+    deadZone: { active: decision.deadZone.active, subTier: decision.deadZone.subTier },
+    // v24.1: the Worker receives the client's ALREADY-COMPUTED labels so it can
+    // explain or challenge them. It is deliberately not given the raw inputs a
+    // competing confidence model would need, and its reply can never write back
+    // here — same boundary the verdict/grade projection already has.
+    confidence: {
+      authority: 'CLIENT_OWNED',
+      overall: decision.confidence.overall,
+      market: decision.confidence.market,
+      broker: decision.confidence.broker,
+      operatingCosts: decision.confidence.operatingCosts,
+      weatherSafety: decision.confidence.weatherSafety,
+      vehicleFit: decision.confidence.vehicleFit,
+      reasons: decision.confidence.reasons.slice(0, 4),
+    },
+    evidence: decision.evidence.slice(0, 8).map(e => ({
+      key: e.key, category: e.category, source: e.source,
+      sourceStatus: e.sourceStatus, freshness: e.freshness,
+      confidence: e.confidence, sampleSize: e.sampleSize,
+      valueSummary: e.valueSummary,
+    })),
+  };
+}
+
+// ================================================================================
+// 7D — Dimensional/payload pre-check (v24.0.0)
+// Configurable van profile; any load exceeding it fails BEFORE economics are
+// evaluated. Runs on every intake path (Smart Load Inbox, F27 Load Intake,
+// OCR quick-scan, manual entry) because all of them funnel into the same
+// evaluator fields and mwEvaluateLoad() — see the guard at its very start.
+// ================================================================================
+
+/** Operator-confirmed figures for THIS van, not published brochure specs.
+ *
+ *  v24.0.4 item 7: `cargoLengthIn` was 130, taken from published 2016 Ford
+ *  Transit T250 148" WB copy. `docs/OPERATOR_TRUTH.md` records an
+ *  OPERATOR_CORRECTION dated 2026-08-20: "Usable cargo-floor length is a hard
+ *  121-inch limit in the operator's actual van configuration. Freight measuring
+ *  176 in long was rejected on fit." A 2026-06-19 statement records a 144 in
+ *  load already rejected, consistent with the same limit.
+ *
+ *  The gap was not cosmetic: with 130 in force, every load between 122 in and
+ *  130 in scored as FITTING and went on to a full grade/verdict/bid, for freight
+ *  this van physically cannot carry. Fail-closed means the default must be the
+ *  confirmed usable figure, not the brochure one.
+ *
+ *  Still editable in Settings → Van Profile; an explicit operator override wins
+ *  and carries its own provenance. Never hardcoded elsewhere. */
+// 2016 Ford Transit-250 148" — reconciled against the operator's own measured
+// figures, not published copy. Published spec has been wrong here twice: the
+// cargo length was 130 until a 176" load was refused at pickup (v24.0.4 item 7,
+// OPERATOR_CORRECTION 2026-08-20), and the two corrections below come from the
+// same source. A number this file gets wrong does not fail loudly — it quietly
+// lets the evaluator grade and bid freight the van cannot physically carry.
+const VAN_PROFILE_DEFAULT = Object.freeze({
+  cargoLengthIn: 121,
+  cargoWidthIn: 65,
+  // The floor-level pinch between the rear wheel housings, operator-measured at
+  // 54.8". Anything resting on the floor — which is all palletized freight — has
+  // to clear this, and it is narrower than both the box and the door, so it is
+  // usually the constraint that actually binds. It had no field at all before,
+  // so a 55-65" load cleared every check and still could not be loaded.
+  // Kept separate from cargoWidthIn rather than overwriting it: the box really
+  // is wider above the wheel housings, and collapsing two distinct facts into
+  // one number is the failure mode this codebase already rejects for
+  // loaded/deadhead miles and quoted/awarded rates.
+  wheelWellWidthIn: 54.8,
+  cargoHeightIn: 56,
+  doorWidthIn: 60,
+  doorHeightIn: 52,
+  // Operator's practical operating limit. The door sticker reads 3,598 lbs and
+  // the heaviest single pallet actually carried was 2,700. The previous default
+  // of 3,800 was above even the sticker, so the pre-check would clear a load
+  // that is both beyond the operator's working limit and over the manufacturer
+  // rating. Configurable in Settings -> Van Profile for a different vehicle.
+  payloadLbs: 3000,
+});
+
+async function getVanProfile(){
+  const stored = await getSetting('vanProfile', null);
+  return { ...VAN_PROFILE_DEFAULT, ...(stored && typeof stored === 'object' ? stored : {}) };
+}
+
+/** Pure gate: does this load's dimensions/weight fit the configured van?
+ *  Only checks dimensions the caller actually supplied — a load posting with
+ *  no dimension data at all is not blocked (most postings don't include
+ *  cargo dimensions; this is a safety net for when they do, not a
+ *  requirement that every load specify them). Weight alone (no L/W/H) is
+ *  still checked against payload. Cargo-box fit uses length/width directly;
+ *  height is checked against BOTH the cargo box height and the door opening
+ *  height (a load can fit inside the box but be too tall to load through the
+ *  door) — same logic for width vs. door width.
+ *  Returns { fits, violations: [{ field, loadValue, limit, limitLabel }] }. */
+function checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, profile){
+  const violations = [];
+  const L = finiteNum(lengthIn, null), W = finiteNum(widthIn, null), H = finiteNum(heightIn, null), WT = finiteNum(weightLbs, null);
+  if (L !== null && L > profile.cargoLengthIn){
+    violations.push({ field: 'length', loadValue: L, limit: profile.cargoLengthIn, limitLabel: `cargo length ${profile.cargoLengthIn}"` });
+  }
+  if (W !== null){
+    // Width has three independent limits and the load must clear ALL of them:
+    // the box interior, the rear door opening, and the floor-level pinch between
+    // the wheel housings. Report whichever one actually BINDS — the narrowest
+    // limit the load exceeds — so the operator is told the real obstacle rather
+    // than whichever happened to be tested first. `wheelWellWidthIn` is filtered
+    // out when absent so a vanProfile saved before this field existed still
+    // evaluates correctly instead of comparing against undefined.
+    const widthLimits = [
+      { limit: profile.wheelWellWidthIn, label: `width between wheel wells ${profile.wheelWellWidthIn}"` },
+      { limit: profile.doorWidthIn,      label: `door opening width ${profile.doorWidthIn}"` },
+      { limit: profile.cargoWidthIn,     label: `cargo width ${profile.cargoWidthIn}"` },
+    ].filter(x => finiteNum(x.limit, null) !== null);
+    const binding = widthLimits.filter(x => W > x.limit).sort((a, b) => a.limit - b.limit)[0];
+    if (binding) violations.push({ field: 'width', loadValue: W, limit: binding.limit, limitLabel: binding.label });
+  }
+  if (H !== null){
+    if (H > profile.cargoHeightIn) violations.push({ field: 'height', loadValue: H, limit: profile.cargoHeightIn, limitLabel: `cargo height ${profile.cargoHeightIn}"` });
+    else if (H > profile.doorHeightIn) violations.push({ field: 'height', loadValue: H, limit: profile.doorHeightIn, limitLabel: `door opening height ${profile.doorHeightIn}"` });
+  }
+  if (WT !== null && WT > profile.payloadLbs){
+    violations.push({ field: 'weight', loadValue: WT, limit: profile.payloadLbs, limitLabel: `payload ${profile.payloadLbs.toLocaleString()} lbs` });
+  }
+  return { fits: violations.length === 0, violations };
+}
+
+/** Renders the blocking "CAN'T TAKE" card in place of the normal evaluator
+ *  result — called by mwEvaluateLoad() before any economics computation
+ *  when checkVanFit() fails. */
+function _renderVanFitBlock(out, violations){
+  const rows = violations.map(v =>
+    `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border-subtle)">
+      <span style="text-transform:capitalize">${escapeHtml(v.field)}</span>
+      <span><b style="color:var(--bad)">${v.loadValue}${v.field === 'weight' ? ' lbs' : '"'}</b> exceeds ${escapeHtml(v.limitLabel)}</span>
+    </div>`
+  ).join('');
+  out.innerHTML = `
+    <div class="fl-eval-hero" style="text-align:center;padding:20px 0">
+      <div class="fl-eval-grade" style="color:var(--bad);font-size:40px;font-weight:800">✕</div>
+      <div style="font-size:18px;font-weight:800;color:var(--bad);margin-top:4px">CAN'T TAKE — dimensional/payload conflict</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">This load exceeds your configured van profile. Economics were not evaluated.</div>
+    </div>
+    <div style="margin-top:8px">${rows}</div>
+    <div class="muted" style="font-size:11px;margin-top:10px">Update your van's real dimensions any time in Settings → Van Profile.</div>`;
+}
+
+/* ── Physical-pickup feasibility (v24.0.9) ───────────────────────────────────
+ *
+ * A load you cannot physically reach before its pickup cutoff is not a pricing
+ * question. Until now the evaluator had no notion of time at all: it would
+ * grade, price and recommend a bid on a load whose pickup had already closed,
+ * or that sat further away in deadhead than the remaining window allowed. The
+ * 2026-09-12 operator dataset contained a real instance — a 225-mile deadhead
+ * against a 19:00 cutoff — and nothing in the app detected it.
+ *
+ * This gate mirrors 7D `checkVanFit()` exactly: it runs BEFORE any economics,
+ * blocks with "CAN'T TAKE" when the load is impossible, and is otherwise
+ * silent. A load with no cutoff entered is not blocked — most postings do not
+ * state one, and this is a safety net, not a requirement.
+ *
+ * WHY THERE IS NO DEFAULT SPEED. Converting deadhead miles into drive time
+ * needs an average speed, and that is an operator fact this repository has no
+ * authority to invent. `VAN_PROFILE_DEFAULT` is the cautionary precedent: its
+ * published-brochure cargo length was wrong by nine inches against the
+ * operator's own measurement, and every load between 122" and 130" scored as
+ * fitting for freight the van could not carry. A guessed speed would fail the
+ * same way, except it would REJECT loads the driver could actually make.
+ *
+ * So `settings['planningAvgMph']` has no default and the gate is inert until
+ * the operator supplies it — the same shape as the EIA feed, which returns
+ * null early without `settings['eiaApiKey']` rather than inventing a fuel
+ * price. Unset is reported as UNSET, never as "reachable" and never as a
+ * speed of zero. */
+const PICKUP_FEASIBILITY = Object.freeze({
+  UNSET: 'PLANNING_SPEED_UNSET',
+  NO_CUTOFF: 'NO_CUTOFF_SUPPLIED',
+  DEADHEAD_UNKNOWN: 'DEADHEAD_UNKNOWN',
+  CUTOFF_UNPARSEABLE: 'CUTOFF_UNPARSEABLE',
+  NO_CLOCK: 'NO_CLOCK',
+  // Sanity bounds on the operator-supplied figure. These reject a typo, they
+  // do NOT substitute a value: outside the range the gate goes inert (UNSET)
+  // rather than silently clamping to a number the operator never chose.
+  MIN_MPH: 5,
+  MAX_MPH: 85,
+  // Slack below which a reachable pickup is still reported as tight. Advisory
+  // only — it never blocks and never touches verdict, grade or bid.
+  TIGHT_SLACK_MIN: 30,
+});
+
+/** The operator's own planning average speed, or null when they have not set
+ *  one. Never falls back to a constant — see the note above. */
+async function getPlanningAvgMph(){
+  const raw = knownNum(await getSetting('planningAvgMph', null));
+  if (raw === null) return null;
+  if (raw < PICKUP_FEASIBILITY.MIN_MPH || raw > PICKUP_FEASIBILITY.MAX_MPH) return null;
+  return raw;
+}
+
+/** Pure. Can the driver physically reach this pickup before it closes?
+ *
+ *  Returns `{ applicable:false, reason }` whenever any material fact is
+ *  missing — an inapplicable check is never reported as a pass. When it does
+ *  apply, `reachable` is the answer and `tight` flags a reachable-but-narrow
+ *  window for advisory use only.
+ *
+ *  A deadhead of exactly 0 is a VERIFIED zero (the driver is already at the
+ *  pickup), so it yields zero drive time and stays applicable — distinguishing
+ *  that from an unstated deadhead is the same M1/knownNum doctrine the
+ *  canonical decision layer follows. */
+function checkPickupFeasibility({ deadheadMi, cutoffMs, nowMs, planningMph }){
+  const mph = knownNum(planningMph);
+  if (mph === null || mph < PICKUP_FEASIBILITY.MIN_MPH || mph > PICKUP_FEASIBILITY.MAX_MPH){
+    return { applicable: false, reason: PICKUP_FEASIBILITY.UNSET };
+  }
+  // knownNum() already rejects NaN/Infinity, so an absent, blank or unparseable
+  // cutoff all arrive here as null. CUTOFF_UNPARSEABLE is reported by the CALLER,
+  // which is the only layer that can tell a malformed entry from an empty field.
+  const cutoff = knownNum(cutoffMs);
+  if (cutoff === null) return { applicable: false, reason: PICKUP_FEASIBILITY.NO_CUTOFF };
+  const dh = knownNum(deadheadMi);
+  if (dh === null || dh < 0) return { applicable: false, reason: PICKUP_FEASIBILITY.DEADHEAD_UNKNOWN };
+  const now = knownNum(nowMs);
+  if (now === null) return { applicable: false, reason: PICKUP_FEASIBILITY.NO_CLOCK };
+
+  const driveMinutes = (dh / mph) * 60;
+  const availableMinutes = (cutoff - now) / 60000;
+  const slackMinutes = availableMinutes - driveMinutes;
+  return {
+    applicable: true,
+    reachable: slackMinutes >= 0,
+    tight: slackMinutes >= 0 && slackMinutes < PICKUP_FEASIBILITY.TIGHT_SLACK_MIN,
+    driveMinutes, availableMinutes, slackMinutes,
+    deadheadMi: dh, planningMph: mph,
+    cutoffPassed: availableMinutes < 0,
+  };
+}
+
+function _fmtMinutes(mins){
+  const m = Math.max(0, Math.round(Math.abs(mins)));
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+
+/** Renders the blocking "CAN'T TAKE" card for an unreachable pickup, in place
+ *  of the normal evaluator result — called before any economics computation.
+ *  Every number that produced the verdict is shown, including the operator's
+ *  own planning speed, so the block is never a mystery the driver has to
+ *  argue with. */
+function _renderPickupBlock(out, r){
+  const rows = [
+    ['Deadhead to pickup', `${r.deadheadMi} mi`],
+    ['At your planning speed', `${r.planningMph} mph`],
+    ['Drive time needed', _fmtMinutes(r.driveMinutes)],
+    [r.cutoffPassed ? 'Cutoff passed' : 'Time until cutoff',
+      r.cutoffPassed ? _fmtMinutes(r.availableMinutes) + ' ago' : _fmtMinutes(r.availableMinutes)],
+    ['Short by', _fmtMinutes(r.slackMinutes)],
+  ].map(([k, v]) =>
+    `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border-subtle)">
+      <span>${escapeHtml(k)}</span><span><b>${escapeHtml(String(v))}</b></span>
+    </div>`).join('');
+  out.innerHTML = `
+    <div class="fl-eval-hero" style="text-align:center;padding:20px 0">
+      <div class="fl-eval-grade" style="color:var(--bad);font-size:40px;font-weight:800">✕</div>
+      <div style="font-size:18px;font-weight:800;color:var(--bad);margin-top:4px">CAN'T TAKE — cannot reach the pickup in time</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${r.cutoffPassed ? 'The pickup window has already closed.' : 'The deadhead does not fit the remaining window.'} Economics were not evaluated.</div>
+    </div>
+    <div style="margin-top:8px">${rows}</div>
+    <div class="muted" style="font-size:11px;margin-top:10px">Based on the planning average speed you set in Settings → Trip Planning. Clear the pickup cutoff field to score this load on economics alone.</div>`;
+}
+
+async function mwIsGoingHome(dest) {
+  const home = await getSetting('homeLocation', '');
+  if (!home) return false;
+  const homeParts = home.toLowerCase().split(',').map(s => s.trim());
+  const destLower = dest.toLowerCase();
+  return homeParts.some(part => destLower.includes(part) && part.length > 2);
+}
+
+async function mwEvaluateLoad(){
+  const origin = ($('#mwOrigin')?.value || '').trim();
+  const dest = ($('#mwDest')?.value || '').trim();
+  const broker = ($('#mwBroker')?.value || '').trim();
+  const loadedMi = knownNum($('#mwLoadedMi')?.value);
+  // M1: a blank deadhead field used to become a confident 0, which inflated
+  // True RPM and produced a grade the driver never supplied the inputs for.
+  // Blank now means UNKNOWN; an explicitly entered 0 is a verified zero.
+  const deadMiRaw = ($('#mwDeadMi')?.value ?? '').trim();
+  const deadMiKnown = knownNum(deadMiRaw);
+  const deadMi = deadMiKnown;
+  const revenue = Math.max(0, numVal('mwRevenue', 0));
+  const revenueCurrency = $('#mwCurrency')?.value || 'USD';
+  const dayOfWeek = $('#mwDayOfWeek')?.value || 'mon';
+  const fatigue = Math.min(10, Math.max(0, numVal('mwFatigue', 0)));
+  const weeklyGross = Math.max(0, numVal('mwWeeklyGross', 0));
+  const strategicEnabled = !!$('#mwStrategic')?.checked;
+  const loadNotes = ($('#mwLoadNotes')?.value || '').trim();
+  const urgency = detectUrgency(loadNotes);
+  const strategicReason = ($('#mwStrategicReason')?.value || '').trim();
+
+  const out = $('#mwEvalOutput');
+  if (!out) return;
+  // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
+  const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
+  if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
+  // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
+  // True RPM, so the evaluator asks for it instead of assuming zero. Entering
+  // 0 is one keystroke and records a verified zero.
+  if (deadMi === null || deadMi < 0 || deadMi > 300000){
+    out.innerHTML = '<div class="muted" style="font-size:13px">Enter deadhead miles — type <b>0</b> if you are already at the pickup.<br><span style="font-size:11px">Leaving it blank used to be treated as zero deadhead, which overstated True RPM.</span></div>';
+    return;
+  }
+  if (strategicEnabled && !strategicReason){
+    toast('Select a Strategic Reason (home / slow market / replace deadhead).', true);
+    return;
+  }
+
+  // 7D: dimensional/payload pre-check — runs BEFORE any economics, on every
+  // intake path (they all funnel into these same fields). Only checks
+  // dimensions actually entered; most load postings have none, and this is
+  // a safety net, not a requirement.
+  // Issue #119 Batch A, item 7: the outcome is retained so evidence can report
+  // the MEASUREMENT STATE that actually applied — checked or not, complete or
+  // partial — instead of the hardcoded `vanFitChecked: true` that claimed a
+  // completed dimensional check on every load, dimensions or not.
+  let vanFitState = { checked: false, complete: false, knownDims: 0, fits: null };
+  {
+    const lengthIn = numVal('mwLoadLengthIn', NaN);
+    const widthIn = numVal('mwLoadWidthIn', NaN);
+    const heightIn = numVal('mwLoadHeightIn', NaN);
+    const weightLbs = numVal('mwLoadWeightLbs', NaN);
+    const dims = [lengthIn, widthIn, heightIn, weightLbs];
+    const knownDims = dims.filter(v => Number.isFinite(v) && v > 0).length;
+    if (knownDims > 0){
+      const vanProfile = await getVanProfile();
+      const fit = checkVanFit({ lengthIn, widthIn, heightIn, weightLbs }, vanProfile);
+      vanFitState = { checked: true, complete: knownDims === dims.length, knownDims, fits: fit.fits };
+      if (!fit.fits){
+        _renderVanFitBlock(out, fit.violations);
+        return;
+      }
+    }
+  }
+
+  // v24.0.9: physical-pickup feasibility — runs immediately after the 7D
+  // dimensional gate and BEFORE any economics, for the same reason: a load the
+  // driver cannot physically reach is not a pricing question, and grading it
+  // produces a confident bid on freight that cannot be served. Inert unless the
+  // operator has set their own planning average speed AND a cutoff is entered,
+  // so this cannot change the verdict on any load scored the way loads are
+  // scored today. See checkPickupFeasibility().
+  let pickupState = { applicable: false, reason: PICKUP_FEASIBILITY.NO_CUTOFF };
+  {
+    const cutoffRaw = ($('#mwPickupCutoff')?.value || '').trim();
+    const cutoffMs = cutoffRaw ? new Date(cutoffRaw).getTime() : null;
+    if (cutoffRaw && !Number.isFinite(cutoffMs)){
+      pickupState = { applicable: false, reason: PICKUP_FEASIBILITY.CUTOFF_UNPARSEABLE };
+    } else {
+      pickupState = checkPickupFeasibility({
+        deadheadMi: deadMi,
+        cutoffMs: Number.isFinite(cutoffMs) ? cutoffMs : null,
+        nowMs: Date.now(),
+        planningMph: await getPlanningAvgMph(),
+      });
+    }
+    if (pickupState.applicable && !pickupState.reachable){
+      _renderPickupBlock(out, pickupState);
+      return;
+    }
+    // Reachable but narrow. Advisory only — it never blocks, and it never
+    // touches verdict, grade, True RPM or the canonical bid range, so it is a
+    // toast rather than anything rendered into the authoritative result card.
+    if (pickupState.applicable && pickupState.tight){
+      toast(`Tight pickup — about ${_fmtMinutes(pickupState.slackMinutes)} of slack at ${pickupState.planningMph} mph.`);
+    }
+  }
+
+  // Save inputs
+  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
+
+  // ── Auto-detect "going home" and suggest strategic mode ──
+  const goingHome = dest ? await mwIsGoingHome(dest) : false;
+  if (goingHome && !strategicEnabled){
+    const mwStratEl = $('#mwStrategic');
+    const mwReasonEl = $('#mwStrategicReason');
+    if (mwStratEl && mwReasonEl){
+      mwStratEl.checked = true;
+      mwReasonEl.value = 'home';
+      toast('Going home detected — strategic $1.25 floor enabled');
+    }
+  }
+  // Re-read after possible auto-toggle
+  const effectiveStrategic = goingHome || strategicEnabled;
+  const effectiveReason = goingHome && !strategicEnabled ? 'home' : strategicReason;
+
+  // ── Core calculations / v24 canonical economics inputs ──
+  const origMarket = naLookupMarket(origin);
+  const destMarket = naLookupMarket(dest);
+  const gateway = caFindGateway(origMarket, destMarket);
+  const caSettings = {
+    cadUsdRate: Number(await getSetting('cadUsdRate', CA.DEFAULT_CAD_USD) || CA.DEFAULT_CAD_USD),
+    borderAdminCost: Number(await getSetting('borderAdminCost', CA.BORDER_ADMIN_COST_DEFAULT) || CA.BORDER_ADMIN_COST_DEFAULT),
+    canadaDocsReady: !!(await getSetting('canadaDocsReady', false)),
+  };
+  const crossBorder = applyCanadaSettingsToCrossBorder(caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, gateway), revenue, revenueCurrency, caSettings);
+  const effectiveRevenue = (crossBorder.isCrossBorder && revenueCurrency === 'CAD') ? crossBorder.normalizedRevenue : revenue;
+  const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
+  const fuelPrice = knownNum(await getSetting('fuelPrice', MW.fuelBaseline));
+  const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
+  const planningAvgMph = await getPlanningAvgMph();
+  const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
+  const economicsResult = deriveUnifiedEconomics({
+    revenue, effectiveRevenue, loadedMi, deadMi,
+    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost, avgMph: planningAvgMph,
+  });
+  const {
+    totalMi, trueRPM, loadedRPM, deadheadPct,
+    fuel, netAfterFuel, operatingCost, totalCost,
+    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, estHours, profitPerHour, fuelPerMile,
+  } = economicsResult;
+  if (!economicsResult.available){
+    out.innerHTML = `<div class="muted">Economics unavailable — check ${escapeHtml(economicsResult.unknownFacts.join(', '))} in the load and Settings.</div>`;
+    return;
+  }
+  const tier = mwClassifyRPM(trueRPM);
+  const geo = mwGeoCheck(origin, dest);
+
+  // Floor logic
+  // Normal floor is MW.hardRejectRPM. Strategic floor is only allowed when explicitly enabled.
+  const floorRPM = effectiveStrategic ? MW.strategicFloorRPM : MW.normalFloorRPM;
+
+  // F20: Dead Zone Exit eligibility
+  const dzFloor = Number(await getSetting('dzFloorRPM', MW.dzFloorRPM) || MW.dzFloorRPM);
+  const dzCheck = (origin && dest) ? await dzCheckEligibility(origin, dest) : { eligible: false };
+  const isDZEligible = dzCheck.eligible;
+  // X-04: final activation decision goes through the shared canonical gate —
+  // same function midwest-stack-authority.js calls via window.isDeadZoneEligible.
+  const dzGate = isDeadZoneEligible({
+    distanceFromHome: dzCheck.distanceFromHome,
+    distanceSaved: dzCheck.distanceSaved,
+    trueRPM, noReloadConfirmed, dzFloor,
+  });
+  const dzSubTier = dzGate.eligible ? dzClassifySubTier(trueRPM, dzCheck.distanceSaved || 0, dzFloor) : null;
+  const isDZActive = !!(dzSubTier);
+
+  const isMonWed = ['mon','tue','wed'].includes(dayOfWeek);
+  const isThuFri = ['thu','fri'].includes(dayOfWeek);
+
+  // v24 Phase B: hard gates are derived once, after evidence prefetch, by deriveUnifiedAuthority().
+
+  // Override display verdict with intelligence engine result
+  const verdictColors = { ACCEPT: 'var(--good)', REJECT: 'var(--bad)', STRATEGIC: 'var(--warn)', 'DZ-EXIT': '#f0a500' };
+  const verdictLabels = { ACCEPT: 'ACCEPT', REJECT: 'PASS', STRATEGIC: 'STRATEGIC ONLY', 'DZ-EXIT': 'DZ EXIT — SURVIVAL' };
+
+  // Pre-fetch intelligence for scoring
+  const [laneIntel, destReloadScore, origReloadScore, brokerIntel] = await Promise.all([
+    getLaneIntel(origin, dest),
+    getCityReloadScore(dest),
+    getCityReloadScore(origin),
+    getBrokerIntel(broker),
+  ]);
+
+  // ── USA Engine integration ──
+  const usaMode = $('#mwModeSelector')?.value || 'HARVEST';
+  const usaResult = usaScoreLoad({
+    origin, dest, trueRPM, deadMi, loadedMi,
+    mode: usaMode, profileId: 'MIDWEST_STACK',
+    revenue, revenueCurrency, crossBorder,
+    laneIntel,
+    destReloadScore,
+    origReloadScore,
+    brokerIntel,
+  });
+
+  // v24 Phase B: one deterministic authority call owns all hard gates plus
+  // downgrade-only Personal Intelligence. External evidence is passed in;
+  // none of these sources can publish a second verdict.
+  const weekTargetForDecision = getMWWeekTarget();
+  const authorityResult = deriveUnifiedAuthority({
+    initialVerdict: tier.verdict,
+    tierLabel: tier.label,
+    trueRPM, totalMi, floorRPM,
+    dzFloor, isDZActive, dzSubTier, dzCheck,
+    effectiveStrategic, effectiveReason,
+    opCPM, profitMarginPct, effectiveRevenue, netAfterFuel,
+    deadheadPct,
+    weeklyGross, weekTargetHigh: weekTargetForDecision.high,
+    stabilizeFloor: MW.stabilizeFloor, surgeFloor: MW.surgeFloor, isMonWed,
+    fatigue, geo, origin, dest,
+    personalScore: usaResult?.personalScore || 0,
+    personalBullets: usaResult?.personalBullets || [],
+  });
+  const { verdict, verdictReason, steps, repoSuggestion } = authorityResult;
+
+  // Grade is a separate presentation classification but shares the same
+  // canonical v24 module and keeps the DZ C-cap invariant.
+  const gradeState = deriveUnifiedGrade(trueRPM, { isDZActive, dzSubTier });
+  const { grade, gradeLabel, gradeColor, gradeEmoji } = gradeState.raw;
+  const {
+    grade: dzDisplayGrade,
+    gradeLabel: dzDisplayGradeLabel,
+    gradeColor: dzDisplayGradeColor,
+    gradeEmoji: dzDisplayGradeEmoji,
+  } = gradeState.display;
+
+  // ── Canonical bid authority ──
+  const isCrossBorder = !!(usaResult?.crossBorder?.isCrossBorder);
+  const bidResult = deriveUnifiedBid(totalMi, { urgencyBoost: urgency.boost, crossBorder: isCrossBorder });
+
+  // ════════════════════════════════════════════════════
+  // VELOCITY MODE (Master Source v5 §11)
+  // ════════════════════════════════════════════════════
+  let velocityMode = 'PRIME';
+  let velocityDetail = '';
+  const targetCfgV = getMWWeekTarget();
+  if (weeklyGross > 0){
+    const dayIdx = ['mon','tue','wed','thu','fri','sat','sun'].indexOf(dayOfWeek);
+    const daysIn = Math.max(1, dayIdx + 1);
+    const dailyPace = weeklyGross / daysIn;
+    const projectedWeek = dailyPace * 5; // project Mon-Fri
+    if (projectedWeek >= targetCfgV.high && trueRPM >= 1.50){
+      velocityMode = 'PRIME'; velocityDetail = 'On pace + strong RPM — be selective';
+    } else if (projectedWeek < targetCfgV.low || (isThuFri && weeklyGross < targetCfgV.low)){
+      velocityMode = 'RECOVERY'; velocityDetail = 'Behind floor — take defendable loads to stabilize';
+    } else {
+      velocityMode = 'FLEX'; velocityDetail = 'Board soft or pace needs movement';
+    }
+  } else {
+    velocityMode = 'FLEX'; velocityDetail = 'No weekly gross entered — defaulting to FLEX';
+  }
+  const velocityFloor = velocityMode === 'PRIME' ? 1.50 : velocityMode === 'FLEX' ? 1.35 : 1.25;
+  // F20: DZ overrides velocity to SURVIVAL
+  if (isDZActive){ velocityMode = 'SURVIVAL'; velocityDetail = 'Dead Zone active — prioritize getting home over profit'; }
+
+  // ════════════════════════════════════════════════════
+  // POST-DELIVERY COMMAND (Master Source v5 §12)
+  // ════════════════════════════════════════════════════
+  let postDeliveryCmd = 'HOLD';
+  let postDeliveryDetail = '';
+  if (verdict === 'REJECT'){
+    postDeliveryCmd = 'SKIP'; postDeliveryDetail = 'Do not take this load';
+  } else if (geo.dT1){
+    postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Delivering into Tier 1 — hold for a better outbound';
+  } else if (geo.dT2){
+    postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Tier 2 destination — reload within 90 min or micro-reposition';
+  } else if (geo.intoDensity){
+    postDeliveryCmd = 'HOLD'; postDeliveryDetail = 'Near density — be patient';
+  } else if (trueRPM >= 1.60){
+    postDeliveryCmd = 'STRATEGIC REPOSITION'; postDeliveryDetail = 'Rate covers distance but destination is weak — plan your next move toward density';
+  } else {
+    postDeliveryCmd = 'EXIT MARKET'; postDeliveryDetail = 'Weak destination — reposition toward Chicago, Indy, Cleveland, or St. Louis';
+  }
+  // F20: DZ overrides post-delivery to a targeted reposition command
+  if (isDZActive){
+    const anchor = ((dzCheck.nearestAnchor || 'midwest corridor').replace(/\b\w/g, c => c.toUpperCase()));
+    postDeliveryCmd = `REPOSITION → ${anchor}`;
+    postDeliveryDetail = `DZ exit complete — find reload within 90mi of ${anchor} or continue north`;
+  }
+
+  // ════════════════════════════════════════════════════
+  // TURNOVER CLASSIFIER (Master Source v5 §30)
+  // ════════════════════════════════════════════════════
+  let turnoverType = 'MONEY RUN';
+  if (totalMi <= 300 && trueRPM >= 1.50){ turnoverType = 'QUICK TURN'; }
+  else if (totalMi > 300 && trueRPM >= 1.50){ turnoverType = 'MONEY RUN'; }
+  else if (totalMi > 600 && trueRPM >= 1.35 && trueRPM < 1.50){ turnoverType = 'LONG LOCK'; }
+  else if (effectiveStrategic || trueRPM < 1.40){ turnoverType = 'STRATEGIC BRIDGE'; }
+
+  // ════════════════════════════════════════════════════
+  // MISTAKE PREVENTION LAYER (Master Source v5 §31)
+  // ════════════════════════════════════════════════════
+  const warnings = [];
+  if (deadMi > 150 && trueRPM < 1.50) warnings.push({ icon: '⚠️', text: 'High deadhead disguised by loaded RPM — true cost is higher' });
+  if (!geo.intoDensity && trueRPM >= 1.40 && trueRPM < 1.60) warnings.push({ icon: '🎭', text: 'Weak destination hidden by rate — reload risk is real' });
+  if (totalMi > 800 && trueRPM < 1.45) warnings.push({ icon: '🛣️', text: 'Long haul under $1.45 — locks you for 2+ days at thin margin' });
+  if (effectiveStrategic && trueRPM >= 1.25 && trueRPM < 1.40) warnings.push({ icon: '🌉', text: 'Strategic bridge — do NOT confuse this with a money load' });
+  if (fatigue >= 6) warnings.push({ icon: '😴', text: 'Fatigue elevated — demand stronger economics before committing' });
+  if (weeklyGross > 0 && weeklyGross < 1500 && isThuFri) warnings.push({ icon: '📉', text: 'Behind pace late-week — stabilize, do not chase $5K from behind' });
+  if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
+
+  // v24.1: assemble evidence for THIS evaluation. Built here, after the
+  // canonical decision inputs are settled, so it can only describe them.
+  // Issue #119 Batch A, item 7: the REAL inputs this evaluation used, not
+  // placeholders. `weatherChecked: !!(warnings||[]).length` was true whenever
+  // ANY warning of any kind existed, which had nothing to do with whether a
+  // route weather observation had been made.
+  const evidenceItems = buildEvaluationEvidence({
+    economicsResult, usaResult, geo, dest, broker,
+    fuelProvenance: await getFuelPriceProvenance(),
+    laneIntel, brokerIntel,
+    weatherObservation: getRouteWeatherObservation(`${origin || ''}|${dest || ''}`),
+    vanFit: vanFitState,
+  });
+  const unifiedDecision = buildUnifiedDecisionContract({
+    evidenceItems,
+    economicsResult, bidResult,
+    tier, authorityResult, verdictColors, verdictLabels,
+    weeklyGross, geo, fatigue, origin, dest,
+    floorRPM, effectiveStrategic, effectiveReason,
+    usaResult, urgency, crossBorder,
+    velocityMode, velocityDetail, velocityFloor,
+    postDeliveryCmd, postDeliveryDetail,
+    turnoverType, warnings,
+    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
+  });
+  _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
+  mwRenderWeekStructure(weeklyGross);
+
+  // Save to eval history (session, last 5)
+  try {
+    const histEntry = {
+      ts: Date.now(),
+      // Use the DZ-adjusted display values (not the raw grade/label/color) so
+      // the Recent Evaluations strip agrees with what the main card just
+      // showed for this exact evaluation — previously stored the raw
+      // pre-DZ-cap grade, showing "F"/"REJECT"/red for a DZ-EXIT evaluation.
+      grade: dzDisplayGrade, gradeLabel: dzDisplayGradeLabel, gradeColor: dzDisplayGradeColor, gradeEmoji: dzDisplayGradeEmoji,
+      trueRPM: +trueRPM.toFixed(2),
+      origin: origin || '', dest: dest || '',
+      revenue: +revenue, loadedMi: +loadedMi,
+      // Issue #119 Batch A, item 7: a compact confidence/evidence snapshot, so
+      // a past evaluation can be read back with the evidence state it was made
+      // under. Bounded deliberately — this lives in sessionStorage. Entries
+      // written before this field exists simply lack it, and the renderer
+      // treats its absence as "not recorded", never as a healthy result.
+      confidence: unifiedDecision.confidence ? {
+        overall: unifiedDecision.confidence.overall,
+        market: unifiedDecision.confidence.market,
+        broker: unifiedDecision.confidence.broker,
+        operatingCosts: unifiedDecision.confidence.operatingCosts,
+        weatherSafety: unifiedDecision.confidence.weatherSafety,
+        vehicleFit: unifiedDecision.confidence.vehicleFit,
+      } : null,
+      evidence: (unifiedDecision.evidence || []).slice(0, 8).map(e => ({
+        key: e.key, source: e.source, sourceStatus: e.sourceStatus,
+        freshness: e.freshness, confidence: e.confidence, sampleSize: e.sampleSize,
+        valueSummary: clampStr(e.valueSummary || '', 120),
+      })),
+    };
+    let hist = [];
+    try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+    hist.unshift(histEntry);
+    if (hist.length > 5) hist.length = 5;
+    sessionStorage.setItem('fl_eval_hist', JSON.stringify(hist));
+  } catch(e){}
+  _renderEvalHistory();
+}
+
+function _genVerdictSentence(d){
+  const { grade, verdict, trueRPM, geo, isDZActive, dzSubTier, effectiveStrategic } = d;
+  if (isDZActive) return `DZ Exit — gets you closer to home corridor`;
+  if (verdict === 'REJECT') return `Skip — trap lane, low reload probability`;
+  // SSI-17: Tier 1 membership is a STATIC classification. Saying "strong
+  // reload market" asserts a live measurement this sentence never made.
+  if (grade === 'A') return `Take it — premium rate into a Tier 1 market`;
+  if (grade === 'B') return geo && geo.dT1 ? `Take it — solid economics into a Tier 1 market` : `Take it — solid economics`;
+  if (grade === 'C') return `Marginal — only if nothing better in 2 hours`;
+  if (grade === 'D') return effectiveStrategic ? `Strategic only — bridges you toward density` : `Negotiate up or pass`;
+  if (grade === 'E') return `Strategic floor only — use with caution`;
+  return `Evaluate carefully before committing`;
+}
+
+function _mwRenderDecision(out, d){
+  const {trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
+    tier, grade, gradeLabel, gradeColor, gradeEmoji,
+    verdict, verdictReason, verdictColors, verdictLabels, steps,
+    fuel, netAfterFuel, operatingCost, totalCost, operationalProfit,
+    trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, profitPerHour, fuelPerMile, estHours, opCPM,
+    weeklyGross, repoSuggestion, geo, fatigue, origin, dest,
+    floorRPM, effectiveStrategic, effectiveReason, usaResult, urgency, bidRange, crossBorder,
+    velocityMode, velocityDetail, velocityFloor,
+    postDeliveryCmd, postDeliveryDetail,
+    turnoverType, warnings,
+    isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor,
+    dzDisplayGrade, dzDisplayGradeLabel, dzDisplayGradeColor, dzDisplayGradeEmoji,
+    noReloadConfirmed} = d;
+  // Use DZ display overrides when active
+  const dispGrade = dzDisplayGrade || grade;
+  const dispGradeLabel = dzDisplayGradeLabel || gradeLabel;
+  const dispGradeColor = dzDisplayGradeColor || gradeColor;
+  const dispGradeEmoji = dzDisplayGradeEmoji || gradeEmoji;
+  // Pre-compute bid numbers for the simplified hero
+  const _roundTo25h = (x)=> Math.round((Number(x)||0)/25)*25;
+  const _nextStepRPMh = (trueRPM >= 1.75) ? 1.90 : (trueRPM >= 1.60) ? 1.75 : (trueRPM >= 1.50) ? 1.60 : (trueRPM >= 1.40) ? 1.50 : 1.40;
+  const _bufferRPMh = breakEvenRPM > 0 ? (breakEvenRPM + 0.20) : 0;
+  const _strongRPMh = Math.max(_nextStepRPMh, _bufferRPMh);
+  const _premiumRPMh = _strongRPMh + 0.10;
+  const _strongFinalH = Math.max(_roundTo25h(_strongRPMh * totalMi), _roundTo25h(revenue));
+  const _premiumFinalH = Math.max(_roundTo25h(_premiumRPMh * totalMi), _strongFinalH + 50);
+  const _quickAcceptH = _roundTo25h(revenue);
+  const _verdictSentence = _genVerdictSentence(d);
+
+  const _heroColorEarly = isDZActive ? '#f0a500' : dispGradeColor;
+
+  // ── Issue #252: decision-first compact facts ─────────────────────────────
+  // The hero already carried the ACTION, the grade and the bid triple. #252's
+  // output contract also asks for True RPM with its ladder label, the mile
+  // breakdown, positioning/reload quality and ONE critical alert, and all four
+  // were behind "Show Details" — so the numbers a driver decides on were one
+  // tap away while the decision itself was not. This is ADDITIVE: the detailed
+  // Omega math below is unchanged and still authoritative, and nothing here is
+  // AI-authored. Every value is read from the canonical decision that has
+  // already been computed above; this block computes no economics of its own.
+  //
+  // Deadhead is always KNOWN here — mwEvaluateLoad() returns early and asks for
+  // it when it is null, so this strip can never print an invented zero.
+  // SSI-17: these tiers are a STATIC market classification table, not a live
+  // reload observation. The first version said "strong reloads" / "workable
+  // reloads", which claims evidence this line does not have -- the same class
+  // as an unrecognised market rendered as a confident directive (#216) and a
+  // blank deadhead rendered as a verified zero. The label now discloses what it
+  // actually is, so a driver can weigh it accordingly.
+  const _posLabel = geo.dT1 ? 'Tier 1 anchor (static market class)'
+    : geo.dT2 ? 'Tier 2 market (static market class)'
+    : 'Outside density (static market class)';
+  const _posColor = (geo.dT1 || geo.dT2) ? 'var(--good)' : 'var(--warn)';
+  const _topWarning = warnings.length ? warnings[0] : null;
+  // SSI-18: the strip renders through the SHARED presentation seam
+  // (.fl-eval-facts / -fact-label / -fact-value / -positioning / [data-fl-rpm])
+  // that styles.css owns, rather than inline 10/11/13px declarations. That is
+  // what lets the Driver/Glance text-size preference reach these numbers: an
+  // inline font-size cannot be scaled by a user preference, and the driver who
+  // chooses Extra Large is exactly the driver who needs True RPM legible.
+  const _factCell = (label, value, attr = '') => `<div style="min-width:0">
+      <div class="fl-eval-fact-label">${escapeHtml(label)}</div>
+      <div class="fl-eval-fact-value"${attr}>${value}</div>
+    </div>`;
+  const _compactFacts = `<div class="fl-eval-facts" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-subtle)">
+    ${_factCell('True RPM', `<span class="mono">$${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${_heroColorEarly}">${escapeHtml(dispGradeLabel)}</span>`, ' data-fl-rpm')}
+    ${_factCell('Miles', `<span class="mono">${totalMi}</span> <span style="font-weight:600;color:var(--text-tertiary)">${loadedMi} loaded + ${deadMi} DH</span>`)}
+    <div class="fl-eval-fact-label" style="grid-column:1/-1">Positioning</div>
+    <div class="fl-eval-positioning" style="color:${_posColor}">${escapeHtml(_posLabel)}</div>
+    ${_topWarning ? `<div class="fl-eval-alert" style="margin-top:1px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.09);border:1px solid rgba(240,165,0,.28);color:var(--text)">${escapeHtml(_topWarning.icon)} ${escapeHtml(_topWarning.text)}</div>` : ''}
+  </div>`;
+
+  // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
+  const _heroColor = _heroColorEarly;
+  const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
+  const _verdictBadgeLabel = isDZActive ? 'DZ EXIT' : verdictLabels[verdict] || verdict;
+  let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
+    <div style="font-size:13px;font-weight:700;color:${_heroColor};letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
+    <div class="fl-eval-grade" style="color:${_heroColor}">${dispGrade}${isDZActive ? '<span style="font-size:20px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
+    <div style="margin-bottom:10px"><span class="fl-eval-verdict ${_verdictClass}">${escapeHtml(_verdictBadgeLabel)}</span></div>
+    <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:12px;line-height:1.4">${escapeHtml(_verdictSentence)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border-subtle)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Min / Accept</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--text)">${fmtMoney(_quickAcceptH)}</div>
+      </div>
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Professional</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:#58a6ff">${fmtMoney(_strongFinalH)}</div>
+      </div>
+      <div style="padding:8px 6px;border-radius:10px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Strong Ask</div>
+        <div style="font-family:var(--font-mono);font-size:17px;font-weight:800;color:var(--good)">${fmtMoney(_premiumFinalH)}</div>
+      </div>
+    </div>
+    ${_compactFacts}
+  </div>
+  <details id="mwEvalDetails" style="margin-bottom:12px">
+    <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
+      <span style="font-size:16px">📊</span> Show Details
+      <span style="margin-left:auto;font-size:11px;color:var(--text-tertiary)">RPM · costs · intelligence</span>
+    </summary>
+    <div style="padding-top:12px">`;
+
+  // ── 1. DECISION BANNER ──
+  const ladderRow = (g, label, rng) => {
+    const active = isDZActive ? g === dispGrade : g === grade;
+    const rowColor = isDZActive && active ? dispGradeColor : (active ? gradeColor : null);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;${active ? `background:${rowColor}18;border:1px solid ${rowColor}55` : 'border:1px solid transparent'}">
+      <div style="width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:800;color:${active ? rowColor : 'var(--text-tertiary)'};${active ? `background:${rowColor}1a` : 'background:var(--surface-2)'}">${g}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${active ? rowColor : 'var(--text-secondary)'}">${label}</div>
+        <div style="font-size:10px;color:var(--text-tertiary)">${rng}</div>
+      </div>
+      ${active ? `<div style="font-size:10px;font-weight:700;color:${rowColor}">${isDZActive ? 'DZ-EXIT' : 'CURRENT'}</div>` : ''}
+    </div>`;
+  };
+
+  html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${dispGradeColor}40;margin-bottom:14px">
+    <div style="font-size:14px;font-weight:600;color:${dispGradeColor};letter-spacing:1px;text-transform:uppercase">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
+    <div class="fl-eval-grade" style="font-size:52px;color:${dispGradeColor}">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
+    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : tier.color}">$${trueRPM.toFixed(2)}</b> • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label}</div>
+    <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
+      ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
+      ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
+      ${ladderRow('C','CONDITIONAL','$1.50–$1.59')}
+      ${ladderRow('D','WEAK — NEGOTIATE','$1.40–$1.49')}
+      ${ladderRow('E','STRATEGIC ONLY','$1.25–$1.39')}
+      <div style="font-size:10px;color:var(--text-tertiary);padding:0 8px">Below E: <b style="color:var(--bad)">REJECT</b></div>
+      ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
+    </div>
+    ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
+    ${_renderConfidenceLine(d._canonicalDecision)}
+    <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
+    ${(crossBorder?.isCrossBorder && revenue !== effectiveRevenue) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">CAD normalized: ${fmtMoney(revenue)} CAD → ${fmtMoney(effectiveRevenue)} USD-equivalent for RPM/profit math</div>` : ''}
+    ${(crossBorder?.isCrossBorder) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Border cost applied: ${fmtMoney(borderAdminCost)} • Docs ready: ${crossBorder?.docsReady ? 'yes' : 'no'}</div>` : ''}
+  </div>`;
+
+  // ── 2. WEEKLY IMPACT BOX ──
+  if (weeklyGross > 0){
+    const targetCfg = getMWWeekTarget();
+    const target = targetCfg.high;
+    const projected = weeklyGross + effectiveRevenue;
+    const stretch = targetCfg.stretch || 5000;
+    const remaining = Math.max(0, target - projected);
+    const pctBefore = Math.min(100, Math.round((weeklyGross / target) * 100));
+    const pctAfter = Math.min(100, Math.round((projected / target) * 100));
+    html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Weekly Impact</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px;margin-bottom:10px">
+        <div><span class="muted">Weekly Target:</span></div><div style="text-align:right;font-weight:600">${fmtMoney(target)}</div>
+        <div><span class="muted">Current Week:</span></div><div style="text-align:right">${fmtMoney(weeklyGross)}</div>
+        <div><span class="muted">This Load:</span></div><div style="text-align:right;color:var(--good);font-weight:600">+${fmtMoney(effectiveRevenue)}</div>
+        <div style="border-top:1px solid var(--border-subtle);padding-top:4px"><b>Projected:</b></div><div style="text-align:right;border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700;font-size:13px;color:${projected >= target ? 'var(--good)' : 'var(--text)'}">${fmtMoney(projected)}</div>
+        <div><span class="muted">Remaining:</span></div><div style="text-align:right;color:${remaining > 0 ? 'var(--warn)' : 'var(--good)'}">${ remaining > 0 ? fmtMoney(remaining) : '✓ Target hit!'}</div>
+        <div><span class="muted">Stretch Goal:</span></div><div style="text-align:right;color:${projected >= stretch ? 'var(--good)' : 'var(--text-secondary)'}">${fmtMoney(stretch)}</div>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden;position:relative">
+        <div style="position:absolute;height:100%;width:${pctBefore}%;border-radius:4px;background:var(--accent);opacity:.4"></div>
+        <div style="position:absolute;height:100%;width:${pctAfter}%;border-radius:4px;background:${projected >= target ? 'var(--good)' : 'var(--accent)'};transition:width .5s"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px;display:flex;justify-content:space-between"><span>Before: ${pctBefore}%</span><span>After: ${pctAfter}%</span></div>
+    </div>`;
+  }
+
+  // ── 3. PROFIT GAUGE ──
+  const gaugeMax = effectiveRevenue || revenue || 1;
+  const profitVal = opCPM > 0 ? trueProfit : netAfterFuel;
+  const profitPct = Math.max(0, Math.min(100, (profitVal / gaugeMax) * 100));
+  let gaugeColor = profitPct >= 50 ? 'var(--good)' : profitPct >= 35 ? '#58a6ff' : profitPct >= 20 ? 'var(--warn)' : 'var(--bad)';
+  html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Profit Gauge</div>
+    <div style="height:32px;border-radius:6px;background:var(--surface-2);overflow:hidden;position:relative">
+      <div style="position:absolute;height:100%;width:${profitPct}%;border-radius:6px;background:${gaugeColor};transition:width .5s;display:flex;align-items:center;justify-content:center">
+        ${profitPct > 25 ? `<span style="font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4)">${fmtMoney(profitVal)}</span>` : ''}
+      </div>
+      ${profitPct <= 25 ? `<span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;color:var(--text-secondary)">${fmtMoney(profitVal)}</span>` : ''}
+    </div>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${opCPM > 0 ? 'True Profit (after all costs)' : 'Revenue \u2212 fuel only. NOT profit \u2014 operating cost per mile is not set, so fixed costs are missing.'}</div>
+  </div>`;
+
+  // ── 4. DECISION METRICS ──
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${tier.color}">$${trueRPM.toFixed(2)}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">True RPM</div>
+    </div>
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${breakEvenRPM > 0 && trueRPM > breakEvenRPM ? 'var(--good)' : 'var(--bad)'}">$${breakEvenRPM.toFixed(2)}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">Break-Even</div>
+    </div>
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600">${totalMi}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">Total Miles</div>
+    </div>
+  </div>`;
+
+  // ── 4b. SMART BID ENGINE (Negotiation Intelligence) ──
+  // Goal: give 3 numbers the driver can say on the phone.
+  // Method: compute revenue required to hit the next RPM ladder step, bounded by break-even + buffer.
+  const roundTo25 = (x)=> Math.round((Number(x)||0)/25)*25;
+  const nextStepRPM = (trueRPM >= 1.75) ? 1.90 : (trueRPM >= 1.60) ? 1.75 : (trueRPM >= 1.50) ? 1.60 : (trueRPM >= 1.40) ? 1.50 : 1.40;
+  const bufferRPM = breakEvenRPM > 0 ? (breakEvenRPM + 0.20) : 0;
+  const strongRPM = Math.max(nextStepRPM, bufferRPM);
+  const premiumRPM = strongRPM + 0.10;
+  const strongAsk = roundTo25(strongRPM * totalMi);
+  const premiumAsk = roundTo25(premiumRPM * totalMi);
+  const quickAccept = roundTo25(revenue);
+
+  // If the current offer is already above strong, keep strong = current (avoid asking down)
+  const strongFinal = Math.max(strongAsk, quickAccept);
+  const premiumFinal = Math.max(premiumAsk, strongFinal + 50);
+
+  html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:700">Smart Bid Engine</div>
+      <div class="muted" style="font-size:10px">Negotiation targets</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+      <div style="padding:10px;border-radius:12px;border:1px solid var(--border-subtle);background:rgba(255,255,255,0.02);text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);letter-spacing:.6px;text-transform:uppercase;font-weight:700">Premium Ask</div>
+        <div style="font-family:var(--font-mono);font-size:18px;font-weight:800;color:var(--good)">${fmtMoney(premiumFinal)}</div>
+        <div class="muted" style="font-size:10px">Aim: ~${premiumRPM.toFixed(2)} RPM</div>
+      </div>
+      <div style="padding:10px;border-radius:12px;border:1px solid var(--border-subtle);background:rgba(255,255,255,0.02);text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);letter-spacing:.6px;text-transform:uppercase;font-weight:700">Strong Target</div>
+        <div style="font-family:var(--font-mono);font-size:18px;font-weight:800;color:#58a6ff">${fmtMoney(strongFinal)}</div>
+        <div class="muted" style="font-size:10px">Min buffer above break-even</div>
+      </div>
+      <div style="padding:10px;border-radius:12px;border:1px solid var(--border-subtle);background:rgba(255,255,255,0.02);text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);letter-spacing:.6px;text-transform:uppercase;font-weight:700">Quick Accept</div>
+        <div style="font-family:var(--font-mono);font-size:18px;font-weight:800;color:var(--text)">${fmtMoney(quickAccept)}</div>
+        <div class="muted" style="font-size:10px">If they won’t move</div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px;line-height:1.35">
+      Script: “I can run it for <b>${fmtMoney(strongFinal)}</b>. If you need it covered now, I can do <b>${fmtMoney(quickAccept)}</b>. If it’s tight / same-day, I’m at <b>${fmtMoney(premiumFinal)}</b>.”
+    </div>
+  </div>`;
+
+  // ── 5. DUAL PROFIT SUMMARY ──
+  html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Profit Summary</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--good-muted);border:1px solid var(--good-border)">
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--good)">${fmtMoney(operationalProfit)}</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Operational Profit</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − Fuel</div>
+      </div>
+      ${opCPM > 0 ? `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:${trueProfit >= 0 ? 'var(--good-muted)' : 'var(--bad-muted)'};border:1px solid ${trueProfit >= 0 ? 'var(--good-border)' : 'var(--bad-border)'}">
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(trueProfit)}</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − All Costs</div>
+      </div>` : `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--surface-0);border:1px dashed var(--border)">
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text-tertiary)">—</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Unavailable — set op cost/mi</div>
+      </div>`}
+    </div>
+  </div>`;
+
+  // ── 6. COST BREAKDOWN ──
+  html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Cost Breakdown</div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px">
+      <div class="muted">Revenue</div><div style="text-align:right;font-weight:600">${fmtMoney(revenue)}</div>
+      <div class="muted">Fuel Cost</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(fuel)}</div>
+      ${opCPM > 0 ? `<div class="muted">Operating Cost (${totalMi}mi × $${opCPM.toFixed(2)})</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(operatingCost)}</div>` : ''}
+      <div style="border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700">Total Cost</div>
+      <div style="text-align:right;border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700;color:var(--bad)">−${fmtMoney(totalCost)}</div>
+      <div style="font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">Net Profit</div>
+      <div style="text-align:right;font-weight:700;font-size:15px;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(trueProfit)}</div>
+    </div>
+  </div>`;
+
+  // ── 7. EFFICIENCY METRICS ──
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px">
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:14px;font-weight:500">$${profitPerMile.toFixed(2)}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">Profit/Mile</div>
+    </div>
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:14px;font-weight:500">${profitPerHour === null ? '—' : ('$' + profitPerHour.toFixed(0))}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">Profit/Hour</div>
+    </div>
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
+      <div style="font-family:var(--font-mono);font-size:14px;font-weight:500">$${fuelPerMile.toFixed(2)}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">Fuel/Mile</div>
+    </div>
+  </div>`;
+
+  // ── 8. FREIGHT INTELLIGENCE FILTER ──
+  html += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Freight Intelligence</div>';
+  steps.forEach(s => {
+    const icon = s.pass === true ? '✓' : s.pass === false ? '✕' : '–';
+    const c = s.pass === true ? 'var(--good)' : s.pass === false ? 'var(--bad)' : 'var(--text-tertiary)';
+    html += `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border-subtle)">
+      <div style="color:${c};font-weight:700;font-size:14px;width:18px;flex-shrink:0">${icon}</div>
+      <div><div style="font-weight:600;font-size:13px">${escapeHtml(s.label)}</div><div style="font-size:12px;color:var(--text-secondary)">${escapeHtml(s.detail)}</div></div>
+    </div>`;
+  });
+
+  // Final intelligence verdict
+  html += `<div style="text-align:center;margin-top:14px;padding:12px;border-radius:var(--r-sm);background:${verdictColors[verdict]}15;border:1px solid ${verdictColors[verdict]}40">
+    <div style="font-size:16px;font-weight:800;color:${verdictColors[verdict]};font-family:var(--font-mono)">${verdict === 'ACCEPT' ? (trueRPM >= 1.75 ? 'PREMIUM WIN' : trueRPM >= 1.60 ? 'STRONG ACCEPT' : 'CONDITIONAL') : verdictLabels[verdict]}</div>
+    ${verdictReason ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${escapeHtml(verdictReason)}</div>` : ''}
+  </div>`;
+
+  if (repoSuggestion){
+    html += `<div style="margin-top:10px;padding:10px;border-radius:var(--r-sm);background:var(--warn-muted);border:1px solid var(--warn-border);font-size:12px;color:var(--warn)">${escapeHtml(repoSuggestion)}</div>`;
+  }
+
+  // ── USA Engine Intelligence Panel ──
+  if (usaResult){
+    const u = usaResult;
+    html += `<div style="margin-top:14px;border-top:2px solid ${u.usaColor}40;padding-top:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">Market Evidence • ${escapeHtml(u.modeConf.label)} Mode</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-mono);font-size:22px;font-weight:800;color:${u.usaColor}">${u.usaGrade}</span>
+          <span style="font-size:12px;font-weight:700;color:${u.usaColor}">Signal: ${escapeHtml(u.usaVerdict)}</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">${u.score}/100</span>
+        </div>
+      </div>`;
+
+    // Score breakdown bar
+    const barSegments = [
+      { label: 'Econ', val: u.econScore, max: 28 },
+      { label: 'DH', val: u.dhScore, max: 8 },
+      { label: 'Role', val: u.roleScore, max: 18 },
+      { label: 'Corr', val: u.corrScore, max: 15 },
+    ];
+    html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:12px">`;
+    for (const seg of barSegments){
+      const pct = seg.max > 0 ? Math.max(0, Math.min(100, ((seg.val + Math.abs(seg.max)) / (Math.abs(seg.max)*2)) * 100)) : 50;
+      const segColor = seg.val > 0 ? 'var(--good)' : seg.val < 0 ? 'var(--bad)' : 'var(--text-tertiary)';
+      html += `<div style="text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:2px">${seg.label}</div>
+        <div style="height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden"><div style="height:100%;width:${pct}%;border-radius:2px;background:${segColor}"></div></div>
+        <div style="font-size:10px;font-weight:600;color:${segColor};margin-top:2px">${seg.val > 0 ? '+' : ''}${seg.val}</div>
+      </div>`;
+    }
+    html += `</div>`;
+
+    // Bullet explanations
+    for (const b of u.bullets){
+      const ic = b.icon === '✓' ? 'var(--good)' : b.icon === '✕' ? 'var(--bad)' : 'var(--text-tertiary)';
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12px">
+        <div style="color:${ic};font-weight:700;width:14px;flex-shrink:0">${b.icon}</div>
+        <div style="color:var(--text-secondary)">${escapeHtml(b.text)}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ── Urgency Detection ──
+  if (urgency && urgency.isUrgent){
+    html += `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">⚡</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--warn)">Urgency Detected: ${escapeHtml(urgency.matches.join(' • '))}</div>
+          <div class="muted" style="font-size:11px">Bid range adjusted +$${urgency.boost.toFixed(2)}/mi — urgent freight supports premium pricing</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Velocity Mode + Turnover + Post-Delivery ──
+  const vmColors = { PRIME: 'var(--good)', FLEX: 'var(--warn)', RECOVERY: 'var(--bad)', SURVIVAL: '#f0a500' };
+  const vmIcons = { PRIME: '🟢', FLEX: '🟡', RECOVERY: '🔴', SURVIVAL: '🟠' };
+  const pdColors = { HOLD: 'var(--good)', 'MICRO-REPOSITION': 'var(--warn)', 'STRATEGIC REPOSITION': '#ff8c42', 'EXIT MARKET': 'var(--bad)', SKIP: 'var(--text-tertiary)' };
+  const pdCmdColor = isDZActive ? '#f0a500' : (pdColors[postDeliveryCmd] || 'var(--text)');
+  const ttColors = { 'QUICK TURN': 'var(--good)', 'MONEY RUN': '#58a6ff', 'LONG LOCK': 'var(--warn)', 'STRATEGIC BRIDGE': '#ff8c42' };
+  html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:10px">Command Dashboard</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px">Velocity Mode</div>
+        <div style="font-size:16px;font-weight:800;color:${vmColors[velocityMode] || 'var(--text)'};margin-top:4px">${vmIcons[velocityMode] || ''} ${velocityMode}</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">Floor: $${velocityFloor.toFixed(2)}</div>
+      </div>
+      <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:10px;text-align:center">
+        <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px">Load Type</div>
+        <div style="font-size:14px;font-weight:800;color:${ttColors[turnoverType] || 'var(--text)'};margin-top:4px">${turnoverType}</div>
+        <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${totalMi <= 300 ? 'Short haul' : totalMi <= 600 ? 'Medium haul' : 'Long haul'}</div>
+      </div>
+    </div>
+    <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:10px;margin-top:8px;text-align:center">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px">Post-Delivery Command</div>
+      <div style="font-size:16px;font-weight:800;color:${pdCmdColor};margin-top:4px">${postDeliveryCmd}</div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${escapeHtml(postDeliveryDetail)}</div>
+    </div>
+    ${velocityDetail ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;text-align:center">${escapeHtml(velocityDetail)}</div>` : ''}
+  </div>`;
+
+  // ── Mistake Prevention Warnings ──
+  if (warnings && warnings.length > 0){
+    html += `<div style="margin-top:12px">`;
+    for (const w of warnings){
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;margin-bottom:4px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn-border)">
+        <span style="font-size:16px;flex-shrink:0">${w.icon}</span>
+        <span style="font-size:12px;color:var(--warn);font-weight:600;line-height:1.4">${escapeHtml(w.text)}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ── Bid Range ──
+  if (bidRange){
+    html += bidRangeHTML(bidRange);
+  }
+
+  // ── v23.8.2: Bid Outcome Log — Won/Lost/Expired, wired to logBid() ──
+  if (bidRange){
+    html += `<div id="mwBidOutcomeSlot" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="muted" style="font-size:11px">Bid outcome:</span>
+      <button class="pill" data-outcome="won" id="mwOutcomeWon">✅ Won</button>
+      <button class="pill" data-outcome="rejected" id="mwOutcomeLost">❌ Lost</button>
+      <button class="pill" data-outcome="expired" id="mwOutcomeExpired">⏱️ Expired</button>
+    </div>`;
+  }
+
+  // ── Lane Intel (F4) + Rate Trend (F8), injected async after render ──
+  html += `<div id="mwLaneIntelSlot"></div><div id="mwRateTrendSlot"></div>`;
+
+  // ── F20: Dead Zone Exit section (shown when eligibility conditions are met) ──
+  if (isDZEligible || isDZActive){
+    const dzDistFromHome = dzCheck.distanceFromHome || 0;
+    const dzSaved = dzCheck.distanceSaved || 0;
+    const dzAnchor = dzCheck.nearestAnchor || 'Midwest corridor';
+    html += `<div id="mwDZSection" style="margin-top:14px;padding:14px;border-radius:var(--r-sm);background:rgba(240,165,0,0.05);border:1px solid rgba(240,165,0,0.3)">
+      <div style="font-size:12px;font-weight:700;color:#f0a500;letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">⚠️ DEAD ZONE EXIT MODE</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:#f0a500;font-family:var(--font-mono)">${dzDistFromHome.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Miles from Home</div>
+        </div>
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${dzSaved >= 500 ? 'var(--good)' : '#f0a500'};font-family:var(--font-mono)">${dzSaved.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Miles Saved</div>
+        </div>
+        <div style="background:rgba(240,165,0,.07);border-radius:6px;padding:7px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#f0a500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(dzAnchor)}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">Target Anchor</div>
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Sub-tier thresholds: <b style="color:#f0a500">DZ-FLOOR</b> $${MW.dzFloorRPM.toFixed(2)}–$0.99 (500+ mi saved) • <b style="color:#f0a500">DZ-ACCEPTABLE</b> $1.00–$1.09 • <b style="color:#f0a500">DZ-STANDARD</b> $1.10–$1.24</div>
+        ${isDZActive ? `<div style="padding:8px 10px;border-radius:6px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;font-weight:700;color:#f0a500">Active: ${escapeHtml(dzSubTier || '')} — Grade capped at C. This load will not pollute your RPM averages.</div>` : ''}
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:8px;border-radius:6px;border:1px solid rgba(240,165,0,.25);background:rgba(240,165,0,.04)">
+        <input type="checkbox" id="mwDZNoReloadToggle" ${noReloadConfirmed ? 'checked' : ''} style="margin-top:2px;accent-color:#f0a500" />
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--text)">No reloads above $1.25 available within 120 miles</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Check this to activate Dead Zone survival scoring for this load. Resets on next evaluation.</div>
+        </div>
+      </label>
+      ${!isDZActive && trueRPM < MW.hardRejectRPM && trueRPM >= (dzFloor || MW.dzFloorRPM) ? `<div style="margin-top:8px;font-size:11px;color:var(--text-tertiary)">Current RPM $${trueRPM.toFixed(2)} is below normal floor. Toggle above to enable DZ scoring — load must save ${trueRPM < 1.00 && (dzCheck.distanceSaved||0) < 500 ? '<b style="color:var(--bad)">500mi</b> (DZ-FLOOR)' : '200mi'} toward home corridor.</div>` : ''}
+    </div>`;
+  }
+
+  // Close details wrapper
+  html += `</div></details>`;
+
+  // "Book as Trip" button — pre-fill trip wizard with evaluated load data
+  html += `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="btn primary" id="mwBookTrip">＋ Book as Trip</button>
+      <button class="btn" id="mwClearNext" style="border-color:var(--border)">↺ Clear &amp; Next</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="btn" id="mwAskAI" style="background:linear-gradient(135deg,var(--surface-2),var(--surface-1));border-color:var(--accent-border)">🤖 Ask AI</button>
+      <button class="btn" id="mwShareBid" style="border-color:var(--border)">📤 Share Bid</button>
+    </div>
+    <div id="mwBrokerNotesSlot"></div>
+    <div id="mwWeatherAlertSlot" style="margin-top:8px"></div>
+    <div id="mwAIResult" style="margin-top:10px"></div>
+  </div>`;
+
+  out.innerHTML = html;
+
+  // Wire up bid copy buttons
+  out.addEventListener('click', (e)=>{
+    const btn = e.target.closest('[data-copybid]');
+    if (!btn) return;
+    const amount = Number(btn.dataset.copybid);
+    if (!amount) return;
+    const text = fmtMoney(amount);
+    try {
+      navigator.clipboard.writeText(text).then(()=>{ haptic(10); toast('Rate copied: ' + text); }).catch(()=>{ toast('Rate: ' + text); });
+    } catch(e){ toast('Rate: ' + text); }
+  }, { once: false });
+
+  // Async: inject Lane Intel (F4) + Rate Trend (F8)
+  if (d.origin && d.dest){
+    getLaneIntel(d.origin, d.dest).then(intel => {
+      const slot = $('#mwLaneIntelSlot', out);
+      if (slot && intel) slot.innerHTML = renderLaneIntelHTML(intel);
+    }).catch(()=>{});
+    injectRateTrendIntoEvaluator(d.origin, d.dest).catch(()=>{});
+  }
+
+  // v21 T3E: Share Bid button
+  const shareBtn = $('#mwShareBid', out);
+  if (shareBtn){
+    shareBtn.addEventListener('click', ()=>{
+      haptic(15);
+      const bidAmounts = bidRange ? bidRange.map(b => b.amount).filter(v => v > 0) : [];
+      const bidAmt = bidAmounts.length ? Math.max(...bidAmounts) : revenue;
+      shareBidToClipboard({ origin, dest, miles: totalMi, bidAmount: bidAmt, rpm: trueRPM.toFixed(2), pickupDate: isoDate() }).catch(()=>{});
+    });
+  }
+
+  // v21 T3D / v23.8.2: Broker Notes button — keyed off #mwBroker only (normalized
+  // via normBroker()), no fallback to destination/origin. Hidden when empty.
+  const brokerNotesSlot = $('#mwBrokerNotesSlot', out);
+  const brokerNotesField = $('#mwBroker');
+  function _renderBrokerNotesBtn(){
+    if (!brokerNotesSlot) return;
+    const bk = normBroker(brokerNotesField?.value);
+    if (bk){
+      brokerNotesSlot.innerHTML = `<button class="btn sm" id="mwBrokerNotes" style="font-size:11px;margin-top:4px;color:var(--text-secondary)">🗒️ Broker Notes</button>`;
+      $('#mwBrokerNotes', out)?.addEventListener('click', ()=> openBrokerNotes((brokerNotesField.value||'').trim()));
+    } else {
+      brokerNotesSlot.innerHTML = '';
+    }
+  }
+  _renderBrokerNotesBtn();
+  if (brokerNotesField){
+    // Re-bind on every render so the listener always targets the current
+    // (freshly re-created) #mwBrokerNotesSlot node rather than a detached one.
+    if (brokerNotesField.__brokerNotesHandler) brokerNotesField.removeEventListener('input', brokerNotesField.__brokerNotesHandler);
+    brokerNotesField.__brokerNotesHandler = _renderBrokerNotesBtn;
+    brokerNotesField.addEventListener('input', _renderBrokerNotesBtn);
+  }
+
+  // v23.8.2: Bid Outcome Log — Won/Lost/Expired → logBid()
+  const outcomeSlot = $('#mwBidOutcomeSlot', out);
+  if (outcomeSlot){
+    const outcomeBtns = Array.from(outcomeSlot.querySelectorAll('[data-outcome]'));
+    outcomeBtns.forEach(btn => {
+      btn.addEventListener('click', async ()=>{
+        haptic(10);
+        const outcome = btn.dataset.outcome; // 'won' | 'rejected' | 'expired' — matches logBid()'s accepted set
+        const brokerVal = normBroker($('#mwBroker')?.value);
+        const bidVals = bidRange ? Object.values(bidRange).map(b => b.amount).filter(v => v > 0) : [];
+        const bidAmt = bidVals.length ? Math.max(...bidVals) : revenue;
+        try {
+          await logBid({
+            loadId: '', broker: brokerVal, origin, destination: dest,
+            miles: totalMi, postedTarget: revenue, bidAmount: bidAmt, outcome
+          });
+          outcomeBtns.forEach(b => { b.disabled = true; b.style.opacity = '.5'; b.style.borderColor = 'transparent'; });
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.borderColor = 'var(--accent)';
+          btn.style.background = 'rgba(var(--accent-rgb),.15)';
+          toast('Bid outcome logged');
+        } catch(e){
+          console.warn('[FL] logBid', e);
+          toast('Could not log outcome', true);
+        }
+      });
+    });
+  }
+
+  // v21 T4B: NWS Weather Alerts — async inject after render
+  if (navigator.onLine && (d.origin || d.dest)){
+    const origCoords = d.origin ? getMarketCoords(d.origin) : null;
+    const destCoords = d.dest ? getMarketCoords(d.dest) : null;
+    checkRouteWeather(origCoords, destCoords, `${d.origin || ''}|${d.dest || ''}`).then(alerts => {
+      const weatherSlot = $('#mwWeatherAlertSlot', out);
+      if (!weatherSlot || !alerts.length) return;
+      const lines = alerts.map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:12px"><span style="color:var(--warn)">⚠️</span><span>${escapeHtml(clampStr(a.event,80))} at ${escapeHtml(clampStr(a.label,80))} (NWS)</span></div>`).join('');
+      weatherSlot.innerHTML = `<div style="padding:8px 10px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);margin-top:4px">${lines}</div>`;
+    }).catch(()=>{});
+  }
+
+  // v21 T4D: Border wait time — inject if cross-border load detected
+  if (navigator.onLine && d._isCrossBorder && d._gatewayId){
+    fetchBorderWaitTime(d._gatewayId).then(bwt => {
+      if (!bwt || bwt.commercialWait === null) return;
+      const weatherSlot = $('#mwWeatherAlertSlot', out);
+      if (!weatherSlot) return;
+      const waitMsg = `🛃 ${escapeHtml(bwt.portName)}: ~${bwt.commercialWait} min commercial wait (CBP)`;
+      const el = document.createElement('div');
+      el.style.cssText = 'padding:6px 10px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);font-size:12px;margin-top:4px';
+      el.textContent = waitMsg;
+      weatherSlot.appendChild(el);
+    }).catch(()=>{});
+  }
+
+  // F20: Wire DZ no-reload toggle → re-evaluate
+  const dzToggle = $('#mwDZNoReloadToggle', out);
+  if (dzToggle){
+    dzToggle.addEventListener('change', ()=>{ haptic(10); mwEvaluateLoad().catch(()=>{}); });
+  }
+
+  // Wire up book-as-trip
+  const bookBtn = $('#mwBookTrip', out);
+  if (bookBtn){
+    bookBtn.addEventListener('click', ()=>{
+      haptic(15);
+      const tripData = {
+        orderNo: '',
+        customer: '',
+        origin: origin || '',
+        destination: dest || '',
+        loadedMiles: loadedMi || 0,
+        emptyMiles: deadMi,
+        pay: revenue || 0,
+        pickupDate: isoDate(),
+        notes: isDZActive
+          ? `MW Stack: ${dispGrade} DZ-EXIT (${dzSubTier}) — True RPM $${trueRPM.toFixed(2)} — ${(dzCheck.distanceFromHome||0)}mi from home`
+          : `MW Stack: ${grade || ''} (USA ${usaResult?.score || 0}/100) — True RPM $${trueRPM.toFixed(2)}`,
+        // F20: DZ exit fields — set on trip record
+        isDZExit: isDZActive,
+        dzSubTier: isDZActive ? dzSubTier : null,
+        dzDistanceFromHome: isDZActive ? (dzCheck.distanceFromHome || null) : null,
+      };
+      if (isDZActive){
+        // Audit log the DZ booking
+        tx(['auditLog'],'readwrite').then(({t, stores}) => {
+          stores.auditLog?.put?.({
+            id: crypto.randomUUID?.() || String(Date.now())+Math.random(),
+            timestamp: Date.now(),
+            entityId: null,
+            action: 'DZ_EXIT_BOOKED',
+            afterData: { origin: origin||'', destination: dest||'', trueRPM, dzSubTier, distanceFromHome: dzCheck.distanceFromHome||0, distanceSaved: dzCheck.distanceSaved||0 },
+            source: 'user'
+          });
+        }).catch(()=>{});
+      }
+      openTripWizard(tripData);
+    });
+  }
+
+  // Wire up Clear & Next
+  const clearNextBtn = $('#mwClearNext', out);
+  if (clearNextBtn){
+    clearNextBtn.addEventListener('click', ()=>{
+      haptic(10);
+      ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => { const el = $('#'+id); if(el) el.value=''; });
+      $('#mwEvalOutput').innerHTML = '';
+      try{ sessionStorage.removeItem('fl_eval_draft'); }catch(e){}
+      setTimeout(()=>{ $('#mwRevenue')?.focus(); }, 80);
+    });
+  }
+
+  // Wire up Ask AI
+  const aiBtn = $('#mwAskAI', out);
+  if (aiBtn){
+    aiBtn.addEventListener('click', async function(){
+      haptic(20);
+      const resultDiv = $('#mwAIResult', out);
+      if (!resultDiv) return;
+      const config = await cloudGetConfig();
+      if (!config){ toast('Connect cloud backup first (need token for AI)', true); return; }
+
+      aiBtn.disabled = true;
+      aiBtn.innerHTML = '<span class="cloud-sync-spinner"></span> Analyzing...';
+      resultDiv.innerHTML = '';
+
+      try {
+        const loadPayload = {
+          origin: origin || '', destination: dest || '',
+          loadedMiles: loadedMi, deadheadMiles: deadMi, totalMiles: totalMi,
+          revenue: effectiveRevenue, trueRPM: trueRPM, loadedRPM: loadedRPM,
+          deadheadPct: deadheadPct, weeklyGross: weeklyGross || 0,
+          dayOfWeek: ($('#mwDayOfWeek')?.value || ''), fatigue: fatigue || 0,
+          rulesGrade: grade, rulesVerdict: verdict,
+          notes: ($('#mwLoadNotes')?.value || '').trim(),
+          currency: ($('#mwCurrency')?.value || 'USD'),
+          mpg: d?._canonicalDecision?.economics?.mpg || MW.mpg, fuelPrice: d?._canonicalDecision?.economics?.fuelPrice || MW.fuelBaseline,
+          operatingCostPerMile: opCPM || 0,
+          strategic: !!effectiveStrategic, strategicReason: effectiveReason || '',
+          canonicalDecision: unifiedDecisionForAI(d?._canonicalDecision),
+        };
+
+        const res = await cloudFetch(CLOUD_WORKER_URL + '/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token },
+          body: JSON.stringify(loadPayload),
+        }, 30000);
+
+        if (!res.ok){
+          const errData = await res.json().catch(function(){ return {}; });
+          resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">' + escapeHtml(errData.error || 'AI unavailable') + '</div>';
+          aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision';
+          return;
+        }
+
+        const aiData = await res.json();
+        if (!aiData.ok || !aiData.ai){ resultDiv.innerHTML = '<div style="color:var(--bad);font-size:12px">AI returned no evaluation</div>'; aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision'; return; }
+
+        const ev = aiData.ai;
+        const evGradeColor = ev.grade === 'A' ? 'var(--good)' : ev.grade === 'B' ? '#58a6ff' : ev.grade === 'C' ? 'var(--warn)' : ev.grade === 'D' ? '#ff8c42' : 'var(--bad)';
+        const evVerdictColor = ev.verdict === 'ACCEPT' ? 'var(--good)' : (ev.verdict === 'STRATEGIC' || ev.verdict === 'DZ-EXIT') ? 'var(--warn)' : 'var(--bad)';
+
+        var aiHTML = '<div style="border:2px solid var(--accent-border);border-radius:var(--r);padding:14px;background:var(--surface-0)">';
+        aiHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:20px">🤖</span><span style="font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px">AI REVIEW · CANONICAL DECISION LOCKED</span>';
+        if (aiData.model) aiHTML += '<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary)">' + escapeHtml(aiData.model) + '</span>';
+        aiHTML += '</div>';
+
+        // Grade + Verdict
+        aiHTML += '<div style="display:flex;gap:10px;margin-bottom:12px">';
+        aiHTML += '<div style="text-align:center;padding:10px 16px;border-radius:8px;background:' + evGradeColor + '15;border:1px solid ' + evGradeColor + '40"><div style="font-size:28px;font-weight:800;color:' + evGradeColor + ';font-family:var(--font-mono)">' + escapeHtml(ev.grade || '?') + '</div><div style="font-size:10px;color:var(--text-tertiary)">FreightLogic Grade</div></div>';
+        aiHTML += '<div style="flex:1;padding:10px;border-radius:8px;background:' + evVerdictColor + '15;border:1px solid ' + evVerdictColor + '40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><div style="font-size:16px;font-weight:800;color:' + evVerdictColor + '">' + escapeHtml((ev.verdict || '?').replace(/_/g, ' ')) + '</div>';
+        if (ev.trueRpmBand) aiHTML += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono)">' + escapeHtml(ev.trueRpmBand) + '</div>';
+        aiHTML += '</div></div>';
+
+        // Summary
+        if (ev.summary) aiHTML += '<div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:10px">' + escapeHtml(ev.summary) + '</div>';
+
+        if (ev.agreement === 'CHALLENGE' && ev.challenge) aiHTML += '<div style="font-size:12px;color:var(--warn);line-height:1.5;padding:9px 10px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn-border);margin-bottom:10px"><b>AI challenge — recheck:</b> ' + escapeHtml(ev.challenge) + '</div>';
+
+        // Primary reason
+        if (ev.primaryReason) aiHTML += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;padding:6px 10px;border-radius:6px;background:var(--surface-2);border-left:3px solid var(--accent-border)">' + escapeHtml(ev.primaryReason) + '</div>';
+
+        // Positives & Risks
+        if (ev.positives && ev.positives.length){
+          aiHTML += '<div style="margin-bottom:8px">';
+          for (var s = 0; s < ev.positives.length; s++){
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--good);font-weight:700">+</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.positives[s]) + '</span></div>';
+          }
+          aiHTML += '</div>';
+        }
+        if (ev.risks && ev.risks.length){
+          aiHTML += '<div style="margin-bottom:10px">';
+          for (var r = 0; r < ev.risks.length; r++){
+            aiHTML += '<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:12px"><span style="color:var(--bad);font-weight:700">−</span><span style="color:var(--text-secondary)">' + escapeHtml(ev.risks[r]) + '</span></div>';
+          }
+          aiHTML += '</div>';
+        }
+
+        // Bid advice
+        if (ev.bidAdvice) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:10px;border-radius:8px;background:var(--surface-2);margin-bottom:8px"><b style="color:var(--text)">Canonical bid:</b> ' + escapeHtml(ev.bidAdvice) + '</div>';
+        if (ev.bidTactic) aiHTML += '<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;padding:8px 10px;border-radius:8px;background:var(--surface-1);margin-bottom:8px"><b style="color:var(--text)">AI tactic:</b> ' + escapeHtml(ev.bidTactic) + '</div>';
+
+        // Next move
+        if (ev.nextMove) aiHTML += '<div style="display:flex;gap:8px;margin-top:4px;font-size:11px"><div style="padding:4px 10px;border-radius:6px;background:var(--surface-2);color:var(--text-secondary)">Next: <b>' + escapeHtml(ev.nextMove) + '</b></div></div>';
+
+        aiHTML += '</div>';
+        resultDiv.innerHTML = aiHTML;
+      } catch(e) {
+        resultDiv.innerHTML = '<div style="padding:10px;border-radius:8px;background:var(--bad-muted);border:1px solid var(--bad-border);font-size:12px;color:var(--bad)">AI request failed: ' + escapeHtml(e.message || 'network error') + '</div>';
+      }
+      aiBtn.disabled = false; aiBtn.innerHTML = '🤖 Ask AI — Review Decision';
+    });
+  }
+
+  // Auto-run AI if token is configured — non-blocking, fails silently
+  (async () => {
+    const cfg = await cloudGetConfig();
+    if (cfg && aiBtn) aiBtn.click();
+  })().catch(() => {});
+}
+
+
+function _renderEvalHistory(){
+  const container = $('#mwEvalHistory');
+  if (!container) return;
+  let hist = [];
+  try { hist = JSON.parse(sessionStorage.getItem('fl_eval_hist') || '[]'); } catch(e){}
+  if (!hist.length){ container.innerHTML = ''; return; }
+
+  const rows = hist.map((h, i) => {
+    const route = (h.origin && h.dest) ? `${escapeHtml(h.origin)} → ${escapeHtml(h.dest)}` : '—';
+    const ago = i === 0 ? 'Just now' : _timeAgoShort(h.ts);
+    // A legacy entry written before the snapshot field existed simply has no
+    // confidence recorded. That reads as "not recorded" — never as HIGH.
+    const confLabel = h.confidence?.overall ? ` · confidence ${escapeHtml(h.confidence.overall)}` : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < hist.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
+      <div style="width:28px;height:28px;border-radius:6px;background:${h.gradeColor}22;border:1px solid ${h.gradeColor}55;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${h.gradeColor};font-family:var(--font-mono);flex-shrink:0">${escapeHtml(h.grade)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${route}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(h.gradeLabel)} · $${h.trueRPM.toFixed(2)}/mi · ${ago}${confLabel}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);flex-shrink:0">${h.revenue ? '$'+h.revenue.toLocaleString() : ''}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <details style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <summary style="font-size:12px;font-weight:600;color:var(--text-secondary);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
+        <span style="flex:1">Recent Evaluations (${hist.length})</span>
+        <span style="font-size:10px;color:var(--text-tertiary)">▼</span>
+      </summary>
+      <div style="margin-top:8px">${rows}</div>
+    </details>`;
+}
+
+function _timeAgoShort(ts){
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return sec + 's ago';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + 'm ago';
+  return Math.floor(min / 60) + 'h ago';
+}
+
+function mwRenderWeekStructure(weeklyGross){
+  const gross = weeklyGross || 0;
+  const targetCfg = getMWWeekTarget();
+  const pct = Math.min(100, Math.round((gross / targetCfg.high) * 100));
+  const bar = $('#mwWeekBar');
+  const label = $('#mwWeekLabel');
+  const grossEl = $('#mwWeekGross');
+  const rpmEl = $('#mwWeekRPM');
+  const nafEl = $('#mwWeekNAF');
+
+  if (bar) bar.style.width = pct + '%';
+  if (bar){
+    bar.style.background = gross >= targetCfg.low ? 'var(--good)' :
+      gross >= MW.stabilizeFloor ? 'var(--accent)' : 'var(--bad)';
+  }
+  if (label){
+    if (gross >= targetCfg.stretch) label.textContent = `Stretch pace — $${gross.toLocaleString()} / $${targetCfg.stretch.toLocaleString()}`;
+    else if (gross >= targetCfg.low) label.textContent = `On target — $${gross.toLocaleString()} / $${targetCfg.high.toLocaleString()}`;
+    else if (gross >= MW.stabilizeFloor) label.textContent = `Building — $${gross.toLocaleString()} / $${targetCfg.low.toLocaleString()} floor`;
+    else if (gross > 0) label.textContent = `Below floor — stabilize into density`;
+    else label.textContent = `Target: $${targetCfg.low.toLocaleString()}–$${targetCfg.high.toLocaleString()}/week • stretch $${targetCfg.stretch.toLocaleString()}`;
+  }
+  if (grossEl) grossEl.textContent = gross > 0 ? fmtMoney(gross) : '—';
+  if (rpmEl) rpmEl.textContent = '—'; // computed from trips if available
+  if (nafEl) nafEl.textContent = '—';
+}
+
+function mwRepoSignal(){
+  const compression = numVal('mbCompression', 0);
+  const rpmLow = numVal('mbRpmLow', 0);
+  const rpmHigh = numVal('mbRpmHigh', 0);
+  const location = ($('#mbLocation')?.value || '').trim();
+  const out = $('#mbRepoSignal');
+  if (!out) return;
+
+  if (!compression && !rpmHigh){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter compression + RPM data to get a reposition recommendation.</div>'; return; }
+
+  const geo = mwGeoCheck(location, '');
+  const inT1 = geo.oT1;
+  const bestVisible = Math.max(rpmLow, rpmHigh);
+  const shouldRepo = compression >= 70 && bestVisible < 1.50 && !inT1;
+
+  let html = '';
+  if (shouldRepo){
+    html = `<div style="padding:10px;border-radius:var(--r-sm);background:var(--warn-muted);border:1px solid var(--warn-border)">
+      <div style="font-weight:700;color:var(--warn);font-size:14px">⚠ Reposition Signal</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Compression ${compression}/100 with no visible 1.50+ RPM. Move toward Chicago, Indianapolis, St. Louis corridor, or Cleveland.</div>
+    </div>`;
+  } else if (compression >= 70){
+    html = `<div style="padding:10px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+      <div style="font-weight:600;font-size:13px">Compressed market (${compression}/100)</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${inT1 ? 'Already in Tier 1 — hold and wait for reload.' : `Best visible RPM: $${bestVisible.toFixed(2)} — monitor for 60–90 min before repositioning.`}</div>
+    </div>`;
+  } else {
+    html = `<div style="padding:10px;border-radius:var(--r-sm);background:var(--good-muted);border:1px solid var(--good-border)">
+      <div style="font-weight:600;font-size:13px;color:var(--good)">Market OK</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Compression ${compression || '—'}/100 • Best visible: $${bestVisible ? bestVisible.toFixed(2) : '—'}</div>
+    </div>`;
+  }
+  out.innerHTML = html;
+}
+
+// Tomorrow Signal — lightweight forecast based on your last market-board observations.
+// This does NOT require any external API (works offline). It becomes more accurate with more logs.
+async function mwRenderTomorrowSignal(){
+  const box = $('#mbTomorrowSignal');
+  if (!box) return;
+  try{
+    const {stores} = tx('marketBoard');
+    const all = (await idbReq(stores.marketBoard.getAll())) || [];
+    if (!all.length){ box.innerHTML = `<div class="muted" style="font-size:12px">Tomorrow Signal will appear after you log a few market observations.</div>`; return; }
+    all.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    const recent = all.slice(0, 6);
+    const cur = recent[0];
+    const prev = recent[1];
+    const volScore = v => v === 'heavy' ? 3 : v === 'moderate' ? 2 : 1;
+    const curVol = volScore(cur.volume);
+    const prevVol = prev ? volScore(prev.volume) : curVol;
+    const volTrend = curVol - prevVol;
+
+    const hi = Number(cur.rpmHigh || 0);
+    const lo = Number(cur.rpmLow || 0);
+    const compression = Number(cur.compression || 0);
+
+    // Market status heuristic
+    let status = 'BALANCED';
+    let color = 'var(--accent)';
+    if (curVol === 3 && hi >= 1.60 && compression <= 55){ status = 'HOT'; color = 'var(--good)'; }
+    else if (curVol === 1 || hi && hi < 1.45 || compression >= 70){ status = 'SLOW'; color = 'var(--warn)'; }
+    if (compression >= 80 && (cur.direction === 'S' || cur.densityDir === 'out')){ status = 'TRAP'; color = 'var(--bad)'; }
+
+    // Tomorrow guess = today status adjusted by trend
+    let tStatus = status;
+    if (volTrend >= 1 && status === 'BALANCED') tStatus = 'HOT';
+    if (volTrend <= -1 && status === 'BALANCED') tStatus = 'SLOW';
+    if (status === 'HOT' && volTrend <= -1) tStatus = 'BALANCED';
+    if (status === 'SLOW' && volTrend >= 1) tStatus = 'BALANCED';
+
+    const trendLabel = volTrend >= 1 ? '↑ volume rising' : volTrend <= -1 ? '↓ volume falling' : '→ steady';
+    const rec = (tStatus === 'HOT')
+      ? 'Push within density corridors. Protect your floor, raise your ask.'
+      : (tStatus === 'SLOW')
+        ? 'Use Strategic Floor only for home/reposition. Favor short corridor moves.'
+        : (tStatus === 'TRAP')
+          ? 'Avoid. Reposition toward Midwest density (STL / IND / CHI corridor).'
+          : 'Normal discipline. Take B+ loads that improve position.';
+
+    const loc = escapeHtml(cur.location || 'Current market');
+    box.innerHTML = `
+      <div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <div style="font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-tertiary);font-weight:700">Tomorrow Signal</div>
+            <div style="font-size:13px;font-weight:700;margin-top:2px">${loc}: <span style="color:${color}">${tStatus}</span></div>
+            <div class="muted" style="font-size:11px;margin-top:2px">Based on last market logs • ${trendLabel}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)">${lo ? '$'+lo.toFixed(2) : '—'}–${hi ? '$'+hi.toFixed(2) : '—'}</div>
+            <div style="font-size:10px;color:var(--text-tertiary)">Visible RPM range</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-secondary)">${escapeHtml(rec)}</div>
+      </div>
+    `;
+  }catch(e){
+    box.innerHTML = `<div class="muted" style="font-size:12px">Tomorrow Signal error.</div>`;
+  }
+}
+
+async function mwSaveMarketEntry(){
+  const entry = {
+    id: crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2,8),
+    date: new Date().toISOString(),
+    dayOfWeek: new Date().toLocaleDateString('en-US', { weekday:'long' }),
+    location: ($('#mbLocation')?.value || '').trim(),
+    volume: $('#mbVolume')?.value || 'moderate',
+    direction: $('#mbDirection')?.value || 'mixed',
+    densityDir: $('#mbDensityDir')?.value || 'into-t1',
+    rpmLow: numVal('mbRpmLow', 0),
+    rpmHigh: numVal('mbRpmHigh', 0),
+    compression: numVal('mbCompression', 0),
+    reload: numVal('mbReload', 0),
+    deadRisk: numVal('mbDeadRisk', 0),
+    notes: ($('#mbNotes')?.value || '').trim()
+  };
+  if (!entry.location){ toast('Enter a location', true); return; }
+  try {
+    const {t:txn, stores} = tx('marketBoard','readwrite');
+    stores.marketBoard.put(entry);
+    await waitTxn(txn);
+    toast('Market entry saved');
+    // Clear form
+    ['mbLocation','mbRpmLow','mbRpmHigh','mbCompression','mbReload','mbDeadRisk','mbNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
+    $('#mbVolume').value='moderate'; $('#mbDirection').value='mixed'; $('#mbDensityDir').value='into-t1';
+    await mwRenderBoardLog();
+    await mwRenderTomorrowSignal();
+  } catch(err){ console.error('[FL] Save error:', err); toast('Save failed. Please try again.', true); }
+}
+
+async function mwRenderBoardLog(){
+  const box = $('#mbLogList');
+  if (!box) return;
+  try {
+    const {stores} = tx('marketBoard');
+    const all = (await idbReq(stores.marketBoard.getAll())) || [];
+    all.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    const recent = all.slice(0, 10);
+    if (!recent.length){ box.innerHTML = '<div class="muted" style="font-size:12px">No market entries yet.</div>'; return; }
+    box.innerHTML = '';
+    recent.forEach(e => {
+      const el = document.createElement('div'); el.className = 'item';
+      const d = new Date(e.date);
+      const dateStr = d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+      const timeStr = d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+      el.innerHTML = `<div class="left">
+        <div class="v">${escapeHtml(e.location)}</div>
+        <div class="sub">${dateStr} ${timeStr} • Vol: ${e.volume} • Compression: ${e.compression || '—'}/100</div>
+        <div class="k">RPM: $${e.rpmLow ? e.rpmLow.toFixed(2) : '—'}–$${e.rpmHigh ? e.rpmHigh.toFixed(2) : '—'} • Reload: ${e.reload || '—'}%${e.notes ? ' • ' + escapeHtml(e.notes.slice(0,40)) : ''}</div>
+      </div>`;
+      box.appendChild(el);
+    });
+    staggerItems(box);
+  } catch{ box.innerHTML = '<div class="muted" style="font-size:12px">Error loading entries.</div>'; }
+}
+
+let mwBound = false;
+
+/** v23.8.2: Broker Identity Chain — fills #mwBrokerList with distinct broker
+ *  names seen in bidHistory (and laneHistory, if it ever carries a broker field)
+ *  so #mwBroker autocompletes from real history instead of starting blank. */
+async function populateBrokerList(){
+  try {
+    const list = $('#mwBrokerList');
+    if (!list) return;
+    const names = new Set();
+    const bidRows = await dumpStore('bidHistory').catch(()=>[]);
+    for (const r of (bidRows||[])){
+      const disp = clampStr(r?.brokerDisplay || r?.broker || '', 80);
+      if (disp) names.add(disp);
+    }
+    const laneRows = await dumpStore('laneHistory').catch(()=>[]);
+    for (const r of (laneRows||[])){
+      const disp = clampStr(r?.broker || '', 80);
+      if (disp) names.add(disp);
+    }
+    const sorted = Array.from(names).sort((a,b)=> a.localeCompare(b));
+    list.innerHTML = sorted.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  } catch(e){ console.warn('[FL] populateBrokerList', e); }
+}
+
+function mwBindTabs(){
+  const tabs = document.querySelectorAll('#mwTabs .btn');
+  const panels = { eval: $('#mwTabEval'), omega: $('#mwTabOmega'), board: $('#mwTabBoard') };
+
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.mwtab;
+      tabs.forEach(b => b.classList.remove('act'));
+      btn.classList.add('act');
+      Object.entries(panels).forEach(([k,p]) => {
+        if (p) p.style.display = k === t ? '' : 'none';
+      });
+      setSetting('mwLastTab', t).catch(()=>{});
+    });
+  });
+}
+
+// ── v20: sessionStorage draft helpers ──
+function _saveEvalDraft(){
+  try{
+    const draft = {
+      rev: $('#mwRevenue')?.value || '',
+      lm: $('#mwLoadedMi')?.value || '',
+      dm: $('#mwDeadMi')?.value || '',
+      origin: $('#mwOrigin')?.value || '',
+      dest: $('#mwDest')?.value || '',
+      ts: Date.now()
+    };
+    sessionStorage.setItem('fl_eval_draft', JSON.stringify(draft));
+  }catch(e){}
+}
+function _loadEvalDraft(){
+  try{
+    const raw = sessionStorage.getItem('fl_eval_draft');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Draft expires after 30 minutes
+    if (!d || (Date.now() - (d.ts||0)) > 1800000) { sessionStorage.removeItem('fl_eval_draft'); return null; }
+    return d;
+  }catch(e){ return null; }
+}
+
+async function mwInit(){
+  if (mwBound) return;
+  mwBound = true;
+  auditBrokerHistoryIntegrity().catch(e => console.warn('[FL] broker integrity boot check', e));
+
+  // Tab switching (hidden tabs used by More → Tools tiles)
+  mwBindTabs();
+
+  // Restore last tab (usually eval)
+  const lastTab = await getSetting('mwLastTab', 'eval');
+  const validTabs = new Set(['eval', 'omega', 'board']);
+  const safeTab = validTabs.has(lastTab) ? lastTab : 'eval';
+  const tabBtn = document.querySelector(`#mwTabs [data-mwtab="${safeTab}"]`);
+  if (tabBtn) tabBtn.click();
+
+  // v20: Advanced section toggle
+  const advToggle = $('#evalAdvToggle');
+  const advBody = $('#evalAdvBody');
+  if (advToggle && advBody){
+    advToggle.addEventListener('click', ()=>{
+      haptic(8);
+      advToggle.classList.toggle('open');
+      advBody.classList.toggle('open');
+    });
+  }
+
+  // v20: Live evaluation — debounced, no button needed
+  let _evalTimer = null;
+  function _scheduleEval(){
+    _saveEvalDraft();
+    clearTimeout(_evalTimer);
+    _evalTimer = setTimeout(()=>{
+      const rev = Number($('#mwRevenue')?.value) || 0;
+      const lm = Number($('#mwLoadedMi')?.value) || 0;
+      if (rev > 0 && lm > 0){
+        mwEvaluateLoad();
+      } else {
+        // Show helpful hint while partially filled
+        const out = $('#mwEvalOutput');
+        if (out){
+          const hint = rev > 0 ? 'Enter loaded miles to see grade' : lm > 0 ? 'Enter revenue to see grade' : null;
+          if (hint) out.innerHTML = `<div class="card" style="text-align:center;padding:20px 16px;border-style:dashed"><div class="muted" style="font-size:13px">${escapeHtml(hint)}</div></div>`;
+        }
+      }
+    }, 200);
+  }
+  ['mwRevenue','mwLoadedMi','mwDeadMi'].forEach(id => {
+    $('#'+id)?.addEventListener('input', _scheduleEval);
+  });
+
+  // Sanity-check warnings on revenue blur
+  $('#mwRevenue')?.addEventListener('blur', ()=>{
+    const rev = Number($('#mwRevenue')?.value) || 0;
+    if (rev > 5000) toast('Revenue over $5,000 — double-check the amount', false);
+    if (rev > 0 && rev < 50) toast('Revenue seems low — is that per mile?', false);
+  });
+
+  // GPS deadhead — trigger on origin field changes
+  const originEl = $('#mwOrigin');
+  if (originEl){
+    let _gpsTimer = null;
+    originEl.addEventListener('input', ()=>{
+      clearTimeout(_gpsTimer);
+      _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
+    });
+  }
+  // GPS pin button next to origin
+  $('#mwGpsBtn')?.addEventListener('click', async ()=>{
+    haptic(15);
+    const orig = ($('#mwOrigin')?.value||'').trim();
+    if (!orig){ toast('Enter an origin city first', true); return; }
+    $('#mwGpsHint').textContent = '📍 Getting location…';
+    _gpsCache = null;
+    await updateGPSDeadhead(orig);
+  });
+
+  // Mode selector persistence
+  const modeEl = $('#mwModeSelector');
+  if (modeEl){
+    const savedMode = await getSetting('mwMode', 'HARVEST');
+    if (['HARVEST','REPOSITION','ESCAPE','FLOOR_PROTECT'].includes(savedMode)) modeEl.value = savedMode;
+    modeEl.addEventListener('change', ()=> setSetting('mwMode', modeEl.value).catch(()=>{}));
+  }
+
+  // Strategic floor toggle
+  $('#mwStrategic')?.addEventListener('change', () => {
+    const on = !!$('#mwStrategic')?.checked;
+    const sel = $('#mwStrategicReason');
+    if (sel){ sel.disabled = !on; if (!on) sel.value = ''; }
+  });
+
+  // v20: Clear button — reset 3 primary fields + output, focus revenue
+  $('#mwEvalReset')?.addEventListener('click', () => {
+    ['mwOrigin','mwDest','mwBroker','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
+    const dow = $('#mwDayOfWeek');
+    if (dow){ const dm = ['sun','mon','tue','wed','thu','fri','sat']; dow.value = dm[new Date().getDay()]; }
+    const cur = $('#mwCurrency'); if (cur) cur.value='USD';
+    const st = $('#mwStrategic'); if (st) st.checked = false;
+    const sr = $('#mwStrategicReason'); if (sr){ sr.value=''; sr.disabled = true; }
+    const out = $('#mwEvalOutput');
+    if (out) out.innerHTML = `<div class="card" style="text-align:center;padding:28px 16px;border-style:dashed"><div style="font-size:32px;margin-bottom:8px;color:var(--text-tertiary)">⚡</div><div class="muted" style="font-size:13px;line-height:1.6">Enter revenue &amp; miles above<br>— grade appears instantly</div><div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Geography → True RPM → Fuel → Weekly Position → Fatigue</div></div>`;
+    mwRenderWeekStructure(0);
+    setSetting('mwLastInputs', null).catch(()=>{});
+    sessionStorage.removeItem('fl_eval_draft');
+    setTimeout(()=> $('#mwRevenue')?.focus(), 50);
+    haptic(10);
+  });
+
+  // Restore state: sessionStorage draft first (fastest), then IDB last inputs
+  const draft = _loadEvalDraft();
+  const last = await getSetting('mwLastInputs', null);
+
+  if (draft?.rev || draft?.lm){
+    // Draft is fresh (< 30min) — use it for primary fields
+    if (draft.rev) { const el=$('#mwRevenue'); if(el) el.value=draft.rev; }
+    if (draft.lm) { const el=$('#mwLoadedMi'); if(el) el.value=draft.lm; }
+    if (draft.dm) { const el=$('#mwDeadMi'); if(el) el.value=draft.dm; }
+    if (draft.origin) { const el=$('#mwOrigin'); if(el) el.value=draft.origin; }
+    if (draft.dest) { const el=$('#mwDest'); if(el) el.value=draft.dest; }
+  } else if (last && typeof last === 'object'){
+    if (last.origin) { const el=$('#mwOrigin'); if(el) el.value=last.origin; }
+    if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
+    if (last.broker) { const el=$('#mwBroker'); if(el) el.value=last.broker; }
+    if (last.loadedMi) { const el=$('#mwLoadedMi'); if(el) el.value=last.loadedMi; }
+    if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
+    if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
+    if (last.fatigue) { const el=$('#mwFatigue'); if(el) el.value=last.fatigue; }
+    if (last.strategicEnabled){
+      const st = $('#mwStrategic'); if (st) st.checked = true;
+      const sr = $('#mwStrategicReason'); if (sr){ sr.disabled = false; sr.value = last.strategicReason || ''; }
+    }
+  }
+
+  // Auto-detect day of week (auto, show label)
+  const dayMap = ['sun','mon','tue','wed','thu','fri','sat'];
+  const today = dayMap[new Date().getDay()];
+  const dowEl = $('#mwDayOfWeek');
+  if (dowEl && !last?.dayOfWeek) dowEl.value = today;
+  const dayAutoLabel = $('#mwDayAutoLabel');
+  if (dayAutoLabel) dayAutoLabel.textContent = '(auto)';
+
+  // Auto-populate weekly gross from IDB (never ask driver to type it)
+  try{
+    const qk = await computeQuickKPIs();
+    const grossEl = $('#mwWeeklyGross');
+    if (qk?.gross > 0 && grossEl && !grossEl.value){
+      grossEl.value = qk.gross;
+      const lbl = $('#mwGrossAutoLabel');
+      if (lbl) lbl.textContent = `(${qk.gross > 0 ? 'auto: $'+qk.gross : 'auto'})`;
+      const statusEl = $('#mwAutoFillStatus');
+      if (statusEl) statusEl.textContent = `Week so far: ${fmtMoney(qk.gross)} • ${today.charAt(0).toUpperCase()+today.slice(1)}`;
+    }
+  }catch(e){ console.warn('[FL] KPI prefill failed:', e); }
+
+  // If we restored inputs with revenue + miles, trigger live eval
+  const hasRevenue = Number($('#mwRevenue')?.value) > 0;
+  const hasMiles = Number($('#mwLoadedMi')?.value) > 0;
+  if (hasRevenue && hasMiles) setTimeout(()=> mwEvaluateLoad(), 100);
+
+  // Market board
+  $('#mbSaveBtn')?.addEventListener('click', mwSaveMarketEntry);
+  $('#mbClearBtn')?.addEventListener('click', () => {
+    ['mbLocation','mbRpmLow','mbRpmHigh','mbCompression','mbReload','mbDeadRisk','mbNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
+    mwRepoSignal();
+  });
+  ['mbCompression','mbRpmLow','mbRpmHigh','mbLocation'].forEach(id => {
+    $('#'+id)?.addEventListener('input', mwRepoSignal);
+  });
+
+  await mwRenderBoardLog();
+  await mwRenderTomorrowSignal();
+
+  // F10: voice input was removed by operator decision (Issue #230, v24.0.17).
+}
+
+let omegaBound = false;
+let omegaLastResult = null; // cached for Save to Bid History
+
+function omegaTierForMiles(m){
+  if (m <= 180) return 0; if (m <= 350) return 1; if (m <= 600) return 2; if (m <= 900) return 3; return 4;
+}
+const OMEGA_TIERS = [
+  { name:'Ultra-Short (≤180)', premium:{min:2.30,max:null}, ideal:{min:2.05,max:2.29}, strong:{min:1.85,max:2.04}, floor:{min:1.65,max:1.84}, under:{min:1.50,max:1.64}, underCond:'≤20 empty & Tier-1 drop only' },
+  { name:'Short (181–350)', premium:{min:1.90,max:null}, ideal:{min:1.65,max:1.89}, strong:{min:1.50,max:1.64}, floor:{min:1.38,max:1.49}, under:{min:1.28,max:1.37}, underCond:'Tier-1 corridor only' },
+  { name:'Mid (351–600)', premium:{min:1.60,max:null}, ideal:{min:1.45,max:1.59}, strong:{min:1.35,max:1.44}, floor:{min:1.28,max:1.34}, under:{min:1.20,max:1.27}, underCond:'home reposition or Tier-1 hub only' },
+  { name:'Long (601–900)', premium:{min:1.52,max:null}, ideal:{min:1.40,max:1.51}, strong:{min:1.32,max:1.39}, floor:{min:1.26,max:1.31}, under:{min:1.18,max:1.25}, underCond:'hub-to-hub only' },
+  { name:'Ultra-Long (901+)', premium:{min:1.48,max:null}, ideal:{min:1.38,max:1.47}, strong:{min:1.30,max:1.37}, floor:{min:1.24,max:1.29}, under:{min:1.18,max:1.23}, underCond:'deadhead replacement only' }
+];
+
+function omegaShiftOneTierLower(t){
+  return { name: t.name + ' (Erosion)', premium:{...t.ideal}, ideal:{...t.strong}, strong:{...t.floor},
+    floor:{...t.under}, under:{min:Math.max(0,t.under.min-0.05), max:t.under.max==null?null:Math.max(0,t.under.max-0.05)}, underCond:t.underCond };
+}
+function omegaApplyAdder(r, add){
+  return { min:+(r.min+add).toFixed(2), max:r.max==null?null:+(r.max+add).toFixed(2) };
+}
+
+function omegaNetRange(miles, rpmRange, fuelPx, mpg, opCpm){
+  const fuelCpm = (mpg > 0 && fuelPx > 0) ? (fuelPx / mpg) : 0;
+  const totalCpm = fuelCpm + (opCpm || 0);
+  const grossLow = miles * rpmRange.min;
+  const grossHigh = rpmRange.max == null ? null : miles * rpmRange.max;
+  const totalCost = miles * totalCpm;
+  return {
+    netLow: grossLow - totalCost,
+    netHigh: grossHigh == null ? null : grossHigh - totalCost,
+    netRpmLow: rpmRange.min - totalCpm,
+    netRpmHigh: rpmRange.max == null ? null : rpmRange.max - totalCpm,
+    costCpm: totalCpm,
+    fuelCpm,
+    opCpm: opCpm || 0,
+  };
+}
+
+function omegaFormatRevenue(miles, rpmRange){
+  const lo = Math.round(miles * rpmRange.min);
+  if (rpmRange.max == null) return `${fmtMoney(lo)}+`;
+  return `${fmtMoney(lo)}–${fmtMoney(Math.round(miles * rpmRange.max))}`;
+}
+function omegaFormatRpm(rpmRange){
+  if (rpmRange.max == null) return `${rpmRange.min.toFixed(2)}+`;
+  return `${rpmRange.min.toFixed(2)}–${rpmRange.max.toFixed(2)}`;
+}
+function omegaFormatNet(netInfo){
+  const lo = Math.round(netInfo.netLow);
+  if (netInfo.netHigh == null) return `${fmtMoney(lo)}+`;
+  return `${fmtMoney(lo)}–${fmtMoney(Math.round(netInfo.netHigh))}`;
+}
+
+function omegaRenderCard(label, miles, rpmRange, netInfo, color, cond){
+  const belowHardFloor = rpmRange.min < 1.25;
+  const dzTag = belowHardFloor
+    ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,140,66,0.12);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px;line-height:1.4"><b style="color:#ff8c42">DZ-ONLY</b> — sub-$1.25 RPM. Verify in Load Evaluator (requires 1500+ mi from home + directional benefit + no $1.25+ reload within 120mi).</div>`
+    : '';
+  const condLine = cond ? `<div class="muted" style="font-size:11px;margin-top:4px">${escapeHtml(cond)}</div>` : '';
+  return `
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;border-left:3px solid ${color}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <b style="color:${color};font-size:13px">${escapeHtml(label)}</b>
+        <span class="mono" style="font-size:11px;color:var(--muted)">${omegaFormatRpm(rpmRange)} RPM</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;font-size:13px">
+        <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Revenue</div><b>${omegaFormatRevenue(miles, rpmRange)}</b></div>
+        <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Net</div><b>${omegaFormatNet(netInfo)}</b></div>
+      </div>
+      ${condLine}${dzTag}
+    </div>`;
+}
+
+async function omegaCompute(){
+  const miles = Math.max(0, numVal('omMiles', 0));
+  const empty = Math.max(0, numVal('omEmpty', 0));
+  const dropTier = Number($('#omDropTier')?.value || 1);
+  const delayPct = Math.max(0, numVal('omDelayPct', 0));
+  const overnight = !!$('#omOvernight')?.checked;
+  const over250 = !!$('#om250')?.checked;
+  const risk = $('#omRisk')?.value || 'none';
+  const dayOfWeek = $('#omDayOfWeek')?.value || 'mon';
+  const loadNotes = ($('#omLoadNotes')?.value || '').trim();
+  const day3Gross = Math.max(0, numVal('omDay3Gross', 0));
+  const erosionOk = !!$('#omErosionOk')?.checked;
+  const out = $('#omOutput');
+  if (!out) return;
+
+  setSetting('omegaLastInputs', { miles, empty, dropTier, delayPct, overnight, over250, risk, dayOfWeek, loadNotes, day3Gross, erosionOk }).catch(()=>{});
+
+  if (!miles || miles <= 0){
+    out.innerHTML = '<div class="muted" style="font-size:13px;padding:18px 4px">Enter total miles to see tier-based bid ranges with net revenue projections.</div>';
+    const saveBtn = $('#omSaveBidBtn'); if (saveBtn) saveBtn.style.display = 'none';
+    toast('Enter total miles.');
+    return;
+  }
+
+  const fuelPx = Number(await getSetting('fuelPrice', MW.fuelBaseline) || MW.fuelBaseline);
+  const mpg = Number(await getSetting('vehicleMpg', MW.mpg) || MW.mpg);
+  const opCpm = Number(await getSetting('opCostPerMile', 0) || 0);
+
+  const weekTarget = getMWWeekTarget();
+  const erosionThreshold = Math.round(weekTarget.low * 0.5);
+
+  let tierIndex = omegaTierForMiles(miles);
+  if (delayPct >= 15) tierIndex = Math.min(4, tierIndex + 1);
+  let tier = OMEGA_TIERS[tierIndex];
+  let erosionApplied = false;
+  if (erosionOk && day3Gross > 0 && day3Gross < erosionThreshold){
+    tier = omegaShiftOneTierLower(tier);
+    erosionApplied = true;
+  }
+
+  let add = 0;
+  const adderNotes = [];
+  if (dropTier === 3){ add += 0.10; adderNotes.push('+0.10 Tier-3 drop'); }
+  if (risk === 'mod'){ add += 0.05; adderNotes.push('+0.05 moderate weather'); }
+  if (risk === 'winter'){ add += 0.10; adderNotes.push('+0.10 winter advisory'); }
+  if (risk === 'ice'){ add += 0.15; adderNotes.push('+0.15 ice/storm'); }
+
+  const urgency = detectUrgency(loadNotes);
+  let urgencyAdd = 0;
+  if (urgency && urgency.isUrgent){
+    urgencyAdd = Math.min(0.15, Number(urgency.boost || 0));
+    if (urgencyAdd > 0){
+      add += urgencyAdd;
+      adderNotes.push(`+${urgencyAdd.toFixed(2)} urgency (${(urgency.matches || []).slice(0,2).join(', ') || 'detected'})`);
+    }
+  }
+
+  const isLateWeek = (dayOfWeek === 'thu' || dayOfWeek === 'fri');
+  const isWeekend = (dayOfWeek === 'sat' || dayOfWeek === 'sun');
+
+  let trapLine = '';
+  if (risk === 'closure') trapLine = 'Trap: Major closure risk — PASS unless Premium Win';
+  else if (overnight || over250 || add > 0){
+    trapLine = add > 0 ? `Adders applied: ${adderNotes.join(', ')}` : 'Risk protocol required (weather/511/metro check)';
+  }
+
+  const p = omegaApplyAdder(tier.premium, add);
+  const i = omegaApplyAdder(tier.ideal, add);
+  const s = omegaApplyAdder(tier.strong, add);
+  const f = omegaApplyAdder(tier.floor, add);
+  const u = omegaApplyAdder(tier.under, add);
+
+  let underCond = tier.underCond || '';
+  if (tierIndex === 0){
+    underCond = (empty > 20 || dropTier !== 1)
+      ? 'Conditional: requires ≤20 empty & Tier-1 drop (NOT met)'
+      : 'Conditional: ≤20 empty & Tier-1 drop ✓';
+  } else underCond = `Conditional: ${underCond}`;
+
+  const pNet = omegaNetRange(miles, p, fuelPx, mpg, opCpm);
+  const iNet = omegaNetRange(miles, i, fuelPx, mpg, opCpm);
+  const sNet = omegaNetRange(miles, s, fuelPx, mpg, opCpm);
+  const fNet = omegaNetRange(miles, f, fuelPx, mpg, opCpm);
+  const uNet = omegaNetRange(miles, u, fuelPx, mpg, opCpm);
+
+  const headerLines = [
+    `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+      <b style="font-size:13px">${escapeHtml(tier.name)}</b>
+      <span class="muted" style="font-size:11px">${miles}mi · ${fmtMoney(pNet.costCpm)}/mi cost (fuel $${fuelPx.toFixed(2)}, ${mpg}mpg, op ${fmtMoney(opCpm)})</span>
+    </div>`
+  ];
+  if (erosionApplied) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Erosion mode active</b> — day-3 gross ${fmtMoney(day3Gross)} below ${fmtMoney(erosionThreshold)} threshold (50% of weekly low ${fmtMoney(weekTarget.low)}). Tier shifted one level down.</div>`);
+  if (isLateWeek) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(99,102,241,0.1);border-left:3px solid var(--accent);border-radius:4px;font-size:11px"><b>${dayOfWeek === 'thu' ? 'Thursday' : 'Friday'} window</b> — late-week target ${fmtMoney(MW.thuFri.low)}–${fmtMoney(MW.thuFri.high)}. Stretch acceptable if weekly low not hit.</div>`);
+  if (isWeekend) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Weekend operations</b> — low board, reload thin. Bid for premium or hold.</div>`);
+
+  const cards = [
+    omegaRenderCard('Premium Win', miles, p, pNet, 'var(--accent-text)', null),
+    omegaRenderCard('Ideal Target', miles, i, iNet, 'var(--good)', null),
+    omegaRenderCard('Strong Accept', miles, s, sNet, 'var(--text)', null),
+    omegaRenderCard('Floor Accept', miles, f, fNet, '#ff8c42', null),
+    omegaRenderCard('Strategic Under-Floor', miles, u, uNet, 'var(--warn)', underCond),
+  ];
+  if (trapLine){
+    cards.push(`<div class="card" style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);font-size:12px">${escapeHtml(trapLine)}</div>`);
+  }
+
+  out.innerHTML = headerLines.join('') + cards.join('');
+
+  omegaLastResult = {
+    miles, empty, dropTier, delayPct, dayOfWeek, risk, overnight, over250,
+    loadNotes, day3Gross, erosionApplied, tierName: tier.name,
+    bands: { premium: p, ideal: i, strong: s, floor: f, under: u },
+    nets: { premium: pNet, ideal: iNet, strong: sNet, floor: fNet, under: uNet },
+    adders: { total: add, notes: adderNotes },
+    urgency: urgency && urgency.isUrgent ? { boost: urgencyAdd, matches: urgency.matches } : null,
+    fuelPx, mpg, opCpm,
+  };
+  const saveBtn = $('#omSaveBidBtn');
+  if (saveBtn) saveBtn.style.display = 'inline-flex';
+}
+
+async function omegaSaveToBidHistory(){
+  if (!omegaLastResult) return toast('Run Calculate first.', true);
+  try {
+    const { t: txn, stores } = tx('bidHistory', 'readwrite');
+    const id = 'omega_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    // v23.8.2: Broker Identity Chain — pull broker/origin/dest from the shared
+    // evaluator fields (#mwBroker/#mwOrigin/#mwDest live in the eval tab's DOM,
+    // which stays mounted even while the Omega tab is active).
+    const brokerRaw = (document.getElementById('mwBroker')?.value || '').trim();
+    const originRaw = (document.getElementById('mwOrigin')?.value || '').trim();
+    const destRaw = (document.getElementById('mwDest')?.value || '').trim();
+    const record = {
+      id,
+      broker: normBroker(brokerRaw),
+      brokerDisplay: brokerRaw,
+      // Same lane format as Lane Memory / laneHistory (normalizeLane()).
+      lane: (originRaw && destRaw) ? normalizeLane(originRaw, destRaw) : '',
+      date: new Date().toISOString().slice(0, 10),
+      created: Date.now(),
+      updatedAt: Date.now(),
+      source: 'omega_calc',
+      miles: omegaLastResult.miles,
+      empty: omegaLastResult.empty,
+      tierName: omegaLastResult.tierName,
+      idealRpmMin: omegaLastResult.bands.ideal.min,
+      idealRpmMax: omegaLastResult.bands.ideal.max,
+      floorRpmMin: omegaLastResult.bands.floor.min,
+      adders: omegaLastResult.adders.total,
+      adderNotes: omegaLastResult.adders.notes.join('; '),
+      urgency: omegaLastResult.urgency,
+      dayOfWeek: omegaLastResult.dayOfWeek,
+      notes: omegaLastResult.loadNotes,
+    };
+    await idbReq(stores.bidHistory.put(record));
+    toast('Bid recommendation saved to history');
+  } catch(e){
+    console.warn('[FL] omega save', e);
+    toast('Save failed', true);
+  }
+}
+
+async function renderOmega(){
+  // F27: Load Intake button binding (idempotent)
+  const liBtn = $('#btnLoadIntake');
+  if (liBtn && !liBtn.__bound){
+    liBtn.__bound = true;
+    liBtn.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
+  }
+  // F23: Smart Load Inbox — renders once, guards against re-init
+  renderLoadInbox().catch(()=>{});
+  // v23.8.2: Broker Identity Chain — refresh broker autocomplete each time the
+  // evaluator view is shown so newly-logged brokers appear.
+  populateBrokerList().catch(()=>{});
+  await mwInit();
+  if (!omegaBound){
+    omegaBound = true;
+    $('#omCalcBtn')?.addEventListener('click', omegaCompute);
+    $('#omSaveBidBtn')?.addEventListener('click', omegaSaveToBidHistory);
+    $('#omResetBtn')?.addEventListener('click', () => {
+      ['omMiles','omEmpty','omDelayPct','omDay3Gross','omLoadNotes'].forEach(id => { const el = $('#'+id); if (el) el.value=''; });
+      const dt = $('#omDropTier'); if (dt) dt.value='1';
+      const rk = $('#omRisk'); if (rk) rk.value='none';
+      const dow = $('#omDayOfWeek'); if (dow) dow.value='mon';
+      const ov = $('#omOvernight'); if (ov) ov.checked=false;
+      const o250 = $('#om250'); if (o250) o250.checked=false;
+      const er = $('#omErosionOk'); if (er) er.checked=false;
+      const out = $('#omOutput');
+      if (out) out.innerHTML = '<div class="muted" style="font-size:13px;padding:18px 4px">Enter total miles to see tier-based bid ranges with net revenue projections.</div>';
+      const saveBtn = $('#omSaveBidBtn'); if (saveBtn) saveBtn.style.display = 'none';
+      omegaLastResult = null;
+      setSetting('omegaLastInputs', null).catch(()=>{});
+    });
+    // Restore last inputs
+    const last = await getSetting('omegaLastInputs', null);
+    if (last && typeof last === 'object'){
+      if (last.miles) { const el = $('#omMiles'); if (el) el.value = last.miles; }
+      if (last.empty) { const el = $('#omEmpty'); if (el) el.value = last.empty; }
+      if (last.dropTier) { const el = $('#omDropTier'); if (el) el.value = last.dropTier; }
+      if (last.delayPct) { const el = $('#omDelayPct'); if (el) el.value = last.delayPct; }
+      if (last.dayOfWeek) { const el = $('#omDayOfWeek'); if (el) el.value = last.dayOfWeek; }
+      if (last.loadNotes) { const el = $('#omLoadNotes'); if (el) el.value = last.loadNotes; }
+      if (last.overnight) { const el = $('#omOvernight'); if (el) el.checked = true; }
+      if (last.over250) { const el = $('#om250'); if (el) el.checked = true; }
+      if (last.risk) { const el = $('#omRisk'); if (el) el.value = last.risk; }
+      if (last.day3Gross) { const el = $('#omDay3Gross'); if (el) el.value = last.day3Gross; }
+      if (last.erosionOk) { const el = $('#omErosionOk'); if (el) el.checked = true; }
+    }
+  }
+  // Render top lanes
+  await renderTopLanes();
+}
+
+async function renderTopLanes(){
+  const box = $('#laneList');
+  if (!box) return;
+  try{
+    const { trips } = await _getTripsAndExps();
+    const lanes = computeLaneStats(trips);
+    box.innerHTML = '';
+    const top = lanes.slice(0, 10);
+    if (!top.length){
+      box.innerHTML = `<div class="muted" style="font-size:12px">Add trips with origin + destination to see lane intelligence.</div>`;
+      return;
+    }
+    top.forEach(lane => {
+      const el = document.createElement('div'); el.className = 'item'; el.style.cursor = 'pointer';
+      const trendIcon = lane.trend > 0 ? '📈' : lane.trend < 0 ? '📉' : '➡️';
+      const trendColor = lane.trend > 0 ? 'var(--good)' : lane.trend < 0 ? 'var(--bad)' : 'var(--muted)';
+      const repeatBadge = lane.repeatRate !== null && lane.repeats > 0 ? ` • <span style="color:#58a6ff">↻ ${lane.repeatRate}% repeat</span>` : '';
+      el.innerHTML = `<div class="left">
+        <div class="v">${escapeHtml(lane.display)}</div>
+        <div class="sub">${lane.trips} run${lane.trips>1?'s':''} • $${lane.avgRpm} avg RPM • $${lane.minRpm}–$${lane.maxRpm} range</div>
+        <div class="k"><span style="color:${trendColor}">${trendIcon} ${lane.trendLabel}</span>${repeatBadge}${lane.daysSinceLast !== null ? ` • Last: ${lane.daysSinceLast}d ago` : ''}</div>
+      </div><div class="right"><div class="v">${fmtMoney(lane.avgPay)}</div><div class="sub">avg/load</div></div>`;
+      el.addEventListener('click', ()=> { haptic(10); openLaneBreakdown(lane, trips); });
+      box.appendChild(el);
+    });
+    staggerItems(box);
+  }catch{ box.innerHTML = `<div class="muted" style="font-size:12px">Error loading lane data.</div>`; }
+}
+
+function openLaneBreakdown(lane, allTrips){
+  const body = document.createElement('div');
+  body.style.padding = '0';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'text-align:center;padding:14px 0';
+  const trendColor = lane.trend > 0 ? 'var(--good)' : lane.trend < 0 ? 'var(--bad)' : 'var(--muted)';
+  header.innerHTML = `
+    <div style="font-size:16px;font-weight:800;margin-bottom:4px">${escapeHtml(lane.display)}</div>
+    <div style="font-size:36px;font-weight:900;color:var(--accent);line-height:1.1">$${lane.avgRpm} <span style="font-size:16px;color:var(--muted)">avg RPM</span></div>
+    <div style="margin-top:8px;font-size:14px;font-weight:700;color:${trendColor}">${lane.trend > 0 ? '📈' : lane.trend < 0 ? '📉' : '➡️'} ${lane.trendLabel}</div>`;
+  body.appendChild(header);
+
+  const stats = document.createElement('div');
+  stats.className = 'row';
+  stats.style.cssText = 'margin:0 0 14px;justify-content:center';
+  stats.innerHTML = `
+    <div class="pill"><span class="muted">Runs</span> <b>${lane.trips}</b></div>
+    <div class="pill"><span class="muted">RPM range</span> <b>$${lane.minRpm}–$${lane.maxRpm}</b></div>
+    <div class="pill"><span class="muted">Avg pay</span> <b>${fmtMoney(lane.avgPay)}</b></div>
+    <div class="pill"><span class="muted">Total rev</span> <b>${fmtMoney(lane.totalPay)}</b></div>
+    <div class="pill"><span class="muted">Total miles</span> <b>${fmtNum(lane.totalMiles)}</b></div>
+    ${lane.volatility > 0 ? `<div class="pill"><span class="muted">Volatility</span> <b>±$${lane.volatility.toFixed(2)}</b></div>` : ''}
+    ${lane.repeatRate !== null ? `<div class="pill"><span class="muted">Would repeat</span> <b style="color:#58a6ff">${lane.repeatRate}%</b></div>` : ''}
+    ${lane.daysSinceLast !== null ? `<div class="pill"><span class="muted">Last run</span> <b>${lane.daysSinceLast}d ago</b></div>` : ''}`;
+  body.appendChild(stats);
+
+  // RPM history list (most recent first)
+  if (lane.rpms && lane.rpms.length > 0){
+    const card = document.createElement('div');
+    card.className = 'card';
+    const sorted = [...lane.rpms].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+    let rows = '';
+    sorted.forEach((r, i) => {
+      const bg = r.rpm >= lane.avgRpm ? 'rgba(107,255,149,.06)' : 'rgba(255,107,107,.06)';
+      rows += `<div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:8px;margin-bottom:4px;background:${bg}">
+        <span style="font-size:12px">${escapeHtml(r.date || '—')}</span>
+        <span style="font-size:12px;font-weight:700">$${r.rpm.toFixed(2)} RPM • ${fmtMoney(r.pay)}</span></div>`;
+    });
+    card.innerHTML = `<h3>Run History (${sorted.length})</h3>${rows}`;
+    body.appendChild(card);
+  }
+
+  openModal(`Lane • ${escapeHtml(lane.display)}`, body);
+}
+
+// ---- Forms ----
+function openQuickAddSheet(){
+  haptic(20);
+  $('#fab')?.classList.add('open');
+  const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.cssText='border:0;box-shadow:none;background:transparent';
+  wrap.innerHTML = `<div class="btn-row"><button class="btn primary" id="qaTrip">＋ Trip</button><button class="btn" id="qaExpense">＋ Expense</button><button class="btn" id="qaFuel">＋ Fuel</button><button class="btn" id="qaCompare">⚖️ Compare</button></div>
+    <div class="muted" style="font-size:12px;margin-top:10px">Trip is Order # + Pay + Miles. Everything else is optional.</div>`;
+  $('#qaTrip', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openTripWizard(); });
+  $('#qaExpense', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openExpenseForm(); });
+  $('#qaFuel', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openFuelForm(); });
+  $('#qaCompare', wrap).addEventListener('click', ()=> { haptic(); closeModal(); openLoadCompare(); });
+  const origClose = closeModal;
+  const _close = closeModal;
+  openModal('Quick Add', wrap);
+  // Reset FAB on close
+  const obs = new MutationObserver(()=> { if ($('#modal').style.display === 'none'){ $('#fab')?.classList.remove('open'); obs.disconnect(); } });
+  obs.observe($('#modal'), {attributes:true, attributeFilter:['style']});
+}
+
+// ── Snap Load: OCR-powered load entry ──────────────────────────────
+let _tesseractReady = false;
+let _tesseractWorker = null;
+
+// Issue #220 — OCR loads self-hosted code or it does not load.
+//
+// WHAT WAS WRONG. `loadTesseract()` fell back to
+// `https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/…` for the engine script, and
+// to jsDelivr again for `workerPath`/`corePath`. That is arbitrary third-party
+// JavaScript executing in the FreightLogic origin, with the same access to
+// IndexedDB as the operator's entire trip history, expenses, receipts and the
+// locally stored cloud credentials. `loadScriptWithFallback()` carried an SRI
+// TODO and no `integrity` attribute, so nothing pinned the bytes either. The
+// only reason `cdn.jsdelivr.net` remained in the CSP at all — after X-10 bundled
+// SheetJS — was this fallback.
+//
+// AND IT WAS ALREADY DEAD. The shipped CSP cannot run that path to completion,
+// which was proved rather than argued (see `OCR-*` in
+// integration/ocr-self-hosted.spec.mjs, which records real
+// `securitypolicyviolation` events):
+//
+//   - `connect-src` has no `tessdata.projectnaptha.com`, and
+//     `Tesseract.createWorker('eng', …)` must fetch `eng.traineddata.gz` from
+//     its default `langPath` there. The fetch raises a real CSP violation.
+//   - `worker-src 'self' blob:` forbids a cross-origin worker, so a jsDelivr
+//     `workerPath` throws `SecurityError` at construction.
+//
+// So the fallback could load and execute a third-party script in the origin —
+// the risk was entirely real — while never actually producing OCR. Removing it
+// takes away no working capability. That is the honest half of the issue's two
+// options, and it is what production already does in practice.
+//
+// WHAT IS KEPT. The local vendor path, unchanged. Dropping the three files into
+// `vendor/` enables OCR with no code change, exactly as README.txt describes,
+// and nothing fetches them from anywhere else. They are deliberately NOT
+// committed here: the engine, the SIMD core and the English model are ~15 MB
+// together, which is an operator-sized decision about a flat-file repo whose
+// service worker precaches its assets — not something to slip into a security
+// fix. See the note in README.txt.
+//
+// Returns a Tesseract worker, or NULL when OCR is not installed. Null rather
+// than a throw because both call sites want to report "not available" rather
+// than surface an engine error, and the receipt path already tested for it.
+const OCR_VENDOR_ENGINE = './vendor/tesseract.min.js';
+const OCR_VENDOR_WORKER = './vendor/worker.min.js';
+const OCR_VENDOR_CORE   = './vendor/tesseract-core-simd-lstm.wasm.js';
+
+async function loadTesseract(){
+  if (_tesseractReady && _tesseractWorker) return _tesseractWorker;
+  if (typeof Tesseract === 'undefined'){
+    try {
+      await loadScriptWithFallback([OCR_VENDOR_ENGINE], () => {
+        if (typeof Tesseract === 'undefined' || typeof Tesseract.createWorker !== 'function'){
+          throw new Error('OCR engine loaded but createWorker is missing');
+        }
+      }, 'OCR engine is not installed on this device.');
+    } catch (err){
+      console.warn('[FL] OCR engine unavailable:', err && err.message);
+      return null;
+    }
+  }
+  try {
+    _tesseractWorker = await Tesseract.createWorker('eng', 1, {
+      workerPath: OCR_VENDOR_WORKER,
+      corePath: OCR_VENDOR_CORE,
+    });
+  } catch (err){
+    console.warn('[FL] OCR worker could not start:', err && err.message);
+    _tesseractWorker = null;
+    return null;
+  }
+  _tesseractReady = true;
+  return _tesseractWorker;
+}
+
+
+function normalizeCityStateLoose(raw){
+  const s = String(raw || '').replace(/\s+/g, ' ').trim().replace(/[|•]+/g,' ');
+  if (!s) return '';
+  const m = s.match(/([A-Za-z][A-Za-z .'-]{1,40}?)[,\s]+([A-Z]{2})/);
+  if (!m) return s;
+  const city = m[1].trim().replace(/([a-z])/g, c => c.toUpperCase());
+  return `${city}, ${m[2].toUpperCase()}`;
+}
+
+function parseArrowLaneLine(text){
+  const safe = String(text || '').replace(/\s+/g,' ').trim();
+  if (!safe) return null;
+  const m = safe.match(/([A-Za-z][A-Za-z .'-]{1,40}(?:,?\s*[A-Z]{2})?)\s*(?:→|->|—>|to)\s*([A-Za-z][A-Za-z .'-]{1,40}(?:,?\s*[A-Z]{2})?)/i);
+  if (!m) return null;
+  return {
+    origin: normalizeCityStateLoose(m[1]),
+    destination: normalizeCityStateLoose(m[2])
+  };
+}
+
+/** v18 OCR character correction — fix common Tesseract misreads in load board text */
+function ocrCorrectText(text){
+  if (!text) return text;
+  let s = String(text);
+  // Common OCR letter/digit confusion in numeric context
+  // O ↔ 0 in numeric sequences: "3O0" → "300", "1O5" → "105"
+  s = s.replace(/(\d)[Oo](\d)/g, '$10$2');
+  s = s.replace(/(\d)[Oo](?=\s|$|\D)/g, '$10');
+  // l ↔ 1 in numeric context
+  s = s.replace(/(\d)l(\d)/g, '$11$2');
+  s = s.replace(/\bl(\d{2,})/g, '1$1');
+  // S ↔ 5 in all-digit context
+  s = s.replace(/(\d)S(\d)/g, '$15$2');
+  // B ↔ 8 in numeric context
+  s = s.replace(/(\d)B(\d)/g, '$18$2');
+  // Fix "$1.5OO" → "$1,500" style misreads
+  s = s.replace(/\$\s*(\d+)\s*\.\s*([Oo5]{3})/gi, (_, a, b) => '$' + a + ',' + b.replace(/[Oo]/g,'0').replace(/5/g,'5'));
+  // Normalize common load board separators
+  s = s.replace(/\s*[|]\s*/g, ' | ');
+  // Fix "CHICAGD" → "CHICAGO" (D at end of -O words, common OCR)
+  // Fix broken state abbreviations: "IL." → "IL"
+  s = s.replace(/\b([A-Z]{2})\./g, '$1');
+  return s;
+}
+
+/** v18 Enhanced OCR parsing — Sylectus, Dispatchland, DAT, Truckstop formats */
+function parseLoadTextEnhanced(rawText){
+  const text = ocrCorrectText(rawText);
+  const base = parseLoadText(text);
+
+  // Sylectus format: "Origin: City ST | Destination: City ST | Miles: XXX | Rate: $X,XXX"
+  const sylectusOrigin = text.match(/(?:^|\|)\s*(?:origin|from|shipper)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  const sylectusDest = text.match(/(?:^|\|)\s*(?:dest(?:ination)?|to|consignee)\s*:?\s*([A-Z][a-zA-Z\s.]{1,30}),?\s*([A-Z]{2})/im);
+  if (sylectusOrigin && !base.origin) base.origin = `${sylectusOrigin[1].trim()}, ${sylectusOrigin[2]}`;
+  if (sylectusDest && !base.destination) base.destination = `${sylectusDest[1].trim()}, ${sylectusDest[2]}`;
+
+  // Dispatchland format: "Chicago, IL → Indianapolis, IN | 185 loaded mi | 22 DH mi | $420"
+  const dlArrow = text.match(/([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})\s*(?:→|->|to)\s*([A-Z][a-zA-Z\s.]{1,30}),\s*([A-Z]{2})/i);
+  if (dlArrow) {
+    if (!base.origin) base.origin = `${dlArrow[1].trim()}, ${dlArrow[2]}`;
+    if (!base.destination) base.destination = `${dlArrow[3].trim()}, ${dlArrow[4]}`;
+  }
+
+  // Loaded miles: "185 loaded mi" or "185 loaded miles"
+  const loadedMiMatch = text.match(/(\d[\d,]{0,5})\s*(?:loaded\s*)?(?:mi(?:les?)?)\b/i);
+  if (loadedMiMatch && !base.loadedMiles) base.loadedMiles = parseInt(loadedMiMatch[1].replace(/,/g,''),10)||0;
+
+  // Deadhead/empty miles: "22 DH" or "22 empty miles" or "empty: 22"
+  const dhMatch = text.match(/(\d[\d,]{0,5})\s*(?:dh|empty|deadhead)\s*(?:mi(?:les?)?)?(?:\s|$)/i) ||
+                  text.match(/(?:empty|dh|deadhead)\s*:?\s*(\d[\d,]{0,5})\s*(?:mi(?:les?)?)?/i);
+  if (dhMatch && base.deadheadMiles == null) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
+
+  // Rate: "$1,650" or "Rate: 1650" or "$1.65/mi" style (reject per-mile rates)
+  if (!base.pay){
+    const rateMatch = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)\b(?!\s*\/\s*mi)/i) ||
+                      text.match(/(?:rate|pay|total|line\s*haul|all[\s-]*in)\s*:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (rateMatch){
+      const v = parseFloat(rateMatch[1].replace(/,/g,''));
+      if (v > 50 && v < 50000) base.pay = v;
+    }
+  }
+
+  // Weight: "1200 lbs" or "Weight: 1200 lb"
+  if (!base.weight){
+    const wm = text.match(/(\d[\d,]{0,6})\s*(?:lbs?|pounds?)/i);
+    if (wm) base.weight = parseInt(wm[1].replace(/,/g,''),10)||0;
+  }
+
+  // Pieces: "4 pcs" or "Pieces: 4"
+  const pcsMatch = text.match(/(\d{1,4})\s*(?:pcs?|pieces?|pallets?|skids?)/i);
+  if (pcsMatch) base.pieces = parseInt(pcsMatch[1],10)||0;
+
+  // Pickup window: "PU: 03/19 08:00-14:00" or "Pickup: tomorrow 0800"
+  const puWindowMatch = text.match(/(?:pu|pick\s*up)\s*(?:window|time)?\s*:?\s*([^\n]{5,40})/i);
+  if (puWindowMatch) base.pickupWindow = puWindowMatch[1].trim().slice(0,60);
+
+  // Broker/company name: "Posted by: Acme Transport" or "Broker: Acme"
+  const brokerMatch = text.match(/(?:posted\s*by|broker(?:age)?|company|carrier\s*contact)\s*:?\s*([A-Z][a-zA-Z0-9\s&.,'-]{3,50})/i);
+  if (brokerMatch && !base.customer) base.customer = brokerMatch[1].trim().slice(0,80);
+
+  return base;
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21.0.0 T1A: Receipt OCR → Expense Pipeline
+// ════════════════════════════════════════════════════════════════
+function parseReceiptOCR(ocrText){
+  const text = ocrText || '';
+  // Total amount: prefer "Total" label, fallback to subtotal
+  let amount = 0;
+  const totalMatch = text.match(/(?:total|amount|balance due|amount due|amount paid)[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+                     text.match(/(?:subtotal|sub.?total)[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+  if (totalMatch){ amount = parseFloat(totalMatch[1].replace(/,/g,'')) || 0; }
+  // If no labeled total, take largest dollar amount in receipt (likely the total)
+  if (!amount){
+    const allAmounts = [];
+    const amtRe = /\$\s*([\d,]+\.\d{2})/g; let m;
+    while ((m = amtRe.exec(text)) !== null){ const v = parseFloat(m[1].replace(/,/g,'')); if (v > 0) allAmounts.push(v); }
+    if (allAmounts.length) amount = Math.max(...allAmounts);
+  }
+  // Date
+  let date = isoDate();
+  const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (dateMatch){
+    const y = dateMatch[3].length === 2 ? '20' + dateMatch[3] : dateMatch[3];
+    const mo = dateMatch[1].padStart(2,'0'); const dy = dateMatch[2].padStart(2,'0');
+    const candidate = `${y}-${mo}-${dy}`;
+    if (isValidISODate(candidate)) date = candidate;
+  }
+  // Vendor: first line with 3+ alpha chars that isn't a date or just numbers
+  let vendor = '';
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  for (const line of lines){
+    if (/^\d[\d\s\-\/:.,$]*$/.test(line)) continue;
+    if (line.length < 3) continue;
+    if (/^(receipt|thank|welcome|cashier|server|table|order|invoice)/i.test(line)) continue;
+    if (/[a-zA-Z]{3}/.test(line)){ vendor = line.replace(/[^\w\s'&.-]/g,' ').trim().slice(0,60); break; }
+  }
+  // Category inference
+  let category = 'Other';
+  const t = text.toLowerCase();
+  if (/love.?s|pilot|flying.?j|\bta\b|casey.?general|sheetz|wawa|buc-?ee|fuel|diesel|\bgas\b|kwik.?trip|speedway/.test(t)) category = 'Fuel';
+  else if (/mcdonald|wendy|burger.?king|subway|taco.?bell|chipotle|chick.?fil|domino|pizza|denny|ihop|cracker|waffle|steak.?n.?shake/.test(t)) category = 'Food';
+  else if (/toll|ez.?pass|i.?pass|sunpass|pikepass|fastlane|peach.?pass/.test(t)) category = 'Tolls';
+  else if (/tire|oil.?change|brake|muffler|maint|autozone|napa|o.?reill|advance.?auto|pep.?boys|jiffy.?lube/.test(t)) category = 'Maintenance';
+  else if (/hotel|motel|inn|lodge|sleep.?inn|comfort.?inn|holiday.?inn|super.?8|days.?inn|hampton/.test(t)) category = 'Lodging';
+  else if (/park|parking|garage|ramp/.test(t)) category = 'Parking';
+  return { amount: roundCents(amount), date, vendor, category };
+}
+
+async function openReceiptExpenseForm(parsed, blob){
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div style="font-size:12px;color:var(--good);margin-bottom:10px;padding:6px 10px;border-radius:6px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2)">
+      Receipt scanned — verify details below
+    </div>
+    <label>Date</label><input id="rof_date" type="date" />
+    <label>Amount $</label><input id="rof_amt" type="number" step="0.01" placeholder="0.00" />
+    <label>Category</label><input id="rof_cat" list="catList" placeholder="Fuel, Tolls..." />
+    <label>Vendor / Notes</label><input id="rof_notes" placeholder="Vendor or note" />
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn primary" id="rof_save">Save Expense</button>
+      <button class="btn" id="rof_cancel">Cancel</button>
+    </div>
+    <div class="muted" id="rof_hint" style="font-size:12px;margin-top:8px"></div>
+  </div>`;
+  $('#rof_date', body).value = parsed.date || isoDate();
+  $('#rof_amt', body).value = parsed.amount > 0 ? parsed.amount.toFixed(2) : '';
+  $('#rof_cat', body).value = parsed.category || '';
+  $('#rof_notes', body).value = parsed.vendor || '';
+
+  $('#rof_save', body).addEventListener('click', async ()=>{
+    const amt = Number($('#rof_amt', body).value || 0);
+    if (!(amt > 0)){ $('#rof_hint', body).textContent = 'Amount must be > 0.'; return; }
+    const exp = { date: $('#rof_date', body).value || isoDate(), amount: amt,
+      category: clampStr($('#rof_cat', body).value, 60),
+      notes: clampStr($('#rof_notes', body).value, 300),
+      type: 'expense', created: Date.now() };
+    // Optionally attach receipt blob
+    if (blob){
+      try{
+        const blobId = 'rcpt_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        const {t:btxn, stores:bs} = tx('receiptBlobs','readwrite');
+        const buf = await blob.arrayBuffer();
+        bs.receiptBlobs.put({ id: blobId, data: new Uint8Array(buf), type: blob.type, size: blob.size, createdAt: Date.now() });
+        await new Promise(r => { btxn.oncomplete = r; btxn.onerror = r; });
+        exp.receiptBlobRef = blobId;
+      }catch(e){ console.warn('[FL] blob attach failed', e); }
+    }
+    await addExpense(exp);
+    invalidateKPICache();
+    toast(`Expense saved: ${fmtMoney(amt)} ${exp.category}${parsed.vendor ? ' at ' + parsed.vendor.slice(0,30) : ''}`);
+    closeModal();
+    await renderExpenses(true); await renderHome();
+  });
+  $('#rof_cancel', body).addEventListener('click', ()=> closeModal());
+  openModal('Save Receipt as Expense', body);
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21.0.0 T1B: Smart Category Suggestion
+// ════════════════════════════════════════════════════════════════
+async function buildCategorySuggestionMap(){
+  try {
+    const {stores} = tx('expenses');
+    const results = [];
+    await new Promise((resolve,reject)=>{
+      const req = stores.expenses.openCursor(null,'prev');
+      req.onerror = ()=> reject(req.error);
+      req.onsuccess = (e)=>{
+        const cur = e.target.result;
+        if (!cur || results.length >= 100){ resolve(); return; }
+        results.push(cur.value); cur.continue();
+      };
+    });
+    const map = new Map(); // key: first 3 words of notes (lowercase) → {category, count}
+    for (const exp of results){
+      if (!exp.notes || !exp.category) continue;
+      const key = exp.notes.toLowerCase().split(/\s+/).slice(0,3).join(' ');
+      if (key.length < 3) continue;
+      if (!map.has(key)){ map.set(key, { category: exp.category, count: 1 }); }
+      else { const e2 = map.get(key); if (e2.category === exp.category) e2.count++; }
+    }
+    return map;
+  } catch(e){ console.warn('[FL] buildCategorySuggestionMap', e); return new Map(); }
+}
+
+function parseLoadText(text){
+  // T5-FIX: Cap OCR text length to prevent regex DoS on adversarial images
+  const safeText = String(text || '').slice(0, 10000);
+  // v24.0.4 item 2: `deadheadMiles` starts as null, not 0. It was the parser's
+  // own default that made an unstated deadhead indistinguishable from a real
+  // zero — every downstream knownNum() check saw a genuine 0 and the evaluator's
+  // blank-deadhead guard was satisfied by a value nobody supplied.
+  const result = { orderNo:'', customer:'', origin:'', destination:'', pay:0, loadedMiles:0, deadheadMiles:null, pickupDate:'', deliveryDate:'', weight:0, notes:'' };
+  const lines = safeText.split('\n').map(l => l.trim()).filter(Boolean);
+  const full = lines.join(' ');
+  const arrowLane = parseArrowLaneLine(lines.join(' | ')) || parseArrowLaneLine(full);
+
+  // ── Order / Reference / Load / Confirmation number ──
+  const orderPats = [
+    /(?:order|load|ref(?:erence)?|confirmation|conf|bol|pro)\s*#?\s*:?\s*([A-Z0-9][A-Z0-9\-]{2,20})/i,
+    /\b([A-Z]{2,4}[\-]?\d{4,10})\b/,
+    /#\s*([A-Z0-9\-]{3,15})/i,
+  ];
+  for (const p of orderPats){
+    const m = full.match(p);
+    if (m){ result.orderNo = m[1].replace(/[^A-Za-z0-9\-]/g,'').slice(0,20); break; }
+  }
+
+  // ── Dollar amounts → largest is likely the line haul rate ──
+  const moneyMatches = [];
+  const moneyRe = /\$\s*([\d,]+\.?\d{0,2})/g;
+  let mm;
+  while ((mm = moneyRe.exec(full)) !== null){
+    const val = parseFloat(mm[1].replace(/,/g,''));
+    if (val > 0 && val < 100000) moneyMatches.push(val);
+  }
+  // Also check "rate: 2500" or "total: 2500.00" patterns without $
+  const rateRe = /(?:rate|total|line\s*haul|all[\s\-]*in)\s*:?\s*\$?\s*([\d,]+\.?\d{0,2})/gi;
+  while ((mm = rateRe.exec(full)) !== null){
+    const val = parseFloat(mm[1].replace(/,/g,''));
+    if (val > 100 && val < 100000) moneyMatches.push(val);
+  }
+  if (moneyMatches.length) result.pay = Math.max(...moneyMatches);
+
+  // ── Miles ──
+  const milesPats = [
+    /(\d[\d,]{0,6})\s*(?:total\s*)?(?:miles|mi\b)/i,
+    /(?:miles|distance|mileage)\s*:?\s*(\d[\d,]{0,6})/i,
+  ];
+  for (const p of milesPats){
+    const m = full.match(p);
+    if (m){ result.loadedMiles = parseInt(m[1].replace(/,/g,''), 10); break; }
+  }
+
+  // ── Deadhead / Distance (Load board specific) ──
+  // Prefer explicit "Deadhead" and "Distance" fields when present (e.g., Trucker Path Truckloads)
+  const dhm = full.match(/deadhead\s*:?\s*(\d[\d,]{0,6})\s*(?:miles|mi\b)/i);
+  if (dhm) result.deadheadMiles = parseInt(dhm[1].replace(/,/g,''), 10) || 0;
+
+  const distm = full.match(/distance\s*:?\s*(\d[\d,]{0,6})\s*(?:miles|mi\b)/i);
+  if (distm){
+    const dist = parseInt(distm[1].replace(/,/g,''), 10) || 0;
+    if (dist > 0) result.loadedMiles = dist; // treat as loaded miles for evaluator
+  }
+
+  // ── City, State pairs (shipper/origin → consignee/destination) ──
+  const cityStatePat = /([A-Z][a-zA-Z\s\.]{1,25}),?\s*([A-Z]{2})\b/g;
+  const cities = [];
+  let cs;
+  while ((cs = cityStatePat.exec(full)) !== null){
+    const city = cs[1].trim();
+    const state = cs[2].toUpperCase();
+    // Filter out noise by requiring known US state abbreviations
+    if (/^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/.test(state)){
+      cities.push(`${city}, ${state}`);
+    }
+  }
+  if (arrowLane && arrowLane.origin && !result.origin) result.origin = arrowLane.origin;
+  if (arrowLane && arrowLane.destination && !result.destination) result.destination = arrowLane.destination;
+  if (cities.length >= 2){
+    if (!result.origin) result.origin = cities[0];
+    if (!result.destination) result.destination = cities[cities.length - 1];
+  }
+  else if (cities.length === 1 && !result.origin) result.origin = cities[0];
+
+  // ── Shipper / consignee as origin/destination labels ──
+  // T5-FIX: Use [^\n] instead of . to prevent catastrophic backtracking on adversarial OCR text
+  const shipperMatch = full.match(/(?:shipper|pick\s*up|origin)\s*:?\s*([^\n]{5,40}?)(?:\n|,\s*[A-Z]{2}|$)/i);
+  const consigneeMatch = full.match(/(?:consignee|deliver(?:y)?|destination|drop)\s*:?\s*([^\n]{5,40}?)(?:\n|,\s*[A-Z]{2}|$)/i);
+  if (!result.origin && shipperMatch) result.origin = shipperMatch[1].trim().slice(0,60);
+  if (!result.destination && consigneeMatch) result.destination = consigneeMatch[1].trim().slice(0,60);
+
+  // ── Customer / Broker ──
+  const brokerPats = [
+    /(?:broker|carrier|customer|company|brokerage)\s*:?\s*(.{3,50})/i,
+    /(?:dispatched\s+(?:by|from)|booked\s+(?:by|with))\s*:?\s*(.{3,50})/i,
+  ];
+  for (const p of brokerPats){
+    const m = full.match(p);
+    if (m){ result.customer = m[1].trim().replace(/[^A-Za-z0-9\s&.\-']/g,'').slice(0,80); break; }
+  }
+
+  // ── Dates ──
+  const datePats = [
+    /(?:pick\s*up|ship|pu)\s*(?:date)?\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /(?:deliver(?:y)?|drop|del)\s*(?:date)?\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ];
+  const parseDateStr = (s) => {
+    const parts = s.split(/[\/-]/);
+    if (parts.length !== 3) return '';
+    let [m, d, y] = parts.map(Number);
+    if (y < 100) y += 2000;
+    if (m > 12){ [m, d] = [d, m]; }
+    if (m < 1 || m > 12 || d < 1 || d > 31 || y < 2020 || y > 2030) return '';
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  };
+  const puMatch = full.match(datePats[0]);
+  const delMatch = full.match(datePats[1]);
+  if (puMatch) result.pickupDate = parseDateStr(puMatch[1]);
+  if (delMatch) result.deliveryDate = parseDateStr(delMatch[1]);
+
+  // ── Weight ──
+  const weightMatch = full.match(/(\d[\d,]{0,7})\s*(?:lbs?|pounds?|#)/i) || full.match(/(?:weight)\s*:?\s*(\d[\d,]{0,7})/i);
+  if (weightMatch) result.weight = parseInt(weightMatch[1].replace(/,/g,''), 10);
+
+  // Stuff confidence and raw into notes
+  const parsed = [];
+  if (result.orderNo) parsed.push(`Order: ${result.orderNo}`);
+  if (result.pay) parsed.push(`Pay: $${result.pay}`);
+  if (result.loadedMiles) parsed.push(`Miles: ${result.loadedMiles}`);
+  if (result.origin) parsed.push(`From: ${result.origin}`);
+  if (result.destination) parsed.push(`To: ${result.destination}`);
+  if (result.weight) parsed.push(`Weight: ${result.weight} lbs`);
+  result._summary = parsed.join(' • ') || 'Could not extract structured data';
+  result._rawText = text.slice(0, 2000);
+
+  return result;
+}
+
+
+function openTripWizard(existing=null){
+  const isEvalPrefill = existing && existing._evalPrefill;
+  const mode = (existing && !isEvalPrefill) ? 'edit' : 'add';
+  const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
+  if (isEvalPrefill) delete trip._evalPrefill;
+  const body = document.createElement('div');
+  const step1 = document.createElement('div');
+  const step2 = document.createElement('div');
+
+  if (isEvalPrefill){
+    const banner = document.createElement('div');
+    banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);margin-bottom:12px;font-size:12px';
+    banner.innerHTML = '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
+    body.appendChild(banner);
+  } else if (mode === 'add'){
+    // First-trip helper: show guidance if user has few trips
+    countStore('trips').then(cnt => {
+      if (cnt < 3){
+        const tip = document.createElement('div');
+        tip.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);margin-bottom:12px;font-size:12px';
+        tip.innerHTML = cnt === 0
+          ? '👋 <b>First trip!</b> Just need Order # and Pay to get started. Miles unlock RPM tracking and profit scoring.'
+          : `💡 <b>Tip:</b> Add the broker name and origin/destination on step 2 — they power your Broker Grades and Lane Intel.`;
+        body.insertBefore(tip, body.firstChild);
+      }
+    }).catch(()=>{});
+  }
+
+  step1.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Step 1/2 — Required</div>
+    <label>Order # *</label><input id="f_orderNo" placeholder="e.g., 123456 — from your rate confirmation" ${mode==='edit'?'disabled':''} />
+    <div class="grid2"><div><label>Pay $ *</label><input id="f_pay" type="number" step="0.01" placeholder="Total line haul pay" /></div>
+      <div><label>Pickup date</label><input id="f_pickup" type="date" /></div></div>
+    <div class="grid2"><div><label>Loaded miles</label><input id="f_loaded" type="number" step="1" placeholder="Miles with freight" /></div>
+      <div><label>Empty miles</label><input id="f_empty" type="number" step="1" placeholder="Deadhead to pickup" /></div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn" id="toStep2">Next (optional)</button>
+      <button class="btn primary" id="saveTrip">Save</button>
+      ${mode==='edit' && getCachedSetting('uiMode','simple') === 'pro' ? '<button class="btn danger" id="delTrip">Delete</button>' : ''}</div>
+    <div class="muted" id="tripHint" style="font-size:12px;margin-top:10px"></div></div>`;
+
+  step2.style.display = 'none';
+  step2.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Step 2/2 — Optional</div>
+    <label>Customer</label><input id="f_customer" placeholder="Broker / shipper" />
+    <div id="brokerIntelBox"></div>
+    <div class="grid2"><div><label>Origin</label><input id="f_origin" placeholder="City, ST" /></div>
+      <div><label>Destination</label><input id="f_dest" placeholder="City, ST" /></div></div>
+    <div id="laneIntelBox"></div>
+    <div id="stopsSection" style="margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label style="margin:0;font-size:13px;font-weight:600">Stops</label>
+        <button class="btn sm" id="addStopBtn" type="button" style="font-size:11px">＋ Add Stop</button>
+      </div>
+      <div id="stopsList"></div>
+      <div class="muted" style="font-size:11px;margin-top:4px">Optional intermediate stops (pickup → stop → delivery)</div>
+    </div>
+    <div class="grid2"><div><label>Delivery date</label><input id="f_delivery" type="date" /></div>
+      <div><label>Status</label><select id="f_paid"><option value="false">Unpaid</option><option value="true">Paid</option></select></div></div>
+    <div class="grid2"><div><label>Invoice date</label><input id="f_invoice" type="date" /></div>
+      <div><label>Due date</label><input id="f_due" type="date" /></div></div>
+    <label>Notes</label><textarea id="f_notes" placeholder="Optional"></textarea>
+    <div style="margin-top:10px"><label class="chk" style="font-size:14px"><input type="checkbox" id="f_runAgain" /> Would run this lane again</label><div class="muted" style="font-size:11px;margin-top:4px">Feeds your Lane Intelligence — helps identify your best corridors</div></div>
+    <label style="margin-top:12px">Receipts</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="f_receipts" type="file" accept="image/*,application/pdf" multiple style="flex:1" />
+      <button class="btn sm" id="f_camera" type="button" style="font-size:12px">📷 Camera</button>
+    </div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn" id="backStep1">Back</button><button class="btn primary" id="saveTrip2">Save</button></div></div>`;
+
+  body.appendChild(step1); body.appendChild(step2);
+
+  $('#f_orderNo', body).value = trip.orderNo || '';
+  $('#f_pay', body).value = trip.pay || '';
+  $('#f_pickup', body).value = trip.pickupDate || isoDate();
+  $('#f_loaded', body).value = trip.loadedMiles || '';
+  $('#f_empty', body).value = trip.emptyMiles ?? '';
+
+  if (mode==='edit'){
+    $('#f_customer', body).value = trip.customer || '';
+    $('#f_origin', body).value = trip.origin || '';
+    $('#f_dest', body).value = trip.destination || '';
+    $('#f_delivery', body).value = trip.deliveryDate || trip.pickupDate || isoDate();
+    $('#f_paid', body).value = String(!!trip.isPaid);
+    $('#f_invoice', body).value = trip.invoiceDate || trip.deliveryDate || trip.pickupDate || isoDate();
+    $('#f_due', body).value = trip.dueDate || '';
+    $('#f_notes', body).value = trip.notes || '';
+    $('#f_runAgain', body).checked = !!trip.wouldRunAgain;
+  } else if (isEvalPrefill){
+    // Evaluator pre-fill — origin/dest from evaluator if available
+    $('#f_origin', body).value = trip.origin || '';
+    $('#f_dest', body).value = trip.destination || '';
+    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+  } else {
+    // Pure add mode: auto-fill origin from last trip destination
+    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+    listTrips({cursor:null}).then(res => {
+      const last = res.items[0];
+      if (last && last.destination){
+        const originEl = $('#f_origin', body);
+        if (originEl && !originEl.value) originEl.value = last.destination;
+      }
+    }).catch(()=>{});
+  }
+
+  // v14.5.0: Multi-stop management
+  function addStopRow(stopData=null){
+    const stopsList = $('#stopsList', body);
+    if (!stopsList) return;
+    const count = $$('.stop-entry', body).length;
+    if (count >= 10){ toast('Max 10 stops per trip', true); return; }
+    const row = document.createElement('div');
+    row.className = 'stop-entry';
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;padding:8px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border-subtle)';
+    row.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;gap:6px">
+        <input class="stop-city" placeholder="City, ST" style="flex:1;font-size:12px" />
+        <select class="stop-type" style="width:80px;font-size:11px">
+          <option value="stop">Stop</option><option value="pickup">Pickup</option><option value="delivery">Delivery</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:6px">
+        <input class="stop-date" type="date" style="flex:1;font-size:11px" />
+        <input class="stop-notes" placeholder="Notes" style="flex:1;font-size:11px" />
+      </div>
+    </div>
+    <button class="btn sm stop-remove" type="button" style="color:var(--bad);font-size:14px;padding:4px 8px">✕</button>`;
+    if (stopData){
+      $('.stop-city', row).value = stopData.city || '';
+      $('.stop-type', row).value = stopData.type || 'stop';
+      $('.stop-date', row).value = stopData.date || '';
+      $('.stop-notes', row).value = stopData.notes || '';
+    }
+    $('.stop-remove', row).addEventListener('click', ()=> { row.remove(); });
+    stopsList.appendChild(row);
+  }
+  $('#addStopBtn', body)?.addEventListener('click', ()=> { haptic(10); addStopRow(); });
+  // Populate existing stops
+  if (trip.stops && trip.stops.length){
+    for (const s of trip.stops) addStopRow(s);
+  }
+
+  // v14.5.0: Camera button opens receipt camera
+  $('#f_camera', body)?.addEventListener('click', ()=> { haptic(15); openReceiptCamera(trip.orderNo || 'new').catch(()=>{}); });
+
+  async function validateStep1(){
+    const orderNo = normOrderNo($('#f_orderNo', body).value);
+    const pay = Number($('#f_pay', body).value || 0);
+    const hint = $('#tripHint', body);
+    if (!orderNo){ hint.textContent = 'Order # is required.'; return false; }
+    if (!(pay > 0)){ hint.textContent = 'Pay must be > 0.'; return false; }
+    if (mode==='add' && await tripExists(orderNo)){
+      // External order numbers can be reused by different brokers/loads. Warn, do not merge identities.
+      hint.textContent = 'Order # already exists — allowed if this is a distinct load.';
+    }
+    hint.textContent = 'Looks good.'; return true;
+  }
+  async function collectTrip(stepNo){
+    trip.orderNo = normOrderNo($('#f_orderNo', body).value);
+    trip.pay = Number($('#f_pay', body).value || 0);
+    trip.pickupDate = $('#f_pickup', body).value || isoDate();
+    trip.loadedMiles = Math.max(0, Number($('#f_loaded', body).value || 0));
+    trip.emptyMiles = knownNum($('#f_empty', body).value);
+    if (stepNo >= 2){
+      trip.customer = clampStr($('#f_customer', body).value, 80);
+      trip.origin = clampStr($('#f_origin', body).value, 60);
+      trip.destination = clampStr($('#f_dest', body).value, 60);
+      trip.deliveryDate = $('#f_delivery', body).value || trip.pickupDate;
+      trip.isPaid = ($('#f_paid', body).value === 'true');
+      trip.invoiceDate = $('#f_invoice', body).value || trip.deliveryDate || trip.pickupDate;
+      trip.dueDate = $('#f_due', body).value || '';
+      trip.notes = clampStr($('#f_notes', body).value, 500);
+      trip.wouldRunAgain = $('#f_runAgain', body).checked ? true : null;
+      // v14.5.0: collect stops
+      const stopEls = $$('.stop-entry', body);
+      trip.stops = [];
+      for (const el of stopEls){
+        const city = clampStr($('.stop-city', el)?.value || '', 60);
+        if (!city) continue;
+        trip.stops.push({
+          city,
+          date: $('.stop-date', el)?.value || '',
+          type: $('.stop-type', el)?.value || 'stop',
+          notes: clampStr($('.stop-notes', el)?.value || '', 200),
+        });
+      }
+    }
+  }
+  async function save(stepNo){
+    if (!(await validateStep1())){ toast('Fix required fields', true); return; }
+    await collectTrip(stepNo);
+    // v21 T1C: Auto-estimate loaded miles from market coords if blank
+    if (!(Number(trip.loadedMiles) > 0) && trip.origin && trip.destination){
+      const origCoords = getMarketCoords(trip.origin);
+      const destCoords = getMarketCoords(trip.destination);
+      if (origCoords && destCoords){
+        const estMiles = Math.round(haversineDistanceMi(origCoords.lat, origCoords.lng, destCoords.lat, destCoords.lng) * 1.3);
+        if (estMiles > 0){ trip.loadedMiles = estMiles; trip.milesEstimated = true; toast(`Estimated ${estMiles} loaded miles — edit if needed`); }
+      }
+    }
+    let saved;
+    try{
+      saved = await upsertTrip(trip);
+    }catch(e){
+      if (e?.code === 'FL_CONFLICT'){
+        // F-6 fix: another tab/device saved this trip since this form was
+        // opened. Don't silently pick a winner — surface it and reopen the
+        // wizard on the current server copy so the driver can redo their
+        // edit against up-to-date data, one tap, no merge UI to puzzle out
+        // one-handed.
+        haptic(35);
+        toast('This trip changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openTripWizard(e.serverRecord), 200);
+        return;
+      }
+      throw e;
+    }
+    _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
+    _positioningCache = null; // F24: clear positioning cache on trip save
+    if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
+    if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
+    if (stepNo >= 2){
+      const f = $('#f_receipts', body).files;
+      // Combine file picker + camera captures
+      const allFiles = [];
+      if (f && f.length) for (const file of f) allFiles.push(file);
+      if (_cameraReceiptFiles.length) { allFiles.push(..._cameraReceiptFiles); _cameraReceiptFiles = []; }
+      if (allFiles.length) await saveNewReceipts(saved.orderNo, allFiles);
+    }
+    invalidateKPICache();
+    // First-trip celebration
+    const tripCount = await countStore('trips');
+    if (mode === 'add' && tripCount === 1){
+      closeModal();
+      setTimeout(()=> {
+        toast('🎉 First trip logged! Your dashboard is live.');
+        $('#fab')?.classList.remove('pulse');
+        $('#fabHint') && ($('#fabHint').style.display = 'none');
+      }, 300);
+      await renderTrips(true); await renderHome();
+      return;
+    }
+    // Compute and show Load Decision Score
+    try{
+      const { trips: allT, exps: allE } = await _getTripsAndExps();
+      const fc = { mpg: Number(await getSetting('vehicleMpg', 0) || 0), pricePerGal: Number(await getSetting('fuelPrice', 0) || 0) };
+      const score = computeLoadScore(saved, allT, allE, fc);
+      closeModal();
+      setTimeout(()=> showScoreFlash(saved, score), 400);
+    }catch{
+      toast(mode==='add' ? 'Trip saved' : 'Trip updated');
+      setSetting('tripDraft', null).catch(()=>{});
+      closeModal();
+    }
+    await renderTrips(true); await renderHome();
+  }
+
+  // Live score preview — debounced
+  const liveScoreEl = document.createElement('div');
+  liveScoreEl.id = 'liveScore';
+  step1.querySelector('.card').appendChild(liveScoreEl);
+  let _lsTimer = null;
+  async function updateLiveScore(){
+    const pay = Number($('#f_pay', body).value || 0);
+    const loaded = Number($('#f_loaded', body).value || 0);
+    const empty = Number($('#f_empty', body).value || 0);
+    if (pay <= 0 || (loaded + empty) <= 0){ liveScoreEl.innerHTML = ''; return; }
+    const preview = { ...trip, pay, loadedMiles: loaded, emptyMiles: empty,
+      customer: mode==='edit' ? trip.customer : ($('#f_customer', body)?.value || ''),
+      orderNo: normOrderNo($('#f_orderNo', body).value) || 'preview' };
+    try{
+      const { trips: allT, exps: allE } = await _getTripsAndExps();
+      renderLiveScore(liveScoreEl, preview, allT, allE);
+    }catch{ liveScoreEl.innerHTML = ''; }
+  }
+  function debounceLiveScore(){
+    clearTimeout(_lsTimer);
+    _lsTimer = setTimeout(updateLiveScore, 300);
+  }
+  ['f_pay','f_loaded','f_empty'].forEach(id => {
+    const el = $(`#${id}`, body);
+    if (el){ el.addEventListener('input', debounceLiveScore); }
+  });
+
+  $('#toStep2', body).addEventListener('click', async ()=>{
+    if (!(await validateStep1())){ toast('Fix required fields first', true); return; }
+    step1.style.display = 'none'; step2.style.display = '';
+    // Auto-populate intel if editing
+    updateBrokerIntel(); updateLaneIntel();
+  });
+  $('#backStep1', body).addEventListener('click', ()=>{ step2.style.display = 'none'; step1.style.display = ''; });
+  $('#saveTrip', body).addEventListener('click', async ()=> { await save(1); });
+  $('#saveTrip2', body).addEventListener('click', async ()=> { await save(2); });
+
+  // Lane + Broker intelligence in step 2 (debounced)
+  let _biTimer = null, _liTimer = null;
+  async function updateBrokerIntel(){
+    const box = $('#brokerIntelBox', body);
+    if (!box) return;
+    const cust = ($('#f_customer', body)?.value || '').trim();
+    if (!cust){ box.innerHTML = ''; return; }
+    try{
+      const { trips: allT } = await _getTripsAndExps();
+      box.innerHTML = brokerIntelHTML(cust, allT);
+    }catch{ box.innerHTML = ''; }
+  }
+  async function updateLaneIntel(){
+    const box = $('#laneIntelBox', body);
+    if (!box) return;
+    const orig = ($('#f_origin', body)?.value || '').trim();
+    const dest = ($('#f_dest', body)?.value || '').trim();
+    if (!orig || !dest){ box.innerHTML = ''; return; }
+    try{
+      const { trips: allT } = await _getTripsAndExps();
+      const intel = computeLaneIntel(orig, dest, allT);
+      box.innerHTML = intel ? laneIntelHTML(intel) : `<div style="padding:8px 0"><span class="muted" style="font-size:12px">New lane — no history</span></div>`;
+    }catch{ box.innerHTML = ''; }
+  }
+  const custEl = $('#f_customer', body);
+  if (custEl){
+    // F3: Broker Intelligence Alert
+    attachBrokerIntelToField(custEl, $('#brokerIntelBox', body));
+    custEl.addEventListener('input', ()=>{ clearTimeout(_biTimer); _biTimer = setTimeout(updateBrokerIntel, 400); });
+    attachAutoComplete(custEl, async (val) => {
+      const { trips: allT } = await _getTripsAndExps();
+      const brokers = computeBrokerStats(allT, isoDate(), 0);
+      const q = val.toLowerCase();
+      return brokers.filter(b => b.name.toLowerCase().includes(q)).slice(0, 6).map(b => ({
+        label: b.name, value: b.name,
+        sub: `${b.trips} load${b.trips>1?'s':''} • $${b.avgRpm.toFixed(2)} RPM • ${fmtMoney(b.pay)} total`
+      }));
+    }, () => { clearTimeout(_biTimer); _biTimer = setTimeout(updateBrokerIntel, 200); }, body);
+  }
+  const origEl = $('#f_origin', body);
+  const destEl = $('#f_dest', body);
+  if (origEl){
+    origEl.addEventListener('input', ()=>{ clearTimeout(_liTimer); _liTimer = setTimeout(updateLaneIntel, 400); });
+    attachAutoComplete(origEl, async (val) => {
+      const { trips: allT } = await _getTripsAndExps();
+      const cities = new Map();
+      for (const t of allT){
+        for (const c of [t.origin, t.destination]){
+          if (!c) continue;
+          const key = c.toLowerCase().trim();
+          if (key.includes(val.toLowerCase()) && !cities.has(key)){
+            cities.set(key, c.trim());
+          }
+        }
+      }
+      return [...cities.values()].slice(0, 6).map(c => ({ label: c, value: c }));
+    }, () => { clearTimeout(_liTimer); _liTimer = setTimeout(updateLaneIntel, 200); }, body);
+  }
+  if (destEl){
+    destEl.addEventListener('input', ()=>{ clearTimeout(_liTimer); _liTimer = setTimeout(updateLaneIntel, 400); });
+    attachAutoComplete(destEl, async (val) => {
+      const { trips: allT } = await _getTripsAndExps();
+      const cities = new Map();
+      for (const t of allT){
+        for (const c of [t.origin, t.destination]){
+          if (!c) continue;
+          const key = c.toLowerCase().trim();
+          if (key.includes(val.toLowerCase()) && !cities.has(key)){
+            cities.set(key, c.trim());
+          }
+        }
+      }
+      return [...cities.values()].slice(0, 6).map(c => ({ label: c, value: c }));
+    }, () => { clearTimeout(_liTimer); _liTimer = setTimeout(updateLaneIntel, 200); }, body);
+  }
+
+  if (mode==='edit'){
+    const delBtn = $('#delTrip', body);
+    if (delBtn) delBtn.addEventListener('click', async ()=>{
+      const ui = await getSetting('uiMode','simple');
+      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
+      closeModal();
+      showUndoToast(
+        `Trip ${escapeHtml(String(trip.orderNo))}`,
+        async ()=>{
+          try{ const rec = await getReceipts(trip.orderNo);
+            for (const f of (rec?.files||[])) try{ await cacheDeleteReceipt(f.id); }catch(e){ console.warn("[FL]", e); } }catch(e){ console.warn("[FL]", e); }
+          await deleteTrip(trip.id); invalidateKPICache();
+          await renderTrips(true); await renderHome();
+        },
+        async ()=>{ await renderTrips(true); }
+      );
+    });
+  }
+  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${escapeHtml(trip.orderNo)}`), body);
+
+  // Eval prefill: auto-focus Order # so the user only needs to type one thing
+  if (isEvalPrefill){
+    setTimeout(()=>{ $('#f_orderNo', body)?.focus(); }, 150);
+  }
+
+  // ── Autosave draft (v16.9.0) ──
+  // Save form state on every input so nothing is lost if app closes
+  if (mode === 'add'){
+    // Restore saved draft if one exists
+    getSetting('tripDraft', null).then(draft => {
+      if (draft && !existing){
+        if (draft.orderNo && !$('#f_orderNo', body)?.value) $('#f_orderNo', body).value = draft.orderNo;
+        if (draft.pay && !$('#f_pay', body)?.value) $('#f_pay', body).value = draft.pay;
+        if (draft.loaded && !$('#f_loaded', body)?.value) $('#f_loaded', body).value = draft.loaded;
+        if (draft.empty && !$('#f_empty', body)?.value) $('#f_empty', body).value = draft.empty;
+        if (draft.pickup && !$('#f_pickup', body)?.value) $('#f_pickup', body).value = draft.pickup;
+        if (draft.customer && !$('#f_customer', body)?.value) $('#f_customer', body).value = draft.customer;
+        if (draft.origin && !$('#f_origin', body)?.value) $('#f_origin', body).value = draft.origin;
+        if (draft.dest && !$('#f_dest', body)?.value) $('#f_dest', body).value = draft.dest;
+        const hint = $('#tripHint', body);
+        if (hint && (draft.orderNo || draft.pay)) hint.innerHTML = '<span style="color:var(--good)">📝 Draft restored</span>';
+      }
+    }).catch(()=>{});
+
+    // Save draft on every input change (debounced)
+    let _draftTimer = null;
+    const saveDraft = () => {
+      if (_draftTimer) clearTimeout(_draftTimer);
+      _draftTimer = setTimeout(() => {
+        const draft = {
+          orderNo: $('#f_orderNo', body)?.value || '',
+          pay: $('#f_pay', body)?.value || '',
+          loaded: $('#f_loaded', body)?.value || '',
+          empty: $('#f_empty', body)?.value || '',
+          pickup: $('#f_pickup', body)?.value || '',
+          customer: $('#f_customer', body)?.value || '',
+          origin: $('#f_origin', body)?.value || '',
+          dest: $('#f_dest', body)?.value || '',
+          savedAt: Date.now(),
+        };
+        setSetting('tripDraft', draft).catch(()=>{});
+      }, 800);
+    };
+    body.addEventListener('input', saveDraft);
+    body.addEventListener('change', saveDraft);
+  }
+}
+
+// P1-6: expense form with category autocomplete
+function openExpenseForm(existing=null){
+  const mode = existing ? 'edit' : 'add';
+  const e = existing ? {...existing} : { date:isoDate(), amount:0, category:'', notes:'', type:'expense' };
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <label>Date</label><input id="f_date" type="date" />
+    <label>Amount $</label><input id="f_amt" type="number" step="0.01" placeholder="0.00" />
+    <label>Category</label><input id="f_cat" list="catList" placeholder="e.g., Fuel, Tolls..." />
+    <label>Notes</label><input id="f_notes" placeholder="Optional" />
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="f_save">Save</button>
+      ${mode==='edit'?'<button class="btn danger" id="f_del">Delete</button>':''}</div>
+    <div class="muted" id="f_hint" style="font-size:12px;margin-top:10px"></div></div>`;
+  $('#f_date', body).value = e.date || isoDate();
+  $('#f_amt', body).value = e.amount || '';
+  $('#f_cat', body).value = e.category || '';
+  $('#f_notes', body).value = e.notes || '';
+
+  function validate(){ const hint = $('#f_hint', body); const amt = Number($('#f_amt', body).value||0);
+    if (!(amt > 0)){ hint.textContent = 'Amount must be > 0.'; return false; } hint.textContent = ''; return true; }
+
+  $('#f_save', body).addEventListener('click', async ()=>{
+    if (!validate()){ toast('Fix required fields', true); return; }
+    const catVal = clampStr($('#f_cat', body).value, 60);
+    // X-03: derive the A/B/C tax bucket from the category text at save time —
+    // the datalist's specific insurance sub-types (Auto/Cargo/Liability/
+    // Occupational Accident Insurance) resolve automatically; bare
+    // "Insurance" (or an unrecognized sub-type) resolves to bucket C.
+    const insuranceBucket = catVal.toLowerCase().includes('insurance') ? classifyExpenseTaxBucket(catVal) : undefined;
+    const obj = { id: e.id, date: $('#f_date', body).value || isoDate(), amount: Number($('#f_amt', body).value||0),
+      category: catVal, notes: clampStr($('#f_notes', body).value, 300), type:'expense', created: e.created,
+      // M2: carry the revision this form was opened with, so updateExpense()
+      // has something to compare against. Absent on an add, which is correct.
+      ...(mode === 'edit' && Number.isFinite(Number(e.updatedAt)) ? { updatedAt: Number(e.updatedAt) } : {}),
+      ...(insuranceBucket ? { insuranceBucket } : {}) };
+    try{
+      if (mode==='add') await addExpense(obj); else await updateExpense(obj);
+      invalidateKPICache(); toast(mode==='add'?'Expense saved':'Expense updated');
+      closeModal(); await renderExpenses(true); await renderHome();
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        // M2: another tab saved this expense since this form opened. Same
+        // treatment as the trip path (F-6) — never silently pick a winner.
+        haptic(35);
+        toast('This expense changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openExpenseForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
+  });
+  if (mode==='edit'){
+    const delBtn = $('#f_del', body);
+    if (delBtn) delBtn.addEventListener('click', async ()=>{
+      const ui = await getSetting('uiMode','simple');
+      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
+      closeModal();
+      showUndoToast(
+        `${escapeHtml(e.category || 'Expense')}`,
+        async ()=>{ await deleteExpense(e.id); invalidateKPICache(); await renderExpenses(true); await renderHome(); },
+        async ()=>{ await renderExpenses(true); }
+      );
+    });
+  }
+  openModal(mode==='add' ? 'Add Expense' : 'Edit Expense', body); validate();
+  // v21 T1B: Smart category suggestion — wire after modal opens
+  if (mode === 'add'){
+    buildCategorySuggestionMap().then(suggMap => {
+      if (!suggMap.size) return;
+      const notesEl = $('#f_notes', body);
+      const catEl = $('#f_cat', body);
+      const hint = $('#f_hint', body);
+      if (!notesEl || !catEl) return;
+      notesEl.addEventListener('input', ()=>{
+        const key = notesEl.value.toLowerCase().split(/\s+/).slice(0,3).join(' ');
+        if (key.length < 3) return;
+        let best = null; let bestLen = 0;
+        for (const [k, v] of suggMap){
+          if ((key.startsWith(k) || k.startsWith(key)) && k.length > bestLen){ best = v; bestLen = k.length; }
+        }
+        if (best && !catEl.value){
+          catEl.value = best.category;
+          if (hint) hint.innerHTML = `<span style="color:var(--good)">Auto: ${escapeHtml(best.category)}</span> — based on your history`;
+        }
+      });
+    }).catch(()=>{});
+  }
+  // First-expense guidance
+  if (mode === 'add'){
+    countStore('expenses').then(cnt => {
+      if (cnt === 0){
+        const tip = document.createElement('div');
+        tip.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);margin-bottom:12px;font-size:12px';
+        tip.innerHTML = '💡 <b>Tip:</b> Pick a category from the dropdown (Fuel, Tolls, Insurance, etc.) — your tax export groups them automatically.';
+        body.insertBefore(tip, body.firstChild);
+      }
+    }).catch(()=>{});
+  }
+}
+
+// P1-3: fuel form with edit support
+function openFuelForm(existing=null){
+  const mode = existing ? 'edit' : 'add';
+  const f = existing || { date:isoDate(), gallons:0, amount:0, state:'', notes:'' };
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <label>Date</label><input id="f_date" type="date" />
+    <div class="grid2"><div><label>Gallons</label><input id="f_gal" type="number" step="0.01" placeholder="0" /></div>
+      <div><label>Total $</label><input id="f_amt" type="number" step="0.01" placeholder="0.00" /></div></div>
+    <div class="grid2"><div><label>State</label><input id="f_state" placeholder="IL, IN, OH..." /></div>
+      <div><label>Notes</label><input id="f_notes" placeholder="Optional" /></div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="f_save">Save</button>
+      ${mode==='edit'?'<button class="btn danger" id="f_del">Delete</button>':''}</div></div>`;
+  $('#f_date', body).value = f.date || isoDate();
+  $('#f_gal', body).value = f.gallons || '';
+  $('#f_amt', body).value = f.amount || '';
+  $('#f_state', body).value = f.state || '';
+  $('#f_notes', body).value = f.notes || '';
+
+  // State autocomplete from fuel history
+  const stateEl = $('#f_state', body);
+  if (stateEl){
+    attachAutoComplete(stateEl, async (val) => {
+      const allF = await dumpStore('fuel');
+      const states = new Map();
+      for (const r of allF){
+        if (!r.state) continue;
+        const s = r.state.toUpperCase().trim();
+        if (s.includes(val.toUpperCase()) && !states.has(s)){
+          const cnt = allF.filter(x => (x.state||'').toUpperCase().trim() === s).length;
+          states.set(s, cnt);
+        }
+      }
+      return [...states.entries()].sort((a,b) => b[1] - a[1]).slice(0, 6).map(([s, cnt]) => ({
+        label: s, value: s, sub: `${cnt} fill-up${cnt>1?'s':''}`
+      }));
+    }, null, body);
+  }
+
+  $('#f_save', body).addEventListener('click', async ()=>{
+    const obj = { id: f.id, date: $('#f_date', body).value || isoDate(),
+      gallons: Number($('#f_gal', body).value || 0), amount: Number($('#f_amt', body).value || 0),
+      state: clampStr($('#f_state', body).value, 20).toUpperCase(), notes: clampStr($('#f_notes', body).value, 200),
+      created: f.created,
+      // M2: carry the revision this form was opened with (see updateFuel).
+      ...(mode === 'edit' && Number.isFinite(Number(f.updatedAt)) ? { updatedAt: Number(f.updatedAt) } : {}) };
+    try{
+      if (mode==='add') await addFuel(obj); else await updateFuel(obj);
+      toast('Fuel saved'); closeModal();
+      if (views.fuel.style.display !== 'none') await renderFuel(true);
+      invalidateKPICache(); await computeKPIs();
+    }catch(err){
+      if (err?.code === 'FL_CONFLICT'){
+        haptic(35);
+        toast('This fuel entry changed elsewhere — showing the latest version. Please redo your last edit.', true);
+        closeModal();
+        setTimeout(()=> openFuelForm(err.serverRecord), 200);
+        return;
+      }
+      console.error('[FL] Operation error:', err); toast('Operation failed. Please try again.', true);
+    }
+  });
+  if (mode==='edit'){
+    const delBtn = $('#f_del', body);
+    if (delBtn) delBtn.addEventListener('click', async ()=>{
+      const ui = await getSetting('uiMode','simple');
+      if (ui !== 'pro'){ toast('Delete is Pro-only', true); return; }
+      closeModal();
+      showUndoToast(
+        `Fuel ${escapeHtml(f.date || '')}`,
+        async ()=>{ await deleteFuel(f.id); invalidateKPICache(); await renderFuel(true); },
+        async ()=>{ await renderFuel(true); }
+      );
+    });
+  }
+  openModal(mode==='add' ? 'Add Fuel' : 'Edit Fuel', body);
+}
+
+// ---- Weekly Reflection ----
+async function openWeeklyReflection(){
+  const body = document.createElement('div');
+  const now = new Date();
+  const weekStart = startOfWeek(now).toISOString().slice(0,10);
+
+  // Get this week's stats
+  const { trips, exps } = await _getTripsAndExps();
+  const wk0 = startOfWeek(now).getTime();
+  let wkGross = 0, wkExp = 0, wkLoaded = 0, wkAll = 0, wkTrips = 0;
+  for (const t of trips){
+    if (t.needsReview) continue;
+    const dt = t.pickupDate || t.deliveryDate;
+    if (dt && new Date(dt).getTime() >= wk0){
+      wkGross += Number(t.pay || 0);
+      wkLoaded += Number(t.loadedMiles || 0);
+      wkAll += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      wkTrips++;
+    }
+  }
+  for (const e of exps){
+    if (e.date && new Date(e.date).getTime() >= wk0) wkExp += Number(e.amount || 0);
+  }
+  const wkNet = wkGross - wkExp;
+  const wkRpm = wkAll > 0 ? wkGross / wkAll : 0;
+  const wkDh = wkAll > 0 ? ((wkAll - wkLoaded) / wkAll * 100) : 0;
+
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--muted)">WEEK OF ${escapeHtml(weekStart)}</div>
+      <div style="font-size:32px;font-weight:900;color:${wkNet>=3800?'var(--good)':wkNet>=2000?'var(--accent)':'var(--bad)'};margin-top:4px">${fmtMoney(wkNet)} net</div>
+    </div>
+    <div class="row" style="margin-bottom:16px;justify-content:center">
+      <div class="pill"><span class="muted">Gross</span> <b>${fmtMoney(wkGross)}</b></div>
+      <div class="pill"><span class="muted">RPM</span> <b>$${wkRpm.toFixed(2)}</b></div>
+      <div class="pill"><span class="muted">Loads</span> <b>${wkTrips}</b></div>
+      <div class="pill"><span class="muted">DH%</span> <b>${wkDh.toFixed(0)}%</b></div>
+    </div>
+    <label>Rate your week (1-10)</label>
+    <div style="display:flex;gap:4px;margin-bottom:14px" id="ratingRow">${
+      [1,2,3,4,5,6,7,8,9,10].map(n => `<button class="btn sm" data-rating="${n}" style="min-width:32px;padding:6px">${n}</button>`).join('')
+    }</div>
+    <input type="hidden" id="rf_rating" value="" />
+    <label class="chk" style="font-size:14px;margin-bottom:14px"><input type="checkbox" id="rf_structured" /> Was the week structured?</label>
+    <label>Wins</label><input id="rf_wins" placeholder="Best load, new broker, hit target..." />
+    <label>Mistakes</label><input id="rf_mistakes" placeholder="Bad load, waited too long, fatigue..." />
+    <label>Lessons</label><input id="rf_lessons" placeholder="What to do differently next week" />
+    <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="rf_save">Save Reflection</button></div>
+  </div>`;
+
+  // Rating buttons
+  body.querySelectorAll('[data-rating]').forEach(btn => {
+    btn.addEventListener('click', ()=>{
+      body.querySelectorAll('[data-rating]').forEach(b => { b.style.background = ''; b.style.color = ''; });
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#0b1220';
+      body.querySelector('#rf_rating').value = btn.dataset.rating;
+      haptic(10);
+    });
+  });
+
+  body.querySelector('#rf_save').addEventListener('click', async ()=>{
+    const rating = Number(body.querySelector('#rf_rating').value || 0);
+    if (!rating){ toast('Tap a number to rate your week', true); return; }
+    const reflection = {
+      week: weekStart,
+      rating,
+      structured: body.querySelector('#rf_structured').checked,
+      wins: clampStr(body.querySelector('#rf_wins').value, 300),
+      mistakes: clampStr(body.querySelector('#rf_mistakes').value, 300),
+      lessons: clampStr(body.querySelector('#rf_lessons').value, 300),
+      stats: { gross: wkGross, net: wkNet, rpm: +wkRpm.toFixed(2), trips: wkTrips, deadhead: +wkDh.toFixed(1) },
+      saved: Date.now()
+    };
+    await setSetting('weeklyReflection', reflection);
+    toast('Week reflection saved');
+    haptic(25);
+    closeModal();
+    await renderHome();
+  });
+
+  openModal('📋 Weekly Reflection', body);
+}
+
+// ---- Buttons ----
+// v20: FAB removed — Evaluate tab (⚡) is the center nav action.
+// Quick-add sheet still accessible from Home quick-actions row.
+addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
+// v20: btnQuickEval is now a hidden stub (Evaluate is the center tab); keep for safety
+addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); location.hash = '#omega'; });
+addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
+addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
+addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
+
+addManagedListener($('#btnTripMore'), 'click', ()=> renderTrips(false));
+addManagedListener($('#btnExpMore'), 'click', ()=> renderExpenses(false));
+addManagedListener($('#btnFuelMore'), 'click', ()=> renderFuel(false));
+addManagedListener($('#btnAddFuel2'), 'click', ()=> openFuelForm());
+
+addManagedListener($('#tripSearch'), 'input', (e)=>{
+  tripSearchTerm = e.target.value || '';
+  clearTimeout(renderTrips._tm); renderTrips._tm = setTimeout(()=> renderTrips(true), 250);
+});
+
+// v20: ＋ Trip button on Trips screen
+addManagedListener($('#btnTripAdd'), 'click', ()=> openTripWizard());
+
+// v20: Filter chips on Trips screen
+addManagedListener($('#tripChips'), 'click', (e)=>{
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  haptic(8);
+  tripFilterChip = chip.dataset.chip || 'all';
+  renderTrips(true);
+});
+addManagedListener($('#expSearch'), 'input', (e)=>{
+  expSearchTerm = e.target.value || '';
+  clearTimeout(renderExpenses._tm); renderExpenses._tm = setTimeout(()=> renderExpenses(true), 250);
+});
+
+// P1-1: Trip filter with date range
+addManagedListener($('#btnTripFilter'), 'click', async ()=>{
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
+    <label>Show</label><select id="flt_paid"><option value="all">All</option><option value="unpaid">Unpaid only</option><option value="paid">Paid only</option></select>
+    <div class="grid2"><div><label>From date</label><input id="flt_from" type="date" /></div><div><label>To date</label><input id="flt_to" type="date" /></div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="flt_apply">Apply</button><button class="btn" id="flt_clear">Clear</button></div></div>`;
+  $('#flt_from', body).value = tripFilterDateFrom || '';
+  $('#flt_to', body).value = tripFilterDateTo || '';
+  $('#flt_apply', body).addEventListener('click', async ()=>{
+    const v = $('#flt_paid', body).value;
+    tripFilterDateFrom = $('#flt_from', body).value || '';
+    tripFilterDateTo = $('#flt_to', body).value || '';
+    closeModal();
+    const res = await listTrips({cursor:null, search: tripSearchTerm, dateFrom: tripFilterDateFrom, dateTo: tripFilterDateTo});
+    const list = $('#tripList'); list.innerHTML = '';
+    let items = res.items;
+    if (v === 'unpaid') items = items.filter(x => !x.isPaid);
+    if (v === 'paid') items = items.filter(x => !!x.isPaid);
+    items.forEach(t => list.appendChild(tripRow(t)));
+    $('#btnTripMore').disabled = true;
+  });
+  $('#flt_clear', body).addEventListener('click', async ()=>{
+    tripFilterDateFrom = ''; tripFilterDateTo = '';
+    closeModal(); await renderTrips(true);
+  });
+  openModal('Trip Filter', body);
+});
+
+// Export/Import wiring
+addManagedListener($('#btnTripExport'), 'click', exportJSON);
+addManagedListener($('#btnExpExport'), 'click', exportJSON);
+addManagedListener($('#btnTripExportCSV'), 'click', exportTripsCSV);
+addManagedListener($('#btnExpExportCSV'), 'click', exportExpensesCSV);
+addManagedListener($('#btnFuelExportCSV'), 'click', exportFuelCSV);
+addManagedListener($('#btnFuelImport'), 'click', async ()=>{
+  const f = await pickFile(IMPORT_ACCEPT); if (!f) return;
+  await importFile(f); invalidateKPICache(); await renderFuel(true); await renderHome();
+});
+
+function pickFile(accept){
+  return new Promise((resolve)=>{
+    const i = document.createElement('input'); i.type = 'file'; i.accept = accept || '*';
+    let resolved = false;
+    const done = (file)=>{ if (resolved) return; resolved = true; window.removeEventListener('focus', onFocus); resolve(file); };
+    i.onchange = ()=> done(i.files?.[0] || null);
+    // Handle cancel: when focus returns and no file was picked, resolve null
+    // T5-FIX: iOS Safari fires focus before onchange — use 1200ms guard + resolved flag
+    const onFocus = ()=>{ setTimeout(()=>{ if (!resolved && !i.files?.length) done(null); }, 1200); };
+    window.addEventListener('focus', onFocus);
+    i.click();
+  });
+}
+const IMPORT_ACCEPT = '.json,.csv,.tsv,.xlsx,.xls,.txt,.pdf';
+addManagedListener($('#btnTripImport'), 'click', async ()=>{
+  const f = await pickFile(IMPORT_ACCEPT); if (!f) return;
+  await importFile(f); invalidateKPICache(); await renderTrips(true); await renderHome();
+});
+addManagedListener($('#btnExpImport'), 'click', async ()=>{
+  const f = await pickFile(IMPORT_ACCEPT); if (!f) return;
+  await importFile(f); invalidateKPICache(); await renderExpenses(true); await renderHome();
+});
+
+// Tax period tabs
+$$('#taxPeriodTabs .btn').forEach(btn => {
+  addManagedListener(btn, 'click', async ()=>{
+    $$('#taxPeriodTabs .btn').forEach(b => b.classList.remove('act'));
+    btn.classList.add('act');
+    _taxPeriod = btn.dataset.period || 'week';
+    invalidateKPICache(); await computeKPIs();
+  });
+});
+
+// Settings
+addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
+  await setSetting('vehicleClass', $('#vehicleClass')?.value || 'cargo_van');
+  await setSetting('uiMode', $('#uiMode').value);
+  await setSetting('perDiemRate', Number($('#perDiemRate').value || 0));
+  await setSetting('brokerWindow', Number($('#brokerWindow').value || 90));
+  await setSetting('weeklyGoal', Number($('#weeklyGoal').value || 0));
+  await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
+  await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
+  markFuelPriceUpdated().catch(()=>{});
+  // The operator saved this settings panel, so this price is the driver's own
+  // figure — whatever number it happens to equal.
+  setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
+  // Monthly fixed costs → auto-calculate opCostPerMile
+  const mIns = Number($('#monthlyInsurance')?.value || 0);
+  const mVeh = Number($('#monthlyVehicle')?.value || 0);
+  const mMaint = Number($('#monthlyMaintenance')?.value || 0);
+  const mOther = Number($('#monthlyOther')?.value || 0);
+  const mMiles = Number($('#monthlyMiles')?.value || 0);
+  await setSetting('monthlyInsurance', mIns);
+  await setSetting('monthlyVehicle', mVeh);
+  await setSetting('monthlyMaintenance', mMaint);
+  await setSetting('monthlyOther', mOther);
+  await setSetting('monthlyMiles', mMiles);
+  // Auto-calculate per-mile cost if monthly data is filled in
+  if (mMiles > 0 && (mIns + mVeh + mMaint + mOther) > 0){
+    const autoOpCost = roundCents((mIns + mVeh + mMaint + mOther) / mMiles);
+    $('#opCostPerMile').value = autoOpCost.toFixed(2);
+    await setSetting('opCostPerMile', autoOpCost);
+  } else {
+    await setSetting('opCostPerMile', Number($('#opCostPerMile').value || 0));
+  }
+  const hlInput = $('#settingsHomeLocation');
+  if (hlInput) await setSetting('homeLocation', (hlInput.value || '').trim());
+  // 7D: van profile for the dimensional/payload pre-check (checkVanFit()).
+  await setSetting('vanProfile', {
+    cargoLengthIn: posNum($('#vanCargoLengthIn')?.value, VAN_PROFILE_DEFAULT.cargoLengthIn),
+    cargoWidthIn:  posNum($('#vanCargoWidthIn')?.value,  VAN_PROFILE_DEFAULT.cargoWidthIn),
+    wheelWellWidthIn: posNum($('#vanWheelWellWidthIn')?.value, VAN_PROFILE_DEFAULT.wheelWellWidthIn),
+    cargoHeightIn: posNum($('#vanCargoHeightIn')?.value, VAN_PROFILE_DEFAULT.cargoHeightIn),
+    doorWidthIn:   posNum($('#vanDoorWidthIn')?.value,   VAN_PROFILE_DEFAULT.doorWidthIn),
+    doorHeightIn:  posNum($('#vanDoorHeightIn')?.value,  VAN_PROFILE_DEFAULT.doorHeightIn),
+    payloadLbs:    posNum($('#vanPayloadLbs')?.value,    VAN_PROFILE_DEFAULT.payloadLbs),
+  });
+  // v24.0.9: planning average speed. An empty or out-of-range entry CLEARS the
+  // setting rather than storing a fallback — an inert gate is correct, a gate
+  // running on a number the operator did not choose is not.
+  {
+    const raw = knownNum($('#planningAvgMph')?.value);
+    const ok = raw !== null && raw >= PICKUP_FEASIBILITY.MIN_MPH && raw <= PICKUP_FEASIBILITY.MAX_MPH;
+    await setSetting('planningAvgMph', ok ? raw : null);
+  }
+  // DAT API settings
+  const datEnabled = $('#datApiEnabled')?.value || 'off';
+  await setSetting('datApiEnabled', datEnabled);
+  const datUrl = $('#datApiBaseUrl')?.value || '';
+  if (datUrl) await setSetting('datApiBaseUrl', clampStr(datUrl, 200));
+  // Canada settings
+  const caEnabled = $('#canadaEnabled')?.value || 'off';
+  await setSetting('canadaEnabled', caEnabled);
+  if (caEnabled === 'on'){
+    const cadRate = Number($('#cadUsdRate')?.value || 0);
+    if (cadRate > 0) await setSetting('cadUsdRate', cadRate);
+    const borderCost = Number($('#borderAdminCost')?.value || 0);
+    if (borderCost >= 0) await setSetting('borderAdminCost', borderCost);
+    await setSetting('canadaDocsReady', !!$('#canadaDocsReady')?.checked);
+  }
+  // F20: Dead Zone Exit settings
+  await setSetting('dzEnabled', ($('#dzEnabled')?.value || 'on') !== 'off');
+  const dzActDistVal = Number($('#dzActivationDistance')?.value || MW.dzActivationDistanceMi);
+  if (dzActDistVal >= 500) await setSetting('dzActivationDistance', dzActDistVal);
+  const dzFloorRPMVal = Number($('#dzFloorRPM')?.value || MW.dzFloorRPM);
+  if (dzFloorRPMVal >= 0.50 && dzFloorRPMVal < MW.hardRejectRPM) await setSetting('dzFloorRPM', dzFloorRPMVal);
+
+  // v21 T4C: FMCSA key
+  const fmcsaKey = ($('#fmcsaApiKey')?.value || '').trim();
+  if (fmcsaKey) await setSetting('fmcsaApiKey', clampStr(fmcsaKey, 80));
+  // v23.8: EIA key
+  const eiaKey = ($('#eiaApiKey')?.value || '').trim();
+  if (eiaKey) await setSetting('eiaApiKey', clampStr(eiaKey, 80));
+  toast('Saved settings'); invalidateKPICache(); await computeKPIs(); await refreshStorageHealth('');
+});
+addManagedListener($('#btnHardReset'), 'click', async ()=>{
+  if ((await getSetting('uiMode','simple')) !== 'pro'){ toast('Hard reset is Pro-only', true); return; }
+  if (!confirm('Hard reset will delete all local data on this device. Continue?')) return;
+  indexedDB.deleteDatabase(DB_NAME);
+  toast('Database deleted. Reloading...'); setTimeout(()=> location.reload(), 1200);
+});
+
+// Storage health
+addManagedListener($('#btnStorageRefresh'), 'click', async ()=> await refreshStorageHealth(''));
+addManagedListener($('#btnStorageAnalyze'), 'click', async ()=> await analyzeReceiptBlobSizes());
+addManagedListener($('#btnStorageRebuild'), 'click', async ()=> await rebuildReceiptIndex());
+addManagedListener($('#btnStorageClearCache'), 'click', async ()=>{
+  if (!confirm('Clear receipt cache? Thumbnails stay.')) return; await clearReceiptCache(); toast('Receipt cache cleared');
+});
+addManagedListener($('#btnWeeklyReport'), 'click', async ()=> { haptic(20); await generateWeeklyReport(); });
+addManagedListener($('#btnLoadCompare'), 'click', ()=> { haptic(20); openLoadCompare(); });
+
+// Accountant period tabs
+let _acctPeriod = 'ytd';
+$$('#acctPeriodTabs .btn').forEach(btn => {
+  addManagedListener(btn, 'click', ()=>{
+    $$('#acctPeriodTabs .btn').forEach(b => b.classList.remove('act'));
+    btn.classList.add('act');
+    _acctPeriod = btn.dataset.acct;
+    haptic(8);
+  });
+});
+addManagedListener($('#btnAccountantExport'), 'click', async ()=> { haptic(20); await generateAccountantPackage(_acctPeriod); });
+
+// ====================================================================
+//  WEEKLY PERFORMANCE REPORT — Canvas-rendered shareable image
+// ====================================================================
+async function generateWeeklyReport(){
+  toast('Generating report...');
+  try{
+    const { trips, exps } = await _getTripsAndExps();
+    const allFuel = await dumpStore('fuel');
+    const now = new Date();
+    const wk0 = startOfWeek(now).getTime();
+    const d7 = now.getTime() - 7 * 86400000;
+    const d14 = now.getTime() - 14 * 86400000;
+    const d30 = now.getTime() - 30 * 86400000;
+    const today = isoDate();
+    const userGoal = Number(await getSetting('weeklyGoal', 0) || 0);
+
+    // Compute weekly stats
+    let wkGross = 0, wkExp = 0, wkTrips = 0;
+    let wkLoaded = 0, wkAll = 0;
+    let wkScoreSum = 0, wkScoreCnt = 0, wkAccept = 0;
+    for (const t of trips){
+      const dt = t.pickupDate || t.deliveryDate;
+      if (t.needsReview || !dt || new Date(dt).getTime() < wk0) continue;
+      wkTrips++;
+      wkGross += Number(t.pay || 0);
+      const l = Number(t.loadedMiles||0), e = Number(t.emptyMiles||0);
+      wkLoaded += l; wkAll += l + e;
+      if (l + e > 0){
+        try{
+          const s = computeLoadScore(t, trips, exps);
+          if (s.available === false) continue;
+          wkScoreSum += s.marginScore; wkScoreCnt++;
+          if (s.verdict === 'PREMIUM WIN' || s.verdict === 'ACCEPT') wkAccept++;
+        }catch(e){ console.warn("[FL]", e); }
+      }
+    }
+    for (const e of exps){
+      if (e.date && new Date(e.date).getTime() >= wk0) wkExp += Number(e.amount || 0);
+    }
+    const wkNet = wkGross - wkExp;
+    const wkRpm = wkAll > 0 ? wkGross / wkAll : 0;
+    const wkDh = wkAll > 0 ? ((wkAll - wkLoaded) / wkAll * 100) : 0;
+    const wkAvgScore = wkScoreCnt > 0 ? Math.round(wkScoreSum / wkScoreCnt) : 0;
+    const wkAccRate = wkScoreCnt > 0 ? Math.round((wkAccept / wkScoreCnt) * 100) : 0;
+
+    const wkTripsArr = trips.filter(t => {
+      const dt = t.pickupDate || t.deliveryDate;
+      return !t.needsReview && dt && new Date(dt).getTime() >= wk0;
+    });
+    const wkMileage = summarizeTripMileage(wkTripsArr);
+    // F20: DZ exit stats — separated from main averages
+    let wkDZCount = 0, wkDZGross = 0, wkDZMi = 0;
+    for (const t of wkTripsArr){
+      if (t.isDZExit){ wkDZCount++; wkDZGross += Number(t.pay||0); wkDZMi += Number(t.loadedMiles||0)+Number(t.emptyMiles||0); }
+    }
+    const wkDZRpm = wkDZMi > 0 ? wkDZGross / wkDZMi : 0;
+    const wkRpmExclDZ = (wkAll - wkDZMi) > 0 ? (wkGross - wkDZGross) / (wkAll - wkDZMi) : wkRpm;
+
+    // Top lane this week
+    const lanes = computeLaneStats(wkTripsArr);
+    const topLane = lanes.length > 0 ? lanes[0] : null;
+
+    // Top broker this week
+    const brokers = computeBrokerStats(wkTripsArr, today, 0);
+    const topBroker = brokers.length > 0 ? brokers.sort((a,b) => b.pay - a.pay)[0] : null;
+    let topBrokerGrade = null;
+    if (topBroker){
+      const allBrokers = computeBrokerStats(trips, today, 0);
+      const gMiles = allBrokers.reduce((s,b) => s + b.miles, 0);
+      const gPay = allBrokers.reduce((s,b) => s + b.pay, 0);
+      const gAvgRpm = gMiles > 0 ? gPay / gMiles : 0;
+      topBrokerGrade = computeBrokerGrade(topBroker, gAvgRpm);
+    }
+
+    // Fuel this week
+    let fuelGal = 0, fuelAmt = 0;
+    for (const f of allFuel){
+      if (f.date && new Date(f.date).getTime() >= wk0){
+        fuelGal += Number(f.gallons || 0);
+        fuelAmt += Number(f.amount || 0);
+      }
+    }
+    const fuelPpg = fuelGal > 0 ? fuelAmt / fuelGal : 0;
+
+    // Week date range
+    const wkStart = new Date(wk0);
+    const wkLabel = `Week of ${wkStart.toLocaleDateString('en-US', { month:'short', day:'numeric' })} — ${now.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}`;
+
+    // ── Render Canvas ──
+    const W = 1080, H = 1920;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#0a0a0f'; ctx.fillRect(0, 0, W, H);
+
+    // Accent gradient header
+    const grd = ctx.createLinearGradient(0, 0, W, 180);
+    grd.addColorStop(0, '#6366f1'); grd.addColorStop(1, '#8b5cf6');
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, 180);
+
+    // Title
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 48px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Weekly Performance Report', W/2, 70);
+    ctx.font = '28px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.8)';
+    ctx.fillText(wkLabel, W/2, 120);
+    ctx.font = '22px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.fillText(`Freight Logic • v${APP_VERSION}`, W/2, 160);
+
+    // Helper: draw stat card
+    let cardY = 220;
+    function drawCard(label, value, sub, color='#fff'){
+      ctx.fillStyle = '#13131a'; roundRect(ctx, 60, cardY, W-120, 120, 20); ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.font = '24px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#888';
+      ctx.fillText(label, 100, cardY + 42);
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 44px -apple-system, system-ui, sans-serif'; ctx.fillStyle = color;
+      ctx.fillText(value, W - 100, cardY + 48);
+      if (sub){
+        ctx.font = '20px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#666';
+        ctx.textAlign = 'left';
+        ctx.fillText(sub, 100, cardY + 86);
+      }
+      cardY += 140;
+    }
+
+    function drawDivider(text){
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 22px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#6366f1';
+      ctx.fillText(text, 80, cardY + 20);
+      cardY += 40;
+    }
+
+    function roundRect(c, x, y, w, h, r){
+      c.beginPath(); c.moveTo(x+r, y);
+      c.lineTo(x+w-r, y); c.quadraticCurveTo(x+w, y, x+w, y+r);
+      c.lineTo(x+w, y+h-r); c.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+      c.lineTo(x+r, y+h); c.quadraticCurveTo(x, y+h, x, y+h-r);
+      c.lineTo(x, y+r); c.quadraticCurveTo(x, y, x+r, y);
+      c.closePath();
+    }
+
+    drawDivider('REVENUE');
+    drawCard('Gross Revenue', fmtMoney(wkGross), `${wkTrips} load${wkTrips!==1?'s':''}`, '#6bff95');
+    drawCard('Expenses', fmtMoney(wkExp), '', '#ff6b6b');
+    drawCard('Net Profit', fmtMoney(wkNet), '', wkNet >= 0 ? '#6bff95' : '#ff6b6b');
+
+    if (userGoal > 0){
+      const pct = wkGross > 0 ? Math.round((wkGross / userGoal) * 100) : 0;
+      drawCard('Goal Progress', `${pct}%`, `${fmtMoney(wkGross)} of ${fmtMoney(userGoal)} goal`, pct >= 100 ? '#6bff95' : '#ffb300');
+    }
+
+    drawDivider('EFFICIENCY');
+    drawCard('Avg RPM', wkMileage.unknownTrips ? 'Unknown' : wkRpmExclDZ > 0 ? `$${wkRpmExclDZ.toFixed(2)}` : '—', `${wkMileage.unknownTrips ? 'Mileage incomplete' : fmtNum(wkAll - wkDZMi) + ' mi'}${wkDZCount > 0 ? ' (DZ exits excluded)' : ''}`);
+    drawCard('Deadhead', wkMileage.unknownTrips ? 'Unknown' : wkAll > 0 ? `${wkDh.toFixed(1)}%` : '—', wkMileage.unknownTrips ? 'Complete deadhead to calculate' : `${fmtNum(wkAll - wkLoaded)} empty of ${fmtNum(wkAll)} total`, wkDh <= 15 ? '#6bff95' : wkDh <= 25 ? '#ffb300' : '#ff6b6b');
+    drawCard('Avg Load Score', wkScoreCnt > 0 ? `${wkAvgScore}/100` : '—', `Accept rate: ${wkAccRate}%`, wkAvgScore >= 60 ? '#6bff95' : wkAvgScore >= 40 ? '#ffb300' : '#ff6b6b');
+
+    if (wkDZCount > 0){
+      drawCard('Dead Zone Exits', `${wkDZCount} load${wkDZCount>1?'s':''}`, `${fmtMoney(wkDZGross)} total • ${wkTripsArr.some(t => t.isDZExit && tripAllMiles(t) === null) ? 'Unknown' : '$' + wkDZRpm.toFixed(2)} avg RPM (survival-tier, excluded from Avg RPM)`, '#f0a500');
+      if (wkDZCount > 2){ drawDivider('⚠️ High DZ frequency — review market positioning'); }
+    }
+
+    drawDivider('INTELLIGENCE');
+    if (topLane){
+      drawCard('Top Lane', topLane.display.length > 30 ? topLane.display.slice(0,30)+'…' : topLane.display, `$${topLane.avgRpm} avg RPM • ${topLane.trips} run${topLane.trips>1?'s':''}`, '#58a6ff');
+    }
+    if (topBroker && topBrokerGrade){
+      drawCard(`Top Broker (${topBrokerGrade.grade})`, topBroker.name.length > 25 ? topBroker.name.slice(0,25)+'…' : topBroker.name, `$${topBroker.avgRpm.toFixed(2)} RPM • ${fmtMoney(topBroker.pay)} revenue`, topBrokerGrade.gradeColor);
+    }
+    if (fuelGal > 0){
+      drawCard('Fuel', `$${fuelPpg.toFixed(3)}/gal`, `${fuelGal.toFixed(1)} gal • ${fmtMoney(fuelAmt)} total`);
+    }
+
+    // Footer
+    const footY = Math.min(cardY + 30, H - 60);
+    ctx.textAlign = 'center';
+    ctx.font = '20px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#444';
+    ctx.fillText('Generated by Freight Logic — freightlogic.app', W/2, footY);
+
+    // Download
+    canvas.toBlob(blob => {
+      if (!blob){ toast('Failed to generate', true); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `FreightLogic_Weekly_${today}.png`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      canvas.width = 0; canvas.height = 0;
+      haptic(25);
+      toast('Weekly report saved!');
+    }, 'image/png');
+  }catch(err){ toast('Report generation failed', true); }
+}
+
+// ====================================================================
+//  LOAD COMPARE MODE — Side-by-side scoring of two loads
+// ====================================================================
+function openLoadCompare(){
+  const body = document.createElement('div');
+  body.style.padding = '0';
+
+  // Two-column input form
+  body.innerHTML = `
+    <div class="muted" style="font-size:12px;margin-bottom:12px;padding:0 4px">Enter two loads to compare. We'll score both and recommend the better option.</div>
+    <div class="grid2" style="gap:10px">
+      <div class="card" style="margin:0">
+        <div style="font-size:14px;font-weight:800;color:var(--accent);margin-bottom:8px">LOAD A</div>
+        <label>Pay $</label><input id="cmpA_pay" type="number" step="0.01" placeholder="0.00" />
+        <div class="grid2"><div><label>Loaded mi</label><input id="cmpA_loaded" type="number" placeholder="0" /></div>
+          <div><label>Empty mi</label><input id="cmpA_empty" type="number" placeholder="0" /></div></div>
+        <label>Customer</label><input id="cmpA_customer" placeholder="Broker name" />
+        <div class="grid2"><div><label>Origin</label><input id="cmpA_origin" placeholder="City, ST" /></div>
+          <div><label>Dest</label><input id="cmpA_dest" placeholder="City, ST" /></div></div>
+      </div>
+      <div class="card" style="margin:0">
+        <div style="font-size:14px;font-weight:800;color:#ff6b6b;margin-bottom:8px">LOAD B</div>
+        <label>Pay $</label><input id="cmpB_pay" type="number" step="0.01" placeholder="0.00" />
+        <div class="grid2"><div><label>Loaded mi</label><input id="cmpB_loaded" type="number" placeholder="0" /></div>
+          <div><label>Empty mi</label><input id="cmpB_empty" type="number" placeholder="0" /></div></div>
+        <label>Customer</label><input id="cmpB_customer" placeholder="Broker name" />
+        <div class="grid2"><div><label>Origin</label><input id="cmpB_origin" placeholder="City, ST" /></div>
+          <div><label>Dest</label><input id="cmpB_dest" placeholder="City, ST" /></div></div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="cmpRun">Compare Loads</button></div>
+    <div id="cmpResult" style="margin-top:12px"></div>`;
+
+  $('#cmpRun', body).addEventListener('click', async ()=>{
+    const getVal = (id) => Number($(`#${id}`, body)?.value || 0);
+    const getStr = (id) => ($(`#${id}`, body)?.value || '').trim();
+
+    const loadA = {
+      orderNo: 'CMP-A', pay: getVal('cmpA_pay'),
+      loadedMiles: getVal('cmpA_loaded'), emptyMiles: getVal('cmpA_empty'),
+      customer: getStr('cmpA_customer'), origin: getStr('cmpA_origin'), destination: getStr('cmpA_dest'),
+      pickupDate: isoDate(), deliveryDate: isoDate(), isPaid: false, paidDate: null
+    };
+    const loadB = {
+      orderNo: 'CMP-B', pay: getVal('cmpB_pay'),
+      loadedMiles: getVal('cmpB_loaded'), emptyMiles: getVal('cmpB_empty'),
+      customer: getStr('cmpB_customer'), origin: getStr('cmpB_origin'), destination: getStr('cmpB_dest'),
+      pickupDate: isoDate(), deliveryDate: isoDate(), isPaid: false, paidDate: null
+    };
+
+    if (loadA.pay <= 0 || loadB.pay <= 0){ toast('Both loads need a pay amount', true); return; }
+    const miA = loadA.loadedMiles + loadA.emptyMiles;
+    const miB = loadB.loadedMiles + loadB.emptyMiles;
+    if (miA <= 0 || miB <= 0){ toast('Both loads need miles', true); return; }
+
+    haptic(15);
+    const result = $('#cmpResult', body);
+    result.innerHTML = '<div class="muted" style="text-align:center;padding:12px">Scoring...</div>';
+
+    try{
+      const { trips: allT, exps: allE } = await _getTripsAndExps();
+      const fc = { mpg: Number(await getSetting('vehicleMpg', 0) || 0), pricePerGal: Number(await getSetting('fuelPrice', 0) || 0) };
+      const scoreA = computeLoadScore(loadA, allT, allE, fc);
+      const scoreB = computeLoadScore(loadB, allT, allE, fc);
+
+      // Lane intel
+      const laneA = computeLaneIntel(loadA.origin, loadA.destination, allT);
+      const laneB = computeLaneIntel(loadB.origin, loadB.destination, allT);
+
+      // Broker intel
+      const brokerStats = computeBrokerStats(allT, isoDate(), 0);
+      const gMiles = brokerStats.reduce((s,b) => s + b.miles, 0);
+      const gPay = brokerStats.reduce((s,b) => s + b.pay, 0);
+      const gAvgRpm = gMiles > 0 ? gPay / gMiles : 0;
+      const brokerA = loadA.customer ? brokerStats.find(b => b.name === loadA.customer) : null;
+      const brokerB = loadB.customer ? brokerStats.find(b => b.name === loadB.customer) : null;
+      const gradeA = brokerA ? computeBrokerGrade(brokerA, gAvgRpm) : null;
+      const gradeB = brokerB ? computeBrokerGrade(brokerB, gAvgRpm) : null;
+
+      // Determine winner
+      const netA = scoreA.marginScore - (scoreA.riskScore * 0.5);
+      const netB = scoreB.marginScore - (scoreB.riskScore * 0.5);
+      let winner, reason;
+      if (netA > netB + 5){ winner = 'A'; reason = 'Load A has better risk-adjusted margin'; }
+      else if (netB > netA + 5){ winner = 'B'; reason = 'Load B has better risk-adjusted margin'; }
+      else {
+        // Tiebreaker: prefer higher RPM
+        const rpmA = miA > 0 ? loadA.pay / miA : 0;
+        const rpmB = miB > 0 ? loadB.pay / miB : 0;
+        if (rpmA > rpmB){ winner = 'A'; reason = 'Very close — Load A edges out on RPM'; }
+        else if (rpmB > rpmA){ winner = 'B'; reason = 'Very close — Load B edges out on RPM'; }
+        else { winner = 'TIE'; reason = 'Effectively identical — pick based on preference'; }
+      }
+
+      const winColor = winner === 'A' ? 'var(--accent)' : winner === 'B' ? '#ff6b6b' : 'var(--muted)';
+      const winLabel = winner === 'TIE' ? 'Too close to call' : `Take Load ${winner}`;
+
+      // Helper: stat row
+      function statRow(label, valA, valB, higherIsBetter=true){
+        const a = typeof valA === 'number' ? valA : 0;
+        const b = typeof valB === 'number' ? valB : 0;
+        const aWin = higherIsBetter ? a > b : a < b;
+        const bWin = higherIsBetter ? b > a : b < a;
+        const aStyle = aWin ? 'color:var(--good);font-weight:700' : '';
+        const bStyle = bWin ? 'color:var(--good);font-weight:700' : '';
+        const fA = typeof valA === 'string' ? valA : (typeof valA === 'number' && valA % 1 !== 0 ? valA.toFixed(2) : valA);
+        const fB = typeof valB === 'string' ? valB : (typeof valB === 'number' && valB % 1 !== 0 ? valB.toFixed(2) : valB);
+        return `<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <div style="text-align:right;${aStyle}">${fA}</div>
+          <div style="text-align:center;font-size:11px;color:var(--muted);min-width:80px">${label}</div>
+          <div style="text-align:left;${bStyle}">${fB}</div>
+        </div>`;
+      }
+
+      const rpmA = miA > 0 ? loadA.pay / miA : 0;
+      const rpmB = miB > 0 ? loadB.pay / miB : 0;
+      const dhA = miA > 0 ? (loadA.emptyMiles / miA * 100) : 0;
+      const dhB = miB > 0 ? (loadB.emptyMiles / miB * 100) : 0;
+
+      let html = `
+        <div style="text-align:center;padding:14px 0;border-radius:14px;background:${winColor}10;border:1px solid ${winColor}30;margin-bottom:14px">
+          <div style="font-size:28px;font-weight:900;color:${winColor}">${winLabel}</div>
+          <div class="muted" style="font-size:13px;margin-top:4px">${reason}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:6px 0;margin-bottom:4px">
+          <div style="text-align:right;font-weight:800;color:var(--accent)">LOAD A</div>
+          <div></div>
+          <div style="text-align:left;font-weight:800;color:#ff6b6b">LOAD B</div>
+        </div>
+        ${statRow('Verdict', scoreA.verdict, scoreB.verdict)}
+        ${statRow('Margin', scoreA.marginScore, scoreB.marginScore)}
+        ${statRow('Risk', scoreA.riskScore, scoreB.riskScore, false)}
+        ${statRow('Pay', fmtMoney(loadA.pay), fmtMoney(loadB.pay))}
+        ${statRow('RPM', '$'+rpmA.toFixed(2), '$'+rpmB.toFixed(2))}
+        ${statRow('Miles', fmtNum(miA), fmtNum(miB))}
+        ${statRow('Deadhead', dhA.toFixed(1)+'%', dhB.toFixed(1)+'%', false)}`;
+
+      // Counter offers
+      if (scoreA.counterOffer || scoreB.counterOffer){
+        html += statRow('Counter', scoreA.counterOffer ? fmtMoney(scoreA.counterOffer) : '—', scoreB.counterOffer ? fmtMoney(scoreB.counterOffer) : '—');
+      }
+
+      // Broker grades
+      if (gradeA || gradeB){
+        html += statRow('Broker', gradeA ? `${gradeA.grade} (${gradeA.score}/100)` : 'New', gradeB ? `${gradeB.grade} (${gradeB.score}/100)` : 'New');
+      }
+
+      // Lane history
+      if (laneA || laneB){
+        html += statRow('Lane runs', laneA ? `${laneA.trips}x ($${laneA.avgRpm} avg)` : 'New', laneB ? `${laneB.trips}x ($${laneB.avgRpm} avg)` : 'New');
+      }
+
+      // Fuel estimates
+      if (scoreA.fuelCost !== null || scoreB.fuelCost !== null){
+        html += statRow('Fuel est', scoreA.fuelCost !== null ? fmtMoney(scoreA.fuelCost) : '—', scoreB.fuelCost !== null ? fmtMoney(scoreB.fuelCost) : '—', false);
+        html += statRow('Net after fuel', scoreA.netAfterFuel !== null ? fmtMoney(scoreA.netAfterFuel) : '—', scoreB.netAfterFuel !== null ? fmtMoney(scoreB.netAfterFuel) : '—');
+      }
+
+      result.innerHTML = html;
+      haptic(25);
+    }catch(err){ result.innerHTML = `<div class="muted" style="color:var(--bad)">Error: ${escapeHtml(err.message)}</div>`; }
+  });
+
+  openModal('⚖️ Compare Loads', body);
+}
+
+// ====================================================================
+//  EXPORT-TO-ACCOUNTANT — Quarterly/YTD tax package as CSV bundle
+// ====================================================================
+async function generateAccountantPackage(period='ytd'){
+  toast('Generating accountant package...');
+  try{
+    const { trips, exps } = await _getTripsAndExps();
+    const allFuel = await dumpStore('fuel');
+    const now = new Date();
+    const year = now.getFullYear();
+    const perDiemRate = Number(await getSetting('perDiemRate', 0) || 0) || 80; // IRS CONUS rate effective Oct 1, 2024
+
+    // Date range based on period
+    let startDate, endDate, label;
+    if (period === 'q1'){ startDate = `${year}-01-01`; endDate = `${year}-03-31`; label = `Q1_${year}`; }
+    else if (period === 'q2'){ startDate = `${year}-04-01`; endDate = `${year}-06-30`; label = `Q2_${year}`; }
+    else if (period === 'q3'){ startDate = `${year}-07-01`; endDate = `${year}-09-30`; label = `Q3_${year}`; }
+    else if (period === 'q4'){ startDate = `${year}-10-01`; endDate = `${year}-12-31`; label = `Q4_${year}`; }
+    else { startDate = `${year}-01-01`; endDate = isoDate(); label = `YTD_${year}`; }
+
+    const inRange = (d) => {
+      if (!d) return false;
+      return d >= startDate && d <= endDate;
+    };
+
+    // ── 1. INCOME (P&L) ──
+    const periodTrips = trips.filter(t => inRange(t.pickupDate || t.deliveryDate));
+    let grossRevenue = 0, totalLoadedMi = 0, totalAllMi = 0;
+    const incomeRows = [['Date','Order #','Customer','Origin','Destination','Pay','Loaded Miles','Empty Miles','RPM','Status']];
+    for (const t of periodTrips){
+      const pay = Number(t.pay || 0);
+      const loaded = Number(t.loadedMiles || 0);
+      const empty = Number(t.emptyMiles || 0);
+      const allMi = loaded + empty;
+      grossRevenue += pay;
+      totalLoadedMi += loaded;
+      totalAllMi += allMi;
+      incomeRows.push([
+        t.pickupDate || t.deliveryDate || '', t.orderNo || '', t.customer || '',
+        t.origin || '', t.destination || '', pay.toFixed(2),
+        // v21 T1C: annotate estimated miles
+        t.milesEstimated ? String(loaded) + ' (est)' : String(loaded), String(empty),
+        allMi > 0 ? (pay / allMi).toFixed(2) : '0.00',
+        t.isPaid ? 'Paid' : 'Unpaid'
+      ]);
+    }
+
+    // ── 2. EXPENSES (categorized) ──
+    const periodExps = exps.filter(e => inRange(e.date));
+    let totalExpenses = 0;
+    const catTotals = new Map();
+    const expenseRows = [['Date','Category','Amount','Notes']];
+    for (const e of periodExps){
+      const amt = Number(e.amount || 0);
+      totalExpenses += amt;
+      const cat = e.category || 'Uncategorized';
+      catTotals.set(cat, (catTotals.get(cat) || 0) + amt);
+      expenseRows.push([e.date || '', cat, amt.toFixed(2), e.notes || '']);
+    }
+
+    // ── 3. FUEL LOG ──
+    const periodFuel = allFuel.filter(f => inRange(f.date));
+    let totalGallons = 0, totalFuelCost = 0;
+    const fuelRows = [['Date','State','Gallons','Amount','Price/Gal']];
+    for (const f of periodFuel){
+      const gal = Number(f.gallons || 0);
+      const amt = Number(f.amount || 0);
+      const st = (f.state || 'Unknown').toUpperCase().trim();
+      totalGallons += gal;
+      totalFuelCost += amt;
+      fuelRows.push([f.date || '', st, gal.toFixed(2), amt.toFixed(2), gal > 0 ? (amt / gal).toFixed(3) : '0.000']);
+    }
+
+    // ── 4. PER DIEM CALCULATION ──
+    // Count unique days with trips
+    const tripDays = new Set();
+    for (const t of periodTrips){
+      const d = t.pickupDate || t.deliveryDate;
+      if (d) tripDays.add(d);
+      if (t.deliveryDate && t.pickupDate && t.deliveryDate !== t.pickupDate){
+        // Multi-day trip: count all days between
+        const s = new Date(t.pickupDate);
+        const e = new Date(t.deliveryDate);
+        for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate() + 1)){
+          tripDays.add(isoDate(dt));
+        }
+      }
+    }
+    const perDiemDays = tripDays.size;
+    const perDiemGross = roundCents(perDiemDays * perDiemRate);
+    // IRS Sec 274(n): DOT-regulated = 80%, non-DOT (cargo van) = 50%
+    const acctVehicleClass = await getSetting('vehicleClass', 'cargo_van');
+    const acctPerDiemPct = (acctVehicleClass === 'semi' || acctVehicleClass === 'box_truck_cdl') ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+    const perDiemTotal = roundCents(perDiemGross * acctPerDiemPct);
+
+    // ── 5. SUMMARY (P&L) ──
+    const netIncome = roundCents(grossRevenue - totalExpenses);
+    const seTax = roundCents(Math.max(0, (netIncome - perDiemTotal) * IRS.SE_RATE * IRS.SE_NET_FACTOR));
+    const estimatedProfit = roundCents(netIncome - perDiemTotal - seTax);
+    const avgRpm = totalAllMi > 0 ? grossRevenue / totalAllMi : 0;
+    const deadhead = totalAllMi > 0 ? ((totalAllMi - totalLoadedMi) / totalAllMi * 100) : 0;
+
+    // X-02: mileage deduction computed per-trip using each trip's own date-keyed
+    // rate and summed — not one flat rate applied to the period total, which
+    // cannot represent a midyear rate change.
+    const mileageDeduction = roundCents(periodTrips.reduce((s, t) => {
+      const mi = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileageRatesUsed = [...new Set(periodTrips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
+
+    const summaryRows = [
+      ['PROFIT & LOSS SUMMARY', label],
+      ['Period', `${startDate} to ${endDate}`],
+      [''],
+      ['REVENUE'],
+      ['Gross Revenue', '$' + grossRevenue.toFixed(2)],
+      ['Total Loads', String(periodTrips.length)],
+      ['Avg RPM (all miles)', '$' + avgRpm.toFixed(2)],
+      ['Total Loaded Miles', String(totalLoadedMi)],
+      ['Total All Miles', String(totalAllMi)],
+      ['Deadhead %', deadhead.toFixed(1) + '%'],
+      [''],
+      ['EXPENSES'],
+      ['Total Expenses', '$' + totalExpenses.toFixed(2)],
+      ...([...catTotals.entries()].sort((a,b) => b[1] - a[1]).map(([cat, amt]) => [`  ${cat}`, '$' + amt.toFixed(2)])),
+      ...(totalFuelCost > 0 ? [
+        [''],
+        ['FUEL'],
+        ['Total Fuel Cost', '$' + totalFuelCost.toFixed(2)],
+        ['Total Gallons', totalGallons.toFixed(2)],
+        ['Avg Price/Gallon', '$' + (totalGallons > 0 ? (totalFuelCost / totalGallons).toFixed(3) : '0.000')],
+      ] : []),
+      [''],
+      ['DEDUCTIONS'],
+      ['Per Diem Rate', '$' + perDiemRate.toFixed(2) + '/day'],
+      ['Days on Road', String(perDiemDays)],
+      ['Per Diem Gross', '$' + perDiemGross.toFixed(2)],
+      ['Per Diem Deductible (' + Math.round(acctPerDiemPct * 100) + '% IRS Sec 274n)', '$' + perDiemTotal.toFixed(2)],
+      [''],
+      ['MILEAGE (IRS Standard Rate Method)'],
+      ['IRS Business Mileage Rate(s) Applied (per trip date)', mileageRatesUsed.length ? mileageRatesUsed.map(r => '$' + r.toFixed(3) + '/mile').join(', ') : 'n/a'],
+      ['Total Business Miles', String(Math.round(totalAllMi))],
+      ['Mileage Deduction (per-trip date-based rate, summed)', '$' + mileageDeduction.toFixed(2)],
+      ['NOTE: Choose EITHER mileage OR actual expenses — not both.'],
+      [''],
+      ['BOTTOM LINE'],
+      ['Net Income (Revenue - Expenses)', '$' + netIncome.toFixed(2)],
+      ['Per Diem Deduction (' + Math.round(acctPerDiemPct * 100) + '%)', '-$' + perDiemTotal.toFixed(2)],
+      ['Est. SE Tax (15.3%)', '-$' + seTax.toFixed(2)],
+      ['Estimated Profit', '$' + estimatedProfit.toFixed(2)],
+      [''],
+      ['NOTE: This is an estimate only. Not tax advice.'],
+      ['Generated by Freight Logic ' + APP_VERSION]
+    ];
+
+    // ── Build CSV files ──
+    function toCSV(rows){
+      return rows.map(r => r.map(c => {
+        const s = csvSafeCell(c);
+        return `"${s.replace(/"/g, '""')}"`;
+      }).join(',')).join('\n');
+    }
+
+    const summaryCSV = toCSV(summaryRows);
+    const incomeCSV = toCSV(incomeRows);
+    const expenseCSV = toCSV(expenseRows);
+
+    // ── Combine into single download (multi-section CSV) ──
+    const sections = [
+      '=== FREIGHT LOGIC ACCOUNTANT PACKAGE ===',
+      '=== ' + label + ' ===',
+      '',
+      '--- P&L SUMMARY ---',
+      summaryCSV,
+      '',
+      '',
+      '--- INCOME DETAIL ---',
+      incomeCSV,
+      '',
+      '',
+      '--- EXPENSES BY CATEGORY ---',
+      expenseCSV,
+    ];
+    if (periodFuel.length > 0){
+      const fuelCSV = toCSV(fuelRows);
+      sections.push('', '', '--- FUEL LOG ---', fuelCSV);
+    }
+    const combined = sections.join('\n');
+
+    // Download
+    const blob = new Blob([combined], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `FreightLogic_Accountant_${label}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    haptic(25);
+    toast(`Accountant package exported: ${label}`);
+    await setSetting('lastExportDate', Date.now());
+  }catch(err){ console.error('[FL] Export error:', err); toast('Export failed. Please try again.', true); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v14.5.0 FEATURE: RECEIPT CAMERA (getUserMedia + Canvas)
+// Auto-crop, compress, preview, save
+// ════════════════════════════════════════════════════════════════
+
+async function openReceiptCamera(orderNo){
+  const hasCamera = !!(navigator.mediaDevices?.getUserMedia);
+  if (!hasCamera){
+    toast('Camera not available — use file picker instead', true);
+    return;
+  }
+
+  const body = document.createElement('div');
+  body.innerHTML = `<div style="position:relative;width:100%;overflow:hidden;border-radius:var(--r-sm)">
+    <video id="camVideo" autoplay playsinline muted style="width:100%;display:block;border-radius:var(--r-sm);background:#000"></video>
+    <canvas id="camCanvas" style="display:none;width:100%;border-radius:var(--r-sm)"></canvas>
+    <div id="camOverlay" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+      <div style="width:85%;height:70%;border:2px dashed rgba(255,255,255,0.4);border-radius:12px"></div>
+    </div>
+  </div>
+  <div id="camControls" style="display:flex;gap:8px;margin-top:12px;justify-content:center">
+    <button class="btn" id="camFlip" style="font-size:18px" title="Flip camera">🔄</button>
+    <button class="btn primary" id="camCapture" style="padding:12px 32px;font-size:15px">📷 Capture</button>
+  </div>
+  <div id="camPreview" style="display:none;margin-top:12px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px">Preview</div>
+    <canvas id="camResult" style="width:100%;border-radius:var(--r-sm);border:1px solid var(--border)"></canvas>
+    <div style="display:flex;gap:4px;margin-top:4px">
+      <div class="pill" id="camSizeInfo"><span class="muted">Size</span> <b>—</b></div>
+      <div class="pill" id="camDimInfo"><span class="muted">Dim</span> <b>—</b></div>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn" id="camRetake">Retake</button>
+      <button class="btn primary" id="camSave">Save Receipt</button>
+      <button class="btn" id="camSaveAsExpense" style="border-color:var(--accent)">💰 Save as Expense</button>
+    </div>
+  </div>
+  <div class="muted" style="font-size:11px;margin-top:10px;text-align:center">Align receipt within the guide frame. Auto-compressed to save storage.</div>`;
+
+  let stream = null;
+  let facingMode = 'environment'; // rear camera default
+  let capturedBlob = null;
+
+  async function startCamera(){
+    try{
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      const video = $('#camVideo', body);
+      if (video){
+        video.srcObject = stream;
+        video.play().catch(()=>{});
+      }
+    } catch(err){
+      console.error('[FL] Camera error:', err); toast('Camera access denied. Check permissions.', true);
+    }
+  }
+
+  function stopCamera(){
+    if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    const video = $('#camVideo', body);
+    if (video) video.srcObject = null;
+  }
+
+  // Capture frame from video to canvas
+  function captureFrame(){
+    const video = $('#camVideo', body);
+    const canvas = $('#camCanvas', body);
+    const result = $('#camResult', body);
+    if (!video || !canvas || !result) return;
+
+    // Get video dimensions
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+
+    // Crop to center 85% x 70% (matching the overlay guide)
+    const cropX = Math.round(vw * 0.075);
+    const cropY = Math.round(vh * 0.15);
+    const cropW = Math.round(vw * 0.85);
+    const cropH = Math.round(vh * 0.70);
+
+    // Scale down if too large (max 1600px wide for storage efficiency)
+    const maxW = 1600;
+    const scale = Math.min(1, maxW / cropW);
+    const outW = Math.round(cropW * scale);
+    const outH = Math.round(cropH * scale);
+
+    result.width = outW;
+    result.height = outH;
+    const ctx = result.getContext('2d', { alpha: false });
+
+    // Draw cropped region
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+
+    // Auto-enhance: slight contrast boost for receipt text
+    try {
+      const imgData = ctx.getImageData(0, 0, outW, outH);
+      const data = imgData.data;
+      // Simple auto-levels: find min/max brightness and stretch
+      let minB = 255, maxB = 0;
+      for (let i = 0; i < data.length; i += 4){
+        const b = (data[i] + data[i+1] + data[i+2]) / 3;
+        if (b < minB) minB = b;
+        if (b > maxB) maxB = b;
+      }
+      const range = maxB - minB;
+      if (range > 30 && range < 240){
+        const factor = 220 / range;
+        for (let i = 0; i < data.length; i += 4){
+          data[i] = Math.min(255, Math.max(0, (data[i] - minB) * factor + 15));
+          data[i+1] = Math.min(255, Math.max(0, (data[i+1] - minB) * factor + 15));
+          data[i+2] = Math.min(255, Math.max(0, (data[i+2] - minB) * factor + 15));
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+    } catch(e){ /* enhancement failed, raw frame is fine */ }
+
+    // Convert to compressed JPEG blob
+    result.toBlob((blob)=>{
+      capturedBlob = blob;
+      const sizeKB = blob ? Math.round(blob.size / 1024) : 0;
+      $('#camSizeInfo', body).innerHTML = `<span class="muted">Size</span> <b>${sizeKB} KB</b>`;
+      $('#camDimInfo', body).innerHTML = `<span class="muted">Dim</span> <b>${outW}×${outH}</b>`;
+    }, 'image/jpeg', 0.82);
+
+    // Show preview, hide video
+    video.style.display = 'none';
+    $('#camOverlay', body).style.display = 'none';
+    $('#camControls', body).style.display = 'none';
+    result.style.display = 'block';
+    $('#camPreview', body).style.display = '';
+    stopCamera();
+  }
+
+  // Capture button
+  $('#camCapture', body)?.addEventListener('click', ()=> { haptic(25); captureFrame(); });
+
+  // Flip camera
+  $('#camFlip', body)?.addEventListener('click', ()=> {
+    haptic(10);
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    startCamera();
+  });
+
+  // Retake
+  $('#camRetake', body)?.addEventListener('click', ()=> {
+    haptic(10);
+    capturedBlob = null;
+    const video = $('#camVideo', body);
+    const result = $('#camResult', body);
+    if (video) video.style.display = 'block';
+    if (result) result.style.display = 'none';
+    $('#camOverlay', body).style.display = '';
+    $('#camControls', body).style.display = 'flex';
+    $('#camPreview', body).style.display = 'none';
+    startCamera();
+  });
+
+  // Save
+  $('#camSave', body)?.addEventListener('click', async ()=> {
+    if (!capturedBlob){ toast('No capture to save', true); return; }
+    haptic(20);
+    const file = new File([capturedBlob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    if (orderNo && orderNo !== 'new'){
+      await saveNewReceipts(orderNo, [file]);
+      toast('Receipt saved from camera');
+    } else {
+      // Store temporarily for the trip being created
+      _cameraReceiptFiles = _cameraReceiptFiles || [];
+      _cameraReceiptFiles.push(file);
+      toast('Receipt captured — will save with trip');
+    }
+    closeModal();
+  });
+
+  // v21 T1A: Save as Expense — OCR → pre-fill expense form
+  $('#camSaveAsExpense', body)?.addEventListener('click', async ()=>{
+    if (!capturedBlob){ toast('Capture a frame first', true); return; }
+    haptic(20);
+    toast('Scanning receipt...');
+    try {
+      // Issue #220: this asked `loadTesseract()` for the Tesseract NAMESPACE and
+      // called `Tess.createWorker('eng')` on it — but the function returns a
+      // ready WORKER, which has no createWorker. So receipt OCR raised a
+      // TypeError even when an engine was present. Found while making the
+      // unavailable path honest; the worker is now used directly.
+      const worker = await loadTesseract();
+      if (!worker){ toast('Receipt scanning needs the offline OCR engine installed — see README.txt.', true); return; }
+      const { data: { text } } = await worker.recognize(capturedBlob);
+      const parsed = parseReceiptOCR(text);
+      closeModal();
+      setTimeout(()=> openReceiptExpenseForm(parsed, capturedBlob), 200);
+    } catch(e){ console.error('[FL] OCR expense', e); toast('OCR failed — try again', true); }
+  });
+
+  openModal('📷 Receipt Camera', body);
+  startCamera();
+
+  // Clean up camera when modal closes
+  const _origClose = closeModal;
+  const obs = new MutationObserver(()=> {
+    if ($('#modal').style.display === 'none'){ stopCamera(); obs.disconnect(); }
+  });
+  obs.observe($('#modal'), { attributes: true, attributeFilter: ['style'] });
+}
+
+// Temp storage for camera receipts captured before trip is saved
+let _cameraReceiptFiles = [];
+
+// ════════════════════════════════════════════════════════════════
+// v14.4.0 FEATURE: WEEKLY TRENDS CHART (Canvas-based, no deps)
+// ════════════════════════════════════════════════════════════════
+
+async function renderWeeklyChart(){
+  const canvas = $('#weeklyChart');
+  if (!canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  // Gather last 7 days of revenue & expenses
+  const { trips, exps } = await _getTripsAndExps();
+  const today = new Date();
+  const dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const days = [];
+  for (let i = 6; i >= 0; i--){
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const iso = isoDate(d);
+    let rev = 0, exp = 0;
+    for (const t of trips){
+      const dt = t.pickupDate || t.deliveryDate;
+      if (dt === iso) rev += Number(t.pay || 0);
+    }
+    for (const e of exps){
+      if (e.date === iso) exp += Number(e.amount || 0);
+    }
+    days.push({ label: dayLabels[d.getDay()], date: iso.slice(5), rev, exp, net: rev - exp });
+  }
+
+  const maxVal = Math.max(1, ...days.map(d => Math.max(d.rev, d.exp)));
+  const isDark = !document.documentElement.hasAttribute('data-theme') || document.documentElement.getAttribute('data-theme') === 'dark';
+  const textColor = isDark ? '#a8a8bc' : '#555570';
+  const revColor = isDark ? '#eba40f' : '#d48f00';
+  const expColor = isDark ? 'rgba(248,113,113,0.6)' : 'rgba(220,38,38,0.5)';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Chart area
+  const padL = 6, padR = 6, padT = 18, padB = 24;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const barW = (chartW / 7) * 0.35;
+  const gap = chartW / 7;
+
+  // Title
+  ctx.font = '600 11px -apple-system, system-ui, sans-serif';
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'left';
+  ctx.fillText('7-DAY REVENUE', padL, 13);
+
+  // Max label
+  ctx.textAlign = 'right';
+  ctx.font = '500 10px ui-monospace, SF Mono, monospace';
+  ctx.fillStyle = textColor;
+  ctx.fillText('$' + Math.round(maxVal).toLocaleString(), W - padR, 13);
+
+  // Grid lines
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 3; i++){
+    const y = padT + (chartH * i / 3);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+  }
+
+  // Bars + labels
+  for (let i = 0; i < 7; i++){
+    const d = days[i];
+    const x = padL + gap * i + gap / 2;
+
+    // Revenue bar
+    const revH = maxVal > 0 ? (d.rev / maxVal) * chartH : 0;
+    ctx.fillStyle = revColor;
+    ctx.beginPath();
+    const bx = x - barW;
+    const by = padT + chartH - revH;
+    const bh = revH;
+    ctx.roundRect?.(bx, by, barW * 1.8, bh, [3, 3, 0, 0]);
+    if (ctx.roundRect) ctx.fill();
+    else { ctx.fillRect(bx, by, barW * 1.8, bh); }
+
+    // Expense overlay (thin line at bottom of bar)
+    if (d.exp > 0){
+      const expH = Math.max(2, (d.exp / maxVal) * chartH);
+      ctx.fillStyle = expColor;
+      ctx.fillRect(bx, padT + chartH - expH, barW * 1.8, expH);
+    }
+
+    // Day label
+    ctx.fillStyle = i === 6 ? revColor : textColor;
+    ctx.font = i === 6 ? '700 10px -apple-system, system-ui, sans-serif' : '400 10px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, x, H - 4);
+
+    // Value on top of bar (if non-zero)
+    if (d.rev > 0){
+      ctx.fillStyle = textColor;
+      ctx.font = '500 9px ui-monospace, SF Mono, monospace';
+      ctx.textAlign = 'center';
+      const valY = by - 3;
+      if (valY > padT) ctx.fillText('$' + Math.round(d.rev).toLocaleString(), x, valY);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v14.4.0 FEATURE: PAYMENT REMINDER NOTIFICATIONS
+// ════════════════════════════════════════════════════════════════
+
+async function checkOverduePayments(){
+  try{
+    const { trips } = await _getTripsAndExps();
+    const today = new Date();
+    const overdueTrips = [];
+    for (const t of trips){
+      if (t.isPaid) continue;
+      const dt = t.pickupDate || t.deliveryDate;
+      if (!dt) continue;
+      const pickupTs = new Date(dt).getTime();
+      const daysSince = Math.floor((today.getTime() - pickupTs) / 86400000);
+      if (daysSince >= 30){
+        overdueTrips.push({ orderNo: t.orderNo, customer: t.customer || 'Unknown', pay: Number(t.pay || 0), days: daysSince });
+      }
+    }
+    if (!overdueTrips.length) return;
+
+    // Show in-app alert banner
+    const banner = $('#overdueAlert');
+    if (banner){
+      const total = overdueTrips.reduce((s, t) => s + t.pay, 0);
+      const worst = overdueTrips.sort((a, b) => b.days - a.days)[0];
+      banner.style.display = '';
+      banner.style.cssText = 'border:1px solid var(--bad-border);background:var(--bad-muted);border-radius:10px;padding:12px;margin-top:8px';
+      banner.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:20px">⏰</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:13px;color:var(--bad)">${overdueTrips.length} Overdue Payment${overdueTrips.length > 1 ? 's' : ''}</div>
+          <div class="muted" style="font-size:12px">${fmtMoney(total)} unpaid 30+ days. Worst: ${escapeHtml(worst.customer)} (${worst.days}d)</div>
+        </div>
+        <button class="btn" onclick="location.hash='#money'" style="white-space:nowrap">View</button>
+      </div>`;
+    }
+
+    // Push notification (if permitted)
+    if ('Notification' in window && Notification.permission === 'granted'){
+      const lastNotify = await getSetting('lastOverdueNotify', 0);
+      const now = Date.now();
+      // Only notify once per 24h
+      if (now - lastNotify > 86400000){
+        const total = overdueTrips.reduce((s, t) => s + t.pay, 0);
+        new Notification('Freight Logic — Overdue Payments', {
+          body: `${overdueTrips.length} load${overdueTrips.length > 1 ? 's' : ''} unpaid 30+ days (${fmtMoney(total)}). Follow up!`,
+          icon: 'icon192.png',
+          badge: 'icon64.png',
+          tag: 'overdue-payments'
+        });
+        await setSetting('lastOverdueNotify', now);
+      }
+    }
+  } catch(e){ console.warn('[NOTIFY] overdue check failed:', e); }
+}
+
+async function requestNotificationPermission(){
+  try{
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default'){
+      // Only ask after user has added at least 1 trip
+      const cnt = await countStore('trips');
+      if (cnt >= 1){
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') toast('Notifications enabled — we\'ll alert you about late payments');
+      }
+    }
+  } catch(e){ console.warn("[FL]", e); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v14.4.0 FEATURE: PWA INSTALL BANNER
+// ════════════════════════════════════════════════════════════════
+
+let _deferredInstallPrompt = null;
+
+// Capture the install event before the browser shows its own prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  // Show custom banner (only if not dismissed before)
+  const dismissed = localStorage.getItem('fl_pwa_dismiss_v1');
+  if (!dismissed) showInstallBanner();
+});
+
+function showInstallBanner(){
+  const banner = $('#pwaInstallBanner');
+  if (!banner) return;
+  banner.style.display = 'block';
+
+  $('#pwaInstallBtn')?.addEventListener('click', async () => {
+    if (_deferredInstallPrompt){
+      _deferredInstallPrompt.prompt();
+      const choice = await _deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') toast('Freight Logic installed!');
+      _deferredInstallPrompt = null;
+      banner.style.display = 'none';
+    }
+  });
+
+  $('#pwaInstallDismiss')?.addEventListener('click', () => {
+    banner.style.display = 'none';
+    localStorage.setItem('fl_pwa_dismiss_v1', '1');
+  });
+}
+
+// Also detect if already installed (standalone mode)
+window.addEventListener('appinstalled', () => {
+  const banner = $('#pwaInstallBanner');
+  if (banner) banner.style.display = 'none';
+  _deferredInstallPrompt = null;
+});
+
+// ════════════════════════════════════════════════════════════════
+// v14.4.0 FEATURE: DARK/LIGHT THEME TOGGLE
+// ════════════════════════════════════════════════════════════════
+
+function initTheme(){
+  const saved = localStorage.getItem('fl_theme');
+  if (saved === 'light'){
+    document.documentElement.setAttribute('data-theme', 'light');
+    updateThemeIcon('light');
+    updateThemeColor('light');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    updateThemeIcon('dark');
+  }
+}
+function toggleTheme(){
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  if (isLight){
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('fl_theme', 'dark');
+    updateThemeIcon('dark');
+    updateThemeColor('dark');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+    localStorage.setItem('fl_theme', 'light');
+    updateThemeIcon('light');
+    updateThemeColor('light');
+  }
+  // Redraw chart with new theme colors
+  renderWeeklyChart().catch(()=>{});
+}
+function updateThemeIcon(theme){
+  const btn = $('#themeToggle');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+function updateThemeColor(theme){
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === 'light' ? '#f5f5f7' : '#141419';
+}
+// Init theme immediately (before DOM paint to avoid flash)
+initTheme();
+addManagedListener($('#themeToggle'), 'click', ()=>{ haptic(15); toggleTheme(); });
+
+
+// ==================== DAT API INTEGRATION MODULE ====================
+// Future integration with DAT Power / DAT API for:
+// - Live market rate lookups by lane
+// - Rate trending data for negotiation
+// - Load board search and auto-evaluate
+// - Broker credit scores from DAT directory
+//
+// API docs: https://developer.dat.com
+// CSP already allows: https://power.dat.com https://api.dat.com
+// Settings: datApiEnabled, datApiBaseUrl stored in IndexedDB
+// ====================================================================
+
+const DAT_DEFAULT_BASE = 'https://power.dat.com/api/v2';
+const DAT_TIMEOUT_MS = 12000;
+
+async function datIsEnabled(){
+  return (await getSetting('datApiEnabled', 'off')) === 'on';
+}
+
+async function datGetConfig(){
+  const enabled = await datIsEnabled();
+  if (!enabled) return null;
+  const baseUrl = (await getSetting('datApiBaseUrl', '')) || DAT_DEFAULT_BASE;
+  return { baseUrl: clampStr(baseUrl, 200) };
+}
+
+/**
+ * datFetch — authenticated request to DAT API
+ * @param {string} endpoint - API path (e.g., '/rateView/lane')
+ * @param {object} options - { method, body, token }
+ * @returns {object|null} - parsed JSON response or null on failure
+ *
+ * NOTE: DAT API requires OAuth2 authentication. When you get your
+ * credentials from DAT, the token flow will be:
+ *   1. POST to /auth/token with client_id + client_secret
+ *   2. Use the bearer token in subsequent requests
+ *   3. Token refresh on 401
+ *
+ * This function is a ready-to-use shell. Fill in your auth flow
+ * when you have DAT credentials.
+ */
+async function datFetch(endpoint, options = {}){
+  const config = await datGetConfig();
+  if (!config) return null;
+
+  const url = config.baseUrl.replace(/\/+$/, '') + '/' + endpoint.replace(/^\/+/, '');
+  const method = options.method || 'GET';
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DAT_TIMEOUT_MS);
+
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+    // When you have your DAT token:
+    // if (options.token) headers['Authorization'] = `Bearer ${options.token}`;
+
+    const fetchOpts = { method, headers, signal: controller.signal };
+    if (options.body && method !== 'GET') fetchOpts.body = JSON.stringify(options.body);
+
+    const res = await fetch(url, fetchOpts);
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      console.warn(`[DAT] ${method} ${endpoint} → ${res.status}`);
+      return null;
+    }
+    return await res.json();
+  } catch(e) {
+    if (e.name === 'AbortError') console.warn('[DAT] Request timed out:', endpoint);
+    else console.warn('[DAT] Request failed:', e.message || e);
+    return null;
+  }
+}
+
+/**
+ * datLookupLaneRate — Get market rate for a lane
+ * Ready to call once you have DAT API credentials.
+ *
+ * Usage (future):
+ *   const rate = await datLookupLaneRate('Indianapolis, IN', 'Chicago, IL');
+ *   // rate = { avg: 2.45, low: 2.10, high: 2.80, samples: 128, ... }
+ */
+async function datLookupLaneRate(origin, dest, options = {}){
+  if (!origin || !dest) return null;
+  if (!(await datIsEnabled())) return null;
+
+  const data = await datFetch('rateView/lane', {
+    method: 'POST',
+    body: {
+      origin: { city: clampStr(origin, 60) },
+      destination: { city: clampStr(dest, 60) },
+      equipmentType: options.equipmentType || 'V',
+      timePeriod: options.days || 15,
+    },
+    token: options.token,
+  });
+
+  if (!data) return null;
+  return {
+    avgRate: finiteNum(data.rate?.perMile?.average, 0),
+    lowRate: finiteNum(data.rate?.perMile?.low, 0),
+    highRate: finiteNum(data.rate?.perMile?.high, 0),
+    samples: intNum(data.rate?.reportCount, 0),
+    avgMiles: finiteNum(data.mileage?.average, 0),
+    source: 'DAT',
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * datEnrichMwEvaluator — Inject DAT market rate into Midwest Stack
+ * Call this after mwEvaluateLoad to add market context.
+ */
+async function datEnrichMwEvaluator(origin, dest, trueRPM){
+  const rate = await datLookupLaneRate(origin, dest);
+  if (!rate || !rate.avgRate) return null;
+
+  const vsMarket = trueRPM - rate.avgRate;
+  const pctVsMarket = rate.avgRate > 0 ? ((vsMarket / rate.avgRate) * 100) : 0;
+
+  return {
+    ...rate,
+    yourRPM: trueRPM,
+    vsMarketDelta: roundCents(vsMarket),
+    vsMarketPct: roundCents(pctVsMarket),
+    verdict: vsMarket >= 0.10 ? 'ABOVE MARKET' : vsMarket >= -0.05 ? 'AT MARKET' : 'BELOW MARKET',
+  };
+}
+
+
+// ==================== COLLAPSIBLE SETTINGS (v16.9.0 → v20.0.0) ====================
+// v20.1: Advanced Settings toggle — keeps essentials visible, hides advanced
+// ==================================================================================
+let _settingsBound = false;
+function initCollapsibleSettings(){
+  if (_settingsBound) return;
+  const toggle = $('#advSettingsToggle');
+  const body = $('#advSettingsBody');
+  const arrow = $('#advSettingsArrow');
+  if (!toggle || !body) return;
+  _settingsBound = true;
+
+  const setOpen = (open)=>{
+    body.style.display = open ? '' : 'none';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+  };
+
+  toggle.addEventListener('click', ()=>{
+    setOpen(body.style.display === 'none');
+    haptic(10);
+  });
+
+  // Apple-style directory: the driver chooses a human category first, then the
+  // existing settings form opens at that exact section. No duplicate setting,
+  // no second storage path, and no field id changes.
+  $('#settingsDirectory [data-settings-target]').forEach(btn => {
+    addManagedListener(btn, 'click', ()=>{
+      const target = document.getElementById(btn.dataset.settingsTarget || '');
+      if (!target) return;
+      setOpen(true);
+      haptic(8);
+      setTimeout(()=> target.scrollIntoView({behavior:'smooth', block:'start'}), 30);
+    });
+  });
+}
+
+// ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
+// Auto-creates monthly expense entries from fixed costs in Settings.
+// Runs once per boot. Only creates if not already logged this month.
+// v23.4.0: reads from monthlyExpensesConfig (full item list) first;
+//          falls back to legacy individual keys for upgrades.
+// ========================================================================
+async function checkRecurringExpenses(){
+  try {
+    const autoRecurring = await getSetting('autoRecurringExpenses', null);
+    if (autoRecurring === false) return;
+
+    const now = new Date();
+    const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const lastRecurring = await getSetting('lastRecurringMonth', '');
+    if (lastRecurring === monthKey) return; // Already processed this month
+
+    // Build entry list from config (v23.4.0+) or legacy individual keys
+    let entries = [];
+    const config = await getSetting('monthlyExpensesConfig', null);
+    if (Array.isArray(config) && config.length > 0){
+      entries = config.filter(x => posNum(x?.amount) > 0).map((x,i) => ({
+        id: 'rec_' + monthKey + '_' + (x.id || i),
+        category: clampStr(x.category || 'Other', 40),
+        amount: posNum(x.amount),
+        note: clampStr(x.label || x.category || 'Monthly fixed cost', 80) + ' (auto)',
+      }));
+    } else {
+      // Legacy fallback
+      const mIns = posNum(await getSetting('monthlyInsurance', 0));
+      const mVeh = posNum(await getSetting('monthlyVehicle', 0));
+      const mMaint = posNum(await getSetting('monthlyMaintenance', 0));
+      const mOther = posNum(await getSetting('monthlyOther', 0));
+      if (!mIns && !mVeh && !mMaint && !mOther) return;
+      if (mIns)   entries.push({ id:'rec_'+monthKey+'_ins',  category:'Insurance',       amount:mIns,   note:'Monthly insurance (auto)' });
+      if (mVeh)   entries.push({ id:'rec_'+monthKey+'_van',  category:'Vehicle Payment', amount:mVeh,   note:'Monthly vehicle payment (auto)' });
+      if (mMaint) entries.push({ id:'rec_'+monthKey+'_mnt',  category:'Maintenance',     amount:mMaint, note:'Monthly maintenance reserve (auto)' });
+      if (mOther) entries.push({ id:'rec_'+monthKey+'_oth',  category:'Other',           amount:mOther, note:'Monthly fixed costs (auto)' });
+    }
+    if (!entries.length) return;
+
+    // First time with real items: auto-enable (setup wizard already asked)
+    if (autoRecurring === null) await setSetting('autoRecurringExpenses', true);
+
+    for (const e of entries){
+      await upsertExpense({
+        id: e.id, category: e.category, amount: e.amount,
+        date: now.toISOString().slice(0, 10), note: e.note,
+        recurring: true, created: Date.now(),
+      });
+    }
+
+    await setSetting('lastRecurringMonth', monthKey);
+    toast('📋 Monthly expenses auto-logged (' + entries.length + ' items)');
+    invalidateKPICache();
+  } catch(e) { console.warn('[FL] Recurring expense check failed:', e); }
+}
+
+// ---- Monthly Expense Manager (F26 companion) ----
+async function openMonthlyExpenseManager(){
+  const config = await getSetting('monthlyExpensesConfig', []);
+  const items = Array.isArray(config) ? config.map(x=>({...x})) : [];
+
+  const defaults = [
+    { id:'ins',      label:'Insurance',           category:'Insurance',       amount:0 },
+    { id:'van',      label:'Van / Vehicle Payment', category:'Vehicle Payment', amount:0 },
+    { id:'phone',    label:'Phone & Data',         category:'Phone / Data',   amount:0 },
+    { id:'dispatch', label:'Dispatch Fees',        category:'Other',          amount:0 },
+    { id:'parking',  label:'Parking / Storage',   category:'Other',          amount:0 },
+    { id:'subs',     label:'Subscriptions',        category:'Other',          amount:0 },
+    { id:'maint',    label:'Maintenance Reserve',  category:'Maintenance',    amount:0 },
+  ];
+  // Merge saved amounts into defaults, then append any custom items
+  const knownIds = new Set(defaults.map(d=>d.id));
+  const merged = defaults.map(d => {
+    const saved = items.find(x=>x.id===d.id);
+    return saved ? {...d, amount: posNum(saved.amount)} : d;
+  });
+  const custom = items.filter(x=>!knownIds.has(x.id));
+  const all = [...merged, ...custom];
+
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:0';
+
+  const autoOn = await getSetting('autoRecurringExpenses', null) !== false;
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const lastDone = await getSetting('lastRecurringMonth', '');
+
+  body.innerHTML = `
+    <div style="padding:12px;background:rgba(var(--accent-rgb),.07);border-radius:10px;border:1px solid var(--accent-border);margin-bottom:16px;font-size:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;color:var(--accent)">Auto-Log Monthly</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="memAutoToggle"${autoOn?' checked':''} style="width:16px;height:16px" />
+          <span style="font-size:12px">${autoOn ? 'Enabled' : 'Disabled'}</span>
+        </label>
+      </div>
+      <div class="muted" style="font-size:11px">These are posted on the 1st of each month. This month: <b>${lastDone===monthKey?'✓ Done':'Pending'}</b></div>
+    </div>
+    <div id="memItemList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+    <button class="btn" id="memAddCustom" style="font-size:12px;padding:8px">+ Add Custom Expense</button>
+    <div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <button class="btn primary" id="memSave" style="flex:2">Save Changes</button>
+      <button class="btn" id="memRunNow" style="flex:1;font-size:12px"${lastDone===monthKey?' disabled':''}>Post Now</button>
+    </div>`;
+
+  const list = body.querySelector('#memItemList');
+
+  function renderList(arr){
+    list.innerHTML = '';
+    arr.forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface-1);border-radius:10px';
+      row.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600">${escapeHtml(item.label)}</div>
+          <div class="muted" style="font-size:10px">${escapeHtml(item.category)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:12px;color:var(--text-secondary)">$</span>
+          <input type="number" min="0" step="1" class="input" value="${posNum(item.amount)||''}" placeholder="0" data-idx="${idx}" style="width:72px;text-align:right;font-size:13px;padding:6px 8px" />
+        </div>`;
+      if (!knownIds.has(item.id)){
+        const del = document.createElement('button');
+        del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:6px 8px;font-size:12px;color:var(--bad);flex-shrink:0';
+        del.addEventListener('click', ()=>{ all.splice(idx,1); renderList(all); });
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    });
+  }
+  renderList(all);
+
+  body.querySelector('#memAddCustom').addEventListener('click', ()=>{
+    const label = prompt('Expense label (e.g. "Parking storage"):');
+    if (!label?.trim()) return;
+    const cat = prompt('Category (Insurance / Maintenance / Other / etc.):') || 'Other';
+    all.push({ id:'cust_'+Date.now(), label:clampStr(label.trim(),60), category:clampStr(cat.trim(),40), amount:0 });
+    renderList(all);
+  });
+
+  body.querySelector('#memSave').addEventListener('click', async ()=>{
+    haptic();
+    // Read current amounts from inputs
+    list.querySelectorAll('input[data-idx]').forEach(inp => {
+      const idx = Number(inp.dataset.idx);
+      if (all[idx]) all[idx].amount = posNum(inp.value);
+    });
+    const toSave = all.filter(x=>posNum(x.amount)>0).map(x=>({...x, amount:posNum(x.amount)}));
+    await setSetting('monthlyExpensesConfig', toSave);
+    const autoVal = body.querySelector('#memAutoToggle')?.checked;
+    await setSetting('autoRecurringExpenses', !!autoVal);
+    // Update legacy keys
+    const ins = (toSave.find(x=>x.id==='ins')?.amount)||0;
+    const van = (toSave.find(x=>x.id==='van')?.amount)||0;
+    const maint = (toSave.find(x=>x.id==='maint')?.amount)||0;
+    const otherTotal = toSave.filter(x=>!['ins','van','maint'].includes(x.id)).reduce((s,x)=>s+x.amount,0);
+    await Promise.all([
+      setSetting('monthlyInsurance', ins),
+      setSetting('monthlyVehicle', van),
+      setSetting('monthlyMaintenance', maint),
+      setSetting('monthlyOther', otherTotal),
+    ]);
+    closeModal();
+    toast('Monthly expenses saved.');
+  });
+
+  body.querySelector('#memRunNow').addEventListener('click', async ()=>{
+    haptic();
+    await setSetting('lastRecurringMonth', ''); // Force re-run
+    await checkRecurringExpenses();
+    closeModal();
+  });
+
+  openModal('Monthly Fixed Costs', body);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// F27 — Unified Load Intake (v23.4.0)
+// Paste / voice / photo → parsed draft review → score → save
+// Replaces the ad-hoc parse-then-silently-fill flow. Driver sees
+// exactly what was parsed and can correct it before it hits the evaluator.
+// ════════════════════════════════════════════════════════════════════════════
+
+function openLoadIntake(){
+  let rawText = '';
+  let parsed = null; // will hold parseLoadTextForInbox result
+
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:0';
+
+  // Stage 1: Input pane
+  const stage1 = document.createElement('div');
+  stage1.innerHTML = `
+    <p class="muted" style="font-size:12px;margin:0 0 12px 0">Share a screenshot of the load, or paste the text. Either way you review what was found before anything is scored.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn" id="liShot" style="flex:1;font-size:13px;min-height:44px">📷 Screenshot</button>
+      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:44px">🖼️ Photos / Files</button>
+    </div>
+    <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
+    <input type="file" id="liImgFile" accept="image/jpeg,image/png,image/webp" style="display:none" />
+    <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
+    <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
+    <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
+    <textarea id="liRawText" class="input" rows="7" placeholder="…or paste load text here — rate confirmation, load board copy, or free text" style="width:100%;box-sizing:border-box;resize:vertical;font-size:16px;line-height:1.5;font-family:monospace"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn primary" id="liParse" style="flex:1;font-size:13px;min-height:44px">Parse Load →</button>
+    </div>
+    <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
+  body.appendChild(stage1);
+
+  // Stage 2: Draft review pane (hidden until parsed)
+  const stage2 = document.createElement('div');
+  stage2.style.display = 'none';
+  stage2.innerHTML = `
+    <div style="padding:10px 12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;border:1px solid var(--accent-border);margin-bottom:14px;font-size:12px">
+      <b style="color:var(--accent)">Review your load draft</b> — edit any field before scoring.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Revenue ($)</label>
+        <input id="liRevenue" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Loaded Miles</label>
+        <input id="liMiles" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Deadhead Miles</label>
+        <input id="liDead" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Weight (lbs)</label>
+        <input id="liWeight" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Origin</label>
+        <input id="liOrigin" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Destination</label>
+        <input id="liDest" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Order / Load #</label>
+        <input id="liOrderNo" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Broker</label>
+        <input id="liBroker" type="text" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Commodity / Notes</label>
+      <input id="liNotes" type="text" class="input" style="width:100%;box-sizing:border-box" />
+    </div>
+    <div id="liConfidence" style="margin-bottom:6px;font-size:11px;color:var(--text-tertiary)"></div>
+    <div id="liReviewNote" style="display:none;margin-bottom:14px;padding:9px 11px;background:rgba(255,149,0,.10);border:1px solid rgba(255,149,0,.35);border-radius:8px;font-size:11.5px;line-height:1.45"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="liBack" style="flex:1">← Edit Text</button>
+      <button class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
+    </div>`;
+  body.appendChild(stage2);
+
+  // Helpers
+  function showError(msg){ const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display=''; }
+  function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
+  function getField(id){ return body.querySelector('#'+id); }
+
+  // Deadhead is the one field where blank and 0 are DIFFERENT FACTS, and this
+  // path could express neither. `intNum('')` returns 0 (Number('') is 0), and
+  // `intNum(0) || ''` returns '' -- so an unstated deadhead and an operator's
+  // verified "I am sitting on the pickup" zero both arrived here as an empty
+  // box, and readDraftFields() then handed a fabricated 0 to the trip draft.
+  // That is the v24.0.4 item-2 defect (four intake paths) and the v24.0.5
+  // persistence defect, in a fifth place. #252 requires an absent deadhead to
+  // stay UNKNOWN through extraction, review and evaluation, so the whole chain
+  // reads through knownNum() now: null renders blank, 0 renders "0".
+  function deadheadToInput(v){
+    const n = knownNum(v);
+    return (n === null || n < 0) ? '' : String(Math.trunc(n));
+  }
+
+  function populateDraft(fields){
+    const get = k => fields[k] ?? '';
+    getField('liRevenue').value  = posNum(get('pay')) || posNum(get('revenue')) || '';
+    getField('liMiles').value    = intNum(get('loadedMiles')) || '';
+    getField('liDead').value     = deadheadToInput(fields.deadheadMiles);
+    getField('liWeight').value   = intNum(get('weight')) || '';
+    getField('liOrigin').value   = clampStr(get('origin'),80);
+    getField('liDest').value     = clampStr(get('destination'),80);
+    getField('liOrderNo').value  = clampStr(get('orderNo'),40);
+    getField('liBroker').value   = clampStr(get('broker'),60);
+    getField('liNotes').value    = clampStr(get('commodity')||get('notes'),120);
+  }
+
+  function readDraftFields(){
+    return {
+      pay:           posNum(getField('liRevenue')?.value),
+      loadedMiles:   intNum(getField('liMiles')?.value),
+      // knownNum, not intNum: a blank box is UNKNOWN and must not become a
+      // verified zero on the trip draft, while a typed 0 must survive as one.
+      deadheadMiles: knownNum(getField('liDead')?.value),
+      weight:        intNum(getField('liWeight')?.value),
+      origin:        clampStr(getField('liOrigin')?.value.trim(),80),
+      destination:   clampStr(getField('liDest')?.value.trim(),80),
+      orderNo:       clampStr(getField('liOrderNo')?.value.trim(),40),
+      broker:        clampStr(getField('liBroker')?.value.trim(),60),
+      notes:         clampStr(getField('liNotes')?.value.trim(),120),
+    };
+  }
+
+  // Parse action
+  stage1.querySelector('#liParse').addEventListener('click', ()=>{
+    haptic();
+    rawText = getField('liRawText')?.value.trim() || '';
+    if (!rawText){ showError('Please paste or type some load text first.'); return; }
+    hideError();
+    // Use existing parser
+    let result;
+    try { result = (typeof parseLoadTextForInbox === 'function') ? parseLoadTextForInbox(rawText) : null; }
+    catch(e){ result = null; }
+    if (!result || (!result.fields && !result.pay)){
+      // Fallback: try parseLoadTextEnhanced directly
+      try { result = (typeof parseLoadTextEnhanced === 'function') ? { fields: parseLoadTextEnhanced(rawText), confidence: 40 } : null; }
+      catch(e){ result = null; }
+    }
+    const fields = result?.fields || result || {};
+    const confidence = result?.confidence ?? result?.score ?? 0;
+    parsed = { fields, confidence, rawText, source: 'text' };
+    populateDraft(fields);
+    // Stage 2 is shared with the screenshot path, so a note from an earlier
+    // image attempt would otherwise describe fields this text parse never saw.
+    const noteEl = getField('liReviewNote');
+    if (noteEl){ noteEl.style.display = 'none'; noteEl.innerHTML = ''; }
+    const imgPrev = getField('liImgPreview');
+    if (imgPrev){ imgPrev.style.display = 'none'; imgPrev.removeAttribute('src'); }
+    const confEl = getField('liConfidence');
+    if (confEl){
+      const color = confidence >= 70 ? 'var(--good)' : confidence >= 40 ? 'var(--warn)' : 'var(--bad)';
+      confEl.innerHTML = `Parse confidence: <b style="color:${color}">${confidence}%</b> — verify highlighted fields before scoring.`;
+    }
+    stage1.style.display = 'none';
+    stage2.style.display = '';
+  });
+
+  // ── Screenshot intake (Issue #252) ─────────────────────────────────────────
+  //
+  // Three ways in, because iOS gives no single reliable one: the camera/share
+  // capture, the Photos/Files picker, and a clipboard paste onto the text box.
+  // The picker is the guaranteed path -- programmatic clipboard-image read is
+  // NOT dependable in an installed iOS PWA, so #252 forbids depending on it.
+  //
+  // The image goes to the FreightLogic Worker and comes back as OBSERVATIONS.
+  // It then lands in the SAME draft-review stage a pasted text parse lands in,
+  // and leaves through the SAME "Score This Load" button into the SAME canonical
+  // evaluator. There is deliberately no second pipeline and no second evaluator:
+  // extraction only decides what goes in the boxes, never what the load is worth.
+
+  const CRITICAL_EXTRACT_FIELDS = {
+    pay: 'Revenue', loadedMiles: 'Loaded miles', deadheadMiles: 'Deadhead',
+    origin: 'Origin', destination: 'Destination',
+  };
+
+  function setImgBusy(msg){
+    const el = getField('liImgBusy');
+    if (!el) return;
+    if (!msg){ el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = ''; el.textContent = msg;
+  }
+
+  /** Render what the extractor could and could not read.
+   *
+   *  ABSENT is shown as plainly as UNCERTAIN, and neither is shown as a value.
+   *  A field the model could not see must not be quietly indistinguishable from
+   *  one it read -- that conflation is the defect class this repo keeps finding
+   *  (a blank deadhead scored as zero, an unrecognised market rendered as a
+   *  confident directive), so the review step names the gap instead.
+   */
+  function renderExtractionReview(fieldMeta, provider){
+    const note = getField('liReviewNote');
+    if (!note) return;
+    const uncertain = [], absent = [];
+    for (const key of Object.keys(CRITICAL_EXTRACT_FIELDS)){
+      const st = fieldMeta?.[key]?.state;
+      if (st === 'UNCERTAIN') uncertain.push(CRITICAL_EXTRACT_FIELDS[key]);
+      else if (st === 'ABSENT') absent.push(CRITICAL_EXTRACT_FIELDS[key]);
+    }
+    const parts = [];
+    if (uncertain.length) parts.push(`<b>Check these — read but not clearly:</b> ${escapeHtml(uncertain.join(', '))}.`);
+    if (absent.length)    parts.push(`<b>Not found in the image:</b> ${escapeHtml(absent.join(', '))}. Fill in anything you know.`);
+    if (absent.includes('Deadhead')) parts.push(`Deadhead was left <b>blank on purpose</b> — that means unknown, not zero. Enter <b>0</b> only if you are already at the pickup.`);
+    if (!parts.length) parts.push(`<b>Every key field was read clearly.</b> Confirm them anyway — you are the one who sees the posting.`);
+    note.innerHTML = parts.join('<br>');
+    note.style.display = '';
+    const confEl = getField('liConfidence');
+    if (confEl) confEl.innerHTML = `Read from screenshot${provider ? ' · ' + escapeHtml(String(provider)) : ''} — FreightLogic scores it, not the reader.`;
+  }
+
+  async function handleIntakeImage(file){
+    if (!file) return;
+    hideError();
+    const preview = getField('liImgPreview');
+    try {
+      setImgBusy('Preparing image…');
+      const shrunk = await downscaleImageForExtraction(file);
+      if (preview){ preview.src = shrunk.dataUrl; preview.style.display = ''; }
+      setImgBusy('Reading the load…');
+      const out = await cloudExtractLoadImage(shrunk.dataUrl, shrunk.mime);
+      setImgBusy('');
+      parsed = { fields: out.fields, confidence: null, rawText: '', fieldMeta: out.fieldMeta, source: 'image' };
+      populateDraft(out.fields);
+      renderExtractionReview(out.fieldMeta, out.provider);
+      stage1.style.display = 'none';
+      stage2.style.display = '';
+      haptic();
+    } catch(e){
+      setImgBusy('');
+      if (preview){ preview.style.display = 'none'; preview.removeAttribute('src'); }
+      // Fail closed to the path that always works, and say so.
+      showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.');
+    }
+  }
+
+  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
+  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  for (const id of ['liImgCamera','liImgFile']){
+    stage1.querySelector('#'+id)?.addEventListener('change', (ev)=>{
+      const f = ev.target?.files?.[0];
+      // Reset the input so choosing the SAME file twice still fires change.
+      if (ev.target) ev.target.value = '';
+      handleIntakeImage(f);
+    });
+  }
+  // Clipboard paste: a convenience on top of the picker, never the only way in.
+  stage1.querySelector('#liRawText')?.addEventListener('paste', (ev)=>{
+    const items = ev.clipboardData?.items || [];
+    for (const it of items){
+      if (it.kind === 'file' && String(it.type||'').startsWith('image/')){
+        const f = it.getAsFile();
+        if (f){ ev.preventDefault(); handleIntakeImage(f); return; }
+      }
+    }
+  });
+
+  // The Load Intake voice control was removed with the rest of Voice Load
+  // (Issue #230, v24.0.17). Paste, type and screenshot are the intake paths;
+  // nothing here reintroduces a speech recognizer or any Voice wording, and
+  // RH-04 asserts that by absence rather than taking this comment's word for it.
+
+  // Back to edit text
+  stage2.querySelector('#liBack').addEventListener('click', ()=>{
+    haptic();
+    stage2.style.display = 'none';
+    stage1.style.display = '';
+  });
+
+  // Score load — pushes fields into evaluator and navigates
+  stage2.querySelector('#liScore').addEventListener('click', ()=>{
+    haptic();
+    const f = readDraftFields();
+    // Fill evaluator fields
+    const rev = $('#mwRevenue'), mi = $('#mwLoadedMi'), dead = $('#mwDeadMi');
+    const orig = $('#mwOrigin'), dest = $('#mwDest'), brk = $('#mwBroker');
+    if (rev && f.pay)          { rev.value  = f.pay;          rev.dispatchEvent(new Event('input')); }
+    if (mi  && f.loadedMiles)  { mi.value   = f.loadedMiles;  mi.dispatchEvent(new Event('input')); }
+    // `if (f.deadheadMiles)` dropped an explicit 0, leaving #mwDeadMi blank --
+    // which the evaluator correctly reads as UNKNOWN, so a driver who told us
+    // the deadhead was zero got asked for it again and the load went ungraded.
+    if (dead && knownNum(f.deadheadMiles) !== null){ dead.value = String(knownNum(f.deadheadMiles)); dead.dispatchEvent(new Event('input')); }
+    if (orig && f.origin)      { orig.value = f.origin;       orig.dispatchEvent(new Event('input')); }
+    if (dest && f.destination) { dest.value = f.destination;  dest.dispatchEvent(new Event('input')); }
+    if (brk && f.broker)       { brk.value  = f.broker;       brk.dispatchEvent(new Event('input')); }
+    closeModal();
+    location.hash = '#omega';
+    setTimeout(()=> window.scrollTo({top:0,behavior:'instant'}), 100);
+  });
+
+  // Save as trip draft
+  stage2.querySelector('#liSaveTrip').addEventListener('click', async ()=>{
+    haptic();
+    const f = readDraftFields();
+    const draft = {
+      orderNo:     f.orderNo || ('DRAFT-' + Date.now()),
+      customer:    f.broker || '',
+      origin:      f.origin || '',
+      destination: f.destination || '',
+      pay:         f.pay || 0,
+      loadedMiles: f.loadedMiles || 0,
+      // v24.0.4 item 2: omit the key entirely when deadhead is unknown, rather
+      // than recording a fabricated verified zero on the draft trip.
+      ...(knownNum(f.deadheadMiles) === null ? {} : { deadMiles: knownNum(f.deadheadMiles) }),
+      weight:      f.weight || 0,
+      notes:       f.notes || '',
+      status:      'pending',
+      created:     Date.now(),
+    };
+    await setSetting('tripDraft', draft);
+    closeModal();
+    toast('Load draft saved — tap + Trip to review and complete it.');
+    // Open trip form pre-filled
+    setTimeout(()=> openQuickAddSheet(), 300);
+  });
+
+  openModal('Load Intake', body);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// F28 — Built-in Diagnostics / Self-Test (v23.4.0)
+// Accessible via More → Advanced → Diagnostics
+// ════════════════════════════════════════════════════════════════════════════
+
+async function openDiagnosticsPanel(){
+  const body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:10px';
+
+  const row = (label, id, status='') => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface-1);border-radius:10px;gap:8px">
+      <span style="font-size:13px;font-weight:600">${escapeHtml(label)}</span>
+      <span id="${id}" style="font-size:12px;color:var(--text-secondary);text-align:right;max-width:60%">${escapeHtml(status)}</span>
+    </div>`;
+
+  body.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:4px 0 2px">App</div>
+    ${row('App Version',       'dxAppVer',  APP_VERSION)}
+    ${row('Service Worker',    'dxSwVer',   '...')}
+    ${row('Cache Status',      'dxCache',   '...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Install</div>
+    ${row('Origin',            'dxOrigin',  '...')}
+    ${row('Launch Mode',       'dxDisplay', '...')}
+    ${row('SW Script',         'dxSwUrl',   '...')}
+    ${row('SW Scope',          'dxScope',   '...')}
+    ${row('Cached Generation', 'dxCacheGen','...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Database</div>
+    ${row('Trips',             'dxTrips',   '...')}
+    ${row('Expenses',          'dxExp',     '...')}
+    ${row('Fuel Logs',         'dxFuel',    '...')}
+    ${row('Receipt Sets',      'dxRec',     '...')}
+    ${row('Lane History',      'dxLane',    '...')}
+    ${row('IDB Status',        'dxIdb',     '...')}
+    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);padding:8px 0 2px">Features</div>
+    ${row('File Input',        'dxFile',    '...')}
+    ${row('Offline (SW)',      'dxOffline', '...')}
+    ${row('Cloud Backup',      'dxCloud',   '...')}
+    ${row('Live Feed Health',  'dxFeeds',   'No calls this session')}
+    ${row('AI Endpoint',       'dxAi',      '...')}
+    <button class="btn primary" id="dxRunTests" style="margin-top:8px">Run All Tests</button>`;
+
+  openModal('Diagnostics', body);
+
+  async function runTests(){
+    const set = (id, val, ok) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = String(val);
+      el.style.color = ok === true ? 'var(--good)' : ok === false ? 'var(--bad)' : 'var(--text-secondary)';
+    };
+
+    // SW version
+    try {
+      const swReg = await navigator.serviceWorker?.getRegistration();
+      if (swReg && swReg.active){
+        set('dxSwVer', 'SW active', true);
+      } else if (swReg && swReg.installing) {
+        set('dxSwVer', 'SW installing', null);
+      } else {
+        set('dxSwVer', 'No SW', false);
+      }
+    } catch(e){ set('dxSwVer', 'Unavailable', null); }
+
+    // Install identity. An installed Home Screen PWA carries the origin it was
+    // installed from for the life of the icon, and each origin has its own
+    // IndexedDB and Cache Storage. So an app showing an old version with no
+    // data is not necessarily a failed update — it can be a different origin
+    // entirely, and nothing else in this panel could tell the two apart. That
+    // ambiguity cost a full investigation once; these five rows answer it.
+    try {
+      set('dxOrigin', location.origin, null);
+      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || navigator.standalone === true;
+      set('dxDisplay', standalone ? 'Installed (standalone)' : 'Browser tab', null);
+    } catch(e){ set('dxOrigin', 'Unavailable', null); }
+    try {
+      const swReg2 = await navigator.serviceWorker?.getRegistration();
+      const worker = swReg2 && (swReg2.active || swReg2.waiting || swReg2.installing);
+      set('dxSwUrl', worker ? worker.scriptURL : 'No registration', worker ? null : false);
+      set('dxScope', swReg2 ? swReg2.scope : '—', null);
+    } catch(e){ set('dxSwUrl', 'Unavailable', null); set('dxScope', 'Unavailable', null); }
+
+    // Which shell generation is actually cached. The service worker names its
+    // cache `freightlogic-<SW_VERSION>`, so a cache that disagrees with
+    // APP_VERSION means the running code and the cached shell are different
+    // releases — the visible symptom of an update that never completed.
+    try {
+      if (typeof caches !== 'undefined'){
+        const keys = await caches.keys();
+        const gens = keys.map(k => (/^freightlogic-(\d+\.\d+\.\d+)$/.exec(k) || [])[1]).filter(Boolean);
+        if (!gens.length){
+          set('dxCacheGen', 'No versioned shell cache', false);
+        } else if (gens.length === 1 && gens[0] === APP_VERSION){
+          set('dxCacheGen', gens[0] + ' (matches app)', true);
+        } else {
+          set('dxCacheGen', gens.join(', ') + ' vs app ' + APP_VERSION, false);
+        }
+      } else {
+        set('dxCacheGen', 'Not supported', false);
+      }
+    } catch(e){ set('dxCacheGen', 'Error', false); }
+
+    // Cache API
+    try {
+      if (typeof caches !== 'undefined'){
+        const keys = await caches.keys();
+        set('dxCache', keys.length + ' cache(s): ' + (keys.join(', ') || '—'), keys.length > 0);
+      } else {
+        set('dxCache', 'Not supported', false);
+      }
+    } catch(e){ set('dxCache', 'Error', false); }
+
+    // IDB counts
+    try {
+      const snap = await storageHealthSnapshot();
+      set('dxTrips',  snap.trips,      snap.trips >= 0);
+      set('dxExp',    snap.expenses,   snap.expenses >= 0);
+      set('dxFuel',   snap.fuel,       snap.fuel >= 0);
+      set('dxRec',    snap.receiptSets, snap.receiptSets >= 0);
+      set('dxLane',   await countStore('laneHistory'), true);
+      set('dxIdb',    'OK', true);
+    } catch(e){ set('dxIdb', 'Error: ' + (e?.message||e), false); }
+
+
+    // File input
+    const hasFile = typeof FileReader !== 'undefined' && typeof File !== 'undefined';
+    set('dxFile', hasFile ? 'Supported' : 'Not supported', hasFile);
+
+    // Offline / SW ready
+    const swReady = 'serviceWorker' in navigator;
+    set('dxOffline', swReady ? (navigator.onLine ? 'Online + SW ready' : 'Offline mode') : 'SW not available', swReady);
+
+    // Cloud backup
+    try {
+      const token = await getSetting('cloudBackupToken', '');
+      const pass  = sessionStorage.getItem('fl_cloud_pass') || '';
+      if (token && pass) set('dxCloud', 'Enabled & authenticated', true);
+      else if (token)    set('dxCloud', 'Token set, no passphrase', null);
+      else               set('dxCloud', 'Not configured', null);
+    } catch(e){ set('dxCloud', 'Error', false); }
+
+    // Pre-v24 integrity gate: external-feed failures are no longer silent.
+    const feedHealth = Object.values(getAllLiveSourceHealth());
+    if (!feedHealth.length){
+      set('dxFeeds', 'No calls this session', null);
+    } else {
+      const hardFailures = feedHealth.filter(x => ![LIVE_SOURCE_STATUS.OK, LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const soft = feedHealth.filter(x => [LIVE_SOURCE_STATUS.UNCONFIGURED, LIVE_SOURCE_STATUS.OFFLINE].includes(x.status));
+      const summary = feedHealth.map(x => `${x.source}:${x.status}`).join(' · ');
+      set('dxFeeds', summary, hardFailures.length ? false : (soft.length ? null : true));
+    }
+
+    // AI/Worker endpoint ping — X-09: this used to send the literal string
+    // 'ping' as X-Backup-Token, which is not a valid flk_-format token
+    // (CLAUDE.md: 'flk_<uuid-no-dashes>'). The Worker's /status route
+    // requires a real token (tokh:<hash> KV lookup) and rejects anything
+    // else with 403 — so this self-test always reported "HTTP 403" and
+    // never actually exercised the real auth path a driver's device uses,
+    // regardless of whether the Worker was genuinely reachable. Now uses the
+    // real configured cloudBackupToken when one exists.
+    const aiToken = await getSetting('cloudBackupToken', '');
+    if (!aiToken){
+      set('dxAi', 'Not configured (no backup token)', null);
+    } else {
+      set('dxAi', 'Testing…', null);
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(()=> ctrl.abort(), 6000);
+        const r = await fetch(CLOUD_WORKER_URL + '/status', { signal: ctrl.signal, headers:{'X-Backup-Token': aiToken, 'X-Device-Id': cloudGetDeviceId()} });
+        clearTimeout(timeout);
+        set('dxAi', r.ok ? 'Reachable (' + r.status + ')' : 'HTTP ' + r.status, r.ok);
+      } catch(e){
+        set('dxAi', e?.name === 'AbortError' ? 'Timeout (>6s)' : 'Unreachable', false);
+      }
+    }
+  }
+
+  body.querySelector('#dxRunTests').addEventListener('click', async ()=>{
+    haptic();
+    body.querySelector('#dxRunTests').textContent = 'Running…';
+    body.querySelector('#dxRunTests').disabled = true;
+    await runTests();
+    body.querySelector('#dxRunTests').textContent = 'Run Tests Again';
+    body.querySelector('#dxRunTests').disabled = false;
+  });
+
+  // Auto-run on open
+  setTimeout(()=> runTests(), 100);
+}
+
+// ==================== CLOUD BACKUP MODULE v3.0 (Simplified Multi-User) =========
+// Client-side AES-256-GCM encryption. Passphrase never leaves device.
+// v3.0: hardcoded worker URL, in-app admin, setup links, retry, sync-on-resume.
+// ===============================================================================
+
+const CLOUD_WORKER_URL = 'https://freightlogic-backup.fimseitef.workers.dev';
+const CLOUD_SYNC_DEBOUNCE = 30000;
+const CLOUD_MIN_PASS_LEN = 8;
+const CLOUD_MAX_RETRIES = 3;
+const CLOUD_RETRY_BASE_MS = 2000;
+let _cloudSyncTimer = null;
+let _cloudSyncInProgress = false;
+let _lastCloudSync = 0;
+let _cloudRetryCount = 0;
+let _cloudLastStatus = null;
+
+async function cloudIsEnabled(){
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
+  const token = await getSetting('cloudBackupToken', '');
+  return !!(pass && token);
+}
+
+async function cloudGetConfig(){
+  const pass = sessionStorage.getItem('fl_cloud_pass') || '';
+  const token = await getSetting('cloudBackupToken', '');
+  if (!pass || !token) return null;
+  // cloudSaveConfig() has always written 'cloudBackupUrl' to settings, but
+  // nothing read it back — every request used the hardcoded CLOUD_WORKER_URL
+  // regardless. Read it here (falling back to the constant), which is what
+  // the setting's own presence in ALLOWED_SETTINGS_KEYS already implied it
+  // should do, and is what lets the test suite point at a local mock worker
+  // for E2E restore-parity testing (tests/integration/backup-restore-parity
+  // .spec.mjs) without touching the production endpoint.
+  const url = await getSetting('cloudBackupUrl', CLOUD_WORKER_URL) || CLOUD_WORKER_URL;
+  return { url, pass, token };
+}
+
+function cloudGetDeviceId(){
+  let id = localStorage.getItem('fl_device_id');
+  if (!id){
+    id = 'dev_' + (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36));
+    localStorage.setItem('fl_device_id', id);
+  }
+  return id;
+}
+
+function cloudPassStrength(pass){
+  if (!pass) return { score: 0, label: '', color: '' };
+  let s = 0;
+  if (pass.length >= 8) s++;
+  if (pass.length >= 12) s++;
+  if (pass.length >= 16) s++;
+  if (/[a-z]/.test(pass) && /[A-Z]/.test(pass)) s++;
+  if (/\d/.test(pass)) s++;
+  if (/[^a-zA-Z0-9]/.test(pass)) s++;
+  if (s <= 1) return { score: 15, label: 'Weak', color: 'var(--bad)' };
+  if (s <= 3) return { score: 45, label: 'Fair', color: 'var(--warn)' };
+  if (s <= 5) return { score: 75, label: 'Strong', color: 'var(--good)' };
+  return { score: 100, label: 'Excellent', color: 'var(--good)' };
+}
+
+function _bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function cloudEncrypt(plaintext, passphrase){
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const km = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+  return { encrypted: _bytesToBase64(new Uint8Array(ct)), iv: _bytesToBase64(iv), salt: _bytesToBase64(salt) };
+}
+
+async function cloudDecrypt(encrypted, iv, salt, passphrase){
+  const enc = new TextEncoder(); const dec = new TextDecoder();
+  const sb = Uint8Array.from(atob(salt), c => c.charCodeAt(0));
+  const ib = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
+  const cb = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+  const km = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  // Try current iteration count first; fall back to legacy 100k for backups made before v23.4.1
+  for (const iterations of [600000, 100000]) {
+    try {
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: sb, iterations, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ib }, key, cb));
+    } catch { if (iterations === 100000) throw new Error('Decryption failed — wrong passphrase or corrupted backup'); }
+  }
+}
+
+async function cloudFetch(url, opts = {}, timeoutMs = 15000){
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), timeoutMs);
+  try { const r = await fetch(url, { ...opts, signal: c.signal }); clearTimeout(t); return r; } catch(e) { clearTimeout(t); throw e; }
+}
+
+/** Call /extract on the worker to parse raw load text into structured fields via AI.
+ *  Returns the `fields` object on success, or throws with a user-facing message.
+ */
+async function cloudExtractLoad(rawText){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) throw new Error('Cloud backup not configured. Add a backup token in Settings to use AI Extract.');
+  const res = await cloudFetch(CLOUD_WORKER_URL + '/extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
+    body: JSON.stringify({ text: String(rawText).slice(0, 4000) }),
+  }, 20000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
+  return data.fields;
+}
+
+/** Downscale and re-encode a screenshot before upload (Issue #252).
+ *
+ *  A modern iPhone screenshot is a 3-4MB PNG; the legible text in a load posting
+ *  survives 1600px on the long edge at JPEG q0.82 with room to spare. This is
+ *  deliberately the ONLY image processing done on the device: #252 requires no
+ *  heavyweight browser OCR, and the v24.0.17 removal of the Tesseract CDN
+ *  fallback is what that requirement protects.
+ *
+ *  Re-encoding through a canvas also strips EXIF -- including GPS -- as a side
+ *  effect of drawing pixels into a new bitmap, which is the privacy handling
+ *  #252 asks for. It is stated here because it is easy to remove by accident
+ *  while "optimizing" this function later.
+ *
+ *  Returns { dataUrl, mime, bytes } or throws a user-facing message.
+ */
+async function downscaleImageForExtraction(file, maxEdge = 1600, quality = 0.82){
+  if (!file) throw new Error('No image selected.');
+  if (file.size > LIMITS.MAX_RECEIPT_BYTES * 4){
+    throw new Error('That image is too large to send. Take a screenshot rather than a photo of the screen.');
+  }
+  const bitmapUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('That file could not be read as an image.'));
+      i.src = bitmapUrl;
+    });
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error('That file could not be read as an image.');
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('This browser cannot process images.');
+    ctx.drawImage(img, 0, 0, cw, ch);
+    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+    const b64 = dataUrl.split(',')[1] || '';
+    // Rough decoded size; the Worker enforces the real ceiling before it reads.
+    const bytes = Math.floor(b64.length * 3 / 4);
+    return { dataUrl, mime: 'image/jpeg', bytes };
+  } finally {
+    URL.revokeObjectURL(bitmapUrl);
+  }
+}
+
+/** Call /extract-image on the Worker to read a load screenshot (Issue #252).
+ *
+ *  Returns { fields, fieldMeta, provider, model }. The provider key lives only in
+ *  Worker secrets, so the browser gains no new script origin and the CSP is
+ *  untouched -- `connect-src` already allows this exact endpoint.
+ *
+ *  Throws with a user-facing message. Every failure path here is a fall back to
+ *  typing or pasting, never a partially-trusted extraction: an empty-but-confident
+ *  load is worse than no load, because the evaluator would price whatever survived.
+ */
+async function cloudExtractLoadImage(dataUrl, mime){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) throw new Error('Cloud backup is not connected. Screenshot reading runs on the FreightLogic server — connect in Settings, or paste the load text instead.');
+  const url = (await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL;
+  const res = await cloudFetch(url + '/extract-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
+    body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
+  }, 45000);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not read that screenshot.');
+  return { fields: data.fields || {}, fieldMeta: data.fieldMeta || {}, provider: data.provider, model: data.model };
+}
+
+async function cloudTestConnection(){
+  const token = ($('#cloudBackupToken')?.value || '').trim();
+  if (!token){ toast('Enter a token first', true); return false; }
+  cloudSetSyncStatus('spinner', 'Testing connection...');
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/status', { headers: { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token } }, 10000);
+    if (res.ok){ const d = await res.json(); _cloudLastStatus = d; cloudSetSyncStatus('ok', 'Connected' + (d.user ? ' as ' + d.user : '') + (d.hasBackup ? ' — ' + d.count + ' backup(s)' : '')); toast('Connection successful'); return true; }
+    else { cloudSetSyncStatus('warn', res.status === 401 ? 'Invalid token' : 'Error (' + res.status + ')'); toast('Connection failed', true); return false; }
+  } catch(e) { cloudSetSyncStatus('warn', e.name === 'AbortError' ? 'Timed out' : !navigator.onLine ? 'No internet' : 'Cannot reach server'); toast('Connection failed', true); return false; }
+}
+
+async function cloudSaveConfig(){
+  const pass = ($('#cloudBackupPass')?.value || '').trim();
+  const token = ($('#cloudBackupToken')?.value || '').trim();
+  if (!token){ toast('Enter your token', true); return; }
+  if (!pass || pass.length < CLOUD_MIN_PASS_LEN){ toast('Passphrase must be ' + CLOUD_MIN_PASS_LEN + '+ characters', true); return; }
+  cloudSetSyncStatus('spinner', 'Verifying...');
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/status', { headers: { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token } }, 10000);
+    if (!res.ok){ const e = await res.json().catch(()=>({})); cloudSetSyncStatus('warn', e.error || 'Invalid token'); toast(e.error || 'Invalid token', true); return; }
+  } catch(e) { cloudSetSyncStatus('warn', 'Cannot reach server'); }
+  await setSetting('cloudBackupUrl', CLOUD_WORKER_URL);
+  sessionStorage.setItem('fl_cloud_pass', pass);
+  await setSetting('cloudBackupToken', token);
+  toast('Cloud backup connected!'); cloudRefreshButtons(); cloudRefreshStatusPanel();
+  await cloudPushBackup(false);
+}
+
+async function cloudPushBackup(silent = true){
+  if (_cloudSyncInProgress) return;
+  const config = await cloudGetConfig(); if (!config) return;
+  _cloudSyncInProgress = true;
+  if (!silent) cloudSetSyncStatus('spinner', 'Encrypting & uploading...');
+  try {
+    // v21 T2B: Delta sync — only send records changed since last sync
+    const lastSynced = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
+    // Read the durable intent marker BEFORE building the payload, and clear it
+    // on success only if nothing re-stamped it in the meantime — a mutation
+    // that lands mid-upload writes a newer value and therefore stays pending
+    // instead of being erased by this push's success.
+    const dirtyAt = finiteNum(await getSetting('syncDirtyAt', 0), 0);
+    const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
+    const allFuel = await dumpStore('fuel');
+    // v24.0.4 item 5: the SAME export-safety policy exportJSON() uses. Cloud
+    // backup is a portability path like any other — the bearer token and PIN
+    // hash must not travel in it either, even though the payload is encrypted
+    // before transmission (the passphrase is recoverable by whoever holds the
+    // backup; the token must not be recoverable WITH it).
+    const settings = exportSafeSettings(await dumpStore('settings'));
+    const receipts = await dumpStore('receipts');
+    const laneHistory = await dumpStore('laneHistory');
+    const weeklyReports = await dumpStore('weeklyReports');
+    const reloadOutcomes = await dumpStore('reloadOutcomes');
+    const bidHistory = await dumpStore('bidHistory');
+    const documents = await dumpStore('documents');
+    const gpsLogs = await dumpStore('gpsLogs');
+
+    // Delta selection runs through the ONE change-clock authority
+    // (SYNC_CHANGE_CLOCKS), which is also what syncPendingSummary() counts
+    // through. Before #240 these were two transcriptions of the same rule and
+    // they had already drifted — the summary tested `updatedAt` on stores whose
+    // clock is `generatedAt`, `timestamp` or `recordedAt`, so Home could report
+    // "Synced" over rows this filter would have sent. Keep both sides reading
+    // the map; do not reintroduce an inline field list here.
+    const changedTrips = syncChangedSince('trips', allTrips, lastSynced);
+    const changedExps = syncChangedSince('expenses', allExpenses, lastSynced);
+    const changedFuel = syncChangedSince('fuel', allFuel, lastSynced);
+    const changedLaneHistory = syncChangedSince('laneHistory', laneHistory, lastSynced);
+    const changedWeeklyReports = syncChangedSince('weeklyReports', weeklyReports, lastSynced);
+    const changedReloadOutcomes = syncChangedSince('reloadOutcomes', reloadOutcomes, lastSynced);
+    const changedBidHistory = syncChangedSince('bidHistory', bidHistory, lastSynced);
+    const changedDocuments = syncChangedSince('documents', documents, lastSynced);
+    const changedGpsLogs = syncChangedSince('gpsLogs', gpsLogs, lastSynced);
+    // A2 (Issue #119 Batch A): `loadLifecycle` is dumped and filtered HERE, with
+    // every other store, not after the empty-delta guard below. The guard reads
+    // `lc`, so declaring it later was a temporal-dead-zone ReferenceError on
+    // every delta push — the exact path a routine background sync takes.
+    // `changedLifecycle` also belongs in the isDelta size test: a sync whose
+    // only changes are lifecycle rows is still a delta.
+    const allLifecycle = await dumpStore('loadLifecycle');
+    const changedLifecycle = syncChangedSince('loadLifecycle', allLifecycle, lastSynced);
+    const allEvidence = await dumpStore(EVIDENCE_STORE);
+    const changedEvidence = syncChangedSince(EVIDENCE_STORE, allEvidence, lastSynced);
+    const isDelta = lastSynced > 0 && (changedTrips.length + changedExps.length + changedFuel.length + changedLaneHistory.length + changedWeeklyReports.length + changedReloadOutcomes.length + changedBidHistory.length + changedDocuments.length + changedGpsLogs.length + changedLifecycle.length + changedEvidence.length) < 50;
+
+    const trips = isDelta ? changedTrips : allTrips;
+    const expenses = isDelta ? changedExps : allExpenses;
+    const fuel = isDelta ? changedFuel : allFuel;
+    const lh = isDelta ? changedLaneHistory : laneHistory;
+    const wr = isDelta ? changedWeeklyReports : weeklyReports;
+    const ro = isDelta ? changedReloadOutcomes : reloadOutcomes;
+    const bh = isDelta ? changedBidHistory : bidHistory;
+    const docs = isDelta ? changedDocuments : documents;
+    const gl = isDelta ? changedGpsLogs : gpsLogs;
+    const lc = isDelta ? changedLifecycle : allLifecycle;
+    const ev = isDelta ? changedEvidence : allEvidence;
+
+    // The empty-delta short circuit, and the `dirtyAt` term that #240 defect 2
+    // made necessary. `settings` and `receipts` ride every payload wholesale but
+    // have no per-record clock, so with only a settings change outstanding every
+    // `changed*` array is empty and this guard used to return "Up to date"
+    // WITHOUT SENDING — meaning a settings-only mutation never reached the
+    // server on the delta path at all, not merely when a session ended early.
+    // A push with empty record arrays and current settings is exactly what that
+    // change needs, so an outstanding marker is a reason to send, not to skip.
+    const noRecordChanges = trips.length === 0 && expenses.length === 0 && fuel.length === 0 && lh.length === 0 && wr.length === 0 && ro.length === 0 && bh.length === 0 && docs.length === 0 && gl.length === 0 && lc.length === 0 && ev.length === 0;
+    if (isDelta && noRecordChanges && !dirtyAt){
+      _lastCloudSync = Date.now(); await setSetting('lastCloudSync', _lastCloudSync);
+      if (!silent) toast('Up to date'); cloudRefreshStatusPanel(); return;
+    }
+
+    const counts = { trips: allTrips.length, expenses: allExpenses.length, fuel: allFuel.length,
+      laneHistory: laneHistory.length, weeklyReports: weeklyReports.length,
+      reloadOutcomes: reloadOutcomes.length, bidHistory: bidHistory.length,
+      documents: documents.length, gpsLogs: gpsLogs.length, loadLifecycle: allLifecycle.length,
+      [EVIDENCE_STORE]: allEvidence.length };
+    const payload = JSON.stringify({ meta: { app: 'FreightLogic', version: APP_VERSION, savedAt: new Date().toISOString(), counts, isDelta, lastSynced }, trips, expenses, fuel, settings, receipts, laneHistory: lh, weeklyReports: wr, reloadOutcomes: ro, bidHistory: bh, documents: docs, loadLifecycle: lc, [EVIDENCE_STORE]: ev, gpsLogs: gl });
+    const { encrypted, iv, salt } = await cloudEncrypt(payload, config.pass);
+    const endpoint = isDelta ? config.url + '/backup/delta' : config.url + '/backup';
+    const res = await cloudFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token }, body: JSON.stringify({ encrypted, iv, salt }) });
+    if (res.ok){
+      _lastCloudSync = Date.now(); _cloudRetryCount = 0;
+      await setSetting('lastCloudSync', _lastCloudSync);
+      await setSetting('lastCloudSyncedAt', _lastCloudSync);
+      // A success clears the durable failure marker (#205 §3). Without this the
+      // status row would say "Sync problem" forever after one transient 500.
+      await setSetting('lastCloudSyncError', null);
+      // Compare-and-clear the dirty marker (#240 defect 2).
+      if (dirtyAt && finiteNum(await getSetting('syncDirtyAt', 0), 0) <= dirtyAt){
+        await setSetting('syncDirtyAt', 0);
+      }
+      if (!silent) toast(isDelta ? 'Delta sync complete' : 'Backup synced');
+      cloudRefreshStatusPanel();
+    }
+    else {
+      // If delta endpoint not found (404), fall back to full backup
+      if (res.status === 404 && isDelta){
+        _cloudSyncInProgress = false;
+        await setSetting('lastCloudSyncedAt', 0);
+        return cloudPushBackup(silent);
+      }
+      // Persist the failure (#205 §3). Both failure paths previously called
+      // cloudScheduleRetry() and, when silent, said nothing and stored nothing,
+      // so a repeatedly failing sync was indistinguishable from a quiet one.
+      await setSetting('lastCloudSyncError', 'HTTP ' + res.status);
+      if (!silent) toast(res.status === 413 ? 'Too large (>5MB)' : 'Backup failed (' + res.status + ')', true); cloudScheduleRetry();
+    }
+  } catch(e) {
+    try { await setSetting('lastCloudSyncError', String(e?.message || e || 'network')); } catch (_) {}
+    if (!silent) toast('Backup failed', true); cloudScheduleRetry();
+  }
+  finally { _cloudSyncInProgress = false; if (!silent) cloudRefreshStatusPanel(); }
+}
+
+// v21 T2C: Merge-aware restore — keeps newer records, reports summary
+async function mergeRestoreData(parsed){
+  const arr = (x) => Array.isArray(x) ? x : [];
+  const stats = { trips:{added:0,updated:0,skipped:0}, expenses:{added:0,updated:0,skipped:0}, fuel:{added:0,updated:0,skipped:0} };
+
+  // Trips — keyed by orderNo.
+  //
+  // DEFERRED.md (v23.9 Phase 4) flagged a two-tab/two-device TOCTOU on this
+  // path and it was real: the `get` ran in its own transaction, the `put` in a
+  // second one, with an await across the boundary. The "is the incoming record
+  // newer?" decision was therefore made against a snapshot that a live edit in
+  // another tab could invalidate before the write landed — and the restore then
+  // wrote its older copy over the newer local record. Reading inside the SAME
+  // readwrite transaction closes that: IndexedDB serialises overlapping
+  // readwrite transactions on a store, so a concurrent local save either
+  // commits first (and this read sees it, and skips) or commits after (and
+  // wins). This is the idiom upsertTrip() has used since F-6, and the one the
+  // lifecycle/evidence loops further down already use.
+  const inTrips = arr(parsed.trips).map(x => sanitizeTrip(x));
+  for (const incoming of inTrips){
+    try {
+      const {t:wt, stores:ws} = tx('trips','readwrite');
+      const existing = await idbReq(ws.trips.get(incoming.id));
+      if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); stats.trips.updated++; }
+      else { stats.trips.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge trip', e); }
+  }
+
+  // Expenses
+  const inExps = arr(parsed.expenses);
+  for (const incoming of inExps){
+    try {
+      const {t:wt, stores:ws} = tx('expenses','readwrite');
+      const existing = incoming.id ? await idbReq(ws.expenses.get(Number(incoming.id))) : null;
+      if (!existing){ ws.expenses.put(incoming); stats.expenses.added++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
+      else { stats.expenses.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge expense', e); }
+  }
+
+  // Fuel
+  const inFuel = arr(parsed.fuel);
+  for (const incoming of inFuel){
+    try {
+      const {t:wt, stores:ws} = tx('fuel','readwrite');
+      const existing = incoming.id ? await idbReq(ws.fuel.get(Number(incoming.id))) : null;
+      if (!existing){ ws.fuel.put(incoming); stats.fuel.added++; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
+      else { stats.fuel.skipped++; }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    }catch(e){ console.warn('[FL] merge fuel', e); }
+  }
+
+  // Other stores: per-record timestamp merge (laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents)
+  // weeklyReports uses keyPath 'weekId'; all others use 'id'
+  // v24.2: lifecycle merge — keyed on the stable lifecycleId, resolved by
+  // revision (then updatedAt), with sourceRefs merged as a de-duplicated union.
+  // The union matters: a full backup and a later delta can each carry a
+  // partial ref list for the same load, and last-writer-wins would drop links.
+  {
+    const incomingLifecycle = arr(parsed.loadLifecycle);
+    for (const incoming of incomingLifecycle){
+      try{
+        if (!incoming?.lifecycleId) continue;
+        const {t:wt, stores:ws} = tx('loadLifecycle','readwrite');
+        const existing = await idbReq(ws.loadLifecycle.get(String(incoming.lifecycleId)));
+        const merged = reconcileLifecycleRecord(existing, incoming);
+        ws.loadLifecycle.put(merged);
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        stats.loadLifecycle = stats.loadLifecycle || { added: 0, updated: 0 };
+        if (existing) stats.loadLifecycle.updated++; else stats.loadLifecycle.added++;
+      }catch(e){ console.warn('[FL] merge loadLifecycle', e); }
+    }
+  }
+
+  // A5/A6: durable normalized evidence restores on the same terms — keyed on
+  // the internal evidenceId, resolved by revision then recordedAt. Evidence is
+  // append-mostly source history, so a restore never deletes a local row the
+  // backup didn't carry; the fingerprint keeps re-imports idempotent.
+  {
+    const incomingEvidence = arr(parsed[EVIDENCE_STORE]);
+    for (const incoming of incomingEvidence){
+      try{
+        if (!incoming?.evidenceId) continue;
+        const {t:wt, stores:ws} = tx(EVIDENCE_STORE,'readwrite');
+        const existing = await idbReq(ws[EVIDENCE_STORE].get(String(incoming.evidenceId)));
+        const merged = reconcileEvidenceRecord(existing, incoming);
+        ws[EVIDENCE_STORE].put(merged);
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        stats[EVIDENCE_STORE] = stats[EVIDENCE_STORE] || { added: 0, updated: 0 };
+        if (existing) stats[EVIDENCE_STORE].updated++; else stats[EVIDENCE_STORE].added++;
+      }catch(e){ console.warn('[FL] merge normalizedEvidence', e); }
+    }
+  }
+
+  const simpleStores = ['laneHistory','weeklyReports','reloadOutcomes','bidHistory','documents'];
+  for (const storeName of simpleStores){
+    const items = arr(parsed[storeName]);
+    if (!items.length) continue;
+    for (const incoming of items){
+      try {
+        const keyPath = storeName === 'weeklyReports' ? 'weekId' : 'id';
+        const key = incoming[keyPath];
+        if (!key){
+          const {t:wt, stores:ws} = tx(storeName,'readwrite');
+          ws[storeName].put(incoming);
+          await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+          continue;
+        }
+        const {t:wt, stores:ws} = tx(storeName,'readwrite');
+        const existing = await idbReq(ws[storeName].get(key));
+        const inTs = incoming.updatedAt || incoming.generatedAt || incoming.updated || incoming.created || incoming.createdAt || incoming.timestamp || 0;
+        const exTs = existing ? (existing.updatedAt || existing.generatedAt || existing.updated || existing.created || existing.createdAt || existing.timestamp || 0) : 0;
+        if (!existing || inTs > exTs){ ws[storeName].put(incoming); }
+        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+      } catch(e){ console.warn('[FL] merge ' + storeName, e); }
+    }
+  }
+
+  // X-07: settings — add-only merge. Settings carry no revision metadata (no
+  // updatedAt), so "keep newer" isn't computable the way it is for trips/
+  // expenses/fuel. Overwriting an existing local setting with whatever a cloud
+  // snapshot happened to hold would risk clobbering something changed locally
+  // since that snapshot was taken (a live preference, a re-entered API key,
+  // etc.) — so a key already present locally is left alone; only genuinely
+  // missing keys are filled in. This is exactly right for the disaster-
+  // recovery case this fixes (wipe -> restore: every local key IS absent, so
+  // everything restores) and is the safe, non-destructive choice for a
+  // routine top-up merge too.
+  const inSettings = arr(parsed.settings);
+  stats.settings = { added: 0, skipped: 0 };
+  if (inSettings.length){
+    // Same single-transaction rule as the record loops above. "Never overwrite
+    // a key that already exists locally" is only true if the existence check
+    // and the write cannot be separated: read in one transaction and write in
+    // another, and a key written locally in the gap gets clobbered by the
+    // snapshot's value — the precise thing this add-only merge promises not to
+    // do.
+    const {t:wt, stores:ws} = tx('settings','readwrite');
+    const existingKeys = new Set((await idbReq(ws.settings.getAll())).map(s => s.key));
+    // Issue #219, defence in depth — NOT the reported defect. This merge is
+    // add-only, so it could never OVERWRITE a local credential the way the
+    // local-import path could; but it could still INSTALL one that happens to
+    // be absent locally (a fresh device mid-disaster-recovery is exactly that
+    // state). `cloudPushBackup()` already strips secrets through
+    // `exportSafeSettings()`, so a legitimate payload never carries them —
+    // which is the point: if one arrives, the payload is not legitimate, and a
+    // restore is not an authenticated request to provision a credential.
+    // Nothing is lost, because the passphrase and token are not in the payload
+    // and must be re-entered on a new device regardless.
+    const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key) && isSettingImportSafe(s.key));
+    for (const s of toAdd) ws.settings.put(s);
+    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    stats.settings.added = toAdd.length;
+    stats.settings.skipped = inSettings.length - toAdd.length;
+  }
+
+  // X-07: receipts (keyPath 'tripOrderNo') — no per-record timestamp, and a
+  // record is metadata for potentially many receipt files, so "keep newer"
+  // doesn't apply at the record level either. Union the file lists by file
+  // id instead: a local trip's existing receipt files are never dropped, and
+  // any file present in the backup but missing locally is added. Blob bytes
+  // themselves are not part of this contract (see docs/BACKUP_CONTRACT.md) —
+  // only the metadata pointer round-trips, same as it always has for a
+  // manual JSON export/import.
+  const inReceipts = arr(parsed.receipts);
+  stats.receipts = { added: 0, merged: 0 };
+  for (const incoming of inReceipts){
+    if (!incoming || typeof incoming.tripOrderNo !== 'string' || !Array.isArray(incoming.files)) continue;
+    try {
+      const {t:wt, stores:ws} = tx('receipts','readwrite');
+      const existing = await idbReq(ws.receipts.get(incoming.tripOrderNo));
+      if (!existing){
+        ws.receipts.put(incoming);
+        stats.receipts.added++;
+      } else {
+        const existingIds = new Set((existing.files || []).map(f => f.id));
+        const newFiles = (incoming.files || []).filter(f => f && !existingIds.has(f.id));
+        if (newFiles.length){
+          ws.receipts.put({ tripOrderNo: incoming.tripOrderNo, files: [...(existing.files || []), ...newFiles] });
+          stats.receipts.merged++;
+        }
+      }
+      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    } catch(e){ console.warn('[FL] merge receipts', e); }
+  }
+
+  // X-07: gpsLogs (keyPath 'id', autoIncrement) — the incoming numeric id is
+  // device-local and meaningless on a different device/after a wipe (it could
+  // collide with an unrelated local record's autoincrement id), so it is
+  // never used as a write key. Dedup on (tripTrackingId, timestamp) — two
+  // pings for the same tracking session at the identical millisecond is not
+  // realistic — so re-running a restore/delta-apply doesn't duplicate points.
+  const inGpsLogs = arr(parsed.gpsLogs);
+  stats.gpsLogs = { added: 0, skipped: 0 };
+  if (inGpsLogs.length){
+    // The (tripTrackingId, timestamp) dedup has to see the same store state it
+    // writes into, or a ping added locally between the read and the write is
+    // duplicated rather than deduplicated.
+    const {t:wt, stores:ws} = tx('gpsLogs','readwrite');
+    const existingAll = await idbReq(ws.gpsLogs.getAll());
+    const existingKeySet = new Set(existingAll.map(g => g.tripTrackingId + '|' + g.timestamp));
+    const toAdd = inGpsLogs.filter(g => g && g.tripTrackingId && g.timestamp && !existingKeySet.has(g.tripTrackingId + '|' + g.timestamp));
+    for (const g of toAdd){ const { id, ...rest } = g; ws.gpsLogs.add(rest); }
+    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    stats.gpsLogs.added = toAdd.length;
+    stats.gpsLogs.skipped = inGpsLogs.length - toAdd.length;
+  }
+
+  const totalSkipped = stats.trips.skipped + stats.expenses.skipped + stats.fuel.skipped;
+  const summary = `Restored: ${stats.trips.added+stats.trips.updated} trips, ${stats.expenses.added+stats.expenses.updated} expenses, ${stats.fuel.added+stats.fuel.updated} fuel, ${stats.settings.added} settings, ${stats.receipts.added+stats.receipts.merged} receipts, ${stats.gpsLogs.added} gpsLogs. ${totalSkipped} record(s) unchanged (local was newer).`;
+  return { stats, summary, totalSkipped };
+}
+
+/** X-01: fetches every currently-retained delta for this user+device
+ *  (GET /backup/delta), decrypts and parses each, and reports whether full
+ *  coverage since the base snapshot can be confirmed. Returns
+ *  { deltas: [{ts, parsed}] (chronological), confirmedGap, unverifiable } —
+ *  confirmedGap means the server has positive evidence deltas were pruned
+ *  (totalCreated > retainedCount); unverifiable means the endpoint could not
+ *  be reached/parsed at all, so coverage cannot be proven either way. Both
+ *  are surfaced by the caller — this fixes cloudPullBackup() silently
+ *  reporting a complete restore when it only ever read the last full
+ *  snapshot and never checked for deltas synced after it. */
+async function cloudFetchDeltas(config, hdrs){
+  let deltas = [], confirmedGap = false, unverifiable = false;
+  try {
+    const res = await cloudFetch(config.url + '/backup/delta', { headers: hdrs }, 10000);
+    if (!res.ok){ unverifiable = true; return { deltas, confirmedGap, unverifiable }; }
+    const data = await res.json();
+    if (data.ok === false){ unverifiable = true; return { deltas, confirmedGap, unverifiable }; }
+    confirmedGap = Number(data.totalCreated || 0) > Number(data.retainedCount || 0);
+    const raw = Array.isArray(data.deltas) ? data.deltas : [];
+    raw.sort((a, b) => String(a.ts).localeCompare(String(b.ts))); // chronological, oldest first — apply in order
+    for (const d of raw){
+      if (!d.payload) continue;
+      try {
+        const dObj = JSON.parse(d.payload);
+        if (!dObj.encrypted || !dObj.iv || !dObj.salt) { unverifiable = true; continue; }
+        const dPlain = await cloudDecrypt(dObj.encrypted, dObj.iv, dObj.salt, config.pass);
+        deltas.push({ ts: d.ts, parsed: JSON.parse(dPlain) });
+      } catch(e){ console.warn('[FL] delta decrypt/parse skipped', e); unverifiable = true; }
+    }
+  } catch(e){ console.warn('[FL] delta fetch failed', e); unverifiable = true; }
+  return { deltas, confirmedGap, unverifiable };
+}
+
+async function cloudPullBackup(){
+  const config = await cloudGetConfig(); if (!config){ toast('Connect cloud backup first', true); return; }
+  cloudSetSyncStatus('spinner', 'Checking backups...');
+  try {
+    // Step 1: Fetch the latest backup directly from /backup (returns encrypted JSON)
+    const hdrs = { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token };
+    // First check if any backups exist
+    const statusRes = await cloudFetch(config.url + '/status', { headers: hdrs }, 10000);
+    if (!statusRes.ok){ cloudSetSyncStatus('warn', 'Could not check status'); toast('Restore failed', true); return; }
+    const statusData = await statusRes.json();
+    if (!statusData.hasBackup || statusData.count === 0){ cloudSetSyncStatus('warn', 'No backup found'); toast('No backup for this device', true); return; }
+    // Step 2: Download latest backup
+    cloudSetSyncStatus('spinner', 'Downloading...');
+    const dataRes = await cloudFetch(config.url + '/backup', { headers: hdrs });
+    if (!dataRes.ok){ toast('Download failed (' + dataRes.status + ')', true); cloudRefreshStatusPanel(); return; }
+    const raw = await dataRes.text(); let encObj;
+    try { encObj = JSON.parse(raw); } catch { toast('Backup corrupted', true); cloudRefreshStatusPanel(); return; }
+    if (!encObj.encrypted || !encObj.iv || !encObj.salt){ toast('Invalid backup format', true); cloudRefreshStatusPanel(); return; }
+    cloudSetSyncStatus('spinner', 'Decrypting...');
+    let plaintext;
+    try { plaintext = await cloudDecrypt(encObj.encrypted, encObj.iv, encObj.salt, config.pass); } catch(e) { cloudSetSyncStatus('warn', 'Wrong passphrase'); toast('Wrong passphrase — cannot decrypt', true); return; }
+    let parsed;
+    try { parsed = JSON.parse(plaintext); } catch { toast('Backup data corrupted — could not parse', true); cloudRefreshStatusPanel(); return; }
+    if (!parsed.trips && !parsed.expenses){ toast('Backup empty', true); return; }
+
+    // X-01: Step 3 — fetch every delta synced after this base snapshot.
+    cloudSetSyncStatus('spinner', 'Checking for delta syncs...');
+    const { deltas, confirmedGap, unverifiable } = await cloudFetchDeltas(config, hdrs);
+
+    const c = parsed.meta?.counts || {};
+    const deltaNote = deltas.length ? `\n${deltas.length} delta sync(s) will also be applied.` : '';
+    if (!confirm('Restore cloud backup?\n\nSaved: ' + (parsed.meta?.savedAt?.slice(0,16)||'?') + '\nTrips: ' + (c.trips||0) + '\nExpenses: ' + (c.expenses||0) + '\nFuel: ' + (c.fuel||0) + deltaNote + '\n\nNewer local records will be kept.')){ cloudRefreshStatusPanel(); return; }
+    if (typeof saveRollbackSnapshot === 'function') await saveRollbackSnapshot();
+    cloudSetSyncStatus('spinner', 'Merging...');
+
+    // v21 T2C: merge-aware restore instead of full importJSON. X-01: apply the
+    // base snapshot first, then every delta IN ORDER — mergeRestoreData's
+    // per-record "keep newer" comparison makes this safe even where a delta
+    // and the base (or two deltas) overlap on the same record.
+    const baseResult = await mergeRestoreData(parsed);
+    let totalSkipped = baseResult.totalSkipped;
+    let lastSummary = baseResult.summary;
+    for (const d of deltas){
+      const r = await mergeRestoreData(d.parsed);
+      totalSkipped += r.totalSkipped;
+      lastSummary = r.summary;
+    }
+    invalidateKPICache(); await renderHome();
+
+    // X-01: expired/missing deltas surface a visible warning — never a
+    // silent "Cloud backup restored!" that hides a real (or unprovable) gap.
+    if (confirmedGap || unverifiable){
+      const anchor = parsed.meta?.savedAt ? new Date(parsed.meta.savedAt).toLocaleString() : 'the last full backup';
+      const msg = confirmedGap
+        ? `⚠️ Partial restore — data after ${anchor} not recovered. Some delta syncs from this device expired or were rotated out before this restore.`
+        : `⚠️ Partial restore — could not verify delta sync coverage after ${anchor}. Some recent changes may not be recovered.`;
+      cloudSetSyncStatus('warn', 'Partial restore');
+      toast(msg, true);
+    } else {
+      toast(deltas.length ? `Cloud backup restored (base + ${deltas.length} delta sync${deltas.length===1?'':'s'})!` : 'Cloud backup restored!');
+      cloudSetSyncStatus('ok', 'Restored');
+    }
+
+    // v21 T2D: if local records were kept, push merged result back up
+    if (totalSkipped > 0){
+      setTimeout(()=>{
+        const conflictEl = $('#cloudSyncStatus');
+        if (conflictEl) conflictEl.innerHTML = '<span class="cloud-dot warn"></span>' + escapeHtml(`${totalSkipped} local records kept (newer). Re-syncing...`);
+        cloudPushBackup(true).catch(()=>{});
+      }, 1500);
+    }
+    console.info('[FL] Merge restore:', lastSummary);
+  } catch(e) { console.error('[CLOUD] Pull error:', e); cloudSetSyncStatus('warn', 'Restore failed'); toast('Restore failed', true); }
+}
+
+async function cloudCheckStatus(){
+  const config = await cloudGetConfig(); if (!config) return null;
+  try { const res = await cloudFetch(config.url + '/status', { headers: { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token } }, 8000); if (!res.ok) return null; const d = await res.json(); _cloudLastStatus = d; return d; } catch { return null; }
+}
+
+function cloudSetSyncStatus(type, msg){
+  const el = $('#cloudSyncStatus'); if (!el) return;
+  const p = { spinner: '<span class="cloud-sync-spinner"></span>', ok: '<span class="cloud-dot ok"></span>', warn: '<span class="cloud-dot warn"></span>', off: '<span class="cloud-dot off"></span>' };
+  el.innerHTML = (p[type] || '') + escapeHtml(msg);
+}
+
+/** True when cloud backup is CONFIGURED but cannot run: a token is stored
+ *  (IndexedDB, survives restarts) while the passphrase is not (sessionStorage,
+ *  cleared on tab/browser close).
+ *
+ *  This is the state that made cloud backup feel unreliable. `cloudIsEnabled()`
+ *  requires BOTH, so once the session ends every automatic push — the
+ *  visibilitychange handlers, `cloudScheduleSync()`, `emergencyAutoBackup()` —
+ *  silently no-ops. Nothing told the operator. The single surface that reported
+ *  it was the Diagnostics panel's `dxCloud` row ("Token set, no passphrase"),
+ *  four taps deep under More → Advanced.
+ *
+ *  So the failure mode was: close the browser, come back, and believe you are
+ *  backed up while nothing has been written since. For a bookkeeping app whose
+ *  cloud story is disaster recovery, that is the worst possible way to fail.
+ *
+ *  The passphrase deliberately stays session-scoped — it is the key protecting
+ *  the cloud copy from anyone with server-side/KV access, and the credential
+ *  rules forbid persisting it. The fix is to make the gap LOUD and recovery one
+ *  tap, not to weaken the encryption.
+ */
+// ── Issue #205 §3 — automatic cloud sync: pending state, durability, status ──
+//
+// §3's requirement is that "the normal user should never need to remember to
+// press Backup". Most of the model was already here: every mutation calls
+// invalidateKPICache() -> cloudScheduleSync() (27 call sites covering trips,
+// expenses, fuel, mark-paid, imports, settings and maintenance), delta sync
+// only sends what changed, restore is revision-aware, and a manual action
+// stays in Settings as a diagnostic. Three things were missing, and only three.
+//
+// 1. PENDING WORK WAS NOT OBSERVABLE. Nothing could answer "how many changes
+//    are waiting", so "3 changes waiting" could not be shown and an operator
+//    had no way to tell automatic sync had stopped except at restore time.
+//
+// 2. THE INTENT WAS NOT DURABLE. cloudScheduleSync() is a 30s in-memory
+//    debounce. Close the app inside that window — or fail the push — and the
+//    timer dies with the page. The DATA was never at risk (local save always
+//    happens first) but the *sync* silently did not happen, which is the
+//    failure this section is about.
+//
+// 3. A FAILURE LEFT NO TRACE. Both failure paths in cloudPushBackup() called
+//    cloudScheduleRetry() and, when silent, said nothing and persisted nothing,
+//    so a repeatedly failing sync was indistinguishable from a quiet one.
+//
+// WHY THERE IS NO SEPARATE QUEUE, which is the design decision worth reading.
+// The obvious implementation is a durable queue store of pending mutations.
+// This deliberately does not do that, because FreightLogic ALREADY has a
+// durable definition of pending work: `lastCloudSyncedAt`, the delta watermark
+// that cloudPushBackup() itself selects records against. Anything with
+// `updatedAt` newer than the watermark is, by that function's own definition,
+// not yet on the server. Deriving the count from the watermark cannot drift
+// from what the push would actually send. A parallel queue can — it would be a
+// second list of what needs syncing, maintained by hand at 27 call sites, and
+// two lists that can disagree is the exact shape of the X-07 restore gap and
+// the 2026-09-13 asset defect this repository already records. It also needs no
+// new object store, so DB_VERSION stays 16 and no migration is spent here.
+//
+// ONE CHANGE-CLOCK AUTHORITY (Issue #240 defect 1). The stores below are the
+// record stores the delta path can send, each paired with the timestamp field
+// that path actually selects on. This map is the ONLY definition of "changed
+// since the watermark": cloudPushBackup() filters through syncChangedSince()
+// and syncPendingSummary() counts through syncChangeClock(), so the two cannot
+// disagree about what is pending.
+//
+// They DID disagree in v24.0.19, which is what #240 reports. The summary tested
+// `updatedAt` on every store while the push used store-specific fields, so a
+// weeklyReports row (`generatedAt`), a gpsLogs row (`timestamp` — the store was
+// missing from the list entirely) or a normalized-evidence row (`recordedAt`)
+// could be genuinely unsynced while the summary counted zero and Home reported
+// "Synced". That is the two-lists-that-can-drift shape this file already
+// records twice (the X-07 restore gap, the 2026-09-13 asset defect) — the fix
+// is one list, not a better-maintained second one.
+//
+// `||` and not `??`: a 0 timestamp means "no clock here", so it must fall
+// through to the next candidate. That is exactly what the push has always done
+// and this map is transcribed from it field for field.
+//
+// `settings` and `receipts` are NOT here, and their absence is not an oversight
+// — neither is delta-filtered, both are pushed wholesale every time, so neither
+// has a per-record change clock to read. Counting them would make "0 changes
+// waiting" unreachable. They are covered instead by the durable dirty marker
+// below, which is what makes their pending state survive a session.
+const SYNC_CHANGE_CLOCKS = Object.freeze({
+  trips:          r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  expenses:       r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  fuel:           r => finiteNum(r?.updatedAt || r?.updated || r?.created, 0),
+  laneHistory:    r => finiteNum(r?.updated || r?.created, 0),
+  weeklyReports:  r => finiteNum(r?.generatedAt, 0),
+  reloadOutcomes: r => finiteNum(r?.updatedAt || r?.created || r?.timestamp, 0),
+  bidHistory:     r => finiteNum(r?.updatedAt || r?.created || r?.timestamp, 0),
+  documents:      r => finiteNum(r?.updatedAt || r?.createdAt, 0),
+  gpsLogs:        r => finiteNum(r?.timestamp, 0),
+  loadLifecycle:  r => finiteNum(r?.updatedAt, 0),
+  [EVIDENCE_STORE]: r => finiteNum(r?.recordedAt, 0),
+});
+
+// Derived, never hand-maintained: a store added to the authority above is
+// counted by the summary on the same edit that teaches the push to send it.
+const SYNC_PENDING_STORES = Object.freeze(Object.keys(SYNC_CHANGE_CLOCKS));
+
+/** This record's change instant under the authority, or 0 when it has none. */
+function syncChangeClock(store, r){
+  const clock = SYNC_CHANGE_CLOCKS[store];
+  return clock ? clock(r) : 0;
+}
+
+/** The delta selection itself. `since <= 0` means no watermark yet, which is a
+ *  full push — every row is "changed". */
+function syncChangedSince(store, rows, since){
+  const arr = Array.isArray(rows) ? rows : [];
+  return since > 0 ? arr.filter(r => syncChangeClock(store, r) > since) : arr;
+}
+
+/** The durable half of the intent (Issue #240 defect 2). cloudScheduleSync()'s
+ *  30s debounce is in-memory, and `settings`/`receipts` have no per-record
+ *  clock, so a settings-only mutation followed by a tab close left NOTHING
+ *  behind: the next boot counted zero pending rows, resumeSyncIfPending()
+ *  returned `nothing-pending`, and Home said "Synced" for a change that never
+ *  reached the server.
+ *
+ *  A single durable marker at the one choke point every mutation already goes
+ *  through is enough — this is still not a queue, and still no new store.
+ *  Cleared only by a push that observed it (see cloudPushBackup), so a mutation
+ *  landing DURING an upload re-stamps a newer value and survives. */
+async function markSyncDirty(){
+  try {
+    // A driver who never enabled cloud backup has nothing pending by
+    // definition; writing a marker for them is noise on every mutation.
+    if (!(await getSetting('cloudBackupToken', ''))) return;
+    await setSetting('syncDirtyAt', Date.now());
+  } catch (_) {}
+}
+
+/** How many records are newer than the server's watermark, the oldest such
+ *  change, whether a non-record (settings/receipts) change is outstanding, and
+ *  — the part that must never be silently dropped — which required stores could
+ *  not be read at all.
+ *
+ *  FAILS CLOSED (Issue #240 defect 3). This used to `continue` past an
+ *  unreadable store, so with every other store clean it returned `pending: 0`
+ *  and the surface said "Synced" although one required backup store could not
+ *  be inspected. cloudPushBackup() treats the same read failure as a failed
+ *  push that does not advance the watermark, so "I could not look" must never
+ *  resolve to "nothing to do". It is reported, not thrown: this runs on every
+ *  home render and taking the whole surface down is not an improvement. */
+async function syncPendingSummary(opts){
+  // `readStore` is a narrow, documented seam and nothing else: production always
+  // takes the default. It exists because the fail-closed branch below cannot be
+  // proven any other way — a store read failure is not reachable from a test
+  // without corrupting the shared database the rest of the suite is using, and
+  // an unproven fail-closed branch is how the fail-OPEN one shipped.
+  const readStore = opts?.readStore || dumpStore;
+  const watermark = Number(await getSetting('lastCloudSyncedAt', 0) || 0);
+  let pending = 0, oldestAt = null;
+  const unreadable = [];
+  for (const store of SYNC_PENDING_STORES){
+    let rows;
+    try { rows = await readStore(store); }
+    catch (_) { unreadable.push(store); continue; }
+    for (const r of rows){
+      const at = syncChangeClock(store, r);
+      // A record with no usable clock is NOT counted as pending. It cannot be
+      // proven newer than the watermark, and inventing pending work would make
+      // the surface cry wolf forever on legacy rows — the UNKNOWN-is-not-a-value
+      // rule applied to sync state.
+      if (at > watermark){
+        pending++;
+        if (oldestAt === null || at < oldestAt) oldestAt = at;
+      }
+    }
+  }
+  const dirtyAt = finiteNum(await getSetting('syncDirtyAt', 0), 0);
+  return { pending, oldestAt, watermark,
+           dirty: dirtyAt > 0, dirtyAt,
+           unreadable, complete: unreadable.length === 0 };
+}
+
+/** The state the driver is actually in, as one value the UI can switch on.
+ *  Order matters: a configured-but-passphrase-less install is PAUSED even when
+ *  offline, because the paused banner owns that case and offers the fix. */
+const SYNC_STATE = { OFF: 'OFF', PAUSED: 'PAUSED', UNKNOWN: 'UNKNOWN', OFFLINE: 'OFFLINE',
+  PROBLEM: 'PROBLEM', PENDING: 'PENDING', SYNCED: 'SYNCED' };
+
+async function cloudSyncStatus(opts){
+  const token = await getSetting('cloudBackupToken', '');
+  // Never configured: report OFF and render nothing. Nagging a driver who never
+  // enabled cloud backup trains them to dismiss the one banner that matters —
+  // the same reason cloudBackupPaused() returns false with no token.
+  if (!token) return { state: SYNC_STATE.OFF, pending: 0 };
+
+  const { pending, oldestAt, dirty, unreadable, complete } = await syncPendingSummary(opts);
+  if (await cloudBackupPaused()) return { state: SYNC_STATE.PAUSED, pending, oldestAt };
+
+  // Fail closed BEFORE anything can resolve to a reassuring state (#240 defect
+  // 3). A required store that could not be read means backup completeness is
+  // unknown, and unknown outranks even OFFLINE here: offline explains why
+  // nothing is being sent, but it is still a claim that we know what is
+  // outstanding, and we do not.
+  if (!complete) return { state: SYNC_STATE.UNKNOWN, pending, oldestAt, unreadable };
+
+  const err = await getSetting('lastCloudSyncError', null);
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  if (offline) return { state: SYNC_STATE.OFFLINE, pending, oldestAt };
+  // `dirty` carries the changes the record count cannot represent — a
+  // settings-only or receipts-only mutation. Without it those render "Synced".
+  const outstanding = pending > 0 || dirty;
+  if (outstanding && err) return { state: SYNC_STATE.PROBLEM, pending, oldestAt, error: err };
+  if (outstanding) return { state: SYNC_STATE.PENDING, pending, oldestAt };
+  return { state: SYNC_STATE.SYNCED, pending: 0, lastSyncedAt: Number(await getSetting('lastCloudSync', 0) || 0) };
+}
+
+function _syncStatusText(st){
+  const n = st.pending;
+  // With a durable dirty marker and no counted rows the honest phrasing is
+  // "changes waiting" with no number — the change is real, the count is not
+  // what represents it. Printing "0 changes waiting" would be worse than both.
+  const changes = n === 1 ? '1 change' : n > 1 ? n + ' changes' : 'changes';
+  switch (st.state){
+    case SYNC_STATE.UNKNOWN: return { icon: '⚠️', text: 'Can\'t verify backup — retrying', tone: 'bad' };
+    case SYNC_STATE.OFFLINE: return { icon: '📴', text: 'Offline — saved on this device' + (n ? ' (' + changes + ' waiting)' : ''), tone: 'warn' };
+    case SYNC_STATE.PROBLEM: return { icon: '⚠️', text: 'Sync problem — retrying (' + changes + ' waiting)', tone: 'bad' };
+    case SYNC_STATE.PENDING: return { icon: '⏳', text: changes + ' waiting', tone: 'warn' };
+    case SYNC_STATE.SYNCED:  return { icon: '✅', text: 'Synced', tone: 'ok' };
+    default: return null;   // OFF and PAUSED render nothing here
+  }
+}
+
+/** One compact row on Home. Deliberately NOT a fixed banner: that slot belongs
+ *  to renderCloudPausedBanner(), and two stacked fixed banners would cover the
+ *  app. PAUSED renders nothing here precisely so the two cannot both speak. */
+async function renderSyncStatusRow(opts){
+  const home = $('#view-home');
+  if (!home) return;
+  const st = await cloudSyncStatus(opts);
+  const copy = _syncStatusText(st);
+  const existing = $('#syncStatusRow');
+  if (!copy){ existing?.remove(); return; }
+
+  const tone = copy.tone === 'ok' ? 'var(--good,#34c759)' : copy.tone === 'bad' ? 'var(--bad,#ff3b30)' : 'var(--warn,#f0a500)';
+  const el = existing || document.createElement('div');
+  el.id = 'syncStatusRow';
+  el.style.cssText = 'margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--surface-0);' +
+    'border:1px solid ' + tone + ';font-size:13px;display:flex;align-items:center;gap:8px';
+  // escapeHtml on the operator-invisible error string too: it can carry an
+  // HTTP status or a network message that originated off-device.
+  el.innerHTML = '<span>' + copy.icon + '</span><span style="flex:1">' + escapeHtml(copy.text) + '</span>';
+  if (!existing){
+    const anchor = $('#homeTripTrackCard');
+    if (anchor?.parentNode) anchor.parentNode.insertBefore(el, anchor);
+    else home.insertBefore(el, home.firstChild);
+  }
+}
+
+/** The durability fix (gap 2). cloudScheduleSync()'s debounce is in-memory, so
+ *  a close inside the window loses the intent — the data is safe locally but
+ *  the sync never happened. Boot re-derives pending work from the watermark and
+ *  drains once. Idempotent and retry-safe by construction: it pushes the same
+ *  delta the lost timer would have, and re-sending a delta is already safe
+ *  because restore is revision-aware.
+ *
+ *  It does NOT force a push when nothing is pending, and it stays silent when
+ *  cloud backup is off or paused — a boot-time toast for a state the banner
+ *  already explains is noise. */
+async function resumeSyncIfPending(opts){
+  try {
+    if (!(await cloudIsEnabled())) return { drained: false, reason: 'not-enabled' };
+    const { pending, dirty, complete, unreadable } = await syncPendingSummary(opts);
+    // Three reasons to drain, and only one of them is a count. `dirty` is the
+    // settings-only case the count cannot see; `!complete` is a store we could
+    // not read, where skipping recovery on an unknown count is the fail-open
+    // #240 defect 3 names. Pushing when nothing was actually outstanding costs
+    // one no-op delta; not pushing when something was costs the change.
+    if (pending <= 0 && !dirty && complete) return { drained: false, reason: 'nothing-pending' };
+    await cloudPushBackup(true);
+    return { drained: true, pending, dirty, unreadable };
+  } catch (_) { return { drained: false, reason: 'error' }; }
+}
+
+async function cloudBackupPaused(){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) return false;                       // never configured — not "paused"
+  return !sessionStorage.getItem('fl_cloud_pass'); // configured, but cannot run
+}
+
+/** One tap, back to syncing — ideally with no typing at all.
+ *
+ *  This is a REAL credential form, not a bare input, and that is the whole
+ *  point. A password manager (iOS Keychain, 1Password, the Android/desktop
+ *  equivalents) will only offer to save and later autofill when it can
+ *  recognise a credential: fields inside a `<form>`, a `username` field
+ *  carrying a stable account value, and a `current-password` field. Given that,
+ *  resuming becomes: tap Resume, Face ID, done.
+ *
+ *  This is deliberately how the re-entry friction is removed. The alternative —
+ *  the app persisting the passphrase itself — is forbidden by the credential
+ *  rules in CLAUDE.md, and would be a worse implementation of what the OS
+ *  keychain already does properly: hardware-backed on iOS, and not something
+ *  our IndexedDB export/backup paths could ever leak. The secret stays out of
+ *  the app's own storage; the platform holds it.
+ *
+ *  The username is `localUserId` (a stable `usr_<hex>` minted on first boot),
+ *  so the keychain entry is scoped to this install rather than to a guessable
+ *  constant. It is shown read-only rather than hidden: Safari's heuristics are
+ *  unreliable for `display:none` fields, and a visible account row also tells
+ *  the operator which identity they are unlocking.
+ */
+async function openCloudReconnect(){
+  haptic(20);
+  const acct = (await getSetting('localUserId', '')) || 'freightlogic';
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <form id="cloudReconnectForm" autocomplete="on" style="margin:0">
+      <div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
+        Your backup passphrase is kept only for the current session, so it clears
+        when the browser closes. Save it to this device's keychain once and your
+        phone will fill it in from then on.
+      </div>
+      <label class="muted" for="cloudReconnectUser" style="font-size:11px;display:block;margin-bottom:4px">Account</label>
+      <input id="cloudReconnectUser" name="username" type="text" autocomplete="username"
+             value="${escapeHtml(acct)}" readonly
+             style="width:100%;padding:12px;font-size:14px;min-height:44px;opacity:.7" />
+      <label class="muted" for="cloudReconnectPass" style="font-size:11px;display:block;margin:10px 0 4px">Backup passphrase</label>
+      <input id="cloudReconnectPass" name="password" type="password" autocomplete="current-password"
+             placeholder="Backup passphrase" inputmode="text"
+             style="width:100%;padding:14px;font-size:16px;min-height:48px" />
+      <div id="cloudReconnectMsg" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>
+      <button class="btn primary" id="cloudReconnectGo" type="submit"
+              style="width:100%;margin-top:12px;min-height:48px;font-size:15px">Resume syncing</button>
+    </form>`;
+
+  const go = async () => {
+    const el = $('#cloudReconnectPass', body);
+    const msg = $('#cloudReconnectMsg', body);
+    const pass = (el?.value || '').trim();
+    if (pass.length < 8){ if (msg) msg.textContent = 'Passphrase must be at least 8 characters.'; return; }
+    sessionStorage.setItem('fl_cloud_pass', pass);
+    if (msg) msg.textContent = 'Syncing…';
+    // Prove it actually works before claiming success. `cloudPushBackup()`
+    // returns undefined on EVERY path — success, "up to date", early-out and
+    // the catch alike — so its return value cannot be tested. It does advance
+    // `lastCloudSync` on success and leaves it untouched in the catch, so
+    // compare that across the call. Same signal the visibilitychange handler
+    // uses. A wrong passphrase still encrypts and uploads fine (the Worker
+    // never decrypts), so this proves the credential pair is USABLE, not that
+    // the passphrase matches an existing backup — that can only surface on
+    // restore, where cloudPullBackup() already reports "Wrong passphrase".
+    const before = Number(await getSetting('lastCloudSync', 0) || 0);
+    await cloudPushBackup(true).catch(()=>{});
+    const after = Number(await getSetting('lastCloudSync', 0) || 0);
+    const ok = after > before;
+    if (ok){
+      closeModal();
+      toast('Cloud backup resumed');
+      _removeCloudPausedBanner();
+      _updateSyncIndicator('ok', 'Synced');
+      cloudRefreshStatusPanel().catch(()=>{});
+      renderHome().catch(()=>{});
+    } else {
+      sessionStorage.removeItem('fl_cloud_pass');
+      if (msg) msg.textContent = 'Could not sync. Check your connection and try again.';
+    }
+  };
+
+  openModal('☁️ Resume cloud backup', body);
+  setTimeout(()=> $('#cloudReconnectPass', body)?.focus(), 120);
+  // Submit on the FORM, not click on the button. A password manager keys its
+  // "save this password?" prompt off a real submit event; a click handler that
+  // never submits is invisible to it, which would defeat the whole point of
+  // shaping this as a credential form. Enter is handled for free by doing this.
+  $('#cloudReconnectForm', body)?.addEventListener('submit', (e)=>{ e.preventDefault(); go(); });
+}
+
+function _removeCloudPausedBanner(){ $('#cloudPausedBanner')?.remove(); }
+
+/** Persistent, non-auto-dismissing banner. Deliberately unlike
+ *  showCloudSyncBanner(), which self-removes after 12s: an informational
+ *  "backup found" notice can afford to vanish, an "you are not being backed up"
+ *  notice cannot. It stays until the condition is actually resolved. */
+async function renderCloudPausedBanner(){
+  if (!(await cloudBackupPaused())){ _removeCloudPausedBanner(); return; }
+  if ($('#cloudPausedBanner')) return; // already shown; don't stack or re-render
+  const el = document.createElement('div');
+  el.id = 'cloudPausedBanner';
+  el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;' +
+    'background:linear-gradient(135deg,#3a2a1a,#453520);border-bottom:1px solid var(--warn,#f0a500);' +
+    'display:flex;align-items:center;gap:12px;font-size:13px';
+  el.innerHTML = `<div style="flex:1">⚠️ <b style="color:var(--warn,#f0a500)">Cloud backup paused</b> — nothing has been backed up since the app was last closed.</div>
+    <button class="btn sm" id="cloudPausedFix" style="min-height:44px;background:var(--warn,#f0a500);color:#000;border:none;font-weight:700">Resume</button>`;
+  document.body.appendChild(el);
+  $('#cloudPausedFix')?.addEventListener('click', ()=> openCloudReconnect());
+  _updateSyncIndicator('warn', 'Paused');
+}
+
+async function cloudRefreshStatusPanel(){
+  const panel = $('#cloudStatusPanel'); const indicator = $('#cloudIndicator');
+  const setupSection = $('#cloudSetupSection');
+  const enabled = await cloudIsEnabled();
+  if (!panel) return;
+  if (!enabled){ panel.style.display = 'none'; if (setupSection) setupSection.style.display = ''; cloudSetSyncStatus('off', 'Not connected'); if (indicator) indicator.style.display = 'none'; return; }
+  panel.style.display = ''; if (setupSection) setupSection.style.display = 'none';
+  const tsEl = $('#cloudStatusTime'); const dotEl = $('#cloudStatusDot'); const ts = _lastCloudSync;
+  if (ts > 0){
+    const ago = Math.floor((Date.now() - ts) / 60000);
+    const timeStr = ago < 1 ? 'Just now' : ago < 60 ? ago + 'm ago' : ago < 1440 ? Math.floor(ago/60) + 'h ago' : Math.floor(ago/1440) + 'd ago';
+    if (tsEl) tsEl.textContent = timeStr; const isStale = ago > 1440;
+    if (dotEl) dotEl.innerHTML = '<span class="cloud-dot ' + (isStale ? 'warn' : 'ok') + '"></span> ' + (isStale ? 'Stale' : 'Connected');
+    cloudSetSyncStatus(isStale ? 'warn' : 'ok', 'Last sync: ' + timeStr);
+    if (indicator){ indicator.style.display = ''; indicator.textContent = '☁️'; indicator.title = 'Synced ' + timeStr; }
+  } else { if (tsEl) tsEl.textContent = 'Never'; if (dotEl) dotEl.innerHTML = '<span class="cloud-dot warn"></span> Not synced'; cloudSetSyncStatus('warn', 'Connected — tap Backup Now'); if (indicator) indicator.style.display = 'none'; }
+  if (!_cloudLastStatus && navigator.onLine) _cloudLastStatus = await cloudCheckStatus();
+  const userEl = $('#cloudStatusUser'); const countEl = $('#cloudStatusCount');
+  if (_cloudLastStatus?.user && userEl) userEl.textContent = _cloudLastStatus.user;
+  if (_cloudLastStatus && countEl) countEl.textContent = (_cloudLastStatus.count || 0) + ' stored';
+}
+
+async function cloudRefreshButtons(){
+  const enabled = await cloudIsEnabled();
+  const pb = $('#btnCloudPush'); const pl = $('#btnCloudPull');
+  if (pb) pb.disabled = !enabled; if (pl) pl.disabled = !enabled;
+}
+
+/** Issue #221 — a link no longer INSTALLS a bearer credential, and a legacy one
+ *  is disarmed at boot rather than whenever Settings happens to render.
+ *
+ *  WHAT THIS REPLACES. `cloudCheckSetupLink()` accepted `#token=<flk_…>` and
+ *  `?token=<flk_…>`, filled `#cloudBackupToken` and navigated to Settings. Both
+ *  halves were the human credential transport that v24.0.13's zero-token
+ *  onboarding exists to eliminate, kept alive for compatibility with a flow that
+ *  had already been deliberately retired:
+ *
+ *    - `?token=` is worse than the fragment form, not merely equivalent. A query
+ *      string IS sent to the origin, so the bearer token reaches the access log,
+ *      the Worker's own request line and any `Referer` header BEFORE any
+ *      client-side cleanup can run. Stripping it afterwards tidies the address
+ *      bar; it cannot un-send it. That is why the toast for this case says the
+ *      token must be treated as exposed rather than merely unsupported.
+ *    - `#token=` never reaches a server, but it still leaves a permanent
+ *      credential in a mail or iMessage thread — exactly the resting place the
+ *      claim-code design removed.
+ *
+ *  WHY IT MOVED TO BOOT. `cloudCheckSetupLink()` was only reachable through
+ *  `cloudInitUI()`, which runs inside `renderInsights()` — the Settings render.
+ *  So the old `history.replaceState` only fired if the operator happened to open
+ *  Settings, and until then a bearer token sat in the address bar, in session
+ *  history, and in any screenshot or share sheet. Found by ZTO-16/17 asserting
+ *  the URL as well as the field; a field-only assertion would have passed.
+ *
+ *  Synchronous, and called before the first await for the same reason
+ *  `flCaptureClaimCode()` is: an await yields to the event loop, and anything
+ *  reading `location.href` in between would capture a live credential.
+ *
+ *  Returns 'query' | 'fragment' | null — the transport, never the token, so the
+ *  value cannot reach a log or an error message through this path. */
+function flStripLegacyTokenLink(){
+  try {
+    const frag = String(window.location.hash || '').slice(1);
+    const fragToken = frag.startsWith('token=') ? decodeURIComponent(frag.slice(6)) : null;
+    let queryToken = null;
+    try { queryToken = new URLSearchParams(window.location.search).get('token'); } catch(_) {}
+
+    const viaQuery = !!(queryToken && queryToken.startsWith('flk_'));
+    const viaFragment = !!(fragToken && fragToken.startsWith('flk_'));
+    if (!viaQuery && !viaFragment) return null;
+
+    // Strip unconditionally and immediately. Whatever is reported afterwards,
+    // the credential must stop travelling with this page.
+    try { history.replaceState(null, '', window.location.pathname); } catch(_) {}
+    return viaQuery ? 'query' : 'fragment';
+  } catch(_) { return null; }
+}
+
+// ─── v24.0.13 Zero-token driver onboarding ────────────────────────────────────
+//
+// WHAT CHANGED AND WHY. Onboarding a driver used to mean calling
+// POST /admin/users, which returns a permanent `flk_` bearer token, and then
+// getting that token onto the driver's phone — by email or SMS. The credential
+// therefore came to rest in an inbox or an iMessage thread and stayed there
+// forever, readable by anyone who later picked up either device, long after the
+// driver had been onboarded or even revoked.
+//
+// The replacement is an invite CLAIM CODE (Worker v18): 120 bits of randomness,
+// single-purpose, dead in 72 hours, and stored server-side only as a SHA-256
+// hash. The `flk_` token is minted at claim time and handed straight to the
+// claiming device. Nobody ever sees a token — not the driver, not the owner.
+//
+// Three properties are load-bearing and must survive any refactor here:
+//
+//   1. The code travels in the URL FRAGMENT (`#i=`), never the query string.
+//      Browsers do not send fragments to an origin, so the code cannot reach a
+//      Worker log, an access log, or a `Referer` header on the way in.
+//   2. The code is captured into a function-scoped variable and the fragment is
+//      stripped from the URL BEFORE the first `await`. Not after — an await
+//      yields to the event loop, and anything that reads `location.href` in
+//      between (an error reporter, an analytics shim, a screenshot) would
+//      capture a live invite.
+//   3. The token is written once and is never rendered, logged, exported, or
+//      placed in an error message.
+
+const ADMIN_TOKEN_SETTING = 'cloudAdminTokenEnc';
+const CLAIM_MIN_PASS_LEN = 10;
+/** Exactly what b32(15 bytes) produces in the Worker — 24 chars, no padding. */
+const CLAIM_CODE_RE = /^[A-Z2-7]{24}$/;
+
+/** The invite code captured from `#i=` at boot, if any.
+ *  Module-scoped rather than global: `app.js` exports nothing, so this is not
+ *  reachable from another script on the page. Cleared the moment it is spent. */
+let _pendingClaimCode = null;
+/** Issue #221: 'query' | 'fragment' | null — which retired setup-link transport
+ *  this page was opened with, recorded so boot can say so once the DOM exists.
+ *  Deliberately never holds the token itself. */
+let _legacyTokenLinkSeen = null;
+
+/* ── Owner: one-time admin setup ─────────────────────────────────────────────
+ *
+ * The admin token grants create/list/revoke over EVERY driver account, so it is
+ * the most sensitive credential this app handles. CLAUDE.md's Credential
+ * Storage Rules have kept it `sessionStorage`-only, which is correct about
+ * plaintext-at-rest and is why the owner has had to retype a 36-character
+ * secret on every browser restart.
+ *
+ * This keeps the session-scoped plaintext rule exactly as it is — the decrypted
+ * token still lives only in `sessionStorage` and still dies with the tab — and
+ * adds an AES-GCM ciphertext at rest, keyed by PBKDF2 over the device PIN
+ * (`cloudEncrypt`, 600k iterations, the same primitive cloud backups use). What
+ * is on disk is not a credential unless you also know the PIN.
+ *
+ * ADMIN ACCESS THEREFORE REQUIRES APP LOCK. That is not incidental: without a
+ * PIN there is no key, and the only way to persist the token would be in the
+ * clear, which is the thing the rule prohibits. Refusing is the honest outcome.
+ */
+
+/** Is an encrypted admin token on disk? Does not decrypt, so it never prompts. */
+async function cloudAdminHasAccess(){
+  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
+  return !!(blob && blob.encrypted && blob.iv && blob.salt);
+}
+
+/** Is App Lock configured with a real PIN? Admin access is gated on this. */
+async function cloudAdminPinAvailable(){
+  const enabled = !!(await getSetting('appLockEnabled', false));
+  const pin = String(await getSetting('appLockPin', '') || '');
+  return !!(enabled && pin);
+}
+
+/** Prompt for the device PIN and resolve with the PIN ITSELF, not a boolean.
+ *
+ *  `requireAppUnlock()` deliberately returns only whether the unlock succeeded
+ *  and discards the PIN, which is right for a gate. Here the PIN is key
+ *  material, so it has to come back. It is held in a local for the duration of
+ *  one decrypt and is never stored anywhere.
+ *
+ *  Resolves `null` on cancel or on a wrong PIN. */
+async function adminPinPrompt(purpose){
+  const stored = String(await getSetting('appLockPin', '') || '');
+  if (!stored) return null;
+  return await new Promise((resolve)=>{
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">' + escapeHtml(purpose || 'Enter your PIN to continue.') + '</div>' +
+      '<label>PIN</label><input id="adminPinEntry" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off" />' +
+      '<div id="adminPinErr" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>' +
+      '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="adminPinGo" style="min-height:48px">Unlock</button><button class="btn" id="adminPinCancel" style="min-height:48px">Cancel</button></div>';
+    openModal('🔐 Confirm it\'s you', body);
+    let settled = false;
+    const finish = (v)=>{ if (settled) return; settled = true; closeModal(); resolve(v); };
+    const go = async ()=>{
+      const val = String($('#adminPinEntry', body)?.value || '');
+      if (!val) return;
+      const match = await verifyPin(stored, val).catch(()=>false);
+      if (!match){
+        const err = $('#adminPinErr', body);
+        if (err){ err.textContent = 'That PIN did not match.'; err.style.color = 'var(--bad)'; }
+        const inp = $('#adminPinEntry', body); if (inp){ inp.value = ''; inp.focus(); }
+        return;
+      }
+      finish(val);
+    };
+    $('#adminPinGo', body)?.addEventListener('click', go);
+    $('#adminPinEntry', body)?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); go(); } });
+    $('#adminPinCancel', body)?.addEventListener('click', ()=> finish(null));
+  });
+}
+
+/** The admin token for this session, decrypting from disk if needed.
+ *  Returns '' when there is none or the operator cancels — never throws, and
+ *  never puts the token or the reason into a message that could carry it. */
+async function cloudAdminResolveToken(){
+  try {
+    const cached = sessionStorage.getItem('fl_admin_tok');
+    if (cached) return cached;
+  } catch(_) {}
+  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
+  if (!blob || !blob.encrypted) return '';
+  const pin = await adminPinPrompt('Enter your PIN to unlock driver management on this device.');
+  if (!pin) return '';
+  try {
+    const tok = await cloudDecrypt(blob.encrypted, blob.iv, blob.salt, pin);
+    if (!tok) return '';
+    try { sessionStorage.setItem('fl_admin_tok', tok); } catch(_) {}
+    return tok;
+  } catch(_) {
+    // cloudDecrypt's message names the failure mode, not the value. Do not
+    // surface the exception text — an error string is one of the classic ways a
+    // secret escapes into a log.
+    toast('Could not unlock admin access', true);
+    return '';
+  }
+}
+
+/** Verify an admin token against the Worker, then persist it encrypted.
+ *  Persists ONLY on a 200 — a rejected token is never written to disk. */
+async function cloudAdminSaveAccess(){
+  const field = $('#adminToken');
+  const token = (field?.value || '').trim();
+  const state = $('#adminAccessState');
+  if (!token){ toast('Enter the admin token', true); return false; }
+  if (!(await cloudAdminPinAvailable())){
+    toast('Turn on App Lock first — the admin token is stored encrypted under your PIN', true);
+    return false;
+  }
+  if (state) state.innerHTML = '<span class="cloud-sync-spinner"></span> Checking...';
+  let res;
+  try {
+    res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': token } }, 10000);
+  } catch(_) {
+    if (state) state.innerHTML = '<span style="color:var(--bad)">Could not reach the server — nothing saved.</span>';
+    return false;
+  }
+  if (!res.ok){
+    // 401 is the answer that matters: a wrong token must leave no trace on disk.
+    if (state) state.innerHTML = '<span style="color:var(--bad)">' + (res.status === 401 ? 'That token was rejected — nothing saved.' : 'Server returned ' + res.status + ' — nothing saved.') + '</span>';
+    return false;
+  }
+  const pin = await adminPinPrompt('Enter your PIN. It encrypts admin access on this device.');
+  if (!pin){ if (state) state.innerHTML = '<span class="muted">Cancelled — nothing saved.</span>'; return false; }
+  const blob = await cloudEncrypt(token, pin);
+  await setSetting(ADMIN_TOKEN_SETTING, blob);
+  try { sessionStorage.setItem('fl_admin_tok', token); } catch(_) {}
+  // Clear the field immediately. The value is never re-rendered after this.
+  if (field) field.value = '';
+  toast('Admin access saved');
+  await renderAdminAccessState();
+  await cloudAdminLoadUsers();
+  return true;
+}
+
+/** Forget admin access on this device. The Worker is untouched. */
+async function cloudAdminClearAccess(){
+  if (!confirm('Forget admin access on this device?\n\nDriver accounts and their backups are not affected. You can set it up again with the admin token.')) return;
+  await setSetting(ADMIN_TOKEN_SETTING, null);
+  try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+  const list = $('#adminUserList'); if (list) list.innerHTML = '';
+  toast('Admin access cleared');
+  await renderAdminAccessState();
+}
+
+/** Render the empty / configured / needs-App-Lock states of the admin panel.
+ *  The stored token is never written back into the input — the configured state
+ *  shows a confirmation, not a value. */
+async function renderAdminAccessState(){
+  const setup = $('#adminSetupBlock');
+  const state = $('#adminAccessState');
+  const drivers = $('#adminDriversBlock');
+  if (!setup || !state) return;
+  const hasAccess = await cloudAdminHasAccess();
+  const hasPin = await cloudAdminPinAvailable();
+
+  if (hasAccess){
+    setup.style.display = 'none';
+    if (drivers) drivers.style.display = '';
+    state.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+      '<span style="color:var(--good);font-weight:700">Admin access configured ✓</span>' +
+      '<button class="btn sm" id="btnAdminClearAccess" style="font-size:11px;min-height:44px">Clear</button></div>' +
+      '<div class="muted" style="font-size:11px;margin-top:6px">Stored encrypted under your PIN on this device.</div>';
+    $('#btnAdminClearAccess')?.addEventListener('click', ()=>{ haptic(10); cloudAdminClearAccess(); });
+    return;
+  }
+
+  setup.style.display = '';
+  if (drivers) drivers.style.display = 'none';
+  state.innerHTML = hasPin
+    ? '<span class="muted">Not configured on this device.</span>'
+    : '<span style="color:var(--warn)">Turn on App Lock first.</span><div class="muted" style="font-size:11px;margin-top:4px">Admin access is stored encrypted under your PIN, so a PIN has to exist before it can be saved.</div>';
+}
+
+/* ── Owner: Drivers ──────────────────────────────────────────────────────────
+ *
+ * The word "token" appears nowhere on this surface, by design. The owner
+ * invites a person and shares a link; the credential is an implementation
+ * detail they neither see nor handle.
+ */
+
+/** Mint an invite and hand back a shareable link.
+ *
+ *  `existingUserId` is what makes RE-INVITE safe. Passing it binds the invite to
+ *  that account, so claiming it re-keys in place: same driver, same backups,
+ *  fresh token. Omitting it creates a new driver. Getting this wrong is not a
+ *  cosmetic difference — every backup is keyed on `userId`, so a re-invite that
+ *  minted a new one would orphan the driver's entire history while looking like
+ *  it worked. */
+async function cloudAdminInviteDriver(existingUserId, existingName){
+  const adminToken = await cloudAdminResolveToken();
+  if (!adminToken){ toast('Admin access required', true); return; }
+  const isReinvite = !!existingUserId;
+  // A re-invite does not ask for a name: the account already has one, and the
+  // Worker ignores a supplied name for a bound invite so a re-invite cannot
+  // quietly rename the driver.
+  const name = isReinvite
+    ? String(existingName || 'Driver')
+    : String(prompt('Driver name:', '') || '').trim();
+  if (!name) return;
+  if (isReinvite && !confirm('Send a new invite link to "' + name + '"?\n\nTheir account and every backup they have made are kept. Their current device stops backing up as soon as the new link is used, so it has to be the device that opens it.')) return;
+  haptic(20);
+  let data;
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/invites', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(isReinvite ? { name, userId: existingUserId } : { name }),
+    }, 15000);
+    data = await res.json().catch(()=>null);
+    if (!res.ok || !data?.ok){
+      if (res.status === 401){
+        // The saved token has stopped working (rotated at the Worker, most
+        // likely). Drop the session copy so the next attempt re-derives it.
+        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+        toast('Admin access was rejected — set it up again', true);
+        return;
+      }
+      toast(data?.error || 'Could not create the invite', true);
+      return;
+    }
+  } catch(_) {
+    toast('Network error creating the invite', true);
+    return;
+  }
+  cloudAdminShowInvite(data.code, data.name || name, data.expiresAt);
+  cloudAdminLoadUsers();
+}
+
+/** Format an expiry as something a person can act on ("Thu 6:14 PM"). */
+function claimExpiryLabel(iso){
+  try {
+    const d = new Date(iso);
+    if (!isFinite(d.getTime())) return '';
+    return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  } catch(_) { return ''; }
+}
+
+/** Build the invite URL. The code goes in the FRAGMENT so it is never sent to
+ *  any origin — not this app's, and not an intermediary's. */
+function claimInviteLink(code){
+  return window.location.origin + window.location.pathname + '#i=' + encodeURIComponent(code);
+}
+
+/** Share sheet for a fresh invite. Shows the EXPIRY, never the code.
+ *  The code is inside the link because it has to be; it is not displayed as a
+ *  value to be read out, retyped, or screenshotted on its own. */
+function cloudAdminShowInvite(code, name, expiresAt){
+  const link = claimInviteLink(code);
+  const when = claimExpiryLabel(expiresAt);
+  const text = 'You\'re set up on FreightLogic. Open this link on your phone to finish:\n\n' + link + '\n\nPick a passphrase when it asks. The link stops working ' + (when ? 'after ' + when : 'in 72 hours') + '.';
+  const body = document.createElement('div');
+  body.innerHTML =
+    '<div style="font-size:14px;line-height:1.5;margin-bottom:10px">Invite ready for <b>' + escapeHtml(name) + '</b>.</div>' +
+    '<div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:14px">Send them the link. When they open it they pick their own passphrase and the app finishes setup by itself.' +
+    (when ? ' <b>Link works until ' + escapeHtml(when) + '.</b>' : '') + '</div>' +
+    '<button class="btn primary" id="adminInviteShare" style="width:100%;min-height:48px">Share invite link</button>' +
+    '<div id="adminInviteFallback" style="display:none;margin-top:10px">' +
+      '<div class="btn-row"><a class="btn" id="adminInviteSms" style="flex:1;min-height:48px;text-align:center;line-height:32px">Text it</a>' +
+      '<a class="btn" id="adminInviteMail" style="flex:1;min-height:48px;text-align:center;line-height:32px">Email it</a></div>' +
+      '<button class="btn sm" id="adminInviteCopy" style="width:100%;margin-top:8px;min-height:44px;font-size:12px">Copy link</button>' +
+    '</div>';
+  openModal('📨 Invite ' + name, body);
+
+  const showFallback = ()=>{
+    const fb = $('#adminInviteFallback', body);
+    if (fb) fb.style.display = '';
+    const sms = $('#adminInviteSms', body);
+    const mail = $('#adminInviteMail', body);
+    if (sms) sms.href = 'sms:?&body=' + encodeURIComponent(text);
+    if (mail) mail.href = 'mailto:?subject=' + encodeURIComponent('Your FreightLogic setup link') + '&body=' + encodeURIComponent(text);
+  };
+
+  $('#adminInviteShare', body)?.addEventListener('click', function(){
+    haptic(10);
+    if (navigator.share){
+      navigator.share({ title: 'FreightLogic setup', text: text, url: link }).catch(()=> showFallback());
+    } else {
+      showFallback();
+    }
+  });
+  $('#adminInviteCopy', body)?.addEventListener('click', function(){
+    try {
+      navigator.clipboard.writeText(link).then(function(){ toast('Invite link copied'); }, function(){ toast('Copy failed — use Text or Email', true); });
+    } catch(_) { toast('Copy failed — use Text or Email', true); }
+  });
+  if (!navigator.share) showFallback();
+}
+
+/** Revoke a driver. The Worker deactivates the account and deletes the token
+ *  hash, which also kills any invite they are still holding (v18 returns 403
+ *  for a claim against a revoked driver). */
+/** The Drivers list.
+ *
+ *  v24.0.13: the controls are Re-invite and Remove. The word "token" does not
+ *  appear on this surface — the owner manages PEOPLE, and the credential is an
+ *  implementation detail they neither see nor handle. "Re-invite" is the
+ *  rotation path now: the Worker's claim handler re-keys the SAME userId, so a
+ *  driver who changed phones keeps every backup they have ever made.
+ *
+ *  This reads the session copy of the admin token only. It never prompts for a
+ *  PIN, because it is called on panel-open and from refresh — a render must not
+ *  be able to throw a credential prompt at the operator. The prompting entry
+ *  points are the actions (invite, re-invite, remove). */
+async function cloudAdminLoadUsers(){
+  const list = $('#adminUserList'); if (!list) return;
+  let adminToken = '';
+  try { adminToken = sessionStorage.getItem('fl_admin_tok') || ''; } catch(_) {}
+  if (!adminToken){
+    list.innerHTML = (await cloudAdminHasAccess())
+      ? '<div class="muted" style="font-size:12px">Locked — tap <b>Invite driver</b> and enter your PIN to load the list.</div>'
+      : '';
+    return;
+  }
+  list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': adminToken } }, 10000);
+    if (!res.ok){
+      if (res.status === 401){
+        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
+        list.innerHTML = '<div class="muted" style="font-size:12px">Admin access was rejected. Clear it and set it up again.</div>';
+      } else { list.innerHTML = '<div class="muted" style="font-size:12px">Server returned ' + res.status + '</div>'; }
+      return;
+    }
+    const data = await res.json();
+    if (!data.users?.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No drivers yet — tap Invite driver.</div>'; return; }
+    list.innerHTML = data.users.map(function(u){
+      // Re-invite is offered only for an ACTIVE driver: a claim against a
+      // revoked account returns 403, so offering it would be a dead button.
+      var actions = u.active
+        ? '<div class="btn-row" style="margin-top:8px">' +
+            '<button class="btn sm" data-reinvite="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">📨 Re-invite</button>' +
+            '<button class="btn sm" data-revoke="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">Remove</button>' +
+          '</div>'
+        : '';
+      return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Removed') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · added ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div>' + actions + '</div>';
+    }).join('');
+    list.querySelectorAll('[data-reinvite]').forEach(function(btn){
+      btn.addEventListener('click', function(){ cloudAdminInviteDriver(btn.dataset.reinvite, btn.dataset.dname); });
+    });
+    list.querySelectorAll('[data-revoke]').forEach(function(btn){
+      btn.addEventListener('click', function(){ cloudAdminRevokeDriver(btn.dataset.revoke, btn.dataset.dname); });
+    });
+  } catch(e) { list.innerHTML = '<div class="muted" style="font-size:12px">Network error</div>'; }
+}
+
+async function cloudAdminRevokeDriver(userId, name){
+  const adminToken = await cloudAdminResolveToken();
+  if (!adminToken){ toast('Admin access required', true); return; }
+  if (!confirm('Remove "' + (name || userId) + '"?\n\nTheir app stops backing up immediately and any invite link they still have stops working. Backups already stored are kept.')) return;
+  haptic(20);
+  try {
+    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users/' + encodeURIComponent(userId), {
+      method: 'DELETE', headers: { 'X-Admin-Token': adminToken },
+    }, 15000);
+    const data = await res.json().catch(()=>null);
+    if (!res.ok || !data?.ok){ toast(data?.error || 'Could not remove that driver', true); return; }
+    toast('Driver removed');
+    cloudAdminLoadUsers();
+  } catch(_) {
+    toast('Network error', true);
+  }
+}
+
+/* ── Driver: claim ───────────────────────────────────────────────────────────
+ *
+ * The three properties in the header comment are implemented here. Read
+ * `flCaptureClaimCode()` with property 2 in mind: it is synchronous on purpose,
+ * top to bottom, with no `await` anywhere in it.
+ */
+
+/** Capture an invite code from `#i=` and strip it from the URL.
+ *
+ *  MUST be called synchronously, before the first `await` of boot. It is
+ *  synchronous throughout so that between reading `location.hash` and calling
+ *  `history.replaceState` there is no point at which the event loop can run
+ *  anything else — no error reporter, no analytics shim, no screenshot — while
+ *  a live invite code is sitting in the address bar.
+ *
+ *  Returns the code, or null. Never logs it. */
+function flCaptureClaimCode(){
+  try {
+    const frag = String(window.location.hash || '').slice(1);
+    if (!frag.startsWith('i=')) return null;
+    const code = decodeURIComponent(frag.slice(2)).toUpperCase().trim();
+    // Strip FIRST, validate second: even a malformed value should not survive
+    // in the URL, and replaceState cannot throw here in a way that matters.
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch(_) {}
+    if (!CLAIM_CODE_RE.test(code)) return null;
+    return code;
+  } catch(_) { return null; }
+}
+
+/** Redeem a code for a token and connect cloud backup under `passphrase`.
+ *  Returns { ok, error } — the token never appears in the return value, and
+ *  never in `error`. */
+async function claimInvite(code, passphrase){
+  let res;
+  try {
+    res = await cloudFetch(CLOUD_WORKER_URL + '/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }, 20000);
+  } catch(_) {
+    return { ok: false, error: 'Could not reach the server. Check your connection and try again.' };
+  }
+  if (res.status === 410) return { ok: false, error: 'This invite has expired or was already used. Ask for a new link.' };
+  if (res.status === 429) return { ok: false, error: 'Too many attempts, try again in an hour.' };
+  if (res.status === 403) return { ok: false, error: 'This account is no longer active. Ask for a new link.' };
+  if (res.status === 400) return { ok: false, error: 'That invite link is not valid.' };
+  let data = null;
+  try { data = await res.json(); } catch(_) {}
+  if (!res.ok || !data?.ok || !data.token) return { ok: false, error: 'Setup failed. Ask for a new link.' };
+
+  // Write once. From here the token is a stored credential and is never read
+  // back into any UI, export, log, or error message.
+  await setSetting('cloudBackupUrl', CLOUD_WORKER_URL);
+  await setSetting('cloudBackupToken', data.token);
+  try { sessionStorage.setItem('fl_cloud_pass', passphrase); } catch(_) {}
+  if (data.name) await setSetting('driverDisplayName', String(data.name).slice(0, 50));
+  await setSetting('lastCloudSync', 0);
+  return { ok: true };
+}
+
+/** Full-screen claim wizard. No app chrome and no nav: a driver opening an
+ *  invite link has nothing in the app yet, and every other surface would be an
+ *  empty distraction from the one thing they need to do.
+ *
+ *  It is a REAL credential form — a `<form>`, a visible read-only
+ *  `autocomplete="username"` field carrying `localUserId`, an
+ *  `autocomplete="new-password"` field, and a genuine `type="submit"` — for the
+ *  same reason `openCloudReconnect()` is (v24.0.6): a password manager keys its
+ *  save prompt off a real submit event and ignores a `display:none` username
+ *  field. The account value MUST match the one `openCloudReconnect()` declares,
+ *  or the credential saved here is not the credential offered back later and the
+ *  driver types a 10+ character passphrase on a phone every time the session
+ *  ends. That is the friction the whole cloud-backup-paused design exists to
+ *  remove, and it is removed by the OS keychain, never by persisting the secret:
+ *  `fl_cloud_pass` stays sessionStorage-only here exactly as it does there. */
+async function openClaimWizard(code){
+  const acct = (await getSetting('localUserId', '')) || 'freightlogic';
+  const host = document.createElement('div');
+  host.id = 'claimWizard';
+  host.setAttribute('role', 'dialog');
+  host.setAttribute('aria-modal', 'true');
+  host.style.cssText = 'position:fixed;inset:0;z-index:12000;background:var(--bg,#0b0d10);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:max(24px,env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))';
+  host.innerHTML =
+    '<div style="max-width:440px;margin:0 auto">' +
+      '<div style="font-size:26px;font-weight:800;line-height:1.25;margin-bottom:10px">You\'ve been invited to FreightLogic.</div>' +
+      '<div class="muted" style="font-size:14px;line-height:1.6;margin-bottom:22px">Pick a passphrase to encrypt your backups. It never leaves this phone.</div>' +
+      '<form id="claimForm" autocomplete="on">' +
+        '<label for="claimAcct">Account</label>' +
+        '<input id="claimAcct" name="username" type="text" autocomplete="username" readonly value="' + escapeHtml(acct) + '" ' +
+          'style="font-size:16px;opacity:.75" aria-label="Account this passphrase belongs to" />' +
+        '<div class="muted" style="font-size:11px;margin-top:4px;margin-bottom:12px">This device\'s account. Save the passphrase to your keychain when your phone offers — it is how you get back in without typing it again.</div>' +
+        '<label for="claimPass">Passphrase</label>' +
+        '<input id="claimPass" name="new-password" type="password" autocomplete="new-password" placeholder="At least ' + CLAIM_MIN_PASS_LEN + ' characters" style="font-size:16px" />' +
+        '<div class="pass-strength" id="claimStrength"><div class="pass-strength-fill" id="claimStrengthFill"></div></div>' +
+        '<div class="muted" style="font-size:12px;margin-top:4px;min-height:16px" id="claimStrengthLabel"></div>' +
+        '<label for="claimPass2" style="margin-top:14px">Confirm passphrase</label>' +
+        '<input id="claimPass2" name="confirm-password" type="password" autocomplete="new-password" placeholder="Type it again" style="font-size:16px" />' +
+        '<div class="muted" style="font-size:12px;margin-top:4px;min-height:16px" id="claimMatch"></div>' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:18px;font-size:13px;line-height:1.5;cursor:pointer;font-weight:400">' +
+          '<input id="claimAck" type="checkbox" style="width:22px;height:22px;flex:0 0 auto;margin-top:1px" />' +
+          '<span>I\'ve saved this passphrase. It cannot be reset &mdash; if I lose it, my backups can\'t be decrypted.</span>' +
+        '</label>' +
+        '<button class="btn primary" id="claimGo" type="submit" style="width:100%;margin-top:20px;min-height:52px;font-size:16px;font-weight:800" disabled>Continue</button>' +
+        '<div id="claimError" style="margin-top:12px;font-size:13px;line-height:1.5;min-height:18px"></div>' +
+      '</form>' +
+    '</div>';
+  document.body.appendChild(host);
+
+  const pass = $('#claimPass', host);
+  const pass2 = $('#claimPass2', host);
+  const ack = $('#claimAck', host);
+  const go = $('#claimGo', host);
+  const err = $('#claimError', host);
+
+  // Continue stays disabled until all three hold: long enough, confirmed, and
+  // acknowledged. The passphrase is unrecoverable by design, so a driver must
+  // not be able to tap past this on momentum.
+  const refresh = ()=>{
+    const p = pass?.value || '', p2 = pass2?.value || '';
+    const str = cloudPassStrength(p);
+    const fill = $('#claimStrengthFill', host);
+    const label = $('#claimStrengthLabel', host);
+    if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; }
+    if (label){
+      if (!p) label.textContent = '';
+      else if (p.length < CLAIM_MIN_PASS_LEN){ label.textContent = 'At least ' + CLAIM_MIN_PASS_LEN + ' characters'; label.style.color = 'var(--warn)'; }
+      else { label.textContent = str.label; label.style.color = str.color; }
+    }
+    const match = $('#claimMatch', host);
+    const confirmed = !!p2 && p === p2;
+    if (match){
+      if (!p2) match.textContent = '';
+      else if (confirmed){ match.textContent = 'Matches'; match.style.color = 'var(--good)'; }
+      else { match.textContent = 'Does not match yet'; match.style.color = 'var(--warn)'; }
+    }
+    const valid = p.length >= CLAIM_MIN_PASS_LEN && confirmed && !!ack?.checked;
+    if (go) go.disabled = !valid;
+    return valid;
+  };
+  pass?.addEventListener('input', refresh);
+  pass2?.addEventListener('input', refresh);
+  ack?.addEventListener('change', refresh);
+  refresh();
+
+  let inFlight = false;
+  $('#claimForm', host)?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    if (inFlight || !refresh()) return;
+    inFlight = true;
+    if (go){ go.disabled = true; go.textContent = 'Setting up...'; }
+    if (err){ err.textContent = ''; }
+    const result = await claimInvite(code, pass.value);
+    if (!result.ok){
+      inFlight = false;
+      if (go){ go.disabled = false; go.textContent = 'Continue'; }
+      if (err){ err.textContent = result.error; err.style.color = 'var(--bad)'; }
+      return;
+    }
+    host.remove();
+    toast('You\'re connected — backups are on.');
+    try { await cloudPushBackup(true); } catch(_) {}
+    try { await renderHome(); } catch(_) {}
+    maybePromptAddToHomeScreen();
+  });
+
+  setTimeout(()=>{ try { pass?.focus(); } catch(_) {} }, 120);
+}
+
+/** One-time "Add to Home Screen" nudge after a successful claim.
+ *  iOS has no install prompt API, so this is the instruction, shown once. */
+function maybePromptAddToHomeScreen(){
+  try {
+    const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
+    if (standalone) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div style="font-size:14px;line-height:1.6;margin-bottom:10px">Add FreightLogic to your Home Screen so it opens like an app and works offline.</div>' +
+      (isIOS
+        ? '<div class="muted" style="font-size:13px;line-height:1.7">1. Tap the <b>Share</b> button at the bottom of Safari<br>2. Scroll and tap <b>Add to Home Screen</b><br>3. Tap <b>Add</b></div>' +
+          '<div class="muted" style="font-size:12px;line-height:1.5;margin-top:12px">If it asks you to set up again from the Home Screen version, open your invite link there once more — it\'s the same account and nothing is lost.</div>'
+        : '<div class="muted" style="font-size:13px;line-height:1.7">Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.</div>') +
+      '<button class="btn primary" id="claimAhsOk" style="width:100%;margin-top:16px;min-height:48px">Got it</button>';
+    openModal('📲 One more thing', body);
+    $('#claimAhsOk', body)?.addEventListener('click', ()=> closeModal());
+  } catch(_) {}
+}
+
+// v24.0.13 REMOVED: cloudAdminCreateUser(), cloudAdminShare(),
+// cloudAdminRotateToken() and the token-based cloudAdminShowInvite().
+//
+// These were the raw-token onboarding paths. Each one ended by rendering an
+// `flk_` bearer token into the DOM as a "#token=" setup link for the owner to
+// send by message or email — which is precisely the exposure the invite claim
+// code replaces. Leaving them in place would have kept a live second path that
+// still put a permanent credential in an inbox, so the feature would be opt-in
+// rather than true.
+//
+// Removing the old cloudAdminShowInvite() also fixes a real shadowing bug this
+// change would otherwise have shipped. Two top-level declarations of that name
+// stood in the same IIFE scope, so hoisting made the LATER (token-based) one
+// win at EVERY call site — including the new invite flow, which would have
+// silently rendered a token instead of a claim link. That is the same defect
+// v23.8.3 found with two getBrokerIntel() declarations, and CLAUDE.md records
+// it; it is caught here by reading the declarations, not by the symptom.
+//
+// Rotation is not lost: "Re-invite" on the Drivers list issues a fresh claim
+// code, and the Worker re-keys the SAME userId on re-claim, so a rotated driver
+// keeps every backup. POST /admin/users/:id/rotate remains in the Worker for
+// direct API use.
+
+function cloudInitUI(){
+  var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
+  makeToggle('#btnPassToggle', '#cloudBackupPass');
+  makeToggle('#btnTokenToggle', '#cloudBackupToken');
+  makeToggle('#btnAdminTokenToggle', '#adminToken');
+  $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
+  $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
+  $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
+  $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
+  $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
+  // v24.0.13: opening the panel no longer re-populates #adminToken from the
+  // session copy. A configured admin token is never rendered back into an input
+  // — the panel shows "Admin access configured ✓" instead, and the value itself
+  // stays where it is. Putting it back in a field is how a credential ends up in
+  // a screenshot, an autofill store, or a shoulder-surf.
+  $('#btnAdminToggle')?.addEventListener('click', async ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ await renderAdminAccessState(); await cloudAdminLoadUsers(); } });
+  $('#btnAdminSaveAccess')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminSaveAccess(); });
+  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminInviteDriver(null, null); });
+  $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
+  $('#btnCloudClear')?.addEventListener('click', async ()=>{
+    if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
+    await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
+    _lastCloudSync = 0; _cloudLastStatus = null;
+    var pe = $('#cloudBackupPass'); if (pe) pe.value = ''; var te = $('#cloudBackupToken'); if (te) te.value = '';
+    toast('Cloud backup disconnected'); cloudRefreshButtons(); cloudRefreshStatusPanel();
+  });
+  cloudRefreshButtons(); cloudRefreshStatusPanel();
+}
+
+function cloudScheduleRetry(){
+  if (_cloudRetryCount >= CLOUD_MAX_RETRIES){ _cloudRetryCount = 0; return; }
+  _cloudRetryCount++; var delay = CLOUD_RETRY_BASE_MS * Math.pow(2, _cloudRetryCount - 1);
+  setTimeout(async ()=>{ if (await cloudIsEnabled()) await cloudPushBackup(true); }, delay);
+}
+
+function cloudScheduleSync(){
+  // Record the intent durably before arming an in-memory timer that a tab close
+  // destroys (#240 defect 2). Fire-and-forget on purpose: all 27 mutation call
+  // sites call this synchronously and must not be made to await an IndexedDB
+  // write to save a trip. `markSyncDirty` is returned so a caller that needs
+  // the marker settled — a test, resumeSyncIfPending — can await it.
+  const marked = markSyncDirty();
+  if (_cloudSyncTimer) clearTimeout(_cloudSyncTimer);
+  _cloudSyncTimer = setTimeout(async ()=>{ _cloudSyncTimer = null; if (await cloudIsEnabled()) await cloudPushBackup(true); }, CLOUD_SYNC_DEBOUNCE);
+  return marked;
+}
+
+// ── v15.3.0: Emergency auto-backup on tab close/hide ──
+let _lastAutoBackup = 0;
+const AUTO_BACKUP_INTERVAL = 300000; // 5 min minimum between auto-backups
+async function emergencyAutoBackup(){
+  try{
+    const now = Date.now();
+    if (now - _lastAutoBackup < AUTO_BACKUP_INTERVAL) return;
+    _lastAutoBackup = now;
+    const trips = await dumpStore('trips');
+    const expenses = await dumpStore('expenses');
+    const fuel = await dumpStore('fuel');
+    if (!trips.length && !expenses.length && !fuel.length) return;
+    const snapshot = {
+      meta: { app:'FreightLogic', version:APP_VERSION, autoBackup:true, savedAt:new Date().toISOString(),
+              counts:{ trips:trips.length, expenses:expenses.length, fuel:fuel.length } },
+      trips, expenses, fuel
+    };
+    let json = JSON.stringify(snapshot);
+    // Full dump fits — save it (sessionStorage: cleared on tab close, not persisted to disk)
+    if (json.length < 4_000_000){
+      sessionStorage.setItem('fl_emergency_backup', json);
+      sessionStorage.setItem('fl_emergency_backup_ts', String(now));
+    } else {
+      // Full dump too large — fallback: save most recent records to preserve current work
+      const recentTrips = trips.sort((a,b) => (b.created||0) - (a.created||0)).slice(0, 20);
+      const recentExps = expenses.sort((a,b) => (b.created||0) - (a.created||0)).slice(0, 50);
+      const recentFuel = fuel.sort((a,b) => (b.created||0) - (a.created||0)).slice(0, 50);
+      const partial = {
+        meta: { app:'FreightLogic', version:APP_VERSION, autoBackup:true, partial:true, savedAt:new Date().toISOString(),
+                counts:{ trips:recentTrips.length, expenses:recentExps.length, fuel:recentFuel.length },
+                totalCounts:{ trips:trips.length, expenses:expenses.length, fuel:fuel.length } },
+        trips: recentTrips, expenses: recentExps, fuel: recentFuel
+      };
+      const partialJson = JSON.stringify(partial);
+      if (partialJson.length < 4_000_000){
+        sessionStorage.setItem('fl_emergency_backup', partialJson);
+        sessionStorage.setItem('fl_emergency_backup_ts', String(now));
+      }
+      // If even partial is too large, we can't help — cloud backup is the safety net
+    }
+  }catch(e){ console.warn('[FL] Auto-backup failed:', e); }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'hidden'){
+    emergencyAutoBackup();
+    cloudPushBackup(true).catch(()=>{});
+  } else if (document.visibilityState === 'visible'){
+    if (_lastCloudSync > 0 && (Date.now() - _lastCloudSync) > 300000){
+      cloudPushBackup(true).catch(()=>{});
+    }
+    cloudRefreshStatusPanel();
+  }
+});
+// emergencyAutoBackup is async — not viable in beforeunload (browser won't wait).
+// The visibilitychange handler above (document hidden) is the reliable path.
+
+
+// ── v15.3.0: Offline/Online indicator ──
+function _updateOnlineStatus(){
+  const isOff = !navigator.onLine;
+  let banner = document.getElementById('offlineBanner');
+  if (isOff && !banner){
+    banner = document.createElement('div');
+    banner.id = 'offlineBanner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;padding:6px 16px;background:#ff6b6b;color:#fff;font-size:12px;font-weight:600;text-align:center;letter-spacing:.5px';
+    banner.textContent = 'OFFLINE — Data is saved locally. Some features require connection.';
+    document.body.appendChild(banner);
+  } else if (!isOff && banner){
+    banner.remove();
+  }
+}
+window.addEventListener('online', _updateOnlineStatus);
+window.addEventListener('offline', _updateOnlineStatus);
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 2-5
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F2: Quick Eval Flow ──────────────────────────────────────────────────
+function openQuickEvalFlow(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="text-align:center;padding:12px 0 4px">
+      <div style="font-size:40px;margin-bottom:8px">📸</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Snap a load board screenshot</div>
+      <div class="muted" style="font-size:13px;line-height:1.5">Take a photo or pick from gallery — the app will scan for load details and score it instantly.</div>
+    </div>
+    <div class="btn-row" style="margin-top:20px;flex-direction:column;gap:10px">
+      <button class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
+      <button class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
+    </div>
+    <input type="file" id="qeCameraInput" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="qeGalleryInput" accept="image/*" style="display:none">
+    <div id="qeStatus" style="display:none;margin-top:16px;text-align:center;padding:16px;background:var(--surface-0);border-radius:var(--r-sm)">
+      <div style="font-size:28px;margin-bottom:8px">⏳</div>
+      <div style="font-size:14px;font-weight:600" id="qeStatusMsg">Scanning load…</div>
+      <div class="muted" style="font-size:12px;margin-top:4px" id="qeStatusSub">Running OCR engine</div>
+    </div>`;
+  openModal('⚡ Quick Eval', body);
+
+  const setStatus = (icon, msg, sub='') => {
+    $('#qeStatus', body).style.display = '';
+    $('#qeStatus', body).querySelector('div').textContent = icon;
+    $('#qeStatusMsg', body).textContent = msg;
+    $('#qeStatusSub', body).textContent = sub;
+  };
+
+  async function processQuickEval(file){
+    if (!file || !file.type.startsWith('image/')){ toast('Please select an image', true); return; }
+    setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
+    try {
+      const worker = await loadTesseract();
+      // Issue #220: this path never tested the result, so an absent engine
+      // surfaced as a TypeError on `worker.recognize` instead of an explanation.
+      if (!worker){ setStatus('❌','OCR not installed','Paste or dictate the load instead — see README.txt for the offline OCR engine'); return; }
+      setStatus('🔍','Scanning load…','Reading text from image');
+      const { data } = await worker.recognize(file);
+      const text = data.text || '';
+      if (!text.trim()){ setStatus('❌','No text found','Try a clearer photo with good lighting'); return; }
+      const parsed = parseLoadTextEnhanced(text);
+      const hasData = parsed.origin || parsed.destination || parsed.pay || parsed.loadedMiles;
+      closeModal();
+      // Navigate to evaluator and fill fields
+      location.hash = '#omega';
+      setTimeout(() => {
+        if (parsed.origin) { const el = $('#mwOrigin'); if (el) el.value = parsed.origin; }
+        if (parsed.destination) { const el = $('#mwDest'); if (el) el.value = parsed.destination; }
+        if (parsed.loadedMiles) { const el = $('#mwLoadedMi'); if (el) el.value = parsed.loadedMiles; }
+        if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
+        if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
+        if (parsed.customer) { const el = $('#mwBroker'); if (el) el.value = parsed.customer; }
+        if (hasData){
+          try { mwEvaluateLoad(); } catch(e){ console.warn('[FL] auto-evaluate after scan failed:', e); }
+          toast('✓ Load scanned — verify fields and hit Evaluate');
+        } else {
+          toast('Scan complete — fill in any missing fields', false);
+        }
+      }, 80);
+    } catch(err){
+      setStatus('❌','Scan failed', String(err.message||err).slice(0,80));
+    }
+  }
+
+  $('#qeCamera', body).addEventListener('click', ()=>{ haptic(); $('#qeCameraInput', body).click(); });
+  $('#qeGallery', body).addEventListener('click', ()=>{ haptic(); $('#qeGalleryInput', body).click(); });
+  $('#qeCameraInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+  $('#qeGalleryInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
+}
+
+// ── F3: Broker Intelligence Alerts ──────────────────────────────────────
+// NOTE: renamed from getBrokerIntel() — a second, unrelated top-level
+// getBrokerIntel() (the v24.0.0 bidHistory aggregator) was declared later in this
+// same IIFE scope and silently shadowed this one at every call site via hoisting,
+// so renderBrokerAlert() received the bidHistory record shape and threw on
+// `avgRPM.toFixed()`. This one reads `trips`; the bidHistory one keeps the old name.
+async function getBrokerTripIntel(company){
+  if (!company || company.length < 2) return null;
+  const norm = company.trim().toLowerCase();
+  try {
+    const all = await dumpStore('trips');
+    const matches = all.filter(t => ((t.customer||'').toLowerCase().includes(norm) || norm.includes((t.customer||'').toLowerCase().slice(0,6))) && !t.needsReview && tripHasKnownDeadhead(t));
+    if (!matches.length) return null;
+    let totalPay = 0, totalMiles = 0, totalDaysToPay = 0, payCount = 0, unpaidCount = 0, wouldRunCount = 0, wouldRunYes = 0;
+    for (const t of matches){
+      const pay = Number(t.pay||0);
+      const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      totalPay += pay;
+      totalMiles += miles;
+      if (tripIsUnpaid(t)) unpaidCount++;
+      if (t.isPaid && t.paidDate && t.invoiceDate){
+        const days = Math.max(0, Math.round((new Date(t.paidDate) - new Date(t.invoiceDate)) / 86400000));
+        if (days < 200){ totalDaysToPay += days; payCount++; }
+      }
+      if (t.wouldRunAgain !== null && t.wouldRunAgain !== undefined){ wouldRunCount++; if (t.wouldRunAgain) wouldRunYes++; }
+    }
+    const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+    const avgDaysPay = payCount > 0 ? Math.round(totalDaysToPay / payCount) : null;
+    const unpaidPct = Math.round((unpaidCount / matches.length) * 100);
+    const wouldRunPct = wouldRunCount > 0 ? Math.round((wouldRunYes / wouldRunCount) * 100) : null;
+    return { count: matches.length, avgRPM, avgDaysPay, unpaidCount, unpaidPct, wouldRunPct, totalPay };
+  } catch(e){ return null; }
+}
+
+function renderBrokerAlert(container, intel, company){
+  if (!container) return;
+  const existing = container.querySelector('.broker-intel-alert');
+  if (existing) existing.remove();
+  if (!intel) return;
+  const { count, avgRPM, avgDaysPay, unpaidPct, wouldRunPct } = intel;
+  // Color: green = fast pay + good RPM, red = slow pay or high unpaid
+  const isGreen = avgRPM >= 1.60 && (avgDaysPay === null || avgDaysPay <= 25) && unpaidPct < 10;
+  const isRed = unpaidPct >= 30 || (avgDaysPay !== null && avgDaysPay > 45) || avgRPM < 1.30;
+  const color = isGreen ? 'var(--good)' : isRed ? 'var(--bad)' : 'var(--warn)';
+  const bg = isGreen ? 'var(--good-muted)' : isRed ? 'var(--bad-muted)' : 'var(--warn-muted)';
+  const border = isGreen ? 'var(--good-border)' : isRed ? 'var(--bad-border)' : 'var(--warn-border)';
+  const icon = isGreen ? '✅' : isRed ? '🚨' : '⚠️';
+  const parts = [`${count} load${count!==1?'s':''}`, `$${avgRPM.toFixed(2)} avg RPM`];
+  if (avgDaysPay !== null) parts.push(`${avgDaysPay}d avg pay`);
+  else parts.push('pay unknown');
+  parts.push(`${unpaidPct}% unpaid`);
+  if (wouldRunPct !== null) parts.push(`${wouldRunPct}% would run again`);
+  const el = document.createElement('div');
+  el.className = 'broker-intel-alert';
+  el.style.cssText = `margin-top:6px;padding:8px 12px;border-radius:8px;background:${bg};border:1px solid ${border};font-size:12px;line-height:1.4`;
+  el.innerHTML = `<span style="font-weight:700;color:${color}">${icon} ${escapeHtml(company)}:</span> <span class="muted">${escapeHtml(parts.join(' · '))}</span>`;
+  container.appendChild(el);
+}
+
+function attachBrokerIntelToField(inputEl, containerEl){
+  if (!inputEl || !containerEl) return;
+  let _timer = null;
+  inputEl.addEventListener('input', ()=>{
+    clearTimeout(_timer);
+    _timer = setTimeout(async ()=>{
+      const val = (inputEl.value||'').trim();
+      if (val.length < 2){ const ex = containerEl.querySelector('.broker-intel-alert'); if (ex) ex.remove(); return; }
+      const intel = await getBrokerTripIntel(val);
+      renderBrokerAlert(containerEl, intel, val);
+    }, 350);
+  });
+}
+
+// ── F4: Lane Memory ──────────────────────────────────────────────────────
+const STATE_ABBRS = { alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY' };
+
+function normalizeLanePart(s){
+  let p = (s||'').trim().toLowerCase().replace(/[^a-z\s,]/g,'').replace(/\s+/g,' ');
+  // Replace full state name with abbreviation
+  for (const [name, abbr] of Object.entries(STATE_ABBRS)){
+    p = p.replace(new RegExp('\\b' + name + '\\b', 'i'), abbr.toLowerCase());
+  }
+  // Keep only city + state (first word group before/after comma)
+  const m = p.match(/^([a-z\s.]+?)(?:,\s*([a-z]{2}))?$/);
+  if (m) return (m[1].trim() + (m[2] ? ',' + m[2] : '')).trim();
+  return p.slice(0, 40).trim();
+}
+
+function normalizeLane(orig, dest){
+  return normalizeLanePart(orig) + '→' + normalizeLanePart(dest);
+}
+
+async function recordLaneHistory(trip){
+  if (!trip || !trip.origin || !trip.destination || trip.needsReview || !tripHasKnownDeadhead(trip)) return;
+  const pay = Number(trip.pay||0);
+  const loaded = Number(trip.loadedMiles||0);
+  const empty = Number(trip.emptyMiles||0);
+  const total = loaded + empty;
+  if (!pay || !total) return;
+  try {
+    const lane = normalizeLane(trip.origin, trip.destination);
+    const rpm = total > 0 ? roundCents(pay / total) : 0;
+    const pickupTs = trip.pickupDate ? new Date(trip.pickupDate).getTime() : null;
+    const deliveryTs = trip.deliveryDate ? new Date(trip.deliveryDate).getTime() : null;
+    const transitDays = (pickupTs && deliveryTs && deliveryTs > pickupTs) ? Math.round((deliveryTs - pickupTs) / 86400000) : null;
+    // Upsert: look for existing lane entry
+    const existing = await (async ()=>{
+      const {stores} = tx('laneHistory');
+      const idx = stores.laneHistory.index('lane');
+      return await idbReq(idx.getAll(lane));
+    })();
+    const now = Date.now();
+    if (existing && existing.length > 0){
+      // Update the existing aggregate entry
+      const rec = existing[0];
+      rec.count = (rec.count||1) + 1;
+      rec.totalPay = roundCents((rec.totalPay||0) + pay);
+      rec.totalMiles = (rec.totalMiles||0) + total;
+      rec.bestPay = Math.max(rec.bestPay||0, pay);
+      rec.avgRPM = rec.totalMiles > 0 ? roundCents(rec.totalPay / rec.totalMiles) : rpm;
+      if (transitDays !== null){ rec.totalTransitDays = (rec.totalTransitDays||0) + transitDays; rec.transitCount = (rec.transitCount||0) + 1; }
+      rec.avgTransitDays = rec.transitCount > 0 ? roundCents(rec.totalTransitDays / rec.transitCount) : null;
+      if (trip.wouldRunAgain !== null && trip.wouldRunAgain !== undefined){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (trip.wouldRunAgain) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      if (trip.isDZExit) rec.dzExitCount = (rec.dzExitCount || 0) + 1;
+      rec.lastDate = isoDate(); rec.updated = now;
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    } else {
+      const rec = { id: 'lane_' + lane.replace(/[^a-z0-9]/g,'_') + '_' + now, lane, count: 1, totalPay: pay, totalMiles: total, bestPay: pay, avgRPM: rpm,
+        totalTransitDays: transitDays||0, transitCount: transitDays !== null ? 1 : 0, avgTransitDays: transitDays,
+        wouldRunCount: (trip.wouldRunAgain!==null&&trip.wouldRunAgain!==undefined)?1:0, wouldRunYes: trip.wouldRunAgain?1:0,
+        dzExitCount: trip.isDZExit ? 1 : 0,
+        lastDate: isoDate(), created: now, updated: now, displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
+      const {t, stores} = tx('laneHistory','readwrite');
+      stores.laneHistory.put(rec);
+      await waitTxn(t);
+    }
+  } catch(e){ console.warn('[FL] recordLaneHistory:', e); }
+}
+
+async function getLaneIntel(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const {stores} = tx('laneHistory');
+    const idx = stores.laneHistory.index('lane');
+    const recs = await idbReq(idx.getAll(lane));
+    if (!recs || !recs.length) return null;
+    const r = recs[0];
+    if (!r.count || r.count < 1) return null;
+    return { ...r, wouldRunPct: r.wouldRunCount > 0 ? Math.round((r.wouldRunYes/r.wouldRunCount)*100) : null };
+  } catch(e){ return null; }
+}
+
+function renderLaneIntelHTML(intel){
+  if (!intel) return '';
+  const { count, avgRPM, bestPay, avgTransitDays, wouldRunPct, lastDate, displayOrigin, displayDest, dzExitCount } = intel;
+  const color = avgRPM >= 1.60 ? 'var(--good)' : avgRPM >= 1.35 ? 'var(--warn)' : 'var(--bad)';
+  const dzHtml = (dzExitCount > 0) ? `<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:${dzExitCount >= 3 ? 'rgba(255,80,80,.08)' : 'rgba(240,165,0,.07)'};border:1px solid ${dzExitCount >= 3 ? 'rgba(255,80,80,.25)' : 'rgba(240,165,0,.25)'};font-size:11px;color:${dzExitCount >= 3 ? 'var(--bad)' : '#f0a500'};font-weight:600">
+    ${dzExitCount >= 3 ? `⚠️ Trap Zone Alert: ${dzExitCount} Dead Zone exits from this origin — this market has repeatedly stranded you` : `🟠 Used ${dzExitCount}× as Dead Zone exit`}
+  </div>` : '';
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">🛣️ Lane Intel — Your History</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+      <div><span class="muted">Times run:</span> <b>${count}</b></div>
+      <div><span class="muted">Avg RPM:</span> <b style="color:${color}">$${(avgRPM||0).toFixed(2)}</b></div>
+      <div><span class="muted">Best pay:</span> <b>${fmtMoney(bestPay||0)}</b></div>
+      ${avgTransitDays ? `<div><span class="muted">Avg transit:</span> <b>${avgTransitDays} day${avgTransitDays!==1?'s':''}</b></div>` : '<div></div>'}
+      ${wouldRunPct !== null ? `<div><span class="muted">Would run again:</span> <b style="color:${wouldRunPct>=70?'var(--good)':wouldRunPct>=40?'var(--warn)':'var(--bad)'}">${wouldRunPct}%</b></div>` : '<div></div>'}
+      <div><span class="muted">Last run:</span> <b>${escapeHtml(lastDate||'—')}</b></div>
+    </div>
+    ${dzHtml}
+  </div>`;
+}
+
+
+// v24.0.0 PRE-v24: conservative bidHistory broker-integrity gate.
+// Only explicit broker-labelled evidence may repair legacy rows. Never infer a
+// broker from trip.customer: that field can represent carrier/company identity
+// and would silently recreate the attribution bug this gate is meant to stop.
+let _brokerIntegrityGatePromise = null;
+async function auditBrokerHistoryIntegrity(){
+  if (_brokerIntegrityGatePromise) return _brokerIntegrityGatePromise;
+  _brokerIntegrityGatePromise = (async () => {
+    const [bids, trips] = await Promise.all([dumpStore('bidHistory'), dumpStore('trips')]);
+    const tripByOrder = new Map();
+    for (const trip of trips || []){
+      const k = String(trip?.orderNo || '').trim();
+      if (k) tripByOrder.set(k, trip);
+    }
+    let normalized = 0, backfilled = 0, unresolved = 0;
+    const pending = [];
+    for (const rec of bids || []){
+      if (!rec || typeof rec !== 'object') continue;
+      const next = { ...rec };
+      const rawBroker = clampStr(rec.broker || '', 80);
+      const normalizedBroker = normBroker(rawBroker);
+      const loadKey = clampStr(rec.loadId || rec.orderNo || '', 60);
+      const matchedTrip = loadKey ? tripByOrder.get(loadKey) : null;
+      const explicitDisplay = clampStr(rec.brokerDisplay || rec.brokerName || '', 80);
+      const tripBroker = clampStr(matchedTrip?.broker || '', 80);
+      const provenDisplay = explicitDisplay || tripBroker;
+      let changed = false;
+
+      if (normalizedBroker && rawBroker !== normalizedBroker){
+        next.broker = normalizedBroker;
+        if (!next.brokerDisplay) next.brokerDisplay = rawBroker;
+        normalized++;
+        changed = true;
+      }
+
+      if ((!normalizedBroker || rec.legacyUnkeyed === true) && provenDisplay){
+        const provenKey = normBroker(provenDisplay);
+        if (provenKey){
+          next.broker = provenKey;
+          next.brokerDisplay = provenDisplay;
+          const origin = clampStr(rec.origin || matchedTrip?.origin || '', 80);
+          const destination = clampStr(rec.destination || matchedTrip?.destination || '', 80);
+          if (!next.lane && origin && destination) next.lane = normalizeLane(origin, destination);
+          next.legacyUnkeyed = false;
+          next.integrityBackfilledAt = Date.now();
+          next.integrityBackfillSource = explicitDisplay ? 'explicit-broker-field' : 'matched-trip-broker-field';
+          backfilled++;
+          changed = true;
+        }
+      }
+
+      if (!normBroker(next.broker || '') || next.legacyUnkeyed === true){
+        unresolved++;
+        if (next.legacyUnkeyed !== true){ next.legacyUnkeyed = true; changed = true; }
+      }
+      if (changed) pending.push(next);
+    }
+
+    if (pending.length){
+      const { t, stores } = tx('bidHistory', 'readwrite');
+      for (const rec of pending) stores.bidHistory.put(rec);
+      await new Promise((resolve, reject) => {
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error || new Error('Broker integrity transaction failed'));
+        t.onabort = () => reject(t.error || new Error('Broker integrity transaction aborted'));
+      });
+    }
+    const summary = { scanned: (bids || []).length, normalized, backfilled, unresolved, updated: pending.length, ts: Date.now() };
+    try { sessionStorage.setItem('fl_broker_integrity_summary', JSON.stringify(summary)); } catch(e) {}
+    if (unresolved) console.warn(`[FL] Broker integrity: ${unresolved} legacy row(s) remain unresolved; excluded from broker intelligence.`);
+    return summary;
+  })().catch(err => {
+    _brokerIntegrityGatePromise = null;
+    console.warn('[FL] Broker integrity gate failed', err);
+    return { error: String(err?.message || err || 'unknown') };
+  });
+  return _brokerIntegrityGatePromise;
+}
+
+// v24.0.0: Broker intelligence — unifies the three bidHistory record flavors
+// (F29 post-trip broker-pay reviews, Counter-Offer Memory, and the bid win/loss
+// log) into one per-broker signal so it can feed usaScoreLoad's scoring instead
+// of sitting display-only in the Counter-Offer Memory and trip-detail panels.
+async function getBrokerIntel(broker){
+  // Read path must use the same identity function as every bidHistory writer
+  // (omegaSaveToBidHistory, logBid, F29 reviews, Counter-Offer Memory), otherwise
+  // "Acme Logistics" typed into #mwBroker never index-matches the stored
+  // "acme logistics" and the whole personal-intelligence signal reads as no-data.
+  const bk = normBroker(broker);
+  if (!bk) return null;
+  try {
+    const {stores} = tx('bidHistory');
+    const idx = stores.bidHistory.index('broker');
+    // v23.8.2: exclude legacy pre-broker-chain rows (the old hardcoded-empty-broker
+    // writer, flagged legacyUnkeyed by the v13 migration) so they don't pollute per-broker stats.
+    const recs = (await idbReq(idx.getAll(bk))).filter(r => !r.legacyUnkeyed);
+    if (!recs || !recs.length) return null;
+
+    const paySpeedRecs = recs.filter(r => r.paySpeed);
+    const paySpeedSamples = paySpeedRecs.length;
+    const fastCount = paySpeedRecs.filter(r => r.paySpeed === 'fast').length;
+    const slowCount = paySpeedRecs.filter(r => r.paySpeed === 'slow' || r.paySpeed === 'dispute').length;
+
+    // 'won' (bid win/loss log) and 'accepted'/'partial' (Counter-Offer Memory)
+    // both mean the broker landed at your number — treat them the same for a
+    // single acceptance-rate signal regardless of which tool logged it.
+    const outcomeRecs = recs.filter(r => r.outcome);
+    const outcomeSamples = outcomeRecs.length;
+    const acceptedLike = outcomeRecs.filter(r => ['accepted','partial','won'].includes(r.outcome)).length;
+
+    if (!paySpeedSamples && !outcomeSamples) return null;
+
+    return {
+      broker: bk,
+      sampleSize: recs.length,
+      paySpeedSamples,
+      fastPayPct: paySpeedSamples ? Math.round((fastCount / paySpeedSamples) * 100) : null,
+      slowPayPct: paySpeedSamples ? Math.round((slowCount / paySpeedSamples) * 100) : null,
+      outcomeSamples,
+      acceptedPct: outcomeSamples ? Math.round((acceptedLike / outcomeSamples) * 100) : null,
+    };
+  } catch(e){ console.warn('[FL] getBrokerIntel:', e); return null; }
+}
+
+// Hook lane recording into trip saves — call after saveTrip
+// v24.2 (spec section 8, steps 4-5): derive execution + settlement state from
+// the trip record that is ALREADY saved and authoritative. Lifecycle never
+// becomes the source of operational or accounting detail — it only records
+// which stage this load reached.
+function _lifecycleStateFromTrip(trip){
+  const t = trip || {};
+  // Execution. A delivery date is the strongest signal we have; a pickup date
+  // without one means it is loaded and moving.
+  const execution =
+      t.fellThrough === true ? 'FELL_THROUGH'
+    : isValidISODate(t.deliveryDate) ? 'DELIVERED'
+    : isValidISODate(t.pickupDate) ? 'PICKED_UP'
+    : 'NOT_STARTED';
+
+  // Settlement is independent of execution: a delivered load can still be
+  // unpaid, overdue, or written off. Never infer PAID from delivery.
+  let settlement = 'NOT_INVOICED';
+  if (t.badDebt === true) settlement = 'BAD_DEBT';
+  else if (isValidISODate(t.paidDate)) settlement = 'PAID';
+  else if (isValidISODate(t.invoiceDate)){
+    // No per-trip payment-terms field exists today, so this uses the standard
+    // 30-day freight term. `t.termsDays` is read first so a future field drops
+    // in without touching this logic.
+    const dueDays = finiteNum(t.termsDays, 30);
+    const invoiced = Date.parse(t.invoiceDate);
+    settlement = (Number.isFinite(invoiced) && Date.now() > invoiced + dueDays * 86400000)
+      ? 'OVERDUE' : 'INVOICED';
+  }
+  return { execution, settlement };
+}
+
+async function _postTripSaveLaneHook(trip){
+  try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+
+  // v24.2 dual-write. Runs after the trip is already persisted; linkLifecycle()
+  // swallows its own errors so this can never cost a saved trip.
+  try {
+    if (trip?.orderNo){
+      const { execution, settlement } = _lifecycleStateFromTrip(trip);
+      await linkLifecycle({
+        orderNo: trip.orderNo,
+        // Blockers 2/3, write side. Fixing only the read side would leave every
+        // newly written lifecycle row carrying customer-as-broker and
+        // orderNo-as-internal-ref, so the laundering is removed where the value
+        // is minted, not only where it is read.
+        broker: trip.broker || '',
+        origin: trip.origin || '',
+        destination: trip.destination || '',
+        pickupAt: isValidISODate(trip.pickupDate) ? trip.pickupDate : null,
+        deliveryAt: isValidISODate(trip.deliveryDate) ? trip.deliveryDate : null,
+        // A saved trip means the opportunity was won, whatever happened next.
+        opportunity: 'WON',
+        execution,
+        settlement,
+        cohort: { deadZoneExit: trip.isDZExit === true },
+        ...(trip.id ? { sourceRefs: { tripIds: [String(trip.id)] } } : {}),
+      }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
+    }
+  } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
+  // F29: Post-trip review prompt when trip has a delivery date
+  if (trip && trip.deliveryDate && trip.origin && trip.destination){
+    const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
+    const alreadyDone = await getSetting(reviewKey, false).catch(()=>false);
+    if (!alreadyDone) setTimeout(()=> openPostTripReview(trip).catch(()=>{}), 1200);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// F29 — Post-Trip Lane & Broker Review (v23.4.0)
+// After delivery: 6 quick-tap questions that turn FreightLogic into a
+// real decision engine — not just a tracker.
+// ════════════════════════════════════════════════════════════════════════════
+
+async function openPostTripReview(trip){
+  if (!trip?.origin || !trip?.destination) return;
+  const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
+
+  const body = document.createElement('div');
+  const lane = `${clampStr(trip.origin,40)} → ${clampStr(trip.destination,40)}`;
+  const rpm = (trip.pay && (trip.loadedMiles||0) > 0) ? '$' + (trip.pay / trip.loadedMiles).toFixed(2) + '/mi' : '';
+
+  const answers = {
+    laneRating: null,     // 1-5
+    brokerPay: null,      // 'fast'|'slow'|'dispute'
+    reloadEase: null,     // 'easy'|'ok'|'hard'
+    destStrength: null,   // 'strong'|'neutral'|'weak'
+    rateVsStrategy: null, // 'yes'|'close'|'no'
+    wouldRunAgain: null,  // true|false
+  };
+
+  function chip(id, val, label, color='var(--surface-2)'){
+    return `<button class="btn" data-qid="${id}" data-val="${val}" style="flex:1;min-width:0;padding:8px 6px;font-size:12px;border-radius:10px;background:${color};border:2px solid transparent;transition:all .15s">${escapeHtml(label)}</button>`;
+  }
+  function row(label, html){ return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(label)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${html}</div></div>`; }
+
+  body.innerHTML = `
+    <div style="padding:10px 12px;background:var(--surface-1);border-radius:10px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent)">${escapeHtml(lane)}</div>
+      ${rpm ? `<div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(rpm)} loaded • ${escapeHtml(trip.customer||trip.broker||'')}</div>` : ''}
+    </div>
+    ${row('How was this lane? (1–5)', [1,2,3,4,5].map(n=> chip('laneRating',n,['1 Bad','2','3 OK','4','5 Great'][n-1])).join(''))}
+    ${row('Broker payment?', chip('brokerPay','fast','✓ Fast & correct') + chip('brokerPay','slow','⏳ Slow') + chip('brokerPay','dispute','⚠️ Issue'))}
+    ${row('Reload from destination?', chip('reloadEase','easy','Easy loads out') + chip('reloadEase','ok','OK / neutral') + chip('reloadEase','hard','Tough to reload'))}
+    ${row('Destination market strength?', chip('destStrength','strong','Strong') + chip('destStrength','neutral','Neutral') + chip('destStrength','weak','Weak / avoid'))}
+    ${row('Did rate match your strategy?', chip('rateVsStrategy','yes','Yes') + chip('rateVsStrategy','close','Close') + chip('rateVsStrategy','no','No'))}
+    ${row('Would you run this lane again?', chip('wouldRunAgain','true','Yes, take it') + chip('wouldRunAgain','false','Pass next time'))}
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn primary" id="reviewSave" style="flex:2;font-weight:700">Save Review</button>
+      <button class="btn" id="reviewSkip" style="flex:1;font-size:12px;color:var(--text-tertiary)">Skip</button>
+    </div>`;
+
+  // Chip selection logic
+  body.addEventListener('click', e => {
+    const btn = e.target.closest('[data-qid]');
+    if (!btn) return;
+    haptic(10);
+    const qid = btn.dataset.qid;
+    const val = btn.dataset.val;
+    answers[qid] = val === 'true' ? true : val === 'false' ? false : (isNaN(Number(val)) ? val : Number(val));
+    // Visual feedback: highlight selected chip in group
+    body.querySelectorAll(`[data-qid="${qid}"]`).forEach(b => {
+      b.style.borderColor = 'transparent';
+      b.style.background = 'var(--surface-2)';
+    });
+    btn.style.borderColor = 'var(--accent)';
+    btn.style.background = 'rgba(var(--accent-rgb),.15)';
+  });
+
+  body.querySelector('#reviewSave').addEventListener('click', async ()=>{
+    haptic();
+    await _savePostTripReview(trip, answers);
+    await setSetting(reviewKey, true);
+    closeModal();
+    toast('Lane review saved. FreightLogic is learning.');
+  });
+  body.querySelector('#reviewSkip').addEventListener('click', async ()=>{
+    await setSetting(reviewKey, true);
+    closeModal();
+  });
+
+  openModal('Lane Review', body);
+}
+
+async function _savePostTripReview(trip, answers){
+  try {
+    // Update lane history with review data
+    const lane = normalizeLane(trip.origin, trip.destination);
+    const {stores} = tx('laneHistory');
+    const idx = stores.laneHistory.index('lane');
+    const existing = await idbReq(idx.getAll(lane));
+    const now = Date.now();
+
+    const ratingNum = Number(answers.laneRating) || null;
+    const wouldRunAgain = answers.wouldRunAgain;
+
+    if (existing && existing.length > 0){
+      const rec = existing[0];
+      if (ratingNum){ rec.ratingTotal = (rec.ratingTotal||0) + ratingNum; rec.ratingCount = (rec.ratingCount||0) + 1; rec.avgRating = roundCents(rec.ratingTotal / rec.ratingCount); }
+      if (wouldRunAgain !== null){ rec.wouldRunCount = (rec.wouldRunCount||0) + 1; if (wouldRunAgain === true) rec.wouldRunYes = (rec.wouldRunYes||0) + 1; }
+      rec.lastBrokerPay     = answers.brokerPay || rec.lastBrokerPay;
+      rec.lastReloadEase    = answers.reloadEase || rec.lastReloadEase;
+      rec.lastDestStrength  = answers.destStrength || rec.lastDestStrength;
+      rec.lastRateVsStrat   = answers.rateVsStrategy || rec.lastRateVsStrat;
+      rec.updated = now;
+      const {t, stores: ws} = tx('laneHistory','readwrite');
+      ws.laneHistory.put(rec);
+      await waitTxn(t);
+    } else {
+      // No lane history entry yet — create minimal one with review data
+      const rec = { id: 'lane_rev_' + now, lane, count: 1,
+        totalPay: posNum(trip.pay), totalMiles: posNum(trip.loadedMiles), bestPay: posNum(trip.pay),
+        avgRPM: (trip.pay && trip.loadedMiles) ? roundCents(trip.pay / trip.loadedMiles) : 0,
+        ratingTotal: ratingNum||0, ratingCount: ratingNum?1:0, avgRating: ratingNum,
+        wouldRunCount: wouldRunAgain!==null?1:0, wouldRunYes: wouldRunAgain===true?1:0,
+        lastBrokerPay: answers.brokerPay, lastReloadEase: answers.reloadEase,
+        lastDestStrength: answers.destStrength, lastRateVsStrat: answers.rateVsStrategy,
+        lastDate: isoDate(), created: now, updated: now,
+        displayOrigin: (trip.origin||'').slice(0,60), displayDest: (trip.destination||'').slice(0,60) };
+      const {t, stores: ws} = tx('laneHistory','readwrite');
+      ws.laneHistory.put(rec);
+      await waitTxn(t);
+    }
+
+    // Also store broker feedback in bidHistory for broker grading
+    if (answers.brokerPay && trip.customer){
+      // Normalized key for the broker index; raw text kept in brokerDisplay for UI.
+      const bkRaw = clampStr(trip.customer, 60);
+      const bk = normBroker(bkRaw);
+      const {t, stores: ws} = tx('bidHistory','readwrite');
+      ws.bidHistory.put({ id: 'brev_' + now, broker: bk, brokerDisplay: bkRaw, paySpeed: answers.brokerPay, lane, orderNo: trip.orderNo||'', created: now });
+      await waitTxn(t);
+    }
+  } catch(e){ console.warn('[FL] _savePostTripReview:', e); }
+}
+
+// ════════════════════════════════════════════════════
+// BID OUTCOME LOG — Track every bid placed, win/loss,
+// and posted-target-vs-bid spread. Builds learning data.
+// ════════════════════════════════════════════════════
+async function logBid({ loadId, broker, origin, destination, miles, postedTarget, bidAmount, outcome }) {
+  const id = `bid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const record = {
+    id,
+    loadId: clampStr(loadId || '', 60),
+    // Normalize here too, not just at the call site, so any future caller
+    // passing raw text still lands on the same broker index key.
+    broker: normBroker(clampStr(broker || '', 80)),
+    brokerDisplay: clampStr(broker || '', 80),
+    origin: clampStr(origin || '', 80),
+    destination: clampStr(destination || '', 80),
+    miles: posNum(miles),
+    postedTarget: posNum(postedTarget),
+    bidAmount: posNum(bidAmount),
+    spread: posNum(postedTarget) - posNum(bidAmount),
+    bidRPM: posNum(miles) > 0 ? posNum(bidAmount) / posNum(miles) : 0,
+    outcome: ['won', 'expired', 'rejected'].includes(outcome) ? outcome : 'expired',
+    timestamp: Date.now(),
+    timeWindow: getCurrentTimeWindow().key,
+  };
+  validateRecordSize(record, 'bidOutcome');
+  const { stores } = tx('bidHistory', 'readwrite');
+  await idbReq(stores.bidHistory.add(record));
+
+  // v24.2 dual-write (spec section 8). Ordered AFTER the authoritative
+  // bidHistory write, and linkLifecycle() never throws, so a lifecycle failure
+  // cannot cost us the bid record that already landed. Compatibility beats
+  // consolidation during the transition.
+  await linkLifecycle({
+    orderNo: record.loadId,
+    broker: record.brokerDisplay || record.broker,
+    origin: record.origin,
+    destination: record.destination,
+    // A logged bid outcome is an ADJUDICATED opportunity state. 'expired' maps
+    // to EXPIRED, not LOST — that distinction is the whole point of the
+    // separate dimensions (see lifecycleWinRate).
+    opportunity: record.outcome === 'won' ? 'WON'
+      : record.outcome === 'rejected' ? 'LOST'
+      : 'EXPIRED',
+    sourceRefs: { bidHistoryIds: [record.id] },
+  }, { source: 'BID_HISTORY', sourceId: record.id, reason: `bid outcome ${record.outcome}` });
+
+  return record;
+}
+
+async function getBidWinRateStats(daysBack = 30) {
+  const cutoff = Date.now() - daysBack * 86400000;
+  const { stores } = tx('bidHistory');
+  const all = await idbReq(stores.bidHistory.getAll());
+  const recent = all.filter(b => b.timestamp >= cutoff && b.bidAmount > 0 && b.postedTarget > 0);
+  const won = recent.filter(b => b.outcome === 'won');
+  // v24.2 section 16.8: the denominator is adjudicated outcomes only. An
+  // 'expired' bid is the bidHistory analog of an EXPIRED opportunity — no known
+  // award decision — so it is excluded, exactly as lifecycleWinRate() excludes
+  // EXPIRED. Counting it understates the win rate on every board you watched.
+  const adjudicated = recent.filter(b => b.outcome === 'won' || b.outcome === 'rejected');
+  const winningSpreads = won.map(b => b.spread / b.postedTarget);
+  const avgWinningDiscount = winningSpreads.length > 0
+    ? winningSpreads.reduce((a, v) => a + v, 0) / winningSpreads.length
+    : 0;
+  const byWindow = {};
+  for (const b of adjudicated) {
+    const wk = b.timeWindow || 'UNKNOWN';
+    if (!byWindow[wk]) byWindow[wk] = { total: 0, wins: 0 };
+    byWindow[wk].total++;
+    if (b.outcome === 'won') byWindow[wk].wins++;
+  }
+  let bestWindow = null, bestWinRate = -1;
+  for (const [wk, s] of Object.entries(byWindow)) {
+    const wr = s.total > 0 ? s.wins / s.total : 0;
+    if (wr > bestWinRate) { bestWinRate = wr; bestWindow = wk; }
+  }
+  return {
+    totalBids: recent.length,
+    adjudicatedBids: adjudicated.length,
+    excludedExpired: recent.length - adjudicated.length,
+    wins: won.length,
+    // null, not 0, when nothing was adjudicated — an unknown rate is not 0%.
+    winRate: adjudicated.length > 0 ? won.length / adjudicated.length : null,
+    avgWinningDiscount,
+    bestWindow,
+    byWindow,
+  };
+}
+
+// ================================================================================
+// X-03: Insurance category split migration (schema-safety, Amendment 3)
+// ================================================================================
+
+/** Idempotent, reversible, one-time migration: existing expense records whose
+ *  category is a bare/legacy "Insurance" (no resolved sub-type) get an explicit
+ *  `insuranceBucket: 'C'` field so F30 can distinguish "known ambiguous, needs
+ *  reclassification" from "not yet examined". Nothing is deleted or reworded —
+ *  only the new field is added. Safe to call twice: the second pass finds no
+ *  record missing `insuranceBucket` and touches nothing (asserted by
+ *  tests/unit/pure-functions.spec.mjs's migration-idempotency test). */
+async function migrateInsuranceCategorySplit(){
+  const { stores } = tx('expenses');
+  const all = (await idbReq(stores.expenses.getAll())) || [];
+  const targets = all.filter(e => e && typeof e.category === 'string' && e.category.trim().toLowerCase().includes('insurance') && !['A','B','C'].includes(e.insuranceBucket));
+  if (!targets.length) return { migrated: 0, backedUp: false };
+
+  // Amendment 3: retained pre-mutation snapshot, keyed by timestamp so a prior
+  // run's backup is never overwritten — this is the "reversible" half of the
+  // requirement, independent of the idempotency check above.
+  const backupKey = 'insuranceMigrationBackup_' + Date.now();
+  await setSetting(backupKey, targets.map(e => ({ id: e.id, category: e.category, insuranceBucket: e.insuranceBucket })));
+  const backupIndex = await getSetting('insuranceMigrationBackupKeys', []);
+  await setSetting('insuranceMigrationBackupKeys', [...(Array.isArray(backupIndex) ? backupIndex : []), backupKey]);
+
+  const { t: wt, stores: ws } = tx('expenses', 'readwrite');
+  for (const e of targets){
+    const bucket = classifyExpenseTaxBucket(e.category, e.insuranceBucket);
+    ws.expenses.put({ ...e, insuranceBucket: bucket });
+  }
+  await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+  await setSetting('insuranceSplitMigrationDone', true);
+  return { migrated: targets.length, backedUp: true, backupKey };
+}
+
+/** Reverts a migration pass by restoring `insuranceBucket` to its pre-migration
+ *  value (absent, for every record this migration touched) from a retained
+ *  backup key. Does not touch category text or any other field. */
+async function revertInsuranceCategorySplit(backupKey){
+  const snapshot = await getSetting(backupKey, null);
+  if (!Array.isArray(snapshot)) return { reverted: 0 };
+  // Resolve every "current" read first, on its own transaction, fully — an
+  // IDB transaction auto-commits once it goes idle waiting on an unrelated
+  // async op, so reads and writes can't be interleaved on the same tick.
+  const { stores: rs } = tx('expenses');
+  const currents = await Promise.all(snapshot.map(row => idbReq(rs.expenses.get(row.id))));
+  const { t: wt, stores: ws } = tx('expenses', 'readwrite');
+  let reverted = 0;
+  snapshot.forEach((row, i) => {
+    const current = currents[i];
+    if (!current) return;
+    const restored = { ...current };
+    if (row.insuranceBucket === undefined) delete restored.insuranceBucket; else restored.insuranceBucket = row.insuranceBucket;
+    ws.expenses.put(restored);
+    reverted++;
+  });
+  await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+  return { reverted };
+}
+
+/** Boot-time gate (Amendment 3): shows a blocking confirmation — take a manual
+ *  JSON export first — before the migration is allowed to run. Declining
+ *  postpones (re-prompts next boot); "Export Now" runs exportJSON() inline
+ *  before re-showing the same prompt so a driver never has to remember to
+ *  come back. Runs at most once per boot; the migration itself no-ops on a
+ *  second run regardless (see migrateInsuranceCategorySplit). */
+async function checkInsuranceSplitMigration(){
+  if (await getSetting('insuranceSplitMigrationDone', false)) return;
+  const { stores } = tx('expenses');
+  const all = (await idbReq(stores.expenses.getAll())) || [];
+  const pending = all.some(e => e && typeof e.category === 'string' && e.category.trim().toLowerCase().includes('insurance') && !['A','B','C'].includes(e.insuranceBucket));
+  if (!pending){ await setSetting('insuranceSplitMigrationDone', true); return; }
+
+  const proceed = confirm(
+    '📋 One-time data update\n\n' +
+    'FreightLogic is about to tag existing "Insurance" expense entries so your tax export can tell auto insurance (vehicle-operating) apart from cargo/liability/occupational-accident insurance (always deductible).\n\n' +
+    'Nothing is deleted or renamed — this only adds a tag, and a backup copy of the affected records is kept automatically.\n\n' +
+    'Please take a manual JSON export first (Settings → Export Data) in case you want to roll back.\n\n' +
+    'Continue now?'
+  );
+  if (!proceed){ toast('Insurance tagging postponed — you\'ll be asked again next time.', true); return; }
+  try{
+    const res = await migrateInsuranceCategorySplit();
+    if (res.migrated) toast(`Tagged ${res.migrated} insurance record(s) for review — see Tax Season Export.`);
+  }catch(e){ console.warn('[FL] insurance split migration', e); }
+}
+
+/** X-02/X-03: "Verify vehicle tax method" Settings row — visible until the
+ *  active vehicle's firstYearElection is resolved. Call after any render that
+ *  populates the Settings panel (renderInsights) and after saving a change. */
+async function refreshVehicleTaxMethodRow(){
+  const row = $('#vehicleTaxMethodRow'); if (!row) return;
+  const v = await getActiveVehicleProfile();
+  const unresolved = v.firstYearElection === FIRST_YEAR_ELECTION.UNKNOWN;
+  row.style.display = unresolved ? '' : 'none';
+  const badge = $('#vehicleTaxMethodBadge');
+  if (badge) badge.textContent = v.vehicleTaxMethod === VEHICLE_TAX_METHOD.UNSET ? 'Not set' : 'Unverified';
+}
+
+/** X-03: modal to set the active vehicle's vehicleTaxMethod / firstYearElection.
+ *  Enforces the hard lock (firstYearElection=ACTUAL_EXPENSE permanently forces
+ *  vehicleTaxMethod=ACTUAL_EXPENSE for this vehicle) and shows the unverified
+ *  banner text verbatim when STANDARD_MILEAGE is picked with firstYearElection
+ *  still UNKNOWN. Reusable from Settings and from the F30 export-blocked state. */
+async function openVehicleTaxMethodModal(onSaved){
+  const v = await getActiveVehicleProfile();
+  const locked = v.firstYearElection === FIRST_YEAR_ELECTION.ACTUAL_EXPENSE;
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Vehicle: <b>${escapeHtml(v.label)}</b></div>
+    <label>First-year election</label>
+    <div class="muted" style="font-size:11px;margin-bottom:4px">Which method was elected in this vehicle's first business-use year? (Ask your bookkeeper if unsure.)</div>
+    <select id="vtmFirstYear" ${locked ? 'disabled' : ''}>
+      <option value="${FIRST_YEAR_ELECTION.UNKNOWN}"${v.firstYearElection===FIRST_YEAR_ELECTION.UNKNOWN?' selected':''}>Unknown / checking with bookkeeper</option>
+      <option value="${FIRST_YEAR_ELECTION.STANDARD_MILEAGE}"${v.firstYearElection===FIRST_YEAR_ELECTION.STANDARD_MILEAGE?' selected':''}>Standard Mileage</option>
+      <option value="${FIRST_YEAR_ELECTION.ACTUAL_EXPENSE}"${v.firstYearElection===FIRST_YEAR_ELECTION.ACTUAL_EXPENSE?' selected':''}>Actual Expense</option>
+    </select>
+    <label style="margin-top:10px">Tax method for this year</label>
+    <select id="vtmMethod" ${locked ? 'disabled' : ''}>
+      <option value="${VEHICLE_TAX_METHOD.UNSET}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.UNSET?' selected':''}>Not set yet</option>
+      <option value="${VEHICLE_TAX_METHOD.STANDARD_MILEAGE}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.STANDARD_MILEAGE?' selected':''}>Standard Mileage</option>
+      <option value="${VEHICLE_TAX_METHOD.ACTUAL_EXPENSE}"${v.vehicleTaxMethod===VEHICLE_TAX_METHOD.ACTUAL_EXPENSE?' selected':''}>Actual Expense</option>
+    </select>
+    <div id="vtmWarning" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;color:var(--warn)">
+      Standard mileage requires that it was elected in this vehicle's first business-use year. Unverified — confirm with your bookkeeper before filing.
+    </div>
+    ${locked ? `<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,.05);font-size:12px" class="muted">
+      This vehicle is locked to Actual Expense because its first-year election was Actual Expense. IRS rules do not allow switching to standard mileage for a vehicle after that.
+    </div>` : ''}
+    <button class="btn primary" id="vtmSave" style="width:100%;margin-top:14px">Save</button>`;
+  function syncWarning(){
+    const method = $('#vtmMethod', body).value;
+    const fy = $('#vtmFirstYear', body).value;
+    $('#vtmWarning', body).style.display = (method === VEHICLE_TAX_METHOD.STANDARD_MILEAGE && fy === FIRST_YEAR_ELECTION.UNKNOWN) ? '' : 'none';
+  }
+  if (!locked){
+    $('#vtmMethod', body).addEventListener('change', syncWarning);
+    $('#vtmFirstYear', body).addEventListener('change', syncWarning);
+  }
+  syncWarning();
+  openModal('Vehicle Tax Method', body);
+  if (!locked){
+    $('#vtmSave', body).addEventListener('click', async ()=>{
+      haptic(15);
+      const firstYearElection = $('#vtmFirstYear', body).value;
+      const vehicleTaxMethod = $('#vtmMethod', body).value;
+      const { justLocked } = await saveActiveVehicleProfile({ firstYearElection, vehicleTaxMethod });
+      closeModal();
+      if (justLocked){
+        alert('Because Actual Expense was elected in this vehicle\'s first business-use year, this vehicle is now permanently locked to the Actual Expense method — standard mileage can never be used for it again. This is a one-time notice.');
+      }
+      await refreshVehicleTaxMethodRow().catch(()=>{});
+      if (typeof onSaved === 'function') await onSaved().catch(()=>{});
+    });
+  }
+}
+
+// ================================================================================
+// F30 — Tax Season Export (v23.4.0)
+// Annual Schedule C summary + per-trip mileage log. Year-selector covers current
+// and prior two years. Differentiated from CPA Package (quarterly/current-year)
+// by: multi-year support, Schedule C line numbers, printable view, mileage log CSV.
+// ================================================================================
+
+async function openTaxSeasonExport(){
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear, currentYear - 1, currentYear - 2];
+  let selectedYear = currentYear;
+
+  const body = document.createElement('div');
+
+  const yearBtns = years.map((y, i) =>
+    `<button class="btn f30-yr${i === 0 ? ' active' : ''}" data-year="${y}" style="flex:1;min-width:0;font-size:13px">${y}</button>`
+  ).join('');
+
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px">${yearBtns}</div>
+    <div id="f30Content"><div class="muted" style="text-align:center;padding:24px 0">Loading…</div></div>`;
+
+  openModal('Tax Season Export', body);
+
+  body.querySelectorAll('.f30-yr').forEach(btn => {
+    btn.addEventListener('click', () => {
+      haptic(10);
+      body.querySelectorAll('.f30-yr').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedYear = Number(btn.dataset.year);
+      loadYear(selectedYear);
+    });
+  });
+
+  async function loadYear(year){
+    const content = body.querySelector('#f30Content');
+    content.innerHTML = '<div class="muted" style="text-align:center;padding:24px 0">Loading…</div>';
+
+    const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+    const inYear = d => d && d >= yStart && d <= yEnd;
+
+    const [allTrips, allExps, allFuel, vehicleClass, perDiemRateSetting, activeVehicle] = await Promise.all([
+      dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
+      getSetting('vehicleClass', 'cargo_van'),
+      getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+      getActiveVehicleProfile(),
+    ]);
+
+    const trips = allTrips.filter(t => !t.needsReview && inYear(t.pickupDate || t.deliveryDate));
+    const exps  = allExps.filter(e => inYear(e.date));
+    const fuel  = allFuel.filter(f => inYear(f.date));
+
+    const isDOT = vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl';
+    const pdPct = isDOT ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+    const pdRate = Number(perDiemRateSetting || IRS.PER_DIEM_CONUS);
+
+    // Gross income
+    const grossIncome = trips.reduce((s, t) => s + posNum(t.pay), 0);
+
+    // Mileage — X-02: per-trip date-based rate, summed. Not one flat annual
+    // rate applied to the year total, which can't represent a midyear change.
+    const totalLoadedMi  = trips.reduce((s, t) => s + posNum(t.loadedMiles || t.miles), 0);
+    const totalDeadMi    = trips.reduce((s, t) => s + posNum(t.emptyMiles), 0);
+    const totalBizMi     = totalLoadedMi + totalDeadMi;
+    const mileageDeduction = roundCents(trips.reduce((s, t) => {
+      const mi = posNum(t.loadedMiles || t.miles) + posNum(t.emptyMiles);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileageRatesUsed = [...new Set(trips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
+
+    // Per diem (count unique work days)
+    const workDays = new Set(trips.map(t => t.pickupDate || t.deliveryDate).filter(Boolean)).size;
+    const perDiemDeduction = roundCents(workDays * pdRate * pdPct);
+
+    // Expense categories mapped to Schedule C lines
+    const expByCategory = {};
+    for (const e of exps){
+      const cat = (e.category || 'Other').trim();
+      expByCategory[cat] = (expByCategory[cat] || 0) + posNum(e.amount);
+    }
+    const fuelTotal = fuel.reduce((s, f) => s + posNum(f.amount), 0);
+    if (fuelTotal > 0) expByCategory['Fuel'] = (expByCategory['Fuel'] || 0) + fuelTotal;
+
+    // X-03: map to Schedule C buckets with explicit method-sensitivity —
+    // bucket A (vehicle-operating: auto insurance, repairs, fuel) only counts
+    // under Actual Expense; bucket B (always deductible) counts either way;
+    // bucket C (unresolved insurance sub-type) is excluded from every total
+    // and surfaced separately for manual reclassification.
+    const schedC = {
+      autoInsurance: 0, otherInsurance: 0, insuranceUnresolved: 0,
+      repairs: 0, fuel: 0, utilities: 0, tolls: 0, parking: 0, other: 0,
+    };
+    for (const [cat, amt] of Object.entries(expByCategory)){
+      const c = cat.toLowerCase();
+      if (c.includes('insurance')){
+        const bucket = classifyExpenseTaxBucket(cat);
+        if (bucket === 'A') schedC.autoInsurance += amt;
+        else if (bucket === 'B') schedC.otherInsurance += amt;
+        else schedC.insuranceUnresolved += amt;
+      }
+      else if (c.includes('repair') || c.includes('maint'))  schedC.repairs   += amt;
+      else if (c.includes('fuel') || c.includes('gas'))      schedC.fuel      += amt;
+      else if (c.includes('phone') || c.includes('util'))    schedC.utilities += amt;
+      else if (c.includes('toll'))                            schedC.tolls     += amt;
+      else if (c.includes('park'))                            schedC.parking   += amt;
+      else                                                     schedC.other    += amt;
+    }
+    const bucketATotal = schedC.autoInsurance + schedC.repairs + schedC.fuel;
+    const bucketBTotal = schedC.otherInsurance + schedC.utilities + schedC.tolls + schedC.parking + schedC.other;
+
+    const vehicleTaxMethod  = activeVehicle.vehicleTaxMethod;
+    const firstYearElection = activeVehicle.firstYearElection;
+    const methodUnset       = vehicleTaxMethod === VEHICLE_TAX_METHOD.UNSET;
+    const isStandardMileage = vehicleTaxMethod === VEHICLE_TAX_METHOD.STANDARD_MILEAGE;
+    const isActualExpense   = vehicleTaxMethod === VEHICLE_TAX_METHOD.ACTUAL_EXPENSE;
+    const isDraft            = !methodUnset && firstYearElection === FIRST_YEAR_ELECTION.UNKNOWN;
+
+    // X-03 fix: exactly one of {vehicleDeduction via mileage, via bucket A}
+    // can ever be non-zero — the old code summed both unconditionally.
+    const vehicleDeduction = isActualExpense ? bucketATotal : (isStandardMileage ? mileageDeduction : 0);
+    const totalDeductions = methodUnset ? 0 : (vehicleDeduction + bucketBTotal + perDiemDeduction);
+    const netProfit = grossIncome - totalDeductions;
+    const seTax = roundCents(Math.max(0, netProfit * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+
+    // X-03: export is blocked entirely while no method is set — there is no
+    // correct total to show or export until the driver picks one.
+    if (methodUnset){
+      content.innerHTML = `
+        <div style="padding:20px;text-align:center">
+          <div style="font-size:32px;margin-bottom:8px">🧾</div>
+          <div style="font-weight:700;margin-bottom:6px">Set your vehicle tax method first</div>
+          <div class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">
+            FreightLogic can't compute a Schedule C total or export until you choose Standard Mileage or
+            Actual Expense for this vehicle — claiming both is not allowed and produced wrong numbers before this was fixed (X-03).
+          </div>
+          <button class="btn primary" id="f30SetMethod" style="width:100%">Set Vehicle Tax Method</button>
+          <div class="muted" style="font-size:11px;margin-top:14px">Gross income this year so far: ${escapeHtml(fmtMoney(grossIncome))}</div>
+        </div>`;
+      content.querySelector('#f30SetMethod').addEventListener('click', ()=> openVehicleTaxMethodModal(()=> loadYear(year)));
+      return;
+    }
+
+    function line(num, label, amt, isBold=false, color=''){
+      const style = `font-size:13px;${isBold ? 'font-weight:700;' : ''}${color ? `color:${color};` : ''}`;
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border-subtle)">
+        <span style="${style}"><span style="font-size:11px;color:var(--text-tertiary);margin-right:8px">Ln ${num}</span>${escapeHtml(label)}</span>
+        <span style="${style}">${escapeHtml(fmtMoney(amt))}</span>
+      </div>`;
+    }
+    function subLine(label, amt){
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0 3px 16px">
+        <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(label)}</span>
+        <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(fmtMoney(amt))}</span>
+      </div>`;
+    }
+
+    const methodLabel = isActualExpense ? 'Actual Expense' : 'Standard Mileage';
+    const rateLabel = mileageRatesUsed.length ? mileageRatesUsed.map(r => '$' + r.toFixed(3)).join(' / ') + '/mi (per trip date)' : `(${year})`;
+    const draftBanner = isDraft ? `<div style="margin-bottom:12px;padding:10px;border-radius:8px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);font-size:12px;color:var(--warn);font-weight:700">
+        ⚠️ DRAFT — vehicle method unverified. Not for filing.
+      </div>` : '';
+
+    content.innerHTML = `
+      ${draftBanner}
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
+        Schedule C Summary &mdash; Tax Year ${year}
+      </div>
+      <div class="muted" style="font-size:11px;margin-bottom:10px">Vehicle method: <b>${escapeHtml(methodLabel)}</b> &middot; <a href="#" id="f30ChangeMethod" style="color:var(--accent-text)">change</a></div>
+      ${line('1',  'Gross receipts / freight income', grossIncome, true)}
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">Deductions</div>
+      ${isActualExpense && schedC.autoInsurance  > 0 ? line('15', 'Insurance — Auto (vehicle-operating)', schedC.autoInsurance) : ''}
+      ${schedC.otherInsurance > 0 ? line('15', 'Insurance — Cargo/Liability/Occ-Acc', schedC.otherInsurance) : ''}
+      ${isActualExpense && schedC.repairs > 0 ? line('21', 'Repairs & maintenance', schedC.repairs) : ''}
+      ${schedC.utilities  > 0 ? line('25', 'Utilities (phone/data)', schedC.utilities) : ''}
+      ${(schedC.tolls + schedC.parking + schedC.other) > 0 ? line('27a','Other expenses',    schedC.tolls + schedC.parking + schedC.other) : ''}
+      ${schedC.tolls      > 0 ? subLine('Tolls', schedC.tolls) : ''}
+      ${schedC.parking    > 0 ? subLine('Parking & storage', schedC.parking) : ''}
+      ${schedC.other      > 0 ? subLine('Other / misc', schedC.other) : ''}
+      ${isActualExpense && schedC.fuel > 0 ? line('27a', 'Fuel & oil', schedC.fuel) : ''}
+      ${isStandardMileage ? line('9',  `Vehicle mileage deduction ${rateLabel}`, mileageDeduction) : ''}
+      ${isStandardMileage ? subLine(`${totalBizMi.toLocaleString()} total business miles (${totalLoadedMi.toLocaleString()} loaded + ${totalDeadMi.toLocaleString()} DH)`, 0) : ''}
+      ${isActualExpense && (schedC.autoInsurance + schedC.repairs + schedC.fuel === 0) ? subLine(`Actual-expense method — no vehicle-operating expenses logged yet for ${totalBizMi.toLocaleString()} business mi`, 0) : ''}
+      ${schedC.insuranceUnresolved > 0 ? `<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);font-size:11px;color:var(--warn)">
+          ⚠️ ${escapeHtml(fmtMoney(schedC.insuranceUnresolved))} in "Insurance" entries have no resolved sub-type (auto vs. cargo/liability/occ-acc) — excluded from every total below. Edit those expenses and pick a specific category to include them.
+        </div>` : ''}
+      ${line('24b',`Per diem deduction (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction)}
+      ${line('28', 'Total deductions', totalDeductions, true)}
+      ${line('29', 'Tentative net profit', netProfit, true, netProfit >= 0 ? 'var(--good)' : 'var(--bad)')}
+      <div style="margin-top:12px;padding:12px;background:rgba(var(--accent-rgb),.07);border-radius:10px;border:1px solid var(--accent-border)">
+        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Schedule SE Estimate</div>
+        <div style="font-size:13px;line-height:1.9">
+          Net × 92.35% × 15.3% SE tax: <strong style="color:var(--accent-text)">${escapeHtml(fmtMoney(seTax))}</strong><br>
+          <span style="font-size:11px;color:var(--text-tertiary)">Estimate only — not tax advice. Verify with your CPA.</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn primary" id="f30ExportCsv" style="flex:2;font-weight:700">Export CSV</button>
+        <button class="btn" id="f30Print" style="flex:1">Print</button>
+      </div>`;
+
+    content.querySelector('#f30ChangeMethod').addEventListener('click', (ev)=>{ ev.preventDefault(); openVehicleTaxMethodModal(()=> loadYear(year)); });
+
+    // X-03: every export (CSV + print) carries the DRAFT header line while
+    // firstYearElection is still unresolved for this vehicle.
+    const draftCsvRow = isDraft ? [['DRAFT — vehicle method unverified. Not for filing.']] : [];
+    const draftPrintBanner = isDraft ? `<p style="background:#fff3cd;color:#7a5b00;padding:8px 10px;border-radius:6px;font-weight:700;font-size:12px;margin-bottom:12px">⚠️ DRAFT — vehicle method unverified. Not for filing.</p>` : '';
+
+    // CSV export — two sections: Schedule C summary + mileage log
+    content.querySelector('#f30ExportCsv').addEventListener('click', ()=>{
+      haptic();
+      const rows = [
+        ...draftCsvRow,
+        ['FreightLogic Tax Export — Schedule C Summary', '', `Tax Year ${year}`],
+        ['Vehicle method', methodLabel, ''],
+        [],
+        ['Line', 'Description', 'Amount'],
+        ['1',  'Gross receipts / freight income',                  grossIncome.toFixed(2)],
+        ...(isStandardMileage ? [['9',  `Vehicle mileage (${totalBizMi} mi, per-trip date rate)`, mileageDeduction.toFixed(2)]] : []),
+        ...(isActualExpense ? [
+          ['15', 'Insurance — Auto',                                  schedC.autoInsurance.toFixed(2)],
+          ['21', 'Repairs & maintenance',                             schedC.repairs.toFixed(2)],
+          ['27a','Fuel & oil',                                        schedC.fuel.toFixed(2)],
+        ] : []),
+        ['15', 'Insurance — Cargo/Liability/Occ-Acc',               schedC.otherInsurance.toFixed(2)],
+        ['25', 'Utilities (phone/data)',                            schedC.utilities.toFixed(2)],
+        ['27a','Tolls',                                             schedC.tolls.toFixed(2)],
+        ['27a','Parking & storage',                                 schedC.parking.toFixed(2)],
+        ['27a','Other expenses',                                    schedC.other.toFixed(2)],
+        ['24b',`Per diem (${workDays} days)`,                      perDiemDeduction.toFixed(2)],
+        ['28', 'Total deductions',                                  totalDeductions.toFixed(2)],
+        ['29', 'Tentative net profit',                              netProfit.toFixed(2)],
+        ...(schedC.insuranceUnresolved > 0 ? [['NOTE', 'Insurance (unresolved sub-type, excluded)', schedC.insuranceUnresolved.toFixed(2)]] : []),
+        [],
+        ['Schedule SE Estimate', '',                                seTax.toFixed(2)],
+        [],
+        ['MILEAGE LOG', '', ''],
+        ['Date', 'Trip #', 'From', 'To', 'Loaded Mi', 'Deadhead Mi', 'Total Mi', `Rate ($/mi)`, 'Deduction ($)'],
+        ...trips
+          .filter(t => posNum(t.loadedMiles || t.miles) > 0)
+          .sort((a, b) => (a.pickupDate || a.deliveryDate || '').localeCompare(b.pickupDate || b.deliveryDate || ''))
+          .map(t => {
+            const loaded = posNum(t.loadedMiles || t.miles);
+            const dead   = posNum(t.emptyMiles);
+            const total  = loaded + dead;
+            const rate   = getMileageRate(t.pickupDate || t.deliveryDate);
+            return [
+              t.pickupDate || t.deliveryDate || '',
+              t.orderNo || '',
+              clampStr(t.origin || '', 60),
+              clampStr(t.destination || '', 60),
+              loaded, dead, total,
+              rate.toFixed(3),
+              roundCents(total * rate).toFixed(2),
+            ];
+          }),
+      ];
+      // F-3 fix: reuse the shared, correctly-quoted CSV writer (app.js:1347)
+      // instead of hand-joining cells with no field quoting — an unquoted
+      // comma in trip.origin/trip.destination ("Springfield, IL") used to
+      // shift every column after it in the mileage log.
+      downloadCSV(rows, `FreightLogic_TaxExport_${year}.csv`);
+      toast('Tax CSV downloaded.');
+    });
+
+    // Print view
+    content.querySelector('#f30Print').addEventListener('click', ()=>{
+      haptic();
+      const win = window.open('', '_blank', 'width=700,height=900');
+      if (!win) { toast('Allow pop-ups to use the print view.', true); return; }
+      const rows2 = [
+        ['1','Gross receipts / freight income', grossIncome],
+        ...(isStandardMileage ? [['9',`Vehicle mileage (${totalBizMi.toLocaleString()} mi, per-trip date rate)`, mileageDeduction]] : []),
+        ...(isActualExpense ? [
+          ['15','Insurance — Auto', schedC.autoInsurance],
+          ['21','Repairs & maintenance', schedC.repairs],
+          ['27a','Fuel & oil', schedC.fuel],
+        ] : []),
+        ['15','Insurance — Cargo/Liability/Occ-Acc', schedC.otherInsurance],
+        ['25','Utilities (phone/data)', schedC.utilities],
+        ['27a','Tolls', schedC.tolls],
+        ['27a','Parking & storage', schedC.parking],
+        ['27a','Other expenses', schedC.other],
+        ['24b',`Per diem (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction],
+        ['28','Total deductions', totalDeductions],
+        ['29','Tentative net profit', netProfit],
+      ].filter(r => r[2] !== 0);
+      win.document.write(`<!doctype html><html><head><title>FreightLogic Tax Export ${year}</title>
+        <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;color:#111;font-size:14px}
+        h1{font-size:20px;margin-bottom:4px}h2{font-size:15px;margin:24px 0 8px;border-bottom:2px solid #ccc;padding-bottom:4px}
+        table{width:100%;border-collapse:collapse}td{padding:6px 8px;border-bottom:1px solid #eee}
+        .num{text-align:right}.bold{font-weight:700}.neg{color:#c00}.pos{color:#080}
+        .note{font-size:11px;color:#666;margin-top:24px}@media print{.note{font-size:10px}}</style></head><body>
+        ${draftPrintBanner}
+        <h1>FreightLogic — Schedule C Summary</h1>
+        <p style="margin:0;color:#666;font-size:13px">Tax Year ${year} &nbsp;&bull;&nbsp; Vehicle method: ${escapeHtml(methodLabel)} &nbsp;&bull;&nbsp; Generated ${new Date().toLocaleDateString()}</p>
+        <h2>Income & Deductions</h2>
+        <table>${rows2.map(r=>`<tr><td style="width:48px;color:#888;font-size:12px">Ln ${r[0]}</td><td>${r[1]}</td><td class="num${r[0]==='29'?r[2]<0?' neg':' pos':''}">${r[0]==='29'?'<b>':''}$${Math.abs(r[2]).toLocaleString('en-US',{minimumFractionDigits:2})}${r[0]==='29'?'</b>':''}</td></tr>`).join('')}</table>
+        <h2>Schedule SE Estimate</h2>
+        <p>Self-employment tax estimate: <strong>$${seTax.toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
+        (net × 92.35% × 15.3%)</p>
+        <p class="note">This is an estimate only and not tax advice. ${isStandardMileage ? `Mileage deduction uses the IRS standard rate in effect on each trip's date (${rateLabel}).` : 'Actual-expense method — vehicle-operating costs are itemized above rather than a per-mile rate.'}
+        Per diem uses $${pdRate}/day at ${Math.round(pdPct*100)}% deductibility.
+        Consult your CPA for final tax filings.</p>
+        <script>window.print();window.onafterprint=()=>window.close();<\/script></body></html>`);
+      win.document.close();
+    });
+  }
+
+  await loadYear(selectedYear);
+}
+
+// ================================================================================
+// F24: PROACTIVE POSITIONING ENGINE (v23.0.0)
+// ================================================================================
+
+let _positioningCache = null; // { city, brief, ts }
+
+async function getPositioningBrief(city) {
+  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
+
+  // Return cached result if same city within 5 min
+  if (_positioningCache && _positioningCache.city === city && (Date.now() - _positioningCache.ts) < 300000) {
+    return _positioningCache.brief;
+  }
+
+  // 1. Market lookup
+  const market = naLookupMarket(city) || usaLookupMarket(city) || null;
+  const coords = getMarketCoords(city) || (market && market.lat ? { lat: market.lat, lng: market.lng } : null);
+
+  // 2. Reload score
+  const reloadScore = await getCityReloadScore(city);
+
+  // 3. Outbound lanes — build from trips
+  let outboundLanes = [];
+  try {
+    const { trips } = await _getTripsAndExps();
+    const normCity = normalizeLanePart(city);
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+
+    // Group by normalized destination
+    const destMap = {};
+    for (const t of fromHere) {
+      if (!t.destination) continue;
+      const normDest = normalizeLanePart(t.destination);
+      if (!destMap[normDest]) destMap[normDest] = { destRaw: t.destination, trips: [] };
+      destMap[normDest].trips.push(t);
+    }
+
+    for (const [normDest, data] of Object.entries(destMap)) {
+      const ts = data.trips;
+      let totalPay = 0, totalMiles = 0, bestPay = 0, lastDate = '';
+      let minRpm = Infinity, maxRpm = 0;
+      for (const t of ts) {
+        const pay = Number(t.pay || 0);
+        const loaded = Number(t.loadedMiles || 0);
+        const empty = Number(t.emptyMiles || 0);
+        const miles = loaded + empty;
+        if (pay > 0 && miles > 0) {
+          const rpm = pay / miles;
+          if (rpm < minRpm) minRpm = rpm;
+          if (rpm > maxRpm) maxRpm = rpm;
+        }
+        totalPay += pay;
+        totalMiles += miles;
+        if (pay > bestPay) bestPay = pay;
+        if (t.pickupDate && t.pickupDate > lastDate) lastDate = t.pickupDate;
+      }
+      const count = ts.length;
+      const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+      const avgPay = count > 0 ? roundCents(totalPay / count) : 0;
+      if (minRpm === Infinity) minRpm = 0;
+
+      // Dest display name and role
+      const destMarket = usaLookupMarket(data.destRaw) || naLookupMarket(data.destRaw);
+      const destRole = destMarket ? destMarket.role : null;
+      const cityDisplay = data.destRaw.trim();
+      const displayName = city.trim().charAt(0).toUpperCase() + city.trim().slice(1) + ' \u2192 ' + cityDisplay.charAt(0).toUpperCase() + cityDisplay.slice(1);
+
+      outboundLanes.push({
+        dest: normDest,
+        destDisplay: cityDisplay,
+        destRole,
+        avgRPM,
+        count,
+        bestPay,
+        lastDate,
+        totalPay,
+        totalMiles,
+        minRpm: parseFloat(minRpm.toFixed(2)),
+        maxRpm: parseFloat(maxRpm.toFixed(2)),
+        // openLaneBreakdown compatibility fields
+        display: displayName,
+        avgRpm: avgRPM.toFixed(2),
+        trend: 0,
+        trendLabel: 'Stable',
+        trips: count,
+        avgPay,
+      });
+    }
+    outboundLanes.sort((a, b) => b.avgRPM - a.avgRPM);
+    outboundLanes = outboundLanes.slice(0, 5);
+  } catch(e) { outboundLanes = []; }
+
+  // 4. Nearby markets (within 150mi)
+  let nearbyMarkets = [];
+  if (coords) {
+    const rolePriority = { anchor: 0, support: 1, feeder: 2, transitional: 3, trap: 4 };
+    const normCity = normalizeLanePart(city);
+    for (const [key, m] of Object.entries(USA_MARKETS)) {
+      if (!m.lat || !m.lng) continue;
+      if (key === normCity) continue;
+      const dist = haversineDistanceMi(coords.lat, coords.lng, m.lat, m.lng);
+      if (dist <= 150) {
+        const displayName = key.charAt(0).toUpperCase() + key.slice(1);
+        nearbyMarkets.push({ city: key, displayName, role: m.role, zone: m.zone, distanceMi: Math.round(dist) });
+      }
+    }
+    nearbyMarkets.sort((a, b) => {
+      const pa = rolePriority[a.role] ?? 5;
+      const pb = rolePriority[b.role] ?? 5;
+      if (pa !== pb) return pa - pb;
+      return a.distanceMi - b.distanceMi;
+    });
+    nearbyMarkets = nearbyMarkets.slice(0, 8);
+  }
+
+  // 5. Weather alerts (non-blocking)
+  let weatherAlerts = [];
+  if (coords) {
+    try { weatherAlerts = await checkRouteWeather(coords, coords); } catch(e) { weatherAlerts = []; }
+  }
+
+  // 6. Patterns
+  const patterns = { totalTrips: 0, bestDay: null, worstDay: null, topDest: null };
+  try {
+    const { trips } = await _getTripsAndExps();
+    const normCity = normalizeLanePart(city);
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity && t.pickupDate);
+    patterns.totalTrips = fromHere.length;
+
+    if (fromHere.length >= 3) {
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const byDay = {};
+      for (const t of fromHere) {
+        const day = new Date(t.pickupDate).getDay();
+        if (!byDay[day]) byDay[day] = [];
+        byDay[day].push(t);
+      }
+      const dayStats = [];
+      for (const [day, ts] of Object.entries(byDay)) {
+        if (ts.length < 2) continue;
+        let totalPay = 0, totalMiles = 0;
+        for (const t of ts) {
+          totalPay += Number(t.pay || 0);
+          totalMiles += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+        }
+        const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
+        dayStats.push({ name: dayNames[Number(day)], avgRPM, count: ts.length });
+      }
+      if (dayStats.length) {
+        dayStats.sort((a, b) => b.avgRPM - a.avgRPM);
+        patterns.bestDay = dayStats[0];
+        if (dayStats.length >= 3) patterns.worstDay = dayStats[dayStats.length - 1];
+      }
+
+      // Top destination
+      const destCount = {};
+      for (const t of fromHere) {
+        if (!t.destination) continue;
+        const nd = normalizeLanePart(t.destination);
+        destCount[nd] = (destCount[nd] || 0) + 1;
+      }
+      const sorted = Object.entries(destCount).sort((a, b) => b[1] - a[1]);
+      if (sorted.length) patterns.topDest = sorted[0][0];
+    }
+  } catch(e) { /* non-critical */ }
+
+  // 7. Command logic
+  let command = 'HUNT';
+  let commandReason = 'Unknown market. No history yet — watch boards.';
+  let repositionTarget = null;
+
+  const nearestAnchor = nearbyMarkets.find(m => m.role === 'anchor' || m.role === 'support');
+
+  if (reloadScore) {
+    if (reloadScore.grade === 'A' || reloadScore.grade === 'B') {
+      command = 'HOLD';
+      commandReason = `${reloadScore.label} \u2014 avg ${reloadScore.avg}h reload (${reloadScore.count} records). Wait for a strong load.`;
+    } else if (reloadScore.grade === 'D' && outboundLanes.length === 0) {
+      command = 'REPOSITION';
+      if (nearestAnchor) {
+        commandReason = `Dead reload zone. No outbound history. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
+        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
+      } else {
+        commandReason = 'Dead reload zone. No outbound history. No nearby anchor found.';
+      }
+    } else {
+      command = 'HUNT';
+      const best = outboundLanes[0];
+      commandReason = best
+        ? `Slow reload but you have options. Target: ${escapeHtml(best.destDisplay)} at $${best.avgRPM.toFixed(2)} avg.`
+        : 'Slow reload. Check boards for outbound loads.';
+    }
+  } else if (market) {
+    if (market.role === 'anchor' || market.role === 'support') {
+      command = 'HOLD';
+      commandReason = `${market.role.charAt(0).toUpperCase() + market.role.slice(1)} market \u2014 reloads likely. Log outcomes to sharpen your data.`;
+    } else if (market.role === 'trap') {
+      command = 'REPOSITION';
+      if (nearestAnchor) {
+        commandReason = `Known trap market. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
+        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
+      } else {
+        commandReason = 'Known trap market. Find nearest anchor market.';
+      }
+    }
+  }
+
+  // 8. Confidence — weighted by data richness and market knowledge
+  let confidencePts = 0;
+  if (reloadScore) {
+    confidencePts += reloadScore.count >= 5 ? 3 : reloadScore.count >= 2 ? 2 : 1;
+  }
+  if (outboundLanes.length >= 3) confidencePts += 3;
+  else if (outboundLanes.length >= 1) confidencePts += 1;
+  if (patterns.totalTrips >= 5) confidencePts += 2;
+  else if (patterns.totalTrips >= 2) confidencePts += 1;
+  if (market) confidencePts += (market.role === 'anchor' || market.role === 'support') ? 2 : 1;
+  if (weatherAlerts.length > 0) confidencePts = Math.max(0, confidencePts - 1); // weather uncertainty reduces confidence
+  let confidence = 'LOW';
+  if (confidencePts >= 7) confidence = 'HIGH';
+  else if (confidencePts >= 3) confidence = 'MEDIUM';
+
+  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason, repositionTarget, confidence };
+  _positioningCache = { city, brief, ts: Date.now() };
+  return brief;
+}
+
+// ── F5: Weekly P&L Auto-Report ───────────────────────────────────────────
+function getWeekId(date){
+  const d = date ? new Date(date) : new Date();
+  const mon = startOfWeek(d);
+  const y = mon.getFullYear();
+  const jan1 = new Date(y, 0, 1);
+  const wk = Math.ceil(((mon - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+  return `${y}-W${String(wk).padStart(2,'0')}`;
+}
+
+async function generateWeeklyPnL(weekId){
+  try {
+    const parts = weekId.match(/^(\d{4})-W(\d{2})$/);
+    if (!parts) return null;
+    const y = parseInt(parts[1]), wk = parseInt(parts[2]);
+    // Compute Monday of that week
+    const jan1 = new Date(y, 0, 1);
+    const firstMon = startOfWeek(jan1); // inverse of getWeekId, including year-boundary weeks
+    const weekStart = new Date(firstMon);
+    weekStart.setDate(weekStart.getDate() + (wk - 1) * 7);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    weekEnd.setMilliseconds(-1);
+    const wkStartISO = isoDate(weekStart);
+    const wkEndISO = isoDate(weekEnd);
+
+    const allTrips = await dumpStore('trips');
+    const allExp = await dumpStore('expenses');
+    const weekTrips = allTrips.filter(t => !t.needsReview && t.pickupDate >= wkStartISO && t.pickupDate <= wkEndISO);
+    const weekExp = allExp.filter(e => (e.date||'') >= wkStartISO && (e.date||'') <= wkEndISO);
+
+    let grossRev = 0, totalLoadedMi = 0, totalDeadMi = 0, totalRPMSum = 0, rpmCount = 0;
+    let bestTrip = null, worstTrip = null;
+    const workDays = new Set();
+    for (const t of weekTrips){
+      const pay = Number(t.pay||0);
+      const loaded = Number(t.loadedMiles||0);
+      const empty = Number(t.emptyMiles||0);
+      const total = loaded + empty;
+      grossRev += pay;
+      totalLoadedMi += loaded;
+      totalDeadMi += empty;
+      if (tripAllMiles(t) !== null && total > 0 && pay > 0){ const rpm = pay/total; totalRPMSum += rpm; rpmCount++; if (!bestTrip || rpm > (bestTrip._rpm||0)) bestTrip = {...t, _rpm: rpm}; if (!worstTrip || rpm < (worstTrip._rpm||Infinity)) worstTrip = {...t, _rpm: rpm}; }
+      if (t.pickupDate) workDays.add(t.pickupDate);
+      if (t.deliveryDate) workDays.add(t.deliveryDate);
+    }
+    let totalExpenses = 0;
+    const expByCategory = {};
+    for (const e of weekExp){
+      const amt = Number(e.amount||0);
+      totalExpenses += amt;
+      const cat = e.category||'Other';
+      expByCategory[cat] = (expByCategory[cat]||0) + amt;
+    }
+    const mileage = summarizeTripMileage(weekTrips);
+    const mpg = knownNum(getCachedSetting('vehicleMpg', null));
+    const fuelPricePerGal = knownNum(getCachedSetting('fuelPrice', null));
+    const fuelEstimate = mileage.all !== null && mpg > 0 && fuelPricePerGal !== null && fuelPricePerGal >= 0
+      ? roundCents((mileage.all / mpg) * fuelPricePerGal) : null;
+    const netIncome = roundCents(grossRev - totalExpenses);
+    const avgRPM = mileage.rpm === null ? null : roundCents(mileage.rpm);
+    const deadheadPct = mileage.deadheadPct === null ? null : roundCents(mileage.deadheadPct);
+    totalDeadMi = mileage.empty;
+
+    const report = { weekId, weekStart: wkStartISO, weekEnd: wkEndISO, grossRev, totalExpenses, netIncome, avgRPM, totalLoadedMi, totalDeadMi, deadheadPct, fuelEstimate, loadsCount: weekTrips.length, daysWorked: workDays.size, expByCategory, bestLane: bestTrip ? `${bestTrip.origin||'?'} → ${bestTrip.destination||'?'}` : null, bestRPM: bestTrip?._rpm||0, worstLane: worstTrip ? `${worstTrip.origin||'?'} → ${worstTrip.destination||'?'}` : null, worstRPM: worstTrip?._rpm||0, generatedAt: Date.now() };
+    const {t, stores} = tx('weeklyReports','readwrite');
+    stores.weeklyReports.put(report);
+    await waitTxn(t);
+    return report;
+  } catch(e){ console.warn('[FL] generateWeeklyPnL:', e); return null; }
+}
+
+async function checkAndGenerateWeeklyReport(){
+  try {
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun
+    const hour = now.getHours();
+    // Generate on Sunday after 8pm OR anytime on Monday for the previous week
+    if (!((dow === 0 && hour >= 20) || dow === 1)) return;
+    const targetDate = new Date(now.getTime() - (dow === 1 ? 7 : 0) * 86400000);
+    const weekId = getWeekId(targetDate);
+    const {stores} = tx('weeklyReports');
+    const existing = await idbReq(stores.weeklyReports.get(weekId));
+    if (existing) return;
+    const report = await generateWeeklyPnL(weekId);
+    if (report && report.loadsCount > 0){
+      toast('📊 Weekly P&L report generated!');
+      await renderWeeklyReportCard(report);
+    }
+  } catch(e){ console.warn('[FL] weekly report check:', e); }
+}
+
+async function getLatestWeeklyReport(){
+  try {
+    const all = await dumpStore('weeklyReports');
+    if (!all.length) return null;
+    return all.sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1)[0];
+  } catch(e){ return null; }
+}
+
+function formatWeeklyReportText(r){
+  const lines = [
+    `📊 Weekly P&L Report — ${r.weekStart} to ${r.weekEnd}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Gross Revenue:    ${fmtMoney(r.grossRev)}`,
+    `Total Expenses:   ${fmtMoney(r.totalExpenses)}`,
+    `Net Income:       ${fmtMoney(r.netIncome)}`,
+    ``,
+    `Avg RPM:          ${r.avgRPM === null ? 'Unknown' : '$' + knownDisplay(r.avgRPM) + '/mi'}`,
+    `Loaded Miles:     ${(r.totalLoadedMi||0).toLocaleString()} mi`,
+    `Deadhead Miles:   ${r.totalDeadMi === null ? 'Unknown' : r.totalDeadMi.toLocaleString() + ' mi'} (${knownDisplay(r.deadheadPct, 1)}%)`,
+    `Fuel Estimate:    ${r.fuelEstimate === null ? 'Unknown' : fmtMoney(r.fuelEstimate)}`,
+    `Loads Completed:  ${r.loadsCount||0}`,
+    `Days Worked:      ${r.daysWorked||0}`,
+  ];
+  if (r.bestLane) lines.push(`Best Load:        ${r.bestLane} ($${(r.bestRPM||0).toFixed(2)} RPM)`);
+  if (r.worstLane && r.loadsCount > 1) lines.push(`Worst Load:       ${r.worstLane} ($${(r.worstRPM||0).toFixed(2)} RPM)`);
+  if (r.expByCategory && Object.keys(r.expByCategory).length){
+    lines.push(``, `Expenses by category:`);
+    for (const [cat, amt] of Object.entries(r.expByCategory)) lines.push(`  ${cat}: ${fmtMoney(amt)}`);
+  }
+  lines.push(``, `Generated by FreightLogic v${APP_VERSION}`);
+  return lines.join('\n');
+}
+
+async function renderWeeklyReportCard(report){
+  const slot = $('#homeWeeklyReport');
+  if (!slot) return;
+  if (!report || !report.loadsCount){ slot.style.display = 'none'; return; }
+  const netColor = (report.netIncome||0) >= 0 ? 'var(--good)' : 'var(--bad)';
+  slot.innerHTML = `<div class="card" style="border:1px solid var(--accent-border);background:var(--accent-glow)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600">📊 Weekly P&L — ${report.weekStart}</div>
+      <button class="btn sm" id="weekReportShare" style="min-height:36px;font-size:11px">Share</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--good)">${fmtMoney(report.grossRev||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Gross</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:${netColor}">${fmtMoney(report.netIncome||0)}</div><div style="font-size:10px;color:var(--text-tertiary)">Net</div></div>
+      <div><div style="font-family:var(--font-mono);font-size:18px;font-weight:700">$${knownDisplay(report.avgRPM)}</div><div style="font-size:10px;color:var(--text-tertiary)">Avg RPM</div></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px;text-align:center">${report.loadsCount} load${report.loadsCount!==1?'s':''} · ${(report.totalLoadedMi||0).toLocaleString()} loaded mi · ${report.daysWorked||0} days worked</div>
+  </div>`;
+  slot.style.display = '';
+  $('#weekReportShare', slot)?.addEventListener('click', async ()=>{
+    haptic(15);
+    const txt = formatWeeklyReportText(report);
+    if (navigator.share){ try{ await navigator.share({ text: txt }); return; }catch{} }
+    await copyTextToClipboard(txt);
+    toast('Weekly report copied to clipboard');
+  });
+}
+
+async function openWeeklyReports(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wkrList"><div class="muted" style="font-size:13px;text-align:center;padding:24px">Loading reports…</div></div>
+    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="wkrGenerate">Generate This Week's Report</button></div>`;
+  openModal('📊 Weekly Reports', body);
+  const allReports = (await dumpStore('weeklyReports')).sort((a,b) => (b.weekId||'') > (a.weekId||'') ? 1 : -1);
+  const list = $('#wkrList', body);
+  if (!allReports.length){
+    list.innerHTML = '<div class="muted" style="font-size:13px;text-align:center;padding:24px">No reports yet.<br><span style="font-size:12px">Reports generate automatically on Sunday evening.</span></div>';
+  } else {
+    list.innerHTML = allReports.map(r => `
+      <div class="card" style="margin-bottom:10px;cursor:pointer" data-wkid="${escapeHtml(r.weekId)}">
+        <div style="display:flex;justify-content:space-between">
+          <div style="font-weight:700">${escapeHtml(r.weekId)} <span class="muted" style="font-size:11px">${escapeHtml(r.weekStart||'')} – ${escapeHtml(r.weekEnd||'')}</span></div>
+          <div style="font-family:var(--font-mono);color:${(r.netIncome||0)>=0?'var(--good)':'var(--bad)'};">${fmtMoney(r.netIncome||0)}</div>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${r.loadsCount||0} loads · $${(r.avgRPM||0).toFixed(2)} RPM · ${fmtMoney(r.grossRev||0)} gross</div>
+      </div>`).join('');
+    list.querySelectorAll('[data-wkid]').forEach(el => {
+      el.addEventListener('click', ()=>{
+        const r = allReports.find(x => x.weekId === el.dataset.wkid);
+        if (!r) return;
+        const txt = formatWeeklyReportText(r);
+        const detail = document.createElement('div');
+        detail.innerHTML = `<pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--text)">${escapeHtml(txt)}</pre><div class="btn-row" style="margin-top:12px"><button class="btn primary" id="drShare">Share</button></div>`;
+        openModal(`Report ${escapeHtml(r.weekId)}`, detail);
+        $('#drShare', detail)?.addEventListener('click', async ()=>{ haptic(); if (navigator.share){ try{ await navigator.share({text:txt}); return; }catch{} } await copyTextToClipboard(txt); toast('Copied!'); });
+      });
+    });
+  }
+  $('#wkrGenerate', body)?.addEventListener('click', async ()=>{
+    haptic(20);
+    const r = await generateWeeklyPnL(getWeekId());
+    if (r){ toast(`Week ${r.weekId} report generated!`); closeModal(); openWeeklyReports(); }
+    else toast('Not enough data this week yet', true);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 6-9
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F6: Fuel Price Staleness Nudge ───────────────────────────────────────
+async function checkFuelPriceStaleness(){
+  try {
+    const updatedAt = await getSetting('fuelPriceUpdatedAt', null);
+    const slot = $('#homeFuelNudge');
+    if (!slot) return;
+    const now = Date.now();
+    const staleDays = updatedAt ? Math.floor((now - Number(updatedAt)) / 86400000) : null;
+    // Show nudge if never set OR stale for 14+ days
+    const isStale = staleDays === null || staleDays >= 14;
+    if (!isStale){ slot.style.display = 'none'; return; }
+    const label = staleDays === null ? 'never updated' : `last updated ${staleDays} day${staleDays!==1?'s':''} ago`;
+    slot.innerHTML = `<div class="card" style="border:1px solid var(--warn-border);background:var(--warn-muted);cursor:pointer" id="fuelNudgeCard">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:24px">⛽</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:13px;color:var(--warn)">Fuel price may be stale</div>
+          <div class="muted" style="font-size:12px;line-height:1.4">Price ${label}. Stale fuel price = inaccurate load scoring.</div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--warn);white-space:nowrap">Update →</div>
+      </div>
+    </div>`;
+    slot.style.display = '';
+    slot.querySelector('#fuelNudgeCard')?.addEventListener('click', ()=>{
+      haptic(15);
+      location.hash = '#settings';
+      setTimeout(()=>{
+        const fp = $('#moreFuelPrice') || $('#fuelPrice');
+        if (fp){ fp.focus(); fp.style.outline = '2px solid var(--warn)'; setTimeout(()=> fp.style.outline = '', 2500); }
+      }, 400);
+    });
+  } catch(e){ console.warn('[FL] fuel staleness:', e); }
+}
+
+// Hook: update fuelPriceUpdatedAt whenever fuel price is saved
+// Called from settings save (patched below at settings save handler)
+async function markFuelPriceUpdated(){
+  await setSetting('fuelPriceUpdatedAt', Date.now());
+}
+
+// Issue #119 Batch A, item 7: record WHICH source the current fuel price came
+// from. Evidence previously claimed "EIA" whenever an EIA health record
+// existed at all — even when the operator had typed the price by hand, and
+// even when the two numbers happened to be equal. Provenance is about origin,
+// not about coincidence of value.
+const FUEL_PRICE_SOURCE = Object.freeze({ OPERATOR: 'OPERATOR', EIA: 'EIA' });
+async function setFuelPriceProvenance(source, observedAt = null){
+  await setSetting('fuelPriceProvenance', {
+    source: FUEL_PRICE_SOURCE[source] ? source : FUEL_PRICE_SOURCE.OPERATOR,
+    at: Date.now(),
+    // The SOURCE observation instant (the EIA period), not the moment we
+    // stored it. Null when the operator typed a number with no source clock.
+    observedAt: _evidenceInstantMs(observedAt),
+  });
+}
+async function getFuelPriceProvenance(){
+  const p = await getSetting('fuelPriceProvenance', null);
+  if (!p || typeof p !== 'object') return null;
+  return {
+    source: FUEL_PRICE_SOURCE[p.source] || FUEL_PRICE_SOURCE.OPERATOR,
+    at: knownNum(p.at),
+    observedAt: knownNum(p.observedAt),
+  };
+}
+
+// ── F7: Deadhead Calculator with GPS ─────────────────────────────────────
+let _gpsCache = null; // { lat, lng, ts }
+
+async function getGPSPosition(){
+  if (_gpsCache && (Date.now() - _gpsCache.ts) < 300000) return _gpsCache; // 5-min cache
+  return new Promise((resolve) => {
+    if (!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => { _gpsCache = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() }; resolve(_gpsCache); },
+      () => resolve(null),
+      { timeout: 6000, maximumAge: 120000 }
+    );
+  });
+}
+
+function haversineDistanceMi(lat1, lon1, lat2, lon2){
+  const R = 3958.8; // miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getMarketCoords(cityStr){
+  const norm = (cityStr||'').trim().toLowerCase().replace(/[^a-z\s]/g,'').replace(/\s+/g,' ');
+  // Check USA_MARKETS first
+  for (const [key, data] of Object.entries(USA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  // Check CA_MARKETS
+  for (const [key, data] of Object.entries(CA_MARKETS)){
+    if (norm.includes(key) || key.includes(norm.split(',')[0].trim())){
+      if (data.lat && data.lng) return { lat: data.lat, lng: data.lng };
+    }
+  }
+  return null;
+}
+
+async function estimateDeadheadFromGPS(originCity){
+  const gps = await getGPSPosition();
+  if (!gps) return null;
+  const coords = getMarketCoords(originCity);
+  if (!coords) return null;
+  const straightLine = haversineDistanceMi(gps.lat, gps.lng, coords.lat, coords.lng);
+  return Math.round(straightLine * 1.3); // road multiplier
+}
+
+// Wire GPS deadhead into evaluator — called when origin field changes
+async function updateGPSDeadhead(originVal){
+  const hint = $('#mwGpsHint');
+  const deadEl = $('#mwDeadMi');
+  if (!hint || !deadEl) return;
+  if (!originVal || originVal.length < 3){ hint.textContent = ''; return; }
+  hint.textContent = '📍 Estimating distance…';
+  const miles = await estimateDeadheadFromGPS(originVal);
+  if (miles !== null){
+    hint.textContent = `📍 ~${miles} mi from your location`;
+    if (!deadEl.value || deadEl.value === '0'){
+      deadEl.value = miles;
+      deadEl.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+  } else {
+    hint.textContent = '';
+  }
+}
+
+// ── F8: Rate Trend Tracking ───────────────────────────────────────────────
+async function getLaneRPMTrend(orig, dest){
+  if (!orig || !dest) return null;
+  try {
+    const lane = normalizeLane(orig, dest);
+    const all = await dumpStore('trips');
+    // Filter trips on this lane
+    const laneParts = lane.split('→');
+    const origNorm = laneParts[0]||'';
+    const destNorm = laneParts[1]||'';
+    const relevant = all.filter(t => {
+      const to = normalizeLanePart(t.origin||'');
+      const td = normalizeLanePart(t.destination||'');
+      return !t.needsReview && tripHasKnownDeadhead(t) && to.includes(origNorm.split(',')[0].trim()) && td.includes(destNorm.split(',')[0].trim());
+    });
+    if (relevant.length < 3) return null;
+    // Group by YYYY-MM
+    const byMonth = {};
+    for (const t of relevant){
+      const mo = (t.pickupDate||'').slice(0,7);
+      if (!mo) continue;
+      const pay = Number(t.pay||0);
+      const mi = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+      if (!pay || !mi) continue;
+      if (!byMonth[mo]) byMonth[mo] = { totalPay:0, totalMi:0, count:0 };
+      byMonth[mo].totalPay += pay;
+      byMonth[mo].totalMi += mi;
+      byMonth[mo].count++;
+    }
+    const months = Object.keys(byMonth).sort();
+    if (months.length < 2) return null;
+    const rpmByMonth = months.map(mo => ({ mo, rpm: byMonth[mo].totalMi > 0 ? roundCents(byMonth[mo].totalPay / byMonth[mo].totalMi) : 0, count: byMonth[mo].count }));
+    const lastTwo = rpmByMonth.slice(-2);
+    const prev = lastTwo[0]; const cur = lastTwo[1];
+    const changePct = prev.rpm > 0 ? roundCents(((cur.rpm - prev.rpm) / prev.rpm) * 100) : 0;
+    const arrow = changePct >= 5 ? '↑' : changePct <= -5 ? '↓' : '→';
+    const color = changePct >= 5 ? 'var(--good)' : changePct <= -5 ? 'var(--bad)' : 'var(--warn)';
+    return { rpmByMonth, prev, cur, changePct, arrow, color, totalCount: relevant.length };
+  } catch(e){ return null; }
+}
+
+function renderRateTrendHTML(trend){
+  if (!trend) return '';
+  const { prev, cur, changePct, arrow, color } = trend;
+  const sparkline = trend.rpmByMonth.slice(-6).map(m =>
+    `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:24px;height:${Math.max(4, Math.round((m.rpm/2.5)*40))}px;background:${m.mo===cur.mo?color:'var(--surface-3)'};border-radius:2px"></div>
+      <div style="font-size:8px;color:var(--text-tertiary)">${m.mo.slice(5)}</div>
+    </div>`
+  ).join('');
+  return `<div style="margin-top:12px;padding:12px;border-radius:var(--r-sm);background:var(--surface-0);border:1px solid var(--border)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">📈 Rate Trend — This Lane</div>
+    <div style="font-size:13px;margin-bottom:8px"><span class="muted">${prev.mo}:</span> <b>$${prev.rpm.toFixed(2)}</b> <span style="color:var(--text-tertiary)">→</span> <span class="muted">${cur.mo}:</span> <b style="color:${color}">$${cur.rpm.toFixed(2)}</b> <span style="color:${color};font-weight:700">${arrow} ${Math.abs(changePct).toFixed(0)}%</span></div>
+    <div style="display:flex;gap:4px;align-items:flex-end;height:50px">${sparkline}</div>
+  </div>`;
+}
+
+async function openRateTrends(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rtContent"><div class="muted" style="text-align:center;padding:24px">Loading lane data…</div></div>`;
+  openModal('📈 Rate Trends', body);
+  try {
+    const all = await dumpStore('trips');
+    // Group by lane
+    const laneMap = {};
+    for (const t of all){
+      if (!t.origin || !t.destination) continue;
+      const lane = normalizeLane(t.origin, t.destination);
+      if (!laneMap[lane]) laneMap[lane] = { lane, trips:[], display:`${t.origin} → ${t.destination}` };
+      laneMap[lane].trips.push(t);
+    }
+    const lanes = Object.values(laneMap).filter(l => l.trips.length >= 2).sort((a,b) => b.trips.length - a.trips.length).slice(0, 20);
+    if (!lanes.length){
+      $('#rtContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No lane trend data yet.<br><span style="font-size:11px">Run at least 2 loads on the same route to see trends.</span></div>`;
+      return;
+    }
+    const items = await Promise.all(lanes.map(async l => {
+      const trend = await getLaneRPMTrend(l.trips[0].origin, l.trips[0].destination);
+      return { ...l, trend };
+    }));
+    $('#rtContent', body).innerHTML = items.map(l => {
+      const t = l.trend;
+      const arrow = t ? t.arrow : '—';
+      const color = t ? t.color : 'var(--text-tertiary)';
+      const curRPM = t ? `$${t.cur.rpm.toFixed(2)}` : '—';
+      return `<div class="card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:13px">${escapeHtml(l.display)}</div>
+          <div style="font-size:18px;font-weight:700;color:${color}">${arrow}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${l.trips.length} run${l.trips.length!==1?'s':''} · Latest: <b style="color:${color}">${curRPM}</b>${t ? ` · ${t.changePct >= 0 ? '+' : ''}${t.changePct.toFixed(0)}% vs prior month` : ''}</div>
+        ${t ? renderRateTrendHTML(t) : ''}
+      </div>`;
+    }).join('');
+  } catch(e){
+    $('#rtContent', body).innerHTML = `<div style="color:var(--bad);padding:16px">Failed to load trend data.</div>`;
+  }
+}
+
+// Wire rate trend into evaluator async injection
+async function injectRateTrendIntoEvaluator(orig, dest){
+  const slot = $('#mwRateTrendSlot');
+  if (!slot) return;
+  const trend = await getLaneRPMTrend(orig, dest);
+  if (trend) slot.innerHTML = renderRateTrendHTML(trend);
+}
+
+// ── F9: Multi-Device Sync Enhancement ────────────────────────────────────
+// Replace existing visibilitychange handler with enhanced version that:
+// 1. Auto-pushes when visible if last sync > 5 min ago
+// 2. Shows sync indicator in header
+// 3. On boot checks if server has newer backup
+
+function _updateSyncIndicator(state, label){
+  const el = $('#syncIndicator');
+  if (!el) return;
+  const icons = { syncing: `<span class="cloud-sync-spinner" style="width:12px;height:12px;border-width:1.5px"></span>`, ok: '☁️', warn: '⚠️', off: '' };
+  el.innerHTML = (icons[state]||'') + (label ? `<span style="font-size:10px;margin-left:3px;color:var(--text-tertiary)">${escapeHtml(label)}</span>` : '');
+  el.style.display = state === 'off' ? 'none' : '';
+  el.title = label || '';
+}
+
+async function cloudCheckServerTimestamp(){
+  // Check if server backup is newer than our last sync
+  try {
+    const config = await cloudGetConfig();
+    if (!config) return;
+    const hdrs = { 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': config.token };
+    const res = await cloudFetch(config.url + '/status', { headers: hdrs }, 6000);
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    if (!data.hasBackup) return;
+    // The worker doesn't expose a timestamp directly; use lastCloudSync comparison.
+    // If we have never synced but there IS a backup, show the banner.
+    const lastLocal = Number(await getSetting('lastCloudSync', 0) || 0);
+    const banner = $('#cloudSyncBanner');
+    const saved = await getSetting('lastCloudCheckTimestamp', 0) || 0;
+    // Avoid re-showing within 1hr
+    if ((Date.now() - Number(saved)) < 3600000) return;
+    await setSetting('lastCloudCheckTimestamp', Date.now());
+    if (lastLocal === 0 && data.count > 0){
+      showCloudSyncBanner('Backup found on server. Tap to restore your data.');
+    }
+  } catch(e){ console.warn('[FL] cloud auto-check failed:', e); }
+}
+
+function showCloudSyncBanner(msg){
+  const existing = $('#cloudSyncBanner');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'cloudSyncBanner';
+  el.style.cssText = 'position:fixed;top:52px;left:0;right:0;z-index:8000;padding:10px 16px;background:linear-gradient(135deg,#1a1a3a,#252545);border-bottom:1px solid var(--accent-border);display:flex;align-items:center;gap:12px;font-size:13px';
+  el.innerHTML = `<div style="flex:1">☁️ <b style="color:var(--accent)">Cloud Sync</b> — ${escapeHtml(msg)}</div>
+    <button class="btn sm" id="cloudBannerSync" style="min-height:36px;background:var(--accent);color:#000;border:none;font-weight:700">Sync Now</button>
+    <button class="btn sm" id="cloudBannerDismiss" style="min-height:36px">✕</button>`;
+  document.body.appendChild(el);
+  document.getElementById('cloudBannerSync')?.addEventListener('click', async ()=>{
+    haptic(20); el.remove();
+    location.hash = '#settings';
+    toast('Go to Cloud Backup → Pull Backup');
+  });
+  document.getElementById('cloudBannerDismiss')?.addEventListener('click', ()=>{ haptic(); el.remove(); });
+  setTimeout(()=> el?.remove(), 12000);
+}
+
+// Override the existing visibilitychange handler behaviour with enhanced version
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible'){
+    cloudIsEnabled().then(async enabled => {
+      if (!enabled) return;
+      const last = Number(await getSetting('lastCloudSync', 0) || 0);
+      const staleMs = 5 * 60 * 1000; // 5 minutes
+      if ((Date.now() - last) > staleMs){
+        _updateSyncIndicator('syncing', 'Syncing…');
+        await cloudPushBackup(true);
+        const newLast = Number(await getSetting('lastCloudSync', 0) || 0);
+        const ago = Math.floor((Date.now() - newLast) / 60000);
+        _updateSyncIndicator('ok', ago < 2 ? 'Synced' : `${ago}m ago`);
+      }
+    }).catch(()=>{});
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 10-13
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F10: Voice Input ─────────────────────────────────────────────────────
+// Voice load intake was removed by operator decision (Issue #230, v24.0.17). Was: full draft review workflow, spoken number
+// parsing, interim results, and confidence scoring.
+
+// ── F11: Document Vault ──────────────────────────────────────────────────
+// Store insurance cards, MC authority, W-9s, carrier packets as blobs.
+// Uses 'documents' IDB store (added in v10 schema).
+
+async function openDocumentVault(filterTripOrderNo=null){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <select id="dvTypeFilter" style="flex:1;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="">All documents</option>
+          <option value="insurance">Insurance</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="rate_confirmation">Rate Confirmation</option>
+          <option value="bol">Bill of Lading (BOL)</option>
+          <option value="pod">Proof of Delivery (POD)</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="btn primary" id="dvAddBtn" style="flex:0 0 auto">+ Add Document</button>
+      </div>
+      ${filterTripOrderNo ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Showing documents for trip <b>${escapeHtml(filterTripOrderNo)}</b></div>` : ''}
+      <div id="dvList"><div class="muted" style="text-align:center;padding:24px;font-size:13px">Loading…</div></div>
+    </div>
+    <input type="file" id="dvFileInput" accept="image/*,application/pdf,.pdf" multiple style="display:none" />`;
+  openModal('📁 Document Vault', body);
+
+  const TYPES = { insurance:'Insurance', authority:'MC Authority', w9:'W-9', carrier_packet:'Carrier Packet', rate_confirmation:'Rate Confirmation', bol:'BOL', pod:'POD', other:'Other' };
+
+  async function loadDocs(){
+    const filter = $('#dvTypeFilter', body).value;
+    let docs = await dumpStore('documents');
+    docs = docs.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    if (filter) docs = docs.filter(d => d.type === filter);
+    if (filterTripOrderNo) docs = docs.filter(d => d.tripOrderNo === filterTripOrderNo || !d.tripOrderNo);
+    const list = $('#dvList', body);
+    if (!docs.length){
+      list.innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No documents yet.<br><span style="font-size:11px">Add insurance cards, MC authority, W-9s, carrier packets.</span></div>`;
+      return;
+    }
+    const today = isoDate();
+    list.innerHTML = docs.map(d => {
+      let expiryBadge = '';
+      if (d.expiresAt){
+        const daysLeft = Math.floor((new Date(d.expiresAt) - new Date(today)) / 86400000);
+        if (daysLeft < 0) expiryBadge = `<span class="tag" style="color:var(--bad);border-color:var(--bad-border);font-size:10px">EXPIRED</span>`;
+        else if (daysLeft <= 30) expiryBadge = `<span class="tag" style="color:var(--warn);border-color:rgba(251,191,36,.4);font-size:10px">Exp ${daysLeft}d</span>`;
+      }
+      const tripBadge = d.tripOrderNo ? `<span class="tag" style="font-size:10px">Trip ${escapeHtml(d.tripOrderNo)}</span>` : '';
+      return `
+      <div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:12px" data-dvid="${escapeHtml(d.id)}">
+        <div style="font-size:28px;flex-shrink:0">${d.mimeType && d.mimeType.startsWith('image') ? '🖼️' : '📄'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name||'Untitled')} ${expiryBadge}${tripBadge}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${escapeHtml(TYPES[d.type]||d.type||'Document')} · ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'} · ${d.size ? Math.round(d.size/1024)+'KB' : '—'}${d.expiresAt ? ' · Exp: ' + escapeHtml(d.expiresAt) : ''}</div>
+          ${d.note ? `<div class="muted" style="font-size:11px;margin-top:2px;font-style:italic">${escapeHtml(d.note.slice(0,60))}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn" style="padding:6px 10px;font-size:12px" data-dvopen="${escapeHtml(d.id)}">Open</button>
+          <button class="btn" style="padding:6px 10px;font-size:12px;color:var(--bad);border-color:var(--bad)" data-dvdel="${escapeHtml(d.id)}">Del</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-dvopen]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        const doc = docs.find(d => d.id === btn2.dataset.dvopen);
+        if (!doc || !doc.blob) return toast('Document data not found', true);
+        const url = URL.createObjectURL(new Blob([doc.blob], {type: doc.mimeType || 'application/octet-stream'}));
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      });
+    });
+    list.querySelectorAll('[data-dvdel]').forEach(btn2 => {
+      btn2.addEventListener('click', async () => {
+        const docId = btn2.dataset.dvdel;
+        const docRecord = docs.find(d => d.id === docId) || null;
+        const docName = docRecord?.name || 'Document';
+        btn2.closest('[data-dvid]')?.remove();
+        showUndoToast(
+          escapeHtml(docName.slice(0, 30)),
+          async ()=>{
+            const {t: t2, stores: s2} = tx('documents', 'readwrite');
+            await idbReq(s2.documents.delete(docId));
+            await new Promise(r => { t2.oncomplete = r; t2.onerror = r; });
+            loadDocs();
+          },
+          async ()=>{
+            if (docRecord){
+              const {t: t3, stores: s3} = tx('documents', 'readwrite');
+              await idbReq(s3.documents.put(docRecord));
+              await new Promise(r => { t3.oncomplete = r; t3.onerror = r; });
+            }
+            loadDocs();
+          }
+        );
+      });
+    });
+  }
+
+  async function addDocument(file, type, note, expiresAt='', tripOrderNo=''){
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) return toast('File too large (max 6 MB)', true);
+    const buf = await file.arrayBuffer();
+    const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const rec = { id, name: file.name, type, note: note||'', mimeType: file.type||'application/octet-stream', size: file.size, blob: new Uint8Array(buf), createdAt: Date.now(), updatedAt: Date.now(), expiresAt: expiresAt||'', tripOrderNo: tripOrderNo||'' };
+    const {t, stores} = tx('documents', 'readwrite');
+    await idbReq(stores.documents.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+    toast(`"${escapeHtml(file.name)}" saved to vault`);
+    loadDocs();
+  }
+
+  $('#dvTypeFilter', body).addEventListener('change', () => loadDocs());
+
+  $('#dvAddBtn', body).addEventListener('click', () => {
+    // Show add dialog — v21 T3A/3B/3C: adds rate_confirmation, bol, pod, expiresAt, tripOrderNo
+    const addBody = document.createElement('div');
+    addBody.innerHTML = `
+      <div class="field"><label>Document type</label>
+        <select id="addDvType" style="width:100%;font-size:13px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="insurance">Insurance Card</option>
+          <option value="authority">MC Authority</option>
+          <option value="w9">W-9</option>
+          <option value="carrier_packet">Carrier Packet</option>
+          <option value="rate_confirmation">Rate Confirmation</option>
+          <option value="bol">Bill of Lading (BOL)</option>
+          <option value="pod">Proof of Delivery (POD)</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Note (optional)</label><input id="addDvNote" placeholder="e.g. State Farm, policy #12345" /></div>
+      <div class="field"><label>Expiration date (optional)</label><input id="addDvExpires" type="date" /></div>
+      <div class="field"><label>Link to trip order # (optional)</label><input id="addDvTrip" placeholder="e.g. ABC-1234" value="${escapeHtml(filterTripOrderNo||'')}" /></div>
+      <div class="field">
+        <label>File</label>
+        <div id="addDvDropzone" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:var(--text-secondary);font-size:13px">
+          📎 Tap to choose file (PDF, image — max 6 MB)
+        </div>
+        <input type="file" id="addDvFile" accept="image/*,application/pdf" style="display:none" />
+        <div id="addDvFilename" class="muted" style="font-size:12px;margin-top:6px"></div>
+      </div>
+      <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="addDvSave">Save to Vault</button></div>`;
+    openModal('Add Document', addBody);
+    let chosenFile = null;
+    $('#addDvDropzone', addBody).addEventListener('click', () => $('#addDvFile', addBody).click());
+    $('#addDvFile', addBody).addEventListener('change', (ev) => {
+      chosenFile = ev.target.files[0] || null;
+      $('#addDvFilename', addBody).textContent = chosenFile ? `Selected: ${chosenFile.name}` : '';
+    });
+    $('#addDvSave', addBody).addEventListener('click', async () => {
+      if (!chosenFile) return toast('Choose a file first', true);
+      const type = $('#addDvType', addBody).value;
+      const note = ($('#addDvNote', addBody).value || '').trim();
+      const expiresAt = ($('#addDvExpires', addBody).value || '').trim();
+      const tripOrderNo = clampStr(($('#addDvTrip', addBody).value || '').trim(), 40);
+      haptic(20);
+      await addDocument(chosenFile, type, note, expiresAt, tripOrderNo);
+      closeModal();
+      // Re-open vault
+      setTimeout(() => openDocumentVault(filterTripOrderNo).catch(()=>{}), 100);
+    });
+  });
+
+  await loadDocs();
+}
+
+// ── F12: Reload Scoring ──────────────────────────────────────────────────
+// Track reload speed per destination city using 'reloadOutcomes' store.
+// Record how long it took to get a return load after delivering to a city.
+// Show city reload score in evaluator output.
+
+async function recordReloadOutcome(trip, hoursToReload){
+  if (!trip || !trip.destination) return;
+  const city = normalizeLanePart(trip.destination);
+  if (!city) return;
+  try {
+    const id = 'ro_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const dt = trip.deliveryDate || isoDate(new Date());
+    const dayOfWeek = new Date(dt + 'T12:00:00').getDay(); // 0=Sun
+    const rec = { id, city, date: dt, dayOfWeek, hoursToReload: Number(hoursToReload)||0, tripId: trip.orderNo||'' };
+    const {t, stores} = tx('reloadOutcomes', 'readwrite');
+    await idbReq(stores.reloadOutcomes.put(rec));
+    await new Promise(r => { t.oncomplete = r; t.onerror = r; });
+  } catch(e){ console.warn('[FL] reloadOutcome:', e); }
+}
+
+async function getCityReloadScore(city){
+  if (!city) return null;
+  try {
+    const norm = normalizeLanePart(city);
+    const {stores} = tx('reloadOutcomes');
+    const idx = stores.reloadOutcomes.index('city');
+    const recs = await idbReq(idx.getAll(norm));
+    if (!recs || recs.length < 2) return null;
+    const avg = recs.reduce((s, r) => s + (r.hoursToReload||0), 0) / recs.length;
+    // Score: <8h = great, 8-24h = ok, 24-48h = slow, >48h = dead zone
+    let grade, color, label;
+    if (avg < 8){ grade='A'; color='var(--good)'; label='Hot market'; }
+    else if (avg < 24){ grade='B'; color='var(--good)'; label='Good reload'; }
+    else if (avg < 48){ grade='C'; color='var(--warn)'; label='Slow reload'; }
+    else { grade='D'; color='var(--bad)'; label='Dead zone'; }
+    return { avg: Math.round(avg), grade, color, label, count: recs.length };
+  } catch(e){ return null; }
+}
+
+async function openReloadScoring(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="rsContent"><div class="muted" style="text-align:center;padding:24px">Loading reload data…</div></div>
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Log a Reload Outcome</div>
+      <div class="field"><label>Delivery city</label><input id="rsCity" placeholder="e.g. Indianapolis" /></div>
+      <div class="field"><label>Hours to reload (after delivery)</label><input id="rsHours" inputmode="decimal" placeholder="e.g. 6.5" /></div>
+      <div class="btn-row"><button class="btn primary" id="rsSave">Log Outcome</button></div>
+    </div>`;
+  openModal('🔄 Reload Scoring', body);
+
+  async function loadScores(){
+    try {
+      const all = await dumpStore('reloadOutcomes');
+      const cities = {};
+      for (const r of all){
+        if (!cities[r.city]) cities[r.city] = [];
+        cities[r.city].push(r.hoursToReload||0);
+      }
+      const entries = Object.entries(cities).map(([city, hrs]) => {
+        const avg = hrs.reduce((a,b)=>a+b,0)/hrs.length;
+        let grade, color;
+        if (avg < 8){ grade='A'; color='var(--good)'; }
+        else if (avg < 24){ grade='B'; color='var(--good)'; }
+        else if (avg < 48){ grade='C'; color='var(--warn)'; }
+        else { grade='D'; color='var(--bad)'; }
+        return { city, avg: Math.round(avg), grade, color, count: hrs.length };
+      }).sort((a,b) => a.avg - b.avg);
+      const el = $('#rsContent', body);
+      if (!entries.length){
+        el.innerHTML = '<div class="muted" style="text-align:center;padding:24px;font-size:13px">No reload data yet.<br>Log outcomes after each delivery to build your city intelligence.</div>';
+      } else {
+        el.innerHTML = `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">A=&lt;8h · B=8-24h · C=24-48h · D=48h+</div>` + entries.map(e => `
+          <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:22px;font-weight:900;color:${e.color};width:24px;text-align:center">${e.grade}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(e.city.replace(/(?:^|\s)\S/g, c => c.toUpperCase()))}</div>
+              <div class="muted" style="font-size:11px">Avg ${e.avg}h to reload · ${e.count} data point${e.count!==1?'s':''}</div>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e){ $('#rsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load data.</div>'; }
+  }
+
+  $('#rsSave', body).addEventListener('click', async () => {
+    const city = ($('#rsCity', body).value || '').trim();
+    const hours = parseFloat($('#rsHours', body).value || '');
+    if (!city || isNaN(hours) || hours < 0) return toast('Enter city and hours', true);
+    haptic(20);
+    await recordReloadOutcome({ destination: city }, hours);
+    toast('Reload outcome logged!');
+    $('#rsCity', body).value = '';
+    $('#rsHours', body).value = '';
+    loadScores();
+  });
+
+  await loadScores();
+}
+
+// ── F13: Chain Analysis ──────────────────────────────────────────────────
+// Analyze multi-load chains: given a delivery city, find best next loads
+// based on lane history, broker intel, and reload scores.
+
+async function openChainAnalysis(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+      Find the best next load after delivering to a city, based on your lane history and reload data.
+    </div>
+    <div class="field"><label>You are delivering to…</label>
+      <input id="caCity" placeholder="e.g. Indianapolis" style="width:100%" /></div>
+    <button class="btn primary" id="caAnalyze" style="width:100%;margin-top:4px">Analyze Chain</button>
+    <div id="caResults" style="margin-top:16px"></div>`;
+  openModal('🔗 Chain Analysis', body);
+
+  $('#caAnalyze', body).addEventListener('click', async () => {
+    const city = ($('#caCity', body).value || '').trim();
+    if (!city) return toast('Enter a delivery city', true);
+    haptic(20);
+    const results = $('#caResults', body);
+    results.innerHTML = '<div class="muted" style="text-align:center;padding:16px">Analyzing…</div>';
+    try {
+      const normCity = normalizeLanePart(city);
+      // Find all lanes that START from this city (from laneHistory)
+      const {stores} = tx('laneHistory');
+      const all = await idbReq(stores.laneHistory.getAll());
+      const outbound = all.filter(r => r.lane && r.lane.startsWith(normCity + '→'));
+      // Get reload score for this city
+      const reload = await getCityReloadScore(city);
+      // Also look at trips from the trips store
+      const allTrips = await dumpStore('trips');
+      const fromCity = allTrips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+      // Build destination stats from trips
+      const destMap = {};
+      for (const t of fromCity){
+        const dest = normalizeLanePart(t.destination||'');
+        if (!dest) continue;
+        if (!destMap[dest]) destMap[dest] = { dest, display: t.destination, pays: [], rpms: [], count: 0 };
+        const pay = Number(t.pay||0);
+        const miles = Number(t.loadedMiles||0) + Number(t.emptyMiles||0);
+        destMap[dest].count++;
+        if (pay) destMap[dest].pays.push(pay);
+        if (miles > 0) destMap[dest].rpms.push(pay / miles);
+      }
+      const lanes = Object.values(destMap).sort((a,b) => {
+        const rpmA = a.rpms.length ? a.rpms.reduce((s,r)=>s+r,0)/a.rpms.length : 0;
+        const rpmB = b.rpms.length ? b.rpms.reduce((s,r)=>s+r,0)/b.rpms.length : 0;
+        return rpmB - rpmA;
+      }).slice(0, 8);
+
+      let html = '';
+      // Reload intel header
+      if (reload){
+        html += `<div class="card" style="margin-bottom:12px;border:1px solid ${reload.color};opacity:.9">
+          <div style="font-size:12px;font-weight:700;color:${reload.color}">Reload Score for ${escapeHtml(city)}: <b>${reload.grade}</b> — ${escapeHtml(reload.label)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">Avg ${reload.avg}h to reload · Based on ${reload.count} data point${reload.count!==1?'s':''}</div>
+        </div>`;
+      } else {
+        html += `<div class="muted" style="font-size:12px;margin-bottom:10px">No reload score for ${escapeHtml(city)} yet — log outcomes to build intelligence.</div>`;
+      }
+      if (!lanes.length){
+        html += `<div class="muted" style="font-size:13px;text-align:center;padding:16px">No outbound lane history from ${escapeHtml(city)} yet.<br><span style="font-size:11px">Run loads from this city to build chain intelligence.</span></div>`;
+      } else {
+        html += `<div style="font-weight:700;font-size:13px;margin-bottom:8px">Best next lanes from ${escapeHtml(city)}:</div>`;
+        html += lanes.map((l, i) => {
+          const avgRPM = l.rpms.length ? (l.rpms.reduce((s,r)=>s+r,0)/l.rpms.length) : 0;
+          const avgPay = l.pays.length ? (l.pays.reduce((s,p)=>s+p,0)/l.pays.length) : 0;
+          const rpmColor = avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+          return `<div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:18px;font-weight:900;color:var(--text-tertiary);width:20px;text-align:center">${i+1}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">${escapeHtml(city)} → ${escapeHtml(l.display||l.dest)}</div>
+              <div class="muted" style="font-size:11px;margin-top:2px">${l.count} run${l.count!==1?'s':''} · Avg ${fmtMoney(avgPay)} · <span style="color:${rpmColor};font-weight:700">$${avgRPM.toFixed(2)} RPM</span></div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+      results.innerHTML = html;
+    } catch(e){
+      results.innerHTML = '<div style="color:var(--bad);padding:16px">Analysis failed. Try again.</div>';
+      console.warn('[FL] chainAnalysis:', e);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 14-15
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F14: Weekly Strategy ─────────────────────────────────────────────────
+// Analyzes the current week's trips/expenses to suggest a strategic mode
+// (HARVEST / REPOSITION / PROTECT / FLOOR_PROTECT), shows goal progress
+// and a projected end-of-week gross.
+
+async function openWeeklyStrategy(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="wsContent"><div class="muted" style="text-align:center;padding:24px">Analyzing this week…</div></div>`;
+  openModal('📅 Weekly Strategy', body);
+  try {
+    const now = new Date();
+    const wkStart = startOfWeek(now);
+    const wkEnd = new Date(wkStart); wkEnd.setDate(wkStart.getDate() + 6); wkEnd.setHours(23,59,59,999);
+    const wkStartISO = isoDate(wkStart);
+    const wkEndISO   = isoDate(wkEnd);
+
+    const [wkTrips, wkExps] = await Promise.all([
+      queryTripsByPickupRange(wkStartISO, wkEndISO),
+      queryExpensesByDateRange(wkStartISO, wkEndISO)
+    ]);
+
+    const weeklyGoal  = Number(await getSetting('weeklyGoal', 0) || 0);
+    const opCPM       = Number(await getSetting('opCostPerMile', 0) || 0);
+
+    // Compute week totals
+    const grossWk   = wkTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
+    const milesWk   = wkTrips.reduce((s, t) => s + Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0), 0);
+    const expWk     = wkExps.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const netWk     = grossWk - expWk - (opCPM > 0 ? milesWk * opCPM : 0);
+    const avgRPM    = milesWk > 0 ? grossWk / milesWk : 0;
+
+    // Day-of-week progress (Mon=0 … Sun=6), Monday-anchored
+    const dayOfWk   = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0-6
+    const daysLeft  = 6 - dayOfWk;
+    const dailyRate = dayOfWk > 0 ? grossWk / dayOfWk : 0;
+    const projected = grossWk + dailyRate * daysLeft;
+
+    // Strategy logic
+    let strategy, stratColor, stratNote;
+    const pct = weeklyGoal > 0 ? grossWk / weeklyGoal : null;
+    if (pct === null){
+      strategy   = 'SET A GOAL';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Add a weekly income goal in Settings to unlock strategy mode.';
+    } else if (pct >= 1.0){
+      strategy   = '🏆 HARVEST';
+      stratColor = 'var(--good)';
+      stratNote  = 'Goal hit. Be selective — only accept premium loads. Protect your net.';
+    } else if (pct >= 0.75){
+      strategy   = '⚡ PUSH';
+      stratColor = 'var(--accent)';
+      stratNote  = 'On track. Accept good loads but keep an eye on expenses.';
+    } else if (pct >= 0.40){
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Behind pace. Consider repositioning to a stronger freight market.';
+    } else if (dayOfWk >= 3){
+      strategy   = '🛡️ FLOOR_PROTECT';
+      stratColor = 'var(--bad)';
+      stratNote  = 'Late in the week and behind. Take what covers costs — do not go negative.';
+    } else {
+      strategy   = '🔄 REPOSITION';
+      stratColor = 'var(--warn)';
+      stratNote  = 'Slow start. Look for volume lanes to build momentum.';
+    }
+
+    const goalBar = weeklyGoal > 0 ? Math.min(100, Math.round((grossWk / weeklyGoal) * 100)) : 0;
+    const projBar = weeklyGoal > 0 ? Math.min(100, Math.round((projected / weeklyGoal) * 100)) : 0;
+    const projColor = projected >= (weeklyGoal || projected + 1) ? 'var(--good)' : projected >= (weeklyGoal || 0) * 0.75 ? 'var(--warn)' : 'var(--bad)';
+
+    $('#wsContent', body).innerHTML = `
+      <div class="card" style="border:2px solid ${stratColor};margin-bottom:14px;text-align:center;padding:18px 12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-tertiary);letter-spacing:.08em;margin-bottom:6px">Strategy Mode</div>
+        <div style="font-size:22px;font-weight:900;color:${stratColor}">${escapeHtml(strategy)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;max-width:280px;margin-left:auto;margin-right:auto">${escapeHtml(stratNote)}</div>
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Week Progress${weeklyGoal > 0 ? ` · Goal: ${fmtMoney(weeklyGoal)}` : ''}</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Earned so far</span><b>${fmtMoney(grossWk)}</b>
+        </div>
+        ${weeklyGoal > 0 ? `
+        <div style="background:var(--card-border);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px">
+          <div style="width:${goalBar}%;background:${stratColor};height:100%;transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:2px">
+          <span>Projected EOW</span><b style="color:${projColor}">${fmtMoney(projected)}</b>
+        </div>
+        <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden">
+          <div style="width:${projBar}%;background:${projColor};height:100%;opacity:.6;transition:width .4s"></div>
+        </div>` : ''}
+      </div>
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Loads</div><b>${wkTrips.length}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Miles</div><b>${milesWk.toLocaleString()}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Avg RPM</div><b style="color:${avgRPM >= 2.5 ? 'var(--good)' : avgRPM >= 2.0 ? 'var(--warn)' : avgRPM > 0 ? 'var(--bad)' : 'var(--text-tertiary)'}">${avgRPM > 0 ? '$' + avgRPM.toFixed(2) : '—'}</b></div>
+          <div><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Est. Net</div><b style="color:${netWk >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(netWk)}</b></div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:4px">
+        ${daysLeft === 0 ? 'Last day of the week.' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left · based on ${wkTrips.length} load${wkTrips.length !== 1 ? 's' : ''} this week`}
+      </div>`;
+  } catch(e){
+    $('#wsContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load strategy data.</div>';
+    console.warn('[FL] weeklyStrategy:', e);
+  }
+}
+
+// ── F15: Seasonal Intel ──────────────────────────────────────────────────
+// Groups all historical trips by calendar month (1-12), computes average
+// gross/RPM per month across all years, and highlights best/worst months.
+
+async function openSeasonalIntel(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="siContent"><div class="muted" style="text-align:center;padding:24px">Building seasonal data…</div></div>`;
+  openModal('🌦️ Seasonal Intel', body);
+  try {
+    const all = await dumpStore('trips');
+    if (!all.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">No trip history yet.<br><span style="font-size:11px">Log loads to build seasonal intelligence over time.</span></div>`;
+      return;
+    }
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // month buckets: index 0-11
+    const buckets = Array.from({length:12}, (_,i) => ({ idx:i, name:MONTHS[i], grosses:[], rpms:[], count:0 }));
+
+    for (const t of all){
+      const d = t.pickupDate || t.date || '';
+      if (!d) continue;
+      const mo = parseInt(d.slice(5, 7), 10) - 1; // 0-based
+      if (mo < 0 || mo > 11) continue;
+      const pay  = Number(t.pay || 0);
+      const mi   = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      buckets[mo].count++;
+      if (pay)      buckets[mo].grosses.push(pay);
+      if (mi > 0)   buckets[mo].rpms.push(pay / mi);
+    }
+
+    // Compute averages
+    const stats = buckets.map(b => {
+      const avgGross = b.grosses.length ? b.grosses.reduce((s,v)=>s+v,0)/b.grosses.length : null;
+      const avgRPM   = b.rpms.length   ? b.rpms.reduce((s,v)=>s+v,0)/b.rpms.length       : null;
+      return { ...b, avgGross, avgRPM };
+    });
+
+    const withData = stats.filter(s => s.avgRPM !== null);
+    if (!withData.length){
+      $('#siContent', body).innerHTML = `<div class="muted" style="text-align:center;padding:24px;font-size:13px">Not enough data yet.</div>`;
+      return;
+    }
+
+    const maxRPM  = Math.max(...withData.map(s => s.avgRPM));
+    const minRPM  = Math.min(...withData.map(s => s.avgRPM));
+    const curMo   = new Date().getMonth(); // 0-based
+
+    const rows = stats.map(s => {
+      if (!s.avgGross && !s.avgRPM){
+        return `<div class="card" style="margin-bottom:6px;opacity:.45;display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;color:var(--text-tertiary)">${escapeHtml(s.name)}</div>
+          <div style="flex:1;font-size:11px;color:var(--text-tertiary)">No data${s.idx === curMo ? ' · <b>current month</b>' : ''}</div>
+        </div>`;
+      }
+      const isBest  = s.avgRPM !== null && s.avgRPM === maxRPM;
+      const isWorst = s.avgRPM !== null && s.avgRPM === minRPM && maxRPM !== minRPM;
+      const isCur   = s.idx === curMo;
+      const rpmColor = s.avgRPM >= 2.5 ? 'var(--good)' : s.avgRPM >= 2.0 ? 'var(--warn)' : 'var(--bad)';
+      const barPct   = maxRPM > 0 ? Math.round((s.avgRPM / maxRPM) * 100) : 0;
+      const badge    = isBest ? ' 🏆' : isWorst ? ' ⚠️' : isCur ? ' ←now' : '';
+      const border   = isBest ? '2px solid var(--good)' : isWorst ? '2px solid var(--bad)' : isCur ? '2px solid var(--accent)' : '1px solid var(--card-border)';
+      return `<div class="card" style="margin-bottom:6px;border:${border}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;font-weight:700;font-size:13px;flex-shrink:0">${escapeHtml(s.name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="background:var(--card-border);border-radius:3px;height:6px;overflow:hidden;margin-bottom:4px">
+              <div style="width:${barPct}%;background:${rpmColor};height:100%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary)">
+              ${s.count} load${s.count !== 1 ? 's' : ''} · Avg ${fmtMoney(s.avgGross || 0)} · <b style="color:${rpmColor}">$${(s.avgRPM||0).toFixed(2)} RPM</b>${escapeHtml(badge)}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    $('#siContent', body).innerHTML = `
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        Based on <b>${all.length}</b> historical load${all.length !== 1 ? 's' : ''}. Best months get <b>🏆</b>, weakest get <b>⚠️</b>.
+      </div>
+      ${rows}
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-top:4px">
+        Data spans ${[...new Set(all.map(t=>(t.pickupDate||t.date||'').slice(0,4)).filter(Boolean))].sort().join(', ') || 'unknown years'}
+      </div>`;
+  } catch(e){
+    $('#siContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load seasonal data.</div>';
+    console.warn('[FL] seasonalIntel:', e);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Features 16-17
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F16: Cost-Per-Day ────────────────────────────────────────────────────
+// Calculates daily breakeven from monthly fixed costs + variable CPM.
+// Shows minimum gross needed per day / week and compares to recent actuals.
+
+async function openCostPerDay(){
+  const body = document.createElement('div');
+  body.innerHTML = `<div id="cpdContent"><div class="muted" style="text-align:center;padding:24px">Loading cost data…</div></div>`;
+  openModal('💸 Cost-Per-Day', body);
+  try {
+    const [mIns, mVeh, mMaint, mOther, mMiles, opCPM, weeklyGoal] = await Promise.all([
+      getSetting('monthlyInsurance',  0),
+      getSetting('monthlyVehicle',    0),
+      getSetting('monthlyMaintenance',0),
+      getSetting('monthlyOther',      0),
+      getSetting('monthlyMiles',      0),
+      getSetting('opCostPerMile',     0),
+      getSetting('weeklyGoal',        0),
+    ]);
+    const fixedMonthly = [mIns, mVeh, mMaint, mOther].reduce((s,v) => s + Number(v||0), 0);
+    const fixedDaily   = fixedMonthly / 30.44;   // avg days/month
+    const fixedWeekly  = fixedMonthly / 4.345;
+    const cpm          = Number(opCPM || 0);
+    const avgMonthMiles= Number(mMiles || 0);
+    const varDaily     = avgMonthMiles > 0 ? (avgMonthMiles / 30.44) * cpm : 0;
+    const varWeekly    = avgMonthMiles > 0 ? (avgMonthMiles / 4.345) * cpm : 0;
+
+    const totalDaily   = fixedDaily + varDaily;
+    const totalWeekly  = fixedWeekly + varWeekly;
+
+    // Last 30 days actuals
+    const now      = new Date();
+    const from30   = new Date(now); from30.setDate(now.getDate() - 30);
+    const [trips30, exps30] = await Promise.all([
+      queryTripsByPickupRange(isoDate(from30), isoDate(now)),
+      queryExpensesByDateRange(isoDate(from30), isoDate(now)),
+    ]);
+    const gross30   = trips30.reduce((s,t) => s + Number(t.pay||0), 0);
+    const exp30     = exps30.reduce((s,e)  => s + Number(e.amount||0), 0);
+    const actDaily  = gross30 / 30;
+    const actNet30  = gross30 - exp30;
+
+    const hasFixed = fixedMonthly > 0;
+    const beColor  = actDaily >= totalDaily ? 'var(--good)' : actDaily > 0 ? 'var(--warn)' : 'var(--text-tertiary)';
+    const wGoal    = Number(weeklyGoal||0);
+
+    $('#cpdContent', body).innerHTML = `
+      ${!hasFixed && cpm === 0 ? `<div class="card" style="border:1px solid var(--warn);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
+        <b style="color:var(--warn)">⚠️ No cost data yet.</b><br>Enter monthly fixed costs and op cost-per-mile in <b>Settings → Vehicle & Costs</b> to unlock full analysis.
+      </div>` : ''}
+
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">Daily Breakeven</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Fixed / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(fixedDaily)}</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Variable / Day</div>
+            <div style="font-size:18px;font-weight:800">${fmtMoney(varDaily)}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:12px;background:var(--bg-secondary);border-radius:10px;text-align:center">
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Total Breakeven / Day</div>
+          <div style="font-size:26px;font-weight:900;color:var(--accent)">${fmtMoney(totalDaily)}</div>
+          <div class="muted" style="font-size:11px;margin-top:2px">${fmtMoney(totalWeekly)} / week &nbsp;·&nbsp; ${fmtMoney(fixedMonthly + varDaily*30.44)} / month</div>
+        </div>
+      </div>
+
+      ${gross30 > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Last 30 Days Actuals</div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Avg gross / day</span><b style="color:${beColor}">${fmtMoney(actDaily)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span>Gross total</span><b>${fmtMoney(gross30)}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>Net (after expenses)</span><b style="color:${actNet30>=0?'var(--good)':'var(--bad)'}">${fmtMoney(actNet30)}</b>
+        </div>
+        ${totalDaily > 0 ? `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:${actDaily >= totalDaily ? 'rgba(0,200,100,.08)' : 'rgba(255,80,80,.08)'};font-size:12px;text-align:center">
+          ${actDaily >= totalDaily
+            ? `<b style="color:var(--good)">✓ Covering costs</b> — ${fmtMoney(actDaily - totalDaily)}/day above breakeven`
+            : `<b style="color:var(--bad)">✗ Below breakeven</b> — ${fmtMoney(totalDaily - actDaily)}/day shortfall`}
+        </div>` : ''}
+      </div>` : ''}
+
+      ${wGoal > 0 ? `
+      <div class="card" style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Weekly Goal Coverage</div>
+        <div style="font-size:12px;color:var(--text-secondary)">Goal: <b>${fmtMoney(wGoal)}</b> &nbsp;·&nbsp; Breakeven: <b>${fmtMoney(totalWeekly)}</b> &nbsp;·&nbsp; Profit window: <b style="color:var(--good)">${fmtMoney(Math.max(0, wGoal - totalWeekly))}</b></div>
+      </div>` : ''}
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:2px">
+        Fixed / 30.44 days avg. Variable based on ${avgMonthMiles > 0 ? avgMonthMiles.toLocaleString() + ' est. monthly miles' : 'no miles estimate'}.
+      </div>`;
+  } catch(e){
+    $('#cpdContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load cost data.</div>';
+    console.warn('[FL] costPerDay:', e);
+  }
+}
+
+// ── F17: Counter-Offer Memory ─────────────────────────────────────────────
+// Log counter-offer attempts per broker+lane with outcome (accepted/rejected/
+// no-response). View history sorted by broker, see win rates and avg deltas.
+
+async function openCounterOfferMemory(){
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+      Track counter-offer outcomes to learn which brokers and lanes are negotiable.
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">Log Attempt</div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Broker</label>
+        <input id="comBroker" placeholder="e.g. Coyote Logistics" style="width:100%" /></div>
+      <div class="field" style="margin-bottom:6px"><label style="font-size:11px">Lane</label>
+        <input id="comLane" placeholder="e.g. Chicago → Indianapolis" style="width:100%" /></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <div class="field"><label style="font-size:11px">Their Offer ($)</label>
+          <input id="comOffer" type="number" min="0" placeholder="800" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Your Counter ($)</label>
+          <input id="comCounter" type="number" min="0" placeholder="950" style="width:100%" /></div>
+        <div class="field"><label style="font-size:11px">Final ($)</label>
+          <input id="comFinal" type="number" min="0" placeholder="920" style="width:100%" /></div>
+      </div>
+      <div class="field" style="margin-bottom:8px"><label style="font-size:11px">Outcome</label>
+        <select id="comOutcome" style="width:100%">
+          <option value="accepted">✅ Accepted my counter</option>
+          <option value="partial">🤝 Partial — met in middle</option>
+          <option value="rejected">❌ Rejected — took their rate</option>
+          <option value="no_response">🚫 No response / walked</option>
+        </select>
+      </div>
+      <button class="btn primary" id="comSave" style="width:100%">Save Attempt</button>
+    </div>
+    <div id="comHistory"></div>`;
+  openModal('🤝 Counter-Offer Memory', body);
+
+  async function loadHistory(){
+    const el = $('#comHistory', body);
+    el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:10px">Loading…</div>';
+    try {
+      // v23.8.2: exclude legacy pre-broker-chain rows so old blank-broker
+      // entries don't show up as "Unknown" and dilute per-broker win rates.
+      const all = (await dumpStore('bidHistory')).filter(r => !r.legacyUnkeyed);
+      all.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      if (!all.length){
+        el.innerHTML = '<div class="muted" style="font-size:12px;text-align:center;padding:16px">No attempts logged yet.</div>';
+        return;
+      }
+
+      // Aggregate by broker
+      // Group on the normalized broker key so rows written before/after key
+      // normalization collapse into one card; show the raw text when we have it.
+      // Object.create(null) — broker text is user input, so a literal "__proto__"
+      // must not land on Object.prototype or silently drop the bucket.
+      const brokerMap = Object.create(null);
+      for (const r of all){
+        const b = normBroker(r.broker) || 'unknown';
+        if (!brokerMap[b]) brokerMap[b] = { broker: r.brokerDisplay || r.broker || 'Unknown', records: [], wins: 0 };
+        brokerMap[b].records.push(r);
+        if (r.outcome === 'accepted' || r.outcome === 'partial') brokerMap[b].wins++;
+        // v24.2 section 16.8: no_response is not adjudicated — track it apart.
+        if (r.outcome === 'accepted' || r.outcome === 'partial' || r.outcome === 'rejected') brokerMap[b].adjudicated = (brokerMap[b].adjudicated || 0) + 1;
+        else brokerMap[b].walked = (brokerMap[b].walked || 0) + 1;
+      }
+      const brokers = Object.values(brokerMap).sort((a,z) => z.records.length - a.records.length);
+
+      const outcomeIcon = { accepted:'✅', partial:'🤝', rejected:'❌', no_response:'🚫' };
+      const outcomeLabel= { accepted:'Accepted', partial:'Partial', rejected:'Rejected', no_response:'Walked' };
+
+      el.innerHTML = brokers.map(bk => {
+        const adj = bk.adjudicated || 0;
+        const walked = bk.walked || 0;
+        // Denominator is adjudicated attempts only. Unknown (all walked) stays
+        // null rather than a misleading 0%.
+        const winRate = adj > 0 ? Math.round((bk.wins / adj) * 100) : null;
+        const rateColor = winRate === null ? 'var(--text-tertiary)' : winRate >= 60 ? 'var(--good)' : winRate >= 30 ? 'var(--warn)' : 'var(--bad)';
+        const rows = bk.records.slice(0, 5).map(r => {
+          const offer   = Number(r.offerAmt  || 0);
+          const counter = Number(r.counterAmt|| 0);
+          const final   = Number(r.finalAmt  || 0);
+          const delta   = final > 0 && offer > 0 ? final - offer : null;
+          const icon    = outcomeIcon[r.outcome] || '•';
+          const label   = outcomeLabel[r.outcome] || r.outcome;
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:6px 0;border-bottom:1px solid var(--card-border)">
+            <span style="width:16px;text-align:center">${icon}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.lane||'—')}</div>
+              <div class="muted">${r.date||''} · ${offer > 0 ? fmtMoney(offer) : '—'} → ${counter > 0 ? fmtMoney(counter) : '—'}${final > 0 ? ` → ${fmtMoney(final)}` : ''}</div>
+            </div>
+            ${delta !== null ? `<div style="font-weight:700;color:${delta >= 0 ? 'var(--good)' : 'var(--bad)'}">+${fmtMoney(delta)}</div>` : ''}
+          </div>`;
+        }).join('');
+        return `<div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-weight:700;font-size:13px">${escapeHtml(bk.broker)}</div>
+            <div style="font-size:11px;font-weight:700;color:${rateColor}">${winRate === null ? '—' : winRate + '% win'} · ${adj} adjudicated${walked ? ` · ${walked} walked` : ''}</div>
+          </div>
+          ${rows}
+          ${bk.records.length > 5 ? `<div class="muted" style="font-size:11px;text-align:center;padding-top:6px">+${bk.records.length-5} more</div>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);font-size:12px;padding:10px">Failed to load history.</div>';
+      console.warn('[FL] counterOfferMemory load:', e);
+    }
+  }
+
+  await loadHistory();
+
+  $('#comSave', body).addEventListener('click', async () => {
+    const broker  = ($('#comBroker',  body).value || '').trim();
+    const lane    = ($('#comLane',    body).value || '').trim();
+    const offer   = Number($('#comOffer',   body).value || 0);
+    const counter = Number($('#comCounter', body).value || 0);
+    const final   = Number($('#comFinal',   body).value || 0);
+    const outcome = $('#comOutcome', body).value;
+    if (!broker) return toast('Enter a broker name', true);
+    if (!lane)   return toast('Enter a lane', true);
+    haptic(20);
+    try {
+      const rec = {
+        id:        Date.now() + Math.random(),
+        // Normalized key for the broker index; raw text kept in brokerDisplay for UI.
+        broker:        normBroker(clampStr(broker, 80)),
+        brokerDisplay: clampStr(broker, 80),
+        lane:      clampStr(lane, 80),
+        offerAmt:  offer,
+        counterAmt:counter,
+        finalAmt:  final,
+        outcome,
+        date:      isoDate(new Date()),
+      };
+      const {t, stores} = tx('bidHistory', 'readwrite');
+      stores.bidHistory.put(rec);
+      await idbReq(t);
+      // Clear fields
+      ['#comBroker','#comLane','#comOffer','#comCounter','#comFinal'].forEach(sel => { const el = $(sel, body); if (el) el.value = ''; });
+      $('#comOutcome', body).value = 'accepted';
+      toast('Saved');
+      await loadHistory();
+    } catch(e){
+      toast('Save failed', true);
+      console.warn('[FL] counterOfferMemory save:', e);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v18 FEATURE BLOCK — Feature 18: CPA Track Package
+// ════════════════════════════════════════════════════════════════════════
+
+// ── F18: CPA Track Package ────────────────────────────────────────────────
+// In-app CPA-ready report: full P&L preview, quarterly breakdown, estimated
+// SE tax + quarterly payment schedule, and one-tap CSV export.
+
+async function openCPAPackage(){
+  const now   = new Date();
+  const year  = now.getFullYear();
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn cpa-period-btn active" data-period="ytd" style="flex:1;min-width:0;font-size:12px">YTD ${year}</button>
+      <button class="btn cpa-period-btn" data-period="q1"  style="flex:1;min-width:0;font-size:12px">Q1</button>
+      <button class="btn cpa-period-btn" data-period="q2"  style="flex:1;min-width:0;font-size:12px">Q2</button>
+      <button class="btn cpa-period-btn" data-period="q3"  style="flex:1;min-width:0;font-size:12px">Q3</button>
+      <button class="btn cpa-period-btn" data-period="q4"  style="flex:1;min-width:0;font-size:12px">Q4</button>
+    </div>
+    <div id="cpaContent"><div class="muted" style="text-align:center;padding:24px">Loading…</div></div>`;
+
+  openModal('📦 CPA Package', body);
+
+  let currentPeriod = 'ytd';
+
+  const QUARTERS = [
+    { key:'q1', label:'Q1', start:`${year}-01-01`, end:`${year}-03-31` },
+    { key:'q2', label:'Q2', start:`${year}-04-01`, end:`${year}-06-30` },
+    { key:'q3', label:'Q3', start:`${year}-07-01`, end:`${year}-09-30` },
+    { key:'q4', label:'Q4', start:`${year}-10-01`, end:`${year}-12-31` },
+  ];
+
+  // IRS estimated tax due dates (approximate)
+  const EST_TAX_DATES = ['Apr 15','Jun 16','Sep 15','Jan 15'];
+
+  async function buildPeriodData(period){
+    let startDate, endDate, label;
+    if (period === 'ytd'){ startDate = `${year}-01-01`; endDate = isoDate(now); label = `YTD ${year}`; }
+    else { const q = QUARTERS.find(x => x.key === period); startDate = q.start; endDate = q.end; label = `${q.label} ${year}`; }
+
+    const inRange = d => d && d >= startDate && d <= endDate;
+
+    const [allTrips, allExps, allFuel] = await Promise.all([
+      dumpStore('trips'), dumpStore('expenses'), dumpStore('fuel'),
+    ]);
+    const trips = allTrips.filter(t => !t.needsReview && inRange(t.pickupDate || t.deliveryDate));
+    const exps  = allExps.filter(e => inRange(e.date));
+    const fuel  = allFuel.filter(f => inRange(f.date));
+
+    const [perDiemRate, vehicleClass] = await Promise.all([
+      getSetting('perDiemRate', IRS.PER_DIEM_CONUS),
+      getSetting('vehicleClass', 'cargo_van'),
+    ]);
+    const pdRate = Number(perDiemRate || IRS.PER_DIEM_CONUS);
+    const perDiemPct = (vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl')
+      ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
+
+    // Revenue
+    let gross = 0, loadedMi = 0, allMi = 0;
+    const tripDays = new Set();
+    for (const t of trips){
+      gross    += Number(t.pay || 0);
+      loadedMi += Number(t.loadedMiles || 0);
+      allMi    += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      const d  = t.pickupDate || t.deliveryDate;
+      if (d) tripDays.add(d);
+      if (t.pickupDate && t.deliveryDate && t.pickupDate !== t.deliveryDate){
+        const s = new Date(t.pickupDate), e = new Date(t.deliveryDate);
+        for (let dt = new Date(s); dt <= e; dt.setDate(dt.getDate()+1)) tripDays.add(isoDate(dt));
+      }
+    }
+    gross = roundCents(gross);
+
+    // Expenses by category
+    const catMap = new Map();
+    let totalExp = 0;
+    for (const e of exps){
+      const amt = Number(e.amount || 0);
+      totalExp += amt;
+      const cat = e.category || 'Uncategorized';
+      catMap.set(cat, (catMap.get(cat) || 0) + amt);
+    }
+    totalExp = roundCents(totalExp);
+
+    // Fuel
+    const totalFuelCost = roundCents(fuel.reduce((s,f) => s + Number(f.amount||0), 0));
+    const totalGallons  = fuel.reduce((s,f) => s + Number(f.gallons||0), 0);
+
+    // Per diem
+    const pdDays       = tripDays.size;
+    const pdGross      = roundCents(pdDays * pdRate);
+    const pdDeductible = roundCents(pdGross * perDiemPct);
+
+    // Mileage deduction (standard rate) — X-02: per-trip date-based rate, summed,
+    // not one flat constant applied to the period total (can't represent a
+    // midyear rate change).
+    const mileDeduc = roundCents(trips.reduce((s, t) => {
+      const mi = Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+      return s + mi * getMileageRate(t.pickupDate || t.deliveryDate);
+    }, 0));
+    const mileRatesUsed = [...new Set(trips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
+
+    // Net + SE tax
+    const net      = roundCents(gross - totalExp);
+    const seTax    = roundCents(Math.max(0, (net - pdDeductible) * IRS.SE_NET_FACTOR * IRS.SE_RATE));
+    const estProfit= roundCents(net - pdDeductible - seTax);
+
+    return {
+      label, startDate, endDate, period,
+      gross, totalExp, catMap, totalFuelCost, totalGallons,
+      loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct,
+      mileDeduc, mileRatesUsed, net, seTax, estProfit,
+      tripCount: trips.length, expCount: exps.length,
+    };
+  }
+
+  async function render(period){
+    const el = $('#cpaContent', body);
+    el.innerHTML = '<div class="muted" style="text-align:center;padding:18px">Calculating…</div>';
+    try {
+      const d = await buildPeriodData(period);
+      const isYTD = period === 'ytd';
+
+      // Quarterly breakdown (YTD only)
+      let qRowsHTML = '';
+      if (isYTD){
+        const qData = await Promise.all(QUARTERS.map(q => buildPeriodData(q.key)));
+        qRowsHTML = `
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:8px">Quarterly Breakdown + Est. Tax Due Dates</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead>
+                <tr style="color:var(--text-secondary)">
+                  <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--card-border)">Period</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Gross</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Expenses</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Net</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">SE Tax Est.</th>
+                  <th style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--card-border)">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${qData.map((q,i) => `<tr style="border-bottom:1px solid var(--card-border)">
+                  <td style="padding:5px 6px;font-weight:600">${q.label}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.gross)}</td>
+                  <td style="padding:5px 6px;text-align:right">${fmtMoney(q.totalExp)}</td>
+                  <td style="padding:5px 6px;text-align:right;font-weight:700;color:${q.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(q.net)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--warn)">${fmtMoney(q.seTax)}</td>
+                  <td style="padding:5px 6px;text-align:right;color:var(--text-secondary)">${EST_TAX_DATES[i]}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">IRS estimated tax due dates are approximate. Confirm at IRS.gov or with your CPA.</div>
+        </div>`;
+      }
+
+      const catRows = [...d.catMap.entries()]
+        .sort((a,b) => b[1]-a[1])
+        .map(([cat,amt]) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+          <span style="color:var(--text-secondary)">${escapeHtml(cat)}</span>
+          <b>${fmtMoney(roundCents(amt))}</b>
+        </div>`).join('');
+
+      el.innerHTML = `
+        <!-- P&L Summary -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:10px">P&L Summary — ${escapeHtml(d.label)}</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Gross Revenue</span><b style="color:var(--good)">${fmtMoney(d.gross)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Expenses</span><b style="color:var(--bad)">-${fmtMoney(d.totalExp)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Net Income</span><b style="color:${d.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.net)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Per Diem Deduction (${Math.round(d.perDiemPct*100)}% · ${d.pdDays}d × $${d.pdRate.toFixed(2)})</span>
+            <b style="color:var(--accent)">-${fmtMoney(d.pdDeductible)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
+            <span>Est. Self-Employment Tax (15.3%)</span><b style="color:var(--warn)">-${fmtMoney(d.seTax)}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:6px 0;margin-top:2px">
+            <span>Estimated After-Tax Profit</span>
+            <span style="color:${d.estProfit>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.estProfit)}</span>
+          </div>
+        </div>
+
+        <!-- Mileage -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Mileage — IRS Standard Rate</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Total Business Miles</span><b>${d.allMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--card-border)">
+            <span>Loaded Miles</span><b>${d.loadedMi.toLocaleString()}</b>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
+            <span>Mileage Deduction @ ${d.mileRatesUsed.map(r => '$' + r.toFixed(3)).join(' / ')}/mi (per trip date)</span>
+            <b style="color:var(--accent)">${fmtMoney(d.mileDeduc)}</b>
+          </div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:5px">⚠️ Choose mileage OR actual expenses — not both. Ask your CPA which method benefits you more.</div>
+        </div>
+
+        <!-- Expense breakdown -->
+        ${d.totalExp > 0 ? `<div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Expenses by Category</div>
+          ${catRows}
+        </div>` : ''}
+
+        <!-- Quarterly breakdown (YTD only) -->
+        ${qRowsHTML}
+
+        <!-- CPA Handoff Checklist -->
+        <div class="card" style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">CPA Handoff Checklist</div>
+          ${[
+            ['This exported CPA Package CSV',                                                  true ],
+            ['Mileage log (this app\'s trip detail CSV)',                                      true ],
+            ['Form 1099-NEC from each broker (due Jan 31)',                                    d.gross > 600 ],
+            ['Bank / business account statements',                                             true ],
+            ['Receipts for expense categories above',                                          d.totalExp > 0 ],
+            ['Home office square footage (if claiming home office deduction)',                  false],
+            ['Cell phone & internet — estimate business use %',                                false],
+          ].map(([item, ready]) => `<div style="display:flex;align-items:flex-start;gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid var(--card-border)">
+            <span style="color:${ready?'var(--good)':'var(--text-tertiary)'};flex-shrink:0;font-size:13px">${ready?'✅':'☐'}</span>
+            <span style="color:${ready?'var(--text-primary)':'var(--text-secondary)'}">${item}</span>
+          </div>`).join('')}
+        </div>
+
+        <!-- Export -->
+        <button class="btn primary" id="cpaExportBtn" style="width:100%;font-size:14px;font-weight:700;padding:14px">
+          ⬇ Download CPA Package — ${escapeHtml(d.label)}
+        </button>
+        <div style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:8px;padding-bottom:4px">
+          CSV includes P&L summary, income detail, expense detail, and fuel log.<br>
+          Estimates only — not tax advice. Verify with a licensed CPA.
+        </div>`;
+
+      $('#cpaExportBtn', body).addEventListener('click', () => {
+        haptic(20);
+        generateAccountantPackage(period);
+      });
+
+    } catch(e){
+      el.innerHTML = '<div style="color:var(--bad);padding:16px;font-size:12px">Failed to load CPA data.</div>';
+      console.warn('[FL] cpaPackage:', e);
+    }
+  }
+
+  $$('.cpa-period-btn', body).forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.cpa-period-btn', body).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      render(currentPeriod);
+    });
+  });
+
+  render(currentPeriod);
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T3C: Document Expiry Tracking + Boot-time Alerts
+// ════════════════════════════════════════════════════════════════
+async function checkDocumentExpiry(){
+  try {
+    const docs = await dumpStore('documents');
+    const today = isoDate();
+    for (const doc of docs){
+      if (!doc.expiresAt) continue;
+      const daysLeft = Math.floor((new Date(doc.expiresAt) - new Date(today)) / 86400000);
+      const label = escapeHtml((doc.note || doc.name || 'Document').slice(0, 30));
+      if (daysLeft < 0){
+        toast(`⚠️ ${label} EXPIRED — update now!`, true);
+      } else if (daysLeft <= 30){
+        toast(`📋 ${label} expires in ${daysLeft} days`);
+      }
+    }
+  } catch(e){ console.warn('[FL] checkDocumentExpiry', e); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T3D: Broker Notes Log
+// ════════════════════════════════════════════════════════════════
+// v23.8.2: key now routes through the shared normBroker() helper so Broker
+// Notes, bidHistory, and logBid() all resolve the same broker to the same identity.
+function normalizeBrokerKey(name){ return 'brokerNotes_' + normBroker(name).replace(/[^a-z0-9]/g,'_').slice(0,40); }
+
+async function openBrokerNotes(brokerName){
+  if (!brokerName){ toast('Enter a broker name first', true); return; }
+  const key = normalizeBrokerKey(brokerName);
+  let notes = [];
+  try { notes = (await getSetting(key, [])) || []; if (!Array.isArray(notes)) notes = []; } catch(e){}
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Notes for <span style="color:var(--accent)">${escapeHtml(brokerName)}</span></div>
+      <div id="bnList" style="margin-bottom:12px;max-height:200px;overflow-y:auto"></div>
+      <label>Add note</label>
+      <input id="bnText" placeholder="e.g. Always counters $50 below first offer" style="margin-bottom:8px"/>
+      <button class="btn primary" id="bnSave" style="width:100%">Add Note</button>
+    </div>`;
+  function renderNotes(){
+    const list = $('#bnList', body);
+    if (!notes.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No notes yet.</div>'; return; }
+    list.innerHTML = notes.slice().reverse().map(n => `
+      <div style="padding:7px 0;border-bottom:1px solid var(--border-subtle);font-size:12px">
+        <div style="color:var(--text)">${escapeHtml(n.text)}</div>
+        <div class="muted" style="font-size:10px;margin-top:2px">${new Date(n.ts).toLocaleDateString()}</div>
+      </div>`).join('');
+  }
+  renderNotes();
+  $('#bnSave', body).addEventListener('click', async ()=>{
+    const text = clampStr(($('#bnText', body).value || '').trim(), 300);
+    if (!text){ toast('Enter a note', true); return; }
+    notes.push({ text, ts: Date.now() });
+    if (notes.length > 50) notes = notes.slice(-50);
+    await setSetting(key, notes);
+    $('#bnText', body).value = '';
+    renderNotes();
+    toast('Note saved');
+  });
+  openModal(`🗒️ Broker Notes`, body);
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T3E: Quick Share to Broker (Web Share API / clipboard)
+// ════════════════════════════════════════════════════════════════
+async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickupDate }){
+  const driverName = (await getSetting('cloudBackupToken', '')) ? 'Driver' : '';
+  const text = [
+    `Hi,`,
+    `Re: ${origin || '?'} → ${dest || '?'}, ${miles || '?'} mi`,
+    `I can take this at ${fmtMoney(bidAmount)} ($${rpm} /mi).`,
+    `Available for pickup ${pickupDate || isoDate()}.`,
+    `Thank you.`,
+  ].join('\n');
+  try {
+    if (navigator.share && navigator.canShare && navigator.canShare({ text })){
+      await navigator.share({ text, title: 'Load Bid' });
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast('Bid copied to clipboard');
+    }
+  } catch(e){
+    try { await navigator.clipboard.writeText(text); toast('Bid copied to clipboard'); }
+    catch(e2){ toast('Bid: ' + fmtMoney(bidAmount)); }
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// v24.0.0 PRE-v24: Live-source health contract
+// External feeds must never fail as an unexplained `null`. Each source records
+// the last attempt/result for Diagnostics while preserving the existing return
+// shapes so this correctness pass does not become a feature rewrite.
+// ════════════════════════════════════════════════════════════════
+const LIVE_SOURCE_STATUS = Object.freeze({
+  OK: 'OK',
+  STALE: 'STALE',
+  UNCONFIGURED: 'UNCONFIGURED',
+  AUTH_ERROR: 'AUTH_ERROR',
+  HTTP_ERROR: 'HTTP_ERROR',
+  TIMEOUT: 'TIMEOUT',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  PARSE_ERROR: 'PARSE_ERROR',
+  OFFLINE: 'OFFLINE',
+});
+const LIVE_SOURCE_HEALTH = new Map();
+try {
+  const prior = JSON.parse(sessionStorage.getItem('fl_live_source_health') || '{}');
+  for (const [k,v] of Object.entries(prior || {})) if (v && typeof v === 'object') LIVE_SOURCE_HEALTH.set(k, v);
+} catch(e) {}
+function _persistLiveSourceHealth(){
+  try { sessionStorage.setItem('fl_live_source_health', JSON.stringify(Object.fromEntries(LIVE_SOURCE_HEALTH))); } catch(e) {}
+}
+function setLiveSourceHealth(source, status, detail={}){
+  const now = Date.now();
+  const prev = LIVE_SOURCE_HEALTH.get(source) || {};
+  const next = {
+    source,
+    status,
+    lastAttempt: now,
+    lastSuccess: status === LIVE_SOURCE_STATUS.OK ? (detail.lastSuccess || now) : (prev.lastSuccess || null),
+    ...detail,
+  };
+  LIVE_SOURCE_HEALTH.set(source, next);
+  _persistLiveSourceHealth();
+  if (status !== LIVE_SOURCE_STATUS.OK && status !== LIVE_SOURCE_STATUS.UNCONFIGURED && status !== LIVE_SOURCE_STATUS.OFFLINE){
+    console.warn(`[FL] ${source} source health: ${status}`, detail);
+  }
+  return next;
+}
+function getAllLiveSourceHealth(){ return Object.fromEntries(LIVE_SOURCE_HEALTH); }
+function _liveSourceFailureStatus(err){
+  const n = String(err?.name || '').toLowerCase();
+  return (n.includes('timeout') || n === 'aborterror') ? LIVE_SOURCE_STATUS.TIMEOUT : LIVE_SOURCE_STATUS.NETWORK_ERROR;
+}
+if (typeof window !== 'undefined') window.flGetLiveSourceHealth = getAllLiveSourceHealth;
+
+// ════════════════════════════════════════════════════════════════
+// v23.8: EIA Midwest regular gasoline feed (requires free EIA key in settings)
+// ════════════════════════════════════════════════════════════════
+async function fetchEIAGasPrice(){
+  if (!navigator.onLine) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OFFLINE); return null; }
+  const lastFetch = Number(await getSetting('eiaLastFetchTs', 0) || 0);
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  if (lastFetch && (Date.now() - lastFetch) < threeDaysMs) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: lastFetch }); return null; } // Skip if fetched recently
+  const eiaKey = (await getSetting('eiaApiKey', '') || '').trim();
+  if (!eiaKey) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }
+  try {
+    const url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPMR&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) { setLiveSourceHealth('EIA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }
+    const json = await res.json();
+    let record = json?.response?.data?.[0];
+    if (!record || !record.value) {
+      const fallbackUrl = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[product][]=EPM0&facets[duoarea][]=R20&sort[0][column]=period&sort[0][direction]=desc&length=1&api_key=' + encodeURIComponent(eiaKey);
+      const fallbackRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+      if (!fallbackRes.ok) { setLiveSourceHealth('EIA', (fallbackRes.status === 401 || fallbackRes.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: fallbackRes.status, fallback: true }); return null; }
+      const fallbackJson = await fallbackRes.json();
+      record = fallbackJson?.response?.data?.[0];
+      if (!record || !record.value) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'no usable Midwest gasoline record' }); return null; }
+    }
+    const price = parseFloat(record.value);
+    if (!(price > 0)) { setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'invalid price value' }); return null; }
+    const period = record.period || '';
+    await setSetting('eiaLastPrice', price);
+    await setSetting('eiaLastDate', period);
+    await setSetting('eiaLastFetchTs', Date.now());
+    // Show hint in settings if visible
+    const hintEl = $('#eiaHint');
+    if (hintEl) hintEl.innerHTML = `EIA MW gas: <b>$${price.toFixed(2)}/gal</b> (${escapeHtml(period)}) — <a href="#" id="eiaApplyBtn" style="color:var(--accent)">Apply</a>`;
+    document.addEventListener('click', async (ev)=>{
+      if (ev.target?.id === 'eiaApplyBtn'){
+        ev.preventDefault();
+        await setSetting('fuelPrice', price);
+        // Applying an EIA observation explicitly switches provenance to EIA,
+        // carrying that observation's own period as its source instant.
+        await setFuelPriceProvenance(FUEL_PRICE_SOURCE.EIA, period || null);
+        const fpEl = $('#fuelPrice');
+        if (fpEl) fpEl.value = price.toFixed(2);
+        toast(`Fuel price updated to $${price.toFixed(2)}/gal (EIA Midwest gas)`);
+      }
+    }, { once: true });
+    setLiveSourceHealth('EIA', LIVE_SOURCE_STATUS.OK, { sourceTimestamp: period, value: price });
+    return { price, period };
+  } catch(e){ setLiveSourceHealth('EIA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] EIA fetch', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4B: NWS Weather Alerts for Route
+// ════════════════════════════════════════════════════════════════
+const _nwsCache = new Map();
+// Issue #119 Batch A, item 7: a route weather OBSERVATION record, distinct
+// from the source-health registry. "Zero alerts on a route we actually
+// checked" and "we never checked this route" are completely different facts,
+// and evidence must never render the second as the first. Keyed by route so a
+// previous evaluation's observation can never be reported for this one.
+let _routeWeatherObservation = null;
+function getRouteWeatherObservation(routeKey){
+  const o = _routeWeatherObservation;
+  return (o && o.routeKey === String(routeKey || '')) ? o : null;
+}
+// A regression that means to exercise "this route was never successfully
+// observed" has to start from genuinely uncached points. The 30-minute
+// per-point success cache is real production behaviour and a cache hit IS a
+// real observation — so the test resets the cache rather than the semantics.
+// Production never calls this.
+function _resetRouteWeatherStateForTests(){
+  _nwsCache.clear();
+  _routeWeatherObservation = null;
+}
+
+async function checkRouteWeather(originCoords, destCoords, routeKey = ''){
+  const key = String(routeKey || '');
+  const points = [];
+  if (originCoords) points.push({ label: 'origin', lat: originCoords.lat, lng: originCoords.lng });
+  if (destCoords) points.push({ label: 'destination', lat: destCoords.lat, lng: destCoords.lng });
+  const obs = {
+    routeKey: key, observed: false, partial: false,
+    pointsRequested: points.length, pointsObserved: 0,
+    alertCount: 0, observedAt: null,
+    status: points.length ? LIVE_SOURCE_STATUS.OK : 'NO_ROUTE_POINTS',
+  };
+  if (!navigator.onLine) {
+    setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OFFLINE);
+    _routeWeatherObservation = { ...obs, status: LIVE_SOURCE_STATUS.OFFLINE };
+    return [];
+  }
+  const alerts = [];
+  for (const pt of points){
+    const cacheKey = `${pt.lat.toFixed(2)},${pt.lng.toFixed(2)}`;
+    const cached = _nwsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000){
+      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts });
+      alerts.push(...cached.alerts);
+      obs.pointsObserved++; obs.alertCount += cached.alerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, cached.ts);
+      continue;
+    }
+    try {
+      const url = `https://api.weather.gov/alerts/active?point=${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'FreightLogicApp/21.3.0' }, signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined });
+      if (!res.ok){
+        const st = (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR;
+        setLiveSourceHealth('NWS', st, { httpStatus: res.status, point: pt.label });
+        obs.status = st;
+        continue;
+      }
+      const json = await res.json();
+      const ptAlerts = (json.features || []).map(f => ({
+        label: pt.label,
+        event: f.properties?.event || 'Weather Alert',
+        severity: f.properties?.severity || 'Unknown',
+        headline: f.properties?.headline || '',
+      })).filter(a => a.event);
+      const nwsSuccessTs = Date.now();
+      _nwsCache.set(cacheKey, { alerts: ptAlerts, ts: nwsSuccessTs });
+      setLiveSourceHealth('NWS', LIVE_SOURCE_STATUS.OK, { point: pt.label, alertCount: ptAlerts.length, lastSuccess: nwsSuccessTs });
+      alerts.push(...ptAlerts);
+      obs.pointsObserved++; obs.alertCount += ptAlerts.length;
+      obs.observedAt = Math.max(obs.observedAt ?? 0, nwsSuccessTs);
+    } catch(e){
+      const st = _liveSourceFailureStatus(e);
+      setLiveSourceHealth('NWS', st, { point: pt.label, message: String(e?.message || e || '') });
+      obs.status = st;
+    }
+  }
+  // `observed` means at least one route point genuinely answered. Only then is
+  // `alertCount: 0` a real "no active alerts" fact rather than an absence.
+  obs.observed = obs.pointsObserved > 0;
+  obs.partial = obs.observed && obs.pointsObserved < obs.pointsRequested;
+  if (obs.observed && !obs.partial) obs.status = LIVE_SOURCE_STATUS.OK;
+  _routeWeatherObservation = obs;
+  return alerts;
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4C: FMCSA Carrier/Broker Lookup
+// ════════════════════════════════════════════════════════════════
+const _fmcsaCache = new Map();
+async function lookupFMCSA(dotNumber){
+  if (!dotNumber) return null;
+  if (!navigator.onLine) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OFFLINE); return null; }
+  const dot = String(dotNumber).replace(/\D/g,'');
+  if (!dot || dot.length < 5) return null;
+  const cached = _fmcsaCache.get(dot);
+  if (cached && (Date.now() - cached.ts) < 24 * 60 * 60 * 1000) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }
+  try {
+    const apiKey = await getSetting('fmcsaApiKey', '') || '';
+    if (!apiKey) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.UNCONFIGURED, { reason: 'missing API key' }); return null; }
+    const url = `https://mobile.fmcsa.dot.gov/qc/services/carriers/${encodeURIComponent(dot)}?webKey=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+    if (!res.ok) { setLiveSourceHealth('FMCSA', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status }); return null; }
+    const json = await res.json();
+    const c = json?.content?.carrier || json?.carrier || null;
+    if (!c) { setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.PARSE_ERROR, { reason: 'carrier payload missing' }); return null; }
+    const data = {
+      dot, name: c.legalName || c.dbaName || '',
+      status: c.allowedToOperate === 'Y' ? 'active' : 'inactive',
+      safetyRating: c.safetyRating || '',
+      insurance: c.bipd || '',
+    };
+    const fmcsaSuccessTs = Date.now();
+    _fmcsaCache.set(dot, { data, ts: fmcsaSuccessTs });
+    setLiveSourceHealth('FMCSA', LIVE_SOURCE_STATUS.OK, { dot, lastSuccess: fmcsaSuccessTs });
+    return data;
+  } catch(e){ setLiveSourceHealth('FMCSA', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] FMCSA lookup', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// v21 T4D: Border Wait Time (CBP API)
+// ════════════════════════════════════════════════════════════════
+const CA_BORDER_PORT_CODES = {
+  'detroit_windsor':    3801, // Ambassador Bridge
+  'port_huron_sarnia':  3802, // Blue Water Bridge
+  'buffalo_fort_erie':  901,  // Peace Bridge
+  'champlain_montreal': 702,  // Champlain/Lacolle
+  'blaine_vancouver':   3004, // Pacific Highway
+  'pembina_emerson':    3401, // Pembina, ND
+};
+const _cbpCache = new Map();
+async function fetchBorderWaitTime(gatewayId){
+  if (!navigator.onLine) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OFFLINE); return null; }
+  const portCode = CA_BORDER_PORT_CODES[gatewayId];
+  if (!portCode) return null;
+  const cached = _cbpCache.get(String(portCode));
+  if (cached && (Date.now() - cached.ts) < 30 * 60 * 1000) { setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { cached: true, lastSuccess: cached.ts }); return cached.data; }
+  try {
+    const url = `https://bwt.cbp.gov/api/bwtquery?port=${portCode}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
+    if (!res.ok) { setLiveSourceHealth('CBP', (res.status === 401 || res.status === 403) ? LIVE_SOURCE_STATUS.AUTH_ERROR : LIVE_SOURCE_STATUS.HTTP_ERROR, { httpStatus: res.status, port: portCode }); return null; }
+    const json = await res.json();
+    const record = Array.isArray(json) ? json[0] : json;
+    const data = {
+      port: portCode,
+      commercialWait: record?.commercial_vehicle_lanes?.standard_lanes?.wait_time ?? record?.commercialWait ?? null,
+      portName: record?.port_name || record?.portName || String(portCode),
+    };
+    const cbpSuccessTs = Date.now();
+    _cbpCache.set(String(portCode), { data, ts: cbpSuccessTs });
+    setLiveSourceHealth('CBP', LIVE_SOURCE_STATUS.OK, { port: portCode, lastSuccess: cbpSuccessTs });
+    return data;
+  } catch(e){ setLiveSourceHealth('CBP', _liveSourceFailureStatus(e), { message: String(e?.message || e || '') }); console.warn('[FL] CBP border wait', e); return null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+
+
+// ================================================================================
+// F21: TRIP TRACKING — GPS Auto-Logger (v22.0.0)
+// ================================================================================
+
+let _activeTracking = null;
+let _trackingIntervalId = null;
+
+function nearestMarketCity(lat, lng) {
+  const STATE_MAP = {
+    'chicago':'IL','indianapolis':'IN','columbus':'OH','detroit':'MI','cleveland':'OH',
+    'louisville':'KY','cincinnati':'OH','dayton':'OH','toledo':'OH','st. louis':'MO',
+    'grand rapids':'MI','fort wayne':'IN','evansville':'IN',
+    'atlanta':'GA','nashville':'TN','charlotte':'NC','memphis':'TN','knoxville':'TN',
+    'greenville':'SC','raleigh':'NC','chattanooga':'TN','savannah':'GA','jacksonville':'FL',
+    'dallas':'TX','houston':'TX','austin':'TX','san antonio':'TX','laredo':'TX','el paso':'TX',
+    'los angeles':'CA','san francisco':'CA','fresno':'CA','sacramento':'CA','bakersfield':'CA',
+    'phoenix':'AZ','tucson':'AZ','las vegas':'NV','salt lake city':'UT','denver':'CO',
+    'seattle':'WA','portland':'OR','spokane':'WA','boise':'ID',
+    'minneapolis':'MN','kansas city':'MO','omaha':'NE','sioux falls':'SD','fargo':'ND',
+    'new york':'NY','philadelphia':'PA','boston':'MA','baltimore':'MD','pittsburgh':'PA',
+    'buffalo':'NY','hartford':'CT','albany':'NY','harrisburg':'PA',
+    'miami':'FL','orlando':'FL','tampa':'FL',
+    'new orleans':'LA','baton rouge':'LA','birmingham':'AL',
+    'oklahoma city':'OK','tulsa':'OK','little rock':'AR',
+    'albuquerque':'NM','colorado springs':'CO',
+  };
+  let bestKey = null, bestDist = Infinity;
+  const _allMkts = Object.assign({}, USA_MARKETS,
+    (typeof CA_MARKETS !== 'undefined' ? CA_MARKETS : {}));
+  for (const [key, data] of Object.entries(_allMkts)) {
+    if (!data.lat || !data.lng) continue;
+    const d = haversineDistanceMi(lat, lng, data.lat, data.lng);
+    if (d < bestDist) { bestDist = d; bestKey = key; }
+  }
+  if (!bestKey || bestDist > 100) return 'Unknown area';
+  const city = bestKey.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const state = STATE_MAP[bestKey] || '';
+  return state ? `${city}, ${state}` : city;
+}
+
+async function renderTripTrackingUI() {
+  const slot = $('#homeTripTrackCard');
+  if (!slot) return;
+  // One-time onboarding
+  const showF21Onboarding = !slot.querySelector('#f21OnboardingCard') && await shouldShowOnboarding('f21OnboardingSeen');
+  if (showF21Onboarding) {
+    const ob = document.createElement('div');
+    ob.id = 'f21OnboardingCard';
+    ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+    ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+      + '<span style="font-size:22px">\u{1F69B}</span>'
+      + '<strong style="font-size:14px;color:var(--accent-text)">New: Track Your Trips Live</strong></div>'
+      + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Tap &ldquo;Start Trip&rdquo; when you pick up a load. FreightLogic tracks your miles automatically. When you deliver, tap &ldquo;Stop&rdquo; and your trip is ready to save.</div>'
+      + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px">Your location stays on your phone and is never shared.</div>'
+      + '<div style="margin-top:12px"><button class="btn primary" id="f21ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+    const f21Dismiss = async () => { await setSetting('f21OnboardingSeen', true); ob.remove(); };
+    ob.querySelector('#f21ObDismiss')?.addEventListener('click', f21Dismiss);
+    ob.addEventListener('click', f21Dismiss);
+    slot.insertBefore(ob, slot.firstChild);
+    markOnboardingExposure(ob, 'f21OnboardingSeen');
+  }
+  let trackDiv = $('#f21TrackArea');
+  if (!trackDiv) {
+    trackDiv = document.createElement('div');
+    trackDiv.id = 'f21TrackArea';
+    slot.appendChild(trackDiv);
+  }
+  if (_activeTracking) { _renderTrackingActive(trackDiv); }
+  else { _renderTrackingIdle(trackDiv); }
+}
+
+// #205 UX/IA -- the idle state is a standing offer, not news.
+//
+// Idle tracking occupied a two-line card with an explanatory subtitle at the top
+// of Today on EVERY launch, above the driver's money and above the next-move
+// brief. The subtitle ("Tap when you pick up a load") is onboarding text that
+// does not stop being rendered after the first trip, so it competes for the same
+// glance as figures that change hourly.
+//
+// It is now one 48px row: the affordance is unchanged and the touch target is
+// unchanged, and it takes roughly half the vertical space. The (i) control keeps
+// the iPhone background-tracking caveat one tap away rather than deleting it.
+//
+// The ACTIVE state is deliberately NOT compacted -- see _renderTrackingActive.
+// Shrinking a live trip, a lost-signal streak or a revoked-permission state is
+// the opposite of what this slice is for, and the F-7 contract requires Stop &
+// Save to stay reachable in every one of them.
+function _renderTrackingIdle(container) {
+  container.innerHTML = '<div style="display:flex;align-items:center;gap:10px;background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:0 14px;min-height:48px;cursor:pointer" id="f21StartBtn">'
+    + '<span style="font-size:17px">\u{1F69B}</span>'
+    + '<div style="flex:1;font-weight:700;font-size:14px;color:var(--text)">Start Trip</div>'
+    + '<span id="f21InfoBtn" style="font-size:17px;cursor:pointer;color:var(--text-tertiary);padding:4px;min-width:28px;text-align:center" title="About GPS tracking">\u24d8</span>'
+    + '</div>';
+  container.querySelector('#f21StartBtn')?.addEventListener('click', (e) => {
+    if (e.target.id === 'f21InfoBtn' || e.target.closest('#f21InfoBtn')) return;
+    haptic(10); startTripTracking();
+  });
+  container.querySelector('#f21InfoBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toast('GPS tracking works best with the app open. On iPhone, tracking may pause if you switch apps.');
+  });
+}
+
+function _renderTrackingActive(container) {
+  const t = _activeTracking;
+  const elapsedMins = Math.floor((Date.now() - t.startTime) / 60000);
+  const hrs = Math.floor(elapsedMins / 60), mins = elapsedMins % 60;
+  const elapsed = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const miles = Math.round((t.totalMiles || 0) * 10) / 10;
+  const acc = t.lastAccuracy || 999;
+  // F-7: while a GPS error streak is open the session stays alive — report the
+  // degraded state honestly instead of the stale accuracy from the last fix.
+  const lostMins = t.gpsErrorSince ? Math.floor((Date.now() - t.gpsErrorSince) / 60000) : 0;
+  const gpsQ = t.gpsErrorSince
+    ? (t.gpsErrorCode === 1
+        ? '<span style="color:var(--warn)">\u{23F8} Tracking paused &mdash; location access is off</span>'
+        : `<span style="color:var(--warn)">\u{1F4E1} GPS signal lost &mdash; searching (${escapeHtml(String(lostMins))}m)</span>`)
+    : acc < 50 ? '<span style="color:var(--good)">\u{1F4CD} Good</span>'
+    : acc < 100 ? '<span style="color:var(--warn)">\u{1F4CD} Fair</span>'
+    : '<span style="color:var(--bad)">\u{1F4CD} Weak</span>';
+  container.innerHTML = '<div style="background:rgba(255,60,60,0.08);border:1px solid rgba(255,60,60,0.3);border-radius:12px;padding:14px 16px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+    + `<span class="f21-pulse-dot${t.gpsErrorSince ? ' paused' : ''}"></span>`
+    + '<strong style="font-size:14px">Trip in progress</strong></div>'
+    + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(elapsed)} &nbsp;&bull;&nbsp; ${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${gpsQ}</div>`
+    + '<button class="btn danger" id="f21StopBtn" style="width:100%;min-height:48px;font-weight:700">Stop &amp; Save Trip</button>'
+    + '</div>';
+  container.querySelector('#f21StopBtn')?.addEventListener('click', () => { haptic(20); stopTripTracking(); });
+}
+
+function _updateTrackingUI() {
+  const d = $('#f21TrackArea');
+  if (d && _activeTracking) _renderTrackingActive(d);
+}
+
+function _initTrackingObject() {
+  _activeTracking = {
+    trackingId: randId(),
+    startTime: Date.now(),
+    startPos: null,
+    lastPos: null,
+    lastAccuracy: 999,
+    totalMiles: 0,
+    waypoints: 0,
+    watcherId: null,
+    // F-7: current GPS error streak. gpsErrorSince is the timestamp of the first
+    // error since the last good fix (null while healthy); gpsErrorCode is that
+    // error's GeolocationPositionError code. A GPS error never ends the session.
+    gpsErrorSince: null,
+    gpsErrorCode: 0,
+  };
+}
+
+// F-7: read the persisted tracking record without applying any age policy —
+// callers decide, because resumeTrackingIfActive() treats a >24h record
+// differently (restore, then stop-and-review) than startTripTracking() does.
+function _readSavedTracking() {
+  try {
+    const raw = sessionStorage.getItem('fl_active_tracking');
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.trackingId || !saved.startTime) return null;
+    return saved;
+  } catch(e) { return null; }
+}
+
+// F-7: rebuild the in-memory session from a persisted record. Shared by
+// resumeTrackingIfActive() (boot) and the resume prompt (same-tab recovery).
+function _restoreTrackingFromSaved(saved) {
+  _activeTracking = {
+    trackingId: saved.trackingId, startTime: saved.startTime,
+    startPos: saved.startPos || null, lastPos: null,
+    lastAccuracy: 999, totalMiles: saved.totalMiles || 0,
+    waypoints: 0, watcherId: null,
+    gpsErrorSince: null, gpsErrorCode: 0,
+  };
+}
+
+async function startTripTracking() {
+  if (_activeTracking) return;
+  if (!navigator.geolocation) { toast('GPS is not available in this browser.', true); return; }
+  const permSeen = await getSetting('f21PermissionSeen', false);
+  if (!permSeen) { _showLocationPermissionModal(); return; }
+  // F-7: an unclean teardown can leave a live session record behind. Offer to
+  // resume it rather than silently minting a new trackingId and abandoning the
+  // miles already tracked — that silent discard was the finding.
+  const saved = _readSavedTracking();
+  if (saved && (Date.now() - saved.startTime) <= 86400000) { _showResumeTrackingModal(saved); return; }
+  _initTrackingObject();
+  _doStartTracking();
+}
+
+// F-7: recovery prompt for a tracking session that outlived its tab state.
+function _showResumeTrackingModal(saved) {
+  const miles = Math.round((saved.totalMiles || 0) * 10) / 10;
+  const elapsedMins = Math.floor((Date.now() - saved.startTime) / 60000);
+  const hrs = Math.floor(elapsedMins / 60), mins = elapsedMins % 60;
+  const elapsed = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const startedAt = new Date(saved.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const body = document.createElement('div');
+  body.innerHTML = '<p style="font-size:14px;line-height:1.6;margin:0 0 12px;color:var(--text)">You have a trip already in progress.</p>'
+    + '<div style="background:var(--surface-0);border-radius:10px;padding:14px;margin-bottom:14px">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(String(miles))} miles &nbsp;&bull;&nbsp; ${escapeHtml(elapsed)}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary)">Started at ${escapeHtml(startedAt)}</div></div>`
+    + '<div style="display:flex;flex-direction:column;gap:10px">'
+    + '<button class="btn primary" id="trkResume" style="min-height:48px;font-weight:700">Resume Trip</button>'
+    + '<button class="btn" id="trkNew" style="min-height:48px">Discard &amp; Start New</button></div>';
+  body.querySelector('#trkResume')?.addEventListener('click', () => {
+    closeModal(); _restoreTrackingFromSaved(saved); _doStartTracking();
+  });
+  body.querySelector('#trkNew')?.addEventListener('click', () => {
+    closeModal();
+    _cleanGpsLogs(saved.trackingId);
+    try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+    _initTrackingObject(); _doStartTracking();
+  });
+  openModal('Trip In Progress', body);
+}
+
+function _showLocationPermissionModal() {
+  const body = document.createElement('div');
+  body.innerHTML = '<p style="font-size:14px;line-height:1.6;margin:0 0 14px;color:var(--text)">FreightLogic needs your location to track trip miles.</p>'
+    + '<ul style="font-size:13px;color:var(--text-secondary);line-height:1.9;margin:0 0 16px;padding-left:18px">'
+    + '<li>Your location stays on your phone only &mdash; never uploaded</li>'
+    + '<li>You can stop tracking anytime</li>'
+    + '<li>Works best with the app open</li></ul>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button class="btn primary" id="permAllow" style="flex:1;min-height:48px">Allow Location</button>'
+    + '<button class="btn" id="permDeny" style="flex:1;min-height:48px">Not Now</button>'
+    + '</div>';
+  body.querySelector('#permAllow')?.addEventListener('click', async () => {
+    await setSetting('f21PermissionSeen', true); closeModal(); _initTrackingObject(); _doStartTracking();
+  });
+  body.querySelector('#permDeny')?.addEventListener('click', () => closeModal());
+  openModal('Location Access', body);
+}
+
+function _doStartTracking() {
+  if (!_activeTracking) return;
+  // Persist the recovery record before waiting on the first geolocation
+  // callback. A tab/app kill immediately after Start (including
+  // "Discard & Start New") must still leave a resumable session behind.
+  _persistTrackingState();
+  // Never leave a previous watcher running — a second live watcher would keep
+  // burning GPS with no way to clear it.
+  if (_activeTracking.watcherId !== null && _activeTracking.watcherId !== undefined) {
+    try { navigator.geolocation.clearWatch(_activeTracking.watcherId); } catch(e) { /* ok */ }
+    _activeTracking.watcherId = null;
+  }
+  const trackingId = _activeTracking.trackingId;
+  const watcher = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (!_activeTracking || _activeTracking.trackingId !== trackingId) return;
+      // F-7: any fix ends the error streak — including a low-accuracy one, so
+      // this must come before the accuracy early-return below.
+      if (_activeTracking.gpsErrorSince) {
+        _activeTracking.gpsErrorSince = null; _activeTracking.gpsErrorCode = 0;
+      }
+      const { latitude: lat, longitude: lng, accuracy, speed } = pos.coords;
+      if (accuracy > 100) { _activeTracking.lastAccuracy = accuracy; return; }
+      if (speed !== null && speed > 53.6) return; // >120 mph = GPS glitch
+      const prev = _activeTracking.lastPos;
+      if (!_activeTracking.startPos) _activeTracking.startPos = { lat, lng, ts: Date.now() };
+      if (prev) {
+        const distMi = haversineDistanceMi(prev.lat, prev.lng, lat, lng) * 1.3;
+        if (distMi > 0.05) _activeTracking.totalMiles += distMi;
+      }
+      _activeTracking.lastPos = { lat, lng, ts: Date.now() };
+      _activeTracking.lastAccuracy = accuracy;
+      // Log waypoint every 120s or if moved >0.5 mi
+      const sinceMs = prev ? (Date.now() - prev.ts) : 999999;
+      const movedFar = prev ? haversineDistanceMi(prev.lat, prev.lng, lat, lng) > 0.5 : false;
+      if (!prev || sinceMs >= 120000 || movedFar) {
+        try {
+          const { t: wt, stores: ws } = tx('gpsLogs', 'readwrite');
+          ws.gpsLogs.add({ tripTrackingId: trackingId, lat, lng, accuracy, speed: speed || 0, timestamp: Date.now() });
+          wt.oncomplete = () => {}; wt.onerror = () => {};
+        } catch(e) { /* non-critical */ }
+        _activeTracking.waypoints = (_activeTracking.waypoints || 0) + 1;
+      }
+      _updateTrackingUI();
+      _persistTrackingState();
+    },
+    (err) => {
+      // F-7: a GPS error NEVER ends the session. Tearing down here used to
+      // discard the live tab's trip on one ordinary signal blip (a tunnel, a
+      // parking garage) while leaving the sessionStorage record behind — so the
+      // trip looked lost but wasn't, and the only visible button ("Start Trip")
+      // then destroyed it for real. The session now stays alive in a degraded
+      // state; Stop & Save keeps working, which is what salvages the miles.
+      if (!_activeTracking || _activeTracking.trackingId !== trackingId) return;
+      const firstOfStreak = !_activeTracking.gpsErrorSince;
+      if (firstOfStreak) _activeTracking.gpsErrorSince = Date.now();
+      _activeTracking.gpsErrorCode = err.code;
+      // Toast once per streak: watchPosition re-fires this callback every
+      // `timeout` ms (15s), so toasting each one would bury the driver.
+      if (firstOfStreak) {
+        let msg = "Couldn't get your location. Make sure Location Services is on. Your trip is still being tracked.";
+        if (err.code === 1) msg = 'Location access was denied — tracking is paused. Your trip is still open; you can stop and save it anytime.';
+        else if (err.code === 2) msg = "Lost the GPS signal — still tracking. Miles will resume when the signal comes back.";
+        else if (err.code === 3) msg = 'Location timed out — still tracking. Miles will resume when the signal comes back.';
+        toast(msg, true);
+      }
+      _updateTrackingUI();
+      _persistTrackingState();
+    },
+    { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
+  );
+  _activeTracking.watcherId = watcher;
+  if (_trackingIntervalId) clearInterval(_trackingIntervalId);
+  _trackingIntervalId = setInterval(() => {
+    if (!_activeTracking) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; return; }
+    _updateTrackingUI();
+    _persistTrackingState();
+    // F24: Refresh positioning card when stationary 10+ min
+    if (_activeTracking && _activeTracking.lastPos) {
+      const age = Date.now() - (_activeTracking.lastPos.ts || 0);
+      if (age >= 600000 && !_activeTracking._f24Shown) {
+        _activeTracking._f24Shown = true;
+        renderPositioningCard().catch(() => {});
+      }
+      if (age < 60000) _activeTracking._f24Shown = false; // reset when moving again
+    }
+  }, 30000);
+  const d = $('#f21TrackArea'); if (d) _renderTrackingActive(d);
+  toast('Trip tracking started — drive safely!');
+}
+
+function _persistTrackingState() {
+  try {
+    if (_activeTracking) {
+      sessionStorage.setItem('fl_active_tracking', JSON.stringify({
+        trackingId: _activeTracking.trackingId, startTime: _activeTracking.startTime,
+        startPos: _activeTracking.startPos, totalMiles: _activeTracking.totalMiles,
+      }));
+    } else { sessionStorage.removeItem('fl_active_tracking'); }
+  } catch(e) { /* unavailable */ }
+}
+
+async function stopTripTracking() {
+  if (!_activeTracking) return;
+  if (_activeTracking) _activeTracking._f24Shown = false; // F24: reset stationary flag
+  if (_activeTracking.watcherId !== null) navigator.geolocation.clearWatch(_activeTracking.watcherId);
+  if (_trackingIntervalId) { clearInterval(_trackingIntervalId); _trackingIntervalId = null; }
+  const t = _activeTracking;
+  _activeTracking = null;
+  try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+
+  const totalMiles = Math.round((t.totalMiles || 0) * 10) / 10;
+  const durationMs = Date.now() - t.startTime;
+  const durHrs = Math.floor(durationMs / 3600000), durMins = Math.floor((durationMs % 3600000) / 60000);
+  const durationStr = durHrs > 0 ? `${durHrs}h ${durMins}m` : `${durMins}m`;
+  const startCity = t.startPos ? nearestMarketCity(t.startPos.lat, t.startPos.lng) : 'Unknown area';
+  const endCity   = t.lastPos  ? nearestMarketCity(t.lastPos.lat,  t.lastPos.lng)  : startCity;
+  const startDate = isoDate(new Date(t.startTime)), endDate = isoDate();
+  const _fmtTime  = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  const body = document.createElement('div');
+  body.innerHTML = '<div style="background:var(--surface-0);border-radius:10px;padding:14px;margin-bottom:14px">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(startCity)} &rarr; ${escapeHtml(endCity)}</div>`
+    + `<div style="font-size:13px;color:var(--text-secondary)">${escapeHtml(String(totalMiles))} miles &nbsp;&bull;&nbsp; ${escapeHtml(durationStr)}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">Started: ${escapeHtml(_fmtTime(t.startTime))} &nbsp;&bull;&nbsp; Ended: ${escapeHtml(_fmtTime(Date.now()))}</div>`
+    + '</div>'
+    + '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Add Details (optional)</div>'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Rate / Pay ($)</label>'
+    + '<input id="trkPay" type="number" inputmode="decimal" step="0.01" placeholder="0.00" style="margin-bottom:10px;font-size:16px;min-height:48px" />'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Broker</label>'
+    + '<input id="trkBroker" type="text" placeholder="Broker or company name" style="margin-bottom:10px;min-height:48px" />'
+    + '<label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Order #</label>'
+    + '<input id="trkOrder" type="text" placeholder="Optional" style="min-height:48px" /></div>'
+    + '<div style="display:flex;gap:10px;margin-top:4px">'
+    + '<button class="btn primary" id="trkSave" style="flex:2;min-height:48px;font-weight:700">Save Trip</button>'
+    + '<button class="btn danger" id="trkDiscard" style="flex:1;min-height:48px">Discard</button></div>'
+    + '<div id="trkHint" style="font-size:12px;color:var(--bad);margin-top:8px;display:none"></div>';
+
+  body.querySelector('#trkSave')?.addEventListener('click', async () => {
+    const pay = Number(body.querySelector('#trkPay')?.value || 0);
+    const broker = clampStr(body.querySelector('#trkBroker')?.value || '', 80);
+    const rawOrder = clampStr(body.querySelector('#trkOrder')?.value || '', 40);
+    const orderNo = rawOrder || ('TRK-' + Date.now().toString(36).toUpperCase().slice(-8));
+    const trip = {
+      orderNo, origin: startCity, destination: endCity,
+      loadedMiles: Math.max(1, Math.round(totalMiles)),
+      emptyMiles: 0, pay: pay || 0,
+      pickupDate: startDate, deliveryDate: endDate,
+      customer: broker, needsReview: !(pay > 0),
+      autoTracked: true, gpsTrackingId: t.trackingId, created: t.startTime,
+    };
+    try {
+      await upsertTrip(trip);
+      invalidateKPICache(); closeModal();
+      toast(`Trip saved! ${startCity} \u2192 ${endCity} \u2022 ${totalMiles} mi`);
+      _cleanGpsLogs(t.trackingId);
+      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+      await renderHome();
+    } catch(err) {
+      const h = body.querySelector('#trkHint');
+      if (h) { h.textContent = "Couldn't save — try a different order number."; h.style.display = ''; }
+    }
+  });
+  body.querySelector('#trkDiscard')?.addEventListener('click', () => {
+    if (confirm('Delete this tracked trip? The GPS data will be removed.')) {
+      closeModal(); _cleanGpsLogs(t.trackingId);
+      const d = $('#f21TrackArea'); if (d) _renderTrackingIdle(d);
+      toast('Trip discarded.');
+    }
+  });
+  openModal('Trip Complete', body);
+}
+
+function _cleanGpsLogs(trackingId) {
+  try {
+    const { stores } = tx('gpsLogs');
+    const ids = [];
+    new Promise((res, rej) => {
+      const req = stores.gpsLogs.openCursor();
+      req.onerror = () => rej(req.error);
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (!cur) { res(); return; }
+        if (cur.value.tripTrackingId === trackingId) ids.push(cur.value.id);
+        cur.continue();
+      };
+    }).then(() => {
+      if (!ids.length) return;
+      const { t: dt, stores: ds } = tx('gpsLogs', 'readwrite');
+      ids.forEach(id => ds.gpsLogs.delete(id));
+      dt.oncomplete = () => {}; dt.onerror = () => {};
+    }).catch(() => {});
+  } catch(e) { console.warn('[FL] GPS log cleanup:', e); }
+}
+
+async function resumeTrackingIfActive() {
+  try {
+    const saved = _readSavedTracking();
+    if (!saved) return;
+    const ageMs = Date.now() - saved.startTime;
+    _restoreTrackingFromSaved(saved);
+    if (ageMs > 86400000) {
+      // Over 24h old — auto-stop and show review
+      try { sessionStorage.removeItem('fl_active_tracking'); } catch(e) { /* ok */ }
+      await stopTripTracking();
+    } else {
+      _doStartTracking();
+      toast('Trip tracking resumed.');
+    }
+  } catch(e) { console.warn('[FL] tracking resume:', e); _activeTracking = null; }
+}
+
+
+
+// ================================================================================
+// F24: POSITIONING CARD + POST-DELIVERY BRIEF (v23.0.0)
+// ================================================================================
+
+async function renderPositioningCard(overrideCity, isExploring) {
+  const card = $('#homePositioningCard');
+  if (!card) return;
+
+  // Step 1: Determine city.
+  //
+  // Issue #216: this used to resolve position itself -- GPS, then the latest
+  // trip out of the 120s KPI cache, sorted with a STABLE Array.prototype.sort
+  // whose equal-`created` order is primary key ASCENDING. The banner resolved
+  // the same question from the `created` INDEX, whose equal-key order is
+  // primary key DESCENDING. Under DB16's UUID primary key the two picked
+  // opposite trips on a tie and contradicted each other on screen. Both now
+  // call one resolver. See resolveDriverPosition().
+  const myGen = ++_positionCardRenderSeq;
+  const pos = await resolveDriverPosition({ overrideCity });
+  if (myGen !== _positionCardRenderSeq) return;   // a newer render owns this card
+  if (!pos.known) { card.style.display = 'none'; return; }
+  const city = pos.city;
+
+  // Step 2: Skeleton
+  card.style.display = '';
+  card.innerHTML = `<div class="card" style="padding:20px;text-align:center"><div class="muted" style="font-size:13px">\uD83D\uDCCD Analyzing ${escapeHtml(pos.display)}\u2026</div></div>`;
+
+  // Step 3: Fetch brief and render
+  let brief;
+  try { brief = await getPositioningBrief(city); }
+  catch(e) {
+    if (myGen !== _positionCardRenderSeq) return;
+    card.innerHTML = ''; card.style.display = 'none'; return;
+  }
+  if (myGen !== _positionCardRenderSeq) return;   // getPositioningBrief does live NWS I/O
+
+  // Onboarding check
+  const f24Slot = card.parentNode;
+  if (f24Slot && !f24Slot.querySelector('#f24OnboardingCard') && await shouldShowOnboarding('f24OnboardingSeen')) {
+    {
+      const slot = f24Slot;
+      const ob = document.createElement('div');
+      ob.id = 'f24OnboardingCard';
+      ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+      ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        + '<span style="font-size:22px">\uD83D\uDCCD</span>'
+        + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Co-Driver</strong></div>'
+        + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">After every delivery, FreightLogic shows what to do next \u2014 reload intel, best lanes out, weather, and nearby markets. Powered by YOUR trips. The more you log, the smarter this gets.</div>'
+        + '<div style="margin-top:12px"><button class="btn primary" id="f24ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      const f24Dismiss = async () => { await setSetting('f24OnboardingSeen', true); ob.remove(); };
+      ob.querySelector('#f24ObDismiss')?.addEventListener('click', f24Dismiss);
+      slot.insertBefore(ob, card);
+      markOnboardingExposure(ob, 'f24OnboardingSeen');
+    }
+  }
+
+  // `market` is deliberately not destructured any more: its only consumer in this
+  // function was the duplicated market subtitle removed below. `reloadScore` was
+  // already unread here before this change -- it is checked, not assumed: the
+  // name appears exactly once in the function, in the destructure itself. It
+  // stays on the brief object, which getPositioningBrief()'s other callers use.
+  const { outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
+
+  // Command badge styles
+  const cmdStyles = {
+    HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+    REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
+    HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
+  };
+  const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+
+  // Best day line
+  const bestDayLine = patterns.bestDay
+    ? `<div style="font-size:12px;margin-top:4px;opacity:.8">Best day: ${escapeHtml(patterns.bestDay.name)} ($${patterns.bestDay.avgRPM.toFixed(2)} RPM)</div>`
+    : '';
+
+  // Outbound lanes HTML
+  let lanesHtml = '';
+  if (outboundLanes.length) {
+    const cityDisplay = pos.display;  // Issue #216: one resolver owns the display name too
+    lanesHtml = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin:14px 0 6px">Best Outbound Lanes</div>`;
+    for (const lane of outboundLanes) {
+      const roleHtml = lane.destRole ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface-0);color:var(--text-secondary);border:1px solid var(--border-subtle);margin-left:6px">${escapeHtml(lane.destRole)}</span>` : '';
+      lanesHtml += `<div class="f24-lane-row" data-dest="${escapeHtml(lane.dest)}" style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:8px 4px;border-bottom:1px solid var(--border-subtle);cursor:pointer">
+        <div style="flex:1;min-width:0">
+          <span style="font-size:13px;font-weight:600">${escapeHtml(cityDisplay)} \u2192 ${escapeHtml(lane.destDisplay)}</span>${roleHtml}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--accent)">$${lane.avgRPM.toFixed(2)}</div>
+          <div style="font-size:11px;color:var(--text-tertiary)">${lane.count} run${lane.count !== 1 ? 's' : ''}</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  // Weather HTML
+  let weatherHtml = '';
+  if (weatherAlerts && weatherAlerts.length) {
+    const alertText = weatherAlerts.map(a => escapeHtml(a.event || a.label || String(a))).join('; ');
+    weatherHtml = `<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:12px;color:var(--warn)">\u26A0\uFE0F ${alertText} (NWS)</div>`;
+  }
+
+  // Nearby markets HTML (collapsed, only if not isExploring)
+  let nearbyHtml = '';
+  if (!isExploring && nearbyMarkets.length) {
+    nearbyHtml = `<div id="f24NearbySection" style="margin-top:12px">
+      <button id="f24NearbyToggle" class="btn" style="width:100%;text-align:left;font-size:12px;color:var(--text-secondary);background:none;border:none;padding:4px 0;cursor:pointer">\u25B8 Nearby Markets (tap to expand)</button>
+      <div id="f24NearbyList" style="display:none"></div>
+    </div>`;
+  }
+
+  // Confidence line
+  const tripWord = patterns.totalTrips === 1 ? 'trip' : 'trips';
+  const confidenceLine = `<div style="font-size:12px;color:var(--text-tertiary);margin-top:10px">Based on ${patterns.totalTrips} ${tripWord} from this market</div>`;
+
+  // Time-window line
+  const tw = getCurrentTimeWindow();
+  const twBiasColor = tw.cargoVanBias === 'firm' || tw.cargoVanBias === 'firming'
+    ? 'var(--good)' : tw.cargoVanBias === 'mixed' ? 'var(--warn)' : 'var(--text-secondary)';
+  const timeWindowHtml = `<div style="font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+    <span style="opacity:.6">\u23F0</span>
+    <span style="color:${twBiasColor};font-weight:600">${escapeHtml(tw.label)}</span>
+    <span style="color:var(--text-tertiary)">\u00B7 ${escapeHtml(tw.desc)}</span>
+  </div>`;
+
+  // CVSA / blitz banner
+  let cvsaBannerHtml = '';
+  const cvsaAlertsOn = (await getSetting('cvsaAlertsEnabled', true)) !== false;
+  if (cvsaAlertsOn) {
+    const cvsaEv = getActiveCVSAEvent();
+    if (cvsaEv) {
+      const cvsaMsg = cvsaEv.status === 'active'
+        ? `\u26A0\uFE0F CVSA ${escapeHtml(cvsaEv.name)} ACTIVE (${escapeHtml(cvsaEv.start)}\u2013${escapeHtml(cvsaEv.end)}) \u2014 Cargo van premium expected. Hold Midwest position.`
+        : `\u26A0\uFE0F CVSA ${escapeHtml(cvsaEv.name)} in ${Math.ceil((new Date(cvsaEv.start) - new Date()) / 86400000)} days (${escapeHtml(cvsaEv.start)}) \u2014 Pre-blitz premium building.`;
+      cvsaBannerHtml = `<div style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.30);font-size:12px;color:var(--warn)">${cvsaMsg}</div>`;
+    }
+  }
+
+  // Render card
+  const cityDisplay = pos.display;  // Issue #216: one resolver owns the display name too
+
+  // #205 UX/IA: this card no longer repeats the position-context banner's
+  // identity line. The banner is the single authority for "where are you and
+  // what kind of market is it"; this card answers "what do I do from here".
+  // The card's own market subtitle (`<role> market \u00B7 <zone>`) was a verbatim
+  // second printing of what the banner states one card above, so it is DELETED
+  // rather than left computed-but-unused -- a dead local that still looks load
+  // bearing is the next reader's wasted hour. The nearby-market drill-down
+  // builds its own subtitle in its own scope and is untouched.
+  //
+  // Issue #216 closed the ambiguity case on the BANNER, which stands down from
+  // its pricing directive when two trips tie and disagree. This card kept
+  // issuing HOLD / REPOSITION / HUNT on the very same coin flip, so the driver
+  // could read "confirm your position before pricing" immediately above a
+  // confident command. A directive grounded in an ambiguous position is exactly
+  // what that repair refused; it refuses it here too.
+  const ambiguityHtml = pos.ambiguous
+    ? `<div style="padding:8px 12px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn);font-size:12px;color:var(--warn);margin-bottom:8px">\u26A0\uFE0F Two trips tie for most recent. Confirm your position before acting on this.</div>`
+    : '';
+  const commandBlockHtml = pos.ambiguous
+    ? ''
+    : `<div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
+      <div style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(command)}</div>
+      <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
+      ${bestDayLine}
+    </div>`;
+
+  if (myGen !== _positionCardRenderSeq) return;   // last guard before the paint
+  card.innerHTML = `<div class="card" style="padding:16px 14px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">\uD83E\uDDED NEXT MOVE FROM ${escapeHtml(cityDisplay)}</div>
+    ${ambiguityHtml}
+    ${timeWindowHtml}
+    ${cvsaBannerHtml}
+    ${commandBlockHtml}
+    ${lanesHtml}
+    ${weatherHtml}
+    ${nearbyHtml}
+    ${confidenceLine}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn primary f24-eval-btn" style="flex:1;min-height:48px;font-size:13px">Open Evaluator</button>
+      <button class="btn f24-reload-btn" style="flex:1;min-height:48px;font-size:13px">Log Reload Outcome</button>
+    </div>
+  </div>`;
+
+  // Wire up outbound lane taps
+  card.querySelectorAll('.f24-lane-row').forEach(el => {
+    const laneObj = outboundLanes.find(l => l.dest === el.dataset.dest);
+    if (!laneObj) return;
+    el.addEventListener('click', async () => {
+      haptic(10);
+      const { trips } = await _getTripsAndExps();
+      openLaneBreakdown(laneObj, trips);
+    });
+  });
+
+  // Wire up nearby markets toggle
+  const nearbyToggle = card.querySelector('#f24NearbyToggle');
+  const nearbyList = card.querySelector('#f24NearbyList');
+  if (nearbyToggle && nearbyList) {
+    nearbyToggle.addEventListener('click', () => {
+      haptic(10);
+      if (nearbyList.style.display === 'none') {
+        nearbyList.style.display = '';
+        nearbyToggle.textContent = '\u25BE Nearby Markets';
+        if (!nearbyList.children.length) {
+          nearbyMarkets.forEach(m => {
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.style.cssText = 'width:100%;text-align:left;margin-top:6px;min-height:48px;font-size:12px;padding:10px 12px';
+            btn.textContent = `${m.displayName} \u00B7 ${m.role} \u00B7 ${m.distanceMi}mi`;
+            btn.addEventListener('click', () => {
+              haptic(10);
+              renderPositioningCard(m.city, true);
+            });
+            nearbyList.appendChild(btn);
+          });
+        }
+      } else {
+        nearbyList.style.display = 'none';
+        nearbyToggle.textContent = '\u25B8 Nearby Markets (tap to expand)';
+      }
+    });
+  }
+
+  // Wire up action buttons
+  card.querySelector('.f24-eval-btn')?.addEventListener('click', () => { haptic(10); location.hash = '#omega'; });
+  card.querySelector('.f24-reload-btn')?.addEventListener('click', () => {
+    haptic(10);
+    openReloadScoring();
+    setTimeout(() => { const inp = document.querySelector('#rsCity'); if (inp) inp.value = city; }, 150);
+  });
+}
+
+async function _triggerPostDeliveryBrief(city) {
+  try {
+    const disabled = await getSetting('f24AutoBriefDisabled', false);
+    if (disabled) return;
+    await new Promise(r => setTimeout(r, 1000));
+    const brief = await getPositioningBrief(city);
+
+    // Increment counter
+    const count = (await getSetting('f24PostDeliveryCount', 0)) + 1;
+    await setSetting('f24PostDeliveryCount', count);
+
+    const { market, reloadScore, outboundLanes, patterns, command, commandReason } = brief;
+    const cmdStyles = {
+      HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+      REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
+      HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
+    };
+    const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+
+    const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
+    let marketSub = '';
+    if (market) {
+      const USA_ZONES_MAP = typeof USA_ZONES !== 'undefined' ? USA_ZONES : {};
+      const zoneLabel = (USA_ZONES_MAP[market.zone] && USA_ZONES_MAP[market.zone].label) ? USA_ZONES_MAP[market.zone].label : (market.zone || '');
+      marketSub = `<div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">${escapeHtml(market.role || '')} \u00B7 ${escapeHtml(zoneLabel)}</div>`;
+    }
+
+    let statsBullets = '';
+    if (reloadScore) statsBullets += `<li>Reload: Grade ${escapeHtml(reloadScore.grade)}, avg ${reloadScore.avg}h</li>`;
+    if (outboundLanes[0]) statsBullets += `<li>Best outbound: ${escapeHtml(outboundLanes[0].destDisplay)} at $${outboundLanes[0].avgRPM.toFixed(2)}</li>`;
+    if (patterns.bestDay) statsBullets += `<li>Best day here: ${escapeHtml(patterns.bestDay.name)}</li>`;
+
+    // Show opt-out checkbox after 3rd view
+    const showOptOut = count >= 3;
+    const optOutHtml = showOptOut
+      ? `<div style="margin-top:12px;padding:10px;background:var(--surface-0);border-radius:8px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="f24DontShow" style="width:16px;height:16px"> Don't show this automatically
+          </label>
+        </div>`
+      : '';
+
+    const body = document.createElement('div');
+    body.innerHTML = `<div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:13px;color:var(--text-tertiary)">You just delivered in</div>
+        <div style="font-size:20px;font-weight:700;margin-top:4px">${escapeHtml(cityDisplay)}</div>
+        ${marketSub}
+      </div>
+      <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
+        <div style="font-size:20px;font-weight:900">${escapeHtml(command)}</div>
+        <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
+      </div>
+      ${statsBullets ? `<ul style="font-size:13px;padding-left:18px;margin:0 0 8px;line-height:1.8">${statsBullets}</ul>` : ''}
+      ${optOutHtml}
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn primary f24-gotit-btn" style="flex:1;min-height:48px">Got It</button>
+        <button class="btn f24-fullbrief-btn" style="flex:1;min-height:48px">Full Brief</button>
+      </div>`;
+
+    body.querySelector('.f24-gotit-btn')?.addEventListener('click', async () => {
+      const cb = body.querySelector('#f24DontShow');
+      if (cb && cb.checked) await setSetting('f24AutoBriefDisabled', true);
+      closeModal();
+    });
+    body.querySelector('.f24-fullbrief-btn')?.addEventListener('click', () => {
+      closeModal();
+      location.hash = '#home';
+      setTimeout(() => { $('#homePositioningCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400);
+    });
+
+    openModal('\uD83D\uDCCD What\'s Next?', body);
+  } catch(e) { /* non-critical */ }
+}
+
+// ================================================================================
+// F25: VEHICLE MAINTENANCE TRACKER (v23.1.0)
+// ================================================================================
+
+const MAINTENANCE_DEFAULTS = [
+  { id: 'oil_change',    label: 'Oil & Filter',       intervalDays: 90,  icon: '🛢️' },
+  { id: 'tire_rotation', label: 'Tire Rotation',      intervalDays: 180, icon: '🔄' },
+  { id: 'inspection',    label: 'Vehicle Inspection',  intervalDays: 365, icon: '📋' },
+  { id: 'registration',  label: 'Registration',        intervalDays: 365, icon: '📄' },
+];
+
+async function _getMaintenanceSchedule() {
+  const saved = await getSetting('maintenanceSchedule', null);
+  if (Array.isArray(saved) && saved.length) return saved;
+  // First run: return defaults (not yet saved — saves on first "Log Service")
+  return MAINTENANCE_DEFAULTS.map(d => ({ ...d, lastDate: null, lastCost: null, lastNotes: '' }));
+}
+
+async function _saveMaintenanceSchedule(items) {
+  const clean = items.map(it => ({
+    id:          clampStr(String(it.id || ''), 40),
+    label:       clampStr(String(it.label || ''), 60),
+    intervalDays: Math.max(1, intNum(it.intervalDays) || 90),
+    icon:        clampStr(String(it.icon || ''), 4),
+    lastDate:    it.lastDate || null,
+    lastCost:    it.lastCost != null ? posNum(it.lastCost) : null,
+    lastNotes:   clampStr(String(it.lastNotes || ''), 200),
+  }));
+  await setSetting('maintenanceSchedule', clean);
+  return clean;
+}
+
+function _maintenanceStatus(item) {
+  const today = new Date();
+  if (!item.lastDate) return { label: 'Never serviced', daysUntil: -9999, state: 'overdue' };
+  const next = new Date(item.lastDate);
+  next.setDate(next.getDate() + item.intervalDays);
+  const daysUntil = Math.ceil((next - today) / 86400000);
+  if (daysUntil <= 0)  return { label: `Overdue ${Math.abs(daysUntil)}d`, daysUntil, state: 'overdue' };
+  if (daysUntil <= 14) return { label: `Due in ${daysUntil}d`, daysUntil, state: 'warn' };
+  return { label: `OK — ${daysUntil}d left`, daysUntil, state: 'ok' };
+}
+
+// Called on home render — shows an alert card if anything is overdue or due soon
+async function checkMaintenanceDue() {
+  try {
+    const slot = $('#homeMaintenanceAlert');
+    if (!slot) return;
+    const items = await _getMaintenanceSchedule();
+    const overdue = [], warn = [];
+    for (const it of items) {
+      const s = _maintenanceStatus(it);
+      if (s.state === 'overdue') overdue.push({ ...it, _status: s });
+      else if (s.state === 'warn') warn.push({ ...it, _status: s });
+    }
+    if (!overdue.length && !warn.length) { slot.style.display = 'none'; return; }
+    slot.style.display = '';
+    const worst = overdue[0] || warn[0];
+    const others = overdue.length + warn.length - 1;
+    const color = overdue.length ? 'var(--bad)' : 'var(--warn)';
+    const borderColor = overdue.length ? 'rgba(255,82,82,.25)' : 'rgba(255,179,0,.25)';
+    const bg = overdue.length ? 'rgba(255,82,82,.06)' : 'rgba(255,179,0,.06)';
+    slot.innerHTML = `<div style="border:1px solid ${borderColor};background:${bg};border-radius:12px;padding:12px 14px;margin-bottom:4px;display:flex;align-items:center;gap:12px;cursor:pointer" id="maintAlertBanner">
+      <div style="font-size:22px">${escapeHtml(worst.icon)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:${color}">${escapeHtml(worst.label)} — ${escapeHtml(worst._status.label)}</div>
+        <div class="muted" style="font-size:12px">${others > 0 ? `+${others} more service item${others > 1?'s':''} need attention` : 'Tap to log service'}</div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:${color};white-space:nowrap">Service →</div>
+    </div>`;
+    slot.querySelector('#maintAlertBanner')?.addEventListener('click', () => { haptic(15); openMaintenanceTracker().catch(()=>{}); });
+  } catch(e) { console.warn('[F25]', e); }
+}
+
+// Main maintenance tracker modal
+async function openMaintenanceTracker() {
+  haptic(15);
+  const items = await _getMaintenanceSchedule();
+  const body = document.createElement('div');
+  body.style.padding = '0';
+
+  function _buildList() {
+    let html = '';
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const s = _maintenanceStatus(it);
+      const badgeColor = s.state === 'overdue' ? 'var(--bad)' : s.state === 'warn' ? 'var(--warn)' : 'var(--good)';
+      const badgeBg = s.state === 'overdue' ? 'rgba(255,82,82,.12)' : s.state === 'warn' ? 'rgba(255,179,0,.12)' : 'rgba(107,255,149,.08)';
+      const lastInfo = it.lastDate ? `Last: ${it.lastDate}${it.lastCost ? ' · ' + fmtMoney(it.lastCost) : ''}` : 'Never logged';
+      html += `<div class="item" style="align-items:center;gap:12px;padding:12px 0" data-maint-idx="${i}">
+        <div style="font-size:22px;flex-shrink:0">${escapeHtml(it.icon)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px">${escapeHtml(it.label)}</div>
+          <div class="muted" style="font-size:11px">Every ${it.intervalDays}d &nbsp;·&nbsp; ${escapeHtml(lastInfo)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${badgeBg};color:${badgeColor};white-space:nowrap">${escapeHtml(s.label)}</div>
+          <button class="btn sm" data-maint-log="${i}" style="font-size:11px;min-height:36px;min-width:72px">Log Service</button>
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  const listCard = document.createElement('div');
+  listCard.className = 'card';
+  listCard.style.marginBottom = '14px';
+  listCard.innerHTML = `<h3>Service Schedule</h3><div id="maintItemList">${_buildList()}</div>`;
+  body.appendChild(listCard);
+
+  // Add custom item form
+  const addCard = document.createElement('div');
+  addCard.className = 'card';
+  addCard.style.marginBottom = '14px';
+  addCard.innerHTML = `<h3>Add Service Item</h3>
+    <div class="grid2" style="gap:10px;margin-bottom:10px">
+      <div><label>Name</label><input id="maintNewLabel" placeholder="e.g., Spark Plugs" /></div>
+      <div><label>Interval (days)</label><input id="maintNewInterval" type="number" step="1" placeholder="180" inputmode="numeric" /></div>
+    </div>
+    <button class="btn" id="maintAddBtn" style="width:100%;min-height:44px">Add Item</button>`;
+  body.appendChild(addCard);
+
+  openModal('🔧 Maintenance Tracker', body);
+
+  // Wire log-service buttons
+  body.addEventListener('click', async (e) => {
+    const logBtn = e.target.closest('[data-maint-log]');
+    if (logBtn) {
+      const idx = parseInt(logBtn.dataset.maintLog, 10);
+      if (isNaN(idx) || !items[idx]) return;
+      haptic(15);
+      await _logMaintenanceService(items, idx, () => {
+        const listEl = body.querySelector('#maintItemList');
+        if (listEl) listEl.innerHTML = _buildList();
+        // Re-wire after rebuild
+      });
+    }
+  });
+
+  // Wire Add Item
+  body.querySelector('#maintAddBtn')?.addEventListener('click', async () => {
+    const label = clampStr(body.querySelector('#maintNewLabel')?.value?.trim() || '', 60);
+    const intervalDays = intNum(body.querySelector('#maintNewInterval')?.value || '') || 180;
+    if (!label) { toast('Enter a service name', true); return; }
+    if (intervalDays < 1 || intervalDays > 3650) { toast('Interval must be 1–3650 days', true); return; }
+    items.push({ id: 'custom_' + Date.now(), label, intervalDays, icon: '🔧', lastDate: null, lastCost: null, lastNotes: '' });
+    await _saveMaintenanceSchedule(items);
+    body.querySelector('#maintNewLabel').value = '';
+    body.querySelector('#maintNewInterval').value = '';
+    const listEl = body.querySelector('#maintItemList');
+    if (listEl) listEl.innerHTML = _buildList();
+    toast('Item added');
+  });
+}
+
+// Sub-modal: log a service event for one item
+async function _logMaintenanceService(items, idx, onDone) {
+  const it = items[idx];
+  const sub = document.createElement('div');
+  sub.style.padding = '0';
+  sub.innerHTML = `
+    <div style="text-align:center;padding:12px 0 16px">
+      <div style="font-size:36px">${escapeHtml(it.icon)}</div>
+      <div style="font-size:16px;font-weight:700;margin-top:6px">${escapeHtml(it.label)}</div>
+    </div>
+    <div class="field"><label>Service Date</label><input id="maintLogDate" type="date" value="${isoDate()}" /></div>
+    <div class="field"><label>Cost ($)</label><input id="maintLogCost" type="number" step="0.01" placeholder="0.00" inputmode="decimal" /></div>
+    <div class="field"><label>Notes</label><input id="maintLogNotes" placeholder="Shop, parts used, etc." /></div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn" id="maintLogCancel">Cancel</button>
+      <button class="btn primary" id="maintLogSave" style="flex:1">Save Service</button>
+    </div>`;
+
+  openModal(`Log Service — ${escapeHtml(it.label)}`, sub);
+
+  sub.querySelector('#maintLogCancel')?.addEventListener('click', () => {
+    closeModal();
+    setTimeout(() => openMaintenanceTracker().catch(()=>{}), 300);
+  });
+
+  sub.querySelector('#maintLogSave')?.addEventListener('click', async () => {
+    const date  = sub.querySelector('#maintLogDate')?.value || isoDate();
+    const cost  = posNum(sub.querySelector('#maintLogCost')?.value || '') || null;
+    const notes = clampStr(sub.querySelector('#maintLogNotes')?.value?.trim() || '', 200);
+
+    if (!date || date > isoDate()) { toast('Enter a valid date', true); return; }
+
+    // Update schedule item
+    items[idx] = { ...it, lastDate: date, lastCost: cost, lastNotes: notes };
+    await _saveMaintenanceSchedule(items);
+
+    // Log as an expense record so it appears in expense history
+    if (cost && cost > 0) {
+      const { t, stores } = tx(['expenses'], 'readwrite');
+      const expRec = {
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        date,
+        amount: cost,
+        category: 'Maintenance',
+        notes: clampStr((it.label || '') + (notes ? ': ' + notes : ''), 300),
+        createdAt: Date.now(),
+      };
+      validateRecordSize(expRec, 'Expense');
+      await idbReq(stores.expenses.add(expRec));
+      await new Promise((res, rej) => { t.oncomplete = res; t.onerror = rej; });
+    }
+
+    toast(`${it.label} logged`);
+    closeModal();
+    await checkMaintenanceDue();   // Refresh home alert
+    if (typeof onDone === 'function') onDone();
+    setTimeout(() => openMaintenanceTracker().catch(()=>{}), 300);
+  });
+}
+
+// ================================================================================
+// F22: MONEY DASHBOARD (v22.0.0)
+// ================================================================================
+
+async function renderMoneyCard() {
+  const card = $('#homeMoneyCard');
+  if (!card) return;
+
+  // One-time onboarding tooltip
+  const f22Slot = card.parentNode;
+  if (f22Slot && !f22Slot.querySelector('#f22OnboardingCard') && await shouldShowOnboarding('f22OnboardingSeen')) {
+    {
+      const slot = f22Slot;
+      const ob = document.createElement('div');
+      ob.id = 'f22OnboardingCard';
+      ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+      ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        + '<span style="font-size:22px">\u{1F4B0}</span>'
+        + '<strong style="font-size:14px;color:var(--accent-text)">New: Your Money at a Glance</strong></div>'
+        + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">See your weekly earnings, unpaid loads, and tax estimate &mdash; all in one place. No more jumping between screens.</div>'
+        + '<div style="margin-top:12px"><button class="btn primary" id="f22ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+      const f22Dismiss = async () => { await setSetting('f22OnboardingSeen', true); ob.remove(); };
+      ob.querySelector('#f22ObDismiss')?.addEventListener('click', f22Dismiss);
+      ob.addEventListener('click', f22Dismiss);
+      slot.insertBefore(ob, card);
+      markOnboardingExposure(ob, 'f22OnboardingSeen');
+    }
+  }
+
+  const { trips, exps } = await _getTripsAndExps();
+  const validTrips = trips.filter(t => !t.needsReview);
+  if (validTrips.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const now = new Date();
+  const wk0 = startOfWeek(now).getTime();
+  const qStart = startOfQuarter(now);
+
+  // Week stats
+  let wkGross = 0, wkExp = 0;
+  for (const t of validTrips) {
+    const dt = t.pickupDate || t.deliveryDate;
+    if (dt && new Date(dt).getTime() >= wk0) wkGross += Number(t.pay || 0);
+  }
+  for (const e of exps) {
+    if (e.date && new Date(e.date).getTime() >= wk0) wkExp += Number(e.amount || 0);
+  }
+  const wkNet = wkGross - wkExp;
+
+  // Unpaid totals
+  let unpaidAmt = 0, unpaidCount = 0, totalPaid = 0, totalEver = 0;
+  for (const t of validTrips) {
+    if (!tripPaymentKnown(t)) continue;
+    const pay = Number(t.pay || 0);
+    totalEver += pay;
+    if (tripIsUnpaid(t)) { unpaidAmt += pay; unpaidCount++; } else if (tripIsPaid(t)) { totalPaid += pay; }
+  }
+  const collectedPct = totalEver > 0 ? Math.round((totalPaid / totalEver) * 100) : 0;
+
+  // Average days to pay
+  let daysToPaySum = 0, daysToPayCount = 0;
+  for (const t of validTrips) {
+    if (t.isPaid && t.paidDate && (t.deliveryDate || t.pickupDate)) {
+      const d = daysBetweenISO(t.deliveryDate || t.pickupDate, t.paidDate);
+      if (d !== null && d >= 0 && d < 365) { daysToPaySum += d; daysToPayCount++; }
+    }
+  }
+  const avgDaysToPay = daysToPayCount > 0 ? Math.round(daysToPaySum / daysToPayCount) : null;
+
+  // Weekly goal
+  const weeklyGoal = Number(await getSetting('weeklyGoal', 0) || 0);
+  const goalPct = weeklyGoal > 0 ? Math.min(200, Math.round((wkGross / weeklyGoal) * 100)) : 0;
+  const dayOfWeek = now.getDay();
+  const daysLeft = dayOfWeek === 0 ? 1 : 7 - dayOfWeek;
+
+  // Quarter tax estimate
+  const qTrips = validTrips.filter(t => {
+    const dt = t.pickupDate || t.deliveryDate;
+    return dt && new Date(dt) >= qStart;
+  });
+  const qExps = exps.filter(e => e.date && new Date(e.date) >= qStart);
+  const daysOnRoad = new Set(qTrips.map(t => t.pickupDate || t.deliveryDate)).size;
+  const perDiemDeduction = daysOnRoad * IRS.PER_DIEM_CONUS * IRS.PER_DIEM_PCT_NON_DOT;
+  let qGross = 0, qExpTotal = 0;
+  for (const t of qTrips) qGross += Number(t.pay || 0);
+  for (const e of qExps) qExpTotal += Number(e.amount || 0);
+  const qNet = Math.max(0, qGross - qExpTotal);
+  const taxableIncome = Math.max(0, qNet - perDiemDeduction);
+  const seTax = roundCents(taxableIncome * IRS.SE_NET_FACTOR * IRS.SE_RATE);
+  const setAside = seTax;
+
+  // Simplified card for < 3 trips
+  if (validTrips.length < 3) {
+    card.innerHTML = '<div class="card" style="margin-top:12px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+      + '<span style="font-size:18px">\u{1F4B0}</span><h3 style="margin:0">Your Money</h3></div>'
+      + `<div style="font-size:16px;font-weight:700;margin-bottom:8px">This week: ${escapeHtml(fmtMoney(wkGross))} earned</div>`
+      + '<div style="font-size:13px;color:var(--text-secondary);line-height:1.6">Keep adding trips to see your full financial picture &mdash; earnings, money owed to you, and tax estimates will appear here.</div>'
+      + '</div>';
+    return;
+  }
+
+  // Progress bar helper
+  const _pbar = (pct, color) => '<div style="height:8px;border-radius:4px;background:var(--surface-0);overflow:hidden;margin:6px 0 4px">'
+    + `<div style="height:100%;width:${Math.min(100, pct)}%;border-radius:4px;background:${escapeHtml(color)};transition:width .4s ease"></div></div>`;
+
+  const goalColor = goalPct >= 100 ? 'var(--good)' : goalPct >= 70 ? 'var(--accent)' : 'var(--warn)';
+  const collectedColor = collectedPct >= 80 ? 'var(--good)' : collectedPct >= 50 ? 'var(--accent)' : 'var(--bad)';
+  const daysPayColor = avgDaysToPay !== null ? (avgDaysToPay <= 15 ? 'var(--good)' : avgDaysToPay <= 30 ? 'var(--warn)' : 'var(--bad)') : 'var(--text-tertiary)';
+
+  // #205 UX/IA -- ONE weekly-goal progress surface on Today.
+  //
+  // This block used to render a second progress bar and a second "$X of $Y
+  // (N%)" for the same week the hero card was already showing as a bar plus a
+  // "N% to goal" badge, roughly one screen apart. Two bars for one number is
+  // presentation duplication, and when they were computed in different functions
+  // from different windows they were also a chance to disagree on screen.
+  //
+  // The bar and the percentage move OUT of here -- the hero card owns them. What
+  // stays is the part the hero does NOT say and cannot say in a badge: how much
+  // is left and how many days are left to earn it. Nothing is computed
+  // differently; `goalPct`, `wkGross` and `weeklyGoal` are unchanged, and
+  // `goalColor` still colours the remaining-amount text so the at-a-glance
+  // signal survives without a second bar.
+  const goalHtml = weeklyGoal > 0
+    ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Weekly Goal</div>'
+      + (goalPct >= 100
+          ? `<div style="color:var(--good);font-weight:700;font-size:14px">&#10003; Goal reached! ${escapeHtml(fmtMoney(wkGross - weeklyGoal))} above target</div>`
+          : `<div style="font-size:14px;font-weight:700;color:${escapeHtml(goalColor)}">${escapeHtml(fmtMoney(Math.max(0, weeklyGoal - wkGross)))} to go`
+            + ` <span style="font-size:12px;font-weight:400;color:var(--text-tertiary)">&bull; ${escapeHtml(String(daysLeft))} day${daysLeft !== 1 ? 's' : ''} left</span></div>`)
+      + '</div>'
+    : '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px">'
+      + '<div style="font-size:13px;color:var(--text-tertiary)">No weekly goal set &mdash; '
+      + '<a href="#insights" style="color:var(--accent-text);text-decoration:none;font-weight:600">Set one &rarr;</a></div></div>';
+
+  const taxBodyHtml = seTax > 0
+    ? '<div style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:0">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Taxes This Quarter</div>'
+      + '<div style="font-size:13px;line-height:1.9;color:var(--text-secondary)">'
+      + `Est. self-employment tax: <strong style="color:var(--text)">${escapeHtml(fmtMoney(seTax))}</strong><br>`
+      + `Per diem savings: <strong style="color:var(--good)">-${escapeHtml(fmtMoney(perDiemDeduction))}</strong><br>`
+      + `Set aside about <strong style="color:var(--accent-text)">${escapeHtml(fmtMoney(setAside))}</strong> this quarter</div>`
+      + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">\u24d8 Estimate only &mdash; not tax advice. Talk to your accountant for exact numbers.</div>'
+      + '</div>'
+    : '<div style="font-size:13px;color:var(--text-tertiary);padding-top:10px">Add more trips to see a tax estimate.</div>';
+
+  card.innerHTML = '<div class="card" style="margin-top:12px">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:18px">\u{1F4B0}</span><h3 style="margin:0">Your Money</h3></div>'
+    // This Week
+    + '<div style="border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">This Week</div>'
+    + `<div style="font-size:17px;font-weight:800;margin-bottom:2px">${escapeHtml(fmtMoney(wkGross))} earned`
+    + ` <span style="font-size:13px;font-weight:400;color:var(--text-secondary)">&bull; ${escapeHtml(fmtMoney(wkExp))} spent</span></div>`
+    + `<div style="font-size:14px;font-weight:700;color:${wkNet >= 0 ? 'var(--good)' : 'var(--bad)'}">${escapeHtml(fmtMoney(wkNet))} in your pocket</div>`
+    + '</div>'
+    // Money Owed
+    + '<div style="border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:12px">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Money Owed to You</div>'
+    + (unpaidCount > 0
+        ? `<div style="font-size:15px;font-weight:700;margin-bottom:2px">${escapeHtml(fmtMoney(unpaidAmt))} unpaid`
+          + ` <span style="font-size:13px;font-weight:400;color:var(--text-secondary)">&bull; ${escapeHtml(String(unpaidCount))} load${unpaidCount !== 1 ? 's' : ''} waiting</span></div>`
+          + _pbar(collectedPct, collectedColor)
+          + `<div style="font-size:12px;color:var(--text-tertiary)">${escapeHtml(String(collectedPct))}% collected`
+          + (avgDaysToPay !== null ? ` &nbsp;&bull;&nbsp; <span style="color:${daysPayColor}">Brokers paying in avg ${escapeHtml(String(avgDaysToPay))} days</span>` : '')
+          + '</div>'
+        : '<div style="font-size:13px;color:var(--good);font-weight:600">&#10003; All caught up &mdash; no unpaid loads</div>')
+    + '</div>'
+    // Weekly Goal
+    + goalHtml
+    // Tax toggle
+    + '<div id="f22TaxToggle" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 0 4px;border-top:1px solid var(--border-subtle);margin-top:12px;color:var(--text-secondary);font-size:13px;font-weight:600">'
+    + '<span id="f22TaxArrow" style="font-size:10px;transition:transform .2s">&#9660;</span> Tax Estimate (tap to expand)</div>'
+    + '<div id="f22TaxBody" style="display:none">' + taxBodyHtml + '</div>'
+    // Unpaid link
+    + (unpaidCount > 0 ? '<div style="margin-top:14px"><a href="#money" class="btn" style="width:100%;text-align:center;display:block;min-height:48px;line-height:48px;padding:0;box-sizing:border-box">See All Unpaid &rarr;</a></div>' : '')
+    + '</div>';
+
+  card.querySelector('#f22TaxToggle')?.addEventListener('click', () => {
+    const tb = card.querySelector('#f22TaxBody');
+    const arr = card.querySelector('#f22TaxArrow');
+    if (!tb) return;
+    const open = tb.style.display !== 'none';
+    tb.style.display = open ? 'none' : '';
+    if (arr) arr.style.transform = open ? '' : 'rotate(180deg)';
+  });
+
+  // F31: Earnings trends chart — appended non-blocking
+  renderEarningsTrends(card, validTrips, exps).catch(()=>{});
+}
+
+// ================================================================================
+// F31 — Earnings Trends (v23.4.0)
+// Pure-SVG bar chart appended to the Money Dashboard card. Shows last 8 weeks
+// (or 6 months) of gross revenue bars + net income overlay line.
+// Requires ≥4 weeks of data to render (avoids noisy single-bar charts).
+// ================================================================================
+
+function _buildWeeklyBuckets(trips, exps, n){
+  const now = new Date();
+  const buckets = [];
+  for (let i = n - 1; i >= 0; i--){
+    const wkStart = startOfWeek(new Date(now.getTime() - i * 7 * 86400000));
+    const wkEnd   = new Date(wkStart.getTime() + 6 * 86400000);
+    const wkStartIso = isoDate(wkStart), wkEndIso = isoDate(wkEnd);
+    const label = `${wkStart.getMonth() + 1}/${wkStart.getDate()}`;
+    let gross = 0, spent = 0;
+    for (const t of trips){
+      const d = t.pickupDate || t.deliveryDate;
+      if (d && d >= wkStartIso && d <= wkEndIso) gross += posNum(t.pay);
+    }
+    for (const e of exps){
+      if (e.date && e.date >= wkStartIso && e.date <= wkEndIso) spent += posNum(e.amount);
+    }
+    buckets.push({ label, gross, net: gross - spent, wkStartIso });
+  }
+  return buckets;
+}
+
+function _buildMonthlyBuckets(trips, exps, n){
+  const now = new Date();
+  const buckets = [];
+  for (let i = n - 1; i >= 0; i--){
+    const d0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 0);
+    const m0 = isoDate(d0).slice(0, 7), label = d0.toLocaleDateString('en-US', { month:'short' });
+    let gross = 0, spent = 0;
+    for (const t of trips){
+      const d = (t.pickupDate || t.deliveryDate || '').slice(0, 7);
+      if (d === m0) gross += posNum(t.pay);
+    }
+    for (const e of exps){
+      const d = (e.date || '').slice(0, 7);
+      if (d === m0) spent += posNum(e.amount);
+    }
+    buckets.push({ label, gross, net: gross - spent });
+    void d1;
+  }
+  return buckets;
+}
+
+async function renderEarningsTrends(card, trips, exps){
+  if (!card) return;
+  const existing = card.querySelector('#f31TrendsSection');
+  if (existing) existing.remove();
+
+  // Need ≥4 weeks with any revenue to show chart
+  const wkBuckets = _buildWeeklyBuckets(trips, exps, 8);
+  const activeWeeks = wkBuckets.filter(b => b.gross > 0).length;
+  if (activeWeeks < 4) return;
+
+  const savedView = await getSetting('f31TrendView', 'week').catch(()=>'week');
+
+  const section = document.createElement('div');
+  section.id = 'f31TrendsSection';
+  section.style.cssText = 'border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:12px';
+
+  function buildChart(buckets, view){
+    const W = 320, H = 120, pad = { l:8, r:8, t:8, b:22 };
+    const innerW = W - pad.l - pad.r;
+    const innerH = H - pad.t - pad.b;
+    const n = buckets.length;
+    const barW = Math.floor(innerW / n) - 3;
+    const maxVal = Math.max(...buckets.map(b => b.gross), 1);
+
+    const bars = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + 1;
+      const bh = Math.max(2, Math.round((b.gross / maxVal) * innerH));
+      const by = pad.t + innerH - bh;
+      const isCurrentWeek = i === n - 1;
+      return `<rect x="${x}" y="${by}" width="${barW}" height="${bh}"
+        rx="2" fill="${isCurrentWeek ? 'var(--accent)' : 'var(--accent-muted, rgba(255,179,0,.35))'}"
+        data-gross="${b.gross.toFixed(0)}" data-net="${b.net.toFixed(0)}" data-label="${escapeHtml(b.label)}" />`;
+    }).join('');
+
+    // Net line
+    const netPts = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + barW / 2 + 1;
+      const y = pad.t + innerH - Math.max(0, Math.round((b.net / maxVal) * innerH));
+      return `${x},${y}`;
+    }).join(' ');
+    const netLine = `<polyline points="${netPts}" fill="none" stroke="var(--good)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity=".85" />`;
+
+    // X-axis labels
+    const labels = buckets.map((b, i) => {
+      const x = pad.l + i * (innerW / n) + barW / 2 + 1;
+      return `<text x="${x}" y="${H - 3}" text-anchor="middle" font-size="9" fill="var(--text-tertiary)">${escapeHtml(b.label)}</text>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:${H}px;display:block;overflow:visible" role="img" aria-label="Earnings chart">${bars}${netLine}${labels}</svg>`;
+  }
+
+  function render(view, buckets){
+    const grossTotal = buckets.reduce((s, b) => s + b.gross, 0);
+    const netTotal   = buckets.reduce((s, b) => s + b.net,   0);
+    const label      = view === 'week' ? 'Last 8 Weeks' : 'Last 6 Months';
+    section.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px">${escapeHtml(label)}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn f31-toggle${view==='week'?' active':''}" data-v="week" style="font-size:11px;padding:4px 10px;min-height:28px">Weeks</button>
+          <button class="btn f31-toggle${view==='month'?' active':''}" data-v="month" style="font-size:11px;padding:4px 10px;min-height:28px">Months</button>
+        </div>
+      </div>
+      ${buildChart(buckets, view)}
+      <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text-secondary)">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:4px"></span>Gross: <b>${escapeHtml(fmtMoney(grossTotal))}</b></span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:var(--good);vertical-align:middle;margin-right:4px"></span>Net: <b style="color:${netTotal>=0?'var(--good)':'var(--bad)'}">${escapeHtml(fmtMoney(netTotal))}</b></span>
+      </div>
+      <div id="f31Tooltip" style="display:none;font-size:12px;color:var(--text-secondary);margin-top:6px;padding:6px 10px;background:var(--surface-1);border-radius:8px"></div>`;
+
+    section.querySelectorAll('.f31-toggle').forEach(btn => {
+      btn.addEventListener('click', async ()=>{
+        haptic(10);
+        const v = btn.dataset.v;
+        await setSetting('f31TrendView', v).catch(()=>{});
+        const newBuckets = v === 'week' ? _buildWeeklyBuckets(trips, exps, 8) : _buildMonthlyBuckets(trips, exps, 6);
+        render(v, newBuckets);
+      });
+    });
+
+    // Bar tap tooltip
+    section.querySelectorAll('rect[data-gross]').forEach(rect => {
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('click', ()=>{
+        haptic(8);
+        const tip = section.querySelector('#f31Tooltip');
+        if (!tip) return;
+        const g = Number(rect.dataset.gross), net = Number(rect.dataset.net), lbl = rect.dataset.label;
+        tip.style.display = '';
+        tip.innerHTML = `<b>${escapeHtml(lbl)}</b> &mdash; Gross: <b>${escapeHtml(fmtMoney(g))}</b> &bull; Net: <b style="color:${net>=0?'var(--good)':'var(--bad)'}">${escapeHtml(fmtMoney(net))}</b>`;
+      });
+    });
+  }
+
+  const initView = savedView || 'week';
+  const initBuckets = initView === 'week' ? wkBuckets : _buildMonthlyBuckets(trips, exps, 6);
+  render(initView, initBuckets);
+
+  // Append to the .card element inside the host div
+  const cardEl = card.querySelector('.card') || card;
+  cardEl.appendChild(section);
+}
+
+
+
+// ================================================================================
+// F23: SMART LOAD INBOX — Paste & Score (v22.0.0)
+// ================================================================================
+
+function parseLoadTextForInbox(rawText) {
+  const safe = String(rawText || '').slice(0, 10000);
+  const base = parseLoadTextEnhanced(safe);
+  let confidence = 0;
+  const fieldsFound = [], fieldsMissing = [];
+
+  if (base.origin && base.origin.length > 3) { confidence += 20; fieldsFound.push('origin'); } else { fieldsMissing.push('origin'); }
+  if (base.destination && base.destination.length > 3) { confidence += 20; fieldsFound.push('destination'); } else { fieldsMissing.push('destination'); }
+  if (base.loadedMiles > 0) { confidence += 20; fieldsFound.push('miles'); } else { fieldsMissing.push('miles'); }
+  if (base.pay > 0) { confidence += 20; fieldsFound.push('pay'); } else { fieldsMissing.push('pay'); }
+
+  // Pickup date
+  let pickupDate = '';
+  const lc = safe.toLowerCase();
+  const todayISO = isoDate(), tomorrowISO = isoDate(new Date(Date.now() + 86400000));
+  if (/\btoday\b/.test(lc)) { pickupDate = todayISO; confidence += 10; fieldsFound.push('pickup'); }
+  else if (/\btomorrow\b/.test(lc)) { pickupDate = tomorrowISO; confidence += 10; fieldsFound.push('pickup'); }
+  else {
+    const dm = safe.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (dm) {
+      const yr = dm[3] ? (dm[3].length === 2 ? '20' + dm[3] : dm[3]) : String(new Date().getFullYear());
+      const cand = `${yr}-${String(dm[1]).padStart(2,'0')}-${String(dm[2]).padStart(2,'0')}`;
+      if (isValidISODate(cand)) { pickupDate = cand; confidence += 10; fieldsFound.push('pickup'); }
+      else { fieldsMissing.push('pickup'); }
+    } else { fieldsMissing.push('pickup'); }
+  }
+
+  // Pickup time
+  let pickupTime = '';
+  const tm1 = safe.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  if (tm1) pickupTime = `${tm1[1]}:${tm1[2]} ${tm1[3].toUpperCase()}`;
+  if (!pickupTime) {
+    const tm2 = safe.match(/\b([01]\d|2[0-3])([0-5]\d)\s*(?:hrs?)?\b/);
+    if (tm2) { pickupTime = `${tm2[1]}:${tm2[2]}`; }
+  }
+
+  const isUrgent = /\b(asap|hot|rush|expedite|urgent|time.?sensitive|line.?down|same.?day)\b/i.test(safe);
+  const ratePerMile = base.loadedMiles > 0 && base.pay > 0
+    ? Math.round((base.pay / base.loadedMiles) * 100) / 100 : 0;
+  const payType = /\$[\d.]+\s*\/\s*mi|\bper\s*mile\b/i.test(safe) ? 'per_mile' : 'flat';
+
+  return {
+    origin: base.origin || '', destination: base.destination || '',
+    loadedMiles: base.loadedMiles || 0,
+    // v24.0.4 item 2: null means the parser found no deadhead figure. Consumers
+    // must not read that as a verified zero.
+    emptyMiles: knownNum(base.deadheadMiles),
+    pay: base.pay || 0, payType, ratePerMile,
+    pickupDate, pickupTime, broker: base.customer || '',
+    weight: base.weight || 0, isUrgent,
+    confidence: Math.min(100, confidence),
+    fieldsFound, fieldsMissing, rawText: safe,
+  };
+}
+
+let _inboxDebounceTimer = null;
+
+// v24.0.8: the Loads route's renderer. PR #168 created `#view-loads` from
+// modern-shell.js AFTER app.js had already built its `views` map, so the
+// canonical router had no entry for it: navigating to `#loads` fell through to
+// `home` and the surface never displayed. `#view-loads` is now real markup in
+// index.html and `loads` is a real route, so the driver-facing Loads tab shows
+// the canonical inbox instead of the Today screen.
+async function renderLoadsView() {
+  const intake = $('#btnLoadsIntake');
+  if (intake && !intake.dataset.bound) {
+    intake.dataset.bound = '1';
+    addManagedListener(intake, 'click', () => { haptic(15); openLoadIntake(); });
+  }
+  await renderLoadInbox();
+  _refreshInboxRecentBar();
+}
+
+// The recent-paste bar is session state that Quick Evaluate and the Home inbox
+// card also write to, so it can be stale by the time the driver opens Loads.
+// renderLoadInbox() builds it once and then short-circuits on `inboxInit`.
+function _refreshInboxRecentBar() {
+  const card = $('#loadInboxCard');
+  const bar = card && card.querySelector('#f23RecentBar');
+  if (bar) _renderInboxRecent(bar, card);
+}
+
+async function renderLoadInbox() {
+  const card = $('#loadInboxCard');
+  if (!card || card.dataset.inboxInit) return;
+  card.dataset.inboxInit = '1';
+
+  // One-time onboarding
+  if (await shouldShowOnboarding('f23OnboardingSeen')) {
+    const ob = document.createElement('div');
+    ob.style.cssText = 'background:var(--surface-1);border:1px solid var(--accent-border);border-radius:12px;padding:16px;margin-bottom:10px';
+    ob.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+      + '<span style="font-size:22px">\u{1F4E5}</span>'
+      + '<strong style="font-size:14px;color:var(--accent-text)">New: Paste &amp; Score Loads</strong></div>'
+      + '<div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">Got a load offer by email or text? Copy it, paste it here, and FreightLogic scores it instantly. Works with emails from Sylectus, DAT, Dispatchland, or any broker.</div>'
+      + '<div style="margin-top:12px"><button class="btn primary" id="f23ObDismiss" style="min-height:48px;width:100%">Got it</button></div>';
+    ob.querySelector('#f23ObDismiss')?.addEventListener('click', async () => {
+      await setSetting('f23OnboardingSeen', true); ob.remove();
+    });
+    card.appendChild(ob);
+    markOnboardingExposure(ob, 'f23OnboardingSeen');
+  }
+
+  _renderInboxInput(card);
+}
+
+function _renderInboxInput(card) {
+  if (card.querySelector('#f23InputArea')) return;
+  const inputArea = document.createElement('div');
+  inputArea.id = 'f23InputArea';
+  inputArea.className = 'card';
+  inputArea.style.marginBottom = '12px';
+
+  inputArea.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+    + '<span style="font-size:18px">\u{1F4E5}</span><h3 style="margin:0">Paste a Load Offer</h3></div>'
+    + '<textarea id="f23Textarea" rows="5" '
+    + 'placeholder="Paste load email or text here&#10;&#10;Example:&#10;Chicago IL to Detroit MI&#10;280 miles, $560 all-in&#10;Pickup tomorrow 8am&#10;XPO Logistics" '
+    + 'style="width:100%;font-size:15px;resize:vertical;min-height:120px;border-radius:8px;border:1px solid var(--border);background:var(--surface-0);color:var(--text);padding:10px;box-sizing:border-box"></textarea>'
+    + '<div style="display:flex;gap:10px;margin-top:10px">'
+    + '<button class="btn primary" id="f23ScoreBtn" style="flex:1;min-height:48px;font-weight:700">Score This Load</button>'
+    + '</div>'
+    + '<div id="f23RecentBar" style="margin-top:10px"></div>';
+
+  card.appendChild(inputArea);
+
+  const textarea = inputArea.querySelector('#f23Textarea');
+
+  const _score = () => {
+    const text = textarea?.value.trim() || '';
+    if (!text) { toast('Paste a load offer to score it.', true); return; }
+    _processInboxText(text, card);
+  };
+
+  textarea?.addEventListener('paste', () => {
+    clearTimeout(_inboxDebounceTimer);
+    _inboxDebounceTimer = setTimeout(() => {
+      if ((textarea.value.trim()).length > 30) _processInboxText(textarea.value.trim(), card);
+    }, 500);
+  });
+  textarea?.addEventListener('input', () => {
+    clearTimeout(_inboxDebounceTimer);
+    _inboxDebounceTimer = setTimeout(() => {
+      if ((textarea.value.trim()).length > 30) _processInboxText(textarea.value.trim(), card);
+    }, 800);
+  });
+  inputArea.querySelector('#f23ScoreBtn')?.addEventListener('click', () => { haptic(10); _score(); });
+
+  _renderInboxRecent(inputArea.querySelector('#f23RecentBar'), card);
+}
+
+function _renderInboxRecent(container, card) {
+  if (!container) return;
+  try {
+    const recents = JSON.parse(sessionStorage.getItem('fl_inbox_recent') || '[]');
+    // v24.0.8: clear first. This is re-rendered on every Loads visit now, so
+    // returning early on an empty list would leave the previous session's
+    // entries on screen after they were cleared.
+    container.innerHTML = '';
+    if (!recents.length) return;
+    container.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Recent (${recents.length})</div>`;
+    recents.slice(0, 5).forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.style.cssText = 'width:100%;text-align:left;margin-bottom:6px;min-height:44px;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis';
+      btn.textContent = `${item.origin || '?'} \u2192 ${item.dest || '?'} (${item.miles || '?'} mi, ${item.pay || '?'})`;
+      btn.addEventListener('click', () => { haptic(8); _processInboxText(item.raw, card); });
+      container.appendChild(btn);
+    });
+  } catch(e) { /* sessionStorage unavailable */ }
+}
+
+function _saveInboxRecent(parsed) {
+  try {
+    const recents = JSON.parse(sessionStorage.getItem('fl_inbox_recent') || '[]');
+    recents.unshift({ raw: parsed.rawText.slice(0, 500), origin: parsed.origin,
+      dest: parsed.destination, miles: parsed.loadedMiles,
+      pay: parsed.pay > 0 ? fmtMoney(parsed.pay) : '?' });
+    sessionStorage.setItem('fl_inbox_recent', JSON.stringify(recents.slice(0, 5)));
+  } catch(e) { /* ignore */ }
+}
+
+function _processInboxText(text, card) {
+  const parsed = parseLoadTextForInbox(text);
+  _saveInboxRecent(parsed);
+  if (parsed.confidence < 20) { _renderInboxFailure(card); return; }
+  _renderInboxParsed(parsed, card);
+}
+
+function _renderInboxParsed(parsed, card) {
+  card.querySelector('#f23ResultArea')?.remove();
+  const confColor = parsed.confidence >= 80 ? 'var(--good)' : parsed.confidence >= 50 ? 'var(--warn)' : 'var(--bad)';
+  const rpmStr = parsed.ratePerMile > 0 ? ` ($${parsed.ratePerMile.toFixed(2)}/mi)` : '';
+  const payStr = parsed.pay > 0 ? escapeHtml(fmtMoney(parsed.pay) + rpmStr) : 'Pay unknown';
+  const miStr  = parsed.loadedMiles > 0 ? `${parsed.loadedMiles} loaded miles` : 'Miles unknown';
+  // v24.0.4 item 2: an unstated deadhead must not read as "0 deadhead" — that is
+  // the precise UNKNOWN-as-zero presentation this release exists to remove.
+  const dhStr  = parsed.emptyMiles === null
+    ? ` &bull; deadhead not stated`
+    : ` &bull; ${parsed.emptyMiles} deadhead`;
+  const puStr  = parsed.pickupDate ? escapeHtml(parsed.pickupDate + (parsed.pickupTime ? ' ' + parsed.pickupTime : '')) : 'Unknown';
+
+  const resultDiv = document.createElement('div');
+  resultDiv.id = 'f23ResultArea';
+  resultDiv.className = 'card';
+  resultDiv.style.marginBottom = '12px';
+  resultDiv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+    + '<span style="font-size:18px">\u{1F4E5}</span><h3 style="margin:0">Parsed Load</h3></div>'
+    + '<div style="height:8px;border-radius:4px;background:var(--surface-0);overflow:hidden;margin-bottom:4px">'
+    + `<div style="height:100%;width:${parsed.confidence}%;border-radius:4px;background:${confColor};transition:width .4s"></div></div>`
+    + `<div style="font-size:11px;color:${confColor};margin-bottom:12px;font-weight:600">${parsed.confidence}% confident</div>`
+    + '<div id="f23ParsedView">'
+    + `<div style="font-size:16px;font-weight:700;margin-bottom:6px">${escapeHtml(parsed.origin || 'Unknown')} &rarr; ${escapeHtml(parsed.destination || 'Unknown')}</div>`
+    + `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:2px">${escapeHtml(miStr)}${dhStr}</div>`
+    + `<div style="font-size:14px;font-weight:700;margin-bottom:2px">${payStr}</div>`
+    + `<div style="font-size:12px;color:var(--text-tertiary)">Pickup: ${puStr}${parsed.broker ? ' &nbsp;&bull;&nbsp; ' + escapeHtml(parsed.broker) : ''}</div>`
+    + (parsed.isUrgent ? '<div style="font-size:12px;color:var(--warn);margin-top:6px">&#9889; Pickup may be urgent &mdash; confirm timing with broker</div>' : '')
+    + (parsed.fieldsMissing.length ? `<div style="font-size:12px;color:var(--warn);margin-top:6px">&#9888;&#65039; Couldn\'t find: ${escapeHtml(parsed.fieldsMissing.join(', '))}</div>` : '')
+    + '</div>'
+    + '<div id="f23EditArea" style="display:none">'
+    + `<label style="font-size:12px">Origin</label><input id="f23eOrigin" value="${escapeHtml(parsed.origin)}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Destination</label><input id="f23eDest" value="${escapeHtml(parsed.destination)}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Loaded Miles</label><input id="f23eMiles" type="number" value="${parsed.loadedMiles || ''}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Deadhead Miles</label><input id="f23eDH" type="number" placeholder="required — enter 0 if none" value="${parsed.emptyMiles === null ? '' : parsed.emptyMiles}" style="min-height:48px;margin-bottom:8px" />`
+    + `<label style="font-size:12px">Pay ($)</label><input id="f23ePay" type="number" step="0.01" value="${parsed.pay || ''}" style="min-height:48px;margin-bottom:8px" /></div>`
+    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+    + '<button class="btn primary" id="f23ScoreLoad" style="flex:2;min-height:48px;font-weight:700">Score Load &rarr;</button>'
+    + '<button class="btn" id="f23EditDetails" style="flex:1;min-height:48px">&#9998; Edit</button></div>'
+    + '<button class="btn" id="f23PasteDiff" style="width:100%;margin-top:8px;min-height:44px;font-size:13px">&larr; Paste Different Load</button>';
+
+  // Insert before input area
+  const inputArea = card.querySelector('#f23InputArea');
+  if (inputArea) { card.insertBefore(resultDiv, inputArea); inputArea.style.display = 'none'; }
+  else { card.appendChild(resultDiv); }
+
+  // Edit toggle
+  resultDiv.querySelector('#f23EditDetails')?.addEventListener('click', () => {
+    haptic(8);
+    const pv = resultDiv.querySelector('#f23ParsedView');
+    const ea = resultDiv.querySelector('#f23EditArea');
+    const btn = resultDiv.querySelector('#f23EditDetails');
+    if (!pv || !ea) return;
+    const editing = ea.style.display !== 'none';
+    pv.style.display = editing ? '' : 'none';
+    ea.style.display = editing ? 'none' : '';
+    if (btn) btn.innerHTML = editing ? '&#9998; Edit' : 'Done';
+  });
+
+  // Score load — fill evaluator and trigger
+  resultDiv.querySelector('#f23ScoreLoad')?.addEventListener('click', () => {
+    haptic(15);
+    const ea = resultDiv.querySelector('#f23EditArea');
+    const editing = ea && ea.style.display !== 'none';
+    const origin = editing ? (resultDiv.querySelector('#f23eOrigin')?.value || parsed.origin) : parsed.origin;
+    const dest   = editing ? (resultDiv.querySelector('#f23eDest')?.value   || parsed.destination) : parsed.destination;
+    const miles  = editing ? (Number(resultDiv.querySelector('#f23eMiles')?.value) || parsed.loadedMiles) : parsed.loadedMiles;
+    // v24.0.4 item 2: `Number(x) || parsed.emptyMiles` destroyed an explicitly
+    // typed 0 (0 is falsy), so the inbox could never record a verified zero
+    // deadhead. knownNum() distinguishes a typed 0 from an empty field, and the
+    // parsed value is used only when the operator actually left it blank.
+    const dhEdited = editing ? knownNum(resultDiv.querySelector('#f23eDH')?.value) : null;
+    const dh     = dhEdited !== null ? dhEdited : knownNum(parsed.emptyMiles);
+    const pay    = editing ? (Number(resultDiv.querySelector('#f23ePay')?.value)   || parsed.pay)         : parsed.pay;
+
+    const revEl  = $('#mwRevenue');   if (revEl)  revEl.value  = pay   || '';
+    const lmEl   = $('#mwLoadedMi');  if (lmEl)   lmEl.value   = miles || '';
+    // Blank ONLY when genuinely unknown — a verified 0 must survive to the evaluator.
+    const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh === null ? '' : String(dh);
+    const origEl = $('#mwOrigin');    if (origEl) origEl.value = origin || '';
+    const destEl = $('#mwDest');      if (destEl) destEl.value = dest   || '';
+    const brkEl  = $('#mwBroker');    if (brkEl && parsed.customer) brkEl.value = parsed.customer;
+
+    // Trigger live evaluation
+    if (revEl) revEl.dispatchEvent(new Event('input', { bubbles: true }));
+    setTimeout(() => {
+      const out = $('#mwEvalOutput');
+      if (out) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
+    toast('Load scored! See the results below.');
+  });
+
+  // Paste different
+  resultDiv.querySelector('#f23PasteDiff')?.addEventListener('click', () => {
+    haptic(8);
+    resultDiv.remove();
+    const ia = card.querySelector('#f23InputArea');
+    if (ia) {
+      ia.style.display = '';
+      const ta = ia.querySelector('#f23Textarea');
+      if (ta) { ta.value = ''; ta.focus(); }
+    }
+  });
+}
+
+function _renderInboxFailure(card) {
+  card.querySelector('#f23ResultArea')?.remove();
+  const failDiv = document.createElement('div');
+  failDiv.id = 'f23ResultArea';
+  failDiv.className = 'card';
+  failDiv.style.marginBottom = '12px';
+  failDiv.innerHTML = '<div style="text-align:center;padding:16px 8px">'
+    + '<div style="font-size:32px;margin-bottom:8px">\u{1F914}</div>'
+    + '<div style="font-weight:700;font-size:15px;margin-bottom:8px">Couldn\'t read that load offer</div>'
+    + '<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:16px">FreightLogic couldn\'t find enough details in that text. This works best with load emails that include cities, miles, and a rate.</div>'
+    + '<div style="display:flex;gap:10px">'
+    + '<button class="btn primary" id="f23FailRetry" style="flex:1;min-height:48px">Try Again</button>'
+    + '<button class="btn" id="f23FailManual" style="flex:1;min-height:48px">Enter Manually &#8595;</button>'
+    + '</div></div>';
+
+  const inputArea = card.querySelector('#f23InputArea');
+  if (inputArea) { card.insertBefore(failDiv, inputArea); inputArea.style.display = 'none'; }
+  else { card.appendChild(failDiv); }
+
+  failDiv.querySelector('#f23FailRetry')?.addEventListener('click', () => {
+    failDiv.remove();
+    const ia = card.querySelector('#f23InputArea');
+    if (ia) { ia.style.display = ''; const ta = ia.querySelector('#f23Textarea'); if (ta) { ta.value = ''; ta.focus(); } }
+  });
+  failDiv.querySelector('#f23FailManual')?.addEventListener('click', () => {
+    haptic(8);
+    const out = $('#mwEvalOutput');
+    if (out) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+// Voice input was removed from the Smart Load Inbox with the rest of Voice Load
+// (Issue #230, v24.0.17). Paste and type remain the intake paths.
+
+
+// TEST EXPORTS — pure functions exposed for test harness
+// Only active when window.__FL_TESTS_ENABLED is set before load
+// ════════════════════════════════════════════════════════════════
+// F-5 fix: the gate described above didn't actually exist in code — this
+// object was assigned unconditionally on every load, exposing 32 internal
+// functions/constants (including hashPin) to any same-origin script. The
+// test harness (tests/lib/harness.mjs) sets window.__FL_TESTS_ENABLED via
+// context.addInitScript() before navigation when it wants this.
+if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
+  window.__FL_TESTS = {
+    // Cloud-backup paused state (configured token, session-scoped passphrase gone)
+    cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
+    escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
+    finiteNum, posNum, intNum, roundCents, validateRecordSize,
+    sanitizeTrip, sanitizeExpense, sanitizeFuel, tripPaymentKnown, tripIsPaid, tripIsUnpaid, findTripsByOrderNo,
+    // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
+    addExpense, updateExpense, addFuel, updateFuel, dumpStore,
+    // v24.2 Load Lifecycle
+    sanitizeLifecycle, newLifecycleId, lifecycleDisplayStage, lifecycleWinRate,
+    lifecycleDeliveryReliability, lifecycleMatchCandidate, upsertLifecycle,
+    getLifecycle, listLifecycle, linkLifecycle, mergeRestoreData,
+    LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
+    _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
+    getBidWinRateStats,
+    // v24.2 M5A/5B normalized opportunity ingestion
+    normalizeOpportunity, intakeOpportunity,
+    PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
+    // Issue #119 Batch A — durable normalized evidence + production intake path
+    EVIDENCE_STORE, EVIDENCE_AUTHORITY_ORDER, EVIDENCE_OPERATIONAL_CLASS,
+    sanitizeEvidence, putEvidence, getEvidence, listEvidence, findEvidenceByFingerprint,
+    evidenceFingerprint, evidenceAuthorityRank, reconcileEvidenceFields,
+    openOpportunityIntake, resolveLifecycleForTrip, renderLifecycleChips,
+    openLifecycleEditor, lifecycleFactsConflict, openDiagnosticsPanel,
+    computeExportChecksumProtected, initDB,
+    // v24.2 M6 historical import + calibration
+    importHistoricalOpportunities, calibrateWinningRange, calibrateFromLifecycle,
+    _historicalRowFingerprint, _orderStableKey,
+    computeExportChecksum, computeExportChecksumFull,
+    computeLoadScore, generateBidRange, detectUrgency,
+    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, exportTripsCSV, invalidateKPICache,
+    // OI-15 drives the REAL row renderer, because what was wrong with the
+    // unknown-deadhead coercion was what the driver SAW, not what a helper
+    // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
+    tripRow,
+    generateWeeklyPnL, getWeekId, formatWeeklyReportText, generateWeeklyReport,
+    omegaTierForMiles, OMEGA_TIERS,
+    mwClassifyRPM, MW, dzClassifySubTier,
+    normOrderNo, sanitizeReceiptId, clampStr,
+    parseCSVLines, isValidISODate, hashPin,
+    isoDate, daysBetweenISO: (typeof daysBetweenISO !== 'undefined' ? daysBetweenISO : null),
+    parseReceiptOCR, buildCategorySuggestionMap,
+    // X-02/X-03 (v23.9 Phase 1)
+    getMileageRate, MILEAGE_RATES,
+    classifyExpenseTaxBucket, EXPENSE_TAX_BUCKET_MAP, INSURANCE_CATEGORY_BUCKET,
+    VEHICLE_TAX_METHOD, FIRST_YEAR_ELECTION,
+    ensureVehicleProfiles, getActiveVehicleProfile, saveActiveVehicleProfile, addVehicleProfile,
+    migrateInsuranceCategorySplit, revertInsuranceCategorySplit,
+    // X-05 (v23.9 Phase 3)
+    exportJSON, importJSON, getSetting, setSetting,
+    // Issue #232 — import ceiling enforced before materialization
+    importFile, importTXTFile, importXLSXFile, importExceedsSizeLimit, LIMITS,
+    // X-01/X-07 (v23.9 Phase 4)
+    cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
+    // Issue #205 section 3 — automatic sync: pending state, status, durability
+    syncPendingSummary, cloudSyncStatus, renderSyncStatusRow, resumeSyncIfPending,
+    SYNC_STATE, SYNC_PENDING_STORES,
+    // Issue #240 — the one change-clock authority both the push and the
+    // pending summary read, exported so a regression can assert they agree
+    // rather than asserting each side's transcription separately.
+    SYNC_CHANGE_CLOCKS, syncChangeClock, syncChangedSince, markSyncDirty, cloudScheduleSync,
+    cloudEncrypt, cloudDecrypt, cloudGetDeviceId, cloudFetchDeltas,
+    // X-04 (v23.9 Phase 5)
+    isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
+    // v24 Unified Decision Engine
+    deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
+    knownNum, mwGeoCheck, buildUnifiedDecisionContract, MILEAGE_PROVENANCE,
+    // v24.1 Confidence + Evidence
+    buildEvidenceItem, evidenceFromLiveSource, summarizeEvidenceConfidence,
+    classifyEvidenceFreshness, classifyEvidenceSample, normalizeEvidenceSourceStatus,
+    EVIDENCE_CONFIDENCE, EVIDENCE_FRESHNESS, EVIDENCE_CATEGORY, EVIDENCE_THRESHOLDS,
+    unifiedDecisionForAI, setLiveSourceHealth, LIVE_SOURCE_STATUS,
+    // Issue #119 Batch A, item 7 — real evaluation-evidence wiring
+    buildEvaluationEvidence, getFuelPriceProvenance, setFuelPriceProvenance, FUEL_PRICE_SOURCE,
+    getRouteWeatherObservation, checkRouteWeather, _resetRouteWeatherStateForTests,
+    getLaneIntel, getBrokerIntel, mwEvaluateLoad,
+    // Issue #119 exact-candidate blockers
+    buildEvidenceContent, reconcileLifecycleRecord, reconcileEvidenceRecord, reconcileFieldProvenance,
+    normalizeLane, _renderEvalHistory,
+    // 7D (v23.9 Phase 7)
+    checkVanFit, getVanProfile, VAN_PROFILE_DEFAULT,
+    // v24.0.9 physical-pickup feasibility
+    checkPickupFeasibility, getPlanningAvgMph, PICKUP_FEASIBILITY,
+    // v24.0.4 "Fail Closed" — regression surface for items 1, 2 and 5.
+    naLookupMarket, usaLookupMarket, naPlaceIsSpecific, naFuzzyPlaceMatch,
+    // #205 UX/IA restructure. The Today/More surfaces are asserted through
+    // RENDERED CONTENT in tests/integration/today-ia.spec.mjs -- the v24.0.8
+    // lesson is that a dead surface can leave every other signal correct. These
+    // two are exported because the onboarding view BUDGET is a durable counter
+    // whose exhaustion a DOM test can only observe by relaunching three times;
+    // asserting the rule directly is what makes the boundary exact.
+    shouldShowOnboarding, ONBOARD_VIEW_BUDGET, MORE_TILES, MORE_GROUPS,
+    // Issue #252 + the carried-forward onboarding-exposure repair. Exposure is
+    // now MEASURED, so the regression needs the measuring seam itself, not just
+    // the decision helper -- asserting shouldShowOnboarding() alone would pass
+    // against the very defect this repair fixes.
+    markOnboardingExposure, _countOnboardingExposure, ONBOARD_EXPOSURE_RATIO,
+    downscaleImageForExtraction, cloudExtractLoadImage, openLoadIntake, knownNum,
+    // Issue #216 — the single position resolver and the market classifier both
+    // surfaces share. Exposed so a regression can assert the ORDERING and the
+    // UNKNOWN state directly, not only through two rendered surfaces agreeing.
+    resolveDriverPosition, classifyPositionMarket, _positionTripRank,
+    // The place normalizers are the unit the separator rule actually lives in.
+    // Asserting it through a market lookup proves nothing: every name in a table
+    // still resolves under the OLD rule via the fuzzy pass or the other country's
+    // normalizer, so a lookup-based test passes with the defect reinstated.
+    usaNormCity, caNormCity,
+    parseLoadTextEnhanced, parseLoadTextForInbox,
+    isSettingExportSafe, exportSafeSettings,
+    isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
+    loadTesseract,                             // Issue #220 — null when OCR is not installed
+    // v24.0.13 zero-token onboarding. Exported so the regressions can drive the
+    // REAL admin/claim paths rather than a reimplementation — the claim wizard
+    // and the PIN modal are asserted through the DOM, but "was a rejected token
+    // written to disk" and "does the checksum cover the same array the payload
+    // ships" are only answerable from inside.
+    cloudAdminSaveAccess, cloudAdminResolveToken, cloudAdminLoadUsers,
+    cloudAdminInviteDriver, cloudAdminHasAccess, renderAdminAccessState,
+    flCaptureClaimCode, claimInvite,
+  };
+}
+
+// ---- Boot ----
+(async () => {
+  // v24.0.13: capture any `#i=` invite code and strip it from the URL BEFORE the
+  // first await. This is the whole reason the call sits on the very first line
+  // of boot rather than beside the other cloud setup: an await yields to the
+  // event loop, and anything that reads location.href in between would capture a
+  // live invite code. flCaptureClaimCode() is synchronous end to end.
+  _pendingClaimCode = flCaptureClaimCode();
+  // Issue #221: disarm a legacy `#token=`/`?token=` setup link on the same
+  // synchronous line of boot. It used to be handled inside renderInsights(), so
+  // a bearer token stayed in the address bar and in session history until the
+  // operator happened to open Settings. Only the TRANSPORT is kept, never the
+  // token, so this cannot become a way for the credential to reach a log.
+  _legacyTokenLinkSeen = flStripLegacyTokenLink();
+  try{
+    $('#appMeta').textContent = `Omega • v${APP_VERSION}`;
+    db = await initDB();
+    await migrateFromLegacyDB().catch(e => console.warn('[FL] legacy migration error:', e));
+    await ensureLocalUserId().catch(()=>{});
+    await requireAppUnlock();
+    // v24.0.13: an invite code captured above opens the claim wizard, which
+    // covers the app at z-index 12000 while the rest of boot continues behind
+    // it. The code is spent here and the module-scoped copy is dropped
+    // immediately, so it survives exactly one attempt to use it.
+    if (_pendingClaimCode){
+      const claimCode = _pendingClaimCode;
+      _pendingClaimCode = null;
+      openClaimWizard(claimCode).catch(()=>{ console.warn('[FL] claim wizard failed to open'); });
+    }
+    // Issue #221: report the retired setup link now that the DOM exists. Not
+    // silence — silence would leave an operator holding a real invite with no
+    // idea why nothing happened. Deliberately after the claim wizard, so a
+    // genuine `#i=` link is never talked over.
+    if (_legacyTokenLinkSeen && !_pendingClaimCode){
+      const via = _legacyTokenLinkSeen;
+      _legacyTokenLinkSeen = null;
+      toast(via === 'query'
+        ? 'That setup link put a token in the web address, so it must be treated as exposed — ask for it to be revoked, then use a claim link.'
+        : 'Token setup links are retired. Ask the owner for a claim link — tokens are no longer shared.',
+        true);
+    }
+    const uiMode = await getSetting('uiMode', null);
+    if (!uiMode) await setSetting('uiMode','simple');
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (ev) => {
+        if (ev.data?.type === 'SW_ACTIVATED') toast(`FreightLogic ${ev.data.version} installed.`);
+      });
+      navigator.serviceWorker.register('./service-worker.js').then(reg => {
+        // sw-bridge.js owns the controllerchange reload — no duplicate handler here
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller){
+              const existing = document.getElementById('swUpdateBanner');
+              if (existing) existing.remove();
+              const banner = document.createElement('div');
+              banner.id = 'swUpdateBanner';
+              banner.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:9000;padding:12px 14px;background:var(--surface-2);border:1px solid var(--accent-border);border-radius:14px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:12px;font-size:13px';
+              banner.innerHTML = '<span style="font-size:18px">🔄</span><div style="flex:1"><b style="color:var(--accent)">Update ready</b> — new Freight Logic version available</div><button id="swUpdateNow" class="btn primary" style="white-space:nowrap;padding:8px 14px">Reload</button><button id="swUpdateLater" class="btn" style="padding:8px 10px;font-size:11px">Later</button>';
+              document.body.appendChild(banner);
+              document.getElementById('swUpdateNow')?.addEventListener('click', ()=>{
+                banner.remove();
+                // Route through the bridge. Posting SKIP_WAITING directly does
+                // activate the new worker, but it leaves sw-bridge.js's private
+                // `skipWaitingRequested` flag false, so the controllerchange
+                // that follows is ignored and the page never reloads: the update
+                // installs silently and the driver keeps looking at the version
+                // they were just told was out of date. `nw` is passed because
+                // `registration.waiting` is not reliably populated at click time.
+                if (typeof window._flRequestSWUpdate === 'function'){ window._flRequestSWUpdate(nw); return; }
+                // Bridge absent (blocked script, older cached shell): do it here,
+                // and still reload so the click means something.
+                if (nw.postMessage){ nw.postMessage({ type:'SKIP_WAITING' }); setTimeout(()=> location.reload(), 1500); }
+                else location.reload();
+              });
+              document.getElementById('swUpdateLater')?.addEventListener('click', ()=>{
+                banner.remove();
+                toast('Update saved — reload when convenient');
+              });
+              setTimeout(()=> banner?.remove(), 30000);
+            }
+          });
+        });
+      }).catch(()=>{});
+    }
+
+    // Pull-to-refresh on list views
+    setupPTR('tripsPTR', '#tripList', ()=> renderTrips(true));
+    setupPTR('expPTR', '#expenseList', ()=> renderExpenses(true));
+    setupPTR('fuelPTR', '#fuelList', ()=> renderFuel(true));
+
+    // F21: Restore GPS trip tracking from previous session before first render
+    await resumeTrackingIfActive().catch(()=>{});
+
+    await navigate();
+    _updateOnlineStatus();
+
+    // Issue #205 §3: drain any sync the previous session could not finish.
+    // cloudScheduleSync()'s 30s debounce is in-memory, so closing the app inside
+    // that window lost the intent — the data was always saved locally, but the
+    // sync silently did not happen. Fire-and-forget AFTER first paint so it
+    // never delays the driver's first screen, and it no-ops when cloud backup
+    // is off, paused, or nothing is pending.
+    resumeSyncIfPending().catch(()=>{});
+    setInterval(()=>{ if (document.visibilityState === 'visible') computeQuickKPIs().catch(()=>{}); }, 60_000);
+
+    // v20: FAB removed — onboarding handled via Home welcome card
+    await getOnboardState();
+
+    // F26: First-run setup wizard (non-blocking, fires after first render)
+    setTimeout(()=> checkFirstRunSetup().catch(()=>{}), 800);
+
+    // v14.4.0: Deferred boot tasks (non-blocking)
+    setTimeout(async ()=>{
+      try{ await requestPersistentStorage(); }catch(e){ console.warn("[FL]", e); }
+      try{ await requestNotificationPermission(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkBackupReminder(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkRecurringExpenses(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkQuarterlyExportReminder(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkInsuranceSplitMigration(); }catch(e){ console.warn("[FL]", e); }
+      // v15.3.0: Check for emergency backup recovery
+      try{
+        const emTs = Number(sessionStorage.getItem('fl_emergency_backup_ts') || 0);
+        const onb = await getOnboardState();
+        if (onb.isEmpty && emTs > 0){
+          const age = Math.floor((Date.now() - emTs) / 86400000);
+          if (age < 30){
+            const doRecover = confirm('Found emergency backup from ' + age + ' day(s) ago with data. Recover it?');
+            if (doRecover){
+              const json = sessionStorage.getItem('fl_emergency_backup');
+              if (json){
+                const blob = new Blob([json], {type:'application/json'});
+                const file = new File([blob], 'recovery.json', {type:'application/json'});
+                await importJSON(file);
+                toast('Emergency backup recovered!');
+                sessionStorage.removeItem('fl_emergency_backup');
+                sessionStorage.removeItem('fl_emergency_backup_ts');
+                await renderHome();
+              }
+            }
+          }
+        }
+      }catch(e){ console.warn('[FL] Recovery check failed:', e); }
+      try{ showSafariWarning(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkStorageQuota(); }catch(e){ console.warn("[FL]", e); }
+      try{ await checkAndGenerateWeeklyReport(); }catch(e){ console.warn("[FL]", e); }
+      try{ await cloudCheckServerTimestamp(); }catch(e){ console.warn("[FL]", e); }
+      // v21 T3C: Document expiry alerts
+      try{ await checkDocumentExpiry(); }catch(e){ console.warn("[FL]", e); }
+      // v21 T4A: EIA diesel price fetch (background, non-blocking)
+      try{ await fetchEIAGasPrice(); }catch(e){ console.warn("[FL]", e); }
+    }, 2000);
+  }catch(err){
+    console.error(err);
+    console.error('[FL] Startup error:', err); toast('App startup failed. Try refreshing.', true);
+  }
+})();
+})();
+, title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'work' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'work' },
+  { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
+  { icon:'⚙', title:'Settings', sub:'Vehicle, costs, display, backup and privacy', hash:'#insights', section:'PRIMARY', group:'app' },
 ];
 
 // ── Intel Page Renderer ──
