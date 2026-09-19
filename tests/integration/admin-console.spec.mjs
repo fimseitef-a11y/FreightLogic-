@@ -248,6 +248,8 @@ test('[ADMIN-14] repository exposes a confirmed manual deploy path for the separ
     'workflow must deploy the isolated admin-console Wrangler config, never the driver/root config');
   ok(/freightlogic-admin-console\.fimseitef\.workers\.dev/.test(workflow),
     'post-deploy verification must target the dedicated Admin Console origin');
+  ok(/node\s+admin-console\/verify-live\.mjs/.test(workflow),
+    'workflow must run the committed no-secret live verifier after deployment');
 });
 
 
