@@ -4,7 +4,7 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.20 / IndexedDB v16 / Worker v20**, superseding the 24.0.19 observation described below (live parity `35329623870` and production service worker `35329629590`, both `VERDICT: PASS` on `c72b521`). **Source is ahead of it at 24.0.21 / Worker v21 and is NOT deployed** — A13 below requires Worker v21, so it is BLOCKED until that lands. The 24.0.19 evidence that follows is kept because it is permanent provenance for a tree a gate actually looked at, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
+Current runtime synchronization point: **production last VERIFIED at FreightLogic v24.0.22 / IndexedDB v16 / Worker v21**, superseding the 24.0.20 and 24.0.19 observations described below (live parity `35424880453` on `11cc8b7` and `35426397099` on `ca8677d`, with production service worker `35424882781` and `35426397089`, all success). **Worker v21 is DEPLOYED and observed, so A13's stated blocker is discharged** — it is OPEN like the rest of the A section rather than BLOCKED. **Source is ahead again at 24.0.23** (the presentation-authority consolidation, PR #265 `8e72252`) and that generation has **no live observation yet**; do not run any A row against it until live parity and the production service-worker gate are re-dispatched and PASS on its exact SHA. This line is a lookup, not a record: re-read `APP_VERSION` and the current certification-state document every session, because it has now gone three generations stale once already — which is the failure this file exists to prevent, a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. The 24.0.19 evidence that follows is kept because it is permanent provenance for a tree a gate actually looked at, and both halves are OBSERVED. Live parity run `35291475396`, `workflow_dispatch` on `main` @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** — app, service worker, sw-bridge, modern-shell and manifest all at 24.0.19, Worker `/health` at **v20**, all **22** declared runtime assets loading with none served as HTML, and 20 repository-only paths confirmed non-public. Worker v20 was deployed by run `35291404482` with its own post-deploy checks green. This is the first fully-green live parity in the v24.0.x line — source and production now agree on BOTH generations. Declared runtime assets are **22** from v24.0.17 onward (Voice Load removed by operator decision, Issue #230), so a 404 for `voice-load.js` is the removal working, not a failed deploy.
 
 **Voice Load was deliberately REMOVED in v24.0.17 by operator decision (Issue #230).** The
 evaluator microphone, the Load Intake and Smart Load Inbox voice buttons, the voice status
@@ -185,9 +185,12 @@ either person at any point.
 
 ## A13. Screenshot intake on a real iPhone (added v24.0.21, Issue #252)
 
-**Requires Worker v21 deployed.** The screenshot path calls `POST /extract-image`, which does
-not exist on Worker v20; against a v20 Worker every attempt fails and this row is BLOCKED, not
-FAIL. Confirm `/health` reports **21** before starting.
+**Requires Worker v21 deployed — SATISFIED.** The screenshot path calls `POST /extract-image`,
+which does not exist on Worker v20; against a v20 Worker every attempt fails and this row would be
+BLOCKED, not FAIL. Worker v21 is deployed and live-observed (`/health` reporting `21` in live
+parity `35424880453`), so the prerequisite is met and this row is OPEN. Confirm `/health` still
+reports **21** before starting anyway: the prerequisite is a live fact, not a permanent one, and a
+Worker redeploy can move it.
 
 This row exists because the three ways an image can reach the app behave differently in an
 **installed** Home Screen PWA than in a Safari tab, and no headless environment can tell you

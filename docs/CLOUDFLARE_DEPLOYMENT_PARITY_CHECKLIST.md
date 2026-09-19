@@ -2,11 +2,34 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**v24.0.19 IS DEPLOYED AND OBSERVED, and so is Worker v20.** This is the first
+**PRODUCTION LAST VERIFIED AT 24.0.22 / DB16 / Worker v21.** Observation of
+record: live parity run `35424880453` (`workflow_dispatch` on `main` @ `11cc8b7`)
+and `35426397099` (push on `main` @ `ca8677d`), with the production service-worker
+gate green on both (`35424882781`, `35426397089`). The `ca8677d` run is worth
+keeping as the pair: its merge changed only `.agents/LANES.md`, so Cloudflare had
+nothing to deploy and the push-triggered run had no deploy to race — which is the
+race mechanism confirming itself rather than an exception to it.
+
+**Worker v21 is deployed and observed**, which is what discharges the
+`POST /extract-image` prerequisite that gated `FIELD_TEST_CHECKLIST.md` A13.
+
+**Source is ahead again at 24.0.23** — the presentation-authority consolidation,
+PR #265 `8e72252`, moving the reference presentation out of `modern-shell.js` into
+`styles.css`. It has **no live observation yet**. Source running ahead of
+production does not make the claim above false; it makes it the production fact
+until 24.0.23 deploys and both gates are **re-dispatched** on its exact SHA. Do
+not cite a push-triggered run that fires on the merge: it races the Cloudflare
+deploy, and this file records eight occurrences of exactly that.
+
+*The block below certified **24.0.19** and was the production fact until this
+correction. It is kept because the runs it names are permanent provenance for a
+tree a gate actually looked at.*
+
+**v24.0.19 WAS DEPLOYED AND OBSERVED, and so was Worker v20.** This was the first
 fully-green live parity in the v24.0.x line: every prior run in this release line
 failed at least one check, most recently the Worker v19-vs-v20 mismatch.
 
-Observation of record: live parity run `35291475396`, `workflow_dispatch` on `main`
+Observation of record at the time: live parity run `35291475396`, `workflow_dispatch` on `main`
 @ `eac5994`, job `105435050613`, **`VERDICT: PASS`** with every check green —
 `index.html` referencing `app.js` and `sw-bridge.js` at **24.0.19**, `index.html`
 **not** referencing `voice-load.js` (the inverted #230 assertion, observed live),
@@ -21,7 +44,8 @@ Worker v20 was deployed by run `35291404482` on the same SHA, with its own
 post-deploy checks green: `/health` at the expected version, CORS on the real app
 origin, and both unauthenticated boundaries still returning 401.
 
-*Earlier revisions of this block described 24.0.15/24.0.14, and before that
+*Earlier revisions of this block described 24.0.19 (three generations stale, this
+correction), before that 24.0.15/24.0.14, and before that
 24.0.13/24.0.12 — four and two app generations stale respectively. Corrected
 rather than overwritten, because a parity document that keeps a superseded
 deployment claim is exactly the drift it exists to catch. The rule that prevents
