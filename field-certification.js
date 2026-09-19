@@ -98,14 +98,16 @@
       ]
     },
     A11: {
-      expected: 'The exact candidate has no required visual/regression defect on a real iPhone running iOS 27 or later.',
+      expected: 'The exact candidate has no required visual/regression defect on a real iPhone running iOS 27 or later, including Driver/Glance readability at normal dashboard/phone-mount distance.',
       checks: [
         'Inspected the F31 SVG chart.',
         'Inspected primary tab icons and labels.',
         'Inspected every required select/menu control.',
         'Checked scroll anchoring/restoration behavior.',
         'Checked persistent-storage grant behavior.',
-        'Checked backup-paused banner and Resume behavior.'
+        'Checked backup-paused banner and Resume behavior.',
+        'Checked every shipped text-size preference on the real iPhone and confirmed primary route, True RPM, revenue, miles, timing/payment and next-action text remained readable without clipping.',
+        'Enabled Driver/Glance Mode at normal dashboard/phone-mount distance and confirmed primary actions stayed obvious while secondary tools remained reachable.'
       ]
     },
     A12: {
