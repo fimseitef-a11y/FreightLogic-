@@ -35,6 +35,8 @@ This subtree now carries its own Workers Static Assets deployment seam:
 Expected Workers.dev origin for the current account:
 `https://freightlogic-admin-console.fimseitef.workers.dev`
 
+Deployment authority is `admin-console/deploy.sh`, not a bare Wrangler command. The wrapper fails closed unless the existing Cloudflare API token is present, verifies the dedicated Worker name, performs a Wrangler v4 dry-run first, deploys only this subtree's config, then runs `admin-console/verify-live.mjs`. The live verifier uses no admin credential: it proves the static security headers/control-file exclusions, exact admin-origin API CORS, and unauthenticated admin denial.
+
 This is intentionally a different origin from the driver PWA. The existing repository Cloudflare API token may be reused only through a Claude-owned/manual deployment workflow; no token belongs in this subtree or in source.
 
 Before treating this as production-ready:
