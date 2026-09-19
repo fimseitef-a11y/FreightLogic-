@@ -15551,6 +15551,27 @@ function initCollapsibleSettings(){
   });
 }
 
+  addManagedListener($('#settingsMaintenanceBtn'), 'click', async ()=>{
+    haptic(10);
+    await openMaintenanceTracker();
+  });
+  addManagedListener($('#settingsExportData'), 'click', async ()=>{
+    haptic(10);
+    await exportJSON();
+  });
+  addManagedListener($('#settingsImportData'), 'click', ()=>{
+    haptic(10);
+    openUniversalImport();
+  });
+  addManagedListener($('#settingsSecurityLock'), 'click', ()=>{
+    haptic(10);
+    openSecurityLockModal();
+  });
+  addManagedListener($('#settingsDiagnostics'), 'click', async ()=>{
+    haptic(10);
+    await openDiagnosticsPanel();
+  });
+
 // ==================== RECURRING EXPENSE ENGINE (v16.9.0) ================
 // Auto-creates monthly expense entries from fixed costs in Settings.
 // Runs once per boot. Only creates if not already logged this month.
