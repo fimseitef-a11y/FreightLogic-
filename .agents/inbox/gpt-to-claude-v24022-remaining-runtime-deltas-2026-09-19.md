@@ -69,3 +69,72 @@ To avoid duplicate-handler and first-paint defects:
 - The controls themselves belong in the existing `#view-insights` Settings markup in `index.html`; route authority is already `#insights`.
 - Immediate change behavior: normalize value -> write localStorage -> update the root data attribute in the same event turn. Reload must rehydrate both the root attribute and the visible control.
 - Keep all secondary routes/More reachable; Glance changes hierarchy/geometry only.
+
+
+## Concrete preference helper shape (implementation aid, not a second authority)
+
+A minimal safe shape that matches DD-01..04 and the existing localStorage/theme pattern:
+
+```js
+const DRIVER_TEXT_SIZE_KEY = 'fl_text_size';
+const DRIVER_MODE_KEY = 'fl_driver_mode';
+const DRIVER_TEXT_SIZES = new Set(['standard','large','xlarge']);
+
+function normalizeDriverTextSize(value){
+  return DRIVER_TEXT_SIZES.has(String(value || '').toLowerCase())
+    ? String(value).toLowerCase()
+    : 'standard';
+}
+
+function applyDriverDisplayPrefs(){
+  const root = document.documentElement;
+  let size = 'standard';
+  let glance = false;
+  try {
+    size = normalizeDriverTextSize(localStorage.getItem(DRIVER_TEXT_SIZE_KEY));
+    glance = localStorage.getItem(DRIVER_MODE_KEY) === 'glance';
+  } catch (_) {}
+  root.setAttribute('data-fl-text-size', size);
+  if (glance) root.setAttribute('data-fl-driver-mode', 'glance');
+  else root.removeAttribute('data-fl-driver-mode');
+  return { size, glance };
+}
+```
+
+Call `applyDriverDisplayPrefs()` synchronously beside `initTheme()`.
+
+In `renderInsights()`, call it again only to REFLECT normalized state:
+```js
+const driverDisplay = applyDriverDisplayPrefs();
+if ($('#driverTextSize')) $('#driverTextSize').value = driverDisplay.size;
+if ($('#driverGlanceMode')) $('#driverGlanceMode').checked = driverDisplay.glance;
+```
+
+Bind once (module-scope flag, like `_vtmBound`):
+- text select change: normalize -> localStorage.setItem('fl_text_size', normalized) -> root attr immediately.
+- glance checkbox change: checked -> localStorage.setItem('fl_driver_mode','glance') + root attr; unchecked -> removeItem('fl_driver_mode') + remove root attr.
+- wrap localStorage writes in try/catch; root state must still update so a storage failure does not break the page.
+- Do not add these keys to IndexedDB/export/import. They are deliberately device-local presentation preferences.
+
+Suggested always-visible index placement:
+after `#weeklyGoal`, before `#advSettingsToggle`:
+```html
+<div style="border-top:1px solid var(--border-subtle);margin:14px 0 8px"></div>
+<div class="settings-section-head"><span class="settings-section-icon">👀</span>Driver display</div>
+<div class="grid2" style="gap:10px">
+  <div>
+    <label for="driverTextSize">Text size</label>
+    <select id="driverTextSize">
+      <option value="standard">Standard</option>
+      <option value="large">Large</option>
+      <option value="xlarge">Extra Large</option>
+    </select>
+  </div>
+  <label class="chk" style="display:flex;align-items:center;gap:10px">
+    <input type="checkbox" id="driverGlanceMode"> Glance Mode
+  </label>
+</div>
+<div class="muted" style="font-size:11px;margin-top:4px">Device-local display preference. Glance Mode enlarges road-use targets; it does not hide secondary tools.</div>
+```
+
+Keep the markup semantics/IDs exact; visual refinement belongs to the already-staged CSS contract.
