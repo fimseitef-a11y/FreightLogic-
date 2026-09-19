@@ -1586,3 +1586,209 @@ html[data-theme="light"] body :is(header#mainHeader,.bottom) { background: var(-
   body :is(.card,.item,.btn,.chip,.fl-quick-btn,.bottom) { border: 1px solid CanvasText; box-shadow: none; }
   body .bottom .nav a.active { outline: 2px solid Highlight; outline-offset: -4px; }
 }
+
+/* DRIVER / GLANCE PRESENTATION CONTRACT
+   Runtime owns only the state attributes:
+     html[data-text-size="normal"|"large"|"xlarge"]
+     html[data-driver-mode="glance"]
+   Presentation stays here. No economics, route selection, persistence or
+   evaluator logic belongs in this stylesheet.
+
+   The semantic .fl-road-* helpers are intentionally strong enough to replace
+   legacy inline font-size declarations when a runtime-rendered primary fact is
+   opted into the road-use hierarchy. They do not hide secondary information. */
+html:root {
+  --fl-type-caption: 11px;
+  --fl-type-support: 13px;
+  --fl-type-body: 15px;
+  --fl-type-primary: 18px;
+  --fl-type-number: 22px;
+  --fl-type-hero: clamp(36px, 10vw, 50px);
+  --fl-type-control: 14px;
+  --fl-road-touch: 44px;
+  --fl-road-gap: 12px;
+}
+
+html[data-text-size="large"] {
+  --fl-type-caption: 12px;
+  --fl-type-support: 14px;
+  --fl-type-body: 16px;
+  --fl-type-primary: 20px;
+  --fl-type-number: 25px;
+  --fl-type-hero: clamp(40px, 11vw, 56px);
+  --fl-type-control: 16px;
+}
+
+html[data-text-size="xlarge"] {
+  --fl-type-caption: 13px;
+  --fl-type-support: 16px;
+  --fl-type-body: 18px;
+  --fl-type-primary: 23px;
+  --fl-type-number: 29px;
+  --fl-type-hero: clamp(44px, 12vw, 62px);
+  --fl-type-control: 18px;
+}
+
+html[data-text-size] body {
+  font-size: var(--fl-type-body);
+}
+
+html[data-text-size] body :is(.btn,.chip,.fl-quick-btn,.fl-intel-tab,.settings-collapse-btn) {
+  font-size: var(--fl-type-control);
+}
+
+html[data-text-size] body :is(input,select,textarea) {
+  font-size: max(16px, var(--fl-type-body)) !important;
+}
+
+html[data-text-size] body :is(.item .v,.fl-tc .fl-tc-route,.fl-trip-full .fl-tf-origin,.fl-nm-text,.fl-alert-text) {
+  font-size: var(--fl-type-body);
+}
+
+html[data-text-size] body :is(.fl-tc .fl-tc-pay,.fl-trip-full .fl-tf-pay,.kpi-cell-value,.eval-rpm-hero) {
+  font-size: var(--fl-type-number);
+}
+
+html[data-text-size] body :is(.fl-tc .fl-tc-meta,.fl-trip-full .fl-tf-sub,.kpi-cell-label,.fl-nm-label,.fl-alert-title) {
+  font-size: var(--fl-type-caption);
+}
+
+body .fl-road-primary {
+  font-size: var(--fl-type-primary) !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -.02em;
+}
+
+body .fl-road-number {
+  font-size: var(--fl-type-number) !important;
+  font-weight: 850 !important;
+  line-height: 1.08 !important;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+body .fl-road-secondary {
+  font-size: var(--fl-type-support) !important;
+  line-height: 1.45 !important;
+}
+
+body .fl-road-caption {
+  font-size: var(--fl-type-caption) !important;
+  line-height: 1.4 !important;
+}
+
+body .fl-road-action {
+  min-height: var(--fl-road-touch) !important;
+  font-size: var(--fl-type-control) !important;
+}
+
+html[data-driver-mode="glance"] {
+  --fl-road-touch: 52px;
+  --fl-road-gap: 14px;
+}
+
+html[data-driver-mode="glance"] body .app {
+  max-width: 680px;
+}
+
+html[data-driver-mode="glance"] body :is(.btn,.chip,.fl-quick-btn,.fl-intel-tab,.settings-collapse-btn,.theme-btn) {
+  min-height: var(--fl-road-touch);
+  font-size: max(var(--fl-type-control), 16px);
+}
+
+html[data-driver-mode="glance"] body :is(.fl-quick-btn,.settings-collapse-btn) {
+  padding-block: 13px;
+}
+
+html[data-driver-mode="glance"] body .bottom .nav {
+  min-height: 78px;
+}
+
+html[data-driver-mode="glance"] body .bottom .nav a {
+  min-height: var(--fl-road-touch);
+}
+
+html[data-driver-mode="glance"] body .bottom .nav a .nl {
+  font-size: max(var(--fl-type-caption), 12px);
+}
+
+html[data-driver-mode="glance"] body #homeKPICard {
+  padding: 22px;
+}
+
+html[data-driver-mode="glance"] body #homeKPICard .kpi-hero-value {
+  font-size: var(--fl-type-hero);
+}
+
+html[data-driver-mode="glance"] body #homeKPICard .kpi-cell-value {
+  font-size: var(--fl-type-number);
+}
+
+html[data-driver-mode="glance"] body #homeKPICard .kpi-cell-label {
+  font-size: var(--fl-type-caption);
+}
+
+html[data-driver-mode="glance"] body .fl-next-move {
+  padding: 17px;
+}
+
+html[data-driver-mode="glance"] body .fl-nm-text {
+  font-size: var(--fl-type-primary);
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+html[data-driver-mode="glance"] body :is(#homePositionBanner,#homeTripTracking,.fl-next-move,#homeKPICard) {
+  scroll-margin-top: 92px;
+}
+
+html[data-driver-mode="glance"] body :is(.fl-tc .fl-tc-route,.fl-trip-full .fl-tf-origin) {
+  font-size: var(--fl-type-primary);
+  line-height: 1.35;
+}
+
+html[data-driver-mode="glance"] body :is(.fl-tc .fl-tc-pay,.fl-trip-full .fl-tf-pay,.eval-rpm-hero) {
+  font-size: var(--fl-type-number);
+  font-weight: 850;
+}
+
+html[data-driver-mode="glance"] body :is(.fl-tc .fl-tc-meta,.fl-trip-full .fl-tf-sub,.fl-tc .fl-tc-rpm,.fl-trip-full .fl-tf-rpm) {
+  font-size: var(--fl-type-support);
+  line-height: 1.4;
+}
+
+html[data-driver-mode="glance"] body .fl-eval-grade {
+  font-size: clamp(64px, 18vw, 88px);
+  line-height: .95;
+}
+
+html[data-driver-mode="glance"] body .fl-eval-verdict {
+  min-height: var(--fl-road-touch);
+  align-items: center;
+  font-size: var(--fl-type-body);
+  padding-inline: 20px;
+}
+
+html[data-driver-mode="glance"] body :is(.card,.item,.fl-alert) {
+  scroll-margin-block: 92px 104px;
+}
+
+@media (max-width: 370px) {
+  html[data-driver-mode="glance"] body .fl-trip-full .fl-tf-origin {
+    font-size: var(--fl-type-primary);
+  }
+  html[data-driver-mode="glance"] body .fl-trip-full .fl-tf-pay {
+    font-size: var(--fl-type-number);
+  }
+  html[data-driver-mode="glance"] body .bottom .nav a .nl {
+    font-size: max(var(--fl-type-caption), 12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-driver-mode="glance"] body :is(.fl-road-primary,.fl-road-number,.fl-road-secondary,.fl-road-caption) {
+    transition: none !important;
+  }
+}
+
