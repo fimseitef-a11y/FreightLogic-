@@ -1598,7 +1598,7 @@ html[data-theme="light"] body :is(header#mainHeader,.bottom) { background: var(-
    app.js/modern-shell.js can expose one user preference without hard-coding
    font sizes into rendered markup. */
 html:root {
-  --fl-body-size: 14px;
+  --fl-body-size: 15px;
   --fl-label-size: 12px;
   --fl-secondary-size: 13px;
   --fl-primary-size: 16px;
@@ -1613,7 +1613,7 @@ html:root {
 }
 
 html[data-fl-text-size="standard"] {
-  --fl-body-size: 14px;
+  --fl-body-size: 15px;
   --fl-label-size: 12px;
   --fl-secondary-size: 13px;
   --fl-primary-size: 16px;
