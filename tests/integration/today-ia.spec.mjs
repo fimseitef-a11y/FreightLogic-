@@ -247,20 +247,37 @@ test('[ISSUE #205] TIA-06 an undismissed onboarding card retires after its EXPOS
       const shownAfter = [];
       for (let i = 0; i < 2; i++) shownAfter.push(await T.shouldShowOnboarding(probe));
 
-      // (c) The real path: booting Today DISPLAYS the F21 card on screen, and a
-      // real on-screen display is what the budget is supposed to count. If boot
-      // did not count, the budget would never retire anything in production and
-      // this test would only prove a helper talks to itself.
+      // (c) The real path, through the REAL observer.
+      //
+      // This used to read the count straight after boot and assume the F21 card
+      // had been on screen. v24.0.22's Driver Display typography makes that
+      // assumption false: `data-fl-text-size="standard"` is now always set on
+      // <html>, styles.css scales the surfaces above the card, and the card is
+      // no longer reliably above the fold at launch. That is the exposure gate
+      // WORKING -- a card the driver has not scrolled to must not spend budget,
+      // which is the entire defect v24.0.21 fixed.
+      //
+      // So the test stops depending on incidental layout and drives the
+      // mechanism instead: scroll the real card into view and require the real
+      // IntersectionObserver to count it. Strictly stronger than before, because
+      // it now exercises scroll -> observer -> durable count rather than reading
+      // a number that happened to be there.
+      const card = document.querySelector('#f21OnboardingCard');
+      if (card){
+        card.scrollIntoView({ block: 'center' });
+        await new Promise(r => setTimeout(r, 900));
+      }
       const views = await T.getSetting('onboardViews', null);
       return {
         budget, askedBefore, spentByAsking, shownAfter,
+        cardPresent: Boolean(card),
         seen: await T.getSetting(probe, false),
         realCount: (views && typeof views === 'object' && views.f21OnboardingSeen) || 0,
       };
     });
     console.log(`    [evidence] budget=${r.budget} askedBefore=${JSON.stringify(r.askedBefore)} ` +
       `spentByAsking=${r.spentByAsking} shownAfter=${JSON.stringify(r.shownAfter)} ` +
-      `seen=${r.seen} bootCountedF21=${r.realCount}`);
+      `cardPresent=${r.cardPresent} seen=${r.seen} countedAfterScrollF21=${r.realCount}`);
 
     eq(r.askedBefore.every(Boolean), true,
       'a card the driver has not yet been EXPOSED to its budget of must still render, ' +
@@ -273,10 +290,12 @@ test('[ISSUE #205] TIA-06 an undismissed onboarding card retires after its EXPOS
     eq(r.seen, true,
       'retirement must be promoted to the durable fNNOnboardingSeen flag, so it survives ' +
       'a reload and travels through export/import like an explicit dismissal');
+    ok(r.cardPresent,
+      'an undismissed onboarding card with budget left must actually render on a fresh Today');
     ok(r.realCount >= 1,
-      'a real Today render that puts the card ON SCREEN must still count — a budget nothing ' +
-      'increments in production retires nothing, and this test would otherwise only prove a ' +
-      'helper talks to itself');
+      'scrolling the REAL card into view must spend exactly the exposure the observer saw — a ' +
+      'budget nothing increments in production retires nothing, and this test would otherwise ' +
+      'only prove a helper talks to itself');
   } finally { await app.close(); }
 });
 
