@@ -123,6 +123,11 @@ test('[DRIVER DISPLAY / NEGATIVE] DD-04 corrupt persisted display values fail cl
     const prefs = await rootPrefs(app.page);
     eq(prefs.size, 'standard', 'unknown text-size values must normalize to Standard');
     eq(prefs.mode, null, 'unknown Glance values must not enable road mode');
+    await openDriverDisplaySettings(app.page);
+    eq(await app.page.locator('#driverTextSize').inputValue(), 'standard',
+      'the visible text-size control must also normalize corrupt storage to Standard');
+    eq(await app.page.locator('#driverGlanceMode').isChecked(), false,
+      'the visible Glance control must stay off after corrupt persisted input');
   } finally { await app.close(); }
 });
 
