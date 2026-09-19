@@ -332,7 +332,11 @@ test('[FIELD CERT / NEW] FC-12 every A1-A13 row is a guided evidence instrument,
     }
     eq(await gate(page, 'A6').locator('[data-background-minutes]').count(), 1, 'A6 must capture measured background minutes');
     eq(await gate(page, 'A6').locator('[data-real-device]').count(), 1, 'A6 must explicitly attest a real-device run');
-    eq(await gate(page, 'A11').locator('[data-required-check]').count() >= 6, true, 'A11 must enumerate the iOS 27 visual/regression checkpoints');
+    const a11Checks = gate(page, 'A11').locator('[data-required-check]');
+    eq(await a11Checks.count() >= 8, true, 'A11 must enumerate iOS 27 plus Driver/Glance readability checkpoints');
+    const a11Text = (await gate(page, 'A11').textContent()) || '';
+    eq(/text-size/i.test(a11Text), true, 'A11 must require every shipped text-size preference to be checked on the real iPhone');
+    eq(/Glance Mode/i.test(a11Text), true, 'A11 must require Driver/Glance readability at normal dashboard\/phone-mount distance');
     eq(await gate(page, 'A12').locator('[data-storage-partition]').count(), 1, 'A12 must record Safari-to-PWA storage behavior');
     eq(await gate(page, 'A13').locator('[data-a13-camera]').count(), 1, 'A13 must record the screenshot/camera delivery result');
     eq(await gate(page, 'A13').locator('[data-a13-clipboard]').count(), 1, 'A13 must record the clipboard-image delivery result');
