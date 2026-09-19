@@ -1,6 +1,0 @@
-owner: gpt
-token: 5b4f8d7a-7f8b-4a93-b1d7-4d77c9e22a61
-started_utc: 2026-09-19T09:57:00Z
-expected_release_utc: 2026-09-19T10:27:00Z
-paths: .agents/LANES.md
-task: retire expired Issue #268 temporary ownership rows after merged green v24.0.24
