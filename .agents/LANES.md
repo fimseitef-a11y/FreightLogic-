@@ -12,7 +12,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **Admin Console Phase A lane exception (2026-09-18, operator-directed takeover).** Issue #231 already carries operator approval for a separate-origin Admin / Onboarding Console. While Claude's current UX/IA lock remains limited to `app.js` and `index.html`, GPT may own only the isolated `admin-console/` subtree plus the exact Admin Console regression file named below. This is an additive Phase A seam only: it does **not** transfer `cloud-backup-worker.js`, `app.js`, `index.html`, `service-worker.js`, `.github/`, or any other Claude/SHARED path. Worker CORS, deployment, live auth verification, and Phase C driver-surface removal remain under their existing ownership/lock rules. The console must preserve #231's zero-token, session-only-admin-credential, no-freight-data, no-service-worker contract and must not be exposed as a finished privileged surface before its distinct admin origin and live verification exist.
 
-**v24.0.22 runtime integration takeover (2026-09-19, operator-directed, bounded).** After Admin Console integration merged green as PR #258 and the live coordination row still showed Claude idle, the operator said Proceed and GPT is authorized to finish the already-reviewed PR #255 runtime slice rather than leave it stranded. SHARED runtime paths remain protected by the normal lock protocol. This temporary ownership exception covers only the otherwise-Claude-owned files needed to integrate the exact release: `CLAUDE.md`, `midwest-stack-config.json`, `midwest-stack-authority.js`, `scripts/verify-cloudflare-parity.mjs`, `tests/integration/screenshot-intake.spec.mjs`, `tests/integration/driver-glance-preferences.spec.mjs`, `tests/integration/today-ia.spec.mjs`, and `tests/run-all.mjs`. The `today-ia.spec.mjs` exception is one-time integration authority only: preserve Claude's strengthened TIA-06 real-scroll/IntersectionObserver regression required by the Driver Display layout change; do not weaken or otherwise expand that suite. Purpose is limited to carrying the existing screenshot/intake/onboarding changes forward, correcting the static positioning wording, wiring the GPT-owned Driver/Glance presentation contract, preserving that exact TIA-06 regression, and advancing all governed app-generation markers together to the next release. It does not transfer Worker source, historical importer semantics, other unrelated tests/scripts/docs, or decision-engine authority. The exception expires when the reviewed successor runtime PR lands and must then be retired.
+**v24.0.22 runtime integration takeover — RETIRED 2026-09-19.** The bounded GPT integration lane completed when clean successor PR #262 merged as `11cc8b78` after exact-head Lanes, CodeQL and full-suite success. The temporary ownership exceptions used only for that release are retired here: `CLAUDE.md`, `midwest-stack-config.json`, and `midwest-stack-authority.js` return to Claude; the temporary parity/test/run-all rows fall back to their Claude-owned parent lanes. `styles.css` remains GPT-owned under the separate UI-redesign directive, and the Admin Console plus field-certification exceptions are unaffected.
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
@@ -23,10 +23,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | gpt | Temporary v24.0.22 runtime-integration exception only: advance governed `appTarget`; expires when the successor runtime PR lands. |
-| `midwest-stack-authority.js` | gpt | Temporary v24.0.22 runtime-integration exception only: advance governed VERSION/header; no decision-logic transfer; expires when the successor runtime PR lands. |
+| `midwest-stack-config.json` | claude | Versioned application-target configuration; temporary v24.0.22 GPT integration authority is retired. |
+| `midwest-stack-authority.js` | claude | Versioned Midwest Stack authority wrapper; temporary v24.0.22 GPT integration authority is retired. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | Temporary v24.0.22 runtime-integration exception only: add/update the release record required by checklist item 10; expires when the successor runtime PR lands. |
+| `CLAUDE.md` | claude | Core release/project record; temporary v24.0.22 GPT integration authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -66,15 +66,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary v24.0.22 runtime-integration exception only: advance expected app/SW/manifest/overlay markers; expires when the successor runtime PR lands. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/integration/screenshot-intake.spec.mjs` | gpt | Temporary v24.0.22 runtime-integration exception only: carry the already-reviewed PR #255 screenshot-intake regression changes; assertions may not be weakened; expires when successor runtime PR lands. |
-| `tests/integration/driver-glance-preferences.spec.mjs` | gpt | Temporary v24.0.22 runtime-integration exception only: dedicated regression for shipped text-size preferences and Driver/Glance Mode; expires when successor runtime PR lands. |
-| `tests/integration/today-ia.spec.mjs` | gpt | Temporary v24.0.22 integration exception only: preserve Claude's strengthened TIA-06 real-scroll/IntersectionObserver exposure regression required by Driver Display layout; no other Today IA changes; expires when successor runtime PR lands. |
-| `tests/run-all.mjs` | gpt | Temporary v24.0.22 runtime-integration exception only: register the dedicated Driver/Glance regression; no other suite changes; expires when successor runtime PR lands. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
@@ -85,7 +80,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 - The exact field-certification companion paths named above remain GPT-owned for the operator-approved bounded task. Its `tests/run-all.mjs` registration is already merged and that temporary whole-file exception is retired; `tests/run-all.mjs` inherits the Claude-owned `tests/` row again.
 - `app.js` remains `SHARED` and requires the current covering lock plus a full suite.
 - PR #210 zero-token onboarding is authoritative; nothing may reinstate the superseded raw-token/admin-handler flow.
-- The post-PR-210 full-repair exceptions are retired. `styles.css`, the three UI-redesign authority documents, and the exact field-certification companion paths are the only GPT-owned paths.
+- The post-PR-210 and v24.0.22 integration exceptions are retired. Persistent GPT-owned seams are `styles.css`, the three UI-redesign authority documents, the isolated `admin-console/` + its exact regression, and the exact field-certification companion paths.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
 - Every other non-excepted path remains Claude-owned.
 
