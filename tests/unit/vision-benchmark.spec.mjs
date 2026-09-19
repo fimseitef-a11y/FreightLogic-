@@ -242,4 +242,9 @@ function execNode(args, extraEnv = {}) {
   });
 }
 
-run();
+export async function runSpec() { return run(); }
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const r = await runSpec();
+  process.exit(r.fail > 0 ? 1 : 0);
+}
