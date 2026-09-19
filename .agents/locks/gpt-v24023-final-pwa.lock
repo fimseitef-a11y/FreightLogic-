@@ -1,6 +1,0 @@
-owner: gpt
-token: 9c822f50-2143-4751-89e7-6e975ef0754c
-started_utc: 2026-09-19T06:52:00Z
-expected_release_utc: 2026-09-19T09:30:00Z
-paths: .agents/LANES.md, app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js
-task: Operator-directed final PWA presentation authority consolidation and required v24.0.23 release-generation integration.
