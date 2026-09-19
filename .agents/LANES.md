@@ -27,8 +27,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | claude | Versioned application-target configuration; temporary v24.0.23 GPT release-marker authority is retired. |
-| `midwest-stack-authority.js` | claude | Versioned Midwest Stack authority wrapper; temporary v24.0.23 GPT release-marker authority is retired. |
+| `midwest-stack-config.json` | gpt | Temporary #268 release-generation marker exception only; retire after v24.0.24 accessibility release lands green. |
+| `midwest-stack-authority.js` | gpt | Temporary #268 release-generation marker exception only; no doctrine/decision changes; retire after v24.0.24 lands green. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
 | `CLAUDE.md` | claude | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
@@ -70,6 +70,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
+| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary #268 release-generation expected-marker exception only; retire after v24.0.24 lands green. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
