@@ -298,6 +298,20 @@ test('[ADMIN-15] live verifier proves dedicated-origin headers, exact API CORS a
 });
 
 
+test('[ADMIN-16] deploy wrapper refuses config drift, dry-runs first, and verifies the live origin', async () => {
+  const deploy = await text('admin-console/deploy.sh');
+  ok(/set -euo pipefail/.test(deploy), 'deployment wrapper must fail closed on command errors and unset variables');
+  ok(/freightlogic-admin-console/.test(deploy), 'wrapper must pin the dedicated admin Worker identity');
+  ok(/wrangler@4\s+deploy\s+-c\s+["']?\$CONFIG["']?\s+--dry-run/.test(deploy),
+    'wrapper must dry-run the exact isolated config before deployment');
+  ok(/wrangler@4\s+deploy\s+-c\s+["']?\$CONFIG["']?(?:\s|$)/.test(deploy),
+    'wrapper must deploy the exact isolated config');
+  ok(/verify-live\.mjs/.test(deploy), 'wrapper must run the no-secret live verifier after deploy');
+  ok(!/deploy\s+-c\s+(?:\.\/)?wrangler\.jsonc/.test(deploy),
+    'wrapper must never deploy the repository root/driver Wrangler config');
+});
+
+
 export async function runSpec() {
   for (const { name, fn } of tests) {
     try { await fn(); pass += 1; console.log(`  PASS ${name}`); }
