@@ -1,6 +1,0 @@
-owner: gpt
-token: 4f62e9a1-3c7b-4d85-91a6-2e0bc4f8d713
-started_utc: 2026-09-19T05:17:17Z
-expected_release_utc: 2026-09-19T06:17:17Z
-paths: .agents/LANES.md
-task: Retire the temporary v24.0.22 runtime-integration ownership exceptions after successor PR #262 merged; restore parent/Claude ownership without changing runtime or tests.
