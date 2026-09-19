@@ -1,0 +1,6 @@
+owner: gpt
+token: 0c4d33ef-1fd1-4c40-a329-e1c6dca16dc5
+started_utc: 2026-09-19T01:42:00Z
+expected_release_utc: 2026-09-19T03:42:00Z
+paths: .agents/NOW.md, .agents/STATUS.md
+task: Advance GPT-owned Admin Console with a self-contained Cloudflare separate-origin deployment seam; no Claude-owned Worker/workflow edits.
