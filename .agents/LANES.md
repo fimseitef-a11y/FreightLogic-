@@ -74,7 +74,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
+| `tests/integration/apple-ios-accessibility.spec.mjs` | gpt | Temporary exact #268 accessibility regression exception; retire after #268 lands green. |\n| `tests/integration/six-width-layout.spec.mjs` | gpt | Temporary exact #268 More/Settings width regression exception; retire after #268 lands green. |\n| `tests/run-all.mjs` | gpt | Temporary #268 exception limited to registering the accessibility spec; retire after #268 lands green. |\n| `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
