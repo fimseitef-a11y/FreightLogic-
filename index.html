@@ -260,21 +260,25 @@
     </section>
     <section id="view-insights" class="view" style="display:none">
       <div>
-        <div class="card"><h3>This Week</h3><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="wkGross">—</b></div><div class="pill"><span class="muted">Exp</span> <b id="wkExp">—</b></div><div class="pill"><span class="muted">Net</span> <b id="wkNet">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Loaded mi</span> <b id="wkLoaded">—</b></div><div class="pill"><span class="muted">All mi</span> <b id="wkAll">—</b></div><div class="pill"><span class="muted">RPM</span> <b id="wkRpm">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill" id="deadheadPill"><span class="muted">Deadhead</span> <b id="wkDeadhead">—</b></div></div></div>
+        <div class="card settings-legacy-week-summary" style="display:none" aria-hidden="true"><h3>This Week</h3><div class="row"><div class="pill"><span class="muted">Gross</span> <b id="wkGross">—</b></div><div class="pill"><span class="muted">Exp</span> <b id="wkExp">—</b></div><div class="pill"><span class="muted">Net</span> <b id="wkNet">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill"><span class="muted">Loaded mi</span> <b id="wkLoaded">—</b></div><div class="pill"><span class="muted">All mi</span> <b id="wkAll">—</b></div><div class="pill"><span class="muted">RPM</span> <b id="wkRpm">—</b></div></div><div class="row" style="margin-top:8px"><div class="pill" id="deadheadPill"><span class="muted">Deadhead</span> <b id="wkDeadhead">—</b></div></div></div>
         <div class="card"><h3>Settings</h3>
-<!-- ── 3 Essential Settings (always visible) ── -->
-<div class="grid2" style="gap:10px;margin-bottom:6px">
-<div><label for="fuelPrice">Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
-<div><label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" /></div>
+<!-- Driver-first settings directory. The actual fields remain single-source below. -->
+<div id="settingsDirectory" class="settings-directory" aria-label="Settings categories">
+  <button type="button" data-settings-target="settingsVehicle"><span>Vehicle &amp; Capacity</span><small>Home base, van profile, trip planning</small></button>
+  <button type="button" data-settings-target="settingsCosts"><span>Costs &amp; Goals</span><small>Fixed costs, per-mile cost, weekly target</small></button>
+  <button type="button" data-settings-target="settingsConnections"><span>Connections &amp; Backup</span><small>Cross-border, data services, cloud backup</small></button>
+  <button type="button" data-settings-target="settingsDisplay"><span>Display &amp; Accessibility</span><small>Text size, Glance Mode and road legibility</small></button>
+  <button type="button" data-settings-target="settingsPrivacy"><span>Privacy &amp; Data</span><small>Storage, reset and recovery controls</small></button>
 </div>
-<div class="field" style="margin-bottom:0"><label for="weeklyGoal">Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
 
-<!-- Driver Display (Issue #205 section 1). Deliberately OUTSIDE the collapsed
-     Advanced block: these are road-legibility controls a driver reaches for at
-     a truck stop, not tuning parameters. Device-local by design - they describe
-     this phone, not the business, so they never enter the settings store,
-     export payloads or cloud backup. -->
-<div class="settings-section-head" style="margin-top:14px"><span class="settings-section-icon">&#128065;&#65039;</span>Driver Display</div>
+<!-- ── All Settings (collapsed) ── -->
+<div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
+  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>All Settings</span></span>
+  <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
+</div>
+<div id="advSettingsBody" style="display:none">
+<div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
+<div class="settings-section-head" id="settingsDisplay"><span class="settings-section-icon">&#128065;&#65039;</span>Driver Display</div>
 <div class="grid2" style="gap:10px">
   <div><label for="driverTextSize">Text size</label>
     <select id="driverTextSize">
@@ -289,25 +293,11 @@
     </div></div>
 </div>
 <div class="muted" style="font-size:11px;margin-top:2px">Stored on this device only. Glance Mode is opt-in and never hides the More menu.</div>
-
-<!-- Driver-first settings directory. The actual fields remain single-source below. -->
-<div id="settingsDirectory" class="settings-directory" aria-label="Settings categories">
-  <button type="button" data-settings-target="settingsVehicle"><span>Vehicle &amp; Capacity</span><small>Home base, van profile, trip planning</small></button>
-  <button type="button" data-settings-target="settingsCosts"><span>Costs &amp; Goals</span><small>Fixed costs, per-mile cost, weekly target</small></button>
-  <button type="button" data-settings-target="settingsConnections"><span>Connections &amp; Backup</span><small>Cross-border, data services, cloud backup</small></button>
-  <button type="button" data-settings-target="settingsPrivacy"><span>Privacy &amp; Data</span><small>Storage, reset and recovery controls</small></button>
-</div>
-
-<!-- ── All Settings (collapsed) ── -->
-<div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
-  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>All Settings</span></span>
-  <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
-</div>
-<div id="advSettingsBody" style="display:none">
-<div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
+<div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" id="settingsVehicle"><span class="settings-section-icon">🚐</span>Vehicle &amp; Capacity</div>
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
+<label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" />
 <label for="opCostPerMile">Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
 <!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
 <div id="vehicleTaxMethodRow" style="margin-top:10px;display:none">
@@ -343,6 +333,10 @@
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" id="settingsCosts"><span class="settings-section-icon">📋</span>Costs &amp; Goals</div>
 <div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
+<div class="grid2" style="gap:10px;margin-bottom:8px">
+  <div><label for="fuelPrice">Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
+  <div><label for="weeklyGoal">Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
+</div>
 <div class="grid2" style="gap:10px">
 <div><label for="monthlyInsurance">Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
 <div><label for="monthlyVehicle">Vehicle payment</label><input id="monthlyVehicle" type="number" step="1" placeholder="$/mo" /></div>
