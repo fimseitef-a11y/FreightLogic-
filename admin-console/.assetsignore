@@ -3,3 +3,4 @@ wrangler.jsonc
 README.md
 _headers
 .assetsignore
+verify-live.mjs
