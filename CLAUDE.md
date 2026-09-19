@@ -4593,7 +4593,7 @@ so the route, the auth gate, the ceilings and the normalizer under test are the 
 only the model call is stubbed, and there is no network and no provider key. Driver credentials are
 minted through the **real invite/claim path** rather than a seeded fixture that could drift from it.
 
-`tests/integration/screenshot-intake.spec.mjs` (16, new) drives the real app in real Chromium with
+`tests/integration/screenshot-intake.spec.mjs` (18, new) drives the real app in real Chromium with
 `/extract-image` intercepted at the network boundary, so the picker, the canvas downscale, the
 review step and the evaluator handoff are all shipped code. It asserts **rendered content**.
 `SSI-02` additionally pins the upload contract: the image must arrive re-encoded as **JPEG**,
