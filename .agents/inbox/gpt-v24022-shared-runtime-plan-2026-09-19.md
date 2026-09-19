@@ -34,9 +34,10 @@ Required SHARED changes, once the lock is released/expired+reaped:
 - Explicit zero deadhead must remain 0; unknown deadhead remains blocked/blank per existing authority.
 
 2. index.html
-- Add visible controls in Settings / App section:
-  #driverTextSize select with exactly standard, large, xlarge.
-  #driverGlanceMode checkbox.
+- Add the display controls in the ALWAYS-VISIBLE Settings area, after the three essential settings and BEFORE #advSettingsToggle. Do NOT place them inside the existing "App" subsection, because that subsection lives inside collapsed #advSettingsBody and DD-01 intentionally requires these road-use preferences to be immediately visible.
+  - #driverTextSize select with exactly standard, large, xlarge (labels Standard, Large, Extra Large).
+  - #driverGlanceMode checkbox.
+  - A compact "Driver display" label/helper is fine; preserve one-handed layout and >=16px focused control text on iPhone.
 - Advance governed app/sw asset query markers from 24.0.21 to 24.0.22 wherever release-generation discipline requires.
 - Preserve current CSP and all existing IDs/routes.
 
