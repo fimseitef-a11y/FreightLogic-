@@ -37,7 +37,7 @@ test('visible Evaluate, Money/Settings and Omega form controls have deterministi
   try {
     const { page } = app;
     await ready(page);
-    const routes = ['omega', 'money'];
+    const routes = ['omega', 'insights'];
     const failures = [];
     for (const route of routes) {
       await page.evaluate((r) => { location.hash = '#' + r; }, route);
