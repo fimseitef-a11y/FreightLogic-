@@ -13,6 +13,11 @@ test('header statuses are non-interactive status semantics and GPS target is App
   try {
     const { page } = app;
     await ready(page);
+    await page.evaluate(() => { location.hash = '#omega'; });
+    await page.waitForTimeout(100);
+    const disclosure = page.locator('#evalAdvToggle');
+    if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
+    await page.waitForTimeout(60);
     const result = await page.evaluate(() => {
       const read = (id) => {
         const el = document.getElementById(id);
