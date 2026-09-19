@@ -233,7 +233,7 @@ test('[ADMIN-12] Cloudflare separate-origin deploy wrapper applies security head
 
 test('[ADMIN-13] Cloudflare asset upload excludes deployment/control-plane files', async () => {
   const ignore = await text('admin-console/.assetsignore');
-  for (const file of ['worker.js', 'wrangler.jsonc', 'README.md', '_headers', '.assetsignore']) {
+  for (const file of ['worker.js', 'wrangler.jsonc', 'README.md', '_headers', '.assetsignore', 'verify-live.mjs']) {
     ok(ignore.split(/\r?\n/).map(x => x.trim()).includes(file), `${file} must not be published as a client static asset`);
   }
 });
