@@ -42,6 +42,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
+import { assetsIgnoreMatcher } from './lib/deploy-assets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIVE_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
@@ -52,47 +53,84 @@ const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
 /**
  * Serve the working copy on an ephemeral loopback port.
  *
- * The request path is CONTAINED to ROOT rather than joined onto it. CodeQL
- * flagged the join form as a high-severity path traversal on this file's own
- * PR, and it was right: `path.join(ROOT, '../../etc/passwd')` escapes ROOT
- * happily, and percent-encoding hides the dots from any naive `..` scan.
+ * NO FILESYSTEM PATH IS EVER BUILT FROM THE REQUEST. The servable set is
+ * enumerated once at startup into a Map of url-path → absolute path, and a
+ * request is a Map lookup whose key is a plain string. A path that was never
+ * enumerated cannot be served however it is spelled, encoded or nested.
  *
- * "It only binds to 127.0.0.1 and lives for one run" is a reason the blast
- * radius is small, not a reason the hole is closed — and that argument is
- * exactly how holes stay open. Containment is three cheap lines.
+ * This replaces an earlier decode + resolve + `path.relative` containment
+ * check. That check was sound — verified over a raw socket, where the
+ * pre-fix handler leaked /etc/passwd on two vectors and the fixed one answered
+ * 403 to all three — but CodeQL kept flagging both sinks, because it does not
+ * recognise `path.relative` as a sanitizer and cannot see that `full` is
+ * contained.
+ *
+ * Suppressing the alert would have been the wrong move twice over: it argues
+ * with a static analyzer about a claim only a human reviewer could check, and
+ * it leaves a constructed path in code whose whole job is to be trustworthy.
+ * An allowlist is shorter, strictly tighter than containment, and removes the
+ * question instead of answering it.
  */
+const SERVABLE_EXT = new Set(Object.keys(MIME));
+
+/**
+ * Enumerate what this local origin may serve, through the REAL `.assetsignore`
+ * matcher the deploy gate already uses.
+ *
+ * Sharing that matcher is the point. A hand-written skip list here would be a
+ * second copy of the exclusion rules, and two lists that can disagree is the
+ * exact shape of the 2026-09-13 defect — `.assetsignore` and the service
+ * worker's CORE list disagreeing while every gate read green.
+ *
+ * It also matters for fidelity. Before this, the local server happily returned
+ * `cloud-backup-worker.js` — the Worker source with its auth middleware — which
+ * production withholds and DAC-03 exists to keep withheld. A pre-flight origin
+ * that serves what production refuses can only produce false confidence.
+ */
+async function buildServableMap(dir, prefix, map, isIgnored) {
+  let entries;
+  try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return map; }
+  for (const ent of entries) {
+    if (ent.name.startsWith('.') || ent.name === 'node_modules') continue;
+    const abs = path.join(dir, ent.name);
+    const url = prefix + '/' + ent.name;
+    const rel = url.replace(/^\//, '');
+    if (ent.isDirectory()) {
+      // The matcher reports {excluded, by} — `by` names the pattern that
+      // decided it, which is why the shared module returns a reason at all.
+      if (isIgnored(rel + '/').excluded) continue;
+      await buildServableMap(abs, url, map, isIgnored);
+    } else if (ent.isFile() && SERVABLE_EXT.has(path.extname(ent.name)) && !isIgnored(rel).excluded) {
+      map.set(url, abs);
+    }
+  }
+  return map;
+}
+
 async function serveLocal() {
+  const files = await buildServableMap(ROOT, '', new Map(), assetsIgnoreMatcher());
+  const index = files.get('/index.html');
+  if (!index) throw new Error('index.html not found under ' + ROOT);
+
   const server = http.createServer(async (req, res) => {
     const deny = (code, msg) => { res.writeHead(code, { 'Content-Type': 'text/plain' }); res.end(msg); };
-    let rel;
-    try {
-      // Decode BEFORE resolving, or %2e%2e%2f walks straight past the check.
-      rel = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]);
-    } catch { return deny(400, 'bad request'); }
-    if (rel === '/' || rel === '') rel = '/index.html';
+    let key;
+    try { key = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]); }
+    catch { return deny(400, 'bad request'); }
+    if (key === '/' || key === '') key = '/index.html';
 
-    // Resolve, then prove containment with path.relative: a result that is
-    // empty, starts with '..', or is absolute means the path left ROOT.
-    const full = path.resolve(ROOT, '.' + (rel.startsWith('/') ? rel : '/' + rel));
-    const inside = path.relative(ROOT, full);
-    if (inside !== '' && (inside.startsWith('..') || path.isAbsolute(inside))) {
-      return deny(403, 'forbidden');
-    }
+    // A lookup, not a path. `key` never reaches the filesystem.
+    const abs = files.get(key);
+    if (!abs) return deny(404, 'not found');
     try {
-      const st = await fsp_stat(full);
-      if (!st.isFile()) return deny(404, 'not found');
-      const buf = await fs.readFile(full);
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(full)] || 'application/octet-stream' });
+      const buf = await fs.readFile(abs);
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(abs)] || 'application/octet-stream' });
       res.end(buf);
     } catch { deny(404, 'not found'); }
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   return { origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
 }
-
-// A directory read succeeds on some platforms and returns junk; stat first so
-// only regular files are ever served.
-async function fsp_stat(p) { return fs.stat(p); }
 
 // ─── the split, stated honestly ──────────────────────────────────────────────
 
