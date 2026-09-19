@@ -4,7 +4,7 @@
 
 **FreightLogic v24.0.20** is a production-ready PWA (Progressive Web App) built for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and OpenAI-backed load evaluation.
 
-**SOURCE IS 24.0.21 / DB16 / Worker v21. PRODUCTION SERVES 24.0.20 / DB16 / Worker v20.**
+**SOURCE IS 24.0.22 / DB16 / Worker v21. WORKER v21 IS DEPLOYED; the app generation is landing.**
 v24.0.21 is the Issue #252 P0 screenshot-intake generation and is **source-only: not deployed and
 not live-observed.** Source being ahead of production does not make the observation below false, it
 makes it the current production fact until v24.0.21 deploys — which is the distinction this file
@@ -258,7 +258,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.21';
+const APP_VERSION = '24.0.22';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -403,8 +403,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.21` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.21`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.22` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.22`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4640,3 +4640,57 @@ operator's. The device gate for this release additionally includes the one thing
 environment can answer: whether the Photos/Files picker, the share-sheet capture and clipboard-image
 paste each actually deliver an image in the **installed** iOS PWA, which is why the picker is the
 guaranteed path and the clipboard is only ever an addition to it.
+
+---
+
+## v24.0.22 "Delivery, Again" — the generation rule, caught by its own gate
+
+A **generation correction**. No source semantics change, the Worker stays **v21**, `DB_VERSION`
+stays **16**. It exists for the same reason v24.0.3 and v24.0.12 exist: a changed deployed byte
+that no client would ever fetch.
+
+**What happened.** v24.0.21's screenshot work landed in one commit (`bac39d4`). The
+decision-first compact strip — the second half of #252's output contract — landed in a **second**
+commit (`918c21b`) that changed `app.js` while leaving every marker at `24.0.21`. That commit's
+own message argued the case explicitly: *"No version marker moves: this is the same 24.0.21
+generation, still undeployed, so there is nothing for a client to have cached yet."*
+
+**Both halves of that sentence were wrong.** Cloudflare's `Workers Builds: freightlogic-v2` check
+succeeded at `00:00:57` on the first commit, so a real `24.0.21` shell already existed. And even
+had it not, "still undeployed" is an argument about **behaviour**; the generation rule is about
+**delivery**. `CACHE_NAME` is `freightlogic-${SW_VERSION}` and the `?v=` query is the only other
+identity a child asset carries, so a client holding that shell would never fetch the changed
+`app.js` — the defect exactly, not a theoretical one.
+
+**`RG-03` caught it, and the local run did not.** CI reported **681 passed / 1 failed**, the one
+failure being `[RG-03] exact checkout respects runtime release generation against its base`. The
+local full-suite run on the same tree reported **682 / 0**, and the difference is the *base*
+`verifyGeneration()` resolves: locally `merge-base(HEAD, origin/main)` is `main` @ 24.0.20, so the
+generation had advanced and the check passed; against the preceding commit it had not. Running the
+verifier explicitly against `bac39d4` reproduces the CI failure on demand —
+`"Runtime assets changed without a new release generation"`, `changedRuntime: ["app.js"]`.
+
+That is worth keeping for two reasons. First, **a green local suite is not equivalent to a green
+CI suite for this particular gate**, because the gate's meaning depends on which base it is asked
+about. Second, this is the **third** recorded instance of the same rationalization: v24.0.3 shipped
+two repairs under a reused `24.0.2`, and v24.0.12 records an "inert in production" change that
+still required a bump. This one was not even inert — it changed a surface the driver reads.
+
+**The fix is the ordinary one.** Every governed marker moves together to `24.0.22`; the
+`v24.0.21` changelog entry stays under its own version and `24.0.22` gets its own, rather than the
+prior entry being relabelled — checklist item 1's specific failure mode. `workerVersion` stays
+`"21"` because no Worker byte changed. All **14** CG assertions and
+`verify-cloudflare-parity --static-only` are green at `24.0.22`, and the declared runtime asset
+count stays **22**.
+
+**The deploy order still holds and is already half done.** Worker **v21 is DEPLOYED and verified**
+— run `35408018661`, every post-deploy check green: preflight, `wrangler --dry-run` (which
+validated the new `AI` binding), deploy, `/health` at the expected generation, CORS echoing the
+real app origin rather than `*`, and both unauthenticated boundaries still denying. The app
+generation follows, and live parity plus the production service-worker gate are **re-dispatched**
+on the merge SHA rather than cited from the push-triggered runs, which race the Cloudflare deploy
+(eight recorded occurrences).
+
+**Still HOLD.** Physical iPhone **A1-A13** and the M6 conflict review are unchanged and remain the
+operator's. #252's provider benchmark against the sanitized DispatchLand corpus is still not done:
+it needs real screenshots, which are operator data and deliberately not in this repository.

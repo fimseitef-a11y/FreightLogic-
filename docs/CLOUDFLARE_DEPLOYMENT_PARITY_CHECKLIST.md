@@ -34,7 +34,7 @@ Current runtime state (what production serves TODAY):
   `35329623870` and production service-worker run `35329629590`, both `workflow_dispatch` on
   `main` @ `c72b521`, both `VERDICT: PASS`. The 24.0.19 observation recorded above remains
   permanent provenance for the tree its runs looked at;
-- repository source generation: **24.0.21** — source is AHEAD of production again, by the
+- repository source generation: **24.0.22** — source is AHEAD of production again, by the
   Issue #252 screenshot-intake generation, which is **not deployed and not live-observed**.
   (The 24.0.20 source-ahead gap this line previously recorded lasted about one hour, from
   merge to deploy, and was closed by the two re-dispatched gates named above.) **Deploy order
@@ -45,13 +45,13 @@ Current runtime state (what production serves TODAY):
 - IndexedDB schema: **16**;
 - backup/API Worker: **20 deployed and observed live; 21 in source, NOT deployed.**
   v21 adds the `POST /extract-image` vision route (#252) and must deploy before the
-  24.0.21 app generation, for the reason given above;
+  24.0.22 app generation, for the reason given above;
 - exact runtime Git candidate: **`c72b521`** (the 24.0.20 merge, which is what production
   serves and what both live gates observed);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
 - status: **HOLD**, and now for exactly one reason — the physical-iPhone gate
-  **A1-A13** (A13 is #252's screenshot flow, added in v24.0.21), deferred by
+  **A1-A13** (A13 is #252's screenshot flow, added in v24.0.22), deferred by
   the operator's 2026-09-16 decision to the final
   post-v24.5 candidate. Every automatable and live-origin gate is observed and
   passing. Section C (M6 private history) has run; see `FIELD_TEST_CHECKLIST.md`.

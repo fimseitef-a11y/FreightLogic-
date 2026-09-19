@@ -1,7 +1,21 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.21 USA ENGINE
+/** FreightLogic v24.0.22 USA ENGINE
+ *  v24.0.22 "Delivery, Again": a GENERATION CORRECTION, not new behaviour. The
+ *          decision-first compact strip (#252's output contract) landed in a
+ *          second commit that changed app.js while leaving every marker at
+ *          24.0.21 -- and Cloudflare had ALREADY built freightlogic-v2 from the
+ *          first commit, so a real 24.0.21 shell existed. A client holding it
+ *          would never have fetched the changed file: CACHE_NAME is
+ *          freightlogic-${SW_VERSION} and the `?v=` query is the only other
+ *          identity a child asset carries. RG-03 caught it in CI (681/1) and was
+ *          right. The commit that did it argued "still undeployed, nothing
+ *          cached yet" -- which is an argument about BEHAVIOUR, and the
+ *          generation rule is about DELIVERY. v24.0.12 records that exact
+ *          rationalization being wrong for a change that was genuinely inert in
+ *          production; this one was not even inert. No source semantics change
+ *          here and the Worker stays v21; every governed marker moves together.
  *  v24.0.21 "Read The Screenshot": Issue #252's P0 screenshot intake, plus the
  *          carried-forward onboarding-exposure repair. (1) A load posting reaches
  *          the driver as a SCREENSHOT far more often than as clean text, and the
@@ -362,7 +376,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.21';
+const APP_VERSION = '24.0.22';
 
 // escapeHtml is the canonical XSS-safe escape function — see line ~74
 
