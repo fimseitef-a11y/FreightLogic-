@@ -148,3 +148,25 @@ Do not add wildcard CORS. The driver production origin remains built into `ALLOW
 
 After these edits, run the full suite before any deploy. ADMIN-09/14 are designed to prove these exact cross-lane edits exist.
 
+
+
+## Final GPT-owned hardening update
+
+Final Admin branch head after the deployment-seam security pass:
+`5d499fc9441bbfccde0ce3ab4a51021f8f31cdad`
+
+Additional guarantees now implemented entirely inside the existing GPT lane:
+- the dedicated static Admin Worker explicitly accepts only `GET` / `HEAD`; every other method is rejected as `405` with `Allow: GET, HEAD` **before** the static asset binding runs;
+- the static Worker strips the complete `Access-Control-Allow-*` authority family from upstream asset responses, not only Origin/Credentials;
+- `verify-live.mjs` now proves the live Admin origin rejects a POST and preserves `no-store` on that denial;
+- the live verifier now requires Permissions-Policy denial for camera, microphone, geolocation **and payment**, rather than treating camera denial alone as sufficient;
+- ADMIN-12 / ADMIN-15 carry regressions and negative controls for those rules.
+
+Direct Node smoke at this head passed the Worker method/CORS behavior and the live-verifier positive + incomplete-policy negative case.
+
+The Claude-owned integration list above is otherwise unchanged. In particular, current main still has:
+- no Admin Console registration in `tests/run-all.mjs`;
+- backup Worker `ALLOWED_ORIGIN` still set to the driver origin rather than the dedicated Admin origin;
+- no `.github/workflows/deploy-admin-console.yml`.
+
+Do not copy an older PR #250 head; integrate the current final head above.
