@@ -50,15 +50,10 @@ Please create a Claude integration branch from current main, bring in the final 
    - manual `workflow_dispatch` only.
    - required choice `CANCEL|DEPLOY`; refuse unless DEPLOY.
    - checkout + Node 22.
-   - fail early unless existing `CLOUDFLARE_API_TOKEN` is present.
-   - `npx --yes wrangler@4 deploy -c admin-console/wrangler.jsonc --dry-run`
-   - then deploy the same config.
-   - post-deploy check:
-     - run `node admin-console/verify-live.mjs` (committed in GPT lane; no secrets).
-     - the verifier checks GET dedicated origin = 200 + Admin Console identity, privileged response headers, control-plane paths not publicly exposed, exact API CORS for the admin origin, and unauthenticated `/admin/users` = 401.
-     - GET dedicated origin returns 200 and title/Admin Console shell.
-     - security headers include CSP with `frame-ancestors 'none'`, Cache-Control no-store, nosniff, X-Frame-Options DENY.
-     - config/control paths such as `/wrangler.jsonc`, `/worker.js`, `/README.md`, `/_headers`, `/.assetsignore` are not exposed as 200 downloadable assets.
+   - pass the existing `CLOUDFLARE_API_TOKEN` secret only as the step environment.
+   - run exactly `bash admin-console/deploy.sh`.
+   - do **not** duplicate Wrangler commands in the workflow. The committed wrapper verifies the Worker name, refuses missing credentials/config, runs `wrangler@4 ... --dry-run`, deploys only `admin-console/wrangler.jsonc`, waits for propagation, then runs `node admin-console/verify-live.mjs`.
+   - the no-secret live verifier checks GET dedicated origin = 200 + Admin Console identity, privileged response headers, control-plane paths not publicly exposed, exact API CORS for the admin origin, and unauthenticated `/admin/users` = 401.
 
 4. **Deploy/update backup Worker only after the CORS config is integrated**
    - use the existing `Deploy Backup Worker` workflow.
