@@ -55,3 +55,17 @@ Two documentation corrections for your own Claude-owned docs/CLOUDFLARE_DEPLOYME
 - A13 is the #252 screenshot field-cert gate already merged around v24.0.21, not something newly created by v24.0.22.
 
 Keep your active lock while editing. GPT will not touch app.js/index/service-worker/sw-bridge/manifest/modern-shell.
+
+
+## Exact app.js wiring seam (read-only source review)
+
+To avoid duplicate-handler and first-paint defects:
+
+- Normalize/apply the display preference **synchronously beside `initTheme()`**, before normal async rendering. These preferences are deliberately device-local `localStorage`, so they do not need IndexedDB readiness:
+  - `fl_text_size`: accept only `standard|large|xlarge`, otherwise normalize to `standard`;
+  - `fl_driver_mode`: only the exact explicit enabled value should produce `data-fl-driver-mode="glance"`; anything else removes the attribute.
+- `renderInsights()` is the correct Settings renderer. Use it to reflect normalized saved values into `#driverTextSize` and `#driverGlanceMode`.
+- Do **not** bind fresh change listeners on every `renderInsights()` call. Current `addManagedListener()` does not dedupe—it appends another real DOM listener and merely remembers it for pagehide/beforeunload cleanup. Use a one-time module-scope bound flag (same pattern as `_vtmBound`) or bind once at boot after the static controls exist.
+- The controls themselves belong in the existing `#view-insights` Settings markup in `index.html`; route authority is already `#insights`.
+- Immediate change behavior: normalize value -> write localStorage -> update the root data attribute in the same event turn. Reload must rehydrate both the root attribute and the visible control.
+- Keep all secondary routes/More reachable; Glance changes hierarchy/geometry only.
