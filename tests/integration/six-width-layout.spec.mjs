@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const { test, run } = createSuite('integration/six-width-layout.spec.mjs');
 const WIDTHS = [320, 375, 390, 393, 430, 440];
-const ROUTES = ['home', 'loads', 'omega', 'trips', 'money'];
+const ROUTES = ['home', 'loads', 'omega', 'trips', 'money', 'more', 'insights'];
 const HEIGHT = 844;
 
 async function waitForShell(page) {
@@ -108,7 +108,7 @@ async function injectLongContentProbe(page) {
   });
 }
 
-test('all six release widths pass five-surface geometry in both theme states', async () => {
+test('all six release widths pass primary plus More geometry in both theme states', async () => {
   const app = await launchApp();
   try {
     const { page } = app;
@@ -202,6 +202,31 @@ test('320px reduced-motion mode suppresses long-running animation and a represen
     ok(dialog.left >= -1 && dialog.right <= 321, `320px modal overflows horizontally: ${JSON.stringify(dialog)}`);
     ok(dialog.width <= 321, `320px modal width ${dialog.width}px exceeds viewport`);
     ok(dialog.top >= -1 && dialog.bottom <= HEIGHT + 1, `320px modal escapes viewport vertically: ${JSON.stringify(dialog)}`);
+  } finally {
+    await app.close();
+  }
+});
+
+
+test('More and Settings stay usable with Extra Large text plus Glance Mode', async () => {
+  const app = await launchApp();
+  try {
+    const { page } = app;
+    await skipFirstRunWizard(page);
+    await page.waitForTimeout(900);
+    await waitForShell(page);
+
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: HEIGHT });
+      await openRoute(page, 'insights');
+      await page.locator('#driverTextSize').selectOption('xlarge');
+      const glance = page.locator('#driverGlanceMode');
+      if (!(await glance.isChecked())) await glance.check();
+      await page.waitForTimeout(60);
+      await assertGeometry(page, width, 'insights', 'xlarge-glance');
+      await openRoute(page, 'more');
+      await assertGeometry(page, width, 'more', 'xlarge-glance');
+    }
   } finally {
     await app.close();
   }
