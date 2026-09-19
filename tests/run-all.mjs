@@ -80,6 +80,7 @@ import { runSpec as liveInviteClaimGate } from './unit/live-invite-claim-gate.sp
 import { runSpec as vehicleProfileRace } from './integration/vehicle-profile-race.spec.mjs';
 import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboarding.spec.mjs';
 import { runSpec as fieldCertificationRunner } from './integration/field-certification-runner.spec.mjs';
+import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -109,6 +110,7 @@ const specs = [
   vehicleProfileRace,
   zeroTokenOnboarding,
   fieldCertificationRunner,
+  adminConsole,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,

@@ -1,0 +1,38 @@
+name: Deploy Admin Console
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Select DEPLOY to confirm the separate Admin Console deployment'
+        required: true
+        type: choice
+        default: CANCEL
+        options:
+          - CANCEL
+          - DEPLOY
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless explicitly confirmed
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Select DEPLOY to run this. Nothing was deployed."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Deploy and verify isolated Admin Console
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
+        run: bash admin-console/deploy.sh
