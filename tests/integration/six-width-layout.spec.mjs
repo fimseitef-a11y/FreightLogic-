@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const { test, run } = createSuite('integration/six-width-layout.spec.mjs');
 const WIDTHS = [320, 375, 390, 393, 430, 440];
-const ROUTES = ['home', 'loads', 'omega', 'trips', 'money', 'more'];
+const ROUTES = ['home', 'loads', 'omega', 'trips', 'money', 'more', 'insights'];
 const HEIGHT = 844;
 
 async function waitForShell(page) {
