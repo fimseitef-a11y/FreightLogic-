@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.20 DEPLOYED and OBSERVED LIVE.** Merged `c72b521` (PR #249); re-dispatched live parity `35329623870` and production SW `35329629590` both PASS; superseding record merged as `54e36f2` (PR #251). Production serves **24.0.20 / DB16 / Worker v20** — source and production agree. Still HOLD on physical iPhone A1-A12 only.) | 2026-09-18 |
-| gpt | Driver/Glance presentation contract in GPT-owned `styles.css` only; preparing scalable text/touch/road-use CSS for Claude's runtime state wiring. No `app.js`, `modern-shell.js`, release markers, or Claude-owned tests touched. | 2026-09-19 |
+| gpt | — idle — (Driver/Glance presentation contract complete on `agent/gpt/driver-glance-presentation-contract` @ `63c3cc5`; styles.css only. Claude must integrate it with the next generation/runtime preference wiring.) | 2026-09-19 |
 
 ---
 
