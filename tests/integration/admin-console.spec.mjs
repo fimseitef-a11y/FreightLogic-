@@ -197,6 +197,42 @@ test('[ADMIN-11] distinct-origin deployment declares fail-closed response header
 });
 
 
+test('[ADMIN-12] Cloudflare separate-origin deploy wrapper applies security headers to every asset response', async () => {
+  const cfg = JSON.parse(await text('admin-console/wrangler.jsonc'));
+  eq(cfg.name, 'freightlogic-admin-console', 'admin site must deploy under its own Worker name');
+  eq(cfg.main, 'worker.js', 'admin deploy must use the dedicated response-hardening Worker');
+  eq(cfg.assets?.directory, '.', 'admin static assets must come only from the isolated admin-console subtree');
+  eq(cfg.assets?.binding, 'ASSETS', 'Worker must receive the static-assets binding');
+  eq(cfg.assets?.run_worker_first, true, 'Worker must run before every asset so security headers cannot be bypassed');
+
+  const workerPath = pathToFileURL(path.join(ROOT, 'admin-console/worker.js')).href + `?t=${Date.now()}`;
+  const worker = await import(workerPath);
+  const assetHeaders = new Headers({ 'Content-Type': 'text/html', 'X-Upstream': 'kept' });
+  const env = {
+    ASSETS: {
+      fetch: async () => new Response('<h1>Admin</h1>', { status: 200, headers: assetHeaders }),
+    },
+  };
+  const result = await worker.default.fetch(new Request('https://admin.example/'), env);
+  eq(result.status, 200, 'wrapper must preserve the asset response status');
+  eq(result.headers.get('X-Upstream'), 'kept', 'wrapper must preserve safe asset response headers');
+  eq(result.headers.get('Cache-Control'), 'no-store', 'privileged admin assets must never be browser/shared-cache durable');
+  eq(result.headers.get('Referrer-Policy'), 'no-referrer', 'admin responses must suppress referrer leakage');
+  eq(result.headers.get('X-Content-Type-Options'), 'nosniff', 'admin responses must disable MIME sniffing');
+  eq(result.headers.get('X-Frame-Options'), 'DENY', 'admin responses must deny legacy framing');
+  ok(/frame-ancestors 'none'/.test(result.headers.get('Content-Security-Policy') || ''), 'response CSP must deny framing');
+  ok(/camera=\(\)/.test(result.headers.get('Permissions-Policy') || ''), 'admin response must deny unused camera permission');
+  ok(!result.headers.has('Access-Control-Allow-Origin'), 'static admin Worker must not invent API CORS');
+});
+
+test('[ADMIN-13] Cloudflare asset upload excludes deployment/control-plane files', async () => {
+  const ignore = await text('admin-console/.assetsignore');
+  for (const file of ['worker.js', 'wrangler.jsonc', 'README.md', '_headers', '.assetsignore']) {
+    ok(ignore.split(/\r?\n/).map(x => x.trim()).includes(file), `${file} must not be published as a client static asset`);
+  }
+});
+
+
 export async function runSpec() {
   for (const { name, fn } of tests) {
     try { await fn(); pass += 1; console.log(`  PASS ${name}`); }
