@@ -10737,12 +10737,32 @@ function buildEvaluationEvidence(ctx = {}){
       observedAt: fuelProv.at,
       valueSummary: `Fuel $${fuelPrice}/gal (your setting)`,
     }));
+  } else if (ctx.costProfile?.fuelSource === 'USER'){
+    items.push(buildEvidenceItem({
+      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (saved)',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      observedAt: null,
+      valueSummary: `Fuel ${fuelPrice}/gal (saved setting; source time unknown)`,
+    }));
   } else {
     items.push(buildEvidenceItem({
-      key: 'fuel.price', category: 'FUEL', source: 'MW.fuelBaseline',
-      sourceStatus: LIVE_SOURCE_STATUS.UNCONFIGURED, evaluatedAt: now,
+      key: 'fuel.price', category: 'FUEL', source: 'COST_PROFILE_DEFAULT',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      observedAt: _evidenceInstantMs(COST_PROFILE_DEFAULT.fuelObservedAt),
       isStaticFallback: true,
-      valueSummary: `Fuel $${fuelPrice}/gal (static baseline)`,
+      valueSummary: `Fuel ${fuelPrice}/gal (dated profile fallback: ${COST_PROFILE_DEFAULT.fuelObservedAt})`,
+    }));
+  }
+
+  const cp = ctx.costProfile || null;
+  if (cp?.available){
+    const profileFallback = cp.variableSource === 'PROFILE' || cp.fixedSource === 'PROFILE';
+    items.push(buildEvidenceItem({
+      key: 'costs.canonical', category: 'OPERATIONS', source: 'canonical cost profile',
+      sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
+      observedAt: profileFallback ? _evidenceInstantMs(COST_PROFILE_DEFAULT.fuelObservedAt) : null,
+      isStaticFallback: profileFallback,
+      valueSummary: `Marginal ${cp.marginalCPM.toFixed(3)}/mi • all-in ${cp.allInCPM.toFixed(3)}/mi • variable ${cp.variableSource} • fixed ${cp.fixedSource}`,
     }));
   }
 
@@ -10949,6 +10969,7 @@ function buildUnifiedDecisionContract(input){
       velocityMode: input.velocityMode, velocityDetail: input.velocityDetail,
       velocityFloor: input.velocityFloor, postDeliveryCmd: input.postDeliveryCmd,
       postDeliveryDetail: input.postDeliveryDetail, turnoverType: input.turnoverType,
+      weekendOverlay: input.weekendOverlay || null,
       repoSuggestion: authorityResult.repoSuggestion || '',
     }),
     context: Object.freeze({
@@ -10971,17 +10992,22 @@ function unifiedDecisionToLegacy(decision){
     grade:a.rawGrade, gradeLabel:a.rawGradeLabel, gradeColor:a.rawGradeColor, gradeEmoji:a.rawGradeEmoji,
     verdict:a.verdict, verdictReason:a.reason, verdictColors:c.verdictColors, verdictLabels:c.verdictLabels,
     steps:decision.risk.steps,
-    fuel:e.fuel, netAfterFuel:e.netAfterFuel, operatingCost:e.operatingCost, totalCost:e.totalCost,
-    operationalProfit:e.operationalProfit, trueProfit:e.trueProfit, profitMarginPct:e.profitMarginPct,
-    breakEvenRPM:e.breakEvenRPM, profitPerMile:e.profitPerMile, profitPerHour:e.profitPerHour,
-    fuelPerMile:e.fuelPerMile, estHours:e.estHours, opCPM:e.opCPM,
+    fuel:e.fuel, fuelCPM:e.fuelCPM, netAfterFuel:e.netAfterFuel,
+    nonFuelVariableCPM:e.nonFuelVariableCPM, variableCost:e.variableCost,
+    marginalCPM:e.marginalCPM, marginalCost:e.marginalCost,
+    fixedCPM:e.fixedCPM, fixedCost:e.fixedCost, allInCPM:e.allInCPM,
+    operatingCost:e.operatingCost, totalCost:e.totalCost,
+    operationalProfit:e.operationalProfit, contributionAfterMarginal:e.contributionAfterMarginal,
+    trueProfit:e.trueProfit, profitMarginPct:e.profitMarginPct,
+    breakEvenRPM:e.breakEvenRPM, profitPerMile:e.profitPerMile, contributionPerMile:e.contributionPerMile, profitPerHour:e.profitPerHour,
+    fuelPerMile:e.fuelPerMile, estHours:e.estHours, opCPM:e.opCPM, economicBand:e.economicBand,
     weeklyGross:c.weeklyGross, repoSuggestion:o.repoSuggestion, geo:r.geo, fatigue:c.fatigue,
     origin:r.origin, dest:r.destination, floorRPM:a.floorRPM,
     effectiveStrategic:c.effectiveStrategic, effectiveReason:c.effectiveReason,
     usaResult:m.usaEvidence, urgency:m.urgency, bidRange:decision.bid.range, crossBorder:m.crossBorder,
     velocityMode:o.velocityMode, velocityDetail:o.velocityDetail, velocityFloor:o.velocityFloor,
     postDeliveryCmd:o.postDeliveryCmd, postDeliveryDetail:o.postDeliveryDetail,
-    turnoverType:o.turnoverType, warnings:decision.risk.warnings,
+    turnoverType:o.turnoverType, weekendOverlay:o.weekendOverlay, warnings:decision.risk.warnings,
     isDZActive:dz.active, isDZEligible:dz.eligible, dzSubTier:dz.subTier, dzCheck:dz.check, dzFloor:dz.floorRPM,
     dzDisplayGrade:a.grade, dzDisplayGradeLabel:a.gradeLabel, dzDisplayGradeColor:a.gradeColor, dzDisplayGradeEmoji:a.gradeEmoji,
     noReloadConfirmed:dz.noReloadConfirmed,
@@ -11015,6 +11041,11 @@ function unifiedDecisionForAI(decision){
       deadMi: decision.economics.deadMi,
       profitMarginPct: decision.economics.profitMarginPct,
       breakEvenRPM: decision.economics.breakEvenRPM,
+      marginalCPM: decision.economics.marginalCPM,
+      allInCPM: decision.economics.allInCPM,
+      contributionAfterMarginal: decision.economics.contributionAfterMarginal,
+      trueProfit: decision.economics.trueProfit,
+      economicBand: decision.economics.economicBand,
     },
     bid: {
       authority: decision.bid.authority,
@@ -11026,6 +11057,7 @@ function unifiedDecisionForAI(decision){
     personalIntel: { score: decision.personalIntel.score },
     risk: { warnings: decision.risk.warnings.slice(0, 6).map(w => w?.text || String(w || '')) },
     deadZone: { active: decision.deadZone.active, subTier: decision.deadZone.subTier },
+    weekendOverlay: decision.operations.weekendOverlay,
     // v24.1: the Worker receives the client's ALREADY-COMPUTED labels so it can
     // explain or challenge them. It is deliberately not given the raw inputs a
     // competing confidence model would need, and its reply can never write back
@@ -11316,6 +11348,7 @@ async function mwEvaluateLoad(){
   const revenue = Math.max(0, numVal('mwRevenue', 0));
   const revenueCurrency = $('#mwCurrency')?.value || 'USD';
   const dayOfWeek = $('#mwDayOfWeek')?.value || 'mon';
+  const deliveryDay = $('#mwDeliveryDay')?.value || '';
   const fatigue = Math.min(10, Math.max(0, numVal('mwFatigue', 0)));
   const weeklyGross = Math.max(0, numVal('mwWeeklyGross', 0));
   const strategicEnabled = !!$('#mwStrategic')?.checked;
@@ -11401,7 +11434,7 @@ async function mwEvaluateLoad(){
   }
 
   // Save inputs
-  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
+  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, deliveryDay, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
 
   // ── Auto-detect "going home" and suggest strategic mode ──
   const goingHome = dest ? await mwIsGoingHome(dest) : false;
@@ -11429,20 +11462,38 @@ async function mwEvaluateLoad(){
   };
   const crossBorder = applyCanadaSettingsToCrossBorder(caScoreCrossBorder(origMarket, destMarket, revenue, revenueCurrency, gateway), revenue, revenueCurrency, caSettings);
   const effectiveRevenue = (crossBorder.isCrossBorder && revenueCurrency === 'CAD') ? crossBorder.normalizedRevenue : revenue;
-  const opCPM = Number(await getSetting('opCostPerMile', 0) || 0);
-  const fuelPrice = knownNum(await getSetting('fuelPrice', MW.fuelBaseline));
-  const vehicleMpg = knownNum(await getSetting('vehicleMpg', MW.mpg));
+  const costProfile = await resolveCanonicalCostProfile();
+  if (!costProfile.available){
+    out.innerHTML = `<div class="muted">Economics unavailable — check ${escapeHtml((costProfile.unknownFacts || []).join(', '))} in Settings.</div>`;
+    return;
+  }
+  const fuelPrice = costProfile.fuelPrice;
+  const vehicleMpg = costProfile.mpg;
   const planningAvgMph = await getPlanningAvgMph();
   const borderAdminCost = crossBorder?.isCrossBorder ? Number(crossBorder.borderAdminCost || caSettings.borderAdminCost || CA.BORDER_ADMIN_COST_DEFAULT) : 0;
   const economicsResult = deriveUnifiedEconomics({
     revenue, effectiveRevenue, loadedMi, deadMi,
-    mpg: vehicleMpg, fuelPrice, opCPM, borderAdminCost, avgMph: planningAvgMph,
+    mpg: vehicleMpg,
+    fuelPrice,
+    nonFuelVariableCPM: costProfile.nonFuelVariableCPM,
+    fixedCPM: costProfile.fixedCPM,
+    costProfileSource: {
+      variable: costProfile.variableSource,
+      fixed: costProfile.fixedSource,
+      migration: costProfile.migration,
+    },
+    borderAdminCost,
+    avgMph: planningAvgMph,
   });
   const {
     totalMi, trueRPM, loadedRPM, deadheadPct,
-    fuel, netAfterFuel, operatingCost, totalCost,
-    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
-    profitPerMile, estHours, profitPerHour, fuelPerMile,
+    fuel, fuelCPM, netAfterFuel,
+    nonFuelVariableCPM, variableCost, marginalCPM, marginalCost,
+    fixedCPM, fixedCost, allInCPM,
+    operatingCost, totalCost, operationalProfit, contributionAfterMarginal,
+    trueProfit, profitMarginPct, breakEvenRPM,
+    profitPerMile, contributionPerMile, estHours, profitPerHour, fuelPerMile,
+    economicBand,
   } = economicsResult;
   if (!economicsResult.available){
     out.innerHTML = `<div class="muted">Economics unavailable — check ${escapeHtml(economicsResult.unknownFacts.join(', '))} in the load and Settings.</div>`;
@@ -11450,6 +11501,13 @@ async function mwEvaluateLoad(){
   }
   const tier = mwClassifyRPM(trueRPM);
   const geo = mwGeoCheck(origin, dest);
+  const weekendOverlay = deriveWeekendOverlay({
+    pickupDay: dayOfWeek,
+    deliveryDay,
+    weakDestination: !geo.intoDensity,
+    strategic: effectiveStrategic,
+    trueRPM,
+  });
 
   // Floor logic
   // Normal floor is MW.hardRejectRPM. Strategic floor is only allowed when explicitly enabled.
@@ -11508,7 +11566,7 @@ async function mwEvaluateLoad(){
     trueRPM, totalMi, floorRPM,
     dzFloor, isDZActive, dzSubTier, dzCheck,
     effectiveStrategic, effectiveReason,
-    opCPM, profitMarginPct, effectiveRevenue, netAfterFuel,
+    opCPM: allInCPM, profitMarginPct, effectiveRevenue, netAfterFuel,
     deadheadPct,
     weeklyGross, weekTargetHigh: weekTargetForDecision.high,
     stabilizeFloor: MW.stabilizeFloor, surgeFloor: MW.surgeFloor, isMonWed,
@@ -11601,6 +11659,13 @@ async function mwEvaluateLoad(){
   if (totalMi > 800 && trueRPM < 1.45) warnings.push({ icon: '🛣️', text: 'Long haul under $1.45 — locks you for 2+ days at thin margin' });
   if (effectiveStrategic && trueRPM >= 1.25 && trueRPM < 1.40) warnings.push({ icon: '🌉', text: 'Strategic bridge — do NOT confuse this with a money load' });
   if (fatigue >= 6) warnings.push({ icon: '😴', text: 'Fatigue elevated — demand stronger economics before committing' });
+  if (weekendOverlay.weekendHold){
+    warnings.push({ icon:'🗓️', text:`Weekend hold — target ~${weekendOverlay.targetRPM?.toFixed(2) || '?'} True RPM and/or add $150–$350 for lost weekend time` });
+  } else if (weekendOverlay.weakWeekend){
+    warnings.push({ icon:'🌙', text:`Weak-destination weekend — seek roughly one economic tier higher (~${weekendOverlay.targetRPM?.toFixed(2) || '?'} RPM)` });
+  } else if (weekendOverlay.weekend){
+    warnings.push({ icon:'🌙', text:`Weekend work — seek about +$0.10–$0.15 True RPM (~${weekendOverlay.targetRPM?.toFixed(2) || '?'} target)` });
+  }
   if (weeklyGross > 0 && weeklyGross < 1500 && isThuFri) warnings.push({ icon: '📉', text: 'Behind pace late-week — stabilize, do not chase $5K from behind' });
   if (deadheadPct > 25 && loadedRPM >= 2.00) warnings.push({ icon: '🪤', text: 'Loaded RPM looks great but deadhead eats real profit' });
 
@@ -11611,7 +11676,7 @@ async function mwEvaluateLoad(){
   // ANY warning of any kind existed, which had nothing to do with whether a
   // route weather observation had been made.
   const evidenceItems = buildEvaluationEvidence({
-    economicsResult, usaResult, geo, dest, broker,
+    economicsResult, costProfile, usaResult, geo, dest, broker,
     fuelProvenance: await getFuelPriceProvenance(),
     laneIntel, brokerIntel,
     weatherObservation: getRouteWeatherObservation(`${origin || ''}|${dest || ''}`),
@@ -11626,7 +11691,7 @@ async function mwEvaluateLoad(){
     usaResult, urgency, crossBorder,
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
-    turnoverType, warnings,
+    turnoverType, warnings, weekendOverlay,
     isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
   });
   _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
@@ -12834,7 +12899,7 @@ async function mwInit(){
 
   // v20: Clear button — reset 3 primary fields + output, focus revenue
   $('#mwEvalReset')?.addEventListener('click', () => {
-    ['mwOrigin','mwDest','mwBroker','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
+    ['mwOrigin','mwDest','mwBroker','mwLoadedMi','mwDeadMi','mwRevenue','mwFatigue','mwWeeklyGross','mwLoadNotes','mwDeliveryDay'].forEach(id => { const el=$('#'+id); if(el) el.value=''; });
     const dow = $('#mwDayOfWeek');
     if (dow){ const dm = ['sun','mon','tue','wed','thu','fri','sat']; dow.value = dm[new Date().getDay()]; }
     const cur = $('#mwCurrency'); if (cur) cur.value='USD';
@@ -12868,6 +12933,8 @@ async function mwInit(){
     if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
     if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
     if (last.fatigue) { const el=$('#mwFatigue'); if(el) el.value=last.fatigue; }
+    if (last.dayOfWeek) { const el=$('#mwDayOfWeek'); if(el) el.value=last.dayOfWeek; }
+    if (last.deliveryDay) { const el=$('#mwDeliveryDay'); if(el) el.value=last.deliveryDay; }
     if (last.strategicEnabled){
       const st = $('#mwStrategic'); if (st) st.checked = true;
       const sr = $('#mwStrategicReason'); if (sr){ sr.disabled = false; sr.value = last.strategicReason || ''; }
