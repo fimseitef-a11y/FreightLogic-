@@ -4680,10 +4680,12 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 **Scope.** This release replaces the remaining parallel trip-cost calculations with one
 canonical operator cost profile. Profile fallbacks are dated 2026-09-17: 16.7 MPG,
-$3.79/gal fuel, $0.066/mi non-fuel variable reserve (oil + tires + repair) and
-$0.109/mi fixed allocation. Exact fuel math is still computed from price ÷ MPG, so the
-derived fallback is $0.227 fuel/mi, $0.293 marginal/mi and $0.402 all-in/mi at those
-inputs; the older rounded $0.230 fuel component is not hard-coded as a second authority.
+$3.79/gal fuel, the adopted working fuel component **$0.230/mi**, $0.066/mi non-fuel
+variable reserve (oil + tires + repair), and $0.109/mi fixed allocation. The authoritative
+working totals therefore reconcile to **$0.296/mi marginal** and **$0.405/mi all-in**.
+The $0.230 profile fuel component is the operator's rounded working ledger value; when MPG
+or fuel price is explicitly overridden, canonical economics returns to exact gallons math
+for trip dollars and derives the override CPM from those inputs.
 
 **Migration and anti-double-counting.** New settings store `nonFuelVariableCpm`,
 `fixedCostPerMile` and `costModelVersion=2`. A legacy `opCostPerMile` is treated as
