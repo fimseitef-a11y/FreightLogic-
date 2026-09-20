@@ -9686,6 +9686,17 @@ async function resolveCanonicalCostProfile(){
 }
 
 function resolveCachedCostProfile(overrides = {}){
+  // A resolved canonical profile is already authoritative; do not reinterpret
+  // its profile values as fresh user overrides or the .230 working baseline
+  // can silently drift back to the raw 3.79/16.7 quotient on trip-score paths.
+  if (overrides?.available === true
+      && knownNum(overrides.mpg) > 0
+      && knownNum(overrides.fuelPrice) >= 0
+      && knownNum(overrides.fuelCPM) >= 0
+      && knownNum(overrides.marginalCPM) >= 0
+      && knownNum(overrides.allInCPM) >= 0){
+    return overrides;
+  }
   const own = key => Object.prototype.hasOwnProperty.call(overrides, key);
   return deriveCostProfile({
     costModelVersion: own('costModelVersion') ? overrides.costModelVersion : getCachedSetting('costModelVersion', null),
@@ -14131,12 +14142,7 @@ function openTripWizard(existing=null){
     try{
       const { trips: allT, exps: allE } = await _getTripsAndExps();
       const cp = await resolveCanonicalCostProfile();
-      const fc = cp.available ? {
-        mpg: cp.mpg, pricePerGal: cp.fuelPrice,
-        nonFuelVariableCpm: cp.nonFuelVariableCPM, fixedCpm: cp.fixedCPM,
-        costModelVersion: COST_MODEL_VERSION,
-      } : {};
-      const score = computeLoadScore(saved, allT, allE, fc);
+      const score = computeLoadScore(saved, allT, allE, cp.available ? cp : {});
       closeModal();
       setTimeout(()=> showScoreFlash(saved, score), 400);
     }catch{
@@ -15074,11 +15080,7 @@ function openLoadCompare(){
     try{
       const { trips: allT, exps: allE } = await _getTripsAndExps();
       const cp = await resolveCanonicalCostProfile();
-      const fc = cp.available ? {
-        mpg: cp.mpg, pricePerGal: cp.fuelPrice,
-        nonFuelVariableCpm: cp.nonFuelVariableCPM, fixedCpm: cp.fixedCPM,
-        costModelVersion: COST_MODEL_VERSION,
-      } : {};
+      const fc = cp.available ? cp : {};
       const scoreA = computeLoadScore(loadA, allT, allE, fc);
       const scoreB = computeLoadScore(loadB, allT, allE, fc);
 
