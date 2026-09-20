@@ -285,3 +285,10 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Full local `node tests/run-all.mjs` attempt 1, same browser: ABORTED before first test after >3 minutes. Root cause isolated to `verify-rollback.mjs` import/child git history with 1,168 absent blobs from `git clone --filter=blob:none`. `git fetch --refetch --no-filter origin main agent/gpt/apple-ia-v24025` reduced missing objects to 0; import probe then finished.
 - Full local attempt 2 on content-equivalent 7d3e2a7, same browser: RUNNING then STOPPED because visual audit discovered a visible literal escaped newline above header. Partial output observed RG-03 reused generation (24.0.24 pending v24.0.25) and LPR-06 sandbox environment HTTP 502 for fixed unreachable.invalid test origin. Controlled one-spec retry with common proxy env variables unset still returned 502 and was stopped; no assertion or product-code workaround. Do not count partial output as complete suite. GitHub-hosted CI on old head f001d63 had LPR-06 green.
 - Exact PR head `e702aaf7ba3b8a6b95b68ceccdd0e445272ab72d`: Lanes 35531048558 PASS; CodeQL 35531048594 PASS; Tests 35531048626 in progress at 19:06 UTC. Record final Tests result when available. Physical iPhone A1–A13 was not part of any run.
+
+## Run — 2026-09-20T23:12:23Z (#278 technical candidate, PR #281)
+- Tested SHA: `c600161e6fdfd0ca19a4abd36d17a59d6588f21d` on `agent/gpt/economics-authority-v24026`.
+- Environment/command: GitHub Actions Playwright suite, `node tests/run-all.mjs`; run `35543647288`, job `106165642891`.
+- Result: **GREEN — 736 passed, 0 failed across 72 spec files**.
+- New #278 regression suite: **14 passed / 0 failed**. No assertion was skipped/quarantined/weakened to obtain this result.
+- Certification boundary: technical green only. PR #281 is Draft because the required Claude independent economics audit/joint consensus is still open and later accepted #278 scope remains unimplemented. This is not a release/deployment/physical-iPhone PASS.

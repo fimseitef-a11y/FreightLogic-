@@ -1,6 +1,0 @@
-owner: gpt
-token: 441df39e-9871-4c44-a5b1-a10d9233023b
-started_utc: 2026-09-20T21:50:00Z
-expected_release_utc: 2026-09-21T04:00:00Z
-paths: service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Issue #278 v24.0.26 governed runtime generation
