@@ -1,0 +1,6 @@
+owner: gpt
+token: d754ac12-d285-4331-98e0-bb69b28b8cb5
+started_utc: 2026-09-20T21:48:00Z
+expected_release_utc: 2026-09-21T04:00:00Z
+paths: index.html
+task: Issue #278 optional delivery-day/weekend-hold context + economics labels
