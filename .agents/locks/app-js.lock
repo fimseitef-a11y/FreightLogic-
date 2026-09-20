@@ -1,6 +1,0 @@
-owner: gpt
-token: 11688f45-4a39-45c5-9510-3d6503e4e4fb
-started_utc: 2026-09-20T18:48:00Z
-expected_release_utc: 2026-09-20T22:30:00Z
-paths: app.js, index.html, modern-shell.js, service-worker.js, sw-bridge.js, manifest.json
-task: Finish existing PR #277 UI regressions and governed release integration
