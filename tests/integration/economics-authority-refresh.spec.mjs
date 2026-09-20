@@ -33,6 +33,7 @@ test('[ECON278-01] dated operator profile derives fuel, marginal and all-in CPM 
   eq(p.fixedCPM, 0.109, 'fixed allocation only');
   eq(p.allInCPM, 0.405, 'marginal + fixed, fuel counted once');
   eq(p.fuelSource, 'PROFILE', 'profile provenance');
+  eq(p.fuelObservedAt, '2026-09-17', 'profile fallback remains dated, not timeless static data');
 });
 
 test('[ECON278-02] explicit operator overrides outrank profile defaults', async () => {
