@@ -209,6 +209,25 @@ test('[ECON278-12] settings surface names non-fuel variable cost and explains se
   eq(state.delivery, true, 'optional delivery-day context exists');
 });
 
+test('[ECON278-13] driver output separates market evidence from user economics and never presents targets as live quotes', async () => {
+  await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    location.hash = '#omega';
+    const set = (id, value) => { const el=document.getElementById(id); if(el) el.value=value; };
+    set('mwOrigin','Chicago, IL');
+    set('mwDest','Detroit, MI');
+    set('mwLoadedMi','200');
+    set('mwDeadMi','20');
+    set('mwRevenue','400');
+    await T.mwEvaluateLoad();
+  });
+  const text = await app.page.locator('#mwEvalOutput').textContent();
+  ok(text.includes('Market Evidence'), 'market evidence remains its own panel');
+  ok(text.includes('User Economics'), 'cost/profit output is explicitly user economics');
+  ok(text.includes('User Rate Targets'), 'internally derived rate targets are named');
+  ok(text.includes('not a live-market quote'), 'targets cannot masquerade as a live market quote');
+});
+
 export async function runSpec(){
   app = await launchApp();
   await skipFirstRunWizard(app.page);
