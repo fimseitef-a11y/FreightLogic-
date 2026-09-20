@@ -1,6 +1,0 @@
-owner: gpt
-token: 4f9489c5-89c2-4f3f-9606-a8167477745e
-started_utc: 2026-09-20T19:38:00Z
-expected_release_utc: 2026-09-20T23:30:00Z
-paths: .agents/LANES.md
-task: Temporary exact-file v24.0.25 release-marker ownership for PR #277 takeover
