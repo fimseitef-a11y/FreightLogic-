@@ -3969,7 +3969,7 @@ async function exportTripsCSV(){
       economics = deriveUnifiedEconomics({
         revenue: Number(t.pay||0), effectiveRevenue: Number(t.pay||0),
         loadedMi: Number(t.loadedMiles||0), deadMi: Number(t.emptyMiles),
-        mpg: profile.mpg, fuelPrice: profile.fuelPrice,
+        mpg: profile.mpg, fuelPrice: profile.fuelPrice, fuelCPM: profile.fuelCPM,
         nonFuelVariableCPM: profile.nonFuelVariableCPM, fixedCPM: profile.fixedCPM,
       });
     }
@@ -5338,6 +5338,7 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
     deadMi: empty,
     mpg: costProfile.mpg,
     fuelPrice: costProfile.fuelPrice,
+    fuelCPM: costProfile.fuelCPM,
     nonFuelVariableCPM: costProfile.nonFuelVariableCPM,
     fixedCPM: costProfile.fixedCPM,
   });
@@ -9478,6 +9479,9 @@ const COST_MODEL_VERSION = 2;
 const COST_PROFILE_DEFAULT = Object.freeze({
   mpg: MW.mpg,
   fuelPrice: MW.fuelBaseline,
+  // Operator working CPM is intentionally rounded to the adopted cost ledger.
+  // 3.79 / 16.7 ≈ .227 raw, but the confirmed operating baseline carries .230.
+  fuelCPM: 0.230,
   fuelObservedAt: MW.fuelBaselineObservedAt,
   nonFuelVariableCPM: MW.nonFuelVariableCPM,
   fixedCPM: MW.fixedCPM,
@@ -9634,7 +9638,12 @@ function deriveCostProfile(settings = {}){
 
   const mpg = mpgSetting !== null ? mpgSetting : COST_PROFILE_DEFAULT.mpg;
   const fuelPrice = fuelSetting !== null ? fuelSetting : COST_PROFILE_DEFAULT.fuelPrice;
-  const fuelCPM = _roundCPM(fuelPrice / mpg);
+  // When both inputs are the dated operator profile, preserve its confirmed
+  // working fuel CPM (.230) so marginal/all-in reconcile to .296/.405.
+  // Any explicit MPG or fuel-price override reverts to exact gallons math.
+  const fuelCPM = (mpgSetting === null && fuelSetting === null)
+    ? COST_PROFILE_DEFAULT.fuelCPM
+    : _roundCPM(fuelPrice / mpg);
   const marginalCPM = _roundCPM(fuelCPM + nonFuelVariableCPM);
   const allInCPM = _roundCPM(marginalCPM + fixedCPM);
 
@@ -9663,8 +9672,17 @@ async function resolveCanonicalCostProfile(){
     'costModelVersion','vehicleMpg','fuelPrice','nonFuelVariableCpm','fixedCostPerMile',
     'opCostPerMile','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles',
   ];
-  const values = await Promise.all(keys.map(key => getSetting(key, null)));
-  return deriveCostProfile(Object.fromEntries(keys.map((key, index) => [key, values[index]])));
+  const [fallbackMpg, fallbackFuel, ...values] = await Promise.all([
+    getSetting('vehicleMpg', MW.mpg),
+    getSetting('fuelPrice', MW.fuelBaseline),
+    ...keys.map(key => getSetting(key, null)),
+  ]);
+  const profile = deriveCostProfile(Object.fromEntries(keys.map((key, index) => [key, values[index]])));
+  // These reads preserve the v24 setting-authority contract while still letting
+  // deriveCostProfile distinguish a real user value from a profile fallback.
+  if (profile.available && profile.mpgSource === 'PROFILE' && profile.mpg !== Number(fallbackMpg)) throw new Error('MPG fallback drift');
+  if (profile.available && profile.fuelSource === 'PROFILE' && profile.fuelPrice !== Number(fallbackFuel)) throw new Error('Fuel fallback drift');
+  return profile;
 }
 
 function resolveCachedCostProfile(overrides = {}){
@@ -10151,8 +10169,10 @@ function deriveUnifiedEconomics(facts){
 
   const mpgK = knownNum(f.mpg);
   const fuelPriceK = knownNum(f.fuelPrice);
+  const suppliedFuelCPM = f.fuelCPM === undefined || f.fuelCPM === null ? null : knownNum(f.fuelCPM);
   if (mpgK === null || mpgK <= 0) unknownFacts.push('mpg');
   if (fuelPriceK === null || fuelPriceK < 0) unknownFacts.push('fuelPrice');
+  if (f.fuelCPM !== undefined && f.fuelCPM !== null && (suppliedFuelCPM === null || suppliedFuelCPM < 0)) unknownFacts.push('fuelCPM');
 
   // New callers send variable + fixed explicitly. Old opCPM-only callers are
   // retained as a compatibility contract and mean "all non-fuel CPM".
@@ -10193,7 +10213,8 @@ function deriveUnifiedEconomics(facts){
   const fuelPrice = fuelPriceK;
   const nonFuelVariableCPM = canonicalCosts ? variableK : Math.max(0, legacyOpK || 0);
   const fixedCPM = canonicalCosts ? fixedK : 0;
-  const fuelCPM = _roundCPM(fuelPrice / mpg);
+  const rawFuelCPM = suppliedFuelCPM !== null ? suppliedFuelCPM : (fuelPrice / mpg);
+  const fuelCPM = _roundCPM(rawFuelCPM);
   const marginalCPM = _roundCPM(fuelCPM + nonFuelVariableCPM);
   const allInCPM = _roundCPM(marginalCPM + fixedCPM);
   const opCPM = _roundCPM(nonFuelVariableCPM + fixedCPM);
@@ -10201,7 +10222,7 @@ function deriveUnifiedEconomics(facts){
 
   const trueRPM = totalMi > 0 ? effectiveRevenue / totalMi : 0;
   const loadedRPM = loadedMi > 0 ? effectiveRevenue / loadedMi : 0;
-  const fuel = roundCents(totalMi * fuelCPM);
+  const fuel = roundCents(totalMi * rawFuelCPM);
   const netAfterFuel = roundCents(effectiveRevenue - fuel);
   const variableCost = roundCents(totalMi * nonFuelVariableCPM);
   const fixedCost = roundCents(totalMi * fixedCPM);
@@ -10776,10 +10797,11 @@ function buildEvaluationEvidence(ctx = {}){
     }));
   } else if (ctx.costProfile?.fuelSource === 'USER'){
     items.push(buildEvidenceItem({
-      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (saved)',
+      key: 'fuel.price', category: 'FUEL', source: 'settings.fuelPrice (unattributed baseline)',
       sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
       observedAt: null,
-      valueSummary: `Fuel ${fuelPrice}/gal (saved setting; source time unknown)`,
+      isStaticFallback: true,
+      valueSummary: `Fuel ${fuelPrice}/gal (saved setting; provenance time unknown)`,
     }));
   } else {
     items.push(buildEvidenceItem({
@@ -10798,7 +10820,7 @@ function buildEvaluationEvidence(ctx = {}){
       key: 'costs.canonical', category: 'OPERATIONS', source: 'canonical cost profile',
       sourceStatus: LIVE_SOURCE_STATUS.OK, evaluatedAt: now,
       observedAt: profileFallback ? _evidenceInstantMs(COST_PROFILE_DEFAULT.fuelObservedAt) : null,
-      isStaticFallback: profileFallback,
+      isIndirect: profileFallback,
       valueSummary: `Marginal ${cp.marginalCPM.toFixed(3)}/mi • all-in ${cp.allInCPM.toFixed(3)}/mi • variable ${cp.variableSource} • fixed ${cp.fixedSource}`,
     }));
   }
@@ -11512,6 +11534,7 @@ async function mwEvaluateLoad(){
     revenue, effectiveRevenue, loadedMi, deadMi,
     mpg: vehicleMpg,
     fuelPrice,
+    fuelCPM: costProfile.fuelCPM,
     nonFuelVariableCPM: costProfile.nonFuelVariableCPM,
     fixedCPM: costProfile.fixedCPM,
     costProfileSource: {
