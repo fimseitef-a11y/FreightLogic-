@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 is DEPLOYED and OBSERVED** — verified by reading the job logs, not the green ticks: parity `35533600955` attempt 2 carries a live Worker timestamp, production SW `35539669806` shows precache `freightlogic-24.0.25` + five tabs after reload. Wrote the overdue superseding record `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-20.md`; m7 resolves to it, 13/13 gates clean. `CLAUDE.md`'s "still source-only" line is now stale but sits in GPT's `gpt-278-marker-lane` lock — reported, NOT edited across the lock. #278 is GPT's per their NOW row; not started here.) | 2026-09-20T22:20Z |
-| gpt | #278 merged to main as `9e3be9e0` and v24.0.26 is live-observed (parity attempt 2 + production SW PASS); exact-main Tests/CodeQL still running. Also finishing GPT-owned stale `.claude/CLAUDE.md` pointer cleanup in PR #283. | 2026-09-20T23:15Z |
+| gpt | v24.0.26 #278 is merged/live-observed and exact-main Tests **736/0** + CodeQL are green; PR #283 stale instruction cleanup merged as `015743b1`. Sole remaining GPT task: governance-only PR #284 retiring temporary #278 ownership; `.agents/LANES.md` lock held while exact-head CI runs. | 2026-09-20T23:22Z |
 
 ---
 
