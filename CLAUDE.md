@@ -2,10 +2,16 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.24** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.25 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE AND PRODUCTION BOTH SERVE 24.0.24 / DB16 / Worker v21, AND BOTH GENERATIONS ARE OBSERVED.**
-v24.0.24 is the Issue #268 Apple/iOS accessibility completion. It merged as `f75f9cc` (PR #275)
+**SOURCE CANDIDATE IS 24.0.25 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.24 / DB16 / Worker v21.**
+v24.0.25 is the operator-directed Apple-style driver information-architecture/evaluator
+simplification in PR #277. It groups More into named categories without dropping
+destinations, keeps Text Size and Glance Mode immediately reachable, preserves
+screenshot/paste/type intake, and changes no freight economics, doctrine, DB schema,
+or Worker behavior. It is source-only until merged, deployed, and observed;
+`DB_VERSION` remains **16** and the Worker remains **v21**.
+The last verified production observation is v24.0.24, the Issue #268 Apple/iOS accessibility completion. It merged as `f75f9cc` (PR #275)
 and was deployed and observed the same day: live all-asset parity run `35434716935`
 (job `105875325854`, `VERDICT: PASS`) and the production service-worker gate run `35434719454`
 (job `105875332085`, `VERDICT: PASS`, 16 checks / 0 failures). Worker `/health` reports
@@ -282,7 +288,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.24';
+const APP_VERSION = '24.0.25';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -427,8 +433,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.24` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.24`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.25` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.25`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4667,6 +4673,26 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.25 "Driver IA" — operator-directed Apple-style information architecture
+
+**Scope.** PR #277 simplifies the driver-facing information architecture without deleting
+FreightLogic capability: More is grouped into five named categories with all existing
+destinations still reachable; Settings presents driver-display controls immediately and
+keeps the full settings form behind deliberate disclosure; evaluator overrides move one
+level deeper while canonical load/economics output remains authoritative; screenshot,
+paste and type intake remain visible.
+
+**Release boundaries.** No True RPM math, bid authority, doctrine thresholds, import
+schema, IndexedDB generation, cloud semantics, Worker code/version, or DB version changes
+in this release. DB stays 16 and Worker stays v21. Issue #278 remains the separate
+economics/market-calibration lane and is not mixed into this IA delivery.
+
+**Pre-generation evidence.** Repaired PR head `e702aaf7` passed Lanes and CodeQL and the
+full suite reached **721 PASS / 1 FAIL across 71 specs**; the sole failure was RG-03
+because runtime bytes were intentionally still on release generation 24.0.24. The governed
+24.0.25 integration must pass the exact-head full suite before merge. Physical iPhone
+A1-A13 remains a separate evidence gate and is not inferred from browser CI.
 
 ## v24.0.24 "Names And Targets" — Issue #268 Apple/iOS accessibility completion
 

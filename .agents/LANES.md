@@ -18,6 +18,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **Issue #268 accessibility completion exception — RETIRED 2026-09-19.** PR #275 merged the reviewed repair as `f75f9cc9`; exact-main Tests, CodeQL, post-deploy Live Parity, and Production Service Worker verification are green. The temporary test/run-all and release-marker exceptions are therefore retired. Physical iPhone A1-A13 remains a separate evidence gate under #226.
 
+**v24.0.25 PR #277 release-marker takeover — ACTIVE 2026-09-20.** The operator directed GPT to take over the interrupted work session and complete the app. For this one governed generation only, GPT may edit exactly `midwest-stack-config.json`, `midwest-stack-authority.js`, `scripts/verify-cloudflare-parity.mjs`, and `CLAUDE.md` to align the already-repaired PR #277 UI tree to v24.0.25. This does not transfer economics, Worker, DB, schema, or any other Claude lane. The exception expires immediately after PR #277 lands and must be retired in a governance-only cleanup.
+
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
 
 **Post-PR-210 full-repair continuation — RETIRED 2026-09-16.** That paragraph granted GPT a bounded set of exact-file exceptions for the v24.0.14 / Worker v19 repair, and it set its own bound: *"These exact exceptions expire when the reviewed successor PR lands."* PR #211 landed as `ef2de47`, and production has served 24.0.14 / DB16 / Worker v19 since, observed by live all-asset parity run `35087770010`. The bound is met, so the exceptions are retired and their parent rows own those paths again — deleted rather than flipped back, because a redundant narrower row is just another thing to go stale, exactly as the OMEGA continuation was closed above. Six of them had no parent row (`cloud-backup-worker.js`, `midwest-stack-config.json`, `midwest-stack-authority.js`, `voice-load.js`, `CLAUDE.md`, `FIELD_TEST_CHECKLIST.md`) and keep a row naming `claude`, because a path with no row fails closed. PR #210 zero-token onboarding stays authoritative and the superseded raw-token/admin-handler flow must not be reinstated. Physical iPhone A1–A12 and authentic M6 remain open evidence gates.
@@ -27,10 +29,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #268 release-marker exception retired after v24.0.24 landed green. |
-| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #268 release-marker exception retired after v24.0.24 landed green. |
+| `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #268 release-marker exception retired after v24.0.24 landed green. |
+| `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #268 release-marker exception retired after v24.0.24 landed green. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | claude | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
+| `CLAUDE.md` | gpt | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -70,6 +72,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
+| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary exact v24.0.25 marker exception for PR #277 only; retire after merge. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
