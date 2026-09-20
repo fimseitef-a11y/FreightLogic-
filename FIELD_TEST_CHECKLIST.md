@@ -14,7 +14,7 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.19 / DB16 / Worker v20 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.24 / DB16 / Worker v21 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
@@ -224,12 +224,20 @@ are additions.
 PASS requires step 1 working, steps 4 and 5 both correct, step 6 correct, and steps 2/3
 **recorded with whatever they actually did** rather than marked PASS by assumption.
 
-**The certification runner does not carry this row yet.** `field-certification.js` exposes
-exactly A1-A12 and `FC-01`/`FC-12` assert that identity and order; both that file and that spec
-are GPT-owned under `.agents/LANES.md`, so A13 was added to this checklist — the instrument of
-record — and requested through `/.agents/inbox/` rather than edited across lanes. Until it lands
-there, record A13 manually against this section. A13 is **not** satisfied by the runner reporting
-A1-A12 complete, and a runner that has never heard of A13 cannot report it missing.
+**The certification runner now carries this row.** This paragraph previously read *"the
+certification runner does not carry this row yet"* and instructed recording A13 manually; that
+was accurate when written and has since been satisfied. A13 was added to this checklist — the
+instrument of record — and requested through `/.agents/inbox/` rather than edited across lanes,
+because `field-certification.js` and `tests/integration/field-certification-runner.spec.mjs` are
+both GPT-owned under `.agents/LANES.md`. The GPT lane landed it: the companion now exposes
+`A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13` and `FC-01`/`FC-12` assert that exact identity and
+order, `FC-12` requires A13 to carry its own camera, clipboard and UNKNOWN-deadhead evidence
+controls rather than a bare PASS button, and `FC-15` asserts A13 BLOCKS below Worker v21 and
+accepts a recorded iOS non-delivery without accepting a fabricated deadhead zero.
+
+The reason the old wording mattered still holds and is why this correction is recorded rather
+than quietly overwritten: **a runner that has never heard of A13 cannot report it missing**, so
+A1-A12 complete was never A13 evidence. That gap is now closed in the instrument itself.
 
 # B. Live deployment blockers
 
@@ -357,4 +365,8 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they are recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. What holds the release is exactly two things: the real private-history bundle is not reconciled, and the applicable physical-iPhone blockers in this file (A1-A13) are not PASS. Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md` before the release is frozen.
+The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they were first recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. **That document is no longer the authority and must not be cited as one** — the chain has since resolved forward to `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md`, which `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the authority out of that runner, not out of this sentence.
+
+What holds the release is now exactly **one** thing: the applicable physical-iPhone blockers in this file (**A1-A13**) are not PASS. This paragraph previously said *"exactly two things"* and named the unreconciled private-history bundle as the second. That was accurate when written and is now superseded: the operator supplied the five raw 2026-08-27 files on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. The current authority's own status line names A1-A13 as the only remaining gate. Two caveats from section C survive and are **not** release blockers: adoption still requires the conflict review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from summaries.
+
+Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` before the release is frozen.

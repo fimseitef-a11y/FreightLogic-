@@ -1574,14 +1574,41 @@ report "not installed" and name the alternative intake path.
 
 ---
 
-## S-4 — the suite's own readiness contract — issue #224 remains OPEN
+## S-4 — the suite's own readiness contract — issue #224 is CLOSED
 
-**Not closed, and this entry exists to say so.** The `db === null` race did not reproduce in
-this environment: the full suite ran green on the first attempt, and targeted probes found no
-post-readiness re-bootstrap (idle app page 0/8 over 4 s, a second tab waiting only for
-`#appMeta` 0/12, the same under 20× CPU throttling 0/8). Issue #224 forbids clearing it with a
-rerun, so the root cause is unproven and `main` must not be described as having all automatable
-gates green.
+**CLOSED 2026-09-18, root-caused rather than cleared by a rerun.** This heading read *"issue
+#224 remains OPEN"* and the paragraph below it opened *"Not closed, and this entry exists to say
+so."* Both were accurate when written and are now superseded; they are corrected here rather
+than quietly overwritten, because an audit report that keeps a stale OPEN finding is the same
+drift class this report and `CLAUDE.md` already record against themselves.
+
+**The root cause was in the repair itself, and it was measured.** `waitForAppReady()` polled
+with `page.waitForFunction(async () => …)`. `waitForFunction` tests its predicate's *result* for
+truthiness **without awaiting it**, and an `async` function always returns a Promise, which is
+always truthy — so the first probe satisfied the wait whatever it found, and readiness returned
+before `db = await initDB()` had assigned the handle. That is the `db === null` window the issue
+reports, written into the harness's own contract. The shape is narrower than "returns
+instantly": Playwright still awaits the accepted Promise while *serialising* it, so the wait
+lasts exactly **one probe**, returning after a single *failed* probe rather than polling until
+one succeeds. Driven against the real Playwright build with a predicate that cannot settle for
+3000 ms, it resolved in **67 ms**; `HR-06` runs that measurement as a live assertion.
+
+The repair is a Node-side poll over `page.evaluate()`, which does await — not a retry, not a
+timeout bump, not a skip, and no production IndexedDB retry, all four of which the issue
+forbids. `HR-08`/`HR-09`/`HR-10` pin the three probe states deterministically (fails-then-
+succeeds asserts the *attempt count*; held-pending must release into a **failure** first, because
+releasing into a success does not discriminate between the two forms; permanently-failing must
+hit a bounded timeout and **throw**). Landed in PR #242 → `7252d29`; fresh exact-`main` suite
+**638 passed / 0 failed across 64 spec files** on `5c68a8c`, first attempt.
+
+**`main` may now be described as having all automatable gates green**, which the superseded
+wording below explicitly forbade. Re-verified on this pass: full suite **722 passed / 0 failed
+across 71 spec files** on `d8e0366`, first attempt.
+
+*The original finding text follows as history.* The `db === null` race did not reproduce in
+the environment of that pass: the full suite ran green on the first attempt, and targeted probes
+found no post-readiness re-bootstrap (idle app page 0/8 over 4 s, a second tab waiting only for
+`#appMeta` 0/12, the same under 20× CPU throttling 0/8).
 
 **What was found and fixed is a real instance of the same class, in 15 places, and `HR-02`
 found 13 that reading had missed.** Two were extra tabs in `toctou-concurrent-edit` waiting only

@@ -2,22 +2,39 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.23 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.24** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE CANDIDATE IS 24.0.23 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.22 / DB16 / Worker v21.**
-v24.0.23 is the presentation-authority consolidation release: the reference presentation CSS
-moves out of the runtime-injected `modern-shell.js` string and into `styles.css`, ahead of the
-Driver/Glance contract so operator text-size/Glance preferences remain the final cascade authority.
-No freight economics, evaluator math, storage, routing, database, or Worker semantics change.
-It is **source-only until merged, deployed, and observed**. DB_VERSION remains 16 and Worker
-source remains v21.
+**SOURCE AND PRODUCTION BOTH SERVE 24.0.24 / DB16 / Worker v21, AND BOTH GENERATIONS ARE OBSERVED.**
+v24.0.24 is the Issue #268 Apple/iOS accessibility completion. It merged as `f75f9cc` (PR #275)
+and was deployed and observed the same day: live all-asset parity run `35434716935`
+(job `105875325854`, `VERDICT: PASS`) and the production service-worker gate run `35434719454`
+(job `105875332085`, `VERDICT: PASS`, 16 checks / 0 failures). Worker `/health` reports
+`{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none served as HTML,
+**20** repository-only paths stay non-public, and the precache is `freightlogic-24.0.24`.
+`DB_VERSION` stays **16** and the Worker stays **v21**.
 
-The last runtime observation of record before this candidate is v24.0.22 / DB16 / Worker v21:
-exact-main live parity run `35426397099` PASS, production service-worker run `35426397089`
-PASS, Tests `35426397097` 706/0, and CodeQL `35426397095` PASS on
-`ca8677d7670343e98cc8fd3ed75fa598c64afdea`. Those runs remain evidence for that exact tree;
-they are not evidence that v24.0.23 is live. After this candidate merges, re-observe live parity
-and production service-worker state on the new exact main SHA.
+*This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
+24.0.22" and described v24.0.23 as "source-only until merged, deployed, and observed." That was
+accurate when written and was two generations stale by the time it was corrected — production
+had moved 24.0.22 → .23 → .24 and the device gate had widened to A1-A13. It is corrected rather
+than quietly overwritten, because that is the eighth time this section has carried a superseded
+deployment claim, and the consequence is concrete: a reader would certify against a candidate
+production stopped serving days earlier. The rule is unchanged and is the one this file keeps
+relearning — **a superseding record is due the day a shipped file deploys, not the day it merges,
+and not whenever somebody notices.** Merging leaves a commit; deploying leaves nothing, which is
+the entire mechanism.*
+
+**The push race recurred for the ninth time and must not be cited.** Live parity also fired on the
+v24.0.24 merge push (`35434651294`) and FAILED eleven seconds later, observing the previous
+generation while Cloudflare was still deploying. The re-dispatched run ninety seconds afterwards
+is the observation of record. A re-dispatch is not a way of making a failure go away — when a
+re-dispatch fails *the same way*, that is a real finding, as it was for the v24.0.17
+Worker-generation mismatch.
+
+The prior observation of record, kept as history, is v24.0.22 / DB16 / Worker v21: exact-main
+live parity run `35426397099` PASS, production service-worker run `35426397089` PASS, Tests
+`35426397097` 706/0, and CodeQL `35426397095` PASS on
+`ca8677d7670343e98cc8fd3ed75fa598c64afdea`. Those runs remain evidence for that exact tree only.
 
 **HISTORICAL OBSERVATION — PRODUCTION SERVED 24.0.20 / DB16 / Worker v20, and BOTH generations were observed.** v24.0.20 is
 the Issue #205 driver-first UX/IA restructure of Today and More. It merged as `c72b521` and was
@@ -92,8 +109,10 @@ decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconci
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md` is the certification
-authority.
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` is the certification
+authority — it supersedes the 2026-09-18 document this line used to name, and it is the one
+`scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
+authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 
 **Recent generations, as history.** Each of these shipped with a "source-only: not deployed"
 note that was true on the day it was written; all three are now live and the notes are superseded:
@@ -263,7 +282,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.23';
+const APP_VERSION = '24.0.24';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -408,8 +427,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.23` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.23`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.24` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.24`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4649,10 +4668,87 @@ guaranteed path and the clipboard is only ever an addition to it.
 ---
 
 
+## v24.0.24 "Names And Targets" — Issue #268 Apple/iOS accessibility completion
+
+`DB_VERSION` stays **16** and the Worker stays **v21** — no schema and no Worker semantics
+changed. **No canonical freight economics, evaluator math, bid authority, routing, import schema
+or storage behaviour changes anywhere in this release**; what changed is how controls announce
+themselves and how large they are.
+
+Merged as `f75f9cc` (PR #275) and **deployed and observed the same day** — see the Project
+Overview above for the two re-dispatched gate runs that are the observation of record.
+
+### What it repaired
+
+The 2026-09-19 production audit ran axe against the live origin at 390×844 and found four
+classes of defect that every prior gate had passed over, because no gate in this repository had
+ever asserted a *pixel* or an *accessible name*:
+
+- **Click-only non-semantic controls.** `#f21StartBtn`, `#f21InfoBtn`, `#fuelNudgeCard`,
+  `#maintAlertBanner`, `#evalAdvToggle`, `#advSettingsToggle`, `#f22TaxToggle` and the dynamic
+  weekly-report / lane rows were `div`/`span` click targets with no native control semantics and,
+  in places, no keyboard activation at all. A driver navigating by keyboard or VoiceOver could
+  see them and could not operate them.
+- **Header status semantics.** `#syncIndicator` was a `span` carrying `aria-label` with no valid
+  role — axe reported `aria-prohibited-attr` at **serious** impact on the live site. `#cloudIndicator`
+  carried the same pattern. Worse, source audit found **no click handler on either**, while both
+  used `cursor:pointer`: they implied an action that did not exist. They are status, and they now
+  say so rather than pretending to be buttons.
+- **A GPS target below Apple's hit-region guidance.** `#mwGpsBtn` was pinned
+  `min-width:40px; min-height:40px` and, not being a `.btn.sm`, never received the
+  `@media (pointer: coarse)` 44px override. Raised to ≥44×44 CSS px without crowding the Origin
+  field beside it.
+- **More / Settings had no width-regression coverage.** `six-width-layout.spec.mjs` covered
+  `home, loads, omega, trips, money` and stopped there, so the two surfaces the #205 restructure
+  had most recently rearranged were the two nobody measured.
+
+### Why the coverage gap is the finding
+
+This is the v24.0.8 lesson in a different register. There, the Loads tab shipped green because
+the hash and the highlighted tab were correct while the surface was dead. Here, the app passed
+every layout gate it had while a serious-impact ARIA violation sat in the global header on every
+route, because the gates asserted geometry for five routes and accessibility for none.
+
+`tests/integration/apple-ios-accessibility.spec.mjs` (new, 4 assertions) closes that axis: header
+statuses must carry non-interactive status semantics and the GPS target must be Apple-safe;
+visible Evaluate, Money/Settings and Omega form controls must have deterministic accessible
+names; disclosure controls must expose keyboard semantics **and state**; and representative
+controls must keep their expected visible *and* programmatic label text — so a future refactor
+cannot silently trade a visible label for an invisible one. `six-width-layout.spec.mjs` extends
+`ROUTES` to include `more` and `insights`, and adds a case pinning More and Settings at
+**Extra Large text plus Glance Mode**, which is the combination most likely to overflow.
+
+Per the issue's own verification contract, the regressions were added **before** the markup
+changed, and the issue explicitly forbids marking #226 A1-A13 PASS from these repairs or from any
+headless evidence. That boundary holds: real iPhone evidence is still required, and this release
+does not touch it.
+
+### Things the audit checked and ruled NOT defects
+
+Recorded so they are not re-opened from an older source declaration: global form controls do
+resolve to 16px in the final v24.0.23 presentation cascade (the earlier 15px base declaration is
+superseded later in that cascade); `.btn.sm` does resolve to ≥44px under
+`@media (pointer: coarse)`; More tiles already carried `role=button`, `tabindex=0`, Enter/Space
+handling and focus-visible styling; and the primary five-route live audit at 390×844 showed no
+horizontal overflow.
+
+### Why this is a version bump
+
+`app.js`, `index.html`, `modern-shell.js`, `service-worker.js`, `sw-bridge.js`, `manifest.json`
+and `styles.css` all changed, and v24.0.23 was live. `CACHE_NAME` is `freightlogic-${SW_VERSION}`
+and the `?v=` query is the only other identity a child asset carries, so an installed PWA holding
+the 24.0.23 shell would never fetch any of them and the repairs would not reach a driver. Every
+governed marker moves together to **24.0.24**; the declared runtime asset count stays **22**.
+
+---
+
 ## v24.0.23 "One CSS Authority" — final PWA presentation consolidation
 
-**Source candidate only until merged/deployed/observed.** DB_VERSION stays **16** and Worker stays
-**v21**. This release changes presentation delivery only.
+**DEPLOYED, OBSERVED, and since SUPERSEDED by v24.0.24.** This section shipped reading *"Source
+candidate only until merged/deployed/observed"*, which was true when written. v24.0.23 merged as
+`8e72252`, deployed, and was then superseded within the day by the Issue #268 accessibility
+completion — see the v24.0.24 section above for the current generation and its evidence.
+DB_VERSION stays **16** and Worker stays **v21**. This release changes presentation delivery only.
 
 The operator-approved reference presentation previously existed as a second large CSS string inside
 `modern-shell.js`, injected after page load, while `styles.css` also owned the design system and
