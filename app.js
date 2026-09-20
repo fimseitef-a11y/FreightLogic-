@@ -13210,7 +13210,7 @@ async function omegaCompute(){
   ];
   if (erosionApplied) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Erosion mode active</b> — day-3 gross ${fmtMoney(day3Gross)} below ${fmtMoney(erosionThreshold)} threshold (50% of weekly low ${fmtMoney(weekTarget.low)}). Tier shifted one level down.</div>`);
   if (isLateWeek) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(99,102,241,0.1);border-left:3px solid var(--accent);border-radius:4px;font-size:11px"><b>${dayOfWeek === 'thu' ? 'Thursday' : 'Friday'} window</b> — late-week target ${fmtMoney(MW.thuFri.low)}–${fmtMoney(MW.thuFri.high)}. Stretch acceptable if weekly low not hit.</div>`);
-  if (isWeekend) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Weekend operations</b> — low board, reload thin. Bid for premium or hold.</div>`);
+  if (isWeekend) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Weekend operations</b> — contextual +${weekendOverlay.rpmAdder.toFixed(2)}/mi applied. Weak destinations use the stronger weekend target; strategic bridge remains an evaluator decision.</div>`);
 
   const cards = [
     omegaRenderCard('Premium Win', miles, p, pNet, 'var(--accent-text)', null),
