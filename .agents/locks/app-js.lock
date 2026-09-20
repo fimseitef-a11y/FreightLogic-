@@ -1,0 +1,6 @@
+owner: gpt
+token: 8d61dbf1-32e3-4c3b-81ab-a8a4b27a9278
+started_utc: 2026-09-20T21:46:00Z
+expected_release_utc: 2026-09-21T04:00:00Z
+paths: app.js
+task: Issue #278 economics authority refresh — canonical costs, RPM ladder, weekend overlay
