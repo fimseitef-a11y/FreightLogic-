@@ -346,8 +346,8 @@
  *          Level X+ grade taxonomy is exact everywhere (D $1.40-1.49,
  *          E $1.25-1.39); Cincinnati and Toledo are Tier 1 across canonical,
  *          adapter and config; the F20/DZ absolute floor is exactly 0.90; and
- *          the MW.mpg fallback is reconciled to the operator-confirmed ~17.5
- *          baseline with explicit user MPG still overriding it.
+ *          the historical MW.mpg fallback was ~17.5; v24.0.26 supersedes that
+ *          value with the dated 16.7 operator profile while user MPG still overrides it.
  *  v24.0.0 "Unified Decision Engine": one deterministic, client-owned decision
  *          object in app.js is the sole authority for load verdict, grade,
  *          economics, and bid range. USA scoring is evidence-only, the Midwest
@@ -11970,7 +11970,7 @@ function _mwRenderDecision(out, d){
       </div>
       ${profitPct <= 25 ? `<span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;color:var(--text-secondary)">${fmtMoney(profitVal)}</span>` : ''}
     </div>
-    <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">${opCPM > 0 ? 'True Profit (after all costs)' : 'Revenue \u2212 fuel only. NOT profit \u2014 operating cost per mile is not set, so fixed costs are missing.'}</div>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">All-in profit after marginal + fixed cost allocation</div>
   </div>`;
 
   // ── 4. DECISION METRICS ──
