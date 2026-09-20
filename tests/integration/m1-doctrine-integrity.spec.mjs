@@ -229,9 +229,9 @@ test('[M1-16] complete facts still produce a full, unchanged authoritative paylo
 
 /* ------------------------------------------------- approved MPG parity */
 
-test('[M1-17] the MW.mpg fallback matches the approved ~17.5 Gate 0 baseline', async () => {
+test('[M1-17] the MW.mpg fallback matches the current 16.7 operator baseline', async () => {
   const mpg = await app.page.evaluate(() => window.__FL_TESTS.MW.mpg);
-  eq(mpg, 17.5, 'stale 16.5 fallback must be reconciled to the operator-confirmed baseline');
+  eq(mpg, 16.7, 'superseded 17.5 fallback must not return after the #278 authority refresh');
 });
 
 test('[M1-18] an explicit user MPG still overrides the fallback exactly', async () => {

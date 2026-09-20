@@ -18,6 +18,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **Issue #268 accessibility completion exception — RETIRED 2026-09-19.** PR #275 merged the reviewed repair as `f75f9cc9`; exact-main Tests, CodeQL, post-deploy Live Parity, and Production Service Worker verification are green. The temporary test/run-all and release-marker exceptions are therefore retired. Physical iPhone A1-A13 remains a separate evidence gate under #226.
 
+**v24.0.26 Issue #278 economics authority takeover — ACTIVE 2026-09-20.** The operator directed GPT to continue and complete FreightLogic after v24.0.25 landed green. For this governed release only, GPT may own exactly `tests/integration/economics-authority-refresh.spec.mjs`, `tests/integration/m1-doctrine-integrity.spec.mjs` (only the superseded MPG-baseline expectation and its wording), `tests/run-all.mjs`, `midwest-stack-config.json`, `midwest-stack-authority.js`, `scripts/verify-cloudflare-parity.mjs`, and `CLAUDE.md`. Shared runtime paths remain SHARED and require their live locks. Scope is limited to #278 canonical cost components, the operator True-RPM economic ladder, weekend/weekend-hold context, safe legacy-cost migration, regression registration, and the v24.0.26 release identity. Existing assertions may not be weakened; the M1 exception exists only because issue #278 explicitly supersedes the old 17.5 MPG authority with 16.7. DB stays 16 and Worker stays v21. This exception expires immediately after the #278 release lands and must be retired in a governance-only cleanup.
+
 **v24.0.25 PR #277 release-marker takeover — RETIRED 2026-09-20.** PR #277 merged as `436d6778` after exact-head Tests 722/0, Lanes, and CodeQL passed; production service-worker and live-parity gates subsequently observed v24.0.25. The temporary marker exceptions are retired here. `midwest-stack-config.json`, `midwest-stack-authority.js`, `CLAUDE.md`, and `scripts/verify-cloudflare-parity.mjs` return to their normal Claude/parent ownership. No economics, Worker, DB, or schema authority transferred.
 
 **OMEGA continuation closed (2026-09-15).** The bounded GPT task — app.js economics/math, market-classifier collision and release-generation discipline — **landed in `fb408a0` (PR #200)**, so its six exact-file exceptions are retired and their parent rows own those paths again. Deleted rather than flipped back: a redundant narrower row is just another thing to go stale. The task did not close physical iPhone A1–A10 or M6 raw-data certification, and nothing here does.
@@ -29,10 +31,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #268 release-marker exception retired after v24.0.24 landed green. |
-| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #268 release-marker exception retired after v24.0.24 landed green. |
+| `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #268 release-marker exception retired after v24.0.24 landed green. |
+| `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #268 release-marker exception retired after v24.0.24 landed green. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | claude | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
+| `CLAUDE.md` | gpt | Core release/project record; temporary v24.0.23 GPT release-record authority is retired. |
 | `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -72,10 +74,14 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
+| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary #278 v24.0.26 release-marker exception; retire after merge. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
+| `tests/integration/economics-authority-refresh.spec.mjs` | gpt | Temporary #278 exact regression seam; retire after v24.0.26 lands. |
+| `tests/integration/m1-doctrine-integrity.spec.mjs` | gpt | Temporary #278 exact exception only for the superseded MPG-baseline assertion/w wording; no unrelated assertion changes. |
+| `tests/run-all.mjs` | gpt | Temporary #278 suite-registration grant only; retire after v24.0.26 lands. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
