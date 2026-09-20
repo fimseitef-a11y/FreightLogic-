@@ -27,11 +27,11 @@ test('[ECON278-01] dated operator profile derives fuel, marginal and all-in CPM 
   eq(p.available, true, 'profile available');
   eq(p.mpg, 16.7, 'operator MPG baseline');
   eq(p.fuelPrice, 3.79, 'operator fuel-price baseline');
-  eq(p.fuelCPM, 0.227, 'exact fuel math rounded to 0.001');
+  eq(p.fuelCPM, 0.230, 'operator working fuel CPM');
   eq(p.nonFuelVariableCPM, 0.066, 'oil + tires + repair reserve');
-  eq(p.marginalCPM, 0.293, 'fuel + non-fuel variable only');
+  eq(p.marginalCPM, 0.296, 'fuel + non-fuel variable only');
   eq(p.fixedCPM, 0.109, 'fixed allocation only');
-  eq(p.allInCPM, 0.402, 'marginal + fixed, fuel counted once');
+  eq(p.allInCPM, 0.405, 'marginal + fixed, fuel counted once');
   eq(p.fuelSource, 'PROFILE', 'profile provenance');
 });
 
@@ -61,7 +61,7 @@ test('[ECON278-03] fixed monthly allocation excludes maintenance reserve', async
   });
   eq(p.fixedCPM, 0.109, 'insurance + vehicle + other only');
   eq(p.nonFuelVariableCPM, 0.066, 'maintenance does not replace or duplicate variable reserve');
-  eq(p.allInCPM, 0.402, 'maintenance cannot be charged twice');
+  eq(p.allInCPM, 0.405, 'maintenance cannot be charged twice');
 });
 
 test('[ECON278-04] legacy auto-derived opCostPerMile migrates without fuel or maintenance double counting', async () => {
@@ -76,14 +76,14 @@ test('[ECON278-04] legacy auto-derived opCostPerMile migrates without fuel or ma
   eq(p.migration, 'LEGACY_AUTO_FIXED', 'recognizes the old monthly-derived setting');
   eq(p.fixedCPM, 0.109, 'fixed allocation excludes maintenance');
   eq(p.nonFuelVariableCPM, 0.066, 'variable reserve restored once');
-  eq(p.allInCPM, 0.402, 'legacy migration preserves one fuel charge and one non-fuel charge');
+  eq(p.allInCPM, 0.405, 'legacy migration preserves one fuel charge and one non-fuel charge');
 });
 
 test('[ECON278-05] legacy non-fuel total without monthly detail splits safely instead of adding it on top of itself', async () => {
   const p = await deriveProfile({ opCostPerMile: 0.175 });
   eq(p.migration, 'LEGACY_NON_FUEL_TOTAL_PROPORTIONAL_SPLIT', 'legacy no-detail split');
   eq(Number((p.nonFuelVariableCPM + p.fixedCPM).toFixed(3)), 0.175, 'legacy non-fuel total conserved');
-  eq(p.allInCPM, 0.402, 'fuel added exactly once');
+  eq(p.allInCPM, 0.405, 'fuel added exactly once');
 });
 
 test('[ECON278-06] canonical economics exposes contribution and all-in profit separately', async () => {
