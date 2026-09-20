@@ -2,22 +2,53 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.25 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.25** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE CANDIDATE IS 24.0.25 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.24 / DB16 / Worker v21.**
+**PRODUCTION SERVES 24.0.25 / DB16 / Worker v21, and BOTH generations are OBSERVED.**
 v24.0.25 is the operator-directed Apple-style driver information-architecture/evaluator
 simplification in PR #277. It groups More into named categories without dropping
 destinations, keeps Text Size and Glance Mode immediately reachable, preserves
 screenshot/paste/type intake, and changes no freight economics, doctrine, DB schema,
-or Worker behavior. It is source-only until merged, deployed, and observed;
-`DB_VERSION` remains **16** and the Worker remains **v21**.
-The last verified production observation is v24.0.24, the Issue #268 Apple/iOS accessibility completion. It merged as `f75f9cc` (PR #275)
-and was deployed and observed the same day: live all-asset parity run `35434716935`
-(job `105875325854`, `VERDICT: PASS`) and the production service-worker gate run `35434719454`
-(job `105875332085`, `VERDICT: PASS`, 16 checks / 0 failures). Worker `/health` reports
-`{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none served as HTML,
-**20** repository-only paths stay non-public, and the precache is `freightlogic-24.0.24`.
-`DB_VERSION` stays **16** and the Worker stays **v21**.
+or Worker behavior. `DB_VERSION` remains **16** and the Worker remains **v21**.
+
+It merged as `436d677` and has deployed. Both live gates were re-dispatched on `main`
+@ `266d74e` and both returned `VERDICT: PASS`:
+
+- **Live all-asset parity** — run `35542846195` (job `106163516058`): manifest name
+  `FreightLogic v24.0.25`, Worker `/health` `{"ok":true,"version":"21"}`, all **22**
+  declared runtime assets load with none served as HTML, and **20** repository-only
+  paths confirmed non-public (Issue #228's live half), every one of them answering
+  with a definite status.
+- **Production service worker** — run `35542851411` (job `106163528152`): the precache
+  is `freightlogic-24.0.25` carrying all 22 assets, `admin-driver-ui.js` and
+  `midwest-stack-authority.js` are injected **and fetchable as script** (HTTP 200,
+  `text/javascript`), an offline subresource miss is `504 text/plain` rather than the
+  HTML shell, a drifted `?v=` self-heals, the cached shell requests `?v=24.0.25`,
+  exactly one generation cache survives, and after reload the driver shell renders
+  five tabs and a visible Today surface with no uncaught errors — this release's own
+  IA restructure observed in production rather than asserted from source.
+
+The prior observation of record, kept as history, is v24.0.24, the Issue #268 Apple/iOS
+accessibility completion. It merged as `f75f9cc` (PR #275) and was deployed and observed
+the same day: live all-asset parity run `35434716935` (job `105875325854`, `VERDICT: PASS`)
+and the production service-worker gate run `35434719454` (job `105875332085`,
+`VERDICT: PASS`). Its precache was `freightlogic-24.0.24`. Those runs remain evidence for
+that exact tree only.
+
+*This overview read "SOURCE CANDIDATE IS 24.0.25 … LAST VERIFIED PRODUCTION SERVES 24.0.24"
+and described v24.0.25 as "source-only until merged, deployed, and observed." That was
+accurate when written and stopped being accurate once PR #277 merged and Cloudflare
+deployed. It is corrected rather than quietly overwritten, because this is the **ninth**
+time this section has carried a superseded deployment claim, and the consequence is the
+same every time: a reader would certify against a candidate production had already stopped
+serving. The rule is unchanged and is the one this file keeps relearning — **a superseding
+record is due the day a shipped file deploys, not the day it merges, and not whenever
+somebody notices.** Merging leaves a commit; deploying leaves nothing, which is the entire
+mechanism. Worth recording about this instance specifically: `.agents/LANES.md` had already
+stated the v24.0.25 observation while this section still said 24.0.24, so two governance
+records disagreed about what production was serving. A lane-ownership map is not the release
+record. This section is, and the disagreement was resolved by re-dispatching the gates and
+reading their verdicts — not by believing the neighbouring document.*
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
 24.0.22" and described v24.0.23 as "source-only until merged, deployed, and observed." That was
@@ -4693,6 +4724,32 @@ full suite reached **721 PASS / 1 FAIL across 71 specs**; the sole failure was R
 because runtime bytes were intentionally still on release generation 24.0.24. The governed
 24.0.25 integration must pass the exact-head full suite before merge. Physical iPhone
 A1-A13 remains a separate evidence gate and is not inferred from browser CI.
+
+### DEPLOYED and OBSERVED LIVE 2026-09-20
+
+This section shipped carrying only pre-generation evidence, which is what a release section
+looks like before its deploy. It merged as `436d677` (PR #277), Cloudflare deployed it, and
+the governance cleanup in `266d74e` (PR #280) retired the temporary marker ownership.
+
+Both live gates were **re-dispatched** on `main` @ `266d74e` — not cited from a
+push-triggered run, which races the Cloudflare deploy and has done so nine recorded times —
+and both returned `VERDICT: PASS`: live all-asset parity run `35542846195`
+(job `106163516058`) and the production service-worker gate run `35542851411`
+(job `106163528152`). The manifest reads `FreightLogic v24.0.25`, Worker `/health` reports
+`{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none served as
+HTML, **20** repository-only paths stay non-public, and the precache is
+`freightlogic-24.0.25` with exactly one generation cache surviving.
+
+The service-worker gate is the half delivery cannot prove, and it is what observes this
+release's actual subject: **after reload the driver shell renders five tabs and a visible
+Today surface with no uncaught page errors.** The regrouped More categories and the
+Text Size / Glance Mode reachability this release exists to deliver are therefore seen in
+production, not asserted from source. `scripts/verify-cloudflare-parity.mjs --static-only`
+is green at 24.0.25 with 22 declared assets.
+
+**Still HOLD.** Physical iPhone **A1-A13** (Issue #226) and the M6 conflict review are
+unchanged and remain the operator's. Nothing in this release or this observation touches
+either, and neither is inferable from browser CI.
 
 ## v24.0.24 "Names And Targets" — Issue #268 Apple/iOS accessibility completion
 
