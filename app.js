@@ -5576,7 +5576,7 @@ function generateBidRange(totalMiles, opts={}){
 /** Render bid range HTML for display in evaluator/scorecard */
 function bidRangeHTML(bids){
   if (!bids) return '';
-  let html = '<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px">Bid Range</div>';
+  let html = '<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:4px">User Rate Targets</div><div class="muted" style="font-size:10px;margin-bottom:8px">Economics guardrails — not a live-market quote</div>';
   const colors = { minimum: 'var(--bad)', professional: 'var(--warn)', strong: '#58a6ff', premium: 'var(--good)' };
   for (const [key, bid] of Object.entries(bids)){
     const color = colors[key] || 'var(--text)';
@@ -12030,8 +12030,8 @@ function _mwRenderDecision(out, d){
 
   html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:700">Smart Bid Engine</div>
-      <div class="muted" style="font-size:10px">Negotiation targets</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:700">User Rate Targets</div>
+      <div class="muted" style="font-size:10px">Economics guardrails · not a live-market quote</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
       <div style="padding:10px;border-radius:12px;border:1px solid var(--border-subtle);background:rgba(255,255,255,0.02);text-align:center">
@@ -12057,7 +12057,7 @@ function _mwRenderDecision(out, d){
 
   // ── 5. DUAL PROFIT SUMMARY ──
   html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Profit Summary</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">User Economics • Profit Summary</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--good-muted);border:1px solid var(--good-border)">
         <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--good)">${fmtMoney(contributionAfterMarginal)}</div>
@@ -12074,7 +12074,7 @@ function _mwRenderDecision(out, d){
 
   // ── 6. COST BREAKDOWN ──
   html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Cost Breakdown</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">User Economics • Cost Breakdown</div>
     <div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px">
       <div class="muted">Revenue</div><div style="text-align:right;font-weight:600">${fmtMoney(revenue)}</div>
       <div class="muted">Fuel (${fuelCPM.toFixed(3)}/mi)</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(fuel)}</div>
