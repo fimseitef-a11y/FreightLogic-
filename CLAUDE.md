@@ -2,22 +2,24 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.25 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.26 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE CANDIDATE IS 24.0.25 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.24 / DB16 / Worker v21.**
-v24.0.25 is the operator-directed Apple-style driver information-architecture/evaluator
-simplification in PR #277. It groups More into named categories without dropping
-destinations, keeps Text Size and Glance Mode immediately reachable, preserves
-screenshot/paste/type intake, and changes no freight economics, doctrine, DB schema,
-or Worker behavior. It is source-only until merged, deployed, and observed;
-`DB_VERSION` remains **16** and the Worker remains **v21**.
-The last verified production observation is v24.0.24, the Issue #268 Apple/iOS accessibility completion. It merged as `f75f9cc` (PR #275)
-and was deployed and observed the same day: live all-asset parity run `35434716935`
-(job `105875325854`, `VERDICT: PASS`) and the production service-worker gate run `35434719454`
-(job `105875332085`, `VERDICT: PASS`, 16 checks / 0 failures). Worker `/health` reports
-`{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none served as HTML,
-**20** repository-only paths stay non-public, and the precache is `freightlogic-24.0.24`.
-`DB_VERSION` stays **16** and the Worker stays **v21**.
+**SOURCE CANDIDATE IS 24.0.26 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.25 / DB16 / Worker v21.**
+v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
+profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
+trip CSV economics; separates fuel, non-fuel variable cost and fixed allocation so the
+same cost cannot be charged twice; adds the operator True-RPM economic bands as a
+separate profitability taxonomy from the retained decision/doctrine letter grades; and
+adds advisory weekend / Fri-Sat-to-Monday hold pricing context without creating a hard
+reject. `DB_VERSION` remains **16** and the Worker remains **v21**.
+
+The last verified production observation is v24.0.25. PR #277 merged as
+`436d677876c238bb6773d56a15d8f00a5699a3f9`; the later governance-only #280 main
+head is `266d74e5eba3b55ad90083f951fa3e571f307539` and changes no runtime bytes.
+On that exact main tree, live parity run `35539669777`, production service-worker run
+`35539669806`, Tests run `35539669816`, and CodeQL run `35539669796` all completed
+successfully on 2026-09-20. Production therefore remains v24.0.25 / DB16 / Worker v21
+until this 24.0.26 candidate is merged, deployed, and observed.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
 24.0.22" and described v24.0.23 as "source-only until merged, deployed, and observed." That was
@@ -288,7 +290,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.25';
+const APP_VERSION = '24.0.26';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -433,8 +435,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.25` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.25`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.26` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.26`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4673,6 +4675,42 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.26 "Economics Authority" — Issue #278
+
+**Scope.** This release replaces the remaining parallel trip-cost calculations with one
+canonical operator cost profile. Profile fallbacks are dated 2026-09-17: 16.7 MPG,
+$3.79/gal fuel, the adopted working fuel component **$0.230/mi**, $0.066/mi non-fuel
+variable reserve (oil + tires + repair), and $0.109/mi fixed allocation. The authoritative
+working totals therefore reconcile to **$0.296/mi marginal** and **$0.405/mi all-in**.
+The $0.230 profile fuel component is the operator's rounded working ledger value; when MPG
+or fuel price is explicitly overridden, canonical economics returns to exact gallons math
+for trip dollars and derives the override CPM from those inputs.
+
+**Migration and anti-double-counting.** New settings store `nonFuelVariableCpm`,
+`fixedCostPerMile` and `costModelVersion=2`. A legacy `opCostPerMile` is treated as
+a non-fuel total and is split/reconciled against monthly data; it is never added on top
+of both fixed costs and fuel. The Settings/setup save path excludes maintenance from
+fixed allocation because maintenance is already represented by the variable reserve.
+
+**Decision context.** Economic bands are now explicit and separate from doctrine grades:
+≤$0.85 Escape; $0.86–0.99 Escape/Recovery; $1.00–1.14 Strategic; $1.15–1.35 Workable;
+$1.36–1.39 Good/Upper-workable; $1.40–1.50 Strong; $1.51–1.64 Very strong/Near-excellent;
+≥$1.65 Excellent. Weekend work generally adds about $0.10–$0.15 True RPM; weak-destination
+weekends and Fri/Sat pickup → Monday delivery seek roughly one economic band higher.
+The hold overlay carries a $150–$350 lost-weekend-time guide and remains advisory —
+strategic/homeward bridge logic is preserved and safety/route gates remain independent.
+
+**Cross-surface authority.** Evaluator output, trip score economics, Today planning burn,
+OMEGA net ranges, and CSV economic columns all consume the same profile. Profit output
+distinguishes contribution after marginal cost from all-in profit after fixed allocation.
+Issue #278 has a dedicated regression suite covering profile math, migration, band
+boundaries, weekend overlays, OMEGA parity, fail-closed invalid inputs and the real
+evaluator form.
+
+**Release boundaries.** Runtime bytes and cache identity advance to v24.0.26. DB stays
+16 and Worker stays v21. Physical iPhone A1-A13 remains a separate manual evidence gate;
+browser CI does not certify hardware-only behavior.
 
 ## v24.0.25 "Driver IA" — operator-directed Apple-style information architecture
 

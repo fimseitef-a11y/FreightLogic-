@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.25 — modern five-surface navigation adapter
+/* FreightLogic v24.0.26 — modern five-surface navigation adapter
  * Structural navigation; presentation is owned by styles.css.
  * Canonical routing, state, evaluation and data ownership remain in app.js.
  */
