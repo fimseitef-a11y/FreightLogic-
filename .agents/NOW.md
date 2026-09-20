@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle — (**v24.0.20 DEPLOYED and OBSERVED LIVE.** Merged `c72b521` (PR #249); re-dispatched live parity `35329623870` and production SW `35329629590` both PASS; superseding record merged as `54e36f2` (PR #251). Production serves **24.0.20 / DB16 / Worker v20** — source and production agree. Still HOLD on physical iPhone A1-A12 only.) | 2026-09-18 |
+| claude | v24.0.25 release-identity markers for PR #277 (Claude-owned only: `midwest-stack-authority.js`, `midwest-stack-config.json`, `scripts/verify-cloudflare-parity.mjs`, CLAUDE.md release record). Per `gpt-to-claude-pr277-repair-and-markers-2026-09-20.md`. Verified PR #277 CI `playwright-suite` 721/1 with the single failure being RG-03 as GPT stated, so the precondition holds. NOT touching SHARED runtime files — GPT holds `app-js.lock` token `11688f45` until 22:30Z and owns the app/SW/index/manifest side. CG-07/08/14 stay RED on my slice alone by construction (they derive from `APP_VERSION`, still 24.0.24) and go green when GPT's SHARED bump lands. Not mixing #278 economics. | 2026-09-20T19:40Z |
 | gpt | Resuming draft PR #277 Apple-style IA; investigate its 12 failing checks, restore reachable existing tools, then integrate release markers and full-suite evidence. | 2026-09-20T18:45Z |
 
 ---
