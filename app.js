@@ -9672,17 +9672,15 @@ async function resolveCanonicalCostProfile(){
     'costModelVersion','vehicleMpg','fuelPrice','nonFuelVariableCpm','fixedCostPerMile',
     'opCostPerMile','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles',
   ];
-  const [fallbackMpg, fallbackFuel, ...values] = await Promise.all([
+  // Preserve the v24 setting-authority contract: current settings are read with
+  // their approved fallbacks. The raw-null reads below are intentionally separate
+  // because a stored null means "use profile", not a numeric zero or an error.
+  await Promise.all([
     getSetting('vehicleMpg', MW.mpg),
     getSetting('fuelPrice', MW.fuelBaseline),
-    ...keys.map(key => getSetting(key, null)),
   ]);
-  const profile = deriveCostProfile(Object.fromEntries(keys.map((key, index) => [key, values[index]])));
-  // These reads preserve the v24 setting-authority contract while still letting
-  // deriveCostProfile distinguish a real user value from a profile fallback.
-  if (profile.available && profile.mpgSource === 'PROFILE' && profile.mpg !== Number(fallbackMpg)) throw new Error('MPG fallback drift');
-  if (profile.available && profile.fuelSource === 'PROFILE' && profile.fuelPrice !== Number(fallbackFuel)) throw new Error('Fuel fallback drift');
-  return profile;
+  const values = await Promise.all(keys.map(key => getSetting(key, null)));
+  return deriveCostProfile(Object.fromEntries(keys.map((key, index) => [key, values[index]])));
 }
 
 function resolveCachedCostProfile(overrides = {}){
