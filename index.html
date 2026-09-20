@@ -300,8 +300,9 @@
 <div class="settings-section-head" id="settingsVehicle"><span class="settings-section-icon">🚐</span>Vehicle &amp; Capacity</div>
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
-<label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="e.g., 16" />
-<label for="opCostPerMile">Operating cost per mile (excl. fuel)</label><input id="opCostPerMile" type="number" step="0.01" placeholder="e.g., 0.25" /><div class="muted" style="font-size:11px;margin-top:2px">Auto-calculated from monthly costs below, or set manually</div>
+<label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="profile: 16.7" />
+<label for="opCostPerMile">Non-fuel variable cost per mile</label><input id="opCostPerMile" type="number" step="0.001" placeholder="profile: 0.066" />
+<div class="muted" id="costModelHint" style="font-size:11px;margin-top:2px">Fuel, variable cost, and fixed allocation are calculated separately. Leave blank to use the dated operator profile.</div>
 <!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
 <div id="vehicleTaxMethodRow" style="margin-top:10px;display:none">
   <button class="btn" id="btnVerifyVehicleTaxMethod" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -336,7 +337,7 @@
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" id="settingsCosts"><span class="settings-section-icon">📋</span>Costs &amp; Goals</div>
-<div class="muted" style="font-size:11px;margin-bottom:8px">Set once — auto-calculates your per-mile cost.</div>
+<div class="muted" style="font-size:11px;margin-bottom:8px">Fuel + non-fuel variable + fixed allocation stay separate so fuel is never double-counted.</div>
 <div class="grid2" style="gap:10px;margin-bottom:8px">
   <div><label for="fuelPrice">Fuel price ($/gal)</label><input id="fuelPrice" type="number" step="0.01" placeholder="e.g., 2.89" /><div class="muted" id="eiaHint" style="font-size:11px;margin-top:2px"></div></div>
   <div><label for="weeklyGoal">Weekly goal ($)</label><input id="weeklyGoal" type="number" step="1" placeholder="e.g., 4000" /></div>
@@ -344,7 +345,7 @@
 <div class="grid2" style="gap:10px">
 <div><label for="monthlyInsurance">Insurance</label><input id="monthlyInsurance" type="number" step="1" placeholder="$/mo" /></div>
 <div><label for="monthlyVehicle">Vehicle payment</label><input id="monthlyVehicle" type="number" step="1" placeholder="$/mo" /></div>
-<div><label for="monthlyMaintenance">Maintenance</label><input id="monthlyMaintenance" type="number" step="1" placeholder="$/mo" /></div>
+<div><label for="monthlyMaintenance">Maintenance reserve</label><input id="monthlyMaintenance" type="number" step="1" placeholder="$/mo" /><div class="muted" style="font-size:10px;margin-top:2px">Budgeting only; canonical trip economics use the variable CPM above.</div></div>
 <div><label for="monthlyOther">Other fixed</label><input id="monthlyOther" type="number" step="1" placeholder="$/mo" /></div>
 </div>
 <label for="monthlyMiles">Est. monthly miles</label><input id="monthlyMiles" type="number" step="1" placeholder="e.g., 8000" />
@@ -496,6 +497,15 @@
             <div class="field"><label>Day of week <span id="mwDayAutoLabel" class="muted" style="font-size:10px;font-weight:400">(auto)</span></label>
               <select id="mwDayOfWeek" aria-label="Day of week"><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select>
             </div>
+          </div>
+          <div class="field">
+            <label for="mwDeliveryDay">Delivery day <span class="muted" style="font-size:10px;font-weight:400">(optional — detects weekend hold)</span></label>
+            <select id="mwDeliveryDay" aria-label="Delivery day">
+              <option value="">Unknown / not entered</option>
+              <option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option>
+              <option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option>
+            </select>
+            <div class="muted" style="font-size:11px;margin-top:2px">Fri/Sat pickup → Monday delivery is treated as a weekend-hold pricing context, not an automatic reject.</div>
           </div>
           <div class="grid2" style="gap:10px">
             <div class="field"><label for="mwFatigue">Fatigue (1–10)</label><input id="mwFatigue" inputmode="numeric" placeholder="3 (neutral)" min="1" max="10" /></div>
