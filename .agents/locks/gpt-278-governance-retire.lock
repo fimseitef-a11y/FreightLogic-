@@ -1,0 +1,6 @@
+owner: gpt
+token: 9f2cb1a7-7b3f-4de7-a0a7-c791a4e2f8e1
+started_utc: 2026-09-20T23:16:00Z
+expected_release_utc: 2026-09-20T23:46:00Z
+paths: .agents/LANES.md
+task: retire the completed v24.0.26 Issue #278 temporary ownership exceptions after exact-main release gates
