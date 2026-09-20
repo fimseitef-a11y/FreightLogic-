@@ -2,5 +2,5 @@ owner: gpt
 token: 5c7dcdb2-9f3b-4482-9bf9-07d62ffb4461
 started_utc: 2026-09-20T21:46:00Z
 expected_release_utc: 2026-09-21T04:00:00Z
-paths: .agents/LANES.md, tests/integration/economics-authority-refresh.spec.mjs, tests/run-all.mjs
+paths: .agents/LANES.md, tests/integration/economics-authority-refresh.spec.mjs, tests/integration/m1-doctrine-integrity.spec.mjs (MPG baseline assertion only), tests/run-all.mjs
 task: Issue #278 bounded regression ownership and suite registration
