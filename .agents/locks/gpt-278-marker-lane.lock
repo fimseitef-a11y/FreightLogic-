@@ -1,0 +1,6 @@
+owner: gpt
+token: 54b98ff9-bd78-4fd9-ac72-49606f7544c5
+started_utc: 2026-09-20T21:50:00Z
+expected_release_utc: 2026-09-21T04:00:00Z
+paths: midwest-stack-config.json, midwest-stack-authority.js, scripts/verify-cloudflare-parity.mjs, CLAUDE.md
+task: Issue #278 v24.0.26 exact release markers
