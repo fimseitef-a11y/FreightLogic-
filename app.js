@@ -21051,20 +21051,18 @@ async function openCostPerDay(){
   body.innerHTML = `<div id="cpdContent"><div class="muted" style="text-align:center;padding:24px">Loading cost data…</div></div>`;
   openModal('💸 Cost-Per-Day', body);
   try {
-    const [mIns, mVeh, mMaint, mOther, mMiles, opCPM, weeklyGoal] = await Promise.all([
-      getSetting('monthlyInsurance',  0),
-      getSetting('monthlyVehicle',    0),
-      getSetting('monthlyMaintenance',0),
-      getSetting('monthlyOther',      0),
-      getSetting('monthlyMiles',      0),
-      getSetting('opCostPerMile',     0),
-      getSetting('weeklyGoal',        0),
+    const [mMiles, weeklyGoal, costProfile] = await Promise.all([
+      getSetting('monthlyMiles', 0),
+      getSetting('weeklyGoal', 0),
+      resolveCanonicalCostProfile(),
     ]);
-    const fixedMonthly = [mIns, mVeh, mMaint, mOther].reduce((s,v) => s + Number(v||0), 0);
-    const fixedDaily   = fixedMonthly / 30.44;   // avg days/month
+    const avgMonthMiles = Number(mMiles || 0);
+    const fixedMonthly = costProfile.available && avgMonthMiles > 0
+      ? avgMonthMiles * costProfile.fixedCPM
+      : 0;
+    const fixedDaily   = fixedMonthly / 30.44;
     const fixedWeekly  = fixedMonthly / 4.345;
-    const cpm          = Number(opCPM || 0);
-    const avgMonthMiles= Number(mMiles || 0);
+    const cpm          = costProfile.available ? costProfile.marginalCPM : 0;
     const varDaily     = avgMonthMiles > 0 ? (avgMonthMiles / 30.44) * cpm : 0;
     const varWeekly    = avgMonthMiles > 0 ? (avgMonthMiles / 4.345) * cpm : 0;
 
@@ -21089,7 +21087,7 @@ async function openCostPerDay(){
 
     $('#cpdContent', body).innerHTML = `
       ${!hasFixed && cpm === 0 ? `<div class="card" style="border:1px solid var(--warn);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
-        <b style="color:var(--warn)">⚠️ No cost data yet.</b><br>Enter monthly fixed costs and op cost-per-mile in <b>Settings → Vehicle & Costs</b> to unlock full analysis.
+        <b style="color:var(--warn)">⚠️ Monthly mileage needed.</b><br>Add estimated monthly miles in <b>Settings → Costs & Goals</b> to turn the canonical per-mile model into a daily breakeven.
       </div>` : ''}
 
       <div class="card" style="margin-bottom:10px">
@@ -21100,7 +21098,7 @@ async function openCostPerDay(){
             <div style="font-size:18px;font-weight:800">${fmtMoney(fixedDaily)}</div>
           </div>
           <div style="background:var(--bg-secondary);border-radius:10px;padding:12px;text-align:center">
-            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Variable / Day</div>
+            <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Marginal / Day</div>
             <div style="font-size:18px;font-weight:800">${fmtMoney(varDaily)}</div>
           </div>
         </div>
@@ -21137,7 +21135,7 @@ async function openCostPerDay(){
       </div>` : ''}
 
       <div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding-top:2px">
-        Fixed / 30.44 days avg. Variable based on ${avgMonthMiles > 0 ? avgMonthMiles.toLocaleString() + ' est. monthly miles' : 'no miles estimate'}.
+        Fixed allocation + marginal CPM. Based on ${avgMonthMiles > 0 ? avgMonthMiles.toLocaleString() + ' est. monthly miles' : 'no miles estimate'}.
       </div>`;
   } catch(e){
     $('#cpdContent', body).innerHTML = '<div style="color:var(--bad);padding:16px">Failed to load cost data.</div>';
