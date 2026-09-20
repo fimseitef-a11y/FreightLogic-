@@ -13088,7 +13088,7 @@ function omegaFormatNet(netInfo){
 function omegaRenderCard(label, miles, rpmRange, netInfo, color, cond){
   const belowHardFloor = rpmRange.min < 1.25;
   const dzTag = belowHardFloor
-    ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,140,66,0.12);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px;line-height:1.4"><b style="color:#ff8c42">DZ-ONLY</b> — sub-$1.25 RPM. Verify in Load Evaluator (requires 1500+ mi from home + directional benefit + no $1.25+ reload within 120mi).</div>`
+    ? `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,140,66,0.12);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px;line-height:1.4"><b style="color:#ff8c42">DZ-ONLY</b> — sub-$1.25 RPM. Verify in Load Evaluator (requires 1000+ mi from home + directional benefit + no $1.25+ reload within 120mi).</div>`
     : '';
   const condLine = cond ? `<div class="muted" style="font-size:11px;margin-top:4px">${escapeHtml(cond)}</div>` : '';
   return `
@@ -23621,7 +23621,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
     tripRow,
     generateWeeklyPnL, getWeekId, formatWeeklyReportText, generateWeeklyReport,
-    omegaTierForMiles, OMEGA_TIERS,
+    omegaTierForMiles, omegaNetRange, OMEGA_TIERS,
     mwClassifyRPM, MW, dzClassifySubTier,
     normOrderNo, sanitizeReceiptId, clampStr,
     parseCSVLines, isValidISODate, hashPin,
