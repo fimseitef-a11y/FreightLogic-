@@ -2,29 +2,52 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**PRODUCTION SERVES 24.0.24 / DB16 / Worker v21, and BOTH generations are
+**PRODUCTION SERVES 24.0.25 / DB16 / Worker v21, and BOTH generations are
 OBSERVED.** Observation of record, both `workflow_dispatch` on `main` @
-`f75f9cc` (PR #275, the Issue #268 accessibility completion):
+`266d74e` (PR #280; the runtime generation merged as `436d677`, PR #277, the
+operator-directed Apple-style driver IA slice):
 
-- live all-asset parity run `35434716935`, job `105875325854`, `VERDICT: PASS` —
-  Worker `/health` `{"ok":true,"version":"21"}`, all **22** declared runtime
-  assets loading, none served as HTML, and **20** repository-only paths
-  confirmed non-public (Issue #228's live half);
-- production service worker run `35434719454`, job `105875332085`,
-  `VERDICT: PASS`, 16 checks / 0 failures — precache `freightlogic-24.0.24`
-  carrying all 22 assets, both injected scripts fetchable as script, an offline
-  subresource miss `504 text/plain`, a drifted `?v=` self-healing, and exactly
-  one generation cache.
+- live all-asset parity run `35542846195`, job `106163516058`, `VERDICT: PASS` —
+  manifest name `FreightLogic v24.0.25`, Worker `/health`
+  `{"ok":true,"version":"21"}`, all **22** declared runtime assets loading, none
+  served as HTML, and **20** repository-only paths confirmed non-public (Issue
+  #228's live half), every one answering with a definite status;
+- production service worker run `35542851411`, job `106163528152`,
+  `VERDICT: PASS` — precache `freightlogic-24.0.25` carrying all 22 assets, both
+  injected scripts fetchable as script (HTTP 200, `text/javascript`), an offline
+  subresource miss `504 text/plain`, a drifted `?v=` self-healing, the cached
+  shell requesting `?v=24.0.25`, exactly one generation cache, and **after reload
+  the driver shell rendering five tabs and a visible Today surface with no
+  uncaught errors** — this generation's own IA restructure, observed rather than
+  asserted from source.
 
-**The push race recurred for the ninth time and must not be cited.** Live parity
-also fired on the merge push (`35434651294`) and FAILED eleven seconds later,
-observing the previous generation while Cloudflare was still deploying. The
-re-dispatch ninety seconds afterwards is the observation of record. A re-dispatch
-that fails *the same way* is a real finding, not a race — that is what made the
-v24.0.17 Worker-generation mismatch evidence rather than noise.
+`266d74e` modifies only `.agents/LANES.md`, so the runtime tree observed is
+byte-identical to the v24.0.25 tree. `scripts/verify-release-generation.mjs`
+agrees: *"No deployed app bytes changed."*
+
+**Neither of these runs was push-triggered, and that is deliberate.** A parity or
+service-worker run that fires on the merge push races the Cloudflare deploy and
+has been recorded failing for that reason nine times. Such a failure is real
+evidence about the origin at that instant and is **not** evidence about the
+release. The converse holds too: a re-dispatch that fails *the same way* is a
+real finding, which is what made the v24.0.17 Worker-generation mismatch evidence
+rather than noise.
 
 The certification authority for this observation is
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md`.
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`.
+
+*The 24.0.24 block this replaced is kept as history below, with the 24.0.22 and
+24.0.19 blocks beneath it. Those run IDs are permanent provenance for the exact
+trees their gates looked at, and stay correct permanently.*
+
+**PRODUCTION SERVED 24.0.24 / DB16 / Worker v21 — kept as history.** Observation
+of record was both `workflow_dispatch` on `main` @ `f75f9cc` (PR #275, the Issue
+#268 accessibility completion): live all-asset parity run `35434716935`, job
+`105875325854`, `VERDICT: PASS`; production service worker run `35434719454`,
+job `105875332085`, `VERDICT: PASS`, 16 checks / 0 failures, precache
+`freightlogic-24.0.24`. Its push-triggered parity (`35434651294`) FAILED eleven
+seconds after the merge — the ninth recorded occurrence of the race — and was
+not the evidence.
 
 *The 24.0.22 block this replaced, and the 24.0.19 block below it, are kept as
 history. Those run IDs are permanent provenance for trees a gate actually looked
@@ -61,33 +84,34 @@ deployment claim is exactly the drift it exists to catch. The rule that prevents
 it is unchanged: a superseding record is due the day a shipped file deploys, not
 the day it merges.*
 
-Current runtime state (what production serves TODAY):
+Current runtime state, as of the observation at the top of this file:
 
-- app / PWA / service worker: **24.0.20**, deployed and observed live — live parity run
-  `35329623870` and production service-worker run `35329629590`, both `workflow_dispatch` on
-  `main` @ `c72b521`, both `VERDICT: PASS`. The 24.0.19 observation recorded above remains
-  permanent provenance for the tree its runs looked at;
-- repository source generation: **24.0.21** — source is AHEAD of production again, by the
-  Issue #252 screenshot-intake generation, which is **not deployed and not live-observed**.
-  (The 24.0.20 source-ahead gap this line previously recorded lasted about one hour, from
-  merge to deploy, and was closed by the two re-dispatched gates named above.) **Deploy order
-  is not optional here: Worker v21 FIRST.** The app's screenshot path calls
-  `POST /extract-image`, which does not exist on the deployed v20, so shipping the app first
-  gives every driver who taps Screenshot a 404 — the inverse of the v24.0.17 mismatch, and
-  avoidable by sequencing rather than by discovering it in a parity run;
+- app / PWA / service worker: **24.0.25**, deployed and observed live by the two re-dispatched
+  gates named in the header block. Earlier observations recorded below remain permanent
+  provenance for the trees their runs looked at, and are not evidence for this one;
+- repository source generation: **equal to production.** Source is not ahead. The previous
+  source-ahead gap — the Issue #252 screenshot generation awaiting Worker v21 — is closed:
+  Worker v21 is deployed and `/health` reports it;
 - IndexedDB schema: **16**;
-- backup/API Worker: **20 deployed and observed live; 21 in source, NOT deployed.**
-  v21 adds the `POST /extract-image` vision route (#252) and must deploy before the
-  24.0.21 app generation, for the reason given above;
-- exact runtime Git candidate: **`c72b521`** (the 24.0.20 merge, which is what production
-  serves and what both live gates observed);
+- backup/API Worker: **21, deployed and observed live.** `POST /extract-image` (#252) exists on
+  the deployed Worker, so the deploy-order warning this block used to carry is discharged;
+- exact runtime Git candidate: **`266d74e`** — PR #280, whose diff touches only
+  `.agents/LANES.md`, so its runtime tree is byte-identical to the v24.0.25 tree that merged as
+  `436d677` (PR #277);
 - production app origin: **`https://freightlogic-v2.fimseitef.workers.dev`**;
 - backup/API Worker origin: **`https://freightlogic-backup.fimseitef.workers.dev`**;
-- status: **HOLD**, and now for exactly one reason — the physical-iPhone gate
-  **A1-A13** (A13 is #252's screenshot flow, added in v24.0.21), deferred by
-  the operator's 2026-09-16 decision to the final
-  post-v24.5 candidate. Every automatable and live-origin gate is observed and
-  passing. Section C (M6 private history) has run; see `FIELD_TEST_CHECKLIST.md`.
+- status: **HOLD**, for exactly one reason — the physical-iPhone gate **A1-A13**, deferred by the
+  operator's 2026-09-16 decision to the final post-v24.5 candidate. Every automatable and
+  live-origin gate is observed and passing. Section C (M6 private history) has run; see
+  `FIELD_TEST_CHECKLIST.md`.
+
+**This block said "TODAY" and meant a day five generations ago.** It claimed production served
+24.0.20, that source was ahead at 24.0.21, and — actively misleading — that **Worker v21 must
+deploy FIRST**. Worker v21 has been deployed since before v24.0.21 was observed, so an operator
+reading it would have sequenced a deploy that had already happened. The word "TODAY" in a
+transcribed record is a promise the record cannot keep; re-derive this block from the header
+observation and from `APP_VERSION` / `GET /health` rather than trusting it, and supersede it the
+day a shipped file deploys.
 
 Important: `https://freightlogic.pages.dev` is a legacy/stale origin and is not the production app origin.
 
@@ -179,22 +203,46 @@ Do not add a push/comment/schedule trigger merely to avoid this explicit release
 
 ## 2. App / PWA generation
 
-PASS requires production to serve:
+**Read the expected generation from the source rather than from this section.** It stood at
+**24.0.9** while production served 24.0.25 — sixteen generations stale — and it still listed
+`voice-load.js`, a file **deleted in v24.0.17** by operator decision (Issue #230). An operator
+following it would have verified the wrong generation and hunted for an asset whose absence is
+the removal working correctly. It is written as a derivation now, for the same reason section 3
+below and `scripts/verify-rollback.mjs` stopped pinning theirs: a number transcribed here goes
+stale at the next release, and the release that bumps it is precisely when nobody remembers to
+edit this file.
 
-- `app.js?v=24.0.9`;
-- `voice-load.js?v=24.0.9`;
-- `sw-bridge.js?v=24.0.9`;
-- `midwest-stack-authority.js?v=24.0.9`;
-- `manifest.json?v=24.0.9` identifying `FreightLogic v24.0.9`;
-- `service-worker.js` with `SW_VERSION = '24.0.9'`;
-- `admin-driver-ui.js?v=24.0.9` and every other asset derived by the runtime inventory;
-- current `modern-shell.js` bytes from the named runtime candidate;
+| Fact | Derive it from |
+|---|---|
+| expected app generation | `APP_VERSION` in `app.js` |
+| expected service-worker generation | `SW_VERSION` in `service-worker.js` (CG-01 asserts the two are equal) |
+| expected precache name | `freightlogic-${SW_VERSION}` |
+| the exact asset set and its `?v=` markers | `scripts/lib/deploy-assets.mjs` — the same derived inventory the gate and `tests/unit/deploy-asset-coverage.spec.mjs` both import |
+
+PASS requires production to serve, at that derived generation:
+
+- every asset in the derived runtime inventory, each answering **200** and **not** `text/html`;
+- `manifest.json` whose `name` is `FreightLogic v<generation>`;
+- `service-worker.js` whose `SW_VERSION` equals `APP_VERSION`;
+- current `modern-shell.js` bytes from the named runtime candidate, imported by `sw-bridge.js`
+  and precached by the worker at that same generation;
 - bundled `vendor/xlsx.full.min.js`;
-- the current `styles.css` visual layer;
-- matching CSP/security headers;
+- the current `styles.css` visual layer, which carries **no version string by design** (CG-11
+  asserts its absence — do not add one to "check" it here);
+- matching CSP/security headers, byte-identical between `index.html` and `_headers`;
 - no failed JavaScript/static request answered with an HTML shell fallback.
 
-Do not reuse the v24.0.5 or v24.0.8 production observations as exact-generation evidence for v24.0.9.
+**Assets that must NOT be present** are as much a part of parity as the ones that must:
+
+- `voice-load.js` — removed in v24.0.17. A **404 is the correct result**; a 200 means a stale
+  deployment or a reintroduced reference. `scripts/verify-cloudflare-parity.mjs` asserts the
+  inverted condition, that `index.html` does not reference it at all.
+- every repository-only path — the live sweep checks **20** of them and a `200` is the defect
+  (Issue #228).
+
+Do not reuse an earlier generation's production observation as exact-generation evidence for the
+current candidate. Each observation is provenance for the exact tree its gate looked at, and for
+no other.
 
 ## 3. Worker live checks
 
@@ -207,8 +255,11 @@ remembers to edit this file. `tests/unit/cache-generation.spec.mjs` CG-09 alread
 header, `/health` and the parity gate's `workerVersion` all name the same number, so there is one
 source of truth and this is not it.
 
-Current source generation at the time of writing: **21** (adds `POST /extract-image`, Issue #252).
-Production serves **20**.
+Do not transcribe the expected generation here. Read the source generation from
+`cloud-backup-worker.js`'s header and the deployed generation from `GET /health`; the two agreeing
+is the check. The line this replaced read *"Current source generation ... 21. Production serves
+20"* — which was stale the moment v21 deployed, in the very section that tells you not to trust a
+transcribed number.
 
 PASS requires:
 
