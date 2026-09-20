@@ -1,6 +1,0 @@
-owner: gpt
-token: 7b5b6628-8d66-4f4f-a012-a23bbf4a22a1
-started_utc: 2026-09-19T12:18:00Z
-expected_release_utc: 2026-09-19T16:30:00Z
-paths: app.js, index.html, modern-shell.js, service-worker.js, sw-bridge.js, manifest.json
-task: Apple-style IA simplification and evaluator/settings hierarchy consolidation
