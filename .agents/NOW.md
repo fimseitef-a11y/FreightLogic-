@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.20 DEPLOYED and OBSERVED LIVE.** Merged `c72b521` (PR #249); re-dispatched live parity `35329623870` and production SW `35329629590` both PASS; superseding record merged as `54e36f2` (PR #251). Production serves **24.0.20 / DB16 / Worker v20** — source and production agree. Still HOLD on physical iPhone A1-A12 only.) | 2026-09-18 |
-| gpt | Apple-style IA simplification: reduce More/Settings clutter, unify evaluator flow, simplify header/result hierarchy; runtime shared paths under fresh lock. | 2026-09-19 |
+| gpt | Resuming draft PR #277 Apple-style IA; investigate its 12 failing checks, restore reachable existing tools, then integrate release markers and full-suite evidence. | 2026-09-20T18:45Z |
 
 ---
 
