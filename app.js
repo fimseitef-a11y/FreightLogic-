@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.25 USA ENGINE
+/** FreightLogic v24.0.26 USA ENGINE
+ *  v24.0.26 "Economics Authority": Issue #278 installs one canonical
+ *          marginal/all-in cost model, the current True-RPM economic ladder,
+ *          safe legacy-cost migration, and advisory weekend/hold context.
+ *          DB stays 16 and Worker stays v21.
  *  v24.0.25 "Driver IA": operator-directed Apple-style information architecture
  *          and evaluator simplification. More groups every existing destination
  *          under named categories; Settings keeps Text Size and Glance immediately
@@ -394,7 +398,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.25';
+const APP_VERSION = '24.0.26';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -4049,7 +4053,7 @@ async function importJSON(file, opts={}){
         cached: false, status: 'imported'
       }))
     }));
-    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','lastCloudSync','vehicleClass','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
+    const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','nonFuelVariableCpm','fixedCostPerMile','costModelVersion','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','lastCloudSync','vehicleClass','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
       // v21 new settings keys
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','localUserId',
       // v22 F21/F22/F23 onboarding flags
@@ -9381,12 +9385,12 @@ function usaScoreLoad(opts){
    ═══════════════════════════════════════════════════════════════ */
 
 const MW = {
-  // M1: fallback only. Gate 0 docs/OPERATOR_TRUTH.md records the operator-
-  // confirmed loaded baseline as ~17.5 MPG; the prior 16.5 was labelled
-  // "field-confirmed" but predates that. An explicit vehicleMpg setting is
-  // higher priority and overrides this in canonical economics.
-  mpg: 17.5,           // Operator-confirmed loaded baseline (Gate 0), fallback only
-  fuelBaseline: 3.55,  // Midwest regular gas, EIA wk of Jul 6 2026; user override via settings
+  // Issue #278: dated profile fallback only; device/user settings outrank it.
+  mpg: 16.7,
+  fuelBaseline: 3.79,
+  fuelBaselineObservedAt: '2026-09-17',
+  nonFuelVariableCPM: 0.066,
+  fixedCPM: 0.109,
   weekTarget: { low: 3800, high: 4200, stretch: 5000 },
   monWed: { low: 2200, high: 2600 },
   thuFri: { low: 1200, high: 1600 },
@@ -9405,6 +9409,7 @@ const MW = {
   tier1: ['chicago','gary','indianapolis','cleveland','columbus','detroit','cincinnati','toledo'],
   tier2: ['nashville','louisville','st. louis','st louis','stl','dayton','fort wayne','grand rapids','milwaukee','lexington'],
   avoid: ['deep southeast','rural southeast','deep texas','far northeast'],
+  // Decision/doctrine taxonomy; economic profitability uses ECONOMIC_BANDS.
   rpmTiers: [
     { min: 0,    max: 1.24, label: 'Reject',             color: 'var(--bad)',  verdict: 'REJECT' },
     { min: 1.25, max: 1.39, label: 'Strategic Only',     color: 'var(--warn)', verdict: 'STRATEGIC' },
@@ -9424,6 +9429,217 @@ const MW = {
   dzActivationDistanceMi: 1000,
   dzMinDistanceSaved: 200, // "meaningful movement toward stronger freight"
 };
+
+
+const COST_MODEL_VERSION = 2;
+const COST_PROFILE_DEFAULT = Object.freeze({
+  mpg: MW.mpg,
+  fuelPrice: MW.fuelBaseline,
+  fuelObservedAt: MW.fuelBaselineObservedAt,
+  nonFuelVariableCPM: MW.nonFuelVariableCPM,
+  fixedCPM: MW.fixedCPM,
+});
+
+const ECONOMIC_BANDS = Object.freeze([
+  Object.freeze({ key:'ESCAPE', min:0, max:0.85, label:'Escape', color:'var(--bad)', rank:0 }),
+  Object.freeze({ key:'RECOVERY', min:0.86, max:0.99, label:'Escape / Recovery', color:'#ff8c42', rank:1 }),
+  Object.freeze({ key:'STRATEGIC', min:1.00, max:1.14, label:'Strategic', color:'var(--warn)', rank:2 }),
+  Object.freeze({ key:'WORKABLE', min:1.15, max:1.35, label:'Workable', color:'var(--text-secondary)', rank:3 }),
+  Object.freeze({ key:'GOOD', min:1.36, max:1.39, label:'Good / Upper-workable', color:'#58a6ff', rank:4 }),
+  Object.freeze({ key:'STRONG', min:1.40, max:1.50, label:'Strong', color:'var(--good)', rank:5 }),
+  Object.freeze({ key:'VERY_STRONG', min:1.51, max:1.64, label:'Very strong / Near-excellent', color:'var(--good)', rank:6 }),
+  Object.freeze({ key:'EXCELLENT', min:1.65, max:null, label:'Excellent', color:'var(--accent-text)', rank:7 }),
+]);
+
+function _roundCPM(value){
+  return Math.round((Number(value) || 0) * 1000) / 1000;
+}
+function _hasCostValue(value){
+  return value !== undefined && value !== null && value !== '';
+}
+function classifyEconomicBand(rpm){
+  const n = knownNum(rpm);
+  if (n === null || n < 0) return null;
+  if (n <= 0.85) return ECONOMIC_BANDS[0];
+  if (n < 1.00) return ECONOMIC_BANDS[1];
+  if (n < 1.15) return ECONOMIC_BANDS[2];
+  if (n <= 1.35) return ECONOMIC_BANDS[3];
+  if (n < 1.40) return ECONOMIC_BANDS[4];
+  if (n <= 1.50) return ECONOMIC_BANDS[5];
+  if (n < 1.65) return ECONOMIC_BANDS[6];
+  return ECONOMIC_BANDS[7];
+}
+function nextEconomicBandFloor(rpm){
+  const band = classifyEconomicBand(rpm);
+  if (!band) return null;
+  return ECONOMIC_BANDS[Math.min(ECONOMIC_BANDS.length - 1, band.rank + 1)].min;
+}
+
+function deriveWeekendOverlay({ pickupDay='', deliveryDay='', weakDestination=false, strategic=false, trueRPM=null } = {}){
+  const pickup = String(pickupDay || '').trim().toLowerCase().slice(0, 3);
+  const delivery = String(deliveryDay || '').trim().toLowerCase().slice(0, 3);
+  const weekend = pickup === 'sat' || pickup === 'sun' || delivery === 'sat' || delivery === 'sun';
+  const weekendHold = (pickup === 'fri' || pickup === 'sat') && delivery === 'mon';
+  const weakWeekend = (weekend || weekendHold) && !!weakDestination;
+  let rpmAdder = weekend ? (weakDestination ? 0.15 : 0.10) : 0;
+  if (weekendHold) rpmAdder = Math.max(rpmAdder, 0.15);
+  const tierShift = (weekendHold || weakWeekend) ? 1 : 0;
+  const rpm = knownNum(trueRPM);
+  const tierTarget = tierShift && rpm !== null ? nextEconomicBandFloor(rpm) : null;
+  const targetRPM = rpm === null ? null : _roundCPM(Math.max(rpm + rpmAdder, tierTarget || 0));
+  const holdPremium = weekendHold ? Object.freeze({ min:150, max:350 }) : null;
+  const label = weekendHold ? 'Weekend hold'
+    : weakWeekend ? 'Weak-destination weekend'
+    : weekend ? 'Weekend'
+    : 'Weekday';
+  const advisory = weekendHold
+    ? 'Fri/Sat pickup with Monday delivery: price one economic tier higher and/or roughly $150–$350 for lost weekend time.'
+    : weakWeekend
+      ? 'Weekend into a weak destination: seek roughly one economic tier higher.'
+      : weekend
+        ? 'Weekend work: generally seek about +$0.10–$0.15 True RPM.'
+        : '';
+  return Object.freeze({
+    active: weekend || weekendHold,
+    weekend,
+    weekendHold,
+    weakWeekend,
+    label,
+    rpmAdder,
+    tierShift,
+    targetRPM,
+    holdPremium,
+    advisory,
+    hardReject: false,
+    strategicBridgeAllowed: !!strategic,
+  });
+}
+
+function deriveCostProfile(settings = {}){
+  const invalid = [];
+  const read = (key, { positive=false } = {}) => {
+    const raw = settings[key];
+    if (!_hasCostValue(raw)) return null;
+    const n = knownNum(raw);
+    if (n === null || n < 0 || (positive && n <= 0)){
+      invalid.push(key);
+      return null;
+    }
+    return n;
+  };
+
+  const modelVersion = read('costModelVersion') || 0;
+  const mpgSetting = read('vehicleMpg', { positive:true });
+  const fuelSetting = read('fuelPrice');
+  const variableSetting = read('nonFuelVariableCpm');
+  const fixedSetting = read('fixedCostPerMile');
+  const monthlyMiles = read('monthlyMiles');
+  const monthlyInsurance = read('monthlyInsurance') || 0;
+  const monthlyVehicle = read('monthlyVehicle') || 0;
+  const monthlyMaintenance = read('monthlyMaintenance') || 0;
+  const monthlyOther = read('monthlyOther') || 0;
+  const legacyOp = modelVersion >= COST_MODEL_VERSION ? null : read('opCostPerMile');
+
+  if (invalid.length){
+    return Object.freeze({
+      available: false,
+      modelVersion: COST_MODEL_VERSION,
+      unknownFacts: Object.freeze([...new Set(invalid)]),
+    });
+  }
+
+  const derivedFixed = monthlyMiles > 0 && (monthlyInsurance + monthlyVehicle + monthlyOther) > 0
+    ? _roundCPM((monthlyInsurance + monthlyVehicle + monthlyOther) / monthlyMiles)
+    : null;
+  const legacyDerived = monthlyMiles > 0 && (monthlyInsurance + monthlyVehicle + monthlyMaintenance + monthlyOther) > 0
+    ? _roundCPM((monthlyInsurance + monthlyVehicle + monthlyMaintenance + monthlyOther) / monthlyMiles)
+    : null;
+
+  let fixedCPM = fixedSetting !== null ? fixedSetting
+    : derivedFixed !== null ? derivedFixed
+    : COST_PROFILE_DEFAULT.fixedCPM;
+  let nonFuelVariableCPM = variableSetting !== null ? variableSetting : COST_PROFILE_DEFAULT.nonFuelVariableCPM;
+  let migration = modelVersion >= COST_MODEL_VERSION ? 'V2' : 'PROFILE_DEFAULTS';
+  let fixedSource = fixedSetting !== null ? 'USER_FIXED_CPM'
+    : derivedFixed !== null ? 'MONTHLY_FIXED_COSTS'
+    : 'PROFILE';
+  let variableSource = variableSetting !== null ? 'USER_VARIABLE_CPM' : 'PROFILE';
+
+  if (modelVersion < COST_MODEL_VERSION && legacyOp !== null && legacyOp > 0 && variableSetting === null && fixedSetting === null){
+    if (legacyDerived !== null && Math.abs(legacyOp - legacyDerived) <= 0.02){
+      fixedCPM = derivedFixed !== null ? derivedFixed : COST_PROFILE_DEFAULT.fixedCPM;
+      nonFuelVariableCPM = COST_PROFILE_DEFAULT.nonFuelVariableCPM;
+      migration = 'LEGACY_AUTO_FIXED';
+      fixedSource = derivedFixed !== null ? 'MONTHLY_FIXED_COSTS' : 'PROFILE';
+      variableSource = 'PROFILE';
+    } else if (derivedFixed !== null && legacyOp > derivedFixed){
+      fixedCPM = derivedFixed;
+      nonFuelVariableCPM = _roundCPM(legacyOp - derivedFixed);
+      migration = 'LEGACY_NON_FUEL_TOTAL_MINUS_FIXED';
+      fixedSource = 'MONTHLY_FIXED_COSTS';
+      variableSource = 'LEGACY_SPLIT';
+    } else if (derivedFixed === null){
+      const profileNonFuel = COST_PROFILE_DEFAULT.nonFuelVariableCPM + COST_PROFILE_DEFAULT.fixedCPM;
+      const variableShare = profileNonFuel > 0 ? COST_PROFILE_DEFAULT.nonFuelVariableCPM / profileNonFuel : 0.5;
+      nonFuelVariableCPM = _roundCPM(legacyOp * variableShare);
+      fixedCPM = _roundCPM(Math.max(0, legacyOp - nonFuelVariableCPM));
+      migration = 'LEGACY_NON_FUEL_TOTAL_PROPORTIONAL_SPLIT';
+      fixedSource = 'LEGACY_SPLIT';
+      variableSource = 'LEGACY_SPLIT';
+    }
+  }
+
+  const mpg = mpgSetting !== null ? mpgSetting : COST_PROFILE_DEFAULT.mpg;
+  const fuelPrice = fuelSetting !== null ? fuelSetting : COST_PROFILE_DEFAULT.fuelPrice;
+  const fuelCPM = _roundCPM(fuelPrice / mpg);
+  const marginalCPM = _roundCPM(fuelCPM + nonFuelVariableCPM);
+  const allInCPM = _roundCPM(marginalCPM + fixedCPM);
+
+  return Object.freeze({
+    available: true,
+    modelVersion: COST_MODEL_VERSION,
+    unknownFacts: Object.freeze([]),
+    mpg,
+    fuelPrice,
+    fuelCPM,
+    nonFuelVariableCPM: _roundCPM(nonFuelVariableCPM),
+    marginalCPM,
+    fixedCPM: _roundCPM(fixedCPM),
+    allInCPM,
+    mpgSource: mpgSetting !== null ? 'USER' : 'PROFILE',
+    fuelSource: fuelSetting !== null ? 'USER' : 'PROFILE',
+    variableSource,
+    fixedSource,
+    migration,
+    fuelObservedAt: fuelSetting !== null ? null : COST_PROFILE_DEFAULT.fuelObservedAt,
+  });
+}
+
+async function resolveCanonicalCostProfile(){
+  const keys = [
+    'costModelVersion','vehicleMpg','fuelPrice','nonFuelVariableCpm','fixedCostPerMile',
+    'opCostPerMile','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles',
+  ];
+  const values = await Promise.all(keys.map(key => getSetting(key, null)));
+  return deriveCostProfile(Object.fromEntries(keys.map((key, index) => [key, values[index]])));
+}
+
+function resolveCachedCostProfile(overrides = {}){
+  const own = key => Object.prototype.hasOwnProperty.call(overrides, key);
+  return deriveCostProfile({
+    costModelVersion: own('costModelVersion') ? overrides.costModelVersion : getCachedSetting('costModelVersion', null),
+    vehicleMpg: own('mpg') ? overrides.mpg : getCachedSetting('vehicleMpg', null),
+    fuelPrice: own('pricePerGal') ? overrides.pricePerGal : getCachedSetting('fuelPrice', null),
+    nonFuelVariableCpm: own('nonFuelVariableCpm') ? overrides.nonFuelVariableCpm : getCachedSetting('nonFuelVariableCpm', null),
+    fixedCostPerMile: own('fixedCpm') ? overrides.fixedCpm : getCachedSetting('fixedCostPerMile', null),
+    opCostPerMile: getCachedSetting('opCostPerMile', null),
+    monthlyInsurance: getCachedSetting('monthlyInsurance', null),
+    monthlyVehicle: getCachedSetting('monthlyVehicle', null),
+    monthlyMaintenance: getCachedSetting('monthlyMaintenance', null),
+    monthlyOther: getCachedSetting('monthlyOther', null),
+    monthlyMiles: getCachedSetting('monthlyMiles', null),
+  });
+}
 
 // ════════════════════════════════════════════════════
 // TIME WINDOWS — Field-calibrated cargo-van auction-app
@@ -23217,6 +23433,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     isDeadZoneEligible, dzCheckEligibilitySync, dzCheckEligibility,
     // v24 Unified Decision Engine
     deriveUnifiedAuthority, deriveUnifiedGrade, deriveUnifiedEconomics, deriveUnifiedBid, UNIFIED_DECISION_POLICY,
+    deriveCostProfile, resolveCanonicalCostProfile, resolveCachedCostProfile, COST_PROFILE_DEFAULT, COST_MODEL_VERSION,
+    classifyEconomicBand, nextEconomicBandFloor, deriveWeekendOverlay, ECONOMIC_BANDS,
     knownNum, mwGeoCheck, buildUnifiedDecisionContract, MILEAGE_PROVENANCE,
     // v24.1 Confidence + Evidence
     buildEvidenceItem, evidenceFromLiveSource, summarizeEvidenceConfidence,
