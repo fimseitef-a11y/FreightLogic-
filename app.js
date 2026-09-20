@@ -11755,14 +11755,16 @@ function _mwRenderDecision(out, d){
   const {trueRPM, loadedRPM, totalMi, loadedMi, deadMi, deadheadPct, revenue, effectiveRevenue,
     tier, grade, gradeLabel, gradeColor, gradeEmoji,
     verdict, verdictReason, verdictColors, verdictLabels, steps,
-    fuel, netAfterFuel, operatingCost, totalCost, operationalProfit,
+    fuel, fuelCPM, netAfterFuel, nonFuelVariableCPM, variableCost,
+    marginalCPM, marginalCost, fixedCPM, fixedCost, allInCPM,
+    operatingCost, totalCost, operationalProfit, contributionAfterMarginal,
     trueProfit, profitMarginPct, breakEvenRPM,
-    profitPerMile, profitPerHour, fuelPerMile, estHours, opCPM,
+    profitPerMile, contributionPerMile, profitPerHour, fuelPerMile, estHours, opCPM, economicBand,
     weeklyGross, repoSuggestion, geo, fatigue, origin, dest,
     floorRPM, effectiveStrategic, effectiveReason, usaResult, urgency, bidRange, crossBorder,
     velocityMode, velocityDetail, velocityFloor,
     postDeliveryCmd, postDeliveryDetail,
-    turnoverType, warnings,
+    turnoverType, weekendOverlay, warnings,
     isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor,
     dzDisplayGrade, dzDisplayGradeLabel, dzDisplayGradeColor, dzDisplayGradeEmoji,
     noReloadConfirmed} = d;
@@ -11773,7 +11775,7 @@ function _mwRenderDecision(out, d){
   const dispGradeEmoji = dzDisplayGradeEmoji || gradeEmoji;
   // Pre-compute bid numbers for the simplified hero
   const _roundTo25h = (x)=> Math.round((Number(x)||0)/25)*25;
-  const _nextStepRPMh = (trueRPM >= 1.75) ? 1.90 : (trueRPM >= 1.60) ? 1.75 : (trueRPM >= 1.50) ? 1.60 : (trueRPM >= 1.40) ? 1.50 : 1.40;
+  const _nextStepRPMh = nextEconomicBandFloor(trueRPM) || 1.40;
   const _bufferRPMh = breakEvenRPM > 0 ? (breakEvenRPM + 0.20) : 0;
   const _strongRPMh = Math.max(_nextStepRPMh, _bufferRPMh);
   const _premiumRPMh = _strongRPMh + 0.10;
@@ -11818,7 +11820,7 @@ function _mwRenderDecision(out, d){
       <div class="fl-eval-fact-value"${attr}>${value}</div>
     </div>`;
   const _compactFacts = `<div class="fl-eval-facts" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-subtle)">
-    ${_factCell('True RPM', `<span class="mono">$${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${_heroColorEarly}">${escapeHtml(dispGradeLabel)}</span>`, ' data-fl-rpm')}
+    ${_factCell('True RPM', `<span class="mono">${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${economicBand?.color || _heroColorEarly}">${escapeHtml(economicBand?.label || dispGradeLabel)}</span>`, ' data-fl-rpm')}
     ${_factCell('Miles', `<span class="mono">${totalMi}</span> <span style="font-weight:600;color:var(--text-tertiary)">${loadedMi} loaded + ${deadMi} DH</span>`)}
     <div class="fl-eval-fact-label" style="grid-column:1/-1">Positioning</div>
     <div class="fl-eval-positioning" style="color:${_posColor}">${escapeHtml(_posLabel)}</div>
@@ -11874,7 +11876,7 @@ function _mwRenderDecision(out, d){
   html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${dispGradeColor}40;margin-bottom:14px">
     <div style="font-size:14px;font-weight:600;color:${dispGradeColor};letter-spacing:1px;text-transform:uppercase">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
     <div class="fl-eval-grade" style="font-size:52px;color:${dispGradeColor}">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
-    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : tier.color}">$${trueRPM.toFixed(2)}</b> • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label}</div>
+    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : (economicBand?.color || tier.color)}">${trueRPM.toFixed(2)}</b> • ${escapeHtml(economicBand?.label || tier.label)} economics • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label + ' decision band'}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
@@ -11920,7 +11922,7 @@ function _mwRenderDecision(out, d){
 
   // ── 3. PROFIT GAUGE ──
   const gaugeMax = effectiveRevenue || revenue || 1;
-  const profitVal = opCPM > 0 ? trueProfit : netAfterFuel;
+  const profitVal = trueProfit;
   const profitPct = Math.max(0, Math.min(100, (profitVal / gaugeMax) * 100));
   let gaugeColor = profitPct >= 50 ? 'var(--good)' : profitPct >= 35 ? '#58a6ff' : profitPct >= 20 ? 'var(--warn)' : 'var(--bad)';
   html += `<div style="background:var(--surface-0);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">
@@ -11937,8 +11939,8 @@ function _mwRenderDecision(out, d){
   // ── 4. DECISION METRICS ──
   html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
-      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${tier.color}">$${trueRPM.toFixed(2)}</div>
-      <div style="font-size:10px;color:var(--text-tertiary)">True RPM</div>
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${economicBand?.color || tier.color}">${trueRPM.toFixed(2)}</div>
+      <div style="font-size:10px;color:var(--text-tertiary)">True RPM · ${escapeHtml(economicBand?.label || '')}</div>
     </div>
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
       <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${breakEvenRPM > 0 && trueRPM > breakEvenRPM ? 'var(--good)' : 'var(--bad)'}">$${breakEvenRPM.toFixed(2)}</div>
@@ -11954,7 +11956,7 @@ function _mwRenderDecision(out, d){
   // Goal: give 3 numbers the driver can say on the phone.
   // Method: compute revenue required to hit the next RPM ladder step, bounded by break-even + buffer.
   const roundTo25 = (x)=> Math.round((Number(x)||0)/25)*25;
-  const nextStepRPM = (trueRPM >= 1.75) ? 1.90 : (trueRPM >= 1.60) ? 1.75 : (trueRPM >= 1.50) ? 1.60 : (trueRPM >= 1.40) ? 1.50 : 1.40;
+  const nextStepRPM = nextEconomicBandFloor(trueRPM) || 1.40;
   const bufferRPM = breakEvenRPM > 0 ? (breakEvenRPM + 0.20) : 0;
   const strongRPM = Math.max(nextStepRPM, bufferRPM);
   const premiumRPM = strongRPM + 0.10;
@@ -11998,19 +12000,15 @@ function _mwRenderDecision(out, d){
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Profit Summary</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--good-muted);border:1px solid var(--good-border)">
-        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--good)">${fmtMoney(operationalProfit)}</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Operational Profit</div>
-        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − Fuel</div>
+        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--good)">${fmtMoney(contributionAfterMarginal)}</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Contribution</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − marginal costs</div>
       </div>
-      ${opCPM > 0 ? `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:${trueProfit >= 0 ? 'var(--good-muted)' : 'var(--bad-muted)'};border:1px solid ${trueProfit >= 0 ? 'var(--good-border)' : 'var(--bad-border)'}">
+      <div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:${trueProfit >= 0 ? 'var(--good-muted)' : 'var(--bad-muted)'};border:1px solid ${trueProfit >= 0 ? 'var(--good-border)' : 'var(--bad-border)'}">
         <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(trueProfit)}</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
-        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − All Costs</div>
-      </div>` : `<div style="text-align:center;padding:10px;border-radius:var(--r-sm);background:var(--surface-0);border:1px dashed var(--border)">
-        <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text-tertiary)">—</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">True Profit</div>
-        <div style="font-size:9px;color:var(--text-tertiary)">Unavailable — set op cost/mi</div>
-      </div>`}
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">All-in Profit</div>
+        <div style="font-size:9px;color:var(--text-tertiary)">Revenue − marginal − fixed allocation</div>
+      </div>
     </div>
   </div>`;
 
@@ -12019,11 +12017,13 @@ function _mwRenderDecision(out, d){
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-tertiary);font-weight:600;margin-bottom:8px">Cost Breakdown</div>
     <div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px">
       <div class="muted">Revenue</div><div style="text-align:right;font-weight:600">${fmtMoney(revenue)}</div>
-      <div class="muted">Fuel Cost</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(fuel)}</div>
-      ${opCPM > 0 ? `<div class="muted">Operating Cost (${totalMi}mi × $${opCPM.toFixed(2)})</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(operatingCost)}</div>` : ''}
-      <div style="border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700">Total Cost</div>
+      <div class="muted">Fuel (${fuelCPM.toFixed(3)}/mi)</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(fuel)}</div>
+      <div class="muted">Non-fuel variable (${nonFuelVariableCPM.toFixed(3)}/mi)</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(variableCost)}</div>
+      <div class="muted">Marginal total (${marginalCPM.toFixed(3)}/mi)</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(marginalCost)}</div>
+      <div class="muted">Fixed allocation (${fixedCPM.toFixed(3)}/mi)</div><div style="text-align:right;color:var(--bad)">−${fmtMoney(fixedCost)}</div>
+      <div style="border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700">All-in Cost (${allInCPM.toFixed(3)}/mi)</div>
       <div style="text-align:right;border-top:1px solid var(--border-subtle);padding-top:4px;font-weight:700;color:var(--bad)">−${fmtMoney(totalCost)}</div>
-      <div style="font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">Net Profit</div>
+      <div style="font-weight:700;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">All-in Profit</div>
       <div style="text-align:right;font-weight:700;font-size:15px;color:${trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(trueProfit)}</div>
     </div>
   </div>`;
@@ -12106,6 +12106,14 @@ function _mwRenderDecision(out, d){
       </div>`;
     }
     html += `</div>`;
+  }
+
+  if (weekendOverlay?.active){
+    const hold = weekendOverlay.holdPremium;
+    html += `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.28)">
+      <div style="font-size:13px;font-weight:700;color:var(--accent)">🗓️ ${escapeHtml(weekendOverlay.label)}</div>
+      <div class="muted" style="font-size:11px;margin-top:3px">${escapeHtml(weekendOverlay.advisory)}${hold ? ` Hold premium guide: ${fmtMoney(hold.min)}–${fmtMoney(hold.max)}.` : ''}${weekendOverlay.strategicBridgeAllowed ? ' Strategic/homeward bridge remains allowed when justified.' : ''}</div>
+    </div>`;
   }
 
   // ── Urgency Detection ──
