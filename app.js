@@ -7941,27 +7941,38 @@ const INTEL_TILES = [
 //    a real surface ends up functionally buried while technically reachable --
 //    the exact way Market Intel was lost in v24.0.8.
 //
-// Tiles now declare a `group`, and groups render under their own headings, all
-// visible -- a directory shows its contents. `section` is retained and still
-// means everyday vs occasional, but it now orders tiles WITHIN a group instead
-// of hiding half of them behind "More Tools". Every tile that existed still
-// exists, with the same `hash`/`act` binding: this is a regrouping, not a cull. `tests/integration/
-// modern-shell-routing.spec.mjs` MS-12 asserts that structurally, with no
+// Tiles declare a `group` and remain in the DOM under named, keyboard-operable
+// categories. Daily routes stay visible; occasional tax and data tools start
+// collapsed behind their descriptive category headings. `section` orders
+// tiles within a group, and every original `hash`/`act` remains available.
+// `tests/integration/modern-shell-routing.spec.mjs` MS-12 asserts that
+// structurally, with no
 // exceptions list, so a regroup that orphaned a route would fail rather than
 // ship.
 const MORE_GROUPS = [
-  { id:'work', label:'Work & Records' },
-  { id:'app',  label:'App' },
+  { id:'work',     label:'Work & Records' },
+  { id:'money',    label:'Money' },
+  { id:'business', label:'Business & Tax', collapsed:true },
+  { id:'data',     label:'Data & Backup', collapsed:true },
+  { id:'app',      label:'App' },
 ];
 
 const MORE_TILES = [
-  // Keep secondary destinations deliberately small. The five-tab bar owns the
-  // daily workflow; More is a short directory, not a second home screen.
   { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
-  { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'work' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'work' },
   { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
+  { icon:'$', title:'Money / AR', sub:'Unpaid trips and aging', hash:'#money', section:'PRIMARY', group:'money' },
+  { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'money' },
+  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
+  { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
+  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view and accountant export', hash:'#insights', section:'PRIMARY', group:'business' },
+  { icon:'📦', title:'CPA Package', sub:'Quarterly report and export', act:'cpaPackage', section:'ADVANCED', group:'business' },
+  { icon:'🗂', title:'Tax Season Export', sub:'Schedule C and mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
+  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
+  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
+  { icon:'💿', title:'Storage Health', sub:'Local storage and cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
   { icon:'⚙', title:'Settings', sub:'Vehicle, costs, display, backup and privacy', hash:'#insights', section:'PRIMARY', group:'app' },
+  { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED', group:'app' },
+  { icon:'🔬', title:'Diagnostics', sub:'App, cache and AI self-test', act:'diagnostics', section:'ADVANCED', group:'app' },
 ];
 
 // ── Intel Page Renderer ──
@@ -8258,8 +8269,8 @@ async function renderMore(){
       return el;
     };
 
-    // Render one labelled group per MORE_GROUPS entry. A tile with an unknown or
-    // missing `group` still renders, in a final "Other" group -- a tile that
+    // Render one labelled category per MORE_GROUPS entry. A tile with an unknown or
+    // missing `group` still renders, in a final "Other" category -- a tile that
     // silently disappeared because somebody added it without a group would be
     // the orphaning this restructure exists to prevent, so the fallback is a
     // visible group rather than a filter.
@@ -8271,25 +8282,31 @@ async function renderMore(){
     }
 
     const sections = MORE_GROUPS
-      .map(g => ({ label: g.label, tiles: grouped.get(g.id) || [] }))
-      .concat(ungrouped.length ? [{ label: 'Other', tiles: ungrouped }] : [])
+      .map(g => ({ id: g.id, label: g.label, collapsed: !!g.collapsed, tiles: grouped.get(g.id) || [] }))
+      .concat(ungrouped.length ? [{ id: 'other', label: 'Other', tiles: ungrouped }] : [])
       .filter(sec => sec.tiles.length);
 
     for (const sec of sections){
-      const heading = document.createElement('div');
+      const heading = document.createElement('button');
+      heading.type = 'button';
       heading.className = 'fl-more-group';
       heading.style.cssText = 'grid-column:1/-1;padding:14px 4px 6px;color:var(--text-tertiary);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px';
       heading.textContent = sec.label;
-      grid.appendChild(heading);
 
-      // Each group is its own `.menu-grid`, which is also what keeps MS-12's
-      // reachability sweep able to reveal and read every tile.
+      // Each category stays in the DOM for reachability; the heading is a real
+      // disclosure control so optional tools remain findable by touch/keyboard.
       const groupGrid = document.createElement('div');
+      groupGrid.id = `moreGroup-${sec.id}`;
       groupGrid.className = 'menu-grid';
-      groupGrid.style.cssText = 'grid-column:1/-1';
-      // `section` no longer controls visibility -- nothing in More is hidden
-      // behind an unlabelled toggle any more. It now orders tiles WITHIN a
-      // group, so the everyday ones sit first and the occasional ones after.
+      groupGrid.style.cssText = `grid-column:1/-1;${sec.collapsed ? 'display:none' : ''}`;
+      heading.setAttribute('aria-controls', groupGrid.id);
+      heading.setAttribute('aria-expanded', sec.collapsed ? 'false' : 'true');
+      heading.addEventListener('click', () => {
+        const open = heading.getAttribute('aria-expanded') !== 'true';
+        heading.setAttribute('aria-expanded', String(open));
+        groupGrid.style.display = open ? '' : 'none';
+      });
+      grid.appendChild(heading);
       const ordered = sec.tiles.slice().sort((a, b) =>
         (a.section === 'PRIMARY' ? 0 : 1) - (b.section === 'PRIMARY' ? 0 : 1));
       for (const tile of ordered) groupGrid.appendChild(makeTileEl(tile));
@@ -15544,7 +15561,7 @@ function initCollapsibleSettings(){
     addManagedListener(btn, 'click', ()=>{
       const target = document.getElementById(btn.dataset.settingsTarget || '');
       if (!target) return;
-      setOpen(true);
+      if (body.contains(target)) setOpen(true);
       haptic(8);
       setTimeout(()=> target.scrollIntoView({behavior:'smooth', block:'start'}), 30);
     });

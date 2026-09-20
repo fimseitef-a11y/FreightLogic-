@@ -271,13 +271,7 @@
   <button type="button" data-settings-target="settingsPrivacy"><span>Privacy &amp; Data</span><small>Storage, reset and recovery controls</small></button>
 </div>
 
-<!-- ── All Settings (collapsed) ── -->
-<div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
-  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>All Settings</span></span>
-  <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
-</div>
-<div id="advSettingsBody" style="display:none">
-<div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
+<div style="border-top:1px solid var(--border-subtle);margin:14px 0 10px"></div>
 <div class="settings-section-head" id="settingsDisplay"><span class="settings-section-icon">&#128065;&#65039;</span>Driver Display</div>
 <div class="grid2" style="gap:10px">
   <div><label for="driverTextSize">Text size</label>
@@ -293,6 +287,14 @@
     </div></div>
 </div>
 <div class="muted" style="font-size:11px;margin-top:2px">Stored on this device only. Glance Mode is opt-in and never hides the More menu.</div>
+
+<!-- ── All Settings (collapsed) ── -->
+<div id="advSettingsToggle" class="settings-collapse-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="advSettingsBody" style="margin-top:14px">
+  <span style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">⚙️</span> <span>All Settings</span></span>
+  <span id="advSettingsArrow" style="font-size:12px;color:var(--text-tertiary);transition:transform .2s">▶</span>
+</div>
+<div id="advSettingsBody" style="display:none">
+<div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" id="settingsVehicle"><span class="settings-section-icon">🚐</span>Vehicle &amp; Capacity</div>
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
@@ -416,7 +418,7 @@
       <!-- F27: Load Intake button — unified entry point -->
       <div style="margin-bottom:10px">
         <button class="btn primary" id="btnLoadIntake" style="width:100%;font-size:15px;font-weight:700;padding:14px;border-radius:14px">
-          Scan / Paste / Type Load
+          Scan Screenshot <small style="display:block;font-size:12px;font-weight:500;margin-top:4px">Load Intake — Paste or Type</small>
         </button>
       </div>
 
