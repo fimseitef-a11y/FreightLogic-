@@ -4725,7 +4725,9 @@ async function computeQuickKPIs(){
       const dailyBreakeven = profile.available && avgDailyMi !== null
         ? roundCents(avgDailyMi * profile.allInCPM)
         : 0;
-      const todayMargin = todayGross - todayExp;
+      // Planning pace only: posted expenses already live in the accounting KPIs,
+      // so do not subtract them again from this estimated all-in burn.
+      const todayMargin = todayGross - dailyBreakeven;
       const burnEl = $('#kpiDailyBurn');
       if (burnEl && wkAll !== null && profile.available && dailyBreakeven > 0){
         const ahead = todayMargin >= 0;
@@ -13048,20 +13050,23 @@ function omegaApplyAdder(r, add){
   return { min:+(r.min+add).toFixed(2), max:r.max==null?null:+(r.max+add).toFixed(2) };
 }
 
-function omegaNetRange(miles, rpmRange, fuelPx, mpg, opCpm){
-  const fuelCpm = (mpg > 0 && fuelPx > 0) ? (fuelPx / mpg) : 0;
-  const totalCpm = fuelCpm + (opCpm || 0);
+function omegaNetRange(miles, rpmRange, costProfile){
   const grossLow = miles * rpmRange.min;
   const grossHigh = rpmRange.max == null ? null : miles * rpmRange.max;
-  const totalCost = miles * totalCpm;
+  const marginalCost = miles * costProfile.marginalCPM;
+  const totalCost = miles * costProfile.allInCPM;
   return {
     netLow: grossLow - totalCost,
     netHigh: grossHigh == null ? null : grossHigh - totalCost,
-    netRpmLow: rpmRange.min - totalCpm,
-    netRpmHigh: rpmRange.max == null ? null : rpmRange.max - totalCpm,
-    costCpm: totalCpm,
-    fuelCpm,
-    opCpm: opCpm || 0,
+    contributionLow: grossLow - marginalCost,
+    contributionHigh: grossHigh == null ? null : grossHigh - marginalCost,
+    netRpmLow: rpmRange.min - costProfile.allInCPM,
+    netRpmHigh: rpmRange.max == null ? null : rpmRange.max - costProfile.allInCPM,
+    costCpm: costProfile.allInCPM,
+    marginalCpm: costProfile.marginalCPM,
+    fuelCpm: costProfile.fuelCPM,
+    nonFuelVariableCpm: costProfile.nonFuelVariableCPM,
+    fixedCpm: costProfile.fixedCPM,
   };
 }
 
@@ -13124,9 +13129,13 @@ async function omegaCompute(){
     return;
   }
 
-  const fuelPx = Number(await getSetting('fuelPrice', MW.fuelBaseline) || MW.fuelBaseline);
-  const mpg = Number(await getSetting('vehicleMpg', MW.mpg) || MW.mpg);
-  const opCpm = Number(await getSetting('opCostPerMile', 0) || 0);
+  const costProfile = await resolveCanonicalCostProfile();
+  if (!costProfile.available){
+    out.innerHTML = '<div class="muted">Cost model unavailable — review Costs & Goals in Settings.</div>';
+    return;
+  }
+  const fuelPx = costProfile.fuelPrice;
+  const mpg = costProfile.mpg;
 
   const weekTarget = getMWWeekTarget();
   const erosionThreshold = Math.round(weekTarget.low * 0.5);
@@ -13159,6 +13168,14 @@ async function omegaCompute(){
 
   const isLateWeek = (dayOfWeek === 'thu' || dayOfWeek === 'fri');
   const isWeekend = (dayOfWeek === 'sat' || dayOfWeek === 'sun');
+  const weekendOverlay = deriveWeekendOverlay({
+    pickupDay: dayOfWeek,
+    weakDestination: dropTier === 3,
+  });
+  if (weekendOverlay.active && weekendOverlay.rpmAdder > 0){
+    add += weekendOverlay.rpmAdder;
+    adderNotes.push(`+${weekendOverlay.rpmAdder.toFixed(2)} weekend context`);
+  }
 
   let trapLine = '';
   if (risk === 'closure') trapLine = 'Trap: Major closure risk — PASS unless Premium Win';
@@ -13179,16 +13196,16 @@ async function omegaCompute(){
       : 'Conditional: ≤20 empty & Tier-1 drop ✓';
   } else underCond = `Conditional: ${underCond}`;
 
-  const pNet = omegaNetRange(miles, p, fuelPx, mpg, opCpm);
-  const iNet = omegaNetRange(miles, i, fuelPx, mpg, opCpm);
-  const sNet = omegaNetRange(miles, s, fuelPx, mpg, opCpm);
-  const fNet = omegaNetRange(miles, f, fuelPx, mpg, opCpm);
-  const uNet = omegaNetRange(miles, u, fuelPx, mpg, opCpm);
+  const pNet = omegaNetRange(miles, p, costProfile);
+  const iNet = omegaNetRange(miles, i, costProfile);
+  const sNet = omegaNetRange(miles, s, costProfile);
+  const fNet = omegaNetRange(miles, f, costProfile);
+  const uNet = omegaNetRange(miles, u, costProfile);
 
   const headerLines = [
     `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;flex-wrap:wrap;gap:6px">
       <b style="font-size:13px">${escapeHtml(tier.name)}</b>
-      <span class="muted" style="font-size:11px">${miles}mi · ${fmtMoney(pNet.costCpm)}/mi cost (fuel $${fuelPx.toFixed(2)}, ${mpg}mpg, op ${fmtMoney(opCpm)})</span>
+      <span class="muted" style="font-size:11px">${miles}mi · marginal ${costProfile.marginalCPM.toFixed(3)}/mi · all-in ${costProfile.allInCPM.toFixed(3)}/mi (fuel ${fuelPx.toFixed(2)}, ${mpg}mpg)</span>
     </div>`
   ];
   if (erosionApplied) headerLines.push(`<div style="margin-bottom:8px;padding:6px 8px;background:rgba(255,140,66,0.1);border-left:3px solid #ff8c42;border-radius:4px;font-size:11px"><b>Erosion mode active</b> — day-3 gross ${fmtMoney(day3Gross)} below ${fmtMoney(erosionThreshold)} threshold (50% of weekly low ${fmtMoney(weekTarget.low)}). Tier shifted one level down.</div>`);
@@ -13215,7 +13232,7 @@ async function omegaCompute(){
     nets: { premium: pNet, ideal: iNet, strong: sNet, floor: fNet, under: uNet },
     adders: { total: add, notes: adderNotes },
     urgency: urgency && urgency.isUrgent ? { boost: urgencyAdd, matches: urgency.matches } : null,
-    fuelPx, mpg, opCpm,
+    fuelPx, mpg, costProfile,
   };
   const saveBtn = $('#omSaveBidBtn');
   if (saveBtn) saveBtn.style.display = 'inline-flex';
