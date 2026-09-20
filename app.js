@@ -6605,17 +6605,13 @@ async function _saveSetupWizardResults(vals){
   const otherTotal = (vals.mPhone||0) + (vals.mDispatch||0) + (vals.mParking||0) + (vals.mSubs||0);
   tasks.push(setSetting('monthlyOther', otherTotal));
 
-  // v24.0.4 item 6: persist the denominator and derive the operating cost per
-  // mile when BOTH sides are real. Mirrors the Settings-panel derivation at the
-  // monthly-costs save so the two paths cannot disagree. If miles are missing,
-  // opCostPerMile is deliberately left unset — economics then reports itself
-  // unavailable instead of presenting revenue-minus-fuel as profit.
+  // v24.0.26: maintenance is a variable reserve; fixed allocation excludes it.
   const wizMiles = posNum(vals.mMiles || 0);
   tasks.push(setSetting('monthlyMiles', wizMiles));
-  const wizFixed = (vals.mIns||0) + (vals.mVan||0) + (vals.mMaint||0) + otherTotal;
-  if (wizMiles > 0 && wizFixed > 0){
-    tasks.push(setSetting('opCostPerMile', roundCents(wizFixed / wizMiles)));
-  }
+  const wizFixed = (vals.mIns||0) + (vals.mVan||0) + otherTotal;
+  tasks.push(setSetting('fixedCostPerMile', wizMiles > 0 && wizFixed > 0 ? _roundCPM(wizFixed / wizMiles) : null));
+  tasks.push(setSetting('costModelVersion', COST_MODEL_VERSION));
+  tasks.push(setSetting('opCostPerMile', null));
 
   tasks.push(setSetting('f26SetupComplete', true));
   tasks.push(setSetting('autoRecurringExpenses', monthlyItems.length > 0));
@@ -7827,7 +7823,17 @@ async function renderInsights(){
   $('#weeklyGoal').value = await getSetting('weeklyGoal', '') || '';
   $('#vehicleMpg').value = await getSetting('vehicleMpg', '') || '';
   $('#fuelPrice').value = await getSetting('fuelPrice', '') || '';
-  $('#opCostPerMile').value = await getSetting('opCostPerMile', '') || '';
+  {
+    const savedVariable = await getSetting('nonFuelVariableCpm', null);
+    $('#opCostPerMile').value = _hasCostValue(savedVariable) ? savedVariable : '';
+    const hint = $('#costModelHint');
+    if (hint){
+      const profile = await resolveCanonicalCostProfile();
+      hint.textContent = profile.available
+        ? `Current: marginal ${profile.marginalCPM.toFixed(3)}/mi • all-in ${profile.allInCPM.toFixed(3)}/mi • ${profile.migration}`
+        : 'Cost model needs review.';
+    }
+  }
   // Monthly fixed costs
   const mInsEl = $('#monthlyInsurance'); if (mInsEl) mInsEl.value = await getSetting('monthlyInsurance', '') || '';
   const mVehEl = $('#monthlyVehicle'); if (mVehEl) mVehEl.value = await getSetting('monthlyVehicle', '') || '';
@@ -14540,13 +14546,21 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('perDiemRate', Number($('#perDiemRate').value || 0));
   await setSetting('brokerWindow', Number($('#brokerWindow').value || 90));
   await setSetting('weeklyGoal', Number($('#weeklyGoal').value || 0));
-  await setSetting('vehicleMpg', Number($('#vehicleMpg').value || 0));
-  await setSetting('fuelPrice', Number($('#fuelPrice').value || 0));
-  markFuelPriceUpdated().catch(()=>{});
-  // The operator saved this settings panel, so this price is the driver's own
-  // figure — whatever number it happens to equal.
-  setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
-  // Monthly fixed costs → auto-calculate opCostPerMile
+  const mpgRaw = knownNum($('#vehicleMpg').value);
+  const fuelRaw = knownNum($('#fuelPrice').value);
+  await setSetting('vehicleMpg', mpgRaw !== null && mpgRaw > 0 ? mpgRaw : null);
+  await setSetting('fuelPrice', fuelRaw !== null && fuelRaw >= 0 ? fuelRaw : null);
+  if (fuelRaw !== null && fuelRaw >= 0){
+    markFuelPriceUpdated().catch(()=>{});
+    setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
+  } else {
+    setSetting('fuelPriceUpdatedAt', null).catch(()=>{});
+    setSetting('fuelPriceProvenance', null).catch(()=>{});
+  }
+
+  const variableRaw = knownNum($('#opCostPerMile')?.value);
+  await setSetting('nonFuelVariableCpm', variableRaw !== null && variableRaw >= 0 ? variableRaw : null);
+
   const mIns = Number($('#monthlyInsurance')?.value || 0);
   const mVeh = Number($('#monthlyVehicle')?.value || 0);
   const mMaint = Number($('#monthlyMaintenance')?.value || 0);
@@ -14557,14 +14571,13 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('monthlyMaintenance', mMaint);
   await setSetting('monthlyOther', mOther);
   await setSetting('monthlyMiles', mMiles);
-  // Auto-calculate per-mile cost if monthly data is filled in
-  if (mMiles > 0 && (mIns + mVeh + mMaint + mOther) > 0){
-    const autoOpCost = roundCents((mIns + mVeh + mMaint + mOther) / mMiles);
-    $('#opCostPerMile').value = autoOpCost.toFixed(2);
-    await setSetting('opCostPerMile', autoOpCost);
-  } else {
-    await setSetting('opCostPerMile', Number($('#opCostPerMile').value || 0));
-  }
+
+  // v24.0.26: fixed allocation excludes maintenance. Repair/oil/tires live in
+  // non-fuel variable CPM, so monthly maintenance cannot be charged a second time.
+  const fixedMonthly = mIns + mVeh + mOther;
+  await setSetting('fixedCostPerMile', mMiles > 0 && fixedMonthly > 0 ? _roundCPM(fixedMonthly / mMiles) : null);
+  await setSetting('costModelVersion', COST_MODEL_VERSION);
+  await setSetting('opCostPerMile', null);
   const hlInput = $('#settingsHomeLocation');
   if (hlInput) await setSetting('homeLocation', (hlInput.value || '').trim());
   // 7D: van profile for the dimensional/payload pre-check (checkVanFit()).
