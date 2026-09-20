@@ -71,6 +71,7 @@ import { runSpec as preV24Integrity } from './unit/pre-v24-integrity.spec.mjs';
 import { runSpec as v24UnifiedDecision } from './unit/v24-unified-decision.spec.mjs';
 import { runSpec as v24AuthorityBoundaries } from './integration/v24-authority-boundaries.spec.mjs';
 import { runSpec as v24EconomicsBid } from './integration/v24-economics-bid.spec.mjs';
+import { runSpec as economicsAuthorityRefresh } from './integration/economics-authority-refresh.spec.mjs';
 
 import { runSpec as omegaEconomics } from './integration/omega-economics.spec.mjs';
 import { runSpec as releaseGenerationDiscipline } from './unit/release-generation-discipline.spec.mjs';
@@ -157,6 +158,7 @@ const specs = [
   v24UnifiedDecision,
   v24AuthorityBoundaries,
   v24EconomicsBid,
+  economicsAuthorityRefresh,
 ];
 
 const results = [];
