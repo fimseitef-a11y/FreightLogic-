@@ -228,6 +228,27 @@ test('[ECON278-13] driver output separates market evidence from user economics a
   ok(text.includes('not a live-market quote'), 'targets cannot masquerade as a live market quote');
 });
 
+test('[ECON278-14] resolved profile remains identical when trip scoring consumes it', async () => {
+  const r = await app.page.evaluate(() => {
+    const T = window.__FL_TESTS;
+    const profile = T.deriveCostProfile({});
+    const score = T.computeLoadScore({
+      id:'econ278-profile-parity',
+      pay:405,
+      loadedMiles:1000,
+      emptyMiles:0,
+      pickupDate:'2026-09-20',
+      customer:'Regression Broker',
+    }, [], [], profile);
+    return {
+      profile:[profile.fuelCPM,profile.marginalCPM,profile.allInCPM],
+      score:[score.marginalCPM,score.allInCPM],
+    };
+  });
+  eq(JSON.stringify(r.profile), JSON.stringify([0.230,0.296,0.405]), 'resolved canonical profile');
+  eq(JSON.stringify(r.score), JSON.stringify([0.296,0.405]), 'trip score consumes the same profile without reinterpretation');
+});
+
 export async function runSpec(){
   app = await launchApp();
   await skipFirstRunWizard(app.page);
