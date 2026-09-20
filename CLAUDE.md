@@ -146,8 +146,8 @@ decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconci
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` is the certification
-authority — it supersedes the 2026-09-18 document this line used to name, and it is the one
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md` is the certification
+authority — it supersedes the 2026-09-19 document this line used to name, and it is the one
 `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 
