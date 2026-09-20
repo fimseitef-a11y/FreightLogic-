@@ -5307,6 +5307,24 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   const loadedRpm = loaded > 0 ? pay / loaded : 0;
   const deadheadPct = allMi > 0 ? (empty / allMi) * 100 : 0;
   const customer = clampStr(trip.customer || '', 80);
+  const costProfile = resolveCachedCostProfile(fuelConfig || {});
+  if (!costProfile.available){
+    return { available:false, verdict:'UNAVAILABLE', verdictColor:'var(--warn)',
+      marginScore:null, riskScore:null, rpm:null, loadedRpm:null, deadheadPct:null,
+      counterOffer:null, counterRpm:null, fuelCost:null, netAfterFuel:null,
+      tierName:'Cost model unavailable', economicBand:'', margin:{total:null,factors:[]}, risk:{total:null,factors:[]} };
+  }
+  const tripEconomics = deriveUnifiedEconomics({
+    revenue: pay,
+    effectiveRevenue: pay,
+    loadedMi: loaded,
+    deadMi: empty,
+    mpg: costProfile.mpg,
+    fuelPrice: costProfile.fuelPrice,
+    nonFuelVariableCPM: costProfile.nonFuelVariableCPM,
+    fixedCPM: costProfile.fixedCPM,
+  });
+  const economicBand = tripEconomics.economicBand;
 
   // ── Historical baselines (cached — shared across all calls in same render) ──
   const bl = _getScoreBaselines(allTrips, allExps);
@@ -5315,18 +5333,14 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   // ── MARGIN SCORE (0-100) ──
   const margin = { total: 0, factors: [] };
 
-  // Factor 1: RPM vs Omega tiers (0-40 pts)
-  // Maps RPM to where it lands in the Omega tier system
+  // Factor 1: canonical operator economic band (0-40 pts).
+  const bandPoints = [0, 6, 12, 20, 26, 30, 34, 40];
+  const economicPts = bandPoints[economicBand?.rank ?? 0] || 0;
+  margin.factors.push({ name:'Economic band', pts:economicPts, max:40, detail:economicBand?.label || 'Unknown' });
+  margin.total += economicPts;
+  // Distance tier remains market/counter context, not a second profitability authority.
   const tierIdx = omegaTierForMiles(allMi || 1);
   const tier = OMEGA_TIERS[tierIdx];
-  let omegaPts = 0;
-  if (trueRpm >= tier.premium.min){ omegaPts = 40; margin.factors.push({ name:'Omega tier', pts:40, max:40, detail:'Premium Win range' }); }
-  else if (trueRpm >= tier.ideal.min){ omegaPts = 32; margin.factors.push({ name:'Omega tier', pts:32, max:40, detail:'Ideal Target range' }); }
-  else if (trueRpm >= tier.strong.min){ omegaPts = 24; margin.factors.push({ name:'Omega tier', pts:24, max:40, detail:'Strong Accept range' }); }
-  else if (trueRpm >= tier.floor.min){ omegaPts = 16; margin.factors.push({ name:'Omega tier', pts:16, max:40, detail:'Floor Accept range' }); }
-  else if (trueRpm >= tier.under.min){ omegaPts = 8; margin.factors.push({ name:'Omega tier', pts:8, max:40, detail:'Under-Floor range' }); }
-  else { omegaPts = 0; margin.factors.push({ name:'Omega tier', pts:0, max:40, detail:'Below all tiers' }); }
-  margin.total += omegaPts;
 
   // Factor 2: RPM vs personal 90-day average (0-25 pts)
   let histPts = 12; // default neutral if no history
@@ -5354,21 +5368,19 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   margin.factors.push({ name:'Deadhead', pts:dhPts, max:20, detail:`${deadheadPct.toFixed(1)}% empty` });
   margin.total += dhPts;
 
-  // Factor 4: Net margin after daily costs (0-15 pts)
-  let costPts = 8; // default if no expense data
-  if (dailyFixedCost > 0){
-    const estDays = allMi > 0 ? Math.max(1, Math.ceil(allMi / 450)) : 1; // ~450mi/day
-    const costForLoad = dailyFixedCost * estDays;
-    const netMargin = pay > 0 ? ((pay - costForLoad) / pay) * 100 : 0;
-    if (netMargin >= 60){ costPts = 15; }
-    else if (netMargin >= 45){ costPts = 12; }
-    else if (netMargin >= 30){ costPts = 9; }
-    else if (netMargin >= 15){ costPts = 5; }
-    else { costPts = 0; }
-    margin.factors.push({ name:'Net margin', pts:costPts, max:15, detail:`${netMargin.toFixed(0)}% after ~${fmtMoney(costForLoad)}/day costs` });
-  } else {
-    margin.factors.push({ name:'Net margin', pts:costPts, max:15, detail:'No expense data — neutral score' });
-  }
+  // Factor 4: the same canonical all-in margin used by the evaluator.
+  const allInMargin = tripEconomics.profitMarginPct;
+  let costPts = 0;
+  if (allInMargin >= 60){ costPts = 15; }
+  else if (allInMargin >= 45){ costPts = 12; }
+  else if (allInMargin >= 30){ costPts = 9; }
+  else if (allInMargin >= 15){ costPts = 5; }
+  margin.factors.push({
+    name:'All-in margin',
+    pts:costPts,
+    max:15,
+    detail:`${allInMargin.toFixed(0)}% after ${tripEconomics.allInCPM.toFixed(3)}/mi all-in cost`,
+  });
   margin.total += costPts;
 
   // ── RISK SCORE (0-100, lower = safer) ──
@@ -5435,9 +5447,15 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
   // Factor 4: Below-floor risk (0-20 pts)
   let floorRisk = 0;
   if (allMi > 0){
-    if (trueRpm < tier.under.min){ floorRisk = 20; risk.factors.push({ name:'Below floor', pts:20, max:20, detail:`$${trueRpm.toFixed(2)} True RPM is below all Omega tiers` }); }
-    else if (trueRpm < tier.floor.min){ floorRisk = 12; risk.factors.push({ name:'Below floor', pts:12, max:20, detail:`$${trueRpm.toFixed(2)} True RPM is under-floor range` }); }
-    else { risk.factors.push({ name:'Below floor', pts:0, max:20, detail:'RPM is at or above floor' }); }
+    if ((economicBand?.rank ?? 0) <= 1){
+      floorRisk = 20;
+      risk.factors.push({ name:'Economic band', pts:20, max:20, detail:`${trueRpm.toFixed(2)} True RPM — ${economicBand?.label || 'Escape'}` });
+    } else if ((economicBand?.rank ?? 0) === 2){
+      floorRisk = 12;
+      risk.factors.push({ name:'Economic band', pts:12, max:20, detail:`${trueRpm.toFixed(2)} True RPM — Strategic` });
+    } else {
+      risk.factors.push({ name:'Economic band', pts:0, max:20, detail:`Economic band: ${economicBand?.label || 'Unknown'}` });
+    }
   } else {
     risk.factors.push({ name:'Below floor', pts:0, max:20, detail:'No mileage entered' });
   }
@@ -5476,18 +5494,13 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
 
   // ── COUNTER-OFFER ──
   // Target the better of: ideal tier RPM or 5% above personal 90-day avg (rewards consistent operators).
-  const idealRpm = tier.ideal.min;
+  const idealRpm = nextEconomicBandFloor(trueRpm) || 1.40;
   const counterRpm = histAvgRpm > 0 ? Math.max(idealRpm, roundCents(histAvgRpm * 1.05)) : idealRpm;
   const counterOffer = allMi > 0 ? Math.round(counterRpm * allMi) : 0;
 
-  // ── FUEL COST ESTIMATE ──
-  let fuelCost = null, netAfterFuel = null;
-  const mpg = fuelConfig?.mpg || 0;
-  const ppg = fuelConfig?.pricePerGal || 0;
-  if (mpg > 0 && ppg > 0 && allMi > 0){
-    fuelCost = +(allMi / mpg * ppg).toFixed(2);
-    netAfterFuel = +(pay - fuelCost).toFixed(2);
-  }
+  // ── CANONICAL COST ESTIMATE ──
+  const fuelCost = tripEconomics.fuel;
+  const netAfterFuel = tripEconomics.netAfterFuel;
 
   return {
     marginScore: Math.min(100, Math.max(0, m)),
@@ -5497,11 +5510,16 @@ function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
     loadedRpm: +loadedRpm.toFixed(2),
     deadheadPct: +deadheadPct.toFixed(1),
     tierName: tier.name,
+    economicBand: economicBand?.label || '',
     counterOffer, counterRpm,
     margin, risk,
     histAvgRpm: +histAvgRpm.toFixed(2),
     dailyFixedCost: +dailyFixedCost.toFixed(2),
     fuelCost, netAfterFuel,
+    marginalCPM: tripEconomics.marginalCPM,
+    allInCPM: tripEconomics.allInCPM,
+    contributionAfterMarginal: tripEconomics.contributionAfterMarginal,
+    trueProfit: tripEconomics.trueProfit,
   };
 }
 
@@ -5647,9 +5665,10 @@ function openScoreBreakdown(trip, score){
     <div class="pill"><span class="muted">True RPM</span> <b>$${score.rpm}</b></div>
     <div class="pill"><span class="muted">Loaded RPM</span> <b>$${score.loadedRpm}</b></div>
     <div class="pill"><span class="muted">DH%</span> <b>${score.deadheadPct}%</b></div>
-    <div class="pill"><span class="muted">Tier</span> <b>${escapeHtml(score.tierName)}</b></div>
-    ${score.fuelCost !== null ? `<div class="pill"><span class="muted">Fuel est</span> <b>${fmtMoney(score.fuelCost)}</b></div>` : ''}
-    ${score.netAfterFuel !== null ? `<div class="pill" style="border-color:rgba(107,255,149,.3)"><span class="muted">Net after fuel</span> <b style="color:${score.netAfterFuel>0?'var(--good)':'var(--bad)'}">${fmtMoney(score.netAfterFuel)}</b></div>` : ''}`;
+    <div class="pill"><span class="muted">Economic</span> <b>${escapeHtml(score.economicBand || '')}</b></div>
+    <div class="pill"><span class="muted">Marginal</span> <b>${score.marginalCPM.toFixed(3)}/mi</b></div>
+    <div class="pill"><span class="muted">All-in</span> <b>${score.allInCPM.toFixed(3)}/mi</b></div>
+    <div class="pill" style="border-color:rgba(107,255,149,.3)"><span class="muted">All-in profit</span> <b style="color:${score.trueProfit>=0?'var(--good)':'var(--bad)'}">${fmtMoney(score.trueProfit)}</b></div>`;
   body.appendChild(metrics);
 
   // Counter-offer
@@ -5721,9 +5740,9 @@ function openScoreBreakdown(trip, score){
     ctx.style.cssText = 'margin-top:14px';
     ctx.innerHTML = `<h3>Your Baselines</h3><div class="row">
       <div class="pill"><span class="muted">90d avg RPM</span> <b>$${score.histAvgRpm}</b></div>
-      <div class="pill"><span class="muted">Daily cost</span> <b>${fmtMoney(score.dailyFixedCost)}</b></div>
-      ${score.fuelCost !== null ? `<div class="pill"><span class="muted">Fuel model</span> <b>Set ✓</b></div>` : `<div class="pill"><span class="muted">Fuel model</span> <b style="color:var(--warn)">Not set</b></div>`}
-      </div>${score.fuelCost === null ? '<div class="muted" style="font-size:11px;margin-top:8px">Set MPG and fuel price in Settings → More to see Net After Fuel estimates</div>' : ''}`;
+      <div class="pill"><span class="muted">Marginal CPM</span> <b>${score.marginalCPM.toFixed(3)}</b></div>
+      <div class="pill"><span class="muted">All-in CPM</span> <b>${score.allInCPM.toFixed(3)}</b></div>
+      </div>`;
     body.appendChild(ctx);
   }
 
@@ -5748,10 +5767,11 @@ function showScoreFlash(trip, score){
       <div class="pill"><span class="muted">DH%</span> <b>${score.deadheadPct}%</b></div>
       ${score.fuelCost !== null ? `<div class="pill"><span class="muted">Fuel est</span> <b>${fmtMoney(score.fuelCost)}</b></div>` : ''}
     </div>
-    ${score.netAfterFuel !== null ? `<div style="padding:8px 12px;border-radius:10px;background:rgba(107,255,149,.06);border:1px solid rgba(107,255,149,.15);margin-bottom:14px;text-align:center">
-      <div class="muted" style="font-size:11px">NET AFTER FUEL</div>
-      <div style="font-size:22px;font-weight:800;color:${score.netAfterFuel > 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(score.netAfterFuel)}</div>
-    </div>` : ''}
+    <div style="padding:8px 12px;border-radius:10px;background:rgba(107,255,149,.06);border:1px solid rgba(107,255,149,.15);margin-bottom:14px;text-align:center">
+      <div class="muted" style="font-size:11px">CONTRIBUTION / ALL-IN PROFIT</div>
+      <div style="font-size:18px;font-weight:800;color:var(--good)">${fmtMoney(score.contributionAfterMarginal)} <span class="muted" style="font-size:12px">contribution</span></div>
+      <div style="font-size:18px;font-weight:800;color:${score.trueProfit >= 0 ? 'var(--good)' : 'var(--bad)'}">${fmtMoney(score.trueProfit)} <span class="muted" style="font-size:12px">all-in</span></div>
+    </div>
     ${score.counterOffer > 0 && score.marginScore < 80 ? `<div style="padding:12px;border-radius:14px;border:1px solid rgba(255,179,0,.3);background:rgba(255,179,0,.05);margin-bottom:14px">
       <div class="muted" style="font-size:11px;margin-bottom:4px">COUNTER-OFFER TARGET</div>
       <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmtMoney(score.counterOffer)} <span class="muted" style="font-size:13px">($${score.counterRpm.toFixed(2)} RPM)</span></div>
@@ -14055,7 +14075,12 @@ function openTripWizard(existing=null){
     // Compute and show Load Decision Score
     try{
       const { trips: allT, exps: allE } = await _getTripsAndExps();
-      const fc = { mpg: Number(await getSetting('vehicleMpg', 0) || 0), pricePerGal: Number(await getSetting('fuelPrice', 0) || 0) };
+      const cp = await resolveCanonicalCostProfile();
+      const fc = cp.available ? {
+        mpg: cp.mpg, pricePerGal: cp.fuelPrice,
+        nonFuelVariableCpm: cp.nonFuelVariableCPM, fixedCpm: cp.fixedCPM,
+        costModelVersion: COST_MODEL_VERSION,
+      } : {};
       const score = computeLoadScore(saved, allT, allE, fc);
       closeModal();
       setTimeout(()=> showScoreFlash(saved, score), 400);
@@ -14993,7 +15018,12 @@ function openLoadCompare(){
 
     try{
       const { trips: allT, exps: allE } = await _getTripsAndExps();
-      const fc = { mpg: Number(await getSetting('vehicleMpg', 0) || 0), pricePerGal: Number(await getSetting('fuelPrice', 0) || 0) };
+      const cp = await resolveCanonicalCostProfile();
+      const fc = cp.available ? {
+        mpg: cp.mpg, pricePerGal: cp.fuelPrice,
+        nonFuelVariableCpm: cp.nonFuelVariableCPM, fixedCpm: cp.fixedCPM,
+        costModelVersion: COST_MODEL_VERSION,
+      } : {};
       const scoreA = computeLoadScore(loadA, allT, allE, fc);
       const scoreB = computeLoadScore(loadB, allT, allE, fc);
 
