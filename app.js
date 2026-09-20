@@ -11889,7 +11889,7 @@ function _mwRenderDecision(out, d){
       <div class="fl-eval-fact-value"${attr}>${value}</div>
     </div>`;
   const _compactFacts = `<div class="fl-eval-facts" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border-subtle)">
-    ${_factCell('True RPM', `<span class="mono">${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${economicBand?.color || _heroColorEarly}">${escapeHtml(economicBand?.label || dispGradeLabel)}</span>`, ' data-fl-rpm')}
+    ${_factCell('True RPM', `<span class="mono">$${trueRPM.toFixed(2)}</span> <span style="font-weight:600;color:${economicBand?.color || _heroColorEarly}">${escapeHtml(economicBand?.label || dispGradeLabel)}</span>`, ' data-fl-rpm')}
     ${_factCell('Miles', `<span class="mono">${totalMi}</span> <span style="font-weight:600;color:var(--text-tertiary)">${loadedMi} loaded + ${deadMi} DH</span>`)}
     <div class="fl-eval-fact-label" style="grid-column:1/-1">Positioning</div>
     <div class="fl-eval-positioning" style="color:${_posColor}">${escapeHtml(_posLabel)}</div>
@@ -11945,7 +11945,7 @@ function _mwRenderDecision(out, d){
   html += `<div style="text-align:center;padding:16px 0;border-bottom:2px solid ${dispGradeColor}40;margin-bottom:14px">
     <div style="font-size:14px;font-weight:600;color:${dispGradeColor};letter-spacing:1px;text-transform:uppercase">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
     <div class="fl-eval-grade" style="font-size:52px;color:${dispGradeColor}">${dispGrade}${isDZActive ? '<span style="font-size:16px;vertical-align:super;font-weight:700;color:#f0a500;letter-spacing:.5px"> DZ</span>' : ''}</div>
-    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : (economicBand?.color || tier.color)}">${trueRPM.toFixed(2)}</b> • ${escapeHtml(economicBand?.label || tier.label)} economics • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label + ' decision band'}</div>
+    <div style="font-size:13px;color:var(--text-secondary)">True RPM: <b style="color:${isDZActive ? '#f0a500' : (economicBand?.color || tier.color)}">$${trueRPM.toFixed(2)}</b> • ${escapeHtml(economicBand?.label || tier.label)} economics • ${isDZActive ? `Dead Zone Exit — ${dzSubTier}` : tier.label + ' decision band'}</div>
     <div style="margin:10px auto 0;max-width:360px;text-align:left;display:grid;gap:6px">
       ${ladderRow('A','PREMIUM WIN','≥ $1.75')}
       ${ladderRow('B','STRONG ACCEPT','$1.60–$1.74')}
@@ -12008,7 +12008,7 @@ function _mwRenderDecision(out, d){
   // ── 4. DECISION METRICS ──
   html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
-      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${economicBand?.color || tier.color}">${trueRPM.toFixed(2)}</div>
+      <div style="font-family:var(--font-mono);font-size:18px;font-weight:600;color:${economicBand?.color || tier.color}">$${trueRPM.toFixed(2)}</div>
       <div style="font-size:10px;color:var(--text-tertiary)">True RPM · ${escapeHtml(economicBand?.label || '')}</div>
     </div>
     <div style="background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:var(--r-sm);padding:8px;text-align:center">
