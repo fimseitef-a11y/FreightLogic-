@@ -10078,16 +10078,15 @@ function normalizeMileageProvenance(value, isKnown){
 // calculated-looking $0.00 that was never calculated.
 const UNAVAILABLE_ECONOMICS_FIELDS = Object.freeze([
   'revenue','effectiveRevenue','loadedMi','deadMi','totalMi','trueRPM','loadedRPM','deadheadPct',
-  'mpg','fuelPrice','fuel','netAfterFuel','opCPM','operatingCost','borderAdminCost','totalCost',
-  'operationalProfit','trueProfit','profitMarginPct','breakEvenRPM','profitPerMile','estHours',
-  'profitPerHour','fuelPerMile',
+  'mpg','fuelPrice','fuelCPM','fuel','netAfterFuel','nonFuelVariableCPM','variableCost',
+  'marginalCPM','marginalCost','fixedCPM','fixedCost','allInCPM','opCPM','operatingCost',
+  'borderAdminCost','totalCost','operationalProfit','contributionAfterMarginal','trueProfit',
+  'profitMarginPct','breakEvenRPM','profitPerMile','contributionPerMile','estHours','profitPerHour',
+  'fuelPerMile','economicBand','costModelVersion','costProfileSource',
 ]);
 
 function deriveUnifiedEconomics(facts){
   const f = facts || {};
-  // M1: read material facts through knownNum. `Number(f.loadedMi || 0)` turned
-  // every missing input into a confident zero, which then produced a precise
-  // True RPM, a real grade, and a bid range out of nothing.
   const loadedMiK = knownNum(f.loadedMi);
   const deadMiK = knownNum(f.deadMi);
   const revenueK = knownNum(f.revenue);
@@ -10106,54 +10105,124 @@ function deriveUnifiedEconomics(facts){
   if (loadedMiK === null || loadedMiK <= 0 || loadedMiK > 300000) unknownFacts.push('loadedMi');
   if (deadMiK === null || deadMiK < 0 || deadMiK > 300000) unknownFacts.push('deadMi');
   if (effectiveRevenueK === null || effectiveRevenueK < 0 || (revenueK !== null && revenueK < 0)) unknownFacts.push('revenue');
-  const mpgK = knownNum(f.mpg), fuelPriceK = knownNum(f.fuelPrice);
+
+  const mpgK = knownNum(f.mpg);
+  const fuelPriceK = knownNum(f.fuelPrice);
   if (mpgK === null || mpgK <= 0) unknownFacts.push('mpg');
   if (fuelPriceK === null || fuelPriceK < 0) unknownFacts.push('fuelPrice');
-  for (const key of ['opCPM', 'borderAdminCost']){
-    if (f[key] !== undefined && (knownNum(f[key]) === null || knownNum(f[key]) < 0)) unknownFacts.push(key);
+
+  // New callers send variable + fixed explicitly. Old opCPM-only callers are
+  // retained as a compatibility contract and mean "all non-fuel CPM".
+  const canonicalCosts = Object.prototype.hasOwnProperty.call(f, 'nonFuelVariableCPM')
+    || Object.prototype.hasOwnProperty.call(f, 'fixedCPM');
+  let variableK = null;
+  let fixedK = null;
+  let legacyOpK = null;
+  if (canonicalCosts){
+    variableK = knownNum(f.nonFuelVariableCPM);
+    fixedK = knownNum(f.fixedCPM);
+    if (variableK === null || variableK < 0) unknownFacts.push('nonFuelVariableCPM');
+    if (fixedK === null || fixedK < 0) unknownFacts.push('fixedCPM');
+  } else {
+    legacyOpK = f.opCPM === undefined ? 0 : knownNum(f.opCPM);
+    if (legacyOpK === null || legacyOpK < 0) unknownFacts.push('opCPM');
   }
+
+  const borderK = f.borderAdminCost === undefined ? 0 : knownNum(f.borderAdminCost);
+  if (borderK === null || borderK < 0) unknownFacts.push('borderAdminCost');
+
   if (unknownFacts.length){
-    const out = { available: false, unknownFacts: Object.freeze(unknownFacts), mileageProvenance };
+    const out = {
+      available: false,
+      unknownFacts: Object.freeze([...new Set(unknownFacts)]),
+      mileageProvenance,
+    };
     for (const key of UNAVAILABLE_ECONOMICS_FIELDS) out[key] = null;
     return Object.freeze(out);
   }
 
-  const loadedMi = Math.max(0, loadedMiK);
-  const deadMi = Math.max(0, deadMiK);
+  const loadedMi = loadedMiK;
+  const deadMi = deadMiK;
   const totalMi = loadedMi + deadMi;
   const revenue = Math.max(0, revenueK === null ? effectiveRevenueK : revenueK);
   const effectiveRevenue = Math.max(0, effectiveRevenueK === null ? revenue : effectiveRevenueK);
   const mpg = mpgK;
   const fuelPrice = fuelPriceK;
-  const opCPM = Math.max(0, Number(f.opCPM || 0));
-  const borderAdminCost = Math.max(0, Number(f.borderAdminCost || 0));
-  const trueRPM = totalMi > 0 ? (effectiveRevenue / totalMi) : 0;
-  const loadedRPM = loadedMi > 0 ? (effectiveRevenue / loadedMi) : 0;
-  const fuel = (totalMi > 0 && mpg > 0) ? roundCents((totalMi / mpg) * fuelPrice) : 0;
+  const nonFuelVariableCPM = canonicalCosts ? variableK : Math.max(0, legacyOpK || 0);
+  const fixedCPM = canonicalCosts ? fixedK : 0;
+  const fuelCPM = _roundCPM(fuelPrice / mpg);
+  const marginalCPM = _roundCPM(fuelCPM + nonFuelVariableCPM);
+  const allInCPM = _roundCPM(marginalCPM + fixedCPM);
+  const opCPM = _roundCPM(nonFuelVariableCPM + fixedCPM);
+  const borderAdminCost = Math.max(0, borderK || 0);
+
+  const trueRPM = totalMi > 0 ? effectiveRevenue / totalMi : 0;
+  const loadedRPM = loadedMi > 0 ? effectiveRevenue / loadedMi : 0;
+  const fuel = roundCents(totalMi * fuelCPM);
   const netAfterFuel = roundCents(effectiveRevenue - fuel);
-  const operatingCost = roundCents(totalMi * opCPM);
-  const totalCost = roundCents(fuel + operatingCost + borderAdminCost);
-  const operationalProfit = netAfterFuel;
+  const variableCost = roundCents(totalMi * nonFuelVariableCPM);
+  const fixedCost = roundCents(totalMi * fixedCPM);
+  const marginalCost = roundCents(fuel + variableCost + borderAdminCost);
+  const operatingCost = roundCents(variableCost + fixedCost);
+  const totalCost = roundCents(marginalCost + fixedCost);
+  const operationalProfit = netAfterFuel; // legacy compatibility alias
+  const contributionAfterMarginal = roundCents(effectiveRevenue - marginalCost);
   const trueProfit = roundCents(effectiveRevenue - totalCost);
   const profitMarginPct = effectiveRevenue > 0 ? roundCents((trueProfit / effectiveRevenue) * 100) : 0;
   const breakEvenRPM = totalMi > 0 ? roundCents(totalCost / totalMi) : 0;
   const profitPerMile = totalMi > 0 ? roundCents(trueProfit / totalMi) : 0;
+  const contributionPerMile = totalMi > 0 ? roundCents(contributionAfterMarginal / totalMi) : 0;
   const avgMphK = knownNum(f.avgMph);
-  const avgMph = (avgMphK !== null && avgMphK >= PICKUP_FEASIBILITY.MIN_MPH && avgMphK <= PICKUP_FEASIBILITY.MAX_MPH) ? avgMphK : null;
+  const avgMph = (avgMphK !== null && avgMphK >= PICKUP_FEASIBILITY.MIN_MPH && avgMphK <= PICKUP_FEASIBILITY.MAX_MPH)
+    ? avgMphK
+    : null;
   const estHours = avgMph === null ? null : roundCents(totalMi / avgMph);
   const profitPerHour = estHours && estHours > 0 ? roundCents(trueProfit / estHours) : null;
-  const fuelPerMile = totalMi > 0 ? roundCents(fuel / totalMi) : 0;
-  const deadheadPct = totalMi > 0 ? ((deadMi / totalMi) * 100) : 0;
+  const fuelPerMile = fuelCPM;
+  const deadheadPct = totalMi > 0 ? (deadMi / totalMi) * 100 : 0;
+  const economicBand = classifyEconomicBand(trueRPM);
+
   return Object.freeze({
     available: true,
     unknownFacts: Object.freeze([]),
     mileageProvenance,
-    revenue, effectiveRevenue, loadedMi, deadMi, totalMi,
-    trueRPM, loadedRPM, deadheadPct,
-    mpg, fuelPrice, fuel, netAfterFuel,
-    opCPM, operatingCost, borderAdminCost, totalCost,
-    operationalProfit, trueProfit, profitMarginPct, breakEvenRPM,
-    profitPerMile, estHours, profitPerHour, fuelPerMile,
+    revenue,
+    effectiveRevenue,
+    loadedMi,
+    deadMi,
+    totalMi,
+    trueRPM,
+    loadedRPM,
+    deadheadPct,
+    mpg,
+    fuelPrice,
+    fuelCPM,
+    fuel,
+    netAfterFuel,
+    nonFuelVariableCPM: _roundCPM(nonFuelVariableCPM),
+    variableCost,
+    marginalCPM,
+    marginalCost,
+    fixedCPM: _roundCPM(fixedCPM),
+    fixedCost,
+    allInCPM,
+    opCPM,
+    operatingCost,
+    borderAdminCost,
+    totalCost,
+    operationalProfit,
+    contributionAfterMarginal,
+    trueProfit,
+    profitMarginPct,
+    breakEvenRPM,
+    profitPerMile,
+    contributionPerMile,
+    estHours,
+    profitPerHour,
+    fuelPerMile,
+    economicBand,
+    costModelVersion: COST_MODEL_VERSION,
+    costProfileSource: f.costProfileSource || null,
   });
 }
 
