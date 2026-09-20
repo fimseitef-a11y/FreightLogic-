@@ -1,7 +1,15 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.24 USA ENGINE
+/** FreightLogic v24.0.25 USA ENGINE
+ *  v24.0.25 "Driver IA": operator-directed Apple-style information architecture
+ *          and evaluator simplification. More groups every existing destination
+ *          under named categories; Settings keeps Text Size and Glance immediately
+ *          reachable while the long form stays under All Settings; screenshot, paste
+ *          and type intake paths remain visible. Freight economics, doctrine,
+ *          IndexedDB and Worker semantics are unchanged. Runtime bytes change, so
+ *          the governed app/service-worker generation advances; DB stays 16 and
+ *          Worker stays v21.
  *  v24.0.23 "One CSS Authority": presentation-only delivery correction for the
  *          final driver-first PWA. The operator-approved reference presentation
  *          used to live twice: base/design rules in styles.css plus a second
@@ -386,7 +394,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.24';
+const APP_VERSION = '24.0.25';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
