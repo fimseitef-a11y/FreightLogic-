@@ -3959,12 +3959,31 @@ function downloadCSV(rows, filename){
 }
 async function exportTripsCSV(){
   const trips = await dumpStore('trips');
-  const header = ['Order#','Customer','Pickup','Delivery','Origin','Destination','Stops','Pay','LoadedMiles','EmptyMiles','AllMiles','RPM','Paid','PaidDate','WouldRunAgain','Notes'];
+  const profile = await resolveCanonicalCostProfile();
+  const header = ['Order#','Customer','Pickup','Delivery','Origin','Destination','Stops','Pay','LoadedMiles','EmptyMiles','AllMiles','RPM','EconomicBand','MarginalCPM','AllInCPM','Contribution','AllInProfit','Paid','PaidDate','WouldRunAgain','Notes'];
   const rows = [header, ...trips.map(t => {
     const all = tripAllMiles(t);
     const rpm = all > 0 ? (Number(t.pay||0)/all).toFixed(2) : '';
+    let economics = null;
+    if (all !== null && all > 0 && profile.available){
+      economics = deriveUnifiedEconomics({
+        revenue: Number(t.pay||0), effectiveRevenue: Number(t.pay||0),
+        loadedMi: Number(t.loadedMiles||0), deadMi: Number(t.emptyMiles),
+        mpg: profile.mpg, fuelPrice: profile.fuelPrice,
+        nonFuelVariableCPM: profile.nonFuelVariableCPM, fixedCPM: profile.fixedCPM,
+      });
+    }
     const stopsStr = Array.isArray(t.stops) ? t.stops.map(s => `${s.city||''}(${s.type||'stop'})`).join('; ') : '';
-    return [t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay, t.loadedMiles, t.emptyMiles, all, rpm, tripPaymentKnown(t) ? (t.isPaid?'Yes':'No') : '', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes];
+    return [
+      t.orderNo, t.customer, t.pickupDate, t.deliveryDate, t.origin, t.destination, stopsStr, t.pay,
+      t.loadedMiles, t.emptyMiles, all, rpm,
+      economics?.economicBand?.label || '',
+      economics?.available ? economics.marginalCPM.toFixed(3) : '',
+      economics?.available ? economics.allInCPM.toFixed(3) : '',
+      economics?.available ? economics.contributionAfterMarginal.toFixed(2) : '',
+      economics?.available ? economics.trueProfit.toFixed(2) : '',
+      tripPaymentKnown(t) ? (t.isPaid?'Yes':'No') : '', t.paidDate||'', t.wouldRunAgain?'Yes':'', t.notes,
+    ];
   })];
   downloadCSV(rows, `freight-logic-trips-${isoDate()}.csv`);
   toast('CSV exported');
@@ -4701,18 +4720,14 @@ async function computeQuickKPIs(){
     if (dhPill) dhPill.className = deadheadPct > 30 ? 'pill danger' : deadheadPct > 20 ? 'pill warn' : 'pill';
     // v21 T1D: Daily breakeven card
     try {
-      const [mIns, mVeh, mMaint, mOther, mpg, fuelPx] = await Promise.all([
-        getSetting('monthlyInsurance', 0), getSetting('monthlyVehicle', 0),
-        getSetting('monthlyMaintenance', 0), getSetting('monthlyOther', 0),
-        getSetting('vehicleMpg', 0), getSetting('fuelPrice', 0)
-      ]);
-      const dailyFixed = ((Number(mIns)||0) + (Number(mVeh)||0) + (Number(mMaint)||0) + (Number(mOther)||0)) / 30;
-      const avgDailyMi = wkAll / 7;
-      const dailyFuelEst = (Number(mpg) > 0 && Number(fuelPx) > 0) ? (avgDailyMi / Number(mpg)) * Number(fuelPx) : 0;
-      const dailyBreakeven = roundCents(dailyFixed + dailyFuelEst);
-      const todayMargin = todayGross - todayExp - dailyFixed;
+      const profile = await resolveCanonicalCostProfile();
+      const avgDailyMi = wkAll === null ? null : wkAll / 7;
+      const dailyBreakeven = profile.available && avgDailyMi !== null
+        ? roundCents(avgDailyMi * profile.allInCPM)
+        : 0;
+      const todayMargin = todayGross - todayExp;
       const burnEl = $('#kpiDailyBurn');
-      if (burnEl && wkAll !== null && Number(mpg) > 0 && Number(fuelPx) > 0 && dailyBreakeven > 0){
+      if (burnEl && wkAll !== null && profile.available && dailyBreakeven > 0){
         const ahead = todayMargin >= 0;
         burnEl.innerHTML = `<span class="muted">Burn</span> <b>${fmtMoney(dailyBreakeven)}/day</b> · <span style="color:${ahead?'var(--good)':'var(--bad)'}">${ahead ? 'Ahead ' : 'Need '}<b>${fmtMoney(Math.abs(todayMargin))}</b></span>`;
       }
@@ -20841,13 +20856,14 @@ async function openWeeklyStrategy(){
     ]);
 
     const weeklyGoal  = Number(await getSetting('weeklyGoal', 0) || 0);
-    const opCPM       = Number(await getSetting('opCostPerMile', 0) || 0);
+    const costProfile  = await resolveCanonicalCostProfile();
 
-    // Compute week totals
+    // Actual expenses remain an observed ledger metric. Modeled net uses all-in
+    // CPM alone so posted fuel/maintenance is not subtracted a second time.
     const grossWk   = wkTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
     const milesWk   = wkTrips.reduce((s, t) => s + Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0), 0);
     const expWk     = wkExps.reduce((s, e) => s + Number(e.amount || 0), 0);
-    const netWk     = grossWk - expWk - (opCPM > 0 ? milesWk * opCPM : 0);
+    const netWk     = costProfile.available ? grossWk - (milesWk * costProfile.allInCPM) : grossWk - expWk;
     const avgRPM    = milesWk > 0 ? grossWk / milesWk : 0;
 
     // Day-of-week progress (Mon=0 … Sun=6), Monday-anchored
