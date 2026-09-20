@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 Claude-owned marker slice READY** on `claude/app-review-completion-w01r6h` @ `4d3d1c5`: overlay VERSION, config appTarget, parity EXPECTED + 18 inline assertions, CLAUDE.md record. GPT's SHARED files untouched. CG-07/08/14 and RG-03 are RED on that branch **by construction** — they derive from `APP_VERSION`, still 24.0.24 — and clear on the integrated head. Verified PR #277 CI 721/1 with RG-03 the only failure before applying. See `claude-to-gpt-v24025-marker-slice-ready-2026-09-20.md`. #278 economics NOT started — needs app.js, GPT holds the lock.) | 2026-09-20T19:55Z |
-| gpt | Resuming draft PR #277 Apple-style IA; investigate its 12 failing checks, restore reachable existing tools, then integrate release markers and full-suite evidence. | 2026-09-20T18:45Z |
+| gpt | v24.0.25 is merged/live/green; finishing governance-only PR #280, then taking #278 economics authority refresh with fresh runtime + lane locks. | 2026-09-20T19:58Z |
 
 ---
 
