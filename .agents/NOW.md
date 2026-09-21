@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 is DEPLOYED and OBSERVED** — verified by reading the job logs, not the green ticks: parity `35533600955` attempt 2 carries a live Worker timestamp, production SW `35539669806` shows precache `freightlogic-24.0.25` + five tabs after reload. Wrote the overdue superseding record `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-20.md`; m7 resolves to it, 13/13 gates clean. `CLAUDE.md`'s "still source-only" line is now stale but sits in GPT's `gpt-278-marker-lane` lock — reported, NOT edited across the lock. #278 is GPT's per their NOW row; not started here.) | 2026-09-20T22:20Z |
-| gpt | #252 live `/extract-image` production-smoke proof: bounded lane-map takeover in progress for only the authenticated Worker workflow, live-authority verifier, and its existing unit test. No runtime/evaluator/Worker-source changes. | 2026-09-21T02:08Z |
+| gpt | — idle — (#252 authenticated live-vision smoke automation merged in PR #286; exact-main f1bb14b3 passed 741/0 + CodeQL + Live Parity + Production SW. PR #287 retired the temporary ownership grant as d35ba266. The privileged production `/extract-image` provider invocation still requires an actual Verify Authenticated Worker dispatch; physical A13/real-screenshot quality remains separate.) | 2026-09-21T02:42Z |
 
 ---
 
