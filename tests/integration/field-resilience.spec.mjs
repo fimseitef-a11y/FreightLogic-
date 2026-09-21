@@ -568,22 +568,36 @@ test('[FINDING F-9 / FIXED] a cosmetic notice cannot erase a visible safety warn
 test('[FINDING F-9 / FIXED] escalation still works — a warning replaces anything, and informational toasts still replace each other', async () => {
   const gpsApp = await launchGpsApp();
   try {
-    const r = await gpsApp.page.evaluate(async () => {
-      const sleep = ms => new Promise(res => setTimeout(res, ms));
+    // NO sleeps between a toast() call and its read, deliberately. Both toast() and
+    // textContent are synchronous, so the whole sequence runs as ONE uninterruptible
+    // block and neither a timer nor another caller can land inside it.
+    //
+    // The first version of this test yielded ~20ms between each step and failed on
+    // CI (745/1 on main @ 764ea09) while passing locally every time. Two real
+    // mechanisms, both reproduced before this was changed:
+    //   1. toast() auto-hides after 2400ms. On a loaded runner a nominal 20ms sleep
+    //      is starved far longer, the warning's own window closes mid-sequence, and
+    //      the cosmetic notice is then correctly NOT suppressed -- the assertion
+    //      fails describing a defect that is not there.
+    //   2. Any app boot/render path that toasts during a yield overwrites #toast,
+    //      so the read returns another caller's message.
+    // Neither is a product defect; both were this test importing a timing
+    // dependency into a rule about synchronous state. Do not reintroduce the sleeps.
+    const r = await gpsApp.page.evaluate(() => {
       const T = window.__FL_TESTS.toast;
       const el = document.getElementById('toast');
       const out = {};
 
-      T('first informational', false);      await sleep(20); out.info1 = el.textContent;
-      T('second informational', false);     await sleep(20); out.info2 = el.textContent;   // info replaces info
-      T('a real warning', true);            await sleep(20); out.warn = el.textContent;    // warning replaces info
-      T('a newer warning', true);           await sleep(20); out.warn2 = el.textContent;   // warning replaces warning
-      T('cosmetic notice', false);          await sleep(20); out.suppressed = el.textContent;
+      T('first informational', false);   out.info1 = el.textContent;
+      T('second informational', false);  out.info2 = el.textContent;   // info replaces info
+      T('a real warning', true);         out.warn = el.textContent;    // warning replaces info
+      T('a newer warning', true);        out.warn2 = el.textContent;   // warning replaces warning
+      T('cosmetic notice', false);       out.suppressed = el.textContent;
 
       // Once the warning's own window closes, informational toasts work normally again.
       el.className = 'toast hide';
       T('informational after the warning cleared', false);
-      await sleep(20); out.afterClear = el.textContent;
+      out.afterClear = el.textContent;
       return out;
     });
 
