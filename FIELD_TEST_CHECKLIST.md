@@ -2,9 +2,21 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point, observed 2026-09-21: **FreightLogic v24.0.26 / IndexedDB v16 / Worker v21**. Exact checkpoint `d35ba266`: live parity `35555039896` (job `106196949693`) and production service worker `35555039852` (job `106196949605`) both returned `VERDICT: PASS`; tests reported 741/0 across 72 specs. The precache is `freightlogic-24.0.26`, with all 22 runtime assets and one generation cache. **A13's Worker-generation prerequisite is met, but the authenticated vision-provider invocation and real-image quality are still unobserved.** Re-read source and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` before testing; these are dated observations, not a permanently pinned candidate.
+Current runtime synchronization point, observed 2026-09-21: **FreightLogic v24.0.27 / IndexedDB v16 / Worker v21**.
+Runtime merge `e160d94` (PR #291) passed exact-main Tests `35649355528`
+(job `106497614211`) at **743/0 across 72 specs**. The later governance-only
+checkpoint `8a520bc` changes no runtime byte; on that checkpoint Live Parity
+`35651336959` (job `106504221124`) and Production Service Worker
+`35651336872` (job `106504213816`) both returned `VERDICT: PASS`.
+Production was directly observed serving app/SW/manifest 24.0.27 and Worker v21;
+the precache is `freightlogic-24.0.27`, all 22 declared runtime assets are present,
+five tabs and Today render after reload, and exactly one generation cache survives.
+**A13's Worker-generation prerequisite is met, but the authenticated live vision-provider
+invocation and real-image quality remain unobserved.** Re-read source and
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` before testing;
+these are dated observations, not a permanently pinned candidate.
 
 **Voice Load was deliberately REMOVED in v24.0.17 by operator decision (Issue #230).** The
 evaluator microphone, the Load Intake and Smart Load Inbox voice buttons, the voice status
@@ -14,7 +26,7 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production 24.0.26 / DB16 / Worker v21 was observed at the checkpoint above, but that does not select it as the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production 24.0.27 / DB16 / Worker v21 was observed at the checkpoint above, but that does not select it as the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
@@ -366,7 +378,7 @@ For every blocking item use exactly one of:
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
 The release remains **HOLD**. The dated evidence and outstanding scope are in
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, resolved by explicit supersession through
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, resolved by explicit supersession through
 `scripts/m7-certify.mjs`. Standard exact-main tests, live app/Worker generation parity and
 production service-worker checks pass at its named checkpoint. The new authenticated
 `/extract-image` provider probe has **not** run, and a blank-image smoke cannot replace
@@ -381,4 +393,4 @@ policy and independent review, and repository/Safari/native work are tracked sep
 in the current state. The former statement that only physical work remained overstated
 completion by omitting those pending items.
 
-Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` before the release is frozen.
+Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` before the release is frozen.
