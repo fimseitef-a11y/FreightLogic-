@@ -1,0 +1,6 @@
+owner: gpt
+token: c711eb5b-81cc-46a3-8d20-b2c1761b2527
+started_utc: 2026-09-21T02:35:00Z
+expected_release_utc: 2026-09-21T03:15:00Z
+paths: .agents/LANES.md
+task: retire temporary #252 live vision smoke ownership after PR #286 merge
