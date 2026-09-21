@@ -1,13 +1,13 @@
-# Completion release certification addendum — source 24.0.28 / last observed production 24.0.27 / DB16 / Worker v21
+# Completion release certification addendum — production 24.0.28 / DB16 / Worker v21
 
 Date: 2026-09-21
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md
-Status: **HOLD — v24.0.28 source/runtime CI is green, while the last directly observed production generation is v24.0.27. Physical iPhone A1-A13, v24.0.28 live parity/service-worker observation, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
+Status: **HOLD — v24.0.28 exact PR-head automated tests, CodeQL, live all-asset parity and production service-worker checks are OBSERVED and PASSING. Physical iPhone A1-A13, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
 
-This addendum supersedes the 24.0.26 certification state without rewriting it. It also
-preserves the directly observed v24.0.27 production evidence while recording that source/main
-has advanced to v24.0.28. It is a dated evidence checkpoint, not a claim that all FreightLogic
-work is complete and not a claim that production already serves v24.0.28.
+This addendum supersedes the 24.0.26 certification state without rewriting it. It preserves
+the directly observed v24.0.27 evidence as history and records the later direct v24.0.28
+production observation. It is a dated evidence checkpoint, not a claim that all FreightLogic
+work is complete.
 
 ## Current source candidate — v24.0.28
 
@@ -24,12 +24,32 @@ and the grade-A hero verdict can no longer claim a Tier 1 destination when no de
 was supplied. The relevant regressions are `ECON278-15`, `ECON278-16`, the expanded
 `ECON278-10`, and `SSI-19`.
 
-**Deployment/live boundary:** the runs in the next sections directly observed **v24.0.27**,
-not v24.0.28. At this checkpoint no v24.0.28 live-parity or production-service-worker run has
-been observed through the available GitHub connector. Source and observed production are
-therefore intentionally recorded as different facts. After deployment settles, re-dispatch
-the live gates and require direct 24.0.28 observation before updating this record to production
-24.0.28.
+## v24.0.28 live production observation of record
+
+Current documentation checkpoint: `340e017e3b05984bab04cd08abe17daa13dbde8b`.
+
+- Live Parity `35659859339`, job `106532274978`: **VERDICT: PASS**. The log directly
+  observes app/SW/manifest **24.0.28**, Worker `/health` **v21**, all **22** declared
+  runtime assets loading, no runtime asset served as HTML, and **20** repository-only paths
+  withheld.
+- Production Service Worker `35659859338`, job `106532275591`: **VERDICT: PASS**.
+  The worker reaches ACTIVATED, controls after reload, precaches
+  `freightlogic-24.0.28` with all 22 assets, renders five tabs + Today after reload,
+  and leaves exactly one generation cache.
+- CodeQL `35659859456`, job `106532275452`: **PASS**.
+
+The runtime-merge push Live Parity run `35658640376` failed while deployment was still
+settling. A later explicit dispatch on the runtime merge, `35658734732` (job
+`106528647843`), directly observed v24.0.28 and passed. The runtime-merge Production
+Service Worker run `35658640358` (job `106528337742`) also passed. This retains both
+the race and the settled observation rather than erasing either.
+
+The runtime-merge push Tests run `35658640366` recorded **745/1** because the F-9
+informational-to-informational ordering assertion saw the automatic
+"FreightLogic 24.0.28 installed." notice. The exact PR head had passed **746/0** first
+attempt, and the documentation successor is merged only behind its own green full suite.
+The 745/1 result remains intermittent test-interference evidence, not a hidden product fix.
+
 
 ## Preserved production observation — why v24.0.27 required its own record
 
