@@ -2,34 +2,34 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.26** is the observed production PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.27** is the observed production PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**Observed 2026-09-21: production serves 24.0.26 / DB16 / Worker v21.**
-v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
-profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
-trip CSV economics; separates fuel, non-fuel variable cost and fixed allocation so the
-same cost cannot be charged twice; adds the operator True-RPM economic bands as a
-separate profitability taxonomy from the retained decision/doctrine letter grades; and
-adds advisory weekend / Fri-Sat-to-Monday hold pricing context without creating a hard
-reject. `DB_VERSION` remains **16** and the Worker remains **v21**.
+**Observed 2026-09-21: production serves 24.0.27 / DB16 / Worker v21.**
+PR #291 merged the F-9 shared-toast safety repair as runtime merge `e160d94e8a16396904ac31508c92900bbfeff91d`.
+The repair prevents an informational service-worker/install notice from erasing a visible warning while
+preserving escalation (a warning may still replace anything). No economics, routing, storage, schema,
+or Worker semantics changed; DB remains **16** and Worker remains **v21**.
 
-The v24.0.26 runtime merged through PR #281 as `9e3be9e0`. On the later
-documentation/tooling/governance checkpoint `d35ba266bfe3fc9083d43f716289a988704f671d`,
-exact-main Tests run `35555039857` reports **741 passed / 0 failed across 72 specs**;
-CodeQL `35555039929` is green; Live Parity `35555039896` and Production Service Worker
-`35555039852` both report `VERDICT: PASS`. Their logs observe app/SW/manifest 24.0.26,
-Worker `/health` v21, 22 runtime assets, 20 repository-only paths withheld, and one
-`freightlogic-24.0.26` generation cache. No deployed app bytes changed after #281 at
-this checkpoint. These are dated observations, not a substitute for fetching the next head.
+Exact-main Tests run `35649355528` (job `106497614211`) on `e160d94` reports
+**743 passed / 0 failed across 72 specs**. A later governance-only checkpoint,
+`8a520bc060ddd11bbb9db5fe3cbd612aecc79456` (PR #292, only `.agents/LANES.md`),
+leaves those runtime bytes unchanged and provides settled live observation:
+Live Parity run `35651336959` (job `106504221124`) returned `VERDICT: PASS`,
+observing app/SW/manifest **24.0.27**, Worker `/health` **v21**, all **22** declared
+runtime assets, and **20** repository-only paths withheld. Production Service Worker run
+`35651336872` (job `106504213816`) returned `VERDICT: PASS`, observing
+`freightlogic-24.0.27`, all 22 assets in precache, five driver tabs and a visible Today
+surface after reload, and exactly one generation cache. CodeQL run `35651336944`
+(job `106504214226`) passed on the same checkpoint.
 
-**This does not close #278 or #252.** #278's later rate-basis, regional fuel, chain/exit,
-outcome and market-calibration scope still needs Claude's independent audit and joint
-consensus. #286 added the synthetic authenticated `/extract-image` smoke, but no run
-has invoked it against the live provider; that result remains **UNOBSERVED**. Worker
-version agreement is not provider-wiring or real-screenshot quality evidence. Physical
-iPhone A1-A13, the guarded Admin Console deployment/live-auth proof, repository-admin
-controls, and macOS Safari/native work remain separate. See the current certification
-state for the exact scope of each observation.
+**This still does not close #278 or #252.** #278's later rate-basis/settlement,
+regional/dynamic fuel, chain/exit, outcome and market-calibration scope still needs the
+required independent Claude audit/joint consensus. #252's synthetic authenticated
+`/extract-image` verifier exists, but the privileged live provider invocation and
+real-screenshot quality benchmark remain separate evidence. Physical iPhone A1-A13,
+the guarded Admin Console deployment/live-auth proof, repository-admin controls, and
+macOS Safari/native Apple work remain open. The current certification authority is
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
 
 **Historical v24.0.25 observation.** PR #277 merged as
 `436d677876c238bb6773d56a15d8f00a5699a3f9`; governance-only #280 was
@@ -136,7 +136,7 @@ decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconci
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` is the certification
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` is the certification
 authority — through the preserved 2026-09-20 addendum it supersedes the older records, and it is the one
 `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
