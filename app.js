@@ -1,7 +1,22 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.27 USA ENGINE
+/** FreightLogic v24.0.28 USA ENGINE
+ *  v24.0.28 "Fuel Is Never Free": two defects confirmed on a physical iPhone and
+ *          carried in the shared coordination layer. (1) A blank fuel price used
+ *          to report Fuel Cost $0.00 and a full "true profit after all costs".
+ *          v24.0.26's dated profile fallback fixed the BLANK case and left the
+ *          other half live: an explicitly entered $0.00/gal was still accepted as
+ *          a VERIFIED zero, so fuel was free forever on every surface consuming
+ *          the canonical profile, while vehicleMpg 0 already failed closed. Fuel
+ *          price now fails closed too, at the derivation, the cached-override
+ *          guard and the Settings write. An ABSENT price still falls back to the
+ *          dated profile -- absent is not an error, zero is a false fact.
+ *          (2) The grade-A hero verdict claimed "into a Tier 1 market" with origin
+ *          and destination BLANK, while every other surface on the same evaluation
+ *          reported no geo at all; it now carries the same resolved-destination
+ *          guard grade B already had. No economics arithmetic, routing, storage,
+ *          schema or Worker semantics change. DB stays 16, Worker stays v21.
  *  v24.0.27 "One Surface, Two Severities": F-9. `#toast` is a single element
  *          with a single timer, and toast() let any later caller overwrite it.
  *          The GPS-loss reassurance fires ONCE per error streak by design, so a
@@ -409,7 +424,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.27';
+const APP_VERSION = '24.0.28';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -9605,7 +9620,13 @@ function deriveCostProfile(settings = {}){
 
   const modelVersion = read('costModelVersion') || 0;
   const mpgSetting = read('vehicleMpg', { positive:true });
-  const fuelSetting = read('fuelPrice');
+  // Fuel is never free, and an operator cannot state that it is. An ABSENT fuel
+  // price is not an error -- it resolves to the dated operator profile below, which
+  // is what closed the original blank-fuel-price P0. But an explicitly entered 0 is
+  // not a fact about the world, so it fails closed here exactly as vehicleMpg does.
+  // This is the knownNum() distinction: an explicit zero DEADHEAD is a real operator
+  // fact (the driver is at the pickup) and is honoured; a zero fuel price is not.
+  const fuelSetting = read('fuelPrice', { positive:true });
   const variableSetting = read('nonFuelVariableCpm');
   const fixedSetting = read('fixedCostPerMile');
   const monthlyMiles = read('monthlyMiles');
@@ -9717,8 +9738,8 @@ function resolveCachedCostProfile(overrides = {}){
   // can silently drift back to the raw 3.79/16.7 quotient on trip-score paths.
   if (overrides?.available === true
       && knownNum(overrides.mpg) > 0
-      && knownNum(overrides.fuelPrice) >= 0
-      && knownNum(overrides.fuelCPM) >= 0
+      && knownNum(overrides.fuelPrice) > 0
+      && knownNum(overrides.fuelCPM) > 0
       && knownNum(overrides.marginalCPM) >= 0
       && knownNum(overrides.allInCPM) >= 0){
     return overrides;
@@ -11840,7 +11861,11 @@ function _genVerdictSentence(d){
   if (verdict === 'REJECT') return `Skip — trap lane, low reload probability`;
   // SSI-17: Tier 1 membership is a STATIC classification. Saying "strong
   // reload market" asserts a live measurement this sentence never made.
-  if (grade === 'A') return `Take it — premium rate into a Tier 1 market`;
+  // SSI-19: the grade-B branch below already guards its Tier 1 clause on an actual
+  // resolved Tier 1 destination. This branch did not, so a premium rate with origin
+  // and destination BLANK rendered "into a Tier 1 market" as a confident fact while
+  // every other surface on the same evaluation correctly reported no geo at all.
+  if (grade === 'A') return geo && geo.dT1 ? `Take it — premium rate into a Tier 1 market` : `Take it — premium rate`;
   if (grade === 'B') return geo && geo.dT1 ? `Take it — solid economics into a Tier 1 market` : `Take it — solid economics`;
   if (grade === 'C') return `Marginal — only if nothing better in 2 hours`;
   if (grade === 'D') return effectiveStrategic ? `Strategic only — bridges you toward density` : `Negotiate up or pass`;
@@ -14736,8 +14761,8 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   const mpgRaw = knownNum($('#vehicleMpg').value);
   const fuelRaw = knownNum($('#fuelPrice').value);
   await setSetting('vehicleMpg', mpgRaw !== null && mpgRaw > 0 ? mpgRaw : null);
-  await setSetting('fuelPrice', fuelRaw !== null && fuelRaw >= 0 ? fuelRaw : null);
-  if (fuelRaw !== null && fuelRaw >= 0){
+  await setSetting('fuelPrice', fuelRaw !== null && fuelRaw > 0 ? fuelRaw : null);
+  if (fuelRaw !== null && fuelRaw > 0){
     markFuelPriceUpdated().catch(()=>{});
     setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR).catch(()=>{});
   } else {

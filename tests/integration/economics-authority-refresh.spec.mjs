@@ -160,10 +160,65 @@ test('[ECON278-09] OMEGA net projection consumes the same canonical marginal/all
   eq(JSON.stringify(r.omega), JSON.stringify([0.28,0.4,112,100]), 'OMEGA parity');
 });
 
+// ECON278-15 — fuel is never free, and an operator cannot state that it is.
+//
+// The original P0 (physical iPhone, 2026-09-19) was a BLANK fuel price producing
+// Fuel Cost $0.00 and True Profit $480.00 "after all costs" on a $600/300-mile
+// load. The v24.0.26 profile fallback fixed the blank case: an unconfigured fuel
+// price now resolves to the dated operator profile.
+//
+// It left the other half live. `deriveCostProfile` read fuelPrice WITHOUT
+// `positive:true`, and the Settings save guard stored anything `>= 0` — so an
+// explicitly typed 0 was recorded as a VERIFIED zero and fuel was free forever,
+// on every surface that consumes the canonical profile.
+//
+// This is the `knownNum()` doctrine, and the distinction it turns on: an explicit
+// zero deadhead is a real operator fact (the driver is at the pickup), so it is
+// honoured. A zero fuel price is not a fact about the world. `vehicleMpg` already
+// encoded that by rejecting 0; fuel price was simply inconsistent with it.
+
+test('[ECON278-15] fuel price: blank uses the dated profile, but an explicit zero or negative fails closed', async () => {
+  const blank = await deriveProfile({ vehicleMpg: 16.5, fuelPrice: null });
+  eq(blank.available, true, 'an unconfigured fuel price is not an error — it falls back to the dated profile');
+  eq(blank.fuelPrice, 3.79, 'blank resolves to the operator profile baseline, never to zero');
+  ok(blank.fuelCPM > 0, `blank fuel price must never produce free fuel — got ${blank.fuelCPM}`);
+
+  for (const bad of [0, -1, -0.01]){
+    const p = await deriveProfile({ vehicleMpg: 16.5, fuelPrice: bad });
+    eq(p.available, false, `fuelPrice ${bad} must fail closed rather than fabricate zero fuel cost`);
+    ok((p.unknownFacts || []).includes('fuelPrice'), `the unusable field must be named, got ${JSON.stringify(p.unknownFacts)}`);
+  }
+
+  const real = await deriveProfile({ vehicleMpg: 16.5, fuelPrice: 3.899 });
+  eq(real.available, true, 'a real configured price still works');
+  ok(real.fuelCPM > 0, 'a real configured price produces real fuel cost');
+
+  // Parity with the field that already got this right, asserted rather than assumed.
+  const zeroMpg = await deriveProfile({ vehicleMpg: 0, fuelPrice: 3.899 });
+  eq(zeroMpg.available, false, 'vehicleMpg 0 already failed closed; fuel price must agree with it');
+});
+
+test('[ECON278-16] a cached/override profile carrying a zero fuel price is not accepted as authoritative', async () => {
+  // resolveCachedCostProfile short-circuits when handed an already-resolved
+  // profile. Its guard accepted fuelPrice >= 0, so a poisoned profile could ride
+  // straight through the fail-closed check above on the trip-score paths.
+  const poisoned = await app.page.evaluate(() => window.__FL_TESTS.resolveCachedCostProfile({
+    available: true, mpg: 16.5, fuelPrice: 0, fuelCPM: 0,
+    marginalCPM: 0.066, allInCPM: 0.175,
+  }));
+  ok(!(poisoned.available === true && poisoned.fuelCPM === 0),
+    `a zero-fuel profile must not pass through as authoritative — got ${JSON.stringify({available: poisoned.available, fuelCPM: poisoned.fuelCPM})}`);
+});
+
 test('[ECON278-10] invalid explicit cost inputs fail closed rather than fabricating zero cost', async () => {
   for (const settings of [
     { vehicleMpg:-1 },
+    { vehicleMpg:0 },
     { fuelPrice:-1 },
+    // ECON278-15: an explicitly entered $0.00/gal was the one value this
+    // "fail closed rather than fabricating zero cost" matrix did not cover,
+    // and it was the one that was still accepted.
+    { fuelPrice:0 },
     { nonFuelVariableCpm:-0.01 },
     { fixedCostPerMile:-0.01 },
   ]){
