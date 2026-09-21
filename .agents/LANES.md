@@ -12,6 +12,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **Admin Console Phase A lane exception (2026-09-18, operator-directed takeover).** Issue #231 already carries operator approval for a separate-origin Admin / Onboarding Console. While Claude's current UX/IA lock remains limited to `app.js` and `index.html`, GPT may own only the isolated `admin-console/` subtree plus the exact Admin Console regression file named below. This is an additive Phase A seam only: it does **not** transfer `cloud-backup-worker.js`, `app.js`, `index.html`, `service-worker.js`, `.github/`, or any other Claude/SHARED path. Worker CORS, deployment, live auth verification, and Phase C driver-surface removal remain under their existing ownership/lock rules. The console must preserve #231's zero-token, session-only-admin-credential, no-freight-data, no-service-worker contract and must not be exposed as a finished privileged surface before its distinct admin origin and live verification exist.
 
+**Issue #252 live vision production-smoke exception (2026-09-21, operator-directed completion).** With Claude idle and no live runtime locks, GPT may temporarily own exactly `.github/workflows/verify-authenticated-worker.yml`, `scripts/verify-live-authority.mjs`, and `tests/unit/live-authority-runner.spec.mjs` solely to add and regress the privacy-safe authenticated `POST /extract-image` production smoke already requested in `.agents/inbox/gpt-to-claude-live-vision-smoke-2026-09-19.md`. The probe must use only a synthetic 1×1 PNG and the workflow's short-lived synthetic driver credential; it must never include operator freight screenshots or secrets in logs. No `app.js`, Worker source, evaluator, economics, storage, deployment-generation, or other workflow/test ownership transfers. This exception expires immediately after the reviewed live-smoke PR lands and must be retired in a governance-only cleanup.
+
 **v24.0.22 runtime integration takeover — RETIRED 2026-09-19.** The bounded GPT integration lane completed when clean successor PR #262 merged as `11cc8b78` after exact-head Lanes, CodeQL and full-suite success. The temporary ownership exceptions used only for that release are retired here: `CLAUDE.md`, `midwest-stack-config.json`, and `midwest-stack-authority.js` return to Claude; the temporary parity/test/run-all rows fall back to their Claude-owned parent lanes. `styles.css` remains GPT-owned under the separate UI-redesign directive, and the Admin Console plus field-certification exceptions are unaffected.
 
 **v24.0.23 final PWA presentation integration takeover — RETIRED 2026-09-19.** The bounded operator-directed lane completed when PR #265 merged as `8e722522`, delivering the single presentation authority and governed v24.0.23 cache generation. The temporary marker exceptions are retired here: `CLAUDE.md`, `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` return to Claude ownership. Persistent GPT-owned seams remain `styles.css`, the isolated Admin Console subtree/regression, and the field-certification companion paths.
@@ -45,6 +47,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `field-certification.js` | gpt | Field-certification state/evidence capture. May auto-record browser-observable facts but may not infer hardware-only PASS. |
 | `tests/integration/field-certification-runner.spec.mjs` | gpt | Exact regression exception for the field-certification companion only; no other tests/ ownership transfers. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
+| `.github/workflows/verify-authenticated-worker.yml` | gpt | Temporary #252 exception for the privacy-safe synthetic live `/extract-image` provider-path smoke only; retire immediately after the reviewed smoke lands. |
 | `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
 | `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
 | `.gitignore` | SHARED | Repository-wide behavior. |
@@ -74,10 +77,12 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
+| `scripts/verify-live-authority.mjs` | gpt | Temporary #252 exception for the authenticated synthetic `/extract-image` smoke and its PASS/FAIL/UNOBSERVED semantics only. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
+| `tests/unit/live-authority-runner.spec.mjs` | gpt | Temporary #252 exact regression seam for the live-authority runner's synthetic image-smoke semantics only. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
