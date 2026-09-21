@@ -101,13 +101,20 @@ the day it merges.*
 
 ## Runtime state at the 2026-09-21 checkpoint
 
-- App/PWA/SW **24.0.26**, DB **16**, Worker **v21**; source and observed production agree.
-- Exact observed checkpoint: `d35ba266`; runtime release #281: `9e3be9e0`.
-- App origin: `https://freightlogic-v2.fimseitef.workers.dev`.
-- Backup/API origin: `https://freightlogic-backup.fimseitef.workers.dev`.
-- **HOLD**: A1-A13 and live authenticated vision remain unobserved. Do not infer that
-  the provider binding works from `/health`; see the current certification state for
-  all remaining work and the separate authentic-M6 completion.
+- App/PWA/SW **24.0.27**, DB **16**, Worker **v21**; source and observed production agree.
+- Runtime merge: `e160d94` (PR #291); exact-main Tests `35649355528`, job
+  `106497614211`: **743 passed / 0 failed across 72 specs**.
+- Settled live observation checkpoint: `8a520bc` (PR #292; governance-only,
+  no runtime-byte change).
+- Live Parity `35651336959`, job `106504221124`: **PASS** — app/SW/manifest
+  24.0.27, Worker v21, 22/22 runtime assets, 20 repository-only paths withheld.
+- Production Service Worker `35651336872`, job `106504213816`: **PASS** —
+  activated/controlled worker, `freightlogic-24.0.27` precache with all 22 assets,
+  five tabs + visible Today after reload, exactly one generation cache.
+- **HOLD remains** for physical A1-A13 and the authenticated live vision-provider /
+  real-screenshot evidence. Do not infer provider binding from `/health`. Admin Console,
+  later #278 policy/evidence work, repository-admin controls, and Safari/native Apple
+  work remain separate; see the current certification addendum.
 
 The earlier source-ahead warning requiring a first deployment of Worker v21 is historical:
 that generation has deployed. A new deployment is not required merely to resolve this prose.
