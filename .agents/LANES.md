@@ -36,8 +36,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
 | `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | Temporary v24.0.27 certification-document reconciliation only; no runtime/policy authority. Returns to Claude after the reviewed documentation successor lands. |
-| `FIELD_TEST_CHECKLIST.md` | gpt | Temporary v24.0.27 synchronization-point update only; A1-A13 acceptance/results remain unchanged. Returns to Claude after the reviewed documentation successor lands. |
+| `CLAUDE.md` | claude | Certification-document takeover retired after PR #295; normal Claude ownership restored. |
+| `FIELD_TEST_CHECKLIST.md` | claude | Certification-document takeover retired after PR #295; A1-A13 acceptance/results remain unchanged. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
@@ -86,12 +86,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 **PR #282 documentation continuation — RETIRED 2026-09-21.** Clean successor PR #289 merged as `9cdd1fd2` after exact-head Lanes, CodeQL, and Tests passed. The temporary six-file documentation ownership exception is retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude, and the four exact `docs/` overrides fall back to the Claude-owned `docs/` parent row. No runtime, policy, test, workflow, deployment, or physical-device certification authority changed; physical A1-A13 and the separately tracked external evidence gates remain open.
 
-**v24.0.27 certification documentation continuation (2026-09-21, operator-directed takeover).** PR #291 shipped the F-9 safety-toast repair as app/SW v24.0.27 after the prior v24.0.26 certification record was already complete. GPT temporarily owns only the four exact documentation paths below to preserve the 24.0.26 state as history, record exact-main/live v24.0.27 evidence, and synchronize the checklist/overview without changing A1-A13 acceptance or results. This grants no runtime, test, economics/policy, workflow, deployment, authenticated-provider, or physical-device certification authority. Retire these rows when the reviewed documentation successor lands.
-
-| Top-level path | Owner | Notes |
-|---|---|---|
-| `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary v24.0.27 observed-production synchronization only. |
-| `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` | gpt | New dated state that supersedes the 24.0.26 state while preserving it on disk. |
+**v24.0.27/v24.0.28 certification documentation continuation — RETIRED 2026-09-21.** PR #295 merged the reviewed documentation successor after runtime PR #294 advanced source to v24.0.28. The successor preserved the directly observed v24.0.27 production evidence, recorded exact v24.0.28 source/CI evidence, and kept unobserved deployment/device/provider gates open. The temporary GPT ownership is now retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude, and the exact `docs/` overrides fall back to the Claude-owned `docs/` parent row. No runtime, test, policy, workflow, deployment, authenticated-provider, or physical-device authority changed.
 
 ## Current lane intent
 
