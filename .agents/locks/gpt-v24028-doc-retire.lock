@@ -1,6 +1,0 @@
-owner: gpt
-token: a4c7f03e-8b6d-4e1c-92d5-6f71b0a4c328
-started_utc: 2026-09-21T21:56:00Z
-expected_release_utc: 2026-09-21T22:26:00Z
-paths: .agents/LANES.md
-task: retire spent v24.0.27/v24.0.28 certification documentation ownership after PR #295
