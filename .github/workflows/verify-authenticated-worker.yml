@@ -141,8 +141,28 @@ jobs:
             exit 2
           fi
 
-          echo 'Synthetic identity is live; running free authority-boundary checks.'
-          FL_BACKUP_TOKEN="$TOKEN" node scripts/verify-live-authority.mjs "$WORKER_ORIGIN"
+          echo 'Synthetic identity is live; running free authority-boundary + live vision-provider checks.'
+          set +e
+          FL_BACKUP_TOKEN="$TOKEN" node scripts/verify-live-authority.mjs "$WORKER_ORIGIN" --vision 2>&1 | tee /tmp/fl-authority-vision.log
+          AUTH_CODE=${PIPESTATUS[0]}
+          set -e
+          case "$AUTH_CODE" in
+            0) AUTH_VERDICT=PASS ;;
+            2) AUTH_VERDICT=UNOBSERVED ;;
+            *) AUTH_VERDICT=FAILURE ;;
+          esac
+          {
+            echo "## Live authority + vision provider — $AUTH_VERDICT"
+            echo
+            echo "- verifier exit code: \`$AUTH_CODE\`"
+            echo "- image fixture: fixed synthetic 1x1 PNG; no operator freight screenshot/data"
+            echo "- scope: canonical authority boundary plus authenticated \`POST /extract-image\` provider/binding path"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$AUTH_VERDICT" != 'PASS' ]; then
+            echo "::error::Live authority/vision verdict: $AUTH_VERDICT (exit $AUTH_CODE). No operator data was used."
+            exit "$AUTH_CODE"
+          fi
 
           echo 'Running synthetic backup/delta/restore round trip.'
           FL_BACKUP_TOKEN="$TOKEN" node scripts/verify-live-backup.mjs "$WORKER_ORIGIN"

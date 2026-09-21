@@ -19,6 +19,7 @@
 // These tests execute the real script against a local stub standing in for the
 // Worker, so they assert observable behaviour rather than grepping source.
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -178,6 +179,80 @@ test('[LA-07] the token never appears in output', async () => {
   const secret = 'flk_supersecrettokenvalue';
   const r = await withStub(authGuarded(correctWorker), origin => runScript(origin, [], { FL_BACKUP_TOKEN: secret }));
   ok(!r.out.includes(secret), 'the backup token must never be echoed, even on success');
+});
+
+const VISION_SMOKE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2WQAAAABJRU5ErkJggg==';
+
+test('[LA-08] --vision sends the synthetic 1x1 PNG and accepts fail-closed 422 with provider provenance', async () => {
+  let seen = null;
+  const r = await withStub(authGuarded((req, body) => {
+    if (req.url === '/extract-image') {
+      seen = body;
+      return [422, {
+        ok: false,
+        error: 'Vision provider returned no useful load fields.',
+        provider: 'workers-ai',
+        model: '@cf/moondream/moondream3.1-9B-A2B',
+      }];
+    }
+    return correctWorker(req, body);
+  }), origin => runScript(origin, ['--vision']));
+
+  eq(r.code, 0, 'expected exit 0 for a provider-reached fail-closed 422; output:\n' + r.out);
+  ok(seen, 'the live verifier must actually call /extract-image in --vision mode');
+  eq(seen?.mime, 'image/png', 'the probe uses PNG, not operator image data');
+  eq(seen?.image, VISION_SMOKE_PNG, 'the probe image is the fixed synthetic 1x1 PNG');
+  ok(/extract-image/i.test(r.out) && /workers-ai/i.test(r.out),
+     'the operator-facing result names the live image path and provider');
+});
+
+test('[LA-09] --vision also accepts a normalized 200 only when provider/model provenance is present', async () => {
+  const r = await withStub(authGuarded((req, body) => {
+    if (req.url === '/extract-image') {
+      return [200, {
+        ok: true,
+        fields: { origin: 'Synthetic, IL' },
+        fieldMeta: { origin: { state: 'OBSERVED', confidence: 1 } },
+        observedCount: 1,
+        provider: 'workers-ai',
+        model: '@cf/moondream/moondream3.1-9B-A2B',
+      }];
+    }
+    return correctWorker(req, body);
+  }), origin => runScript(origin, ['--vision']));
+
+  eq(r.code, 0, 'expected exit 0 for a normalized 200; output:\n' + r.out);
+  ok(/workers-ai/.test(r.out), 'successful live vision evidence includes provider provenance');
+});
+
+test('[LA-10] --vision treats an unconfigured provider/binding as a real FAILURE', async () => {
+  const r = await withStub(authGuarded((req, body) => {
+    if (req.url === '/extract-image') {
+      return [501, { ok: false, error: 'Image extraction is not configured on the server. Workers AI binding missing.' }];
+    }
+    return correctWorker(req, body);
+  }), origin => runScript(origin, ['--vision']));
+
+  eq(r.code, 1, 'a missing live provider/binding must fail; output:\n' + r.out);
+  ok(/FAIL/.test(r.out), 'the live-provider configuration defect is reported as a failure');
+});
+
+test('[LA-11] --vision treats provider execution failure as a real FAILURE', async () => {
+  const r = await withStub(authGuarded((req, body) => {
+    if (req.url === '/extract-image') {
+      return [502, { ok: false, error: 'Image extraction service error. Paste the load text instead.' }];
+    }
+    return correctWorker(req, body);
+  }), origin => runScript(origin, ['--vision']));
+
+  eq(r.code, 1, 'provider execution failure must fail; output:\n' + r.out);
+  ok(/FAIL/.test(r.out), 'a provider execution defect must not be recorded as PASS/UNOBSERVED');
+});
+
+test('[LA-12] authenticated production workflow invokes the authority verifier with --vision', () => {
+  const workflow = readFileSync(path.join(ROOT, '.github/workflows/verify-authenticated-worker.yml'), 'utf8');
+  ok(/verify-live-authority\.mjs\s+"\$WORKER_ORIGIN"\s+--vision/.test(workflow),
+     'the privileged synthetic identity workflow must actually run the live image-provider smoke');
 });
 
 export async function runSpec() { return run(); }
