@@ -4,15 +4,6 @@
 
 **FreightLogic v24.0.26** is the observed production PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**SOURCE CANDIDATE IS 24.0.28 / DB16 / Worker v21.** Two generations landed after the
-production observation recorded below, and neither is deployed or live-observed yet:
-**v24.0.27** (F-9 — a cosmetic toast could erase a visible safety warning on the single
-shared `#toast` surface) and **v24.0.28** (an explicitly entered $0.00/gal fuel price was
-accepted as a verified zero; the grade-A hero verdict claimed a Tier 1 destination that was
-never supplied). Both are described in their own sections below. Production continues to
-serve 24.0.26 until 24.0.28 is deployed and re-observed — merging leaves a commit,
-deploying leaves nothing, which is the entire mechanism this file keeps relearning.
-
 **Observed 2026-09-21: production serves 24.0.26 / DB16 / Worker v21.**
 v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
 profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
@@ -318,7 +309,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.28';
+const APP_VERSION = '24.0.26';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -463,8 +454,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.28` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.28`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.26` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.26`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4704,116 +4695,6 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
-
-## v24.0.28 "Fuel Is Never Free" — two defects confirmed on a physical iPhone
-
-`DB_VERSION` stays **16** and the Worker stays **v21**. **No economics arithmetic, bid
-authority, doctrine threshold, routing, import schema or storage behaviour changes** — what
-changed is which inputs are allowed to be believed, and what the hero sentence is allowed to
-claim. Both defects were carried in the shared coordination layer as open items against
-Claude, both were observed on a real iPhone on 2026-09-19, and both were re-verified against
-exact current source before anything was edited.
-
-**1 — An explicitly entered $0.00/gal fuel price made fuel free, forever.**
-The original report was a BLANK fuel price producing `Fuel Cost $0.00`, `Fuel/Mile $0.00`
-and `True Profit $480.00` "after all costs" on a $600 / 300-mile load. **v24.0.26 fixed the
-blank half** — an unconfigured fuel price now resolves to the dated operator profile
-($3.79/gal, $0.230/mi) — and that was verified here rather than assumed.
-
-It left the other half live. `deriveCostProfile()` read `fuelPrice` **without**
-`positive:true` while `vehicleMpg` had it, and the Settings save guard stored anything
-`>= 0` while the `vehicleMpg` line directly above it required `> 0`. So a typed `0` was
-recorded as a **verified** zero and produced `fuelCPM: 0`, `marginalCPM: 0.066` and
-`allInCPM: 0.175` on every surface that consumes the canonical profile. Measured, not
-deduced: a 300-mile load costs $69.00 in fuel on a blank setting, $70.80 at $3.899/gal, and
-**$0.00** on an explicit zero.
-
-This is the `knownNum()` doctrine and the distinction it turns on. An explicit zero
-**deadhead** is a real operator fact — the driver is at the pickup — and is honoured
-everywhere. A zero **fuel price** is not a fact about the world; fuel is never free. So an
-ABSENT price still falls back to the dated profile (absent is not an error) while an explicit
-zero or negative now fails closed with `fuelPrice` named in `unknownFacts`, exactly as
-`vehicleMpg 0` already did. Fixed at all three layers — the derivation, the
-`resolveCachedCostProfile()` short-circuit guard (which accepted `>= 0` and would have let a
-poisoned profile ride straight past the derivation check on the trip-score paths), and the
-Settings write.
-
-**`ECON278-10` is named "invalid explicit cost inputs fail closed rather than fabricating
-zero cost" and did not test zero.** It covered `-1` for every field. Zero was the one value
-in that matrix that was still accepted, and it was the one that shipped. `ECON278-15` now
-covers the whole fuel-price severity matrix including the `vehicleMpg` parity assertion, and
-`ECON278-16` covers the cached-override guard; `{ vehicleMpg: 0 }` and `{ fuelPrice: 0 }`
-were added to `ECON278-10` itself.
-
-**2 — The grade-A hero verdict claimed a Tier 1 destination that was never supplied.**
-`_genVerdictSentence()`'s grade-**B** branch guards its "into a Tier 1 market" clause on
-`geo && geo.dT1`. The grade-**A** branch returned that claim unconditionally, so a premium
-rate with origin and destination **blank** rendered `Take it — premium rate into a Tier 1
-market` while every other surface on the same evaluation correctly reported "No origin/dest —
-skipping geo check", destination weak/outside density, Role score 0, and confidence LOW
-capped by market. The economics were right; the hero invented a destination.
-
-That is the `naLookupMarket('')`-to-Toronto class (v24.0.4) — an absence rendered as a
-confident favourable fact — and it sat directly beneath the `SSI-17` comment stating that
-Tier 1 membership is a STATIC classification that must not be phrased as a live measurement.
-Grade A now carries the same guard grade B already had, and falls back to `Take it — premium
-rate`. `SSI-19` asserts both directions: blank origin/dest must not claim Tier 1, and a
-genuine Tier 1 destination must still be named.
-
-**Tests.** `ECON278-15`, `ECON278-16`, `SSI-19`, plus two values added to `ECON278-10`. All
-assert through the real derivation and the real evaluator UI. Red-first evidence captured
-before any fix: economics 13 passed / 3 failed and screenshot-intake 18 passed / 1 failed,
-each failing only on its own assertion. Full suite on the exact candidate head, first
-attempt: **746 passed, 0 failed across 72 spec files**, nothing skipped or weakened.
-
-**Why this is a version bump.** v24.0.27 was merged as PR #291 and main already carried it,
-so `RG-03` correctly refused these bytes at a reused generation. `CACHE_NAME` is
-`freightlogic-${SW_VERSION}`, so an installed PWA would never have fetched the repaired
-`app.js`. Every governed marker moves together to **24.0.28**; 22 declared runtime assets.
-
-**Not deployed.** Source-only. After deploying, **re-dispatch** live parity rather than
-citing the push-triggered run, which races the Cloudflare deploy and has been recorded doing
-so nine times.
-
----
-
-## v24.0.27 "One Surface, Two Severities" — F-9, the retry that hid a real defect
-
-`DB_VERSION` stays **16** and the Worker stays **v21**. Merged as PR #291.
-
-**The defect.** `#toast` is ONE element with ONE timer, and `toast()` let any later caller
-overwrite whatever was on it. The GPS-loss reassurance fires **exactly once per error
-streak** by design — `watchPosition` re-fires every 15s and toasting each one would bury the
-driver — so a cosmetic `FreightLogic <version> installed.` notice landing inside its 2.4s
-window did not reorder two messages. It **permanently destroyed the driver's only signal that
-the trip was degraded but still tracking**.
-
-**It was recorded as a flake and cleared by a retry.** Tests run `35556446150` attempt 1 on
-PR #288 was 740/1, the sole failure being `field-resilience` F-7 sustained GPS loss with
-`#toast` reading `"FreightLogic 24.0.26 installed."`; a controlled full rerun passed 741/0
-and the failure was handed off. It was not timing noise — it was reproduced deterministically
-through the real `SW_ACTIVATED` listener in the real app before any code changed. A retry
-that goes green is not a diagnosis.
-
-**The rule.** The one the cloud-backup paused banner already follows: an informational notice
-may vanish, a warning may not. An informational toast may no longer replace a **visible**
-warning. Escalation stays unrestricted — a warning still replaces anything, including another
-warning, so a warning cannot strand itself on screen — and the check reads the element rather
-than a shadow flag, so it cannot disagree with what the driver is actually looking at.
-
-**Tests.** `F-9` (the eviction) plus its paired escalation control, which is what stops the
-fix being satisfied by simply never letting anything replace a warning. Red-first: 13 passed
-/ 2 failed with only the two new tests failing. Full suite first attempt: **743 passed, 0
-failed across 72 specs**.
-
-**Also fixed while bumping:** a provenance comment in
-`scripts/verify-cloudflare-parity.mjs` that originally read `v24.0.14` and had been rewritten
-to each new generation in turn by successive blanket release `sed` bumps, until it claimed the
-adapter check was added in whichever release happened to be passing through. `app.js` now
-also contains the literal string `"FreightLogic 24.0.26 installed."` as a verbatim quote of
-the observed CI evidence — **it is history and must not be advanced by a future bump.**
-
----
 
 ## v24.0.26 "Economics Authority" — Issue #278
 
