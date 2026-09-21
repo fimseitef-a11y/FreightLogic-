@@ -498,6 +498,42 @@ test('[SSI-17] compact positioning labels disclose static market classification 
 });
 
 
+// SSI-19 continues SSI-17's rule into the branch it missed.
+//
+// SSI-17 established that Tier 1/2 membership is a STATIC classification and must
+// not be phrased as a live measurement. The grade-B branch of _genVerdictSentence
+// was written to honour that, guarding its "into a Tier 1 market" clause on
+// `geo && geo.dT1`. The grade-A branch returned that claim UNCONDITIONALLY.
+//
+// Reported from a physical iPhone (2026-09-19): the hero read "Take it — premium
+// rate into a Tier 1 market" on an evaluation with origin and destination BLANK,
+// while every other surface on that same evaluation correctly said "No origin/dest
+// — skipping geo check", destination weak/outside density, Role score 0, and
+// confidence LOW capped by market. The economics were right; the hero invented a
+// destination nobody supplied. That is the naLookupMarket('')-to-Toronto class:
+// an absence rendered as a confident favourable fact.
+
+test('[SSI-19] a premium-rate hero verdict cannot claim a Tier 1 destination that was never supplied', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    // Grade A economics, deadhead an explicit 0, and NO origin or destination.
+    const blank = await scoreLoad(app.page, { revenue: 1400, loaded: 400, dead: 0 });
+    ok(/Take it/i.test(blank.upFront),
+      `sanity: these economics must still produce a take verdict — got ${blank.upFront.slice(0, 300)}`);
+    ok(!/Tier 1 market/i.test(blank.upFront),
+      `the hero must not claim a Tier 1 destination when none was entered — got ${blank.upFront.slice(0, 400)}`);
+
+    // Control: with a real Tier 1 destination the claim is earned and must survive.
+    const withDest = await scoreLoad(app.page, {
+      revenue: 1400, loaded: 400, dead: 0, origin: 'Columbus, OH', dest: 'Chicago, IL',
+    });
+    ok(/Tier 1 market/i.test(withDest.upFront),
+      `a genuine Tier 1 destination must still be named — got ${withDest.upFront.slice(0, 400)}`);
+  } finally { await app.close(); }
+});
+
+
 test('[SSI-18] compact decision facts consume the Driver/Glance semantic presentation seam', async () => {
   const app = await launchApp();
   try {
