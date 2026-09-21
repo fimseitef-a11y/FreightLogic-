@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.26** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.26 candidate** is the next governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**PRODUCTION SERVES 24.0.26 / DB16 / Worker v21, and BOTH generations are OBSERVED.**
+**SOURCE CANDIDATE IS 24.0.26 / DB16 / Worker v21. LAST VERIFIED PRODUCTION SERVES 24.0.25 / DB16 / Worker v21.**
 v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
 profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
 trip CSV economics; separates fuel, non-fuel variable cost and fixed allocation so the
@@ -13,59 +13,13 @@ separate profitability taxonomy from the retained decision/doctrine letter grade
 adds advisory weekend / Fri-Sat-to-Monday hold pricing context without creating a hard
 reject. `DB_VERSION` remains **16** and the Worker remains **v21**.
 
-It merged as `9e3be9e` (PR #281) and has deployed. Both halves are observed on `main`
-@ `9e3be9e`:
-
-- **Live all-asset parity** — run `35544113040` (job `106166881011`), **re-dispatched**
-  `workflow_dispatch`, `VERDICT: PASS`: Worker `/health`
-  `{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none
-  served as HTML, and **20** repository-only paths confirmed non-public (Issue #228's
-  live half), every one answering with a definite status.
-- **Production service worker** — run `35543985994` (job `106166542768`),
-  `VERDICT: PASS`: the precache is `freightlogic-24.0.26` carrying all 22 assets,
-  `admin-driver-ui.js` and `midwest-stack-authority.js` are injected **and fetchable as
-  script**, an offline subresource miss is `504 text/plain` rather than the HTML shell,
-  a drifted `?v=` self-heals, the cached shell requests `?v=24.0.26`, exactly one
-  generation cache survives, and after reload the driver shell renders five tabs and a
-  visible Today surface with no uncaught errors.
-
-**That service-worker run was push-triggered, and it is still evidence — read why.** It
-fired four seconds after the merge, squarely inside the window this file records nine
-push races in. The rule those nine occurrences produced is about a **FAILURE**: a run
-that observes the *previous* generation mid-deploy proves nothing about the release. A
-push run that **passes** is the opposite case, because the gate derives its expectation
-from source and asserts the precache **equals** it — you cannot observe
-`freightlogic-24.0.26` unless production is serving 24.0.26. The live-parity half was
-re-dispatched anyway rather than reasoned about, and it agrees.
-
-The prior observation of record, kept as history, is v24.0.25 — the PR #277 Apple-style
-driver IA slice, merged `436d677`, with the governance-only #280 head `266d74e` changing
-no runtime bytes. It was observed twice on that exact tree: live parity `35539669777`
-and production service worker `35539669806`, and again by re-dispatch at live parity
-`35542846195` (job `106163516058`) and production service worker `35542851411` (job
-`106163528152`). Before it, v24.0.24 (`f75f9cc`, PR #275) was observed by live parity
-`35434716935` and production service worker `35434719454`. Each set is evidence for the
-exact tree its gate looked at, and for no other.
-
-*This section has now carried a superseded deployment claim **ten** times. The tenth is
-worth stating precisely, because it happened inside a single hour and to both lanes at
-once. This overview said "PRODUCTION SERVES 24.0.25" while `.agents/LANES.md` already
-said 24.0.25 and `.claude/CLAUDE.md` still said 24.0.19; that was corrected by
-re-dispatching the gates. PR #281 then merged with its own overview reading "SOURCE
-CANDIDATE IS 24.0.26 … LAST VERIFIED PRODUCTION SERVES 24.0.25" and "Production
-therefore remains v24.0.25 … until this 24.0.26 candidate is merged, deployed, and
-observed" — accurate when written, and superseded by its own deploy within minutes. The
-rule is unchanged and is the one this file keeps relearning: **a superseding record is
-due the day a shipped file deploys, not the day it merges, and not whenever somebody
-notices.** Merging leaves a commit; deploying leaves nothing, which is the entire
-mechanism. The corollary this instance adds: a release section written before its own
-deploy should say what it does not yet know, and be superseded the moment it does.*
-
-**Issue #278 remains OPEN.** The core v24.0.26 economics slice has merged and deployed,
-but its later accepted addenda and the independent Claude economics-audit / joint-consensus
-gate are not complete. A merged and observed runtime generation is not a closed issue, and
-nothing in this section should be read as closing it. Physical iPhone **A1-A13** remains a
-separate evidence gate under #226.
+The last verified production observation is v24.0.25. PR #277 merged as
+`436d677876c238bb6773d56a15d8f00a5699a3f9`; the later governance-only #280 main
+head is `266d74e5eba3b55ad90083f951fa3e571f307539` and changes no runtime bytes.
+On that exact main tree, live parity run `35539669777`, production service-worker run
+`35539669806`, Tests run `35539669816`, and CodeQL run `35539669796` all completed
+successfully on 2026-09-20. Production therefore remains v24.0.25 / DB16 / Worker v21
+until this 24.0.26 candidate is merged, deployed, and observed.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
 24.0.22" and described v24.0.23 as "source-only until merged, deployed, and observed." That was
@@ -163,8 +117,8 @@ decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconci
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md` is the certification
-authority — it supersedes the 2026-09-19 document this line used to name, and it is the one
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` is the certification
+authority — it supersedes the 2026-09-18 document this line used to name, and it is the one
 `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 
@@ -4777,32 +4731,6 @@ full suite reached **721 PASS / 1 FAIL across 71 specs**; the sole failure was R
 because runtime bytes were intentionally still on release generation 24.0.24. The governed
 24.0.25 integration must pass the exact-head full suite before merge. Physical iPhone
 A1-A13 remains a separate evidence gate and is not inferred from browser CI.
-
-### DEPLOYED and OBSERVED LIVE 2026-09-20
-
-This section shipped carrying only pre-generation evidence, which is what a release section
-looks like before its deploy. It merged as `436d677` (PR #277), Cloudflare deployed it, and
-the governance cleanup in `266d74e` (PR #280) retired the temporary marker ownership.
-
-Both live gates were **re-dispatched** on `main` @ `266d74e` — not cited from a
-push-triggered run, which races the Cloudflare deploy and has done so nine recorded times —
-and both returned `VERDICT: PASS`: live all-asset parity run `35542846195`
-(job `106163516058`) and the production service-worker gate run `35542851411`
-(job `106163528152`). The manifest reads `FreightLogic v24.0.25`, Worker `/health` reports
-`{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none served as
-HTML, **20** repository-only paths stay non-public, and the precache is
-`freightlogic-24.0.25` with exactly one generation cache surviving.
-
-The service-worker gate is the half delivery cannot prove, and it is what observes this
-release's actual subject: **after reload the driver shell renders five tabs and a visible
-Today surface with no uncaught page errors.** The regrouped More categories and the
-Text Size / Glance Mode reachability this release exists to deliver are therefore seen in
-production, not asserted from source. `scripts/verify-cloudflare-parity.mjs --static-only`
-is green at 24.0.25 with 22 declared assets.
-
-**Still HOLD.** Physical iPhone **A1-A13** (Issue #226) and the M6 conflict review are
-unchanged and remain the operator's. Nothing in this release or this observation touches
-either, and neither is inferable from browser CI.
 
 ## v24.0.24 "Names And Targets" — Issue #268 Apple/iOS accessibility completion
 
