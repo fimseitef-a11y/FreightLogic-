@@ -1,6 +1,0 @@
-owner: claude
-token: 0b4b2257-df61-4ca7-a109-2f2c8e013436
-started_utc: 2026-09-21T21:05:00Z
-expected_release_utc: 2026-09-22T01:05:00Z
-paths: app.js
-task: Close the live residue of the Airtable P0 "blank fuel price becomes confident zero" — an explicitly entered 0/gal fuel price is still accepted as a verified zero and makes fuel free forever, while vehicleMpg 0 already fails closed.
