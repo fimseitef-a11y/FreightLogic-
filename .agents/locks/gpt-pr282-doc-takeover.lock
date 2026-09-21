@@ -1,6 +1,0 @@
-owner: gpt
-token: b63ed9d1-3719-4644-af57-5b40583b2b04
-started_utc: 2026-09-21T03:07:00Z
-expected_release_utc: 2026-09-21T05:07:00Z
-paths: .agents/LANES.md
-task: Operator-requested bounded takeover of stale PR #282 release documentation; publish and later retire six exact documentation ownership exceptions, no runtime or policy changes.
