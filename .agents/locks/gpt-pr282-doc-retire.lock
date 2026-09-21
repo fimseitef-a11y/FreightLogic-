@@ -1,0 +1,6 @@
+owner: gpt
+token: 9f1c2a34-7b11-4d3a-8e21-6c7d9a5b2031
+started_utc: 2026-09-21T19:55:00Z
+expected_release_utc: 2026-09-21T21:15:00Z
+paths: .agents/LANES.md
+task: Retire temporary PR #282/#289 documentation ownership exception after reviewed successor merge; no runtime or policy changes.
