@@ -2,9 +2,9 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-18.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-Current runtime synchronization point: **production serves FreightLogic v24.0.24 / IndexedDB v16 / Worker v21, and BOTH generations are OBSERVED** — re-dispatched live parity `35434716935` (job `105875325854`) and production service worker `35434719454` (job `105875332085`), both `VERDICT: PASS` on `f75f9cc`. Worker `/health` reports v21, all 22 declared runtime assets load with none served as HTML, 20 repository-only paths stay non-public, and the precache is `freightlogic-24.0.24`. **A13's Worker-v21 prerequisite is therefore discharged** — that row is OPEN like the rest of the A section rather than BLOCKED. The push-triggered parity on the same merge FAILED eleven seconds in (`35434651294`, ninth recorded occurrence of the Cloudflare race) and is not evidence about the release. **This line is a lookup, not a record:** re-read `APP_VERSION` and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` every session. It has gone stale by three generations once already — which is the failure this file exists to prevent, a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified.
+Current runtime synchronization point, observed 2026-09-21: **FreightLogic v24.0.26 / IndexedDB v16 / Worker v21**. Exact checkpoint `d35ba266`: live parity `35555039896` (job `106196949693`) and production service worker `35555039852` (job `106196949605`) both returned `VERDICT: PASS`; tests reported 741/0 across 72 specs. The precache is `freightlogic-24.0.26`, with all 22 runtime assets and one generation cache. **A13's Worker-generation prerequisite is met, but the authenticated vision-provider invocation and real-image quality are still unobserved.** Re-read source and `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` before testing; these are dated observations, not a permanently pinned candidate.
 
 **Voice Load was deliberately REMOVED in v24.0.17 by operator decision (Issue #230).** The
 evaluator microphone, the Load Intake and Smart Load Inbox voice buttons, the voice status
@@ -14,13 +14,13 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production now serves 24.0.24 / DB16 / Worker v21 and both generations are OBSERVED, but that is still not the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production 24.0.26 / DB16 / Worker v21 was observed at the checkpoint above, but that does not select it as the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 
 **The exact candidate SHA lives in the certification document, not here.** This file went two generations stale once (it read `24.0.9` / Worker `v15` while production served `24.0.10` / `v17`), which would have had a tester confirming the wrong build and recording a PASS for a candidate that is not the one being certified. It went one generation stale again at v24.0.11, and the certification document it defers to then went **two** generations stale at v24.0.12 — which is worth understanding, because it is the same drift one level up: removing the SHA from this file relocated the staleness into the document this file points at rather than removing it. The fix is keeping that document current on the day a shipped file changes, not copying the SHA back here where the two can disagree. When the deferral lifts, read the SHA out of the then-current superseding certification document immediately before testing and confirm the generation strings against Diagnostics and Worker `/health` on the device itself. If any disagree, stop — the disagreement is the finding.
 
-All of section B and section D are now closed by observed live evidence recorded in the current certification authority. What remains open is exactly what a headless runner cannot reach: **A1-A13 on a physical iPhone**, deferred as stated above. **Section C has now run** — see that section for the structural result, and for the two things it deliberately does not cover: the separate 125-row 2026-08-24 master, and conflict review before adoption.
+Section B and section D retain their dated evidence below; the current certification authority identifies what was re-observed and what remains unobserved. **A1-A13 on a physical iPhone** remains deferred as stated above. The new authenticated vision-provider probe and real-image quality evidence are also pending; the Admin Console and later economics-policy work remain open. **Section C has now run** — see that section for the structural result, and for the two things it deliberately does not cover: the separate 125-row 2026-08-24 master, and conflict review before adoption.
 
 Do not convert source, deployment-build, preview, desktop, or older-generation evidence into a physical-device PASS.
 
@@ -365,8 +365,20 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. Every gate in the list this paragraph used to enumerate is now closed by observation on the current candidate — live production all-asset parity, authenticated Worker authority/backup smokes, six-width browser-layout acceptance, and truthful rollback/fix-forward evidence — and they were first recorded with their run IDs in `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-15.md`. **That document is no longer the authority and must not be cited as one** — the chain has since resolved forward to `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md`, which `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the authority out of that runner, not out of this sentence.
+The release remains **HOLD**. The dated evidence and outstanding scope are in
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, resolved by explicit supersession through
+`scripts/m7-certify.mjs`. Standard exact-main tests, live app/Worker generation parity and
+production service-worker checks pass at its named checkpoint. The new authenticated
+`/extract-image` provider probe has **not** run, and a blank-image smoke cannot replace
+A13 or the real-screenshot benchmark. Older authenticated text/backup evidence is not
+evidence for this new route.
 
-What holds the release is now exactly **one** thing: the applicable physical-iPhone blockers in this file (**A1-A13**) are not PASS. This paragraph previously said *"exactly two things"* and named the unreconciled private-history bundle as the second. That was accurate when written and is now superseded: the operator supplied the five raw 2026-08-27 files on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. The current authority's own status line names A1-A13 as the only remaining gate. Two caveats from section C survive and are **not** release blockers: adoption still requires the conflict review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from summaries.
+**The physical-device gate is still A1-A13 and has no new PASS claim.** The operator's
+deferral remains in force. Authentic Gate C is already complete and is not reopened by
+this documentation change; conflict/adoption review and the unavailable separate 125-row
+master remain as recorded in section C. Admin Console deployment/live auth, later #278
+policy and independent review, and repository/Safari/native work are tracked separately
+in the current state. The former statement that only physical work remained overstated
+completion by omitting those pending items.
 
-Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md` before the release is frozen.
+Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` before the release is frozen.
