@@ -1,6 +1,0 @@
-owner: gpt
-token: 6f0a8a7a-bb64-4f11-8ec1-9a86e0902520
-started_utc: 2026-09-21T02:08:00Z
-expected_release_utc: 2026-09-21T03:08:00Z
-paths: .agents/LANES.md
-task: grant bounded GPT ownership for #252 live /extract-image production-smoke verifier/workflow/test only
