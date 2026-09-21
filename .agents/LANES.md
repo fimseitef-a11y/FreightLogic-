@@ -36,8 +36,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
 | `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | claude | Core release/project record; temporary #278 v24.0.26 release-record authority is retired. |
-| `FIELD_TEST_CHECKLIST.md` | claude | Physical-device certification gate. A1–A12 stay open; it defers to the current certification-state document for the candidate SHA. |
+| `CLAUDE.md` | gpt | Temporary PR #282 documentation continuation only; preserve #278 implementation and open-policy boundary. Returns to Claude when the reviewed successor lands. |
+| `FIELD_TEST_CHECKLIST.md` | gpt | Temporary PR #282 current-candidate references only; no change to physical A1-A13 acceptance or results. Returns to Claude when the reviewed successor lands. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
@@ -83,6 +83,15 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
+
+**PR #282 documentation continuation (2026-09-21, operator-directed takeover).** The operator requested available work be taken over; both lanes were idle, and draft #282 remained in conflict with the newer v24.0.26 release. GPT temporarily owns only the six exact documentation paths below to preserve Claude's v24.0.25 observations, reconcile current production/certification with observed v24.0.26, and finish the unexecuted Safari QA runbook on a clean GPT successor branch. This grants no runtime, policy, test, workflow, deployment, or physical-device certification authority. Retire these rows when the reviewed successor lands; normal Claude/parent ownership then resumes. The existing Claude branch is preserved and never written by GPT.
+
+| Top-level path | Owner | Notes |
+|---|---|---|
+| `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | Temporary PR #282 dated observation reconciliation only. |
+| `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md` | gpt | Preserve the original draft's v24.0.25 checkpoint as historical evidence. |
+| `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` | gpt | Current v24.0.26 evidence and explicit supersession; physical HOLD and pending external gates remain. |
+| `docs/SAFARI27_MCP_QA_WORKFLOW.md` | gpt | Finish the draft runbook with primary-source setup; no Safari execution claim. |
 
 ## Current lane intent
 
