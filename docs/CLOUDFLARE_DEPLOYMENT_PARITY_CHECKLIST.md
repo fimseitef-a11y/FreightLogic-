@@ -2,18 +2,23 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Observed 2026-09-21: production serves 24.0.26 / DB16 / Worker v21.**
-At `d35ba266`, live parity run `35555039896` (job `106196949693`) and production
-service-worker run `35555039852` (job `106196949605`) both returned `VERDICT: PASS`.
-Logs observed 22 runtime assets, 20 repository-only paths withheld, Worker health v21,
-and one `freightlogic-24.0.26` cache. Tests `35555039857` reports 741/0 across 72 specs;
-CodeQL `35555039929` passes. These dated observations are detailed in
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`. Re-fetch current source before the next release claim.
+**Observed 2026-09-21: production serves 24.0.27 / DB16 / Worker v21.**
+Runtime merge `e160d94` passed exact-main Tests `35649355528` at **743/0 across
+72 specs**. The later governance-only checkpoint `8a520bc` leaves runtime bytes
+unchanged and provides the current settled observation: Live Parity `35651336959`
+(job `106504221124`) and Production Service Worker `35651336872`
+(job `106504213816`) both returned `VERDICT: PASS`. The logs directly observed
+app/SW/manifest 24.0.27, Worker v21, 22 runtime assets, 20 repository-only paths
+withheld, `freightlogic-24.0.27` as the sole generation cache, and the five-tab
+driver shell with Today visible after reload. CodeQL `35651336944` passed.
+The current dated authority is
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
 
-**Live vision remains UNOBSERVED.** #286 added the authenticated synthetic image probe;
-it has not yet been dispatched. Standard live parity and a Worker version check cannot
-close provider execution, image quality, or physical A13. The current state also keeps
-Admin deployment and later #278 policy work open.
+**Live vision remains UNOBSERVED.** The authenticated synthetic image probe exists,
+but the privileged provider invocation has not been observed and a Worker version
+check cannot close provider execution, image quality, or physical A13. Admin Console,
+later #278 policy work, repository-admin controls and Safari/native Apple work also
+remain separate.
 
 ## Historical v24.0.25 observation — 2026-09-20
 
