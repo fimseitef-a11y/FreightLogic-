@@ -1,6 +1,0 @@
-owner: claude
-token: 229e4d7e-0d07-4d23-8edf-52e5ce4b83cb
-started_utc: 2026-09-21T19:57:00Z
-expected_release_utc: 2026-09-22T00:00:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Fix reproduced toast-eviction defect (an informational toast erases a visible safety warning on the single shared #toast surface), add regression, and carry the governed release generation bump the fix requires to reach installed clients.
