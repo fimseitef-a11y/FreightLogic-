@@ -2,42 +2,22 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.26** is the observed production PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.28 is the current source candidate; the last directly observed production generation is v24.0.27.** DB remains **16** and the backup/API Worker remains **v21**.
 
-**Observed 2026-09-21: production serves 24.0.26 / DB16 / Worker v21.**
-v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
-profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
-trip CSV economics; separates fuel, non-fuel variable cost and fixed allocation so the
-same cost cannot be charged twice; adds the operator True-RPM economic bands as a
-separate profitability taxonomy from the retained decision/doctrine letter grades; and
-adds advisory weekend / Fri-Sat-to-Monday hold pricing context without creating a hard
-reject. `DB_VERSION` remains **16** and the Worker remains **v21**.
+PR #294 merged the v24.0.28 runtime as `764ea091e2ae3157a9c9d7a532ab802147388220`. Its exact PR head `121e1188c8fbd7eb02145c21bd9f27bc65e62abb` passed Tests run `35657810077` (job `106525656602`) at **746 passed / 0 failed across 72 specs**, with Lanes `35657810158` and CodeQL `35657810273` also passing. The release closes two real-device defects: an explicitly entered **$0.00/gal fuel price** can no longer become authoritative free fuel, and the grade-A hero verdict can no longer claim a Tier 1 destination when no destination was supplied. Blank/unconfigured fuel still resolves to the dated operator profile; an explicit zero deadhead remains a valid known zero. No DB or Worker generation changed.
 
-The v24.0.26 runtime merged through PR #281 as `9e3be9e0`. On the later
-documentation/tooling/governance checkpoint `d35ba266bfe3fc9083d43f716289a988704f671d`,
-exact-main Tests run `35555039857` reports **741 passed / 0 failed across 72 specs**;
-CodeQL `35555039929` is green; Live Parity `35555039896` and Production Service Worker
-`35555039852` both report `VERDICT: PASS`. Their logs observe app/SW/manifest 24.0.26,
-Worker `/health` v21, 22 runtime assets, 20 repository-only paths withheld, and one
-`freightlogic-24.0.26` generation cache. No deployed app bytes changed after #281 at
-this checkpoint. These are dated observations, not a substitute for fetching the next head.
+**Observed production evidence remains v24.0.27 / DB16 / Worker v21 until v24.0.28 is deployed and re-observed.** The settled v24.0.27 checkpoint `8a520bc060ddd11bbb9db5fe3cbd612aecc79456` directly passed Live Parity `35651336959` (job `106504221124`) and Production Service Worker `35651336872` (job `106504213816`): app/SW/manifest 24.0.27, Worker v21, all 22 declared runtime assets, 20 repository-only paths withheld, `freightlogic-24.0.27` as the current cache, five driver tabs and Today visible after reload, and exactly one generation cache. Do not relabel those runs as v24.0.28 evidence.
 
-**This does not close #278 or #252.** #278's later rate-basis, regional fuel, chain/exit,
-outcome and market-calibration scope still needs Claude's independent audit and joint
-consensus. #286 added the synthetic authenticated `/extract-image` smoke, but no run
-has invoked it against the live provider; that result remains **UNOBSERVED**. Worker
-version agreement is not provider-wiring or real-screenshot quality evidence. Physical
-iPhone A1-A13, the guarded Admin Console deployment/live-auth proof, repository-admin
-controls, and macOS Safari/native work remain separate. See the current certification
-state for the exact scope of each observation.
+**This still does not close #278 or #252.** #278's later rate-basis/settlement, regional/dynamic fuel, chain/exit, outcome and market-calibration scope remains separate. #252's privileged authenticated live provider invocation and real-screenshot quality benchmark remain unobserved. Physical iPhone A1-A13, guarded Admin Console live proof, repository-admin controls, and Safari/native Apple work also remain separate. The current certification authority is `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
 
 **Historical v24.0.25 observation.** PR #277 merged as
 `436d677876c238bb6773d56a15d8f00a5699a3f9`; governance-only #280 was
 `266d74e5eba3b55ad90083f951fa3e571f307539`. Live parity `35542846195` and
 production service worker `35542851411` were re-dispatched on that checkpoint and
 observed v24.0.25 / DB16 / Worker v21. The complete dated record is preserved in
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md` and superseded by
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`. The previous overview's
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`, superseded first by
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` and now by
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`. The previous overview's
 claim that v24.0.26 was still source-only is now superseded by the logs above.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
@@ -136,7 +116,7 @@ decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconci
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` is the certification
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` is the certification
 authority — through the preserved 2026-09-20 addendum it supersedes the older records, and it is the one
 `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
@@ -309,7 +289,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.26';
+const APP_VERSION = '24.0.28';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -454,8 +434,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.26` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.26`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.28` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.28`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4695,6 +4675,46 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.28 "Fuel Is Never Free" — fail closed on impossible fuel and invented geography
+
+**Scope.** PR #294 repairs two defects confirmed on a physical iPhone. First, an explicit
+`fuelPrice: 0` was previously accepted as a verified value, allowing canonical fuel cost
+to become zero even though the blank/unconfigured case already fell back safely to the dated
+operator profile. v24.0.28 rejects explicit zero/negative fuel price in the derivation,
+cached-profile short-circuit, and Settings write path. This does **not** change the meaning of
+explicit zero deadhead: zero deadhead remains a valid operator fact.
+
+Second, the grade-A hero sentence previously appended "into a Tier 1 market" without checking
+that a destination had actually resolved to Tier 1. The branch now applies the same
+`geo && geo.dT1` guard already used by grade B, so missing geography cannot become a confident
+favorable claim.
+
+**Evidence.** Exact PR head `121e1188c8fbd7eb02145c21bd9f27bc65e62abb` passed the full
+suite **746/0 across 72 specs** in run `35657810077`, job `106525656602`, first attempt.
+`ECON278-15`, `ECON278-16`, the expanded `ECON278-10`, and `SSI-19` exercise the repaired
+paths. Lanes and CodeQL also passed. Runtime merged to main as `764ea091e2ae3157a9c9d7a532ab802147388220`.
+
+**Deployment boundary.** This section records source/runtime evidence only. At the time this
+record was written, the last directly observed production generation was v24.0.27. Do not
+claim v24.0.28 live parity until the deployment settles and the live parity and production
+service-worker gates directly observe 24.0.28.
+
+---
+
+## v24.0.27 "One Surface, Two Severities" — F-9 safety-toast repair
+
+PR #291 fixed a real shared-toast race: a cosmetic service-worker/install notice could overwrite
+the one-time GPS-loss reassurance on the single visible toast surface. Informational messages may
+no longer replace a visible warning; warning escalation remains unrestricted. DB stayed 16 and
+Worker stayed v21.
+
+Exact-main Tests `35649355528` passed **743/0 across 72 specs**. The settled governance-only
+checkpoint `8a520bc` then directly observed production 24.0.27 through Live Parity
+`35651336959` and Production Service Worker `35651336872`, both PASS. Those live results are
+historical evidence for v24.0.27 and are preserved even after source advances.
+
+---
 
 ## v24.0.26 "Economics Authority" — Issue #278
 
