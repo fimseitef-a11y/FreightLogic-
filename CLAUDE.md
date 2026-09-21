@@ -36,8 +36,9 @@ macOS Safari/native Apple work remain open. The current certification authority 
 `266d74e5eba3b55ad90083f951fa3e571f307539`. Live parity `35542846195` and
 production service worker `35542851411` were re-dispatched on that checkpoint and
 observed v24.0.25 / DB16 / Worker v21. The complete dated record is preserved in
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md` and superseded by
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`. The previous overview's
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`, superseded first by
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` and now by
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`. The previous overview's
 claim that v24.0.26 was still source-only is now superseded by the logs above.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
