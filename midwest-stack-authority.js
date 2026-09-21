@@ -1,11 +1,11 @@
-/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.26
+/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.27
  * Driver-first cargo-van decision intelligence layer.
  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
  */
 (function(){
   'use strict';
 
-  const VERSION = '24.0.26';
+  const VERSION = '24.0.27';
   const UPDATED_AT = '2026-08-20';
 
   const CONFIG = Object.freeze({

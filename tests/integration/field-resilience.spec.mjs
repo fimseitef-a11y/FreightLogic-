@@ -505,6 +505,99 @@ test('[FINDING F-7 / FIXED] sustained GPS signal loss keeps the session alive an
   }
 });
 
+// F-9 is the defect behind the 2026-09-21 CI failure that was retried rather
+// than root-caused (run 35556446150 attempt 1: 740/1, the F-7 sustained-GPS-loss
+// toast read "FreightLogic 24.0.26 installed." instead of the reassurance).
+// That was not timing noise in the test. `#toast` is ONE shared element with ONE
+// shared timer, and `toast()` let any later caller overwrite whatever was on it.
+// The GPS reassurance fires exactly ONCE per error streak by design (watchPosition
+// re-fires every 15s and toasting each one would bury the driver), so a cosmetic
+// notice landing inside its 2.4s window did not merely reorder two messages — it
+// destroyed the driver's only notification that the trip was degraded but still
+// tracking, permanently.
+//
+// The rule this repo already applies to the cloud-backup paused banner is the one
+// that was missing here: an informational notice may vanish, a warning may not.
+// Escalation stays unrestricted — a warning may still replace anything, including
+// another warning. Only the informational-over-a-visible-warning direction is refused.
+
+test('[FINDING F-9 / FIXED] a cosmetic notice cannot erase a visible safety warning on the shared toast surface', async () => {
+  const gpsApp = await launchGpsApp();
+  try {
+    await gpsApp.page.click('#f21StartBtn');
+    await gpsApp.page.waitForSelector('#f21StopBtn', { timeout: 5000 });
+
+    const cdp = await gpsApp.context.newCDPSession(gpsApp.page);
+    await cdp.send('Emulation.setGeolocationOverride', {});   // sustained POSITION_UNAVAILABLE
+    await gpsApp.page.waitForTimeout(1500);
+
+    const warned = await gpsApp.page.textContent('#toast');
+    ok(/still tracking/i.test(warned),
+      `sanity: the GPS reassurance must be on screen before we try to evict it — got ${JSON.stringify(warned)}`);
+
+    // The real listener app.js registers on navigator.serviceWorker. This is the
+    // exact message service-worker.js broadcasts on activate, delivered to the
+    // real handler — not a direct call to toast().
+    const dispatched = await gpsApp.page.evaluate(() => {
+      if (!('serviceWorker' in navigator)) return false;
+      navigator.serviceWorker.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'SW_ACTIVATED', version: '24.0.99' } })
+      );
+      return true;
+    });
+    ok(dispatched, 'sanity: the SW_ACTIVATED path must be reachable for this regression to mean anything');
+    await gpsApp.page.waitForTimeout(150);
+
+    const after = await gpsApp.page.textContent('#toast');
+    console.log(`    [evidence] toast after a cosmetic SW notice arrives: ${JSON.stringify(after)}`);
+    ok(/still tracking/i.test(after),
+      `an informational notice must not replace a visible safety warning — got ${JSON.stringify(after)}`);
+
+    // The trip itself must be untouched by any of this.
+    const stillTracking = await gpsApp.page.textContent('#f21TrackArea');
+    ok(stillTracking.includes('Trip in progress'),
+      `the session must be unaffected — got ${JSON.stringify(stillTracking)}`);
+  } finally {
+    await gpsApp.close();
+  }
+});
+
+// The paired control. Without this, the fix above could be satisfied by simply
+// never letting anything replace a warning, which would strand a stale warning on
+// screen and silence every genuine escalation after it.
+test('[FINDING F-9 / FIXED] escalation still works — a warning replaces anything, and informational toasts still replace each other', async () => {
+  const gpsApp = await launchGpsApp();
+  try {
+    const r = await gpsApp.page.evaluate(async () => {
+      const sleep = ms => new Promise(res => setTimeout(res, ms));
+      const T = window.__FL_TESTS.toast;
+      const el = document.getElementById('toast');
+      const out = {};
+
+      T('first informational', false);      await sleep(20); out.info1 = el.textContent;
+      T('second informational', false);     await sleep(20); out.info2 = el.textContent;   // info replaces info
+      T('a real warning', true);            await sleep(20); out.warn = el.textContent;    // warning replaces info
+      T('a newer warning', true);           await sleep(20); out.warn2 = el.textContent;   // warning replaces warning
+      T('cosmetic notice', false);          await sleep(20); out.suppressed = el.textContent;
+
+      // Once the warning's own window closes, informational toasts work normally again.
+      el.className = 'toast hide';
+      T('informational after the warning cleared', false);
+      await sleep(20); out.afterClear = el.textContent;
+      return out;
+    });
+
+    eq(r.info2, 'second informational', 'an informational toast must still replace an earlier informational one');
+    eq(r.warn, 'a real warning', 'a warning must replace an informational toast — escalation is never blocked');
+    eq(r.warn2, 'a newer warning', 'a newer warning must replace an older one, so warnings cannot go stale on screen');
+    eq(r.suppressed, 'a newer warning', 'a cosmetic notice must not evict the visible warning');
+    eq(r.afterClear, 'informational after the warning cleared',
+      'once the warning is no longer displayed, informational toasts must work normally again');
+  } finally {
+    await gpsApp.close();
+  }
+});
+
 test('[FINDING F-7 / FIXED] a tracking record left behind by an unclean teardown is offered for resume — tapping "Start Trip" no longer silently abandons it', async () => {
   const gpsApp = await launchGpsApp();
   try {

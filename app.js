@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.26 USA ENGINE
+/** FreightLogic v24.0.27 USA ENGINE
+ *  v24.0.27 "One Surface, Two Severities": F-9. `#toast` is a single element
+ *          with a single timer, and toast() let any later caller overwrite it.
+ *          The GPS-loss reassurance fires ONCE per error streak by design, so a
+ *          cosmetic "installed." notice landing inside its 2.4s window did not
+ *          reorder two messages -- it permanently destroyed the driver's only
+ *          signal that the trip was degraded but still tracking. Observed in CI
+ *          and reproduced through the real SW_ACTIVATED listener. An
+ *          informational toast may no longer replace a VISIBLE warning;
+ *          escalation is unrestricted, so a warning still replaces anything and
+ *          cannot strand itself on screen. No economics, routing, storage,
+ *          schema or Worker semantics change. DB stays 16, Worker stays v21.
  *  v24.0.26 "Economics Authority": Issue #278 installs one canonical
  *          marginal/all-in cost model, the current True-RPM economic ladder,
  *          safe legacy-cost migration, and advisory weekend/hold context.
@@ -398,7 +409,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.26';
+const APP_VERSION = '24.0.27';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -1162,6 +1173,23 @@ function haptic(ms=10){ try{ navigator?.vibrate?.(ms); }catch(e){ /* vibrate uns
 
 function toast(msg, isErr=false){
   const t = $('#toast');
+  // F-9: `#toast` is ONE element with ONE timer, so every caller used to be able
+  // to overwrite whatever was on it. The GPS-loss reassurance fires exactly ONCE
+  // per error streak by design (watchPosition re-fires every 15s and toasting
+  // each one would bury the driver), so a cosmetic notice landing inside its
+  // 2.4s window did not reorder two messages — it permanently destroyed the
+  // driver's only signal that the trip was degraded but still tracking. Observed
+  // in CI as `#toast` reading "FreightLogic 24.0.26 installed." during a live
+  // GPS outage, and reproduced deterministically through the real SW_ACTIVATED
+  // listener.
+  //
+  // Same rule the cloud-backup paused banner already follows: an informational
+  // notice may vanish, a warning may not. Escalation stays unrestricted — a
+  // warning still replaces anything, including another warning, so a stale
+  // warning can never strand itself on screen. Only this one direction is
+  // refused. Read from the element rather than a shadow flag, so the check can
+  // never disagree with what the driver is actually looking at.
+  if (!isErr && t.classList.contains('err') && t.classList.contains('show')) return;
   t.textContent = msg;
   t.className = 'toast ' + (isErr ? 'err ' : '') + 'show';
   haptic(isErr ? 30 : 10);
@@ -23611,6 +23639,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   window.__FL_TESTS = {
     // Cloud-backup paused state (configured token, session-scoped passphrase gone)
     cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
+    // F-9: the shared #toast severity rule. Exposed so the escalation control can
+    // drive every direction of it directly, rather than inferring the rule from
+    // whichever callers happen to exist.
+    toast,
     escapeHtml, csvSafeCell, sanitizeImportValue, deepCleanObj,
     finiteNum, posNum, intNum, roundCents, validateRecordSize,
     sanitizeTrip, sanitizeExpense, sanitizeFuel, tripPaymentKnown, tripIsPaid, tripIsUnpaid, findTripsByOrderNo,
