@@ -2,53 +2,70 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.25** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
+**FreightLogic v24.0.26** is the current governed PWA generation for expedited cargo van operators. It provides freight decision intelligence: load scoring, bid recommendations, trap detection, market positioning, proactive positioning briefs, and full business bookkeeping — all running locally in the browser with optional cloud backup and AI-backed load review.
 
-**PRODUCTION SERVES 24.0.25 / DB16 / Worker v21, and BOTH generations are OBSERVED.**
-v24.0.25 is the operator-directed Apple-style driver information-architecture/evaluator
-simplification in PR #277. It groups More into named categories without dropping
-destinations, keeps Text Size and Glance Mode immediately reachable, preserves
-screenshot/paste/type intake, and changes no freight economics, doctrine, DB schema,
-or Worker behavior. `DB_VERSION` remains **16** and the Worker remains **v21**.
+**PRODUCTION SERVES 24.0.26 / DB16 / Worker v21, and BOTH generations are OBSERVED.**
+v24.0.26 is the Issue #278 economics-authority refresh. It makes one canonical cost
+profile feed the evaluator, trip scoring, Today planning burn, OMEGA projections and
+trip CSV economics; separates fuel, non-fuel variable cost and fixed allocation so the
+same cost cannot be charged twice; adds the operator True-RPM economic bands as a
+separate profitability taxonomy from the retained decision/doctrine letter grades; and
+adds advisory weekend / Fri-Sat-to-Monday hold pricing context without creating a hard
+reject. `DB_VERSION` remains **16** and the Worker remains **v21**.
 
-It merged as `436d677` and has deployed. Both live gates were re-dispatched on `main`
-@ `266d74e` and both returned `VERDICT: PASS`:
+It merged as `9e3be9e` (PR #281) and has deployed. Both halves are observed on `main`
+@ `9e3be9e`:
 
-- **Live all-asset parity** — run `35542846195` (job `106163516058`): manifest name
-  `FreightLogic v24.0.25`, Worker `/health` `{"ok":true,"version":"21"}`, all **22**
-  declared runtime assets load with none served as HTML, and **20** repository-only
-  paths confirmed non-public (Issue #228's live half), every one of them answering
-  with a definite status.
-- **Production service worker** — run `35542851411` (job `106163528152`): the precache
-  is `freightlogic-24.0.25` carrying all 22 assets, `admin-driver-ui.js` and
-  `midwest-stack-authority.js` are injected **and fetchable as script** (HTTP 200,
-  `text/javascript`), an offline subresource miss is `504 text/plain` rather than the
-  HTML shell, a drifted `?v=` self-heals, the cached shell requests `?v=24.0.25`,
-  exactly one generation cache survives, and after reload the driver shell renders
-  five tabs and a visible Today surface with no uncaught errors — this release's own
-  IA restructure observed in production rather than asserted from source.
+- **Live all-asset parity** — run `35544113040` (job `106166881011`), **re-dispatched**
+  `workflow_dispatch`, `VERDICT: PASS`: Worker `/health`
+  `{"ok":true,"version":"21"}`, all **22** declared runtime assets load with none
+  served as HTML, and **20** repository-only paths confirmed non-public (Issue #228's
+  live half), every one answering with a definite status.
+- **Production service worker** — run `35543985994` (job `106166542768`),
+  `VERDICT: PASS`: the precache is `freightlogic-24.0.26` carrying all 22 assets,
+  `admin-driver-ui.js` and `midwest-stack-authority.js` are injected **and fetchable as
+  script**, an offline subresource miss is `504 text/plain` rather than the HTML shell,
+  a drifted `?v=` self-heals, the cached shell requests `?v=24.0.26`, exactly one
+  generation cache survives, and after reload the driver shell renders five tabs and a
+  visible Today surface with no uncaught errors.
 
-The prior observation of record, kept as history, is v24.0.24, the Issue #268 Apple/iOS
-accessibility completion. It merged as `f75f9cc` (PR #275) and was deployed and observed
-the same day: live all-asset parity run `35434716935` (job `105875325854`, `VERDICT: PASS`)
-and the production service-worker gate run `35434719454` (job `105875332085`,
-`VERDICT: PASS`). Its precache was `freightlogic-24.0.24`. Those runs remain evidence for
-that exact tree only.
+**That service-worker run was push-triggered, and it is still evidence — read why.** It
+fired four seconds after the merge, squarely inside the window this file records nine
+push races in. The rule those nine occurrences produced is about a **FAILURE**: a run
+that observes the *previous* generation mid-deploy proves nothing about the release. A
+push run that **passes** is the opposite case, because the gate derives its expectation
+from source and asserts the precache **equals** it — you cannot observe
+`freightlogic-24.0.26` unless production is serving 24.0.26. The live-parity half was
+re-dispatched anyway rather than reasoned about, and it agrees.
 
-*This overview read "SOURCE CANDIDATE IS 24.0.25 … LAST VERIFIED PRODUCTION SERVES 24.0.24"
-and described v24.0.25 as "source-only until merged, deployed, and observed." That was
-accurate when written and stopped being accurate once PR #277 merged and Cloudflare
-deployed. It is corrected rather than quietly overwritten, because this is the **ninth**
-time this section has carried a superseded deployment claim, and the consequence is the
-same every time: a reader would certify against a candidate production had already stopped
-serving. The rule is unchanged and is the one this file keeps relearning — **a superseding
-record is due the day a shipped file deploys, not the day it merges, and not whenever
-somebody notices.** Merging leaves a commit; deploying leaves nothing, which is the entire
-mechanism. Worth recording about this instance specifically: `.agents/LANES.md` had already
-stated the v24.0.25 observation while this section still said 24.0.24, so two governance
-records disagreed about what production was serving. A lane-ownership map is not the release
-record. This section is, and the disagreement was resolved by re-dispatching the gates and
-reading their verdicts — not by believing the neighbouring document.*
+The prior observation of record, kept as history, is v24.0.25 — the PR #277 Apple-style
+driver IA slice, merged `436d677`, with the governance-only #280 head `266d74e` changing
+no runtime bytes. It was observed twice on that exact tree: live parity `35539669777`
+and production service worker `35539669806`, and again by re-dispatch at live parity
+`35542846195` (job `106163516058`) and production service worker `35542851411` (job
+`106163528152`). Before it, v24.0.24 (`f75f9cc`, PR #275) was observed by live parity
+`35434716935` and production service worker `35434719454`. Each set is evidence for the
+exact tree its gate looked at, and for no other.
+
+*This section has now carried a superseded deployment claim **ten** times. The tenth is
+worth stating precisely, because it happened inside a single hour and to both lanes at
+once. This overview said "PRODUCTION SERVES 24.0.25" while `.agents/LANES.md` already
+said 24.0.25 and `.claude/CLAUDE.md` still said 24.0.19; that was corrected by
+re-dispatching the gates. PR #281 then merged with its own overview reading "SOURCE
+CANDIDATE IS 24.0.26 … LAST VERIFIED PRODUCTION SERVES 24.0.25" and "Production
+therefore remains v24.0.25 … until this 24.0.26 candidate is merged, deployed, and
+observed" — accurate when written, and superseded by its own deploy within minutes. The
+rule is unchanged and is the one this file keeps relearning: **a superseding record is
+due the day a shipped file deploys, not the day it merges, and not whenever somebody
+notices.** Merging leaves a commit; deploying leaves nothing, which is the entire
+mechanism. The corollary this instance adds: a release section written before its own
+deploy should say what it does not yet know, and be superseded the moment it does.*
+
+**Issue #278 remains OPEN.** The core v24.0.26 economics slice has merged and deployed,
+but its later accepted addenda and the independent Claude economics-audit / joint-consensus
+gate are not complete. A merged and observed runtime generation is not a closed issue, and
+nothing in this section should be read as closing it. Physical iPhone **A1-A13** remains a
+separate evidence gate under #226.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
 24.0.22" and described v24.0.23 as "source-only until merged, deployed, and observed." That was
@@ -319,7 +336,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.25';
+const APP_VERSION = '24.0.26';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -464,8 +481,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.25` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.25`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.26` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.26`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4704,6 +4721,42 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.26 "Economics Authority" — Issue #278
+
+**Scope.** This release replaces the remaining parallel trip-cost calculations with one
+canonical operator cost profile. Profile fallbacks are dated 2026-09-17: 16.7 MPG,
+$3.79/gal fuel, the adopted working fuel component **$0.230/mi**, $0.066/mi non-fuel
+variable reserve (oil + tires + repair), and $0.109/mi fixed allocation. The authoritative
+working totals therefore reconcile to **$0.296/mi marginal** and **$0.405/mi all-in**.
+The $0.230 profile fuel component is the operator's rounded working ledger value; when MPG
+or fuel price is explicitly overridden, canonical economics returns to exact gallons math
+for trip dollars and derives the override CPM from those inputs.
+
+**Migration and anti-double-counting.** New settings store `nonFuelVariableCpm`,
+`fixedCostPerMile` and `costModelVersion=2`. A legacy `opCostPerMile` is treated as
+a non-fuel total and is split/reconciled against monthly data; it is never added on top
+of both fixed costs and fuel. The Settings/setup save path excludes maintenance from
+fixed allocation because maintenance is already represented by the variable reserve.
+
+**Decision context.** Economic bands are now explicit and separate from doctrine grades:
+≤$0.85 Escape; $0.86–0.99 Escape/Recovery; $1.00–1.14 Strategic; $1.15–1.35 Workable;
+$1.36–1.39 Good/Upper-workable; $1.40–1.50 Strong; $1.51–1.64 Very strong/Near-excellent;
+≥$1.65 Excellent. Weekend work generally adds about $0.10–$0.15 True RPM; weak-destination
+weekends and Fri/Sat pickup → Monday delivery seek roughly one economic band higher.
+The hold overlay carries a $150–$350 lost-weekend-time guide and remains advisory —
+strategic/homeward bridge logic is preserved and safety/route gates remain independent.
+
+**Cross-surface authority.** Evaluator output, trip score economics, Today planning burn,
+OMEGA net ranges, and CSV economic columns all consume the same profile. Profit output
+distinguishes contribution after marginal cost from all-in profit after fixed allocation.
+Issue #278 has a dedicated regression suite covering profile math, migration, band
+boundaries, weekend overlays, OMEGA parity, fail-closed invalid inputs and the real
+evaluator form.
+
+**Release boundaries.** Runtime bytes and cache identity advance to v24.0.26. DB stays
+16 and Worker stays v21. Physical iPhone A1-A13 remains a separate manual evidence gate;
+browser CI does not certify hardware-only behavior.
 
 ## v24.0.25 "Driver IA" — operator-directed Apple-style information architecture
 

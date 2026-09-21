@@ -1,4 +1,4 @@
-# Completion release certification state — production 24.0.25 / DB16 / Worker v21
+# Completion release certification state — production 24.0.26 / DB16 / Worker v21
 
 Date: 2026-09-20
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-19.md
@@ -16,83 +16,94 @@ historical evidence and must not be read as the current candidate.
 ## Why this document exists
 
 The document it supersedes certified **24.0.24 / Worker v21** on candidate `f75f9cc`. Production
-has since moved to **24.0.25** — PR #277, the operator-directed Apple-style driver
-information-architecture / evaluator simplification — and that deploy had no superseding record.
+has since moved through **24.0.25** (PR #277, the Apple-style driver IA slice) and **24.0.26**
+(PR #281, the Issue #278 economics-authority refresh), and neither deploy had a superseding
+record.
 
-It is the same drift this chain exists to prevent, and this instance had a second symptom worth
-recording, because it is the one a reader would actually have been misled by. Two governance
-records disagreed:
+**This document was itself amended before it merged, and that is recorded rather than hidden.**
+It was first written certifying 24.0.25, from two re-dispatched gates on `266d74e`. While it sat
+unmerged, PR #281 merged and deployed, moving production to 24.0.26 within the hour. Rather than
+merge a certification record that was already superseded — the exact defect this chain exists to
+prevent — it was re-verified against the new head and rewritten. The 24.0.25 evidence is kept
+below as history, because those runs remain permanent provenance for the tree they looked at.
 
-- `CLAUDE.md`'s Project Overview still read *"LAST VERIFIED PRODUCTION SERVES 24.0.24"* and
-  described v24.0.25 as *"source-only until merged, deployed, and observed."*
-- `.agents/LANES.md` had already recorded, on 2026-09-20, that *"production service-worker and
-  live-parity gates subsequently observed v24.0.25."*
+That is the second symptom worth recording. Four governance records disagreed about what
+production served inside one hour:
 
-Neither was treated as evidence. **Both live gates were re-dispatched and their verdicts read**,
-and `CLAUDE.md` was corrected to match what they returned. A lane-ownership map is not the
-release record, and prose in either file is not an observation.
+- `CLAUDE.md`'s Project Overview said 24.0.24, then said 24.0.25, while PR #281's own overview
+  shipped saying *"LAST VERIFIED PRODUCTION SERVES 24.0.25 … Production therefore remains
+  v24.0.25 until this 24.0.26 candidate is merged, deployed, and observed"* — superseded by its
+  own deploy within minutes;
+- `FIELD_TEST_CHECKLIST.md` said 24.0.24 and named a superseded certification document;
+- `.claude/CLAUDE.md` said 24.0.19;
+- `.agents/LANES.md` was correct for 24.0.25 and stale for 24.0.26.
 
-The rule is unchanged and is the one this chain keeps relearning: **a superseding record is due
-the day a shipped file deploys, not the day it merges, and not whenever somebody notices.**
-Merging leaves a commit; deploying leaves nothing, which is the entire mechanism.
+None was treated as evidence. **The gates were re-dispatched and their verdicts read**, twice —
+once for 24.0.25 and again for 24.0.26.
+
+The rule is unchanged: **a superseding record is due the day a shipped file deploys, not the day
+it merges, and not whenever somebody notices.** Merging leaves a commit; deploying leaves
+nothing, which is the entire mechanism.
 
 ## The observation of record
 
-Candidate: `266d74e5eba3b55ad90083f951fa3e571f307539` — `main`, PR #280.
+Candidate: `9e3be9e0e61592c6cdaaec1fd489391f7dfa28e8` — `main`, PR #281, v24.0.26.
 
-The runtime generation is **v24.0.25**, which merged as `436d6778` (PR #277). `266d74e`
-(PR #280) is a governance-only cleanup retiring the temporary marker ownership: it modifies
-`.agents/LANES.md` and nothing else (+4/-5, one file), so **the runtime tree observed here is
-byte-identical to the v24.0.25 runtime tree**. `scripts/verify-release-generation.mjs` agrees —
-`"No deployed app bytes changed"`.
+`DB_VERSION` stays **16** and the Worker stays **v21**. The Worker's semantics did not change in
+this generation; the economics refresh is client-side.
 
-`DB_VERSION` stays **16** and the Worker stays **v21**. No schema, Worker, economics or doctrine
-semantics changed in this generation.
+### Live all-asset Cloudflare parity — `workflow_dispatch` on `main`, run `35544113040`, job `106166881011`, `VERDICT: PASS`
 
-### Live all-asset Cloudflare parity — `workflow_dispatch` on `main`, run `35542846195`, job `106163516058`, `VERDICT: PASS`
-
-- manifest loads (HTTP 200) and its name is `FreightLogic v24.0.25`
 - Worker `/health` → `{"ok":true,"version":"21"}`
-- admin endpoint rejects without a token — 401
 - all **22** declared runtime assets load from the app origin
 - no runtime asset served as HTML (no SPA fallback masking a miss)
+- the unauthenticated admin endpoint still rejects — 401
 - **20** repository-only paths confirmed non-public — Issue **#228**'s live half
 - every withheld path answered with a definite status, so none was counted as withheld merely
   because it could not be reached
 
-### Production service worker / offline — `workflow_dispatch` on `main`, run `35542851411`, job `106163528152`, `VERDICT: PASS`
+This run was **re-dispatched**, not taken from the merge push.
 
-This is the half delivery cannot prove. A 200 proves an asset was served; it says nothing about
-what a browser does after installing the deployed worker.
+### Production service worker / offline — `main`, run `35543985994`, job `106166542768`, `VERDICT: PASS`
 
-- the origin serves the app shell (HTTP 200); the service worker reaches **ACTIVATED**; the page
-  is **CONTROLLED** after one reload
+- the origin serves the app shell; the service worker reaches **ACTIVATED**; the page is
+  **CONTROLLED** after one reload
 - `admin-driver-ui.js` and `midwest-stack-authority.js` are each injected **and fetchable as
   script** — HTTP 200, `text/javascript`
-- the precache is the current generation, `freightlogic-24.0.25`, and carries all **22** declared
+- the precache is the current generation, `freightlogic-24.0.26`, carrying all **22** declared
   runtime assets
-- **after reload the driver shell renders five tabs and a visible Today surface**, with no
-  uncaught page errors during install or reload
-- with the network verifiably down, checked against the running worker instance: an uncached
-  subresource miss returns `504 text/plain` rather than the HTML shell
-  (`/does-not-exist.js`), a cached asset still serves as script (`/app.js`, 200
-  `text/javascript`), and a drifted `?v=` on a known asset self-heals to the real file
-- the cached app shell is a complete HTML document (60677 bytes, `text/html`), carries the driver
-  tab-bar markup, and requests the current generation's assets (`?v=24.0.25`)
+- after reload the driver shell renders five tabs and a visible Today surface, with no uncaught
+  page errors
+- with the network verifiably down: an uncached subresource miss returns `504 text/plain` rather
+  than the HTML shell, a cached asset still serves as script, and a drifted `?v=` self-heals
+- the cached app shell is a complete HTML document (61762 bytes, `text/html`), carries the driver
+  tab-bar markup, and requests `?v=24.0.26`
 - the worker recovers cleanly when the network returns
-- exactly **one** generation cache survives — `freightlogic-24.0.25`, with no stale generation
-  left behind. `freightlogic-share-v2` is also present and is expected: it is `SHARE_CACHE`, not
-  a generation.
+- exactly **one** generation cache survives — `freightlogic-24.0.26`. `freightlogic-share-v2` is
+  also present and expected: it is `SHARE_CACHE`, not a generation.
 
-**This release's own subject was observed, not asserted.** v24.0.25 is an information-architecture
-change, so "five tabs and a visible Today surface after reload, with no uncaught errors" is the
-gate that actually looks at what shipped. v24.0.8 is the precedent for why that matters: the Loads
-tab shipped green because the hash and the highlighted tab were both correct while the surface
-itself was dead.
+**This run was push-triggered, four seconds after the merge, and it is still evidence.** That is
+squarely inside the window this repository records nine push races in — but the rule those
+occurrences produced is about a **FAILURE**. A run that observes the *previous* generation
+mid-deploy proves nothing about the release. A push run that **passes** is the opposite case:
+the gate derives its expected generation from source and asserts the precache **equals** it, so
+`freightlogic-24.0.26` cannot be observed unless production is serving 24.0.26. The parity half
+was re-dispatched rather than reasoned about, and it agrees.
+
+### Prior observations, kept as history
+
+- **24.0.25** — PR #277, merged `436d677`; governance-only #280 head `266d74e` changed no runtime
+  bytes. Observed on that tree by live parity `35539669777` and production service worker
+  `35539669806`, and again by re-dispatch at live parity `35542846195` (job `106163516058`) and
+  production service worker `35542851411` (job `106163528152`), precache `freightlogic-24.0.25`.
+- **24.0.24** — PR #275, merged `f75f9cc`. Live parity `35434716935` (job `105875325854`) and
+  production service worker `35434719454` (job `105875332085`), precache `freightlogic-24.0.24`.
+
+Each set is evidence for the exact tree its gate looked at, and for no other.
 
 ### Repository-side
 
-`node scripts/verify-cloudflare-parity.mjs --static-only` is **PASS** at 24.0.25: CSP is
+`node scripts/verify-cloudflare-parity.mjs --static-only` is **PASS** at 24.0.26: CSP is
 byte-identical between `index.html` and `_headers`, and no runtime asset is excluded from
 deployment by `.assetsignore` (22 declared).
 
@@ -114,6 +125,14 @@ exists to prevent.
    read as A1-A13 PASS.
 
 ## What remains
+
+**Issue #278 remains OPEN, and a deployed generation does not close it.** The core v24.0.26
+economics slice has merged, deployed and been observed by both gates above — but its later
+accepted addenda and the independent Claude economics-audit / joint-consensus gate are not
+complete. Nothing in this document closes #278, and a green runtime observation must not be read
+as discharging an economics-authority review that has not happened. This is the same distinction
+the chain draws everywhere else: delivery observed is not correctness certified.
+
 
 **One gate: physical iPhone A1-A13** (Issue #226), deferred by the operator's 2026-09-16 decision
 to the final post-v24.5 candidate. `FIELD_TEST_CHECKLIST.md` remains the instrument. The device

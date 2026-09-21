@@ -2,39 +2,45 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**PRODUCTION SERVES 24.0.25 / DB16 / Worker v21, and BOTH generations are
-OBSERVED.** Observation of record, both `workflow_dispatch` on `main` @
-`266d74e` (PR #280; the runtime generation merged as `436d677`, PR #277, the
-operator-directed Apple-style driver IA slice):
+**PRODUCTION SERVES 24.0.26 / DB16 / Worker v21, and BOTH generations are
+OBSERVED.** Observation of record on `main` @ `9e3be9e` (PR #281, the Issue #278
+economics-authority refresh):
 
-- live all-asset parity run `35542846195`, job `106163516058`, `VERDICT: PASS` —
-  manifest name `FreightLogic v24.0.25`, Worker `/health`
+- live all-asset parity run `35544113040`, job `106166881011`, **re-dispatched**
+  `workflow_dispatch`, `VERDICT: PASS` — Worker `/health`
   `{"ok":true,"version":"21"}`, all **22** declared runtime assets loading, none
-  served as HTML, and **20** repository-only paths confirmed non-public (Issue
-  #228's live half), every one answering with a definite status;
-- production service worker run `35542851411`, job `106163528152`,
-  `VERDICT: PASS` — precache `freightlogic-24.0.25` carrying all 22 assets, both
-  injected scripts fetchable as script (HTTP 200, `text/javascript`), an offline
-  subresource miss `504 text/plain`, a drifted `?v=` self-healing, the cached
-  shell requesting `?v=24.0.25`, exactly one generation cache, and **after reload
-  the driver shell rendering five tabs and a visible Today surface with no
-  uncaught errors** — this generation's own IA restructure, observed rather than
-  asserted from source.
+  served as HTML, the unauthenticated admin endpoint still 401, and **20**
+  repository-only paths confirmed non-public (Issue #228's live half), every one
+  answering with a definite status;
+- production service worker run `35543985994`, job `106166542768`, `VERDICT: PASS` —
+  precache `freightlogic-24.0.26` carrying all 22 assets, both injected scripts
+  fetchable as script, an offline subresource miss `504 text/plain`, a drifted `?v=`
+  self-healing, the cached shell requesting `?v=24.0.26`, exactly one generation
+  cache, and the driver shell rendering five tabs and a visible Today surface after
+  reload with no uncaught errors.
 
-`266d74e` modifies only `.agents/LANES.md`, so the runtime tree observed is
-byte-identical to the v24.0.25 tree. `scripts/verify-release-generation.mjs`
-agrees: *"No deployed app bytes changed."*
+**The service-worker run was push-triggered and is still evidence; the parity run was
+re-dispatched.** The nine recorded push races in this repository are about a
+**FAILURE** — a run observing the *previous* generation mid-deploy proves nothing about
+the release. A push run that **passes** is the opposite case: the gate derives its
+expected generation from source and asserts the precache **equals** it, so
+`freightlogic-24.0.26` cannot be observed unless production serves 24.0.26. The
+converse still holds: a re-dispatch that fails *the same way* is a real finding, which
+is what made the v24.0.17 Worker-generation mismatch evidence rather than noise.
 
-**Neither of these runs was push-triggered, and that is deliberate.** A parity or
-service-worker run that fires on the merge push races the Cloudflare deploy and
-has been recorded failing for that reason nine times. Such a failure is real
-evidence about the origin at that instant and is **not** evidence about the
-release. The converse holds too: a re-dispatch that fails *the same way* is a
-real finding, which is what made the v24.0.17 Worker-generation mismatch evidence
-rather than noise.
+`DB_VERSION` stays **16** and the Worker stays **v21** — the economics refresh is
+client-side and changed no Worker semantics.
 
 The certification authority for this observation is
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`.
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`. **Issue #278 stays
+OPEN**: its later accepted addenda and the independent Claude economics-audit /
+joint-consensus gate are not complete, and a deployed generation does not close them.
+
+**PRODUCTION SERVED 24.0.25 — kept as history.** PR #277 merged `436d677`; the
+governance-only #280 head `266d74e` changed no runtime bytes. Observed on that tree by
+live parity `35539669777` and production service worker `35539669806`, and again by
+re-dispatch at live parity `35542846195` (job `106163516058`) and production service
+worker `35542851411` (job `106163528152`), precache `freightlogic-24.0.25`.
 
 *The 24.0.24 block this replaced is kept as history below, with the 24.0.22 and
 24.0.19 blocks beneath it. Those run IDs are permanent provenance for the exact
