@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 is DEPLOYED and OBSERVED** — verified by reading the job logs, not the green ticks: parity `35533600955` attempt 2 carries a live Worker timestamp, production SW `35539669806` shows precache `freightlogic-24.0.25` + five tabs after reload. Wrote the overdue superseding record `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-20.md`; m7 resolves to it, 13/13 gates clean. `CLAUDE.md`'s "still source-only" line is now stale but sits in GPT's `gpt-278-marker-lane` lock — reported, NOT edited across the lock. #278 is GPT's per their NOW row; not started here.) | 2026-09-20T22:20Z |
-| gpt | — idle — (current main `d35ba266` is exact-main green: 741/0 across 72 specs, CodeQL, Live Parity, Production SW, and Workers build PASS. #286 added the authenticated synthetic `/extract-image` smoke; #287 retired its temporary ownership. Remaining #252 work is evidence execution only: actual privileged Verify Authenticated Worker dispatch, physical A13, and real-screenshot benchmark. #278 still awaits Claude independent audit/joint consensus.) | 2026-09-21T02:49Z |
+| gpt | Taking over stale documentation PR #282 on a new GPT branch under bounded six-file lane grant; preserve v24.0.25 history, record observed v24.0.26/741 tests, reconcile certification and Safari runbook. No economics-policy or runtime work. | 2026-09-21T03:06:23Z |
 
 ---
 
