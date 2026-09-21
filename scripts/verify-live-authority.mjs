@@ -2,7 +2,7 @@
 /**
  * FreightLogic — live Worker authority-boundary verification (M7 gate).
  *
- *   node scripts/verify-live-authority.mjs [workerOrigin] [--paid]
+ *   node scripts/verify-live-authority.mjs [workerOrigin] [--paid] [--vision]
  *
  * `scripts/verify-cloudflare-parity.mjs` already covers the deployed asset
  * generation, `/health`, the Worker version and admin auth denial. The one M7
@@ -20,10 +20,12 @@
  *
  *   FL_BACKUP_TOKEN=flk_... node scripts/verify-live-authority.mjs
  *
- * COST.  The default run spends NO OpenAI quota: every check it performs is on
- * a path the Worker short-circuits before calling the model. `--paid` adds the
+ * COST.  The default run spends NO model quota: every check it performs is on
+ * a path the Worker short-circuits before calling a provider. `--paid` adds the
  * live projection checks, which do call OpenAI (rate limit: 100/hr per user for
- * /evaluate, 50/hr for /extract).
+ * /evaluate, 50/hr for /extract). `--vision` adds exactly one synthetic 1x1 PNG
+ * call to /extract-image so production provider/binding wiring is observable
+ * without uploading operator freight data.
  *
  * DATA.  Every fixture below is synthetic. No operator trip, broker, rate or
  * lane data is sent to the network by this script.
@@ -39,12 +41,17 @@
 
 const args = process.argv.slice(2);
 const paid = args.includes('--paid');
+const vision = args.includes('--vision');
 const positional = args.filter(a => !a.startsWith('-'));
 const workerOrigin = (positional[0] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 const token = process.env.FL_BACKUP_TOKEN || '';
 
 const checks = [];
 let unreachable = false;
+
+// Fixed 1x1 PNG. This is the only image the live smoke may send; it carries no
+// operator freight data, broker/rate/lane information, metadata or credentials.
+const VISION_SMOKE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2WQAAAABJRU5ErkJggg==';
 
 function pass(name, detail = '') { checks.push({ state: 'PASS', name, detail }); }
 function fail(name, detail = '') { checks.push({ state: 'FAIL', name, detail }); }
@@ -149,10 +156,41 @@ function assertAbsencePreserved(label, r) {
   bad.length ? fail(label, bad.join('; ')) : pass(label);
 }
 
+function assertVisionProviderSmoke(r) {
+  const label = 'live /extract-image provider path';
+  if (r.status === 0) { skip(label, 'origin unreachable'); return; }
+
+  if (r.status !== 200 && r.status !== 422) {
+    fail(label, `HTTP ${r.status} ${JSON.stringify(r.json)?.slice(0, 180)}`);
+    return;
+  }
+
+  const provider = String(r.json?.provider || '').trim();
+  const model = String(r.json?.model || '').trim();
+  const bad = [];
+  if (!provider) bad.push('provider provenance missing');
+  if (!model) bad.push('model provenance missing');
+
+  if (r.status === 200) {
+    if (r.json?.ok !== true) bad.push('HTTP 200 did not carry ok:true');
+    if (!r.json?.fields || typeof r.json.fields !== 'object') bad.push('HTTP 200 did not carry normalized fields');
+  } else {
+    // Blank/non-useful synthetic imagery is allowed to fail CLOSED after the
+    // provider runs. 422 is evidence that provider invocation reached shared
+    // normalization, not a screenshot-quality PASS.
+    if (r.json?.ok !== false) bad.push('HTTP 422 did not carry ok:false');
+  }
+
+  bad.length
+    ? fail(label, bad.join('; '))
+    : pass(label, `HTTP ${r.status} via ${provider} / ${model}`);
+}
+
 async function run() {
   console.log(`FreightLogic — live Worker authority boundary`);
   console.log(`  origin: ${workerOrigin}`);
-  console.log(`  mode:   ${paid ? 'FULL (spends OpenAI quota)' : 'FREE (short-circuit paths only)'}`);
+  const mode = paid && vision ? 'FULL + VISION' : paid ? 'FULL (spends OpenAI quota)' : vision ? 'FREE AUTHORITY + VISION (one provider call)' : 'FREE (short-circuit paths only)';
+  console.log(`  mode:   ${mode}`);
   console.log('='.repeat(72));
 
   if (!token) {
@@ -189,6 +227,16 @@ async function run() {
   else assert('a decision with no bid range is refused, not invented',
     noBid.status === 400 && /required/i.test(String(noBid.json?.error || '')),
     `expected 400 + "required", got ${noBid.status} ${JSON.stringify(noBid.json)?.slice(0, 160)}`);
+
+  if (!vision) {
+    skip('live /extract-image provider path', 'needs --vision (spends one vision-provider call)');
+  } else {
+    const imageSmoke = await post('/extract-image', {
+      mime: 'image/png',
+      image: VISION_SMOKE_PNG,
+    });
+    assertVisionProviderSmoke(imageSmoke);
+  }
 
   if (!paid) {
     skip('live projection of a complete decision', 'needs --paid (spends OpenAI quota)');
@@ -261,7 +309,8 @@ async function run() {
     console.log('  Do not certify this release generation until this is resolved.');
     process.exit(1);
   }
-  console.log(`\n  Authority boundary verified on ${workerOrigin}${paid ? '' : ' (free checks only — re-run with --paid for the full gate)'}.`);
+  const suffix = paid ? '' : ' (free authority checks only — re-run with --paid for model projection)';
+  console.log(`\n  Authority boundary verified on ${workerOrigin}${suffix}${vision ? '; live vision provider path observed' : ''}.`);
   process.exit(0);
 }
 
