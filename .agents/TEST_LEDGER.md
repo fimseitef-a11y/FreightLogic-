@@ -292,3 +292,6 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Result: **GREEN — 736 passed, 0 failed across 72 spec files**.
 - New #278 regression suite: **14 passed / 0 failed**. No assertion was skipped/quarantined/weakened to obtain this result.
 - Certification boundary: technical green only. PR #281 is Draft because the required Claude independent economics audit/joint consensus is still open and later accepted #278 scope remains unimplemented. This is not a release/deployment/physical-iPhone PASS.
+
+| 2026-09-21T03:16:07.740Z | 89437842064f8f56bd37bb295bbe3009f3e1d316 | GitHub Tests 35556446150 attempt 1 / 106200882080; node tests/run-all.mjs | 740/1, 72 specs | Only F-7 GPS-loss toast mismatch (installation message); app/tests unchanged. One controlled rerun requested; no assertion changes. |
+| 2026-09-21T03:16:07.740Z | local 72999a4289366c1e8dd50ae2e1747c513564ed47 (same tree as remote grant) | FL_CHROME_PATH=/workspace/scratch/934618485cb3/browser-runtime/chromium node tests/integration/field-resilience.spec.mjs | 13/0 | Diagnostic controlled focused reproduction, no fix; full-suite CI first-attempt failure retained. |
