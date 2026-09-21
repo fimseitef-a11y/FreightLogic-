@@ -309,7 +309,7 @@ async function run() {
     console.log('  Do not certify this release generation until this is resolved.');
     process.exit(1);
   }
-  const suffix = paid ? '' : ' (free authority checks only — re-run with --paid for model projection)';
+  const suffix = paid ? '' : ' (free checks only — re-run with --paid for model projection)';
   console.log(`\n  Authority boundary verified on ${workerOrigin}${suffix}${vision ? '; live vision provider path observed' : ''}.`);
   process.exit(0);
 }
