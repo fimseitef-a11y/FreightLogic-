@@ -144,8 +144,13 @@ async function main() {
     // kept the file from ever being published, so the tag pointed at a 404 and
     // every parity check stayed green.
     const html = await page.content();
+    // Issue #231 Phase C (v24.0.33): admin-driver-ui.js was deleted with the
+    // driver-app admin surface. A worker that still injects it is serving a
+    // superseded generation, so its presence is now the failure.
+    /admin-driver-ui\.js/.test(html)
+      ? fail('admin-driver-ui.js is still injected into the worker-served HTML — the driver app must carry no admin module')
+      : pass('admin-driver-ui.js is NOT injected — the driver app carries no admin module');
     for (const [name, re] of [
-      ['admin-driver-ui.js', /admin-driver-ui\.js/],
       ['midwest-stack-authority.js', /midwest-stack-authority\.js/],
     ]) {
       if (!re.test(html)) { fail(`${name} tag is absent from the worker-served HTML`); continue; }

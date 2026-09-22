@@ -5,12 +5,11 @@
 // feature worth having, each of which failed silently in some earlier form of
 // this codebase:
 //
-//   ZTO-01/02  a rejected admin token leaves NOTHING on disk. "Verify before
-//              persist" is easy to write and easy to get backwards.
-//   ZTO-03/04  the admin token is absent from the export payload AND from the
-//              checksum input — the X-05 class of bug, where the two disagreed
-//              and every honest export failed its own integrity check.
-//   ZTO-05/06  the `#i=` code is gone from the URL BEFORE the claim request
+//   ZTO-01/02  (Issue #231 Phase C) the driver app carries no admin surface,
+//              and a leftover admin credential from an earlier build is deleted.
+//   ZTO-05     a legacy admin key is absent from the export payload AND from the
+//              checksum input — the X-05 class of bug.
+//   ZTO-06     the `#i=` code is gone from the URL BEFORE the claim request
 //              fires. Asserted by reading location.href inside the intercepted
 //              request handler, which is the only moment that proves ordering
 //              rather than merely eventual cleanup.
@@ -20,7 +19,7 @@
 //
 // Every network call to the Worker is intercepted; no test here touches the
 // production endpoint.
-import { launchApp, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, skipFirstRunWizard, waitForAppReady, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/zero-token-onboarding.spec.mjs');
 
@@ -131,136 +130,51 @@ async function claimWizardReady(page) {
   }
 }
 
-// ── Owner: admin access is verified before it is stored ──────────────────────
+// ── Issue #231 Phase C: the driver app carries no admin surface ─────────────
+//
+// v24.0.13–v24.0.32 shipped an owner/admin panel inside the driver app. Driver
+// management now lives on the separate Admin Console origin, proven live before
+// this removal. These replace the old in-app admin-token tests: absence is the
+// contract now, and a leftover credential from an earlier build is DELETED.
 
-test('[ZTO-01] a REJECTED admin token is not persisted anywhere', async () => {
+test('[ZTO-01] the driver app has no admin UI, no admin exports and no admin API calls', async () => {
   const app = await openApp();
   try {
-    await setPin(app.page);
-    await routeWorker(app.page, { '/admin/users': async () => ({ status: 401, body: { ok: false, error: 'Unauthorized' } }) });
-
-    const saved = await app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'definitely-wrong-admin-token';
-      const result = await window.__FL_TESTS.cloudAdminSaveAccess();
-      return {
-        result,
-        stored: await window.__FL_TESTS.getSetting('cloudAdminTokenEnc', null),
-        session: sessionStorage.getItem('fl_admin_tok'),
-        local: localStorage.getItem('fl_admin_tok'),
-        stateText: document.querySelector('#adminAccessState')?.textContent || '',
-      };
-    });
-
-    eq(saved.result, false, 'saving a rejected token must report failure');
-    eq(saved.stored, null, 'a rejected token must NOT be written to IndexedDB settings');
-    eq(saved.session, null, 'a rejected token must not reach sessionStorage');
-    eq(saved.local, null, 'a rejected token must never reach localStorage');
-    ok(/rejected/i.test(saved.stateText), `the UI must say it was rejected, got "${saved.stateText}"`);
-    ok(!saved.stateText.includes('definitely-wrong'), 'the rejected value must not be echoed back into the UI');
+    const out = await app.page.evaluate(() => ({
+      dom: ['#btnAdminToggle', '#adminPanel', '#adminToken', '#btnAdminSaveAccess', '#btnAdminCreate', '#adminUserList']
+        .filter(sel => document.querySelector(sel)),
+      exports: Object.keys(window.__FL_TESTS || {}).filter(k => /^cloudAdmin|AdminAccess/.test(k)),
+      adminScript: [...document.scripts].some(sc => /admin-driver-ui/.test(sc.src || '')),
+    }));
+    eq(out.dom.length, 0, `admin controls must be absent, found ${out.dom.join(', ')}`);
+    eq(out.exports.length, 0, `admin functions must be gone, found ${out.exports.join(', ')}`);
+    eq(out.adminScript, false, 'admin-driver-ui.js must not be loaded');
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
+    ok(!/['"`]\/admin\//.test(src), 'app.js must not call any /admin/ endpoint');
   } finally { await app.close(); }
 });
 
-test('[ZTO-02] an ACCEPTED admin token is stored as ciphertext, never as plaintext', async () => {
+test('[ZTO-02] a leftover admin credential from an earlier build is DELETED at boot', async () => {
   const app = await openApp();
   try {
-    await setPin(app.page);
-    await routeWorker(app.page, { '/admin/users': async () => ({ status: 200, body: { ok: true, users: [] } }) });
-
-    const done = app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'real-admin-token-abc123';
-      return await window.__FL_TESTS.cloudAdminSaveAccess();
+    await app.page.evaluate(async () => {
+      await window.__FL_TESTS.setSetting('cloudAdminTokenEnc', { encrypted: 'LEFTOVER', iv: 'IV', salt: 'SALT' });
+      sessionStorage.setItem('fl_admin_tok', 'leftover-session-admin');
+      localStorage.setItem('fl_admin_tok', 'leftover-disk-admin');
     });
-    await answerPinModal(app.page);
-    eq(await done, true, 'a verified token must be saved');
-
-    const after = await app.page.evaluate(async () => {
-      const blob = await window.__FL_TESTS.getSetting('cloudAdminTokenEnc', null);
-      // Dump the entire settings store, the way an attacker with the IndexedDB
-      // file would see it.
-      const all = await window.__FL_TESTS.dumpStore('settings');
-      return {
-        blob,
-        rawDump: JSON.stringify(all),
-        fieldValue: document.querySelector('#adminToken')?.value,
-        stateText: document.querySelector('#adminAccessState')?.textContent || '',
-        local: localStorage.getItem('fl_admin_tok'),
-      };
-    });
-
-    ok(after.blob && after.blob.encrypted && after.blob.iv && after.blob.salt,
-      'the stored value must be an AES-GCM envelope (encrypted/iv/salt)');
-    ok(!after.rawDump.includes('real-admin-token-abc123'),
-      'the PLAINTEXT admin token must not appear anywhere in the settings store');
-    eq(after.fieldValue, '', 'the input must be cleared after saving');
-    ok(/configured/i.test(after.stateText), `the panel must show the configured state, got "${after.stateText}"`);
-    eq(after.local, null, 'the admin token must never be written to localStorage');
-  } finally { await app.close(); }
-});
-
-test('[ZTO-03] admin access survives a browser restart and is re-usable with the PIN', async () => {
-  const app = await openApp();
-  try {
-    await setPin(app.page);
-    await routeWorker(app.page, { '/admin/users': async () => ({ status: 200, body: { ok: true, users: [] } }) });
-    const save = app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'real-admin-token-abc123';
-      return await window.__FL_TESTS.cloudAdminSaveAccess();
-    });
-    await answerPinModal(app.page);
-    eq(await save, true, 'setup must succeed');
-
     await app.page.reload({ waitUntil: 'load' });
-    await app.page.waitForFunction(() => !!window.__FL_TESTS, null, { timeout: 15000 });
-    await routeWorker(app.page, { '/admin/users': async () => ({ status: 200, body: { ok: true, users: [] } }) });
-
-    // The ciphertext is what has to survive a reload, and does.
-    const survived = await app.page.evaluate(async () => await window.__FL_TESTS.getSetting('cloudAdminTokenEnc', null));
-    ok(survived && survived.encrypted, 'the encrypted envelope must survive a reload');
-
-    // Now end the SESSION. A reload does not: sessionStorage is scoped to the
-    // tab and outlives any number of reloads — only closing the tab or the
-    // browser clears it. An earlier version of this test asserted that a reload
-    // emptied it and "failed" against correct behaviour, which would have been
-    // a real defect to chase. Clearing it explicitly is what a tab close does,
-    // and it is the situation that used to force the owner to retype a
-    // 36-character secret on every restart.
-    await app.page.evaluate(() => sessionStorage.removeItem('fl_admin_tok'));
-    const beforePin = await app.page.evaluate(() => sessionStorage.getItem('fl_admin_tok'));
-    eq(beforePin, null, 'precondition: the session copy is gone, as after a browser restart');
-
-    const resolved = app.page.evaluate(async () => await window.__FL_TESTS.cloudAdminResolveToken());
-    await answerPinModal(app.page);
-    eq(await resolved, 'real-admin-token-abc123', 'the PIN must decrypt the stored token back');
+    await waitForAppReady(app.page);
+    const after = await app.page.evaluate(async () => ({
+      stored: await window.__FL_TESTS.getSetting('cloudAdminTokenEnc', null),
+      session: sessionStorage.getItem('fl_admin_tok'),
+      local: localStorage.getItem('fl_admin_tok'),
+    }));
+    eq(after.stored, null, 'the PIN-wrapped admin ciphertext must be deleted');
+    eq(after.session, null, 'a session admin token must be deleted, never kept');
+    eq(after.local, null, 'a legacy on-disk admin token must be deleted, never promoted');
   } finally { await app.close(); }
 });
-
-test('[ZTO-04] a WRONG PIN does not yield the admin token', async () => {
-  const app = await openApp();
-  try {
-    await setPin(app.page, '4321');
-    await routeWorker(app.page, { '/admin/users': async () => ({ status: 200, body: { ok: true, users: [] } }) });
-    const save = app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'real-admin-token-abc123';
-      return await window.__FL_TESTS.cloudAdminSaveAccess();
-    });
-    await answerPinModal(app.page, '4321');
-    await save;
-
-    await app.page.evaluate(() => sessionStorage.removeItem('fl_admin_tok'));
-    const resolved = app.page.evaluate(async () => await window.__FL_TESTS.cloudAdminResolveToken());
-    await app.page.waitForSelector('#adminPinEntry', { timeout: 5000 });
-    await app.page.fill('#adminPinEntry', '9999');
-    await app.page.click('#adminPinGo');
-    // A wrong PIN must not close the modal into a success — it re-prompts.
-    await app.page.waitForTimeout(300);
-    const err = await app.page.textContent('#adminPinErr').catch(() => '');
-    ok(/did not match/i.test(err || ''), `a wrong PIN must be reported, got "${err}"`);
-    await app.page.click('#adminPinCancel');
-    eq(await resolved, '', 'cancelling must yield no token');
-  } finally { await app.close(); }
-});
-
-// ── The export guardrail (the X-05 class) ────────────────────────────────────
 
 test('[ZTO-05] the admin token is absent from the export AND from its checksum input', async () => {
   const app = await openApp();
@@ -588,77 +502,6 @@ test('[ZTO-14] claiming never writes the passphrase to disk', async () => {
 });
 
 // ── Owner: the invite surface says nothing about tokens ──────────────────────
-
-test('[ZTO-11] the Drivers surface never uses the word "token"', async () => {
-  const app = await openApp();
-  try {
-    await setPin(app.page);
-    await routeWorker(app.page, {
-      '/admin/users': async () => ({ status: 200, body: { ok: true, users: [
-        { userId: 'u_aaa', name: 'Dana', createdAt: '2026-09-01T00:00:00Z', active: true, backupCount: 12 },
-      ] } }),
-    });
-    const save = app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'real-admin-token-abc123';
-      return await window.__FL_TESTS.cloudAdminSaveAccess();
-    });
-    await answerPinModal(app.page);
-    await save;
-
-    const listText = await app.page.evaluate(async () => {
-      await window.__FL_TESTS.cloudAdminLoadUsers();
-      return {
-        list: document.querySelector('#adminUserList')?.innerText || '',
-        drivers: document.querySelector('#adminDriversBlock')?.innerText || '',
-      };
-    });
-
-    ok(/Dana/.test(listText.list), `the driver must be listed, got "${listText.list}"`);
-    ok(/Re-invite/i.test(listText.list), 'the list must offer Re-invite');
-    ok(!/token/i.test(listText.list), `the driver list must not say "token", got "${listText.list}"`);
-    ok(!/token/i.test(listText.drivers), `the Drivers block must not say "token", got "${listText.drivers}"`);
-  } finally { await app.close(); }
-});
-
-test('[ZTO-12] inviting a driver builds a #i= link and never requests /admin/users POST', async () => {
-  const app = await openApp();
-  try {
-    await setPin(app.page);
-    const log = [];
-    await routeWorker(app.page, {
-      '/admin/users': async () => ({ status: 200, body: { ok: true, users: [] } }),
-      '/admin/invites': async () => ({ status: 201, body: { ok: true, name: 'Dana', code: VALID_CODE, expiresAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString() } }),
-    }, log);
-    const save = app.page.evaluate(async () => {
-      document.querySelector('#adminToken').value = 'real-admin-token-abc123';
-      return await window.__FL_TESTS.cloudAdminSaveAccess();
-    });
-    await answerPinModal(app.page);
-    await save;
-
-    await app.page.evaluate(() => { window.prompt = () => 'Dana'; window.navigator.share = undefined; });
-    await app.page.evaluate(async () => { await window.__FL_TESTS.cloudAdminInviteDriver('', false); });
-    await app.page.waitForSelector('#adminInviteShare', { timeout: 10000 });
-
-    const invite = await app.page.evaluate(() => {
-      const sms = document.querySelector('#adminInviteSms')?.getAttribute('href') || '';
-      return { sms, modalText: document.querySelector('#modalBody')?.innerText || '' };
-    });
-
-    ok(invite.sms.includes(encodeURIComponent('#i=' + VALID_CODE)) || invite.sms.includes('%23i%3D'),
-      `the SMS fallback must carry the #i= link, got ${invite.sms.slice(0, 200)}`);
-    ok(/Dana/.test(invite.modalText), 'the invite modal must name the driver');
-    ok(!invite.modalText.includes(VALID_CODE), 'the raw code must not be displayed as a value to read out');
-    ok(!/token/i.test(invite.modalText), `the invite modal must not say "token", got "${invite.modalText}"`);
-
-    // The whole point: onboarding no longer mints a bearer token.
-    const posts = log.filter(e => e.path === '/admin/users' && e.method === 'POST');
-    eq(posts.length, 0, 'inviting must NOT call POST /admin/users — that is the raw-token path');
-    const invites = log.filter(e => e.path === '/admin/invites' && e.method === 'POST');
-    eq(invites.length, 1, 'inviting must call POST /admin/invites exactly once');
-    ok(invites[0].headers['x-admin-token'] === 'real-admin-token-abc123', 'the admin token authorises /admin/invites');
-  } finally { await app.close(); }
-});
 
 test('[ZTO-15] the wizard puts the cursor in the passphrase field', async () => {
   const app = await openApp();

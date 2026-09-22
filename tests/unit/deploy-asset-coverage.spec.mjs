@@ -136,22 +136,24 @@ test('[DAC-04] the live parity gate sweeps every declared runtime asset, from th
     'as full production parity is the 2026-09-13 defect restated');
 });
 
-test('[DAC-05] admin-driver-ui.js specifically is requested, present, and deployable', () => {
-  // The named finding, asserted by name. DAC-01/02 are general and would catch a
-  // recurrence, but this one pins the exact file so a regression report reads as
-  // the same defect rather than a generic inventory failure.
+test('[DAC-05] the injected overlay is deployable, and the retired admin module stays gone', () => {
+  // The 2026-09-13 defect was a script reachable ONLY through a tag the service
+  // worker injects, so no markup-based check saw it 404. admin-driver-ui.js was
+  // that script; Issue #231 Phase C (v24.0.33) deleted it with the driver-app
+  // admin surface. The overlay is now the one injected asset, so the same
+  // property is pinned on it — and the admin module must not come back.
   const assets = inventory();
-  const entry = assets.get('admin-driver-ui.js');
-  const requesters = entry && entry.requesters;
-  ok(requesters, 'admin-driver-ui.js is no longer in the runtime asset inventory — if it was ' +
-    'genuinely retired, remove it from service-worker.js CORE and its injected <script> tag too');
-  ok([...requesters].some(r => r.includes('ADMIN_UI_TAG')),
-    'admin-driver-ui.js must still be reached through the injected ADMIN_UI_TAG; that injection ' +
-    'is why the 404 was invisible to every markup-based check');
-  ok(existsSync(path.join(REPO_ROOT, 'admin-driver-ui.js')), 'admin-driver-ui.js is missing from the repository');
-  const { excluded, by } = isExcluded('admin-driver-ui.js');
-  ok(!excluded, `admin-driver-ui.js is excluded by .assetsignore pattern "${by}" — this is the ` +
-    '2026-09-13 production 404 exactly, reintroduced');
+  const overlay = [...assets.keys()].find(k => k === 'midwest-stack-authority.js');
+  ok(overlay, 'midwest-stack-authority.js is missing from the runtime asset inventory');
+  ok([...assets.get(overlay).requesters].some(r => r.includes('MIDWEST_STACK_TAG')),
+    'midwest-stack-authority.js must still be reached through the injected MIDWEST_STACK_TAG');
+  const { excluded, by } = isExcluded(overlay);
+  ok(!excluded, `midwest-stack-authority.js is excluded by .assetsignore pattern "${by}" — the 2026-09-13 404 shape`);
+
+  ok(!assets.has('admin-driver-ui.js'), 'admin-driver-ui.js is back in the runtime inventory — the driver app must carry no admin module');
+  ok(!existsSync(path.join(REPO_ROOT, 'admin-driver-ui.js')), 'admin-driver-ui.js is back on disk');
+  const sw = readFileSync(path.join(REPO_ROOT, 'service-worker.js'), 'utf8');
+  ok(!/admin-driver-ui|ADMIN_UI_TAG/.test(sw), 'service-worker.js still references the retired admin module');
 });
 
 test('[DAC-06] internal audit/certification/reference material is never a deployed asset', () => {

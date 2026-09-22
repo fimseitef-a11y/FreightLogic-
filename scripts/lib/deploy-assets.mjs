@@ -96,7 +96,9 @@ export function declaredRuntimeAssets() {
   if (criticalMatch) collectArray(criticalMatch[1], 'service-worker.js critical shell');
   else problems.push('could not locate the `const critical = [...]` array in service-worker.js');
 
-  for (const constName of ['ADMIN_UI_TAG', 'MIDWEST_STACK_TAG']) {
+  // ADMIN_UI_TAG was removed with admin-driver-ui.js (Issue #231 Phase C); the
+  // overlay tag is now the only script the service worker injects.
+  for (const constName of ['MIDWEST_STACK_TAG']) {
     const m = sw.match(new RegExp('const ' + constName + " = '<script src=\"([^\"]+)\""));
     if (m) addRef(m[1], `service-worker.js ${constName} (injected)`);
     else problems.push(`could not read ${constName} from service-worker.js`);

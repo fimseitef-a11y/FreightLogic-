@@ -60,7 +60,10 @@ test('[PSW-05] the 2026-09-13 injected-asset defect is specifically covered', ()
   // admin-driver-ui.js is reachable ONLY through the tag the service worker
   // injects, so no markup-based check could ever see it 404. The gate must
   // assert both that the tag is injected and that the file actually loads.
-  ok(gate.includes('admin-driver-ui.js'), 'the injected admin asset must be named');
+  // Issue #231 Phase C removed admin-driver-ui.js; the overlay is now the one
+  // injected asset, and the gate must also fail if the admin module comes back.
+  ok(gate.includes("'midwest-stack-authority.js'"), 'the injected overlay asset must be named');
+  ok(/admin-driver-ui\.js is still injected/.test(gate), 'a resurrected admin module injection must fail the gate');
   ok(/injected AND fetchable/.test(gate), 'a present tag pointing at a 404 is the defect — fetchability must be asserted');
   ok(/missing from the precache/.test(gate), 'a declared asset absent from the precache must fail');
 });

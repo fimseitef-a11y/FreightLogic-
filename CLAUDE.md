@@ -267,12 +267,11 @@ modern-shell.js            — Driver-facing structural shell: the Today/Loads/E
                              Money tab bar and the More entry. Loaded by dynamic import from
                              sw-bridge.js. Structural ONLY — it owns no route, renderer or
                              state; tabs are plain hrefs into the canonical hash router
-admin-driver-ui.js         — Admin driver management UI (injected via service worker)
 midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
                              (injected via service worker, not referenced from index.html)
 sw-bridge.js               — Service worker auto-update bridge (SKIP_WAITING + reload)
-service-worker.js          — PWA offline caching; injects admin-driver-ui.js and
-                             midwest-stack-authority.js into HTML responses; precaches
+service-worker.js          — PWA offline caching; injects midwest-stack-authority.js
+                             into HTML responses; precaches
                              modern-shell.js in the install-blocking critical shell
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
 manifest.json              — PWA manifest
@@ -375,7 +374,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.32';
+const APP_VERSION = '24.0.33';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -520,8 +519,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.32` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.32`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.33` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.33`; caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check — `admin-driver-ui.js` was deleted in v24.0.33, Issue #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4761,6 +4760,36 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.33 "One Origin Each" — Issue #231 Phase C: the driver app carries no admin surface
+
+`DB_VERSION` stays **16** and the Worker stays **v23**. **No freight economics, verdict, grade,
+bid, routing, storage schema or driver cloud-backup behaviour changes.**
+
+Driver management lives on the separate Admin Console origin. Phase C removes it from the driver
+app entirely — absent, not hidden:
+
+- the Settings "👑 Admin — Add / Manage Drivers" panel, the admin credential field, and every
+  admin list/invite/re-invite/revoke call (`cloudAdmin*`, `renderAdminAccessState`) are deleted
+  from `index.html` and `app.js`; `app.js` calls no `/admin/` endpoint at all;
+- `admin-driver-ui.js` is deleted, with its `ADMIN_UI_TAG` injection and `CORE` precache entry;
+  the declared runtime inventory drops 22 → **21**, so a 404 for it is the removal working;
+- a **delete-only** boot purge (`purgeDriverAppAdminCredentials()`) removes any leftover
+  `settings['cloudAdminTokenEnc']` and `fl_admin_tok` from earlier builds. It never reads,
+  decrypts or promotes the value. `cloudAdminTokenEnc` stays in `SETTINGS_NEVER_EXPORT` and out of
+  `ALLOWED_SETTINGS_KEYS`, so an old export still cannot carry or install one.
+
+Driver claim (`#i=`), reconnect, raw-token-link retirement and cloud backup are unchanged.
+
+**Tests.** ZTO-01 (no admin DOM, exports, script or `/admin/` call) and ZTO-02 (leftover
+credential deleted at boot) replace the old in-app admin-token tests; DAC-05 and PSW-05 now pin
+the overlay as the injected asset and fail if the admin module returns;
+`verify-production-sw.mjs` fails if production still injects it. Negative control verified:
+removing the boot purge fails ZTO-02 only.
+
+**Gate.** Per #231, Phase C merges only after **Verify Admin Console** passes against Worker v23.
+
+---
 
 ## Worker v23 "Narrower Than The Key" — a certification admin credential (Issue #231)
 
