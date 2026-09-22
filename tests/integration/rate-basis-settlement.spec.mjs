@@ -119,30 +119,47 @@ test('[RB-06] an unknown revenue makes every settlement field unknown', async ()
 });
 
 test('[RB-07] rate basis is DESCRIPTIVE — it cannot move verdict, grade, True RPM or bid', async () => {
+  // Asserts the four things the contract actually names, extracted from the
+  // rendered decision, rather than whole-card text equality. The full card also
+  // carries live-source evidence rows (weather, market, source freshness) which
+  // are network- and time-dependent and legitimately differ between two
+  // evaluations on a runner with no outbound access — comparing them would make
+  // this spec fail for a reason that has nothing to do with rate basis, which is
+  // exactly what it did on its first CI run.
   const r = await evalIn(async () => {
     const T = window.__FL_TESTS;
-    const decide = async (rateBasis, settlementPct) => {
+    const decide = async (rateBasis) => {
       await T.setSetting('rateBasis', rateBasis);
-      await T.setSetting('settlementPct', settlementPct);
+      await T.setSetting('settlementPct', null);
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
       location.hash = '#omega';
       set('mwOrigin', 'Chicago, IL'); set('mwDest', 'Indianapolis, IN');
       set('mwLoadedMi', '180'); set('mwDeadMi', '20'); set('mwRevenue', '400');
       await T.mwEvaluateLoad();
-      const out = document.getElementById('mwEvalOutput');
-      return (out?.textContent || '').replace(/\s+/g, ' ').trim();
+      const text = (document.getElementById('mwEvalOutput')?.textContent || '').replace(/\s+/g, ' ');
+      const grab = (re) => (text.match(re) || [])[1] ?? null;
+      return {
+        verdict: grab(/\b(ACCEPT|REJECT|STRATEGIC|DZ-EXIT|UNAVAILABLE)\b/),
+        grade: grab(/\b([A-F?])\s+(?:ACCEPT|REJECT|STRATEGIC)\b/),
+        trueRPM: grab(/True RPM:?\s*\$?([0-9.]+)/),
+        bids: (text.match(/\$[0-9,]+\.[0-9]{2}/g) || []).slice(0, 3).join('|'),
+      };
     };
-    const unknown = await decide(null, null);
-    const leased = await decide('LEASED_SETTLEMENT', null);
-    const own = await decide('OWN_AUTHORITY_CARRIER_GROSS', null);
-    await T.setSetting('rateBasis', null); await T.setSetting('settlementPct', null);
+    const unknown = await decide(null);
+    const leased = await decide('LEASED_SETTLEMENT');
+    const own = await decide('OWN_AUTHORITY_CARRIER_GROSS');
+    await T.setSetting('rateBasis', null);
     return { unknown, leased, own };
   });
-  ok(r.unknown.length > 0, 'the evaluator must actually have rendered');
-  // Strip the disclosure line itself before comparing — the DECISION must not move.
-  const strip = (s) => s.replace(/Rate basis[^·]*·?/gi, '').replace(/\s+/g, ' ').trim();
-  eq(strip(r.leased), strip(r.unknown), 'declaring a leased basis must not change the canonical decision');
-  eq(strip(r.own), strip(r.unknown), 'declaring own authority must not change the canonical decision');
+  ok(r.unknown.verdict, `the evaluator must have produced a verdict — got ${JSON.stringify(r.unknown)}`);
+  ok(r.unknown.trueRPM, 'and a True RPM');
+  ok(r.unknown.bids, 'and a bid range');
+  for (const [name, d] of [['leased', r.leased], ['own authority', r.own]]) {
+    eq(d.verdict, r.unknown.verdict, `declaring ${name} must not change the verdict`);
+    eq(d.grade, r.unknown.grade, `declaring ${name} must not change the grade`);
+    eq(d.trueRPM, r.unknown.trueRPM, `declaring ${name} must not change True RPM`);
+    eq(d.bids, r.unknown.bids, `declaring ${name} must not change the canonical bid range`);
+  }
 });
 
 test('[RB-08] the operator can actually declare the arrangement from Settings', async () => {

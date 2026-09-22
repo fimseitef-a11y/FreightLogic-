@@ -4794,6 +4794,17 @@ fires on exactly what it guards:
 | accept an out-of-range split | RB-02 |
 | remove the Settings control | RB-08 |
 | stamp the watermark at completion | SQ-13 |
+| make the verdict depend on rate basis | RB-07 |
+
+**`RB-07` was corrected after its first CI run**, and the correction is the point rather than an
+embarrassment. It originally compared the **entire** rendered decision card, which also carries
+live-source evidence rows — weather, market, source freshness — that are network- and
+time-dependent and legitimately differ between two evaluations on a runner with no outbound
+access. It failed in CI while passing locally, for a reason that had nothing to do with rate
+basis. It now extracts the four things the contract actually names (verdict, grade, True RPM,
+bid range) rather than a proxy that happened to contain them. That is a narrower assertion and a
+correct one; its control confirms it still fails when a declared basis is made to move the
+verdict.
 
 **One correction worth recording:** `SQ-13`'s first "red" was a `ReferenceError` (`app is not
 defined` — this spec names its handle differently), and its second fixture never reached the
