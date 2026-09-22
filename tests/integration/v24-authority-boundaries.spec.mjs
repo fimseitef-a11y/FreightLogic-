@@ -105,7 +105,11 @@ test('[V24-B10] valid DZ conditions activate DZ-EXIT before later safety gates',
 
 test('[V24-B11] canonical authority is deterministic for identical inputs', async () => {
   const a = await derive({ trueRPM: 1.45, weeklyGross: 1000, isMonWed: true, personalScore: -2, personalBullets: [{ icon: '–', text: 'Neutral' }] });
-  const b = await derive({ trueRPM: 1.45, weeklyGross: 1000, isMonWed: true, personaltest('[V24-B12] crossing the retired 250-mile boundary cannot change verdict by distance alone', async () => {
+  const b = await derive({ trueRPM: 1.45, weeklyGross: 1000, isMonWed: true, personalScore: -2, personalBullets: [{ icon: '–', text: 'Neutral' }] });
+  eq(JSON.stringify(a), JSON.stringify(b), 'identical facts must yield byte-equivalent JSON');
+});
+
+test('[V24-B12] crossing the retired 250-mile boundary cannot change verdict by distance alone', async () => {
   const at = await derive({ trueRPM: 1.44, totalMi: 250 });
   const over = await derive({ trueRPM: 1.44, totalMi: 251 });
   eq(at.verdict, 'ACCEPT', '250mi should remain acceptable on these facts');
@@ -126,8 +130,6 @@ test('[V24-B13] very long mileage stays contextual while independent hard gates 
     geo: { intoDensity: false, destDensity: 'None', dT1: false, dT2: false },
   });
   eq(weakDestination.verdict, 'REJECT', 'out-of-density RPM gate must remain independent of distance policy');
-});t atFloor = await derive({ trueRPM: 1.45, totalMi: 251 });
-  eq(atFloor.verdict, 'ACCEPT', '1.45 is not below longHaulMinRPM and must clear the long-haul rule');
 });
 
 export async function runSpec() {
