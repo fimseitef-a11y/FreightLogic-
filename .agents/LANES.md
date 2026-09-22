@@ -37,8 +37,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
-| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.26 ownership retired after PR #281 landed and was observed in production. |
+| `midwest-stack-config.json` | gpt | TEMPORARY Issue #304 release-generation marker only; no doctrine/economics edits. Retire immediately after #304 lands. |
+| `midwest-stack-authority.js` | gpt | TEMPORARY Issue #304 release-generation marker only; no advisory/doctrine edits. Retire immediately after #304 lands. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
 | `CLAUDE.md` | claude | v24.0.28 observed-production documentation reconciliation completed by PR #301; normal Claude ownership restored. |
 | `FIELD_TEST_CHECKLIST.md` | claude | v24.0.28 observed-production documentation reconciliation completed by PR #301; A1-A13 acceptance/results remain unchanged. |
@@ -84,8 +84,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `midwest-stack-config.json` | gpt | TEMPORARY Issue #304 release-generation marker only; no doctrine/economics edits. |
-| `midwest-stack-authority.js` | gpt | TEMPORARY Issue #304 release-generation marker only; no advisory/doctrine edits. |
 | `scripts/verify-cloudflare-parity.mjs` | gpt | TEMPORARY Issue #304 expected app-generation markers only; no gate weakening. |
 | `tests/integration/trip-delete-safety.spec.mjs` | gpt | TEMPORARY Issue #304 regression only; retire after reviewed repair lands. |
 | `tests/run-all.mjs` | gpt | TEMPORARY Issue #304 registration only; no unrelated test/assertion edits. |
