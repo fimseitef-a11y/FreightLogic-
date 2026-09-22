@@ -2,20 +2,17 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Source candidate 2026-09-21: v24.0.28 / DB16 / Worker v21; last directly observed production: v24.0.27 / DB16 / Worker v21.**
-PR #294 merged runtime v24.0.28 as `764ea091e2ae3157a9c9d7a532ab802147388220`.
-Its exact PR head `121e1188c8fbd7eb02145c21bd9f27bc65e62abb` passed Tests
-`35657810077` (job `106525656602`) at **746/0 across 72 specs**, Lanes
-`35657810158`, and CodeQL `35657810273`. This is source evidence, not a live deploy observation.
-
-The last settled live observation is the governance-only v24.0.27 checkpoint `8a520bc`:
-Live Parity `35651336959` (job `106504221124`) and Production Service Worker
-`35651336872` (job `106504213816`) both returned `VERDICT: PASS`, directly observing
-app/SW/manifest 24.0.27, Worker v21, 22 runtime assets, 20 repository-only paths withheld,
-`freightlogic-24.0.27` as the sole generation cache, and the five-tab shell with Today
-visible after reload. **Source and observed production therefore do not yet have verified
-parity after the v24.0.28 merge.** Re-dispatch the live gates after deployment settles and
-require them to directly observe 24.0.28 before recording parity PASS for this candidate.
+**Observed production 2026-09-21: v24.0.28 / DB16 / Worker v21.**
+PR #294 merged runtime v24.0.28 as `764ea091e2ae3157a9c9d7a532ab802147388220`;
+its exact PR head passed Tests `35657810077` (job `106525656602`) at **746/0 across 72 specs**.
+Current settled observation checkpoint `675e6fb0140f0e226219fc52955932703fc07a1c`
+passed Tests `35661894446` (job `106538812253`) at **746/0**, CodeQL
+`35661894363`, Live Parity `35661894518` (job `106538813802`), and Production
+Service Worker `35661894391` (job `106538814618`). The live gates directly observe
+app/SW/manifest **24.0.28**, Worker **v21**, all **22** declared runtime assets,
+**20** repository-only paths withheld, `freightlogic-24.0.28` with all 22 assets in
+precache, five tabs + Today after reload, no uncaught page errors, and exactly one
+app-generation cache. Source and observed production therefore agree at v24.0.28.
 
 **Live vision remains UNOBSERVED.** The authenticated synthetic image probe exists, but the
 privileged provider invocation has not been observed and a Worker version check cannot close
@@ -109,15 +106,17 @@ the day it merges.*
 
 ## Runtime state at the 2026-09-21 checkpoint
 
-- **Source/main:** App/PWA/SW **24.0.28**, DB **16**, Worker source remains **v21**.
+- App/PWA/SW **24.0.28**, DB **16**, Worker **v21**; source and observed production agree.
 - Runtime merge: `764ea091` (PR #294); exact PR-head Tests `35657810077`, job
-  `106525656602`: **746 passed / 0 failed across 72 specs**; Lanes and CodeQL passed.
-- **Last directly observed production:** App/PWA/SW **24.0.27**, DB **16**, Worker **v21**.
-- Settled production checkpoint: `8a520bc` with Live Parity `35651336959` and
-  Production Service Worker `35651336872`, both PASS.
-- **Parity for v24.0.28 is PENDING observation, not failed and not inferred.** A source merge
-  and a successful Cloudflare build are insufficient; the live origin must directly report
-  24.0.28 after deployment settles.
+  `106525656602`: **746 passed / 0 failed across 72 specs**.
+- Settled current observation checkpoint: `675e6fb0140f0e226219fc52955932703fc07a1c`.
+- Exact-main Tests `35661894446`, job `106538812253`: **746/0 across 72 specs**;
+  CodeQL `35661894363`: **PASS**.
+- Live Parity `35661894518`, job `106538813802`: **PASS** — app/SW/manifest 24.0.28,
+  Worker v21, 22/22 runtime assets, 20 repository-only paths withheld.
+- Production Service Worker `35661894391`, job `106538814618`: **PASS** —
+  activated/controlled worker, `freightlogic-24.0.28` with all 22 assets, five tabs +
+  visible Today after reload, no uncaught page errors, exactly one generation cache.
 - **HOLD remains** for physical A1-A13 and authenticated live vision-provider / real-screenshot
   evidence. Admin Console live proof, later #278 policy/evidence work, repository-admin
   controls, and Safari/native Apple work remain separate.
