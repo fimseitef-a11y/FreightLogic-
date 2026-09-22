@@ -1,0 +1,6 @@
+owner: gpt
+token: 8f6b2b5d-3ad0-4d1f-9c73-5d77d98b1a42
+started_utc: 2026-09-22T20:38:00Z
+expected_release_utc: 2026-09-22T21:08:00Z
+paths: .agents/NOW.md
+task: Claim GPT row for operator-assigned Shortcuts/Web Push queue
