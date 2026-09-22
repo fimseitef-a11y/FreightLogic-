@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.30">
+  <link rel="manifest" href="manifest.json?v=24.0.31">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -301,6 +301,15 @@
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
 <label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="profile: 16.7" />
+<label for="rateBasisSelect">Operating arrangement (rate basis)</label>
+<select id="rateBasisSelect">
+<option value="UNKNOWN">Not stated</option>
+<option value="LEASED_SETTLEMENT">Leased to carrier — I am paid a settlement</option>
+<option value="OWN_AUTHORITY_CARRIER_GROSS">My own authority — I receive the carrier gross</option>
+<option value="DIRECT_SHIPPER_GROSS">Direct shipper/customer — I receive the gross</option>
+</select>
+<label for="settlementPct">My settlement share, if you know it (0–1)</label><input id="settlementPct" type="number" step="0.01" min="0" max="1" placeholder="leave blank if unknown" />
+<div class="muted" id="rateBasisHint" style="font-size:11px;margin-top:2px">FreightLogic never guesses a carrier split. Leave the share blank and the market spread stays UNKNOWN rather than being invented.</div>
 <label for="opCostPerMile">Non-fuel variable cost per mile</label><input id="opCostPerMile" type="number" step="0.001" placeholder="profile: 0.066" />
 <div class="muted" id="costModelHint" style="font-size:11px;margin-top:2px">Fuel, variable cost, and fixed allocation are calculated separately. Leave blank to use the dated operator profile.</div>
 <!-- X-03: stays visible until firstYearElection is resolved for the active vehicle -->
@@ -685,7 +694,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.30"></script>
-  <script src="sw-bridge.js?v=24.0.30"></script>
+  <script src="app.js?v=24.0.31"></script>
+  <script src="sw-bridge.js?v=24.0.31"></script>
 </body>
 </html>

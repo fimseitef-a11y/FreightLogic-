@@ -2,7 +2,14 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.30 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
+**SOURCE CANDIDATE IS v24.0.31. LAST DIRECTLY OBSERVED PRODUCTION IS v24.0.30 / DB16 / Worker v21.**
+
+v24.0.31 carries Issue #278's operating-arrangement / rate-basis semantics and a
+**backup data-loss defect found while shipping it**. It is source-only until it merges,
+deploys and is observed; the v24.0.30 paragraphs below stay true until then. `DB_VERSION`
+remains **16** and the Worker remains **v21**.
+
+**Historical production observation — v24.0.30.**
 
 v24.0.30 is the Issue #278 `DEACTIVATED`/`WITHDRAWN` outcome class — the one later #278
 addendum on which the ChatGPT evidence pass of 2026-09-20 and the independent Claude audit of
@@ -316,7 +323,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.30';
+const APP_VERSION = '24.0.31';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -461,8 +468,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.30` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.30`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.31` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.31`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4702,6 +4709,111 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.31 "Whose Dollar" — rate basis, and a backup gap found while shipping it
+
+`DB_VERSION` stays **16** and the Worker stays **v21**. **No canonical economics, verdict,
+grade, bid range, routing, import schema or security behaviour changes.** Two pieces, one
+generation, because both change `app.js` and two generations for one deploy is the thing this
+file tells both lanes not to do.
+
+### 1 — Operating arrangement / rate basis (#278)
+
+The addendum both independent audits back with **HIGH confidence** and no disagreement.
+49 CFR 376.12 makes the compensation basis a **lease term**, not a market constant — percentage
+of gross, flat per-mile, directional, or another mutually agreed method — and the operator
+confirmed they run **without their own MC/DOT authority**. So a quoted/market amount and the
+operator's settlement are two different facts, and which one an entered number represents
+depends on an arrangement only the operator knows.
+
+`RATE_BASIS` records it: `UNKNOWN` / `LEASED_SETTLEMENT` / `OWN_AUTHORITY_CARRIER_GROSS` /
+`DIRECT_SHIPPER_GROSS`, failing closed to `UNKNOWN` for anything unrecognised.
+
+**No guessed haircut, ever** — the rule both audits state in the same words, and the one most
+likely to be "simplified" away later. On a basis where the operator receives the gross,
+settlement **equals** the quoted amount exactly. With a leased basis and an explicitly supplied
+split, that split is applied exactly. With a leased basis and **no** stated split the settlement
+is **UNKNOWN**: not the quoted amount scaled by an invented constant, and not the quoted amount
+silently relabelled. `settlementPct` has **no default**, and an empty or out-of-range entry
+*clears* the setting rather than storing a bound — the v24.0.9 `planningAvgMph` rule.
+
+The layer is **descriptive**. `RB-07` asserts it structurally rather than in prose: the rendered
+canonical decision must be byte-identical whether or not a basis is declared, for the same
+reason the v24.1 confidence contract may not move a verdict.
+
+`rateBasis` and `settlementPct` join `ALLOWED_SETTINGS_KEYS` in the same change that introduces
+them — a key the app writes but the importer drops is the X-07 class of gap this list has needed
+retrofitting for three times.
+
+**Scope, named rather than slipped past:** the arrangement is an operator-level setting in this
+slice, not a per-load override. The addendum asks for per-load distinction eventually; that is a
+larger change and is not claimed here.
+
+### 2 — The backup watermark was stamped at the wrong instant
+
+Not reported by anyone. The parallel suite surfaced it as a `backup-restore-parity` failure —
+3 of 4 trips restored, `DELTA-1` missing — and root-causing it instead of re-running found a
+**production data-loss defect**.
+
+`cloudPushBackup()` selects rows with `updatedAt > watermark` **before** it encrypts and
+uploads, then on success stamped the watermark with `Date.now()` at **completion**. A record
+saved while that upload was in flight therefore carried an `updatedAt` older than the new
+watermark, so the next push excluded it — and `updatedAt` never changes again, so it was
+excluded **permanently**. Save a trip while a backup is uploading and that trip is never backed
+up, on any later push, with every surface reporting **Synced**.
+
+The watermark is now anchored to the instant the rows were **selected**. Anything written during
+the upload is still newer than it and is picked up next time. Re-sending a record that did make
+it into this payload is safe and is the fail-safe direction: restore is revision-aware (X-07)
+and a delta is idempotent by design. `lastCloudSync` stays `Date.now()`, because that one is a
+display fact about when the sync happened, not a selection boundary.
+
+`SQ-13` drives the real push with a record written inside the upload. Its negative control is
+exact: with the completion-time stamp restored it reports watermark `…331` against a trip
+`…330` — **one millisecond**, and excluded forever.
+
+*This is the third defect in this line whose mechanism is a millisecond boundary, after the
+Worker's W-01 key collision and the mock's un-ported copy of it. The pattern is worth naming:
+every one of them was invisible while the code was slow enough that two events never shared a
+millisecond.*
+
+### Tests
+
+`tests/integration/rate-basis-settlement.spec.mjs` (8, new, registered) — red-first **1/7**, the
+single pass being `RB-07`, which could only pass vacuously before the feature existed and is
+kept as a forward guard. `SQ-13` in the already-registered `cloud-backup-paused.spec.mjs`.
+
+Every negative control was applied against a pristine copy, `sha256sum`-verified afterwards, and
+fires on exactly what it guards:
+
+| Control | Fires |
+|---|---|
+| apply a guessed 70% haircut when the split is unknown | RB-05 |
+| give `settlementPct` a default of 0.7 | RB-02, RB-05 |
+| let an unrecognised basis pass through | RB-01 |
+| accept an out-of-range split | RB-02 |
+| remove the Settings control | RB-08 |
+| stamp the watermark at completion | SQ-13 |
+
+**One correction worth recording:** `SQ-13`'s first "red" was a `ReferenceError` (`app is not
+defined` — this spec names its handle differently), and its second fixture never reached the
+upload at all because it tripped the "Up to date" early-out. Neither was evidence. A red that
+fails for the wrong reason proves nothing, and both were fixed before the control was trusted.
+
+Full suite on the exact candidate head, real headless Chromium: **767 passed, 0 failed across
+75 spec files**, twice, at ~148s.
+
+### Not deployed
+
+**Source-only.** After merging, let Cloudflare deploy, then **re-dispatch** live parity and the
+production service-worker gate rather than citing the push-triggered runs. No Worker deploy is
+needed: `/health` stays v21.
+
+**Still HOLD.** Physical iPhone **A1-A13** (#226), the M6 conflict review, #252's provider
+benchmark, #231 and #222 are unchanged. **#278 stays OPEN** — its disputed long-haul scope still
+needs joint consensus, and items 2, 4 and 6 are unbuilt.
+
+---
 
 ## v24.0.30 "Not A Loss" — Issue #278's DEACTIVATED outcome class
 
