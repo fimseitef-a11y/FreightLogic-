@@ -16,6 +16,20 @@ import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+/* Parallel-suite spec context.
+ *
+ * `run-all.mjs` can execute several specs concurrently. Two things break if
+ * nothing knows which spec a given async continuation belongs to:
+ *   1. console output interleaves into an unreadable braid, and
+ *   2. the #224 lifecycle dump — deliberately "every live page" — would report
+ *      OTHER specs' pages as evidence for this spec's failure, which is worse
+ *      than no diagnostic because it reads as a real finding.
+ * An AsyncLocalStorage store carries the label through every await, so both
+ * stay correct. Concurrency 1 behaves exactly as before: the store is simply
+ * always the same value. */
+export const SPEC_CTX = new AsyncLocalStorage();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -171,7 +185,7 @@ const LIFECYCLE_INIT = () => {
 };
 
 function trackPage(page, label) {
-  const rec = { page, label, navigations: [], pageErrors: [], consoleErrors: [], bootDocId: null };
+  const rec = { page, label, spec: SPEC_CTX.getStore()?.label ?? null, navigations: [], pageErrors: [], consoleErrors: [], bootDocId: null };
   page.on('framenavigated', f => {
     try { if (f === page.mainFrame()) rec.navigations.push(f.url()); } catch (_) {}
   });
@@ -211,8 +225,14 @@ async function lifecycleOf(rec) {
 /** Printed by createSuite() on any assertion failure. */
 async function dumpLifecycleDiagnostics() {
   if (!TRACKED.size) return;
+  // Under a parallel run, report only the pages this spec actually owns.
+  // Outside one (or for pages created before any context existed) the set is
+  // unfiltered, which is the original single-threaded behaviour.
+  const spec = SPEC_CTX.getStore()?.label ?? null;
+  const scoped = spec ? [...TRACKED].filter(r => r.spec === spec || r.spec === null) : [...TRACKED];
+  if (!scoped.length) return;
   const lines = [];
-  for (const rec of [...TRACKED]) {
+  for (const rec of scoped) {
     let info;
     try { info = await lifecycleOf(rec); } catch (e) { info = { label: rec.label, error: String(e) }; }
     lines.push(`    [#224 lifecycle] ${JSON.stringify(info)}`);
@@ -343,6 +363,12 @@ export async function launchApp({ headless = true, geolocation = null, permissio
   await context.addInitScript(LIFECYCLE_INIT);   // Issue #224 diagnostics
   const page = await context.newPage();
   const rec = trackPage(page, 'launchApp:page');
+  // Pages belonging to THIS app handle. `TRACKED` is process-wide, and every
+  // app's first page carries the same label, so a caller doing
+  // `.find(l => l.label === 'launchApp:page')` over the global set silently
+  // reads whichever app happens to be first — another spec's, once specs run
+  // concurrently. An instance method must answer for its own instance.
+  const owned = [rec];
   const baseUrl = `http://127.0.0.1:${port}`;
   await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
   await waitForAppBoot(page, enableTestExports, rec);
@@ -355,12 +381,13 @@ export async function launchApp({ headless = true, geolocation = null, permissio
     newReadyPage: async (label = 'extra') => {
       const p = await context.newPage();
       const r = trackPage(p, label);
+      owned.push(r);
       await p.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
       await waitForAppReady(p);
       r.bootDocId = await p.evaluate(() => window.__FL_DOC_ID || null).catch(() => null);
       return p;
     },
-    lifecycle: async () => Promise.all([...TRACKED].map(lifecycleOf)),
+    lifecycle: async () => Promise.all(owned.filter(r => TRACKED.has(r)).map(lifecycleOf)),
     close: async () => { await browser.close(); },
   };
 }
@@ -389,7 +416,8 @@ export async function launchBlank({ headless = true, enableTestExports = true } 
   await page.goto(`${baseUrl}/tests/fixtures/blank.html`, { waitUntil: 'load' });
   return {
     browser, context, page, baseUrl,
-    lifecycle: async () => Promise.all([...TRACKED].map(lifecycleOf)),
+    // Same scoping rule as launchApp(): this handle answers for its own page.
+    lifecycle: async () => Promise.all([rec].filter(r => TRACKED.has(r)).map(lifecycleOf)),
     bootApp: async () => {
       await page.goto(`${baseUrl}/index.html`, { waitUntil: 'load' });
       await waitForAppBoot(page, enableTestExports, rec);

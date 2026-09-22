@@ -4,7 +4,12 @@
 // Usage:  node tests/run-all.mjs
 // (Requires the sibling node_modules/playwright symlink — see tests/README.md)
 
-import { stopServer } from './lib/harness.mjs';
+import { cpus, tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { stopServer, SPEC_CTX } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
@@ -165,10 +170,103 @@ const specs = [
   deactivatedOutcome,
 ];
 
-const results = [];
-for (const runSpecFn of specs) {
-  results.push(await runSpecFn());
+/* ────────────────────────────────────────────────────────────────────────────
+   Execution: a bounded worker pool, not a for-loop.
+
+   MEASURED before changing anything, because the obvious suspect was wrong.
+   Chromium launch costs ~300ms per spec (launch 120ms + context/page 100ms +
+   close 80ms) — about 15s of a 470s suite, 3%. Pooling browsers would have
+   bought almost nothing. The time is inside the specs: real app boots, real
+   reloads, and ~136s of deliberate fixed sleeps. That work is overwhelmingly
+   I/O- and browser-bound, so it parallelises well on this 4-core host.
+
+   Nothing about any assertion changes. Each spec still launches its own
+   browser, so its IndexedDB, Cache Storage and sessionStorage stay isolated
+   exactly as before; the only shared thing is the static file server, which
+   `ensureServer()` already makes a singleton and which only reads from disk.
+
+   Set FL_TEST_CONCURRENCY=1 to restore the previous strictly-sequential run —
+   worth doing when debugging a failure, since serial output is live rather
+   than buffered.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+const CONCURRENCY = Math.max(1, Number(process.env.FL_TEST_CONCURRENCY ?? Math.min(4, cpus().length || 4)));
+
+/* Longest-first scheduling. With 74 tasks over N workers the makespan is
+   dominated by whatever starts last, so a 55s spec picked up at the end adds
+   55s to the whole run. Durations are remembered between runs in the OS temp
+   dir — deliberately NOT in the repository, so there is no gitignore change,
+   no churning tracked file, and no committed number that can go stale and be
+   mistaken for a contract. A cold cache (CI) simply runs in declaration order,
+   which still parallelises; it just schedules the tail less well. */
+const TIMINGS_FILE = path.join(
+  tmpdir(),
+  `fl-spec-timings-${createHash('sha256').update(fileURLToPath(import.meta.url)).digest('hex').slice(0, 12)}.json`,
+);
+let timings = {};
+try { timings = JSON.parse(readFileSync(TIMINGS_FILE, 'utf8')); } catch (_) { timings = {}; }
+
+const queue = specs.map((fn, i) => ({ fn, i, key: fn.name || `spec_${i}` }));
+if (CONCURRENCY > 1) {
+  // Unknown duration sorts FIRST: a spec nobody has timed might be the long
+  // one, and starting it early is the cheap side of that bet.
+  queue.sort((a, b) => (timings[b.key] ?? Infinity) - (timings[a.key] ?? Infinity));
 }
+
+/* Output. Concurrent specs writing to one stdout produce an unreadable braid,
+   so each spec's lines are captured and flushed as one block when it finishes.
+   Attribution rides the AsyncLocalStorage context rather than a global flag,
+   which is what makes it correct across awaits. Anything logged with no
+   context (a stray listener, a library) passes straight through rather than
+   being swallowed — losing a line would be worse than printing it out of
+   order. */
+const realLog = console.log;
+const realErr = console.error;
+if (CONCURRENCY > 1) {
+  const sink = (fallback) => (...args) => {
+    const store = SPEC_CTX.getStore();
+    if (store) store.out.push(args);
+    else fallback(...args);
+  };
+  console.log = sink(realLog);
+  console.error = sink(realErr);
+}
+
+const results = new Array(specs.length);
+let cursor = 0;
+let done = 0;
+
+async function worker() {
+  for (;;) {
+    const job = queue[cursor++];
+    if (!job) return;
+    const store = { label: job.key, out: [] };
+    const started = Date.now();
+    let r;
+    try {
+      r = await SPEC_CTX.run(store, () => job.fn());
+    } catch (e) {
+      // A spec that throws outside its own assertions would otherwise vanish
+      // from the totals and the run would exit 0 having tested less than it
+      // reported. Surface it as a failure.
+      r = { file: job.key, pass: 0, fail: 1, failures: [{ name: `runSpec threw: ${String(e && e.message || e)}` }] };
+    }
+    timings[job.key] = Date.now() - started;
+    results[job.i] = r;
+    done++;
+    if (CONCURRENCY > 1) {
+      for (const args of store.out) realLog(...args);
+      realLog(`  [${String(done).padStart(2)}/${specs.length}] ${r.file} — ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    }
+  }
+}
+
+await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+
+console.log = realLog;
+console.error = realErr;
+try { writeFileSync(TIMINGS_FILE, JSON.stringify(timings)); } catch (_) {}
+
 await stopServer();
 
 const totalPass = results.reduce((s, r) => s + r.pass, 0);
