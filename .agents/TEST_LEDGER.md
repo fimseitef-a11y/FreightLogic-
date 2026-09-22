@@ -295,3 +295,11 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 
 | 2026-09-21T03:16:07.740Z | 89437842064f8f56bd37bb295bbe3009f3e1d316 | GitHub Tests 35556446150 attempt 1 / 106200882080; node tests/run-all.mjs | 740/1, 72 specs | Only F-7 GPS-loss toast mismatch (installation message); app/tests unchanged. One controlled rerun requested; no assertion changes. |
 | 2026-09-21T03:16:07.740Z | local 72999a4289366c1e8dd50ae2e1747c513564ed47 (same tree as remote grant) | FL_CHROME_PATH=/workspace/scratch/934618485cb3/browser-runtime/chromium node tests/integration/field-resilience.spec.mjs | 13/0 | Diagnostic controlled focused reproduction, no fix; full-suite CI first-attempt failure retained. |
+
+## 2026-09-22 — GPT Issue #304 trip-delete safety / v24.0.29
+
+- RED-first test-only head `0890a968`, GitHub Tests run `35677930231`, `node tests/run-all.mjs`: **746 passed / 2 failed across 73 specs**. Both failures were the new trip-delete safety regression only; no pre-existing suite failed.
+- Exact PR #306 head `cbdc36e133fc8e265e7c410dd3a6c29920ce6348`: Tests run `35678726412` **748/0 across 73 specs**, Lanes `35678726404` PASS, CodeQL `35678726418` PASS.
+- Merged runtime main `ca99d50abf18557682f38e641c2b023041088ea6`: Tests `35679161545` **748/0** attempt 1; CodeQL `35679161583` PASS attempt 1. Live Parity `35679161628` and Production Service Worker `35679161632` first observed the prior generation during deployment propagation, then **PASS on attempt 2** with app/SW/manifest v24.0.29, Worker v21, 22 runtime assets, 20 repository-only paths withheld, one freightlogic-24.0.29 cache, and five driver tabs + Today.
+- Governance-retirement PR #307 head `6377d6d2978f07efa5dc7ae1945b51aefb1da02b`: Tests `35679394004`, Lanes `35679393998`, CodeQL `35679394021` all PASS attempt 1; merged as `98e447e3dc1ffe5d00e5793ab0725bde4e6a063a`.
+- Physical iPhone A1-A13 is not certified by these runs. Historical order 960760 absence is not attributed to #304 without separate evidence.
