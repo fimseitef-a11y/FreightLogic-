@@ -39,6 +39,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 **Issue #278 long-haul policy completion takeover — RETIRED 2026-09-22.** PR #317 merged as `694b468e` after exact-head PR Tests **767/0 across 75 specs**, Lanes, and CodeQL passed. The temporary release/test ownership is retired: `midwest-stack-config.json`, `midwest-stack-authority.js`, and `CLAUDE.md` return to Claude, and the parity/boundary-test exact rows fall back to their Claude-owned parent lanes. Runtime paths remain SHARED. This retirement does not claim production deployment or physical-device certification; those remain evidence gates.
 
+**Apple native capability lane (2026-09-22, operator-directed under #204/#205).** The operator explicitly directed GPT to proceed with the Safari/native Apple work. GPT may own only the new `native-ios/` subtree plus the exact `.github/workflows/native-ios.yml` workflow used to validate that subtree. This is an additive thin-native scaffold: it does **not** transfer `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `cloud-backup-worker.js`, existing tests, release/version markers, or deterministic freight economics. The native layer may expose typed bridge contracts, App Intents/Shortcuts/Spotlight/Live Activity capability adapters, and Apple-model/Vision extraction adapters, but it must treat FreightLogic web/core calculations as authoritative and may not persist or expose admin/driver credentials. Safari MCP, Xcode signing, entitlements, real-device behavior, and physical A1-A13 remain external evidence gates until observed on actual Apple hardware/software.
+
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
@@ -51,6 +53,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
 | `admin-console/` | gpt | Issue #231 additive separate-origin Admin Console subtree only; no Worker, driver-app, or deployment authority. |
+| `native-ios/` | gpt | #204/#205 thin Apple-native scaffold and typed bridge contracts only; no web-core/economics authority, credentials, or physical-device certification claims. |
+| `.github/workflows/native-ios.yml` | gpt | Exact bounded workflow for native-ios SwiftPM/static validation only; no other `.github/` ownership transfer. |
 | `tests/integration/admin-console.spec.mjs` | gpt | Exact regression exception for the isolated #231 Admin Console contract only; no other `tests/` ownership transfer. |
 | `field-certification.html` | gpt | Operator-approved same-origin physical-device certification companion; no app.js or decision-engine authority. |
 | `field-certification.js` | gpt | Field-certification state/evidence capture. May auto-record browser-observable facts but may not infer hardware-only PASS. |
@@ -103,7 +107,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 - The exact field-certification companion paths named above remain GPT-owned for the operator-approved bounded task. Its `tests/run-all.mjs` registration is already merged and that temporary whole-file exception is retired; `tests/run-all.mjs` inherits the Claude-owned `tests/` row again.
 - `app.js` remains `SHARED` and requires the current covering lock plus a full suite.
 - PR #210 zero-token onboarding is authoritative; nothing may reinstate the superseded raw-token/admin-handler flow.
-- The post-PR-210 and v24.0.22 integration exceptions are retired. Persistent GPT-owned seams are `styles.css`, the three UI-redesign authority documents, the isolated `admin-console/` + its exact regression, and the exact field-certification companion paths.
+- The post-PR-210 and v24.0.22 integration exceptions are retired. Persistent GPT-owned seams are `styles.css`, the three UI-redesign authority documents, the isolated `admin-console/` + its exact regression, the exact field-certification companion paths, and the bounded `native-ios/` + exact `native-ios.yml` Apple track.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
 - Every other non-excepted path remains Claude-owned.
 
