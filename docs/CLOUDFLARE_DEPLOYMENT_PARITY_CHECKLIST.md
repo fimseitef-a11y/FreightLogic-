@@ -2,7 +2,21 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Observed 2026-09-22 UTC: production serves v24.0.31 / DB16 / Worker v21.**
+**Observed 2026-09-22 UTC: production serves v24.0.32 / DB16 / Worker v21.** Live Parity run
+`35752118359` and Production Service Worker run `35752118327` both PASS on `main` @ `4ba9567`.
+
+**The Worker source candidate is v22 and it is NOT deployed.** Worker v22 repairs the default
+`POST /extract-image` vision adapter; the deployed v21 answers that route **HTTP 502** on every
+call, so Issue #252 screenshot intake is inert in production. Observed by Verify Authenticated
+Worker run `35756559469` against the deployed v21 — the five canonical authority-boundary checks
+in that same run passed, so this is confined to the vision provider path. The parity gate's
+`workerVersion` pin is therefore **22** and a live parity run will correctly FAIL that one check
+until the Worker is deployed. Deploy order: Actions → **Deploy Backup Worker** (typed `DEPLOY`),
+then re-dispatch **Verify Authenticated Worker** and require `live /extract-image provider path`
+to PASS. The app generation does **not** move for a Worker-only repair, and must not be bumped
+for it. See `AUDIT_REPORT.md` P-08 and CLAUDE.md's Worker v22 section.
+
+*Superseded below and kept as history: production served v24.0.31 / DB16 / Worker v21.*
 Merged as `ad6a6fb2` (PR #314 — Issue #278 rate basis + the backup-watermark data-loss fix).
 Live parity was **re-dispatched after propagation**: run `35690508284`, PASS. Production Service
 Worker run `35690173735`, PASS. The two earlier parity attempts failed naming the previous

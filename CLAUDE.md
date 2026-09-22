@@ -2,7 +2,16 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.32 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
+**FreightLogic v24.0.32 / DB16 / Worker v22 source / Worker v21 deployed.** The app
+generation is DIRECTLY OBSERVED in production — Live Parity run `35752118359` and Production
+Service Worker run `35752118327`, both PASS on `main` @ `4ba9567`. **The Worker source is one
+generation ahead and the difference is not cosmetic:** v22 repairs the default
+`POST /extract-image` vision adapter, which the deployed v21 answers with **HTTP 502** on every
+call, so Issue #252 screenshot intake is inert in production until the Worker is deployed. That
+was observed, not inferred — Verify Authenticated Worker run `35756559469` against the deployed
+v21 — and the Worker v22 section below carries the full record. Deploy order: Worker first
+(Actions → Deploy Backup Worker, typed `DEPLOY`), then re-dispatch Verify Authenticated Worker;
+the app generation does not move with it.
 
 v24.0.32 is the operator-resolved Issue #278 long-haul policy repair. It removes the
 distance-only `>250mi && < $1.45 True RPM => REJECT` veto without inventing a replacement
@@ -212,7 +221,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v21 source / v21 deployed** carries #252's `POST /extract-image` vision route, PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v22 source / v21 deployed** carries #252's `POST /extract-image` vision route (working only from v22 — the deployed v21 answers it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -481,7 +490,7 @@ plaintext localStorage credentials must never be promoted back into a live sessi
 - `GET /list` — list backup keys
 - `GET /status` — backup count + user name
 - `POST /evaluate` — AI load evaluation (OpenAI); rate limited 100 req/hr per user (hourly window); returns `{ ok, ai: { verdict, grade, summary, trueRpmBand, bidAdvice, primaryReason, risks, positives, nextMove }, model, user }`
-- `POST /extract-image` — vision/OCR field extraction from ONE load screenshot (Worker v21, Issue #252); rate limited 25 req/hr per user; provider selected server-side by `VISION_PROVIDER` (`workers-ai` default, `gemini`, `openai`, `deepseek`); returns `{ ok, fields, fieldMeta, observedCount, provider, model }` where every field is tri-state `OBSERVED` / `UNCERTAIN` / `ABSENT` and an ABSENT value is `null`, never `0`. **Observational fields only** — anything else the model returns is dropped by the normalizer, so it can never become a second evaluator
+- `POST /extract-image` — vision/OCR field extraction from ONE load screenshot (Worker v21 route, **repaired in v22** — v21's default `workers-ai` adapter called Moondream 3.1 with the wrong input schema and 502'd on every live call; Issue #252); rate limited 25 req/hr per user; provider selected server-side by `VISION_PROVIDER` (`workers-ai` default, `gemini`, `openai`, `deepseek`); returns `{ ok, fields, fieldMeta, observedCount, provider, model }` where every field is tri-state `OBSERVED` / `UNCERTAIN` / `ABSENT` and an ABSENT value is `null`, never `0`. **Observational fields only** — anything else the model returns is dropped by the normalizer, so it can never become a second evaluator
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 - `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
@@ -4744,6 +4753,116 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## Worker v22 "The Default Provider Never Ran" — the #252 route that has always 502'd
+
+Worker **v21 → v22**. `DB_VERSION` stays **16** and the app/PWA stays **24.0.32** — no app
+source changed, so **no cache generation moves** and `verify-release-generation.mjs` reports
+`No deployed app bytes changed`. No route, auth, rate-limit, normalization or authority
+semantics change either. What changes is that the default vision provider can actually be
+called.
+
+### The defect
+
+`POST /extract-image` (Issue #252, the P0 operator workflow — screenshot a DispatchLand
+posting, extract it, score it in the canonical evaluator) selects its provider from
+`VISION_PROVIDER`, and that var is **deliberately unset** on the deployed Worker, so
+production always takes `VISION_DEFAULT_PROVIDER` — `workers-ai`, Moondream 3.1 through the
+`AI` binding. That adapter called the model like this:
+
+```js
+env.AI.run(model, { image: [...bytes], prompt: VISION_SYSTEM_PROMPT + '…', max_tokens: 700 })
+```
+
+`image: [...bytes]` and `prompt:` are the **older** Workers AI vision convention (llava,
+uform). `@cf/moondream/moondream3.1-9B-A2B` documents `image` as a **string** — a public HTTPS
+URL or a base64 data URI — takes the query prompt in **`question`**, and answers in
+**`answer`**, not `description`/`response`/`text`. So `env.AI.run` threw schema validation on
+every call, the route's catch returned **HTTP 502**, and the app fell back to
+*"Image extraction service error. Paste the load text instead."*
+
+Both halves were wrong independently: even had the call been accepted, the adapter read three
+keys the model never fills, so it would have returned `''` and the route would have failed
+closed with 422. **Screenshot intake has never worked in production.** The fail-closed
+behaviour is the design working — the driver is told to paste text rather than handed an
+invented load — but a P0 feature was inert behind it.
+
+### How it was found, which is the part worth keeping
+
+Not by reading. The authenticated live gate was dispatched — **Verify Authenticated Worker run
+`35756559469`** on `main` @ `4ba9567`, against the deployed v21 — and reported:
+
+```
+PASS  /evaluate rejects an unauthenticated request
+PASS  UNAVAILABLE verdict is projected, never coerced to REJECT/F/$0.00
+PASS  factsComplete:false is honoured over a contradictory ACCEPT/A
+PASS  economics.available:false is honoured over a contradictory ACCEPT/A
+PASS  a decision with no bid range is refused, not invented
+FAIL  live /extract-image provider path — HTTP 502 {"ok":false,"error":"Image extraction
+      service error. Paste the load text instead."}
+```
+
+Five canonical authority-boundary checks passed in the same run, so this is confined to the
+vision provider path and is not an authority regression.
+
+That gate is the one this file recorded as **unobserved**: *"#252's privileged authenticated
+live provider invocation and real-screenshot quality benchmark remain unobserved."* It was
+unobserved because nothing had dispatched it, and the first dispatch found the defect
+immediately. An unobserved gate is not a passing gate — the doctrine this repository already
+applies to `UNOBSERVED` in the live-parity runner, demonstrated here against itself.
+
+### Why the unit suite could never have caught it
+
+`tests/unit/worker-vision-extract.spec.mjs` drives the REAL exported fetch handler, and its own
+header says so — but every one of VEX-01…VEX-15 sets `VISION_PROVIDER: 'openai'`, "deliberately"
+so that a real shipped adapter is exercised rather than a test-only branch. The `openai` adapter
+is correct. The reasoning was sound and the conclusion was wrong: the adapter it exercised is
+not the adapter production takes, so the live path had **no coverage at all** while fifteen
+green assertions reported the route as proven. This is the `OI-11`-passing-with-the-defect
+class (v24.0.12) and the checklist-item-15-documented-as-machine-checked class (v24.0.3) once
+more: a guard that runs beside the thing it guards.
+
+**VEX-16** pins the call shape — `image` is a string and a `data:<mime>;base64,` URI, the prompt
+rides `question`, `prompt` is absent, `max_tokens` stays inside the documented 1..28672 range,
+and `reasoning` is off so the trace does not compete with the answer for the token budget.
+**VEX-17** pins the read, through a stub `AI` binding that answers the way the documented
+`query` task does. Asserting the response body alone cannot catch either half — a stub that
+answers whatever it is asked passes both ways.
+
+Red-first on the unmodified tree: **15 passed / 2 failed**, failing exactly on the defect.
+Both negative controls were applied against a `sha256sum`-verified pristine copy and fire:
+reverting the call shape alone fails **VEX-16 only**, with VEX-17 staying green, which is the
+demonstration that the two halves are independently guarded rather than one rule tested twice;
+reverting the read alone fails both, because VEX-16's HTTP 200 precondition depends on it.
+
+### Scope, and what is deliberately NOT claimed
+
+`gemini`, `openai` and `deepseek` were audited in the same pass and are correct for their
+respective APIs — each already builds a proper base64 data URI or `inline_data` part. Only the
+default was wrong, which is exactly why it survived: it is the one adapter no test drove.
+
+This does **not** close #252. A green live provider call proves the binding, the schema and the
+normalizer wiring; it does not measure extraction quality, and the sanitized real-screenshot
+benchmark still needs operator screenshots that are deliberately not in this repository. A13
+on a real iPhone is unchanged and remains the operator's.
+
+Full suite on the exact candidate head, real headless Chromium, first attempt:
+**769 passed, 0 failed across 75 spec files.** Nothing was skipped, quarantined or weakened.
+
+### Not deployed
+
+**Source-only.** Production still serves Worker **v21** and therefore still 502s on screenshot
+intake. Deploy is an operator action — Actions → **Deploy Backup Worker** → dispatch with the
+typed `DEPLOY` confirmation, which is the guard this file records as working rather than
+broken. The app generation does not move with it and must not be bumped for this.
+
+After deploying, **re-dispatch Verify Authenticated Worker** and require
+`live /extract-image provider path` to PASS (HTTP 200, or 422 for the synthetic 1x1 PNG, which
+is evidence the provider ran and reached shared normalization — not a screenshot-quality pass).
+Do not dispatch it twice inside one clock hour: `/claim` is 10/hr per IP and the gate spends up
+to 6, so the second result reads `UNOBSERVED`, which is neither a pass nor a product failure.
+
+---
 
 ## v24.0.31 "Whose Dollar" — rate basis, and a backup gap found while shipping it
 
