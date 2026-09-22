@@ -52,18 +52,19 @@ import WebKit
 @MainActor
 public final class FreightLogicWebHost: NSObject, WKNavigationDelegate {
     public let configuration: FreightLogicHostConfiguration
+    public let actionDispatcher = FreightLogicWebActionDispatcher()
 
-    private let bridge: FreightLogicScriptBridge
+    private let bridge: FreightLogicNativeCapabilityBridge
     private let webViewConfiguration: WKWebViewConfiguration
 
     public init(
         configuration: FreightLogicHostConfiguration,
-        router: any FreightLogicBridgeRouting
+        router: any NativeCapabilityRouting
     ) {
         self.configuration = configuration
 
         let contentController = WKUserContentController()
-        let bridge = FreightLogicScriptBridge(
+        let bridge = FreightLogicNativeCapabilityBridge(
             allowlist: OriginAllowlist(origins: [configuration.origin]),
             router: router
         )
