@@ -1,6 +1,0 @@
-owner: gpt
-token: a27f5f7c-2042-4205-9205-appletrack001
-started_utc: 2026-09-22T09:35:00Z
-expected_release_utc: 2026-09-22T11:35:00Z
-paths: .agents/LANES.md
-task: Establish bounded GPT ownership for native-ios scaffold and exact native CI workflow under #204/#205.
