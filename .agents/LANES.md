@@ -10,7 +10,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against concurrent sessions, not just different agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
 
-**v24.0.29 observed-production documentation reconciliation — TEMPORARY 2026-09-22.** Production has been directly observed at app/SW/manifest v24.0.29 / DB16 / Worker v21 after #304. GPT temporarily owns exactly four certification files only: `CLAUDE.md`, `FIELD_TEST_CHECKLIST.md`, `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md`, and `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`. The task is limited to replacing stale v24.0.28 current-production prose with already-observed v24.0.29 evidence, including the preserved deployment-propagation failures and the #304 red-first/green evidence. It grants no runtime, test, freight-policy, workflow, deployment, credential, repository-admin, authenticated-provider, or physical-device authority and expires immediately after the reviewed documentation successor lands.
+**v24.0.29 observed-production documentation reconciliation — RETIRED 2026-09-22.** PR #309 merged the reviewed four-file certification successor as `936bbc2e` after exact-head Tests **748/0 across 73 specs**, Lanes, and CodeQL passed. The temporary documentation ownership is retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude ownership, and the two exact `docs/` overrides fall back to the Claude-owned `docs/` parent lane. No runtime, tests, freight policy, workflow, deployment, credential, repository-admin, authenticated-provider, or physical-device evidence changed.
 
 **Issue #304 trip-delete safety exception — RETIRED 2026-09-22.** PR #306 merged the reviewed v24.0.29 repair as `ca99d50a` after exact-head Tests, Lanes, and CodeQL passed. The temporary regression/registration/release-marker ownership grant is retired: `tests/integration/trip-delete-safety.spec.mjs` and `tests/run-all.mjs` return to the Claude-owned `tests/` lane; `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` return to their normal Claude/parent ownership. Runtime paths remain SHARED. No economics, schema, Worker-source, historical reconstruction, or physical-certification authority transferred.
 
@@ -42,8 +42,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #304 v24.0.29 release-marker ownership retired after PR #306 landed. |
 | `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #304 v24.0.29 release-marker ownership retired after PR #306 landed. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | TEMPORARY v24.0.29 observed-production documentation reconciliation only; retire after successor docs merge. |
-| `FIELD_TEST_CHECKLIST.md` | gpt | TEMPORARY v24.0.29 observed-production documentation reconciliation only; A1-A13 acceptance/results remain unchanged. |
+| `CLAUDE.md` | claude | v24.0.29 observed-production documentation reconciliation completed by PR #309; normal Claude ownership restored. |
+| `FIELD_TEST_CHECKLIST.md` | claude | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
@@ -65,8 +65,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `admin-driver-ui.js` | claude | PR #210 zero-token onboarding makes this module explicitly stand down; do not restore the superseded GPT admin-handler patch. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains serialized. |
 | `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
-| `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` | gpt | TEMPORARY v24.0.29 observed-production evidence reconciliation only; retire after successor docs merge. |
-| `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` | gpt | TEMPORARY v24.0.29 observed-production evidence reconciliation only; retire after successor docs merge. |
 | `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation. |
 | `favicon16.png` | claude | Visual asset. |
 | `favicon32.png` | claude | Visual asset. |
