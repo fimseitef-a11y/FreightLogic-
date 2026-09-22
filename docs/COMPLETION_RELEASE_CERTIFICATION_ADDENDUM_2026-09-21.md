@@ -1,13 +1,13 @@
-# Completion release certification addendum — source 24.0.28 / last observed production 24.0.27 / DB16 / Worker v21
+# Completion release certification addendum — production 24.0.28 / DB16 / Worker v21
 
 Date: 2026-09-21
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md
-Status: **HOLD — v24.0.28 source/runtime CI is green, while the last directly observed production generation is v24.0.27. Physical iPhone A1-A13, v24.0.28 live parity/service-worker observation, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
+Status: **HOLD — v24.0.28 exact PR-head automated tests, CodeQL, live all-asset parity and production service-worker checks are OBSERVED and PASSING. Physical iPhone A1-A13, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
 
-This addendum supersedes the 24.0.26 certification state without rewriting it. It also
-preserves the directly observed v24.0.27 production evidence while recording that source/main
-has advanced to v24.0.28. It is a dated evidence checkpoint, not a claim that all FreightLogic
-work is complete and not a claim that production already serves v24.0.28.
+This addendum supersedes the 24.0.26 certification state without rewriting it. It preserves
+the directly observed v24.0.27 evidence as history and records the later direct v24.0.28
+production observation. It is a dated evidence checkpoint, not a claim that all FreightLogic
+work is complete.
 
 ## Current source candidate — v24.0.28
 
@@ -24,12 +24,29 @@ and the grade-A hero verdict can no longer claim a Tier 1 destination when no de
 was supplied. The relevant regressions are `ECON278-15`, `ECON278-16`, the expanded
 `ECON278-10`, and `SSI-19`.
 
-**Deployment/live boundary:** the runs in the next sections directly observed **v24.0.27**,
-not v24.0.28. At this checkpoint no v24.0.28 live-parity or production-service-worker run has
-been observed through the available GitHub connector. Source and observed production are
-therefore intentionally recorded as different facts. After deployment settles, re-dispatch
-the live gates and require direct 24.0.28 observation before updating this record to production
-24.0.28.
+## v24.0.28 live production observation of record
+
+Current documentation checkpoint: `675e6fb0140f0e226219fc52955932703fc07a1c`.
+
+- Live Parity `35661894518`, job `106538813802`: **VERDICT: PASS**. The log directly
+  observes app/SW/manifest **24.0.28**, Worker `/health` **v21**, all **22** declared
+  runtime assets loading, no runtime asset served as HTML, and **20** repository-only paths
+  withheld.
+- Production Service Worker `35661894391`, job `106538814618`: **VERDICT: PASS**.
+  The worker reaches ACTIVATED, controls after reload, precaches
+  `freightlogic-24.0.28` with all 22 assets, renders five tabs + Today after reload,
+  and leaves exactly one generation cache.
+- CodeQL `35661894363`, job `106538813341`: **PASS**.
+- Exact-main full suite `35661894446`, job `106538812253`: **746 passed / 0 failed across 72 spec files**.
+
+The runtime-merge push Live Parity run `35658640376` failed while deployment was still
+settling. A later explicit dispatch on the runtime merge, `35658734732` (job
+`106528647843`), directly observed v24.0.28 and passed. The runtime-merge Production
+Service Worker run `35658640358` (job `106528337742`) also passed. This retains both
+the race and the settled observation rather than erasing either.
+
+The runtime-merge push Tests run `35658640366` recorded **745/1** in F-9. Claude later reproduced the failure as a **test-control timing dependency**: the test inserted two `await sleep(20)` yields between synchronous toast calls and reads, allowing the auto-hide timer or another caller to interfere. Test-only commit `0fc250cb0523bc040049cd25fbf6f12e9a5b376c` removed those yields; `app.js` stayed byte-identical, both negative controls still failed when the real severity guard was removed, and current exact-main Tests `35661894446` returned **746/0**. This stabilization changed no runtime asset and required no release-generation bump.
+
 
 ## Preserved production observation — why v24.0.27 required its own record
 
@@ -122,7 +139,7 @@ certification and do not imply every iPhone-only behavior was exercised.
 Authentic **M6 Gate C remains PASS** and is not reopened by this release: five source files,
 216 source rows reconciled into 149 deterministic records; 141 unknown and eight positive
 deadhead values, zero fabricated zeros. No importer/reconciliation semantics changed in
-v24.0.27. The separate unavailable 125-row master remains separate and must never be
+v24.0.28 or in the later test-only F-9 stabilization. The separate unavailable 125-row master remains separate and must never be
 reconstructed from summaries.
 
 Voice Load remains deliberately removed from v24.0.17 onward. The current runtime inventory
