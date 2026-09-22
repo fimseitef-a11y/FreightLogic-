@@ -50,6 +50,32 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
 };
 
+/* W-01 parity with the real Worker.
+ *
+ * `cloud-backup-worker.js` fixed this in v17 ("Same Millisecond"): a backup or
+ * delta key is `user:<id>:device:<id>:(backup|delta):<ts>`, and a plain
+ * `new Date().toISOString()` gives millisecond precision, so two writes landing
+ * in the same millisecond mint the SAME key — the second silently overwrites
+ * the first and one payload is gone, while both requests return 200.
+ *
+ * This stand-in never received that fix, so `backup-restore-parity` carried the
+ * collision for its whole life, hidden by the suite being slow enough that two
+ * pushes never shared a millisecond. Running specs concurrently removed that
+ * luck and the spec correctly reported 3 of 4 trips restored, DELTA-1 missing.
+ * The spec was right and the mock was wrong.
+ *
+ * The key SHAPE is unchanged for the same reasons the real Worker keeps it:
+ * `deltaTsFromKey()` parses it back into an ISO instant, and the pointer's
+ * lexical sort is only chronological because the transform is monotonic for
+ * same-length strings. A random suffix would break both. */
+let _lastKeyMs = 0;
+function nextBackupTs() {
+  let ms = Date.now();
+  if (ms <= _lastKeyMs) ms = _lastKeyMs + 1;
+  _lastKeyMs = ms;
+  return new Date(ms).toISOString().replace(/[:.]/g, '-');
+}
+
 export function startMockWorker() {
   const kv = new Map(); // key -> string value (mirrors env.BACKUPS)
   const TOKEN = 'flk_' + 'a'.repeat(32);
@@ -125,7 +151,7 @@ export function startMockWorker() {
     });
 
     if (req.method === 'POST' && p === '/backup') {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const ts = nextBackupTs();
       const key = `user:${USER_ID}:device:${deviceId}:backup:${ts}`;
       kv.set(key, body);
       const ptr = getPtr(deviceId, 'b');
@@ -137,7 +163,7 @@ export function startMockWorker() {
     }
 
     if (req.method === 'POST' && p === '/backup/delta') {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const ts = nextBackupTs();
       const key = `user:${USER_ID}:device:${deviceId}:delta:${ts}`;
       kv.set(key, body);
       const ptr = getPtr(deviceId, 'd');
