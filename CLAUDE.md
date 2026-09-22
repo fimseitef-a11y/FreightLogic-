@@ -2,18 +2,32 @@
 
 ## Project Overview
 
-**SOURCE CANDIDATE IS v24.0.30. LAST DIRECTLY OBSERVED PRODUCTION IS v24.0.29 / DB16 / Worker v21.**
+**FreightLogic v24.0.30 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
 
 v24.0.30 is the Issue #278 `DEACTIVATED`/`WITHDRAWN` outcome class — the one later #278
 addendum on which the ChatGPT evidence pass of 2026-09-20 and the independent Claude audit of
 2026-09-22 agree with no disagreement, because it is data semantics rather than the disputed
-market policy. It is **source-only until it merges, deploys and is observed**; the production
-paragraphs below describe v24.0.29 and stay true until a superseding observation exists.
-`DB_VERSION` remains **16** and the Worker remains **v21**. No economics, verdict, grade, bid,
-schema or Worker semantics change. Nothing in #278's disputed long-haul scope is implemented
-here, and this does not close #278.
+market policy. `DB_VERSION` remains **16** and the Worker remains **v21**. No economics,
+verdict, grade, bid, schema or Worker semantics change. Nothing in #278's disputed long-haul
+scope is implemented, and **this does not close #278**.
 
-**Production observation of record — v24.0.29.**
+PR #311 merged as `ea0416713ae716918745cad148f96a8f7664112b`. Its exact PR head `6198efdd`
+passed Tests `35683496425`, Lanes `35683496430` and CodeQL `35683496439`; exact-main Tests
+`35683976838` and CodeQL `35683976839` then passed on the merge commit. The local exact-head
+full suite was **758 passed / 0 failed across 74 spec files**, first attempt.
+
+Both live gates were **re-dispatched** on `main` @ `ea041671` rather than cited from the
+push-triggered runs — Live Parity run `35684405039` and Production Service Worker run
+`35684408029`, both **success**. The push-triggered pair (`35683976801`, `35683976815`) also
+passed this time, which is worth recording: the ten documented push races are all about a
+FAILURE observing the PREVIOUS generation, and a PASS cannot occur unless production already
+serves the source-derived generation. The re-dispatch is still the observation of record.
+
+*This paragraph replaced a source-only claim that was true for about ten minutes. That is the
+ordinary gap between a merge and a deploy, and the rule is the one this file keeps relearning:
+a superseding record is due the day a shipped file **deploys**, not the day it merges.*
+
+**Historical production observation — v24.0.29.**
 
 PR #306 merged the v24.0.29 trip-delete safety runtime as `ca99d50abf18557682f38e641c2b023041088ea6`. Its exact PR head `cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed Tests `35678726412` at **748 passed / 0 failed across 73 specs**, with Lanes `35678726404` and CodeQL `35678726418` passing. The release fixes Issue #304 by making an Undo-pending trip immediately non-actionable, refusing duplicate queueing for the same stable id, restoring the row on Undo/failure, and deleting only the exact stable-id record after the Undo window. DB remains 16 and Worker remains v21.
 
@@ -4801,11 +4815,24 @@ v24.0.30 was given its own entry, rather than inheriting a neighbour's.
 Full suite on the exact candidate head, real headless Chromium, **first attempt: 758 passed, 0
 failed across 74 spec files.** Nothing was skipped, quarantined or weakened.
 
-### Not deployed
+### DEPLOYED and OBSERVED LIVE 2026-09-22
 
-**Source-only.** After merging, let Cloudflare deploy, then **re-dispatch** live parity and the
-production service-worker gate rather than citing the push-triggered runs, which race the deploy
-— ten recorded occurrences.
+This section shipped reading *"Source-only. After merging, let Cloudflare deploy…"*. That was
+true when written and stopped being true within about ten minutes, which is the ordinary gap
+between a merge and a deploy. It is corrected here rather than quietly overwritten, for the
+reason this file now records against itself nine times.
+
+Merged as `ea041671`. Both live gates were **re-dispatched** on that exact SHA rather than cited
+from the push-triggered runs: Live Parity `35684405039` and Production Service Worker
+`35684408029`, both **success**. Exact-main Tests `35683976838` and CodeQL `35683976839` passed
+on the same commit. The Worker was not redeployed and `/health` stays **v21**, as this
+generation requires.
+
+The push-triggered pair (`35683976801`, `35683976815`) also passed this time. That is worth
+recording precisely: the ten documented push races are all about a run **FAILING** while it
+observed the previous generation mid-deploy, and a parity PASS cannot occur unless production
+already serves the source-derived generation. The re-dispatch remains the observation of
+record.
 
 **Still HOLD.** Physical iPhone **A1-A13** (#226), the M6 conflict review, #252's privileged
 provider invocation and real-screenshot benchmark, #231's guarded Admin Console proof and #222's
