@@ -267,11 +267,13 @@ modern-shell.js            — Driver-facing structural shell: the Today/Loads/E
                              Money tab bar and the More entry. Loaded by dynamic import from
                              sw-bridge.js. Structural ONLY — it owns no route, renderer or
                              state; tabs are plain hrefs into the canonical hash router
-admin-driver-ui.js         — Admin driver management UI (injected via service worker)
+admin-console/             — Separate-origin Admin / Onboarding Console (#231). The driver
+                             app carries NO admin surface since v24.0.33; admin-driver-ui.js
+                             is deleted
 midwest-stack-authority.js — Midwest Stack v2 authority overlay; TRUE_RPM decision layer
                              (injected via service worker, not referenced from index.html)
 sw-bridge.js               — Service worker auto-update bridge (SKIP_WAITING + reload)
-service-worker.js          — PWA offline caching; injects admin-driver-ui.js and
+service-worker.js          — PWA offline caching; injects
                              midwest-stack-authority.js into HTML responses; precaches
                              modern-shell.js in the install-blocking critical shell
 cloud-backup-worker.js     — Cloudflare Worker: multi-user backup + AI load evaluation + AI field extraction
@@ -375,7 +377,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.32';
+const APP_VERSION = '24.0.33';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -418,7 +420,7 @@ This app handles financial data. All security mitigations are intentional and mu
 |---|---|---|
 | Backup token (`flk_…`) | IndexedDB (`settings`) | Persistent bearer credential; excluded from ordinary exports |
 | Encryption passphrase | `sessionStorage` (`fl_cloud_pass`) | Cleared on tab/browser close — never written to disk |
-| Admin token plaintext | `sessionStorage` (`fl_admin_tok`) | Cleared on tab/browser close; optional encrypted-at-rest wrapper uses `settings['cloudAdminTokenEnc']` behind App Lock/PIN |
+| Admin token | **Not in the driver app** (v24.0.33, #231 Phase C) | Session-only in the separate-origin Admin Console. Driver boot deletes any legacy `fl_admin_tok` / `settings['cloudAdminTokenEnc']` |
 | Device ID | `localStorage` (`fl_device_id`) | Persists — non-secret identifier |
 
 Do not move the passphrase or admin token back to persistent storage.
@@ -449,13 +451,12 @@ CBP-07 asserts the passphrase never reaches `localStorage` or the settings
 store — so the friction can never be resolved by weakening the encryption
 instead.
 
-The admin token grants create/list/revoke over **every** driver account, so it is the most
-sensitive credential in the app. PR #210's zero-token onboarding keeps decrypted admin
-material session-scoped; persistence is allowed only as AES-GCM ciphertext in
-`settings['cloudAdminTokenEnc']`, keyed through the App Lock/PIN flow and written only
-after the Worker verifies the credential. `admin-driver-ui.js` deliberately stands down
-from the legacy admin-driver flow and its legacy-token purge is delete-only: stale
-plaintext localStorage credentials must never be promoted back into a live session.
+The admin token grants create/list/revoke over **every** driver account. Since v24.0.33
+(#231 Phase C) it has **no place in the driver app at all**: the admin panel, credential
+entry, PIN-encrypted `cloudAdminTokenEnc` storage and invite/revoke handlers are removed,
+`admin-driver-ui.js` is deleted, and `purgeLegacyAdminCredential()` deletes any copy an
+earlier build stored at boot — delete-only, never read or promoted. Admin work happens in
+the separate-origin Admin Console. Do not reintroduce an admin surface into the driver app.
 
 ---
 
@@ -520,8 +521,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.32` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.32`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.33` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.33`; caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4761,6 +4762,37 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.33 "One Least-Privilege Client" — Issue #231 Phase C
+
+`DB_VERSION` stays **16**, Worker stays **v23**. No economics, routing, storage schema or
+Worker semantics change. Phase B was live-verified first (Verify Admin Console run
+`35772326644` PASS against the deployed console and Worker v23), which is the issue's own
+precondition for Phase C.
+
+**Removed from the driver app:** the Settings admin panel and every admin element, admin
+credential entry, PIN-encrypted `cloudAdminTokenEnc` persistence, the PIN-unlock prompt,
+the Drivers list, invite/re-invite/revoke handlers and every `/admin/*` call, and
+`admin-driver-ui.js` itself (file deleted; no longer precached or injected by the service
+worker). Declared runtime assets **22 → 21**.
+
+**Kept:** the driver `#i=` claim flow and its synchronous boot capture, legacy `#token=` /
+`?token=` stripping, reconnect, and cloud backup. `cloudAdminTokenEnc` stays in
+`SETTINGS_NEVER_EXPORT` and out of `ALLOWED_SETTINGS_KEYS` as defence in depth.
+
+**Migration rule:** any device that ever configured admin access (v24.0.13+) still holds the
+ciphertext, so `purgeLegacyAdminCredential()` runs at boot, before the unlock prompt, and
+deletes `settings['cloudAdminTokenEnc']` plus `fl_admin_tok` from session and local
+storage. Delete-only: nothing reads, decrypts or promotes it.
+
+**Gates:** ZTO-01..03 replace the old in-app admin assertions (absence of admin DOM,
+functions and `/admin` traffic; boot purge; driver token untouched by the purge). DAC-05 is
+inverted to require `admin-driver-ui.js` gone from repo, inventory and worker; the
+production SW gate now FAILS if the worker still injects it; live parity adds it to the
+must-404 list. Negative control verified: disabling the boot purge fails ZTO-02 only.
+Full suite **770/0 across 75 specs**.
+
+---
 
 ## Worker v23 "Narrower Than The Key" — a certification admin credential (Issue #231)
 

@@ -145,7 +145,6 @@ async function main() {
     // every parity check stayed green.
     const html = await page.content();
     for (const [name, re] of [
-      ['admin-driver-ui.js', /admin-driver-ui\.js/],
       ['midwest-stack-authority.js', /midwest-stack-authority\.js/],
     ]) {
       if (!re.test(html)) { fail(`${name} tag is absent from the worker-served HTML`); continue; }
@@ -160,6 +159,14 @@ async function main() {
         ? pass(`${name} is injected AND fetchable as script — HTTP 200 (${probe.type || 'no content-type'})`)
         : fail(`${name} is injected but returns HTTP ${probe.status} (${probe.type || 'no content-type'})`);
     }
+
+    // #231 Phase C: the driver app carries no admin surface. admin-driver-ui.js
+    // is deleted, so a worker that still injects its tag is a stale generation
+    // (or a regression) pointing the page at a privileged module that no longer
+    // exists — and the 2026-09-13 404 in a new shape.
+    /admin-driver-ui\.js/.test(html)
+      ? fail('admin-driver-ui.js is still injected into the worker-served HTML — the driver app must carry no admin surface (#231)')
+      : pass('admin-driver-ui.js is NOT injected — the driver app carries no admin surface (#231 Phase C)');
 
     const cacheState = await page.evaluate(async () => {
       const names = await caches.keys();

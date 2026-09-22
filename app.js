@@ -1,7 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.32 USA ENGINE
+/** FreightLogic v24.0.33 USA ENGINE
+ *  v24.0.33 "One Least-Privilege Client": Issue #231 Phase C. The driver app
+ *          no longer carries the owner/admin surface — admin panel, admin
+ *          credential entry, PIN-encrypted admin storage, invite/re-invite/
+ *          revoke handlers and admin-driver-ui.js are removed; the separate-
+ *          origin Admin Console owns them. Boot performs a delete-only purge
+ *          of any admin credential an earlier build stored. Driver claim,
+ *          reconnect and cloud backup are unchanged. DB16 / Worker v23.
  *  v24.0.32 "Long Road": Issue #278 operator policy resolution. Retires the
  *          distance-only >250mi / <$1.45 True RPM hard veto. Long-haul
  *          distance/time commitment remains contextual advisory evidence;
@@ -474,7 +481,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.32';
+const APP_VERSION = '24.0.33';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -18228,7 +18235,6 @@ function flStripLegacyTokenLink(){
 //   3. The token is written once and is never rendered, logged, exported, or
 //      placed in an error message.
 
-const ADMIN_TOKEN_SETTING = 'cloudAdminTokenEnc';
 const CLAIM_MIN_PASS_LEN = 10;
 /** Exactly what b32(15 bytes) produces in the Worker — 24 chars, no padding. */
 const CLAIM_CODE_RE = /^[A-Z2-7]{24}$/;
@@ -18242,367 +18248,36 @@ let _pendingClaimCode = null;
  *  Deliberately never holds the token itself. */
 let _legacyTokenLinkSeen = null;
 
-/* ── Owner: one-time admin setup ─────────────────────────────────────────────
+/* ── #231 Phase C: the owner/admin surface is gone from the driver app ───────
  *
- * The admin token grants create/list/revoke over EVERY driver account, so it is
- * the most sensitive credential this app handles. CLAUDE.md's Credential
- * Storage Rules have kept it `sessionStorage`-only, which is correct about
- * plaintext-at-rest and is why the owner has had to retype a 36-character
- * secret on every browser restart.
+ * Admin setup, the Drivers list, invite/re-invite/revoke and the PIN-encrypted
+ * admin credential all moved to the separate-origin Admin Console
+ * (`admin-console/`, live-verified by `verify-admin-console.yml`). The driver
+ * app is a least-privilege client: it carries no admin UI, no admin API call,
+ * and no admin credential storage. Hiding the controls would not have been
+ * enough — a dormant privileged path is still a path.
  *
- * This keeps the session-scoped plaintext rule exactly as it is — the decrypted
- * token still lives only in `sessionStorage` and still dies with the tab — and
- * adds an AES-GCM ciphertext at rest, keyed by PBKDF2 over the device PIN
- * (`cloudEncrypt`, 600k iterations, the same primitive cloud backups use). What
- * is on disk is not a credential unless you also know the PIN.
- *
- * ADMIN ACCESS THEREFORE REQUIRES APP LOCK. That is not incidental: without a
- * PIN there is no key, and the only way to persist the token would be in the
- * clear, which is the thing the rule prohibits. Refusing is the honest outcome.
+ * What survives is DELETE-ONLY cleanup. v24.0.13-v24.0.32 could persist the
+ * admin token as `settings['cloudAdminTokenEnc']` (AES-GCM under the PIN) and
+ * keep its plaintext in `sessionStorage['fl_admin_tok']`; older builds kept it
+ * in `localStorage`. Any device that ever configured admin access still holds
+ * that ciphertext, so boot removes all three. Nothing here reads, decrypts or
+ * promotes the value — it is removed, never used.
  */
+const LEGACY_ADMIN_TOKEN_SETTING = 'cloudAdminTokenEnc';
+const LEGACY_ADMIN_TOKEN_STORAGE_KEY = 'fl_admin_tok';
 
-/** Is an encrypted admin token on disk? Does not decrypt, so it never prompts. */
-async function cloudAdminHasAccess(){
-  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
-  return !!(blob && blob.encrypted && blob.iv && blob.salt);
-}
-
-/** Is App Lock configured with a real PIN? Admin access is gated on this. */
-async function cloudAdminPinAvailable(){
-  const enabled = !!(await getSetting('appLockEnabled', false));
-  const pin = String(await getSetting('appLockPin', '') || '');
-  return !!(enabled && pin);
-}
-
-/** Prompt for the device PIN and resolve with the PIN ITSELF, not a boolean.
- *
- *  `requireAppUnlock()` deliberately returns only whether the unlock succeeded
- *  and discards the PIN, which is right for a gate. Here the PIN is key
- *  material, so it has to come back. It is held in a local for the duration of
- *  one decrypt and is never stored anywhere.
- *
- *  Resolves `null` on cancel or on a wrong PIN. */
-async function adminPinPrompt(purpose){
-  const stored = String(await getSetting('appLockPin', '') || '');
-  if (!stored) return null;
-  return await new Promise((resolve)=>{
-    const body = document.createElement('div');
-    body.innerHTML =
-      '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">' + escapeHtml(purpose || 'Enter your PIN to continue.') + '</div>' +
-      '<label>PIN</label><input id="adminPinEntry" type="password" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off" />' +
-      '<div id="adminPinErr" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>' +
-      '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="adminPinGo" style="min-height:48px">Unlock</button><button class="btn" id="adminPinCancel" style="min-height:48px">Cancel</button></div>';
-    openModal('🔐 Confirm it\'s you', body);
-    let settled = false;
-    const finish = (v)=>{ if (settled) return; settled = true; closeModal(); resolve(v); };
-    const go = async ()=>{
-      const val = String($('#adminPinEntry', body)?.value || '');
-      if (!val) return;
-      const match = await verifyPin(stored, val).catch(()=>false);
-      if (!match){
-        const err = $('#adminPinErr', body);
-        if (err){ err.textContent = 'That PIN did not match.'; err.style.color = 'var(--bad)'; }
-        const inp = $('#adminPinEntry', body); if (inp){ inp.value = ''; inp.focus(); }
-        return;
-      }
-      finish(val);
-    };
-    $('#adminPinGo', body)?.addEventListener('click', go);
-    $('#adminPinEntry', body)?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); go(); } });
-    $('#adminPinCancel', body)?.addEventListener('click', ()=> finish(null));
-  });
-}
-
-/** The admin token for this session, decrypting from disk if needed.
- *  Returns '' when there is none or the operator cancels — never throws, and
- *  never puts the token or the reason into a message that could carry it. */
-async function cloudAdminResolveToken(){
+async function purgeLegacyAdminCredential(){
+  try { sessionStorage.removeItem(LEGACY_ADMIN_TOKEN_STORAGE_KEY); } catch(_) {}
+  try { localStorage.removeItem(LEGACY_ADMIN_TOKEN_STORAGE_KEY); } catch(_) {}
   try {
-    const cached = sessionStorage.getItem('fl_admin_tok');
-    if (cached) return cached;
-  } catch(_) {}
-  const blob = await getSetting(ADMIN_TOKEN_SETTING, null);
-  if (!blob || !blob.encrypted) return '';
-  const pin = await adminPinPrompt('Enter your PIN to unlock driver management on this device.');
-  if (!pin) return '';
-  try {
-    const tok = await cloudDecrypt(blob.encrypted, blob.iv, blob.salt, pin);
-    if (!tok) return '';
-    try { sessionStorage.setItem('fl_admin_tok', tok); } catch(_) {}
-    return tok;
-  } catch(_) {
-    // cloudDecrypt's message names the failure mode, not the value. Do not
-    // surface the exception text — an error string is one of the classic ways a
-    // secret escapes into a log.
-    toast('Could not unlock admin access', true);
-    return '';
-  }
-}
-
-/** Verify an admin token against the Worker, then persist it encrypted.
- *  Persists ONLY on a 200 — a rejected token is never written to disk. */
-async function cloudAdminSaveAccess(){
-  const field = $('#adminToken');
-  const token = (field?.value || '').trim();
-  const state = $('#adminAccessState');
-  if (!token){ toast('Enter the admin token', true); return false; }
-  if (!(await cloudAdminPinAvailable())){
-    toast('Turn on App Lock first — the admin token is stored encrypted under your PIN', true);
-    return false;
-  }
-  if (state) state.innerHTML = '<span class="cloud-sync-spinner"></span> Checking...';
-  let res;
-  try {
-    res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': token } }, 10000);
-  } catch(_) {
-    if (state) state.innerHTML = '<span style="color:var(--bad)">Could not reach the server — nothing saved.</span>';
-    return false;
-  }
-  if (!res.ok){
-    // 401 is the answer that matters: a wrong token must leave no trace on disk.
-    if (state) state.innerHTML = '<span style="color:var(--bad)">' + (res.status === 401 ? 'That token was rejected — nothing saved.' : 'Server returned ' + res.status + ' — nothing saved.') + '</span>';
-    return false;
-  }
-  const pin = await adminPinPrompt('Enter your PIN. It encrypts admin access on this device.');
-  if (!pin){ if (state) state.innerHTML = '<span class="muted">Cancelled — nothing saved.</span>'; return false; }
-  const blob = await cloudEncrypt(token, pin);
-  await setSetting(ADMIN_TOKEN_SETTING, blob);
-  try { sessionStorage.setItem('fl_admin_tok', token); } catch(_) {}
-  // Clear the field immediately. The value is never re-rendered after this.
-  if (field) field.value = '';
-  toast('Admin access saved');
-  await renderAdminAccessState();
-  await cloudAdminLoadUsers();
-  return true;
-}
-
-/** Forget admin access on this device. The Worker is untouched. */
-async function cloudAdminClearAccess(){
-  if (!confirm('Forget admin access on this device?\n\nDriver accounts and their backups are not affected. You can set it up again with the admin token.')) return;
-  await setSetting(ADMIN_TOKEN_SETTING, null);
-  try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
-  const list = $('#adminUserList'); if (list) list.innerHTML = '';
-  toast('Admin access cleared');
-  await renderAdminAccessState();
-}
-
-/** Render the empty / configured / needs-App-Lock states of the admin panel.
- *  The stored token is never written back into the input — the configured state
- *  shows a confirmation, not a value. */
-async function renderAdminAccessState(){
-  const setup = $('#adminSetupBlock');
-  const state = $('#adminAccessState');
-  const drivers = $('#adminDriversBlock');
-  if (!setup || !state) return;
-  const hasAccess = await cloudAdminHasAccess();
-  const hasPin = await cloudAdminPinAvailable();
-
-  if (hasAccess){
-    setup.style.display = 'none';
-    if (drivers) drivers.style.display = '';
-    state.innerHTML = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<span style="color:var(--good);font-weight:700">Admin access configured ✓</span>' +
-      '<button class="btn sm" id="btnAdminClearAccess" style="font-size:11px;min-height:44px">Clear</button></div>' +
-      '<div class="muted" style="font-size:11px;margin-top:6px">Stored encrypted under your PIN on this device.</div>';
-    $('#btnAdminClearAccess')?.addEventListener('click', ()=>{ haptic(10); cloudAdminClearAccess(); });
-    return;
-  }
-
-  setup.style.display = '';
-  if (drivers) drivers.style.display = 'none';
-  state.innerHTML = hasPin
-    ? '<span class="muted">Not configured on this device.</span>'
-    : '<span style="color:var(--warn)">Turn on App Lock first.</span><div class="muted" style="font-size:11px;margin-top:4px">Admin access is stored encrypted under your PIN, so a PIN has to exist before it can be saved.</div>';
-}
-
-/* ── Owner: Drivers ──────────────────────────────────────────────────────────
- *
- * The word "token" appears nowhere on this surface, by design. The owner
- * invites a person and shares a link; the credential is an implementation
- * detail they neither see nor handle.
- */
-
-/** Mint an invite and hand back a shareable link.
- *
- *  `existingUserId` is what makes RE-INVITE safe. Passing it binds the invite to
- *  that account, so claiming it re-keys in place: same driver, same backups,
- *  fresh token. Omitting it creates a new driver. Getting this wrong is not a
- *  cosmetic difference — every backup is keyed on `userId`, so a re-invite that
- *  minted a new one would orphan the driver's entire history while looking like
- *  it worked. */
-async function cloudAdminInviteDriver(existingUserId, existingName){
-  const adminToken = await cloudAdminResolveToken();
-  if (!adminToken){ toast('Admin access required', true); return; }
-  const isReinvite = !!existingUserId;
-  // A re-invite does not ask for a name: the account already has one, and the
-  // Worker ignores a supplied name for a bound invite so a re-invite cannot
-  // quietly rename the driver.
-  const name = isReinvite
-    ? String(existingName || 'Driver')
-    : String(prompt('Driver name:', '') || '').trim();
-  if (!name) return;
-  if (isReinvite && !confirm('Send a new invite link to "' + name + '"?\n\nTheir account and every backup they have made are kept. Their current device stops backing up as soon as the new link is used, so it has to be the device that opens it.')) return;
-  haptic(20);
-  let data;
-  try {
-    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/invites', {
-      method: 'POST',
-      headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify(isReinvite ? { name, userId: existingUserId } : { name }),
-    }, 15000);
-    data = await res.json().catch(()=>null);
-    if (!res.ok || !data?.ok){
-      if (res.status === 401){
-        // The saved token has stopped working (rotated at the Worker, most
-        // likely). Drop the session copy so the next attempt re-derives it.
-        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
-        toast('Admin access was rejected — set it up again', true);
-        return;
-      }
-      toast(data?.error || 'Could not create the invite', true);
-      return;
-    }
-  } catch(_) {
-    toast('Network error creating the invite', true);
-    return;
-  }
-  cloudAdminShowInvite(data.code, data.name || name, data.expiresAt);
-  cloudAdminLoadUsers();
-}
-
-/** Format an expiry as something a person can act on ("Thu 6:14 PM"). */
-function claimExpiryLabel(iso){
-  try {
-    const d = new Date(iso);
-    if (!isFinite(d.getTime())) return '';
-    return d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  } catch(_) { return ''; }
-}
-
-/** Build the invite URL. The code goes in the FRAGMENT so it is never sent to
- *  any origin — not this app's, and not an intermediary's. */
-function claimInviteLink(code){
-  return window.location.origin + window.location.pathname + '#i=' + encodeURIComponent(code);
-}
-
-/** Share sheet for a fresh invite. Shows the EXPIRY, never the code.
- *  The code is inside the link because it has to be; it is not displayed as a
- *  value to be read out, retyped, or screenshotted on its own. */
-function cloudAdminShowInvite(code, name, expiresAt){
-  const link = claimInviteLink(code);
-  const when = claimExpiryLabel(expiresAt);
-  const text = 'You\'re set up on FreightLogic. Open this link on your phone to finish:\n\n' + link + '\n\nPick a passphrase when it asks. The link stops working ' + (when ? 'after ' + when : 'in 72 hours') + '.';
-  const body = document.createElement('div');
-  body.innerHTML =
-    '<div style="font-size:14px;line-height:1.5;margin-bottom:10px">Invite ready for <b>' + escapeHtml(name) + '</b>.</div>' +
-    '<div class="muted" style="font-size:12px;line-height:1.5;margin-bottom:14px">Send them the link. When they open it they pick their own passphrase and the app finishes setup by itself.' +
-    (when ? ' <b>Link works until ' + escapeHtml(when) + '.</b>' : '') + '</div>' +
-    '<button class="btn primary" id="adminInviteShare" style="width:100%;min-height:48px">Share invite link</button>' +
-    '<div id="adminInviteFallback" style="display:none;margin-top:10px">' +
-      '<div class="btn-row"><a class="btn" id="adminInviteSms" style="flex:1;min-height:48px;text-align:center;line-height:32px">Text it</a>' +
-      '<a class="btn" id="adminInviteMail" style="flex:1;min-height:48px;text-align:center;line-height:32px">Email it</a></div>' +
-      '<button class="btn sm" id="adminInviteCopy" style="width:100%;margin-top:8px;min-height:44px;font-size:12px">Copy link</button>' +
-    '</div>';
-  openModal('📨 Invite ' + name, body);
-
-  const showFallback = ()=>{
-    const fb = $('#adminInviteFallback', body);
-    if (fb) fb.style.display = '';
-    const sms = $('#adminInviteSms', body);
-    const mail = $('#adminInviteMail', body);
-    if (sms) sms.href = 'sms:?&body=' + encodeURIComponent(text);
-    if (mail) mail.href = 'mailto:?subject=' + encodeURIComponent('Your FreightLogic setup link') + '&body=' + encodeURIComponent(text);
-  };
-
-  $('#adminInviteShare', body)?.addEventListener('click', function(){
-    haptic(10);
-    if (navigator.share){
-      navigator.share({ title: 'FreightLogic setup', text: text, url: link }).catch(()=> showFallback());
-    } else {
-      showFallback();
-    }
-  });
-  $('#adminInviteCopy', body)?.addEventListener('click', function(){
-    try {
-      navigator.clipboard.writeText(link).then(function(){ toast('Invite link copied'); }, function(){ toast('Copy failed — use Text or Email', true); });
-    } catch(_) { toast('Copy failed — use Text or Email', true); }
-  });
-  if (!navigator.share) showFallback();
-}
-
-/** Revoke a driver. The Worker deactivates the account and deletes the token
- *  hash, which also kills any invite they are still holding (v18 returns 403
- *  for a claim against a revoked driver). */
-/** The Drivers list.
- *
- *  v24.0.13: the controls are Re-invite and Remove. The word "token" does not
- *  appear on this surface — the owner manages PEOPLE, and the credential is an
- *  implementation detail they neither see nor handle. "Re-invite" is the
- *  rotation path now: the Worker's claim handler re-keys the SAME userId, so a
- *  driver who changed phones keeps every backup they have ever made.
- *
- *  This reads the session copy of the admin token only. It never prompts for a
- *  PIN, because it is called on panel-open and from refresh — a render must not
- *  be able to throw a credential prompt at the operator. The prompting entry
- *  points are the actions (invite, re-invite, remove). */
-async function cloudAdminLoadUsers(){
-  const list = $('#adminUserList'); if (!list) return;
-  let adminToken = '';
-  try { adminToken = sessionStorage.getItem('fl_admin_tok') || ''; } catch(_) {}
-  if (!adminToken){
-    list.innerHTML = (await cloudAdminHasAccess())
-      ? '<div class="muted" style="font-size:12px">Locked — tap <b>Invite driver</b> and enter your PIN to load the list.</div>'
-      : '';
-    return;
-  }
-  list.innerHTML = '<span class="cloud-sync-spinner"></span> Loading...';
-  try {
-    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users', { headers: { 'X-Admin-Token': adminToken } }, 10000);
-    if (!res.ok){
-      if (res.status === 401){
-        try { sessionStorage.removeItem('fl_admin_tok'); } catch(_) {}
-        list.innerHTML = '<div class="muted" style="font-size:12px">Admin access was rejected. Clear it and set it up again.</div>';
-      } else { list.innerHTML = '<div class="muted" style="font-size:12px">Server returned ' + res.status + '</div>'; }
-      return;
-    }
-    const data = await res.json();
-    if (!data.users?.length){ list.innerHTML = '<div class="muted" style="font-size:12px">No drivers yet — tap Invite driver.</div>'; return; }
-    list.innerHTML = data.users.map(function(u){
-      // Re-invite is offered only for an ACTIVE driver: a claim against a
-      // revoked account returns 403, so offering it would be a dead button.
-      var actions = u.active
-        ? '<div class="btn-row" style="margin-top:8px">' +
-            '<button class="btn sm" data-reinvite="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">📨 Re-invite</button>' +
-            '<button class="btn sm" data-revoke="' + escapeHtml(u.userId) + '" data-dname="' + escapeHtml(u.name) + '" style="min-height:44px">Remove</button>' +
-          '</div>'
-        : '';
-      return '<div class="admin-user"><span class="au-name">' + escapeHtml(u.name) + '</span><span class="au-badge ' + (u.active ? 'active' : 'revoked') + '">' + (u.active ? 'Active' : 'Removed') + '</span><div class="au-meta">' + (u.backupCount||0) + ' backup(s) · added ' + escapeHtml((u.createdAt||'').slice(0,10)) + '</div>' + actions + '</div>';
-    }).join('');
-    list.querySelectorAll('[data-reinvite]').forEach(function(btn){
-      btn.addEventListener('click', function(){ cloudAdminInviteDriver(btn.dataset.reinvite, btn.dataset.dname); });
-    });
-    list.querySelectorAll('[data-revoke]').forEach(function(btn){
-      btn.addEventListener('click', function(){ cloudAdminRevokeDriver(btn.dataset.revoke, btn.dataset.dname); });
-    });
-  } catch(e) { list.innerHTML = '<div class="muted" style="font-size:12px">Network error</div>'; }
-}
-
-async function cloudAdminRevokeDriver(userId, name){
-  const adminToken = await cloudAdminResolveToken();
-  if (!adminToken){ toast('Admin access required', true); return; }
-  if (!confirm('Remove "' + (name || userId) + '"?\n\nTheir app stops backing up immediately and any invite link they still have stops working. Backups already stored are kept.')) return;
-  haptic(20);
-  try {
-    const res = await cloudFetch(CLOUD_WORKER_URL + '/admin/users/' + encodeURIComponent(userId), {
-      method: 'DELETE', headers: { 'X-Admin-Token': adminToken },
-    }, 15000);
-    const data = await res.json().catch(()=>null);
-    if (!res.ok || !data?.ok){ toast(data?.error || 'Could not remove that driver', true); return; }
-    toast('Driver removed');
-    cloudAdminLoadUsers();
-  } catch(_) {
-    toast('Network error', true);
-  }
+    if (!db) return false;
+    const { t, stores } = tx('settings', 'readwrite');
+    stores.settings.delete(LEGACY_ADMIN_TOKEN_SETTING);
+    await new Promise((res, rej)=>{ t.oncomplete = res; t.onerror = ()=>rej(t.error); t.onabort = ()=>rej(t.error); });
+    SETTINGS_CACHE.delete(LEGACY_ADMIN_TOKEN_SETTING);
+    return true;
+  } catch(_) { return false; }
 }
 
 /* ── Driver: claim ───────────────────────────────────────────────────────────
@@ -18821,21 +18496,11 @@ function cloudInitUI(){
   var makeToggle = function(btnId, inputId){ $(btnId)?.addEventListener('click', function(){ var inp = $(inputId); if (!inp) return; var s = inp.type === 'text'; inp.type = s ? 'password' : 'text'; var b = $(btnId); if (b) b.textContent = s ? '👁' : '🔒'; }); };
   makeToggle('#btnPassToggle', '#cloudBackupPass');
   makeToggle('#btnTokenToggle', '#cloudBackupToken');
-  makeToggle('#btnAdminTokenToggle', '#adminToken');
   $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
   $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
-  // v24.0.13: opening the panel no longer re-populates #adminToken from the
-  // session copy. A configured admin token is never rendered back into an input
-  // — the panel shows "Admin access configured ✓" instead, and the value itself
-  // stays where it is. Putting it back in a field is how a credential ends up in
-  // a screenshot, an autofill store, or a shoulder-surf.
-  $('#btnAdminToggle')?.addEventListener('click', async ()=>{ var p = $('#adminPanel'); if (!p) return; var s = p.style.display !== 'none'; p.style.display = s ? 'none' : ''; if (!s){ await renderAdminAccessState(); await cloudAdminLoadUsers(); } });
-  $('#btnAdminSaveAccess')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminSaveAccess(); });
-  $('#btnAdminCreate')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminInviteDriver(null, null); });
-  $('#btnAdminRefresh')?.addEventListener('click', async ()=>{ haptic(20); await cloudAdminLoadUsers(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
     if (!confirm('Disconnect cloud backup? Your cloud data stays safe.')) return;
     await setSetting('cloudBackupUrl', ''); await setSetting('cloudBackupToken', ''); await setSetting('lastCloudSync', 0); sessionStorage.removeItem('fl_cloud_pass');
@@ -24037,9 +23702,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // and the PIN modal are asserted through the DOM, but "was a rejected token
     // written to disk" and "does the checksum cover the same array the payload
     // ships" are only answerable from inside.
-    cloudAdminSaveAccess, cloudAdminResolveToken, cloudAdminLoadUsers,
-    cloudAdminInviteDriver, cloudAdminHasAccess, renderAdminAccessState,
     flCaptureClaimCode, claimInvite,
+    purgeLegacyAdminCredential,               // #231 Phase C — delete-only
   };
 }
 
@@ -24062,6 +23726,10 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     db = await initDB();
     await migrateFromLegacyDB().catch(e => console.warn('[FL] legacy migration error:', e));
     await ensureLocalUserId().catch(()=>{});
+    // #231 Phase C: delete-only removal of any admin credential an earlier
+    // build stored on this device. Before the unlock prompt, so it never
+    // depends on the operator knowing the PIN that encrypted it.
+    await purgeLegacyAdminCredential().catch(()=>{});
     await requireAppUnlock();
     // v24.0.13: an invite code captured above opens the claim wizard, which
     // covers the app at z-index 12000 while the rest of boot continues behind
