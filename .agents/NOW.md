@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 is DEPLOYED and OBSERVED** — verified by reading the job logs, not the green ticks: parity `35533600955` attempt 2 carries a live Worker timestamp, production SW `35539669806` shows precache `freightlogic-24.0.25` + five tabs after reload. Wrote the overdue superseding record `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-20.md`; m7 resolves to it, 13/13 gates clean. `CLAUDE.md`'s "still source-only" line is now stale but sits in GPT's `gpt-278-marker-lane` lock — reported, NOT edited across the lock. #278 is GPT's per their NOW row; not started here.) | 2026-09-20T22:20Z |
-| gpt | — idle — (exact main `3d68e6e4` / v24.0.32 is fully green; #278 CLOSED; no unblocked code-side completion remains. Open gates: #222 repo-admin protection/security posture, #231 guarded Admin Console deploy + live auth proof, #252 live vision dispatch + real-image/A13 evidence, #226 physical A1–A13, #204/#205 Safari/native external track.) | 2026-09-22T09:24Z |
+| gpt | #204/#205 Apple track: establishing bounded `native-ios/` + exact native CI lane, then implementing typed bridge contract/scaffold without claiming physical Safari/Xcode certification | 2026-09-22T09:35Z |
 
 ---
 
