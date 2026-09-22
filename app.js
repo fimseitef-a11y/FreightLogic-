@@ -1277,7 +1277,11 @@ function queueTripDelete(trip, { rowEl = null, purgeReceiptCache = false } = {})
   // because listTrips() suppresses this stable id until commit or Undo.
   const rendered = rowEl?.closest?.('.swipe-wrap') || rowEl;
   try{ rendered?.remove?.(); }catch(e){ console.warn('[FL] pending-delete row removal:', e); }
+  // Refresh both canonical trip surfaces immediately. If the modal was opened
+  // from Today/Home rather than Trips, its recent-trip card must not remain a
+  // second actionable delete affordance during the Undo window.
   renderTrips(true).catch(()=>{});
+  renderHome().catch(()=>{});
 
   showUndoToast(
     `Trip ${String(trip.orderNo || '')}`,
