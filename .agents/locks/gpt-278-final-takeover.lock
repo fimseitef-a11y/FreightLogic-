@@ -1,0 +1,6 @@
+owner: gpt
+token: a43d2f76-8c9e-4a9e-b2f1-278c31f4c901
+started_utc: 2026-09-22T07:30:00Z
+expected_release_utc: 2026-09-22T10:30:00Z
+paths: .agents/LANES.md
+task: temporary bounded GPT ownership grant for issue #278 remaining implementation
