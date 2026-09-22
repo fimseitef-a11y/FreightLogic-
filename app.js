@@ -1,7 +1,17 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.28 USA ENGINE
+/** FreightLogic v24.0.29 USA ENGINE
+ *  v24.0.29 "Delete Once, Know It Happened": Issue #304. Edit Trip → Delete
+ *          used the five-second Undo queue but, unlike swipe-delete, left the
+ *          target card visible/actionable until IndexedDB commit. A physical
+ *          iPhone therefore made a successful delete look failed and invited a
+ *          repeated delete attempt. Pending trip ids are now suppressed from
+ *          listTrips immediately, both delete entry points share one stable-id
+ *          queue, duplicate queueing is refused, Undo restores the row, commit
+ *          deletes only the exact stable id, and a failed commit restores the
+ *          trip visibly with an error. No economics, schema, Worker or history
+ *          semantics change. DB stays 16, Worker stays v21.
  *  v24.0.28 "Fuel Is Never Free": two defects confirmed on a physical iPhone and
  *          carried in the shared coordination layer. (1) A blank fuel price used
  *          to report Fuel Cost $0.00 and a full "true profit after all costs".
@@ -424,7 +434,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.28';
+const APP_VERSION = '24.0.29';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -1214,6 +1224,13 @@ function toast(msg, isErr=false){
 
 // ── Undo Toast: immediate UI deletion + 5s window to undo before IDB commit ──
 let _undoPending = null;
+// Issue #304: persistence is intentionally delayed for Undo, but driver-facing
+// state must not stay actionable while that delay is running. Keep a stable-id
+// set outside IndexedDB so every list re-render suppresses pending deletions.
+const _pendingTripDeleteIds = new Set();
+function isTripDeletePending(tripId){
+  return _pendingTripDeleteIds.has(String(tripId ?? ''));
+}
 function showUndoToast(label, doDelete, onUndo){
   // Commit any previously pending deletion
   if (_undoPending){
@@ -1249,6 +1266,50 @@ function showUndoToast(label, doDelete, onUndo){
     haptic(10);
     try{ await onUndo(); }catch(e){ console.warn('[FL] undo-delete restore:', e); }
   });
+}
+
+function queueTripDelete(trip, { rowEl = null, purgeReceiptCache = false } = {}){
+  const stableId = String(trip?.id ?? '');
+  if (!stableId || isTripDeletePending(stableId)) return false;
+  _pendingTripDeleteIds.add(stableId);
+
+  // Remove the live affordance now. A route/search/filter re-render is also safe
+  // because listTrips() suppresses this stable id until commit or Undo.
+  const rendered = rowEl?.closest?.('.swipe-wrap') || rowEl;
+  try{ rendered?.remove?.(); }catch(e){ console.warn('[FL] pending-delete row removal:', e); }
+  renderTrips(true).catch(()=>{});
+
+  showUndoToast(
+    `Trip ${String(trip.orderNo || '')}`,
+    async ()=>{
+      let cachedReceiptIds = [];
+      try{
+        if (purgeReceiptCache && trip.orderNo){
+          const rec = await getReceipts(trip.orderNo);
+          cachedReceiptIds = (rec?.files || []).map(f => f?.id).filter(Boolean);
+        }
+        await deleteTrip(trip.id);
+        _pendingTripDeleteIds.delete(stableId);
+        for (const id of cachedReceiptIds){
+          try{ await cacheDeleteReceipt(id); }catch(e){ console.warn('[FL] receipt cache cleanup after trip delete:', e); }
+        }
+        invalidateKPICache();
+        await renderTrips(true);
+        await renderHome();
+      }catch(e){
+        _pendingTripDeleteIds.delete(stableId);
+        try{ await renderTrips(true); await renderHome(); }catch(renderErr){ console.warn('[FL] delete-failure refresh:', renderErr); }
+        toast('Trip could not be deleted — it is still saved.', true);
+        throw e;
+      }
+    },
+    async ()=>{
+      _pendingTripDeleteIds.delete(stableId);
+      await renderTrips(true);
+      await renderHome();
+    }
+  );
+  return true;
 }
 
 let _modalCloseTimer = null;
@@ -3340,6 +3401,9 @@ async function listTrips({cursor=null, search='', dateFrom='', dateTo='', unpaid
         return;
       }
       const v = cur.value;
+      // Issue #304: an Undo-pending trip remains in IndexedDB for five seconds by
+      // design, but it must not reappear on any list render during that window.
+      if (isTripDeletePending(v.id)){ cur.continue(); return; }
       // P1-1: date range filtering
       if (dateFrom && (v.pickupDate || '') < dateFrom){ cur.continue(); return; }
       if (dateTo && (v.pickupDate || '') > dateTo){ cur.continue(); return; }
@@ -7656,13 +7720,7 @@ function tripRow(t, {compact=false}={}){
     await renderAR(); await renderTrips(true);
   };
   const swipeDelete = async ()=>{
-    // Remove from UI immediately
-    d.remove();
-    showUndoToast(
-      `Trip ${escapeHtml(String(t.orderNo))}`,
-      async ()=>{ await deleteTrip(t.id); invalidateKPICache(); await renderTrips(true); await renderHome(); },
-      async ()=>{ await renderTrips(true); }
-    );
+    queueTripDelete(t, { rowEl: d });
   };
   return compact ? d : addSwipeActions(d, {
     onRight: t.isPaid ? null : markPaid,
@@ -14321,16 +14379,7 @@ function openTripWizard(existing=null){
     const delBtn = $('#delTrip', body);
     if (delBtn) delBtn.addEventListener('click', async ()=>{
       closeModal();
-      showUndoToast(
-        `Trip ${escapeHtml(String(trip.orderNo))}`,
-        async ()=>{
-          try{ const rec = await getReceipts(trip.orderNo);
-            for (const f of (rec?.files||[])) try{ await cacheDeleteReceipt(f.id); }catch(e){ console.warn("[FL]", e); } }catch(e){ console.warn("[FL]", e); }
-          await deleteTrip(trip.id); invalidateKPICache();
-          await renderTrips(true); await renderHome();
-        },
-        async ()=>{ await renderTrips(true); }
-      );
+      queueTripDelete(trip, { purgeReceiptCache: true });
     });
   }
   openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${escapeHtml(trip.orderNo)}`), body);
