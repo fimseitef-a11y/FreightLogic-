@@ -136,22 +136,19 @@ test('[DAC-04] the live parity gate sweeps every declared runtime asset, from th
     'as full production parity is the 2026-09-13 defect restated');
 });
 
-test('[DAC-05] admin-driver-ui.js specifically is requested, present, and deployable', () => {
-  // The named finding, asserted by name. DAC-01/02 are general and would catch a
-  // recurrence, but this one pins the exact file so a regression report reads as
-  // the same defect rather than a generic inventory failure.
+test('[DAC-05] admin-driver-ui.js is retired: not requested, not in the repo, not injected (#231 Phase C)', () => {
+  // The 2026-09-13 finding was this file 404ing behind an injected tag. Issue
+  // #231 Phase C then DELETED it: the admin surface lives on the separate-origin
+  // Admin Console. So the pin inverts — it must be gone from every axis at once,
+  // because a half-retirement (tag still injected, file gone) is that 404 again.
   const assets = inventory();
-  const entry = assets.get('admin-driver-ui.js');
-  const requesters = entry && entry.requesters;
-  ok(requesters, 'admin-driver-ui.js is no longer in the runtime asset inventory — if it was ' +
-    'genuinely retired, remove it from service-worker.js CORE and its injected <script> tag too');
-  ok([...requesters].some(r => r.includes('ADMIN_UI_TAG')),
-    'admin-driver-ui.js must still be reached through the injected ADMIN_UI_TAG; that injection ' +
-    'is why the 404 was invisible to every markup-based check');
-  ok(existsSync(path.join(REPO_ROOT, 'admin-driver-ui.js')), 'admin-driver-ui.js is missing from the repository');
-  const { excluded, by } = isExcluded('admin-driver-ui.js');
-  ok(!excluded, `admin-driver-ui.js is excluded by .assetsignore pattern "${by}" — this is the ` +
-    '2026-09-13 production 404 exactly, reintroduced');
+  ok(!assets.has('admin-driver-ui.js'),
+    'admin-driver-ui.js is back in the runtime asset inventory — the driver app must carry no admin surface');
+  ok(!existsSync(path.join(REPO_ROOT, 'admin-driver-ui.js')),
+    'admin-driver-ui.js exists again — Phase C deletes it rather than leaving a dormant privileged module');
+  const sw = readFileSync(path.join(REPO_ROOT, 'service-worker.js'), 'utf8');
+  ok(!/admin-driver-ui\.js\?v=|ADMIN_UI_TAG/.test(sw),
+    'service-worker.js still precaches or injects admin-driver-ui.js');
 });
 
 test('[DAC-06] internal audit/certification/reference material is never a deployed asset', () => {
