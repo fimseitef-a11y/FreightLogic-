@@ -1,6 +1,0 @@
-owner: gpt
-token: b14e7a92-8c5d-43f1-a6e9-2f70c4d18b35
-started_utc: 2026-09-22T01:49:00Z
-expected_release_utc: 2026-09-22T04:00:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js
-task: GitHub #304 trip-delete stale-card / repeated-delete repair plus governed app generation markers; no freight economics, schema, Worker-source, or physical-cert authority.
