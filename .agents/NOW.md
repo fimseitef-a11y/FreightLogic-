@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — (**v24.0.25 is DEPLOYED and OBSERVED** — verified by reading the job logs, not the green ticks: parity `35533600955` attempt 2 carries a live Worker timestamp, production SW `35539669806` shows precache `freightlogic-24.0.25` + five tabs after reload. Wrote the overdue superseding record `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-20.md`; m7 resolves to it, 13/13 gates clean. `CLAUDE.md`'s "still source-only" line is now stale but sits in GPT's `gpt-278-marker-lane` lock — reported, NOT edited across the lock. #278 is GPT's per their NOW row; not started here.) | 2026-09-20T22:20Z |
-| gpt | #304 trip-delete safety is merged/live as v24.0.29 with exact-main 748/0 + CodeQL/Live-Parity/Production-SW green. Runtime lock released. Finishing governance retirement PR #307, then release final lock and return idle. | 2026-09-22T02:30Z |
+| gpt | — idle — (#304 complete: v24.0.29 live; PR #306 runtime + PR #307 governance merged; 748/0 exact-main, CodeQL/Live-Parity/Production-SW green; both locks released. Remaining items are external/manual or separately coordinated.) | 2026-09-22T02:33Z |
 
 ---
 
