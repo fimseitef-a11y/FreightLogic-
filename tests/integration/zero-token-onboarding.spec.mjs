@@ -143,7 +143,7 @@ test('[ZTO-01] the driver app has no admin UI, no admin exports and no admin API
     const out = await app.page.evaluate(() => ({
       dom: ['#btnAdminToggle', '#adminPanel', '#adminToken', '#btnAdminSaveAccess', '#btnAdminCreate', '#adminUserList']
         .filter(sel => document.querySelector(sel)),
-      exports: Object.keys(window.__FL_TESTS || {}).filter(k => /^cloudAdmin|AdminAccess/.test(k)),
+      exports: Object.keys(window.__FL_TESTS || {}).filter(k => k.startsWith('cloudAdmin') || k.includes('AdminAccess')),
       adminScript: [...document.scripts].some(sc => /admin-driver-ui/.test(sc.src || '')),
     }));
     eq(out.dom.length, 0, `admin controls must be absent, found ${out.dom.join(', ')}`);
