@@ -4,14 +4,12 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-**Current production synchronization point (observed 2026-09-21): FreightLogic v24.0.28 / IndexedDB v16 / Worker v21.**
-PR #294 merged runtime v24.0.28 as `764ea091e2ae3157a9c9d7a532ab802147388220`; its exact PR head passed
-Tests `35657810077` (job `106525656602`) at **746/0 across 72 specs**.
-On current exact-main checkpoint `675e6fb0`, Live Parity `35661894518`
-(job `106538813802`) and Production Service Worker `35661894391`
-(job `106538814618`) both returned `VERDICT: PASS`, directly observing app/SW/manifest
-24.0.28, Worker v21, all 22 runtime assets, `freightlogic-24.0.28`, five tabs + Today after
-reload, and exactly one generation cache. Current exact-main Tests `35661894446` (job `106538812253`) passed **746/0 across 72 specs**; CodeQL `35661894363` (job `106538813341`) also passed. The later `0fc250cb` change stabilized only the F-9 test control; runtime bytes and generation stayed 24.0.28.
+**Current production synchronization point (observed 2026-09-22 UTC): FreightLogic v24.0.29 / IndexedDB v16 / Worker v21.**
+PR #306 merged runtime v24.0.29 as `ca99d50abf18557682f38e641c2b023041088ea6`; its exact PR head
+`cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed Tests `35678726412` at **748/0 across 73 specs**, with Lanes and CodeQL green.
+On settled checkpoint `98e447e3`, exact-main Tests `35679841575` (job `106594197228`) passed **748/0 across 73 specs** and CodeQL `35679841490` (job `106594197964`) passed. Live Parity `35679841528` (job `106594200002`) and Production Service Worker `35679841496` (job `106594196748`) both passed on attempt 1, directly observing app/SW/manifest 24.0.29, Worker v21, all 22 runtime assets, `freightlogic-24.0.29`, five tabs + Today after reload, and exactly one generation cache.
+
+The runtime-merge push also recorded the normal Cloudflare propagation boundary: Live Parity `35679161628` and Production Service Worker `35679161632` initially observed v24.0.28, then passed on attempt 2 with no code change once v24.0.29 was actually live. Keep both observations; do not convert the first attempt into a product failure or erase it.
 
 **A13's Worker-generation prerequisite is met, but the authenticated live vision-provider
 invocation and real-image quality remain unobserved.** A1-A13 remain deferred to the final
@@ -25,7 +23,7 @@ asset, and **not** a failed deploy. Declared runtime assets are **22** from 24.0
 before), and a parity or asset-coverage reading of "`voice-load.js` absent" is correct.
 Load intake is paste and type only; do not test for or report a voice path.
 
-**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production 24.0.28 / DB16 / Worker v21 is observed at the checkpoint above, but that does not select it as the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
+**Not a live test queue.** A1-A13 is **deferred by the operator's 2026-09-16 decision** to the final post-v24.5 candidate and runs **once** against it. *(Section C is no longer part of that wait: the five raw files were supplied on 2026-09-18, the reconciliation ran, and all six PASS criteria are recorded in section C. Its deferral was conditioned on the files being missing, and they are not.)* **Production 24.0.29 / DB16 / Worker v21 is observed at the checkpoint above, but that does not select it as the certification candidate** — the deferral names the final post-v24.5 candidate, and deploying a generation does not promote it into one. See `docs/CERTIFICATION_DEFERRAL_2026-09-16.md` before running any row below. The instrument is ready and remains open; it is deliberately not being run yet, and a partial A-section against a superseded generation is not evidence.
 
 **Candidate-specific row text below is intentionally not being rewritten in this documentation-only handoff.** Per the deferral decision, A1, A3, A9, A10 and A11 must be re-verified against the final redesigned shell before the device gate runs. Until then, do not execute stale generation-specific instructions as though they describe the final candidate.
 

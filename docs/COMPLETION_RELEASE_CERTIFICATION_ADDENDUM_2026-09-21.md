@@ -1,15 +1,55 @@
-# Completion release certification addendum — production 24.0.28 / DB16 / Worker v21
+# Completion release certification addendum — production 24.0.29 / DB16 / Worker v21
 
 Date: 2026-09-21
+Updated: 2026-09-22 UTC
 Supersedes: COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md
-Status: **HOLD — v24.0.28 exact PR-head automated tests, CodeQL, live all-asset parity and production service-worker checks are OBSERVED and PASSING. Physical iPhone A1-A13, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
+Status: **HOLD — v24.0.29 exact PR-head automated tests, CodeQL, live all-asset parity and production service-worker checks are OBSERVED and PASSING. Physical iPhone A1-A13, authenticated live vision-provider invocation/real-image benchmark, guarded Admin Console live proof, later #278 economics-policy work, repository-admin controls, and Safari/native Apple work remain open.**
 
 This addendum supersedes the 24.0.26 certification state without rewriting it. It preserves
-the directly observed v24.0.27 evidence as history and records the later direct v24.0.28
-production observation. It is a dated evidence checkpoint, not a claim that all FreightLogic
-work is complete.
+the directly observed v24.0.27 and v24.0.28 evidence as history and records the later direct
+v24.0.29 production observation. It is a dated evidence checkpoint, not a claim that all
+FreightLogic work is complete.
 
-## Current source candidate — v24.0.28
+## Current source candidate — v24.0.29
+
+PR #306 merged runtime v24.0.29 as `ca99d50abf18557682f38e641c2b023041088ea6`.
+Its exact PR head `cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed:
+
+- full suite `35678726412`: **748 passed / 0 failed across 73 spec files**;
+- Lanes `35678726404`: **PASS**;
+- CodeQL `35678726418`: **PASS**.
+
+v24.0.29 repairs Issue #304 without changing DB or Worker generation. Edit Trip → Delete and
+swipe-delete now share one stable-id pending-delete queue; the target is suppressed from every
+trip-list render immediately during the Undo window, duplicate queueing is refused, Undo/failure
+restores the row, and commit deletes only the exact stable-id record. TDS-01/TDS-02 prove immediate
+suppression, cross-render suppression, Undo restoration, exact-target deletion, and neighboring
+record survival. Historical order `960760` remains a separate data-history question and is not
+attributed to this defect without proof.
+
+## v24.0.29 live production observation of record
+
+Settled observation checkpoint: `98e447e3dc1ffe5d00e5793ab0725bde4e6a063a`.
+PR #307 is governance-only, so this checkpoint serves the same v24.0.29 runtime bytes merged by #306.
+
+- Live Parity `35679841528`, job `106594200002`: **VERDICT: PASS**. The log directly
+  observes app/SW/manifest **24.0.29**, Worker **v21**, all **22** declared runtime assets,
+  no runtime asset served as HTML, and **20** repository-only paths withheld.
+- Production Service Worker `35679841496`, job `106594196748`: **VERDICT: PASS**.
+  The worker reaches ACTIVATED, controls after reload, precaches `freightlogic-24.0.29`
+  with all 22 assets, renders five tabs + Today after reload, and leaves exactly one
+  generation cache.
+- CodeQL `35679841490`, job `106594197964`: **PASS**.
+- Exact-main full suite `35679841575`, job `106594197228`: **748 passed / 0 failed across 73 spec files**.
+
+The runtime-merge push preserved the deployment-propagation boundary rather than hiding it.
+Live Parity `35679161628` and Production Service Worker `35679161632` first observed the
+prior v24.0.28 generation while Cloudflare was still settling, then both passed on attempt 2
+with no code change once v24.0.29 was actually served. The first observations remain valid
+evidence about production at that instant; the settled passes are the release evidence.
+
+## Preserved source evidence — v24.0.28
+
 
 PR #294 merged as `764ea091e2ae3157a9c9d7a532ab802147388220`.
 Its exact PR head `121e1188c8fbd7eb02145c21bd9f27bc65e62abb` passed:
@@ -24,7 +64,7 @@ and the grade-A hero verdict can no longer claim a Tier 1 destination when no de
 was supplied. The relevant regressions are `ECON278-15`, `ECON278-16`, the expanded
 `ECON278-10`, and `SSI-19`.
 
-## v24.0.28 live production observation of record
+## Preserved live production observation — v24.0.28
 
 Current documentation checkpoint: `675e6fb0140f0e226219fc52955932703fc07a1c`.
 

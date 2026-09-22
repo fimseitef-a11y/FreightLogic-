@@ -2,16 +2,15 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.28 / DB16 / Worker v21 is now directly observed in production.**
+**FreightLogic v24.0.29 / DB16 / Worker v21 is now directly observed in production.**
 
-PR #294 merged the v24.0.28 runtime as `764ea091e2ae3157a9c9d7a532ab802147388220`. Its exact PR head `121e1188c8fbd7eb02145c21bd9f27bc65e62abb` passed Tests run `35657810077` (job `106525656602`) at **746 passed / 0 failed across 72 specs**, with Lanes `35657810158` and CodeQL `35657810273` passing. The release fixes explicit-zero fuel authority and the false Tier-1 hero claim without changing DB or Worker generation.
+PR #306 merged the v24.0.29 trip-delete safety runtime as `ca99d50abf18557682f38e641c2b023041088ea6`. Its exact PR head `cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed Tests `35678726412` at **748 passed / 0 failed across 73 specs**, with Lanes `35678726404` and CodeQL `35678726418` passing. The release fixes Issue #304 by making an Undo-pending trip immediately non-actionable, refusing duplicate queueing for the same stable id, restoring the row on Undo/failure, and deleting only the exact stable-id record after the Undo window. DB remains 16 and Worker remains v21.
 
-Production has now been observed on current exact-main checkpoint `675e6fb0140f0e226219fc52955932703fc07a1c`:
-Live Parity `35661894518` (job `106538813802`) returned `VERDICT: PASS`, directly observing app/SW/manifest **24.0.28**, Worker `/health` **v21**, all **22** declared runtime assets, and **20** repository-only paths withheld. Production Service Worker `35661894391` (job `106538814618`) returned `VERDICT: PASS`, observing `freightlogic-24.0.28`, all 22 assets in precache, five driver tabs + Today after reload, and exactly one generation cache. CodeQL `35661894363` (job `106538813341`) also passed. Current exact-main Tests `35661894446` (job `106538812253`) also passed **746/0 across 72 specs**.
+Production is directly observed on settled checkpoint `98e447e3dc1ffe5d00e5793ab0725bde4e6a063a` (PR #307 is governance-only and leaves the v24.0.29 runtime tree unchanged). Exact-main Tests `35679841575` (job `106594197228`) passed **748/0 across 73 specs** and CodeQL `35679841490` (job `106594197964`) passed. Live Parity `35679841528` (job `106594200002`) and Production Service Worker `35679841496` (job `106594196748`) both passed on attempt 1, directly observing app/SW/manifest **24.0.29**, Worker **v21**, all **22** declared runtime assets, **20** repository-only paths withheld, `freightlogic-24.0.29` as the sole generation cache, and five driver tabs + Today after reload.
 
-The runtime-merge push Tests run `35658640366` recorded **745/1** in F-9. Claude later reproduced that result as a **test-control timing dependency**, not another runtime defect: two `await sleep(20)` yields let the toast auto-hide timer or another caller land inside an otherwise synchronous assertion sequence. Test-only commit `0fc250cb0523bc040049cd25fbf6f12e9a5b376c` removed those yields; `app.js` remained byte-identical, the negative control still failed when the severity guard was removed, and current exact-main Tests `35661894446` (job `106538812253`) passed **746/0 across 72 specs**. No release generation changed for that stabilization.
+The runtime merge also preserved the deployment-propagation evidence rather than hiding it: Live Parity `35679161628` and Production Service Worker `35679161632` first observed the prior v24.0.28 generation while Cloudflare was still settling, then both passed on attempt 2 with no code change once v24.0.29 was actually served. That is deployment-race evidence, not a product failure and not a reason to erase the first observation.
 
-**This still does not close #278 or #252.** #278's disputed later policy scope still requires its independent Claude audit/joint-consensus gate. #252's privileged authenticated live provider invocation and real-screenshot quality benchmark remain unobserved. Physical iPhone A1-A13, guarded Admin Console live proof, repository-admin controls, and Safari/native Apple work also remain separate. The current certification authority is `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
+**This still does not close #278 or #252.** #278's disputed later policy scope still requires its independent Claude audit/joint-consensus gate. #252's privileged authenticated live provider invocation and real-screenshot quality benchmark remain unobserved. Physical iPhone A1-A13, guarded Admin Console live proof, repository-admin controls, and Safari/native Apple work also remain separate. The current certification authority remains `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
 
 **Historical v24.0.25 observation.** PR #277 merged as
 `436d677876c238bb6773d56a15d8f00a5699a3f9`; governance-only #280 was
@@ -292,7 +291,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.28';
+const APP_VERSION = '24.0.29';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -437,8 +436,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.28` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.28`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.29` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.29`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4678,6 +4677,18 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.29 "Delete Once, Know It Happened" — Issue #304 trip-delete safety
+
+**Scope.** Physical-iPhone testing exposed a data-safety UX defect in the Edit Trip → Delete path: persistence was intentionally deferred for the five-second Undo window, but the target trip card stayed visible/actionable during that delay and could appear undeleted. v24.0.29 unifies swipe-delete and modal-delete through one stable-id pending-delete queue, suppresses pending ids from every Trips re-render, refreshes Trips and Today immediately, refuses duplicate queueing, restores the row on Undo or commit failure, and commits deletion only for the exact stable-id record. Receipt-cache cleanup now follows the durable trip/receipt delete transaction. Historical order 960760 is **not** attributed to this mechanism without separate evidence.
+
+**Regression evidence.** Red-first test-only head `0890a968` produced Tests `35677930231` at **746 passed / 2 failed across 73 specs**, both new TDS failures only. The repaired exact PR head `cbdc36e1` passed **748/0 across 73 specs** in `35678726412`, with Lanes and CodeQL green. Merged runtime main `ca99d50a` then passed Tests `35679161545` **748/0** and CodeQL `35679161583`.
+
+**Production observation.** The first merge-push Live Parity/Production-SW attempts (`35679161628` / `35679161632`) observed v24.0.28 while Cloudflare was still propagating; attempt 2 of both passed without a code change and directly observed v24.0.29. The later settled governance checkpoint `98e447e3` passed Tests `35679841575` **748/0**, CodeQL `35679841490`, Live Parity `35679841528`, and Production Service Worker `35679841496` on attempt 1. Production serves app/SW/manifest v24.0.29, DB16, Worker v21, 22 runtime assets, one current-generation cache, and the five-tab Today shell.
+
+**Boundaries.** No freight economics, doctrine, historical reconciliation, DB schema, or Worker-source semantics changed. Physical iPhone A1-A13 remains a separate evidence gate.
+
+---
 
 ## v24.0.28 "Fuel Is Never Free" — fail closed on impossible fuel and invented geography
 
