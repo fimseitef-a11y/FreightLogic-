@@ -1,6 +1,0 @@
-owner: gpt
-token: f2743d3a-7af7-4e42-b6e4-91fbce8f67c9
-started_utc: 2026-09-22T20:39:00Z
-expected_release_utc: 2026-09-22T21:09:00Z
-paths: .agents/inbox/gpt-to-claude-shortcuts-webpush-lane-2026-09-22.md
-task: Request exact lane transfer required by operator-assigned Shortcuts/Web Push queue
