@@ -34,7 +34,7 @@ public final class FreightLogicScriptBridge: NSObject, WKScriptMessageHandlerWit
     public func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage,
-        replyHandler: @escaping (Any?, String?) -> Void
+        replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
     ) {
         guard message.frameInfo.isMainFrame else {
             replyHandler(Self.replyObject(BridgeResponse(requestID: "", ok: false, errorCode: .deniedFrame, errorMessage: "Main frame required")), nil)
