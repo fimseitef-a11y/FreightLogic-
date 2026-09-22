@@ -77,20 +77,33 @@ jobs:
             exit 1
           fi
           echo "Expecting Worker v$WANT"
-          echo "Waiting for propagation..."
-          sleep 10
-          code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 30 \
-            -H "Origin: $APP_ORIGIN" "$API_ORIGIN/health")
+          # Cloudflare rolls a deploy out across the edge; `wrangler deploy` can
+          # report "Deployed ... triggers" seconds before /health answers with
+          # the new generation. A single sleep therefore turns a SUCCESSFUL
+          # deploy into a reported failure -- observed on the v22 deploy (run
+          # 35762229263), which uploaded cleanly and then read version 21 ten
+          # seconds later, and which also SKIPPED the auto-triggered
+          # authenticated gate, because that job requires this workflow to have
+          # concluded success. Poll instead: same assertion, given the rollout
+          # time it actually needs. A version that never appears still fails.
+          code=""
+          for attempt in $(seq 1 20); do
+            code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 30 \
+              -H "Origin: $APP_ORIGIN" "$API_ORIGIN/health" || echo 000)
+            echo "attempt $attempt: HTTP $code $(cat body.txt 2>/dev/null)"
+            if [ "$code" = "200" ] && grep -q "\"version\":\"$WANT\"" body.txt; then
+              echo "Worker v$WANT is live (after $attempt attempt(s))."
+              exit 0
+            fi
+            sleep 10
+          done
           echo "HTTP $code"; cat body.txt; echo
           if [ "$code" != "200" ]; then
             echo "::error::/health returned $code, expected 200."
             exit 1
           fi
-          if ! grep -q "\"version\":\"$WANT\"" body.txt; then
-            echo "::error::/health did not report version $WANT."
-            exit 1
-          fi
-          echo "Worker v$WANT is live."
+          echo "::error::/health never reported version $WANT within the rollout window."
+          exit 1
 
       - name: Verify CORS targets the real app origin
         run: |

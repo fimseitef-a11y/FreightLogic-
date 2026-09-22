@@ -2,16 +2,24 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.32 / DB16 / Worker v22 source / Worker v21 deployed.** The app
-generation is DIRECTLY OBSERVED in production — Live Parity run `35752118359` and Production
-Service Worker run `35752118327`, both PASS on `main` @ `4ba9567`. **The Worker source is one
-generation ahead and the difference is not cosmetic:** v22 repairs the default
-`POST /extract-image` vision adapter, which the deployed v21 answers with **HTTP 502** on every
-call, so Issue #252 screenshot intake is inert in production until the Worker is deployed. That
-was observed, not inferred — Verify Authenticated Worker run `35756559469` against the deployed
-v21 — and the Worker v22 section below carries the full record. Deploy order: Worker first
-(Actions → Deploy Backup Worker, typed `DEPLOY`), then re-dispatch Verify Authenticated Worker;
-the app generation does not move with it.
+**FreightLogic v24.0.32 / DB16 / Worker v22 is DIRECTLY OBSERVED in production, and
+screenshot intake works live for the first time.** Live Parity run `35762451735` on `main` @
+`d3c02ca` PASS with the `workerVersion` pin at **22**, and Verify Authenticated Worker run
+`35762633659` reports `AUTHENTICATED WORKER VERDICT: PASS` — authority **6/0**,
+backup/delta/restore **21/0**, invite/claim **12/0**, and the line that matters:
+
+```
+PASS  live /extract-image provider path — HTTP 422 via workers-ai / @cf/moondream/moondream3.1-9B-A2B
+```
+
+**HTTP 422 is the pass here, and 502 was the defect.** 422 means the provider ran and the shared
+normalizer fail-closed on a synthetic 1x1 PNG that carries no load fields — provider invocation
+reaching normalization, which is what the verifier documents as evidence. The deployed v21
+answered that same call **502** because `env.AI.run` threw on a wrong input schema. See the
+Worker v22 section below.
+
+*Superseded and kept as history: this line read "Worker v22 source / Worker v21 deployed" and
+said screenshot intake was inert in production. It was, for about forty minutes.*
 
 v24.0.32 is the operator-resolved Issue #278 long-haul policy repair. It removes the
 distance-only `>250mi && < $1.45 True RPM => REJECT` veto without inventing a replacement
@@ -221,7 +229,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v22 source / v21 deployed** carries #252's `POST /extract-image` vision route (working only from v22 — the deployed v21 answers it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v22 source / v22 deployed** carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -4849,18 +4857,48 @@ on a real iPhone is unchanged and remains the operator's.
 Full suite on the exact candidate head, real headless Chromium, first attempt:
 **769 passed, 0 failed across 75 spec files.** Nothing was skipped, quarantined or weakened.
 
-### Not deployed
+### DEPLOYED and OBSERVED LIVE 2026-09-22
 
-**Source-only.** Production still serves Worker **v21** and therefore still 502s on screenshot
-intake. Deploy is an operator action — Actions → **Deploy Backup Worker** → dispatch with the
-typed `DEPLOY` confirmation, which is the guard this file records as working rather than
-broken. The app generation does not move with it and must not be bumped for this.
+This section shipped reading *"Source-only. Production still serves Worker v21 and therefore
+still 502s on screenshot intake."* That was true when written and stopped being true about forty
+minutes later. It is corrected here rather than quietly overwritten, for the reason this file now
+records against itself ten times.
 
-After deploying, **re-dispatch Verify Authenticated Worker** and require
-`live /extract-image provider path` to PASS (HTTP 200, or 422 for the synthetic 1x1 PNG, which
-is evidence the provider ran and reached shared normalization — not a screenshot-quality pass).
-Do not dispatch it twice inside one clock hour: `/claim` is 10/hr per IP and the gate spends up
-to 6, so the second result reads `UNOBSERVED`, which is neither a pass nor a product failure.
+Merged as `d3c02ca`. Deployed by run `35762229263` (`Uploaded freightlogic-backup` /
+`Deployed freightlogic-backup triggers`, Version ID `a815cb75-b073-49e9-addb-e70962f794ab`).
+Observed by **Live Parity run `35762451735`** — PASS with the parity gate's `workerVersion`
+pinned at 22 — and by **Verify Authenticated Worker run `35762633659`**:
+
+```
+PASS  live /extract-image provider path — HTTP 422 via workers-ai / @cf/moondream/moondream3.1-9B-A2B
+```
+
+plus authority 6/0, backup/delta/restore 21/0, invite/claim 12/0, and
+`AUTHENTICATED WORKER VERDICT: PASS`. **422 is the pass**: the provider ran and the shared
+normalizer fail-closed on a synthetic 1x1 PNG carrying no load fields. The deployed v21 answered
+the identical call **502**, which is the defect, so this is the repair observed in production
+rather than asserted from source.
+
+### The deploy workflow reported its own success as a failure
+
+**The propagation race, on the Worker this time — the eleventh occurrence in this file and the
+first on this component.** Run `35762229263` uploaded and deployed cleanly, then its post-deploy
+step slept **once** for 10 seconds, read `/health`, saw `{"ok":true,"version":"21"}` and exited
+1. Cloudflare had not finished rolling the new generation across the edge. The deploy was real;
+the check raced it.
+
+That was not cosmetic, and the cost is the part worth keeping: `verify-authenticated-worker.yml`
+triggers on `workflow_run` **gated on `conclusion == 'success'`**, so the raced failure
+**skipped the authenticated gate entirely** (run `35762297955`, conclusion `skipped`). A
+successful deploy reported as a failure silently withheld the observation that proves the
+deploy. The fix is not a longer sleep: the step now **polls** `/health` for the expected version
+with bounded retries and still fails if it never appears. Same assertion, given the rollout time
+it actually needs — the `UNOBSERVED`-is-not-`FAILURE` doctrine applied to a deploy gate.
+
+Nothing was re-deployed to establish this. The deploy had already landed, so the correct action
+was to re-observe rather than re-run: Live Parity first (read-only, cheap), then the
+authenticated gate once, in a **later clock hour** than the earlier dispatch, because `/claim` is
+10/hr per IP and the gate spends up to 6.
 
 ---
 

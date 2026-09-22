@@ -1574,7 +1574,7 @@ report "not installed" and name the alternative intake path.
 
 ---
 
-## P-08 — the DEPLOYED `/extract-image` default provider 502s on every call — CONFIRMED, FIXED in Worker v22 (source), OPEN in production
+## P-08 — the DEPLOYED `/extract-image` default provider 502s on every call — CONFIRMED, FIXED and CLOSED BY DEPLOY (Worker v22)
 
 **Severity: High.** Issue #252's screenshot intake is the operator's stated P0 workflow and it
 does not work in production. It has never worked in production.
@@ -1627,11 +1627,24 @@ shape alone fails **VEX-16 only** (VEX-17 stays green — the two halves are ind
 guarded); reverting the read alone fails both, because VEX-16's HTTP 200 precondition depends
 on it.
 
-**Status.** FIXED in source, **OPEN in production** until Worker v22 is deployed and Verify
-Authenticated Worker is re-dispatched with `live /extract-image provider path` PASS. A
-CLOSED-in-source finding is not a CLOSED-in-production finding — the distinction the P-series
-exists to make, and the reason this finding is numbered into that series rather than the
-source-side S-series.
+**Status — CLOSED BY DEPLOY 2026-09-22.** Worker v22 deployed by run `35762229263`
+(Version ID `a815cb75-b073-49e9-addb-e70962f794ab`) and observed by Live Parity `35762451735`
+(PASS, `workerVersion` pin 22) and Verify Authenticated Worker `35762633659`:
+
+```
+PASS  live /extract-image provider path — HTTP 422 via workers-ai / @cf/moondream/moondream3.1-9B-A2B
+```
+
+422 is the pass — the provider ran and the normalizer fail-closed on a synthetic 1x1 PNG with no
+load fields — against the 502 the same call produced on v21. A CLOSED-in-source finding is not a
+CLOSED-in-production finding, which is the distinction the P-series exists to make; this one is
+now closed on both.
+
+*Recorded with it:* the deploy run itself reported **failure**, because its post-deploy check
+slept once for 10 seconds and read the pre-rollout `/health`. That raced failure also skipped the
+`workflow_run`-triggered authenticated gate, which is gated on `conclusion == 'success'` — a
+successful deploy withholding the evidence that proves it. The check now polls rather than
+sleeping once.
 
 **Not claimed.** A green provider call proves binding, schema and normalizer wiring. It does
 not measure extraction quality: #252's sanitized real-screenshot benchmark needs operator
