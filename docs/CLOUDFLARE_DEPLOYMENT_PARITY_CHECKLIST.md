@@ -2,13 +2,22 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Source candidate is v24.0.30. Observed 2026-09-22 UTC: production serves v24.0.29 / DB16 / Worker v21.**
-v24.0.30 (Issue #278's `DEACTIVATED` outcome class) is source-only: it has not deployed and
-has not been observed. The production evidence below is about v24.0.29 and stays true until a
-superseding observation exists — a superseding record is due the day a shipped file DEPLOYS,
-not the day it merges. DB stays 16 and Worker stays v21, so no Worker deploy is required for
-this generation; deploy the app, then **re-dispatch** both live gates rather than citing the
-push-triggered runs.
+**Observed 2026-09-22 UTC: production serves v24.0.30 / DB16 / Worker v21.**
+PR #311 merged as `ea0416713ae716918745cad148f96a8f7664112b` (Issue #278's `DEACTIVATED`
+outcome class, plus the long-haul thresholds pinned on both sides). Exact PR-head Tests
+`35683496425`, Lanes `35683496430` and CodeQL `35683496439` passed; exact-main Tests
+`35683976838` and CodeQL `35683976839` passed on the merge commit. The local exact-head full
+suite was **758/0 across 74 specs**, first attempt.
+
+Both live gates were **re-dispatched** on `main` @ `ea041671` rather than cited from the
+push-triggered runs: Live Parity `35684405039` and Production Service Worker `35684408029`,
+both **success**. The Worker was not redeployed — `/health` stays **v21**, which is what this
+generation requires.
+
+The push-triggered pair (`35683976801`, `35683976815`) also passed. Recorded precisely: the ten
+documented push races are all about a run FAILING while it observed the previous generation
+mid-deploy, and a parity PASS cannot occur unless production already serves the source-derived
+generation. The re-dispatch remains the observation of record.
 
 Runtime merge `ca99d50abf18557682f38e641c2b023041088ea6` (PR #306) has exact PR-head
 Tests `35678726412` at **748/0 across 73 specs**, with Lanes `35678726404`
@@ -130,9 +139,10 @@ the day it merges.*
 
 ## Runtime state at the 2026-09-22 checkpoint
 
-- Observed production: App/PWA/SW **24.0.29**, DB **16**, Worker **v21**.
-- Source candidate: App/PWA/SW **24.0.30**, DB **16**, Worker **v21** — source and production
-  deliberately do NOT agree yet, and will not until v24.0.30 deploys and is re-observed.
+- App/PWA/SW **24.0.30**, DB **16**, Worker **v21**; source and observed production agree.
+- Runtime merge: `ea041671` (PR #311); exact PR-head Tests `35683496425` and exact-main Tests
+  `35683976838` both passed. Re-dispatched Live Parity `35684405039` and Production Service
+  Worker `35684408029` both **success** on that exact SHA.
 - Runtime merge: `ca99d50a` (PR #306); exact PR-head Tests `35678726412`:
   **748 passed / 0 failed across 73 specs**.
 - Settled current observation checkpoint: `98e447e3`.
