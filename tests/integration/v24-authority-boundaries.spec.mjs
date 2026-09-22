@@ -59,9 +59,11 @@ test('[V24-B03] explicit strategic band cannot rescue an out-of-density weak loa
   eq(outDensity.verdict, 'REJECT', 'strategic must not rescue weak out-of-density load');
 });
 
-test('[V24-B04] long-haul floor and home/replace exception preserve legacy behavior', async () => {
-  eq((await derive({ trueRPM: 1.44, totalMi: 500 })).verdict, 'REJECT', 'normal long haul under 1.45 must reject');
-  eq((await derive({ trueRPM: 1.44, totalMi: 500, floorRPM: 1.25, effectiveStrategic: true, effectiveReason: 'home' })).verdict, 'ACCEPT', 'going-home strategic exception should allow 1.44 long haul');
+test('[V24-B04] long-haul distance alone never vetoes otherwise acceptable economics', async () => {
+  const ordinary = await derive({ trueRPM: 1.44, totalMi: 500 });
+  eq(ordinary.verdict, 'ACCEPT', '500mi alone must not hard-reject an otherwise acceptable 1.44 True RPM load');
+  ok(ordinary.verdictReason !== 'Long haul under $1.45', 'retired distance-only long-haul reason must not survive');
+  eq((await derive({ trueRPM: 1.44, totalMi: 500, floorRPM: 1.25, effectiveStrategic: true, effectiveReason: 'home' })).verdict, 'ACCEPT', 'homeward strategic context remains allowed');
 });
 
 test('[V24-B05] true-cost and fuel-only margin reject thresholds are exact', async () => {
@@ -107,30 +109,27 @@ test('[V24-B11] canonical authority is deterministic for identical inputs', asyn
   eq(JSON.stringify(a), JSON.stringify(b), 'identical facts must yield byte-equivalent JSON');
 });
 
-test('[V24-B12] long-haul distance threshold is exact: 250 survives, 251 rejects by the long-haul rule', async () => {
-  // The long-haul gate is `totalMi > policy.longHaulMiles` with longHaulMiles = 250.
-  // Every neighbouring authority boundary in this spec is pinned on BOTH sides
-  // (1.39/1.40, 1.59/1.60, 35.01/35, 9.99/10, 1.24/1.25); this one was not, and
-  // V24-B04 exercises 500mi, comfortably inside the band. A contextual replacement
-  // could therefore move or drop the real threshold with the suite still green —
-  // the OI-11 failure mode. This pins the SHIPPED number; it takes no position on
-  // whether 250 is the right number (see issue #278's long-haul addendum).
+test('[V24-B12] crossing the retired 250-mile boundary cannot change verdict by distance alone', async () => {
   const at = await derive({ trueRPM: 1.44, totalMi: 250 });
-  eq(at.verdict, 'ACCEPT', '250mi is not greater than longHaulMiles, so the long-haul rule must not fire');
-
   const over = await derive({ trueRPM: 1.44, totalMi: 251 });
-  eq(over.verdict, 'REJECT', '251mi must cross the long-haul distance threshold');
-  // Assert the REASON, not just the verdict: a rejection produced by any other rule
-  // would satisfy a verdict-only assertion while the long-haul threshold had moved.
-  eq(over.verdictReason, 'Long haul under $1.45', 'the rejection must come from the long-haul rule specifically');
+  eq(at.verdict, 'ACCEPT', '250mi should remain acceptable on these facts');
+  eq(over.verdict, 'ACCEPT', '251mi should remain acceptable on identical economics');
+  ok(over.verdictReason !== 'Long haul under $1.45', '251mi must not resurrect the retired long-haul veto');
 });
 
-test('[V24-B13] long-haul RPM threshold is exact at a fixed long distance: 1.44 rejects, 1.45 survives', async () => {
-  const under = await derive({ trueRPM: 1.44, totalMi: 251 });
-  eq(under.verdict, 'REJECT', '1.44 is below longHaulMinRPM');
-  eq(under.verdictReason, 'Long haul under $1.45', 'rejection must be the long-haul rule');
-  const atFloor = await derive({ trueRPM: 1.45, totalMi: 251 });
-  eq(atFloor.verdict, 'ACCEPT', '1.45 is not below longHaulMinRPM and must clear the long-haul rule');
+test('[V24-B13] very long mileage stays contextual while independent hard gates remain authoritative', async () => {
+  const long = await derive({ trueRPM: 1.44, totalMi: 900 });
+  eq(long.verdict, 'ACCEPT', '900mi alone must not hard-reject otherwise acceptable economics');
+
+  const fatigued = await derive({ trueRPM: 1.44, totalMi: 900, fatigue: 8 });
+  eq(fatigued.verdict, 'REJECT', 'fatigue safety veto must still reject a very long load');
+
+  const weakDestination = await derive({
+    trueRPM: 1.44,
+    totalMi: 900,
+    geo: { intoDensity: false, destDensity: 'None', dT1: false, dT2: false },
+  });
+  eq(weakDestination.verdict, 'REJECT', 'out-of-density RPM gate must remain independent of distance policy');
 });
 
 export async function runSpec() {
