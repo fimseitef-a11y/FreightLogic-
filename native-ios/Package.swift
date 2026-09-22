@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "FreightLogicNative",
+    platforms: [
+        .iOS(.v17),
+        .macOS(.v14)
+    ],
     products: [
         .library(name: "FreightLogicNativeCore", targets: ["FreightLogicNativeCore"]),
         .library(name: "FreightLogicAppleBridge", targets: ["FreightLogicAppleBridge"])
