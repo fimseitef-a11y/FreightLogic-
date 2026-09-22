@@ -2,12 +2,25 @@
 
 ## Project Overview
 
-**SOURCE CANDIDATE IS v24.0.31. LAST DIRECTLY OBSERVED PRODUCTION IS v24.0.30 / DB16 / Worker v21.**
+**FreightLogic v24.0.31 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
 
-v24.0.31 carries Issue #278's operating-arrangement / rate-basis semantics and a
-**backup data-loss defect found while shipping it**. It is source-only until it merges,
-deploys and is observed; the v24.0.30 paragraphs below stay true until then. `DB_VERSION`
-remains **16** and the Worker remains **v21**.
+v24.0.31 carries Issue #278's operating-arrangement / rate-basis semantics and a **backup
+data-loss defect found while shipping it**. `DB_VERSION` remains **16** and the Worker remains
+**v21**; no Worker deploy was needed.
+
+Merged as `ad6a6fb2824e97fffa54cd4868f5020a9198102a`. Exact PR head `56e20ba` passed Tests,
+Lanes and CodeQL. Production Service Worker run `35690173735` passed, and **live parity was
+re-dispatched after propagation** — run `35690508284`, `VERDICT: PASS`.
+
+**The push race recurred, and this time through my own impatience.** The first parity runs —
+push-triggered and a re-dispatch fired about a minute after the merge — both FAILED with seven
+checks reporting the PREVIOUS generation, the failing line naming it exactly:
+`FAIL  Manifest name v24.0.31 — FreightLogic v24.0.30`. That is the documented propagation case,
+not a mismatch: a re-dispatch only supersedes a raced run if it is dispatched *after* Cloudflare
+has finished, and mine was not. Waiting and re-dispatching returned PASS with no code change.
+The rule stands and is worth restating with its own counter-example attached: **a re-dispatch is
+not a way of making a failure go away, and a re-dispatch fired too early is just a second raced
+run.**
 
 **Historical production observation — v24.0.30.**
 
@@ -4814,11 +4827,16 @@ fails for the wrong reason proves nothing, and both were fixed before the contro
 Full suite on the exact candidate head, real headless Chromium: **767 passed, 0 failed across
 75 spec files**, twice, at ~148s.
 
-### Not deployed
+### DEPLOYED and OBSERVED LIVE 2026-09-22
 
-**Source-only.** After merging, let Cloudflare deploy, then **re-dispatch** live parity and the
-production service-worker gate rather than citing the push-triggered runs. No Worker deploy is
-needed: `/health` stays v21.
+Merged as `ad6a6fb2`. Production Service Worker `35690173735` PASS; live parity **re-dispatched
+after propagation**, run `35690508284`, PASS. Worker not redeployed — `/health` stays v21.
+
+The first two parity attempts failed, both naming the previous generation
+(`FAIL  Manifest name v24.0.31 — FreightLogic v24.0.30`), because the re-dispatch was fired
+about a minute after the merge. That is the propagation race with a self-inflicted cause, and it
+is recorded rather than glossed: a re-dispatch supersedes a raced run only if it happens after
+the deploy lands.
 
 **Still HOLD.** Physical iPhone **A1-A13** (#226), the M6 conflict review, #252's provider
 benchmark, #231 and #222 are unchanged. **#278 stays OPEN** — its disputed long-haul scope still

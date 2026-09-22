@@ -2,7 +2,12 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Observed 2026-09-22 UTC: production serves v24.0.30 / DB16 / Worker v21.**
+**Observed 2026-09-22 UTC: production serves v24.0.31 / DB16 / Worker v21.**
+Merged as `ad6a6fb2` (PR #314 — Issue #278 rate basis + the backup-watermark data-loss fix).
+Live parity was **re-dispatched after propagation**: run `35690508284`, PASS. Production Service
+Worker run `35690173735`, PASS. The two earlier parity attempts failed naming the previous
+generation (`Manifest name v24.0.31 — FreightLogic v24.0.30`) because the re-dispatch was fired
+about a minute after the merge — the propagation race, not a mismatch.
 PR #311 merged as `ea0416713ae716918745cad148f96a8f7664112b` (Issue #278's `DEACTIVATED`
 outcome class, plus the long-haul thresholds pinned on both sides). Exact PR-head Tests
 `35683496425`, Lanes `35683496430` and CodeQL `35683496439` passed; exact-main Tests
@@ -139,7 +144,7 @@ the day it merges.*
 
 ## Runtime state at the 2026-09-22 checkpoint
 
-- App/PWA/SW **24.0.30**, DB **16**, Worker **v21**; source and observed production agree.
+- App/PWA/SW **24.0.31**, DB **16**, Worker **v21**; source and observed production agree.
 - Runtime merge: `ea041671` (PR #311); exact PR-head Tests `35683496425` and exact-main Tests
   `35683976838` both passed. Re-dispatched Live Parity `35684405039` and Production Service
   Worker `35684408029` both **success** on that exact SHA.
