@@ -68,6 +68,8 @@ The future App Intents layer should map Siri/Shortcuts language to this small ca
 
 ### Phase 1 — requires a Mac with current Xcode / iOS 27 SDK
 
+**Current CI gate:** PR #321's macOS runner reported Xcode 26.6 / Swift 6.3.3. Apple now deprecates `openAppWhenRun` in favor of iOS 27 `supportedModes`, so the real App Intents conformances are intentionally not authored against the older SDK. The framework-independent action/execution policy is implemented first; App Intents code waits for an Xcode 27-capable compiler so the current API is compiled rather than guessed.
+
 Create the thin host app and validate the bridge inside a `WKWebView`. Add App Intents for the action catalog and use App Intents Testing to exercise them through system pathways. Mutating intents must preserve confirmation/foreground requirements appropriate to the action.
 
 ### Phase 2 — native intake assistance
