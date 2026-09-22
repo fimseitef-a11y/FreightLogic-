@@ -1,6 +1,10 @@
 import Foundation
 
-public enum BridgeAction: String, Codable, CaseIterable, Sendable {
+public enum BridgeContractVersion {
+    public static let current = 1
+}
+
+public enum FreightLogicAction: String, Codable, CaseIterable, Sendable {
     case evaluateLoad
     case addTrip
     case addExpense
@@ -21,6 +25,10 @@ public enum BridgeAction: String, Codable, CaseIterable, Sendable {
             return false
         }
     }
+}
+
+public enum NativeCapabilityAction: String, Codable, CaseIterable, Sendable {
+    case capabilities
 }
 
 public indirect enum BridgeValue: Equatable, Sendable, Codable {
@@ -66,42 +74,30 @@ public enum BridgeValidationError: String, Error, Equatable, Sendable {
     case forbiddenCredentialKey
 }
 
-public struct BridgeRequest: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
-    public static let maximumEncodedBytes = 65_536
-    public static let maximumPayloadDepth = 8
-
-    public let version: Int
-    public let requestID: String
-    public let action: BridgeAction
-    public let payload: [String: BridgeValue]
-
-    public init(
-        version: Int = BridgeRequest.currentVersion,
-        requestID: String,
-        action: BridgeAction,
-        payload: [String: BridgeValue] = [:]
-    ) {
-        self.version = version
-        self.requestID = requestID
-        self.action = action
-        self.payload = payload
-    }
-
-    public func validate(using encoder: JSONEncoder = JSONEncoder()) -> BridgeValidationError? {
-        guard version == Self.currentVersion else { return .unsupportedVersion }
-        guard !requestID.isEmpty, requestID.count <= 128 else { return .invalidRequestID }
-        guard Self.depth(of: .object(payload)) <= Self.maximumPayloadDepth else { return .payloadTooDeep }
-        guard !Self.containsForbiddenCredentialKey(in: .object(payload)) else { return .forbiddenCredentialKey }
-        guard let size = try? encoder.encode(self).count, size <= Self.maximumEncodedBytes else { return .payloadTooLarge }
-        return nil
-    }
+private enum BridgePayloadPolicy {
+    static let maximumEncodedBytes = 65_536
+    static let maximumPayloadDepth = 8
 
     private static let forbiddenNormalizedKeys: Set<String> = [
         "token", "admintoken", "drivertoken", "bearertoken", "authorizationheader",
         "credential", "password", "passphrase", "applockpin", "adminpin",
         "secret", "apikey"
     ]
+
+    static func validate<T: Encodable>(
+        version: Int,
+        requestID: String,
+        payload: [String: BridgeValue],
+        envelope: T,
+        using encoder: JSONEncoder
+    ) -> BridgeValidationError? {
+        guard version == BridgeContractVersion.current else { return .unsupportedVersion }
+        guard !requestID.isEmpty, requestID.count <= 128 else { return .invalidRequestID }
+        guard depth(of: .object(payload)) <= maximumPayloadDepth else { return .payloadTooDeep }
+        guard !containsForbiddenCredentialKey(in: .object(payload)) else { return .forbiddenCredentialKey }
+        guard let size = try? encoder.encode(envelope).count, size <= maximumEncodedBytes else { return .payloadTooLarge }
+        return nil
+    }
 
     private static func normalizeKey(_ key: String) -> String {
         key.lowercased().filter { $0.isLetter || $0.isNumber }
@@ -134,6 +130,67 @@ public struct BridgeRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct FreightLogicActionRequest: Codable, Equatable, Sendable {
+    public static let maximumEncodedBytes = BridgePayloadPolicy.maximumEncodedBytes
+    public static let maximumPayloadDepth = BridgePayloadPolicy.maximumPayloadDepth
+
+    public let version: Int
+    public let requestID: String
+    public let action: FreightLogicAction
+    public let payload: [String: BridgeValue]
+
+    public init(
+        version: Int = BridgeContractVersion.current,
+        requestID: String,
+        action: FreightLogicAction,
+        payload: [String: BridgeValue] = [:]
+    ) {
+        self.version = version
+        self.requestID = requestID
+        self.action = action
+        self.payload = payload
+    }
+
+    public func validate(using encoder: JSONEncoder = JSONEncoder()) -> BridgeValidationError? {
+        BridgePayloadPolicy.validate(
+            version: version,
+            requestID: requestID,
+            payload: payload,
+            envelope: self,
+            using: encoder
+        )
+    }
+}
+
+public struct NativeCapabilityRequest: Codable, Equatable, Sendable {
+    public let version: Int
+    public let requestID: String
+    public let action: NativeCapabilityAction
+    public let payload: [String: BridgeValue]
+
+    public init(
+        version: Int = BridgeContractVersion.current,
+        requestID: String,
+        action: NativeCapabilityAction,
+        payload: [String: BridgeValue] = [:]
+    ) {
+        self.version = version
+        self.requestID = requestID
+        self.action = action
+        self.payload = payload
+    }
+
+    public func validate(using encoder: JSONEncoder = JSONEncoder()) -> BridgeValidationError? {
+        BridgePayloadPolicy.validate(
+            version: version,
+            requestID: requestID,
+            payload: payload,
+            envelope: self,
+            using: encoder
+        )
+    }
+}
+
 public enum BridgeErrorCode: String, Codable, Sendable {
     case invalidEnvelope
     case unsupportedVersion
@@ -154,7 +211,7 @@ public struct BridgeResponse: Codable, Equatable, Sendable {
     public let errorMessage: String?
 
     public init(
-        version: Int = BridgeRequest.currentVersion,
+        version: Int = BridgeContractVersion.current,
         requestID: String,
         ok: Bool,
         result: BridgeValue? = nil,
