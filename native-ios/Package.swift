@@ -9,13 +9,18 @@ let package = Package(
     ],
     products: [
         .library(name: "FreightLogicNativeCore", targets: ["FreightLogicNativeCore"]),
-        .library(name: "FreightLogicAppleBridge", targets: ["FreightLogicAppleBridge"])
+        .library(name: "FreightLogicAppleBridge", targets: ["FreightLogicAppleBridge"]),
+        .library(name: "FreightLogicNativeHost", targets: ["FreightLogicNativeHost"])
     ],
     targets: [
         .target(name: "FreightLogicNativeCore"),
         .target(
             name: "FreightLogicAppleBridge",
             dependencies: ["FreightLogicNativeCore"]
+        ),
+        .target(
+            name: "FreightLogicNativeHost",
+            dependencies: ["FreightLogicNativeCore", "FreightLogicAppleBridge"]
         ),
         .testTarget(
             name: "FreightLogicNativeCoreTests",
@@ -24,6 +29,10 @@ let package = Package(
         .testTarget(
             name: "FreightLogicAppleBridgeTests",
             dependencies: ["FreightLogicAppleBridge", "FreightLogicNativeCore"]
+        ),
+        .testTarget(
+            name: "FreightLogicNativeHostTests",
+            dependencies: ["FreightLogicNativeHost", "FreightLogicNativeCore"]
         )
     ]
 )
