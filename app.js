@@ -1,7 +1,23 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.29 USA ENGINE
+/** FreightLogic v24.0.30 USA ENGINE
+ *  v24.0.30 "Not A Loss": Issue #278's DEACTIVATED/WITHDRAWN outcome class, the
+ *          one later addendum on which the ChatGPT evidence pass (2026-09-20)
+ *          and the independent Claude audit (2026-09-22) agree with no
+ *          disagreement — it is data semantics, not the disputed market policy.
+ *          A broker/platform withdrawing the operator's BID is a different event
+ *          from CANCELLED, which is about the LOAD, so it gets its own member of
+ *          LIFECYCLE_OPPORTUNITY rather than being folded into a neighbour. It is
+ *          CENSORED evidence: excluded from every win-rate denominator and from
+ *          clearing-price calibration, and reported as an exclusion rather than
+ *          merely absent. getBidWinRateStats' excludedExpired was a RESIDUAL
+ *          bucket (recent - adjudicated) that would have reported the first
+ *          deactivation as an expiry; both are counted explicitly now. logBid
+ *          accepts 'deactivated' and still fails closed on anything unknown, and
+ *          the evaluator result card offers the fourth pill so the class is
+ *          actually reachable. No economics, verdict, grade, bid, schema or
+ *          Worker semantics change. DB stays 16, Worker stays v21.
  *  v24.0.29 "Delete Once, Know It Happened": Issue #304. Edit Trip → Delete
  *          used the five-second Undo queue but, unlike swipe-delete, left the
  *          target card visible/actionable until IndexedDB commit. A physical
@@ -434,7 +450,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.29';
+const APP_VERSION = '24.0.30';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -1503,7 +1519,7 @@ async function importHistoricalOpportunities(records, opts = {}){
       // adjudicated/executed state when the operator supplied explicit
       // award/completion evidence (e.g. the confirmed 2026-08-24 expired batch).
       const operatorAwarded = rec.operatorConfirmed === true &&
-        (rec.awarded === true || ['WON','LOST','EXPIRED','CANCELLED'].includes(rec.opportunity));
+        (rec.awarded === true || ['WON','LOST','EXPIRED','CANCELLED','DEACTIVATED'].includes(rec.opportunity));
       const opportunity = isQuote && !operatorAwarded
         ? (rec.opportunity === 'QUOTED' ? 'QUOTED' : 'SEEN')
         : (LIFECYCLE_OPPORTUNITY.includes(rec.opportunity) ? rec.opportunity : 'SEEN');
@@ -2319,10 +2335,20 @@ async function intakeOpportunity(raw, opts = {}){
    The three dimensions are deliberately not collapsed into one enum, because
    the real distinctions are load-bearing for analytics:
      EXPIRED is not LOST.  CANCELLED is not LOST.
+     DEACTIVATED is not LOST, and it is not CANCELLED either.
      WON does not imply DELIVERED.  DELIVERED does not imply PAID.
+
+   Issue #278: DEACTIVATED is the platform/broker withdrawing the OPERATOR'S
+   BID. CANCELLED already existed and is about the LOAD — different subject,
+   different event, so folding one into the other would lose exactly the
+   distinction these separate dimensions exist to keep. A deactivation is
+   CENSORED evidence: nobody outbid the operator, so it is not a loss, and it
+   is not a clearing-price observation unless later evidence shows the load
+   awarded at a known rate. Whether a deactivation means the bid was too high
+   is the operator's HYPOTHESIS and is recorded as one, never as a cause.
    ═══════════════════════════════════════════════════════════════ */
 
-const LIFECYCLE_OPPORTUNITY = Object.freeze(['SEEN','QUOTED','BID','WON','LOST','EXPIRED','CANCELLED']);
+const LIFECYCLE_OPPORTUNITY = Object.freeze(['SEEN','QUOTED','BID','WON','LOST','EXPIRED','CANCELLED','DEACTIVATED']);
 const LIFECYCLE_EXECUTION   = Object.freeze(['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP','DELIVERED','FELL_THROUGH']);
 const LIFECYCLE_SETTLEMENT  = Object.freeze(['NOT_INVOICED','INVOICED','OVERDUE','PAID','BAD_DEBT']);
 const LIFECYCLE_MUTATION_SOURCES = Object.freeze(['USER','BID_HISTORY','TRIP','GPS','IMPORT','RESTORE','MIGRATION']);
@@ -2409,14 +2435,20 @@ function lifecycleDisplayStage(lc){
   if (lc.opportunity === 'QUOTED') return 'QUOTED';
   if (lc.opportunity === 'EXPIRED') return 'EXPIRED';
   if (lc.opportunity === 'CANCELLED') return 'CANCELLED';
+  if (lc.opportunity === 'DEACTIVATED') return 'DEACTIVATED';
   if (lc.opportunity === 'LOST') return 'LOST';
   return 'SEEN';
 }
 
 /* ---- analytics denominators: the whole reason the dimensions stay separate ---- */
 
-// numerator WON, denominator WON + LOST. EXPIRED and CANCELLED are excluded
-// because neither is an adjudicated loss — counting them understates win rate.
+// numerator WON, denominator WON + LOST. EXPIRED, CANCELLED and DEACTIVATED
+// are excluded because none of them is an adjudicated loss — counting them
+// understates win rate. DEACTIVATED (#278) is the newest of the three and the
+// easiest to get wrong: mapping a withdrawn bid onto LOST for convenience puts
+// a loss that never happened into the denominator AND trains the clearing-price
+// model with it. The exclusions are REPORTED, not merely absent, so the
+// denominator can be audited rather than trusted.
 function lifecycleWinRate(rows){
   const list = (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.normalMarketEligible !== false);
   const won = list.filter(r => r.opportunity === 'WON').length;
@@ -2426,6 +2458,7 @@ function lifecycleWinRate(rows){
     won, lost, denominator,
     excludedExpired: list.filter(r => r.opportunity === 'EXPIRED').length,
     excludedCancelled: list.filter(r => r.opportunity === 'CANCELLED').length,
+    excludedDeactivated: list.filter(r => r.opportunity === 'DEACTIVATED').length,
     excludedDzExit: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.deadZoneExit === true).length,
     excludedDryRun: (Array.isArray(rows) ? rows : []).filter(r => r?.cohort?.dryRun === true).length,
     // null, not 0 — an unknown rate is not a 0% rate (M1's UNKNOWN doctrine).
@@ -12358,13 +12391,15 @@ function _mwRenderDecision(out, d){
     html += bidRangeHTML(bidRange);
   }
 
-  // ── v23.8.2: Bid Outcome Log — Won/Lost/Expired, wired to logBid() ──
+  // ── v23.8.2: Bid Outcome Log — wired to logBid(). #278 added Deactivated,
+  //    which is CENSORED evidence, not a loss (see LIFECYCLE_OPPORTUNITY). ──
   if (bidRange){
     html += `<div id="mwBidOutcomeSlot" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="muted" style="font-size:11px">Bid outcome:</span>
       <button class="pill" data-outcome="won" id="mwOutcomeWon">✅ Won</button>
       <button class="pill" data-outcome="rejected" id="mwOutcomeLost">❌ Lost</button>
       <button class="pill" data-outcome="expired" id="mwOutcomeExpired">⏱️ Expired</button>
+      <button class="pill" data-outcome="deactivated" id="mwOutcomeDeactivated" title="The broker or platform withdrew the auction — not a loss">🚫 Deactivated</button>
     </div>`;
   }
 
@@ -12482,14 +12517,14 @@ function _mwRenderDecision(out, d){
     brokerNotesField.addEventListener('input', _renderBrokerNotesBtn);
   }
 
-  // v23.8.2: Bid Outcome Log — Won/Lost/Expired → logBid()
+  // v23.8.2: Bid Outcome Log → logBid(). #278: Deactivated is a fourth outcome.
   const outcomeSlot = $('#mwBidOutcomeSlot', out);
   if (outcomeSlot){
     const outcomeBtns = Array.from(outcomeSlot.querySelectorAll('[data-outcome]'));
     outcomeBtns.forEach(btn => {
       btn.addEventListener('click', async ()=>{
         haptic(10);
-        const outcome = btn.dataset.outcome; // 'won' | 'rejected' | 'expired' — matches logBid()'s accepted set
+        const outcome = btn.dataset.outcome; // 'won' | 'rejected' | 'expired' | 'deactivated' — matches logBid()'s accepted set
         const brokerVal = normBroker($('#mwBroker')?.value);
         const bidVals = bidRange ? Object.values(bidRange).map(b => b.amount).filter(v => v > 0) : [];
         const bidAmt = bidVals.length ? Math.max(...bidVals) : revenue;
@@ -19342,7 +19377,10 @@ async function logBid({ loadId, broker, origin, destination, miles, postedTarget
     bidAmount: posNum(bidAmount),
     spread: posNum(postedTarget) - posNum(bidAmount),
     bidRPM: posNum(miles) > 0 ? posNum(bidAmount) / posNum(miles) : 0,
-    outcome: ['won', 'expired', 'rejected'].includes(outcome) ? outcome : 'expired',
+    // #278: 'deactivated' is the platform/broker withdrawing the bid. It is
+    // accepted as itself; the fallback still fails closed, so widening the set
+    // did not turn this into a pass-through.
+    outcome: ['won', 'expired', 'rejected', 'deactivated'].includes(outcome) ? outcome : 'expired',
     timestamp: Date.now(),
     timeWindow: getCurrentTimeWindow().key,
   };
@@ -19364,6 +19402,7 @@ async function logBid({ loadId, broker, origin, destination, miles, postedTarget
     // separate dimensions (see lifecycleWinRate).
     opportunity: record.outcome === 'won' ? 'WON'
       : record.outcome === 'rejected' ? 'LOST'
+      : record.outcome === 'deactivated' ? 'DEACTIVATED'
       : 'EXPIRED',
     sourceRefs: { bidHistoryIds: [record.id] },
   }, { source: 'BID_HISTORY', sourceId: record.id, reason: `bid outcome ${record.outcome}` });
@@ -19382,6 +19421,13 @@ async function getBidWinRateStats(daysBack = 30) {
   // award decision — so it is excluded, exactly as lifecycleWinRate() excludes
   // EXPIRED. Counting it understates the win rate on every board you watched.
   const adjudicated = recent.filter(b => b.outcome === 'won' || b.outcome === 'rejected');
+  // #278: excludedExpired used to be `recent.length - adjudicated.length`, a
+  // RESIDUAL bucket that silently absorbs every non-adjudicated outcome added
+  // later — so the first deactivation would have been reported as an expiry,
+  // which is the same conflation this issue exists to remove, one layer down.
+  // Both are counted explicitly now.
+  const expiredOnly = recent.filter(b => b.outcome === 'expired');
+  const deactivatedOnly = recent.filter(b => b.outcome === 'deactivated');
   const winningSpreads = won.map(b => b.spread / b.postedTarget);
   const avgWinningDiscount = winningSpreads.length > 0
     ? winningSpreads.reduce((a, v) => a + v, 0) / winningSpreads.length
@@ -19401,7 +19447,8 @@ async function getBidWinRateStats(daysBack = 30) {
   return {
     totalBids: recent.length,
     adjudicatedBids: adjudicated.length,
-    excludedExpired: recent.length - adjudicated.length,
+    excludedExpired: expiredOnly.length,
+    excludedDeactivated: deactivatedOnly.length,
     wins: won.length,
     // null, not 0, when nothing was adjudicated — an unknown rate is not 0%.
     winRate: adjudicated.length > 0 ? won.length / adjudicated.length : null,
