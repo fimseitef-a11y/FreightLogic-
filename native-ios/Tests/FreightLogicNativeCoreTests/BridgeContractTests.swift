@@ -2,22 +2,26 @@ import XCTest
 @testable import FreightLogicNativeCore
 
 final class BridgeContractTests: XCTestCase {
-    func testActionAllowlistIsExact() {
+    func testFreightActionAllowlistIsExact() {
         XCTAssertEqual(
-            Set(BridgeAction.allCases.map(\.rawValue)),
+            Set(FreightLogicAction.allCases.map(\.rawValue)),
             Set(["evaluateLoad", "addTrip", "addExpense", "addFuel", "markPaid", "accountsReceivable", "trueRPM", "bestMove", "startTrip", "pickup", "delivered"])
         )
     }
 
+    func testNativeCapabilityAllowlistIsNarrow() {
+        XCTAssertEqual(NativeCapabilityAction.allCases, [.capabilities])
+    }
+
     func testMutationClassification() {
-        XCTAssertFalse(BridgeAction.evaluateLoad.mutatesFreightLogicState)
-        XCTAssertFalse(BridgeAction.trueRPM.mutatesFreightLogicState)
-        XCTAssertTrue(BridgeAction.addTrip.mutatesFreightLogicState)
-        XCTAssertTrue(BridgeAction.delivered.mutatesFreightLogicState)
+        XCTAssertFalse(FreightLogicAction.evaluateLoad.mutatesFreightLogicState)
+        XCTAssertFalse(FreightLogicAction.trueRPM.mutatesFreightLogicState)
+        XCTAssertTrue(FreightLogicAction.addTrip.mutatesFreightLogicState)
+        XCTAssertTrue(FreightLogicAction.delivered.mutatesFreightLogicState)
     }
 
     func testRoundTripPreservesNestedPayload() throws {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-1",
             action: .evaluateLoad,
             payload: [
@@ -27,12 +31,12 @@ final class BridgeContractTests: XCTestCase {
             ]
         )
         let data = try JSONEncoder().encode(request)
-        XCTAssertEqual(try JSONDecoder().decode(BridgeRequest.self, from: data), request)
+        XCTAssertEqual(try JSONDecoder().decode(FreightLogicActionRequest.self, from: data), request)
         XCTAssertNil(request.validate())
     }
 
     func testUnknownDeadheadCanRemainNull() {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-unknown-dh",
             action: .evaluateLoad,
             payload: ["deadheadMiles": .null]
@@ -41,7 +45,7 @@ final class BridgeContractTests: XCTestCase {
     }
 
     func testCredentialKeysAreRejectedRecursively() {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-secret",
             action: .bestMove,
             payload: ["nested": .object(["app_lock_pin": .string("must-not-cross-bridge")])]
@@ -49,8 +53,17 @@ final class BridgeContractTests: XCTestCase {
         XCTAssertEqual(request.validate(), .forbiddenCredentialKey)
     }
 
+    func testNativeCapabilityRequestAlsoRejectsCredentialKeys() {
+        let request = NativeCapabilityRequest(
+            requestID: "cap-secret",
+            action: .capabilities,
+            payload: ["adminToken": .string("must-not-cross-bridge")]
+        )
+        XCTAssertEqual(request.validate(), .forbiddenCredentialKey)
+    }
+
     func testOrdinaryFreightPickupPinKeyIsNotMistakenForAppCredential() {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-pickup-pin",
             action: .evaluateLoad,
             payload: ["pickupPin": .string("4832")]
@@ -59,7 +72,7 @@ final class BridgeContractTests: XCTestCase {
     }
 
     func testCredentialWordsInsideOrdinaryValuesAreNotRejected() {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-note",
             action: .evaluateLoad,
             payload: ["notes": .string("Broker note mentions a token charge")]
@@ -68,22 +81,22 @@ final class BridgeContractTests: XCTestCase {
     }
 
     func testUnsupportedVersionFailsClosed() {
-        let request = BridgeRequest(version: 99, requestID: "req-v99", action: .trueRPM)
+        let request = FreightLogicActionRequest(version: 99, requestID: "req-v99", action: .trueRPM)
         XCTAssertEqual(request.validate(), .unsupportedVersion)
     }
 
     func testPayloadDepthIsBounded() {
         var value: BridgeValue = .string("leaf")
         for _ in 0..<9 { value = .array([value]) }
-        let request = BridgeRequest(requestID: "req-deep", action: .bestMove, payload: ["value": value])
+        let request = FreightLogicActionRequest(requestID: "req-deep", action: .bestMove, payload: ["value": value])
         XCTAssertEqual(request.validate(), .payloadTooDeep)
     }
 
     func testPayloadSizeIsBounded() {
-        let request = BridgeRequest(
+        let request = FreightLogicActionRequest(
             requestID: "req-large",
             action: .evaluateLoad,
-            payload: ["blob": .string(String(repeating: "x", count: BridgeRequest.maximumEncodedBytes))]
+            payload: ["blob": .string(String(repeating: "x", count: FreightLogicActionRequest.maximumEncodedBytes))]
         )
         XCTAssertEqual(request.validate(), .payloadTooLarge)
     }
