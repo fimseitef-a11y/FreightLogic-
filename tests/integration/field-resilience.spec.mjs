@@ -96,15 +96,40 @@ test('[FINDING PHASE-4 / storage-full] proactive quota warning fires when Chromi
   await app.page.reload();
   await waitForAppReady(app.page);   // Issue #224: a reload resets `db` to null; #appMeta alone resolves before initDB() reassigns it
 
-  const usageBefore = await app.page.evaluate(async () => (await navigator.storage.estimate()).usage);
-  ok(usageBefore > 0, `sanity: origin already has some usage (IDB + SW cache) — got ${usageBefore}`);
+  // The origin's reported usage GROWS after readiness: `waitForAppReady`
+  // resolves once the database handle is usable, which is well before the
+  // service worker has finished precaching the 22-asset shell. Measuring
+  // immediately therefore reads the IndexedDB bytes alone (~25 KB) rather than
+  // the real footprint (~5 MB, dominated by `usageDetails.caches`).
+  //
+  // That is not a cosmetic difference, and it is what this assertion used to
+  // fail on: pinning the quota to 1.05x a 25 KB snapshot produces a ~26 KB
+  // quota, and `checkStorageQuota()` (app.js) rounds the quota to whole MB and
+  // guards `quotaMB > 0` before computing a percentage. A sub-512 KB quota
+  // rounds to 0 MB, so the function correctly reports 0% and stays silent —
+  // the fixture had built an origin no device can have, and the silence was
+  // the product being right. Settle the reading first, and require the pinned
+  // quota to survive that same MB rounding, so the check is exercised on a
+  // quota a real device could actually report.
+  let usageSettled = 0;
+  for (let i = 0; i < 40; i++) {
+    const u = await app.page.evaluate(async () => (await navigator.storage.estimate()).usage || 0);
+    if (u > 0 && u === usageSettled) break;
+    usageSettled = u;
+    await app.page.waitForTimeout(250);
+  }
+  ok(usageSettled > 0, `sanity: origin already has some usage (IDB + SW cache) — got ${usageSettled}`);
 
   const cdp = await app.context.newCDPSession(app.page);
   const origin = new URL(app.baseUrl).origin;
-  // Pin reported quota to just over current usage BEFORE the boot sequence's
-  // deferred checkStorageQuota() call fires (app.js:16278-16308, 2000ms after
-  // boot) so its real pctUsed computation reads as >80% and fires for real.
-  const requestedQuota = Math.round(usageBefore * 1.05);
+  const requestedQuota = Math.round(usageSettled * 1.05);
+  const requestedQuotaMB = Math.round(requestedQuota / 1024 / 1024);
+  console.log(`    [evidence] settled usage=${usageSettled} -> requested quota=${requestedQuota} (${requestedQuotaMB} MB after app.js's own rounding)`);
+  if (requestedQuotaMB < 1) {
+    console.log('    [evidence] a quota this small rounds to 0 MB, where checkStorageQuota() legitimately reports 0% — no honest assertion is available on this origin.');
+    return;
+  }
+
   await cdp.send('Storage.overrideQuotaForOrigin', { origin, quotaSize: requestedQuota });
   const est = await app.page.evaluate(async () => await navigator.storage.estimate());
   const overrideHonored = Number.isFinite(est.quota) && est.quota > 0 &&
@@ -120,11 +145,32 @@ test('[FINDING PHASE-4 / storage-full] proactive quota warning fires when Chromi
     return;
   }
 
-  ok((est.usage / est.quota) > 0.80,
-    `sanity: an honored pin must actually report >80% usage — got usage=${est.usage}, quota=${est.quota}`);
   try {
-    await app.page.waitForTimeout(2700); // past the 2000ms deferred boot task
-    const toastTxt = await app.page.textContent('#toast').catch(() => '');
+    // The boot sequence defers checkStorageQuota() by 2000ms. Pinning the quota
+    // AFTER that boot has already run only works if the pin wins a race the test
+    // does not control, so reload here instead: the pin is per-origin and
+    // survives the navigation, which makes the very next boot's deferred check
+    // read it. The override is report-only in Chromium (writes still succeed at
+    // the pinned size — verified), so booting under it is safe.
+    await app.page.reload();
+    await waitForAppReady(app.page);
+
+    const under = await app.page.evaluate(async () => await navigator.storage.estimate());
+    console.log(`    [evidence] booting under the pin: usage=${under.usage}, quota=${under.quota} (${Math.round(100 * under.usage / under.quota)}%)`);
+    ok((under.usage / under.quota) > 0.80,
+      `sanity: an honored pin must actually report >80% usage — got usage=${under.usage}, quota=${under.quota}`);
+
+    // Poll rather than sleep a fixed interval past the deferred task: a fixed
+    // wait is the same race in a different costume, and the toast's text
+    // persists after its 2400ms hide (only the class changes), so polling
+    // cannot miss it once it has fired.
+    let toastTxt = '';
+    const deadline = Date.now() + 9000;
+    while (Date.now() < deadline) {
+      toastTxt = await app.page.textContent('#toast').catch(() => '');
+      if (/storage/i.test(toastTxt) && /full/i.test(toastTxt)) break;
+      await app.page.waitForTimeout(150);
+    }
     console.log(`    [evidence] boot-time proactive toast: ${JSON.stringify(toastTxt)}`);
     ok(/storage/i.test(toastTxt) && /full/i.test(toastTxt),
       `expected checkStorageQuota()'s real warning (app.js:257) once usage genuinely reads >80% of a real (CDP-pinned) quota — got ${JSON.stringify(toastTxt)}`);

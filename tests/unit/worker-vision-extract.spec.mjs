@@ -303,6 +303,98 @@ test('[VEX-14] the response carries no provider secret', async () => {
   ok(!serialized.includes('sk-test'), 'a provider key must never reach the client');
 });
 
+// ── The DEFAULT provider — the adapter production actually takes ─────────────
+//
+// Every test above drives `VISION_PROVIDER: 'openai'`, which is a real adapter
+// in the shipped table but is NOT the one production runs: `VISION_PROVIDER` is
+// deliberately unset on the deployed Worker, so `VISION_DEFAULT_PROVIDER`
+// ('workers-ai') is the live path. That left the live path with no coverage at
+// all, and it was wrong: it called Moondream 3.1 with `image` as a byte ARRAY
+// and the prompt under `prompt`, which is the OLDER Workers AI vision
+// convention (llava/uform). Moondream 3.1's documented schema takes `image` as
+// a STRING — a public HTTPS URL or a base64 data URI — and puts the query
+// prompt in `question`; it answers in `answer`, not `description`/`response`/
+// `text`. So `env.AI.run` threw on every call, the route's catch returned
+// HTTP 502, and screenshot intake could never have worked in production.
+//
+// Observed, not deduced: the authenticated live gate (Verify Authenticated
+// Worker, run 35756559469 against the deployed v21) reported
+// `FAIL live /extract-image provider path — HTTP 502` while all five canonical
+// authority-boundary checks in the same run passed.
+//
+// These two assert the CALL SHAPE and the READ, because those are what was
+// wrong. Asserting the response body alone cannot catch it — a stub that
+// answers whatever it is asked passes either way.
+
+/** An env whose `AI` binding records the payload it was handed and answers the
+ *  way the documented Moondream `query` task does. */
+function workersAiEnv(kv, answer) {
+  const seen = [];
+  return {
+    seen,
+    env: {
+      BACKUPS: kv,
+      ADMIN_TOKEN: ADMIN,
+      AI: {
+        async run(model, payload) {
+          seen.push({ model, payload });
+          return { answer, caption: null, points: null, objects: null, reasoning: null };
+        },
+      },
+    },
+  };
+}
+
+test('[VEX-16] the DEFAULT provider calls Workers AI with the schema that model documents', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { seen, env } = workersAiEnv(kv, FULL);
+  const token = await seedDriver(worker, env);
+
+  const res = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), env);
+  const body = await res.json();
+
+  eq(res.status, 200, `the default provider path must reach normalization, got ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
+  eq(seen.length, 1, 'the default provider must invoke the AI binding exactly once');
+
+  const { model, payload } = seen[0];
+  ok(/^@cf\//.test(model), `a Workers AI model id is expected, got ${model}`);
+
+  // `image` is a STRING. A byte array is the older convention and is exactly
+  // what the deployed v21 sent, so this is the assertion that fails on it.
+  eq(typeof payload.image, 'string', `image must be a string (URL or base64 data URI), got ${Array.isArray(payload.image) ? 'array' : typeof payload.image}`);
+  ok(/^data:image\/jpeg;base64,/.test(payload.image), `image must be a base64 data URI carrying the request's mime, got ${String(payload.image).slice(0, 40)}`);
+
+  // The prompt rides `question`, not `prompt`.
+  ok(typeof payload.question === 'string' && payload.question.length > 0,
+    `the query prompt must ride 'question', got keys ${Object.keys(payload).join(',')}`);
+  ok(payload.prompt === undefined, "`prompt` is not a parameter this model accepts — sending it is the defect, not a harmless extra");
+
+  // Bounded generation, within the documented range.
+  ok(Number.isInteger(payload.max_tokens) && payload.max_tokens >= 1 && payload.max_tokens <= 28672,
+    `max_tokens must stay inside the documented 1..28672 range, got ${payload.max_tokens}`);
+
+  // The extraction wants the JSON answer, not a reasoning trace competing for
+  // the same token budget.
+  eq(payload.reasoning, false, 'the reasoning trace must be off for structured extraction');
+
+  ok(body.ok === true && body.fields && typeof body.fields === 'object',
+    'and the normalized fields must come back as usual');
+});
+
+test('[VEX-17] the DEFAULT provider reads the field that model answers in', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  // `answer` is the ONLY key the documented `query` task fills. A reader that
+  // looks at description/response/text finds nothing, returns '', and the route
+  // fails closed with 422 — a silent dead feature rather than a visible error.
+  const { env } = workersAiEnv(kv, FULL);
+  const token = await seedDriver(worker, env);
+  const body = await (await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), env)).json();
+
+  eq(body.ok, true, `the adapter must read the model's answer field — got ${JSON.stringify(body).slice(0, 200)}`);
+  eq(body.fields.orderNo, '1079840', 'and the answer must reach the normalizer intact');
+  eq(body.provider, 'workers-ai', 'provenance must name the default provider');
+});
+
 // ── Generation ───────────────────────────────────────────────────────────────
 
 test('[VEX-15] /health names the generation this endpoint shipped in', async () => {

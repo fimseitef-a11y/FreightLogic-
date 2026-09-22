@@ -1574,6 +1574,72 @@ report "not installed" and name the alternative intake path.
 
 ---
 
+## P-08 — the DEPLOYED `/extract-image` default provider 502s on every call — CONFIRMED, FIXED in Worker v22 (source), OPEN in production
+
+**Severity: High.** Issue #252's screenshot intake is the operator's stated P0 workflow and it
+does not work in production. It has never worked in production.
+
+**Reproduction — observed, not deduced.** Dispatch **Verify Authenticated Worker** on `main`
+@ `4ba9567` (run `35756559469`). Against the deployed Worker v21 it reports:
+
+```
+  PASS  /evaluate rejects an unauthenticated request
+  PASS  UNAVAILABLE verdict is projected, never coerced to REJECT/F/$0.00
+  PASS  factsComplete:false is honoured over a contradictory ACCEPT/A
+  PASS  economics.available:false is honoured over a contradictory ACCEPT/A
+  PASS  a decision with no bid range is refused, not invented
+  FAIL  live /extract-image provider path  — HTTP 502 {"ok":false,"error":"Image extraction
+        service error. Paste the load text instead."}
+```
+
+The five authority-boundary checks pass in the same run, so the canonical decision contract is
+intact and this is confined to the vision provider path.
+
+**Root cause.** `VISION_PROVIDER` is deliberately unset on the deployed Worker, so production
+takes `VISION_DEFAULT_PROVIDER` — `workers-ai`, Moondream 3.1 through the `AI` binding. That
+adapter passed `image: [...bytes]` and `prompt: …`, which is the older Workers AI vision
+convention (llava/uform). `@cf/moondream/moondream3.1-9B-A2B` documents `image` as a **string**
+(public HTTPS URL or base64 data URI), takes the query prompt in **`question`**, and answers in
+**`answer`**. `env.AI.run` therefore threw schema validation and the route's own catch returned
+502. The adapter also read `description`/`response`/`text`, none of which this model fills, so
+even an accepted call would have returned `''` and failed closed with 422. Two independent
+faults in the one adapter no test drove.
+
+**Why source CI reported the route as proven.** `tests/unit/worker-vision-extract.spec.mjs`
+drives the real exported fetch handler, but VEX-01…VEX-15 all set `VISION_PROVIDER: 'openai'`
+— a real shipped adapter, and a correct one, but not the one production takes. Fifteen green
+assertions covered a path production never executes. This is the `OI-11`-passing-with-the-
+defect class (v24.0.12) restated at the provider boundary.
+
+**Fix (source).** Worker v21 → v22 sends `task: 'query'`, `image` as a `data:<mime>;base64,…`
+string, the prompt in `question`, `reasoning: false` so the trace does not compete with the
+answer for the token budget, and reads `out.answer` with the older keys retained as a tolerant
+fallback for an operator-pinned `VISION_MODEL` from another family. `gemini`, `openai` and
+`deepseek` were audited in the same pass and are correct for their respective APIs; only the
+default was wrong.
+
+**Regression.** VEX-16 pins the call shape (string `image`, data-URI form carrying the
+request's mime, prompt on `question`, `prompt` absent, `max_tokens` inside the documented
+1..28672 range, `reasoning` off). VEX-17 pins the read through a stub `AI` binding answering the
+way the documented `query` task does. Red-first on the unmodified tree: **15 passed / 2 failed**.
+Negative controls, applied against a `sha256sum`-verified pristine copy: reverting the call
+shape alone fails **VEX-16 only** (VEX-17 stays green — the two halves are independently
+guarded); reverting the read alone fails both, because VEX-16's HTTP 200 precondition depends
+on it.
+
+**Status.** FIXED in source, **OPEN in production** until Worker v22 is deployed and Verify
+Authenticated Worker is re-dispatched with `live /extract-image provider path` PASS. A
+CLOSED-in-source finding is not a CLOSED-in-production finding — the distinction the P-series
+exists to make, and the reason this finding is numbered into that series rather than the
+source-side S-series.
+
+**Not claimed.** A green provider call proves binding, schema and normalizer wiring. It does
+not measure extraction quality: #252's sanitized real-screenshot benchmark needs operator
+screenshots that are deliberately not in this repository, and A13 on a real iPhone is
+unchanged.
+
+---
+
 ## S-4 — the suite's own readiness contract — issue #224 is CLOSED
 
 **CLOSED 2026-09-18, root-caused rather than cleared by a rerun.** This heading read *"issue

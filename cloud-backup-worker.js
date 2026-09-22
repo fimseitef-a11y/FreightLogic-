@@ -1,4 +1,18 @@
-// FreightLogic Cloud Backup Worker v21 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v22 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// v22: THE DEFAULT VISION PROVIDER ACTUALLY RUNS (Issue #252). v21 shipped the
+// `workers-ai` adapter -- the one production takes, because VISION_PROVIDER is
+// deliberately unset -- calling Moondream 3.1 with `image` as a byte ARRAY and
+// the prompt under `prompt`. That is the older llava/uform convention; this
+// model documents `image` as a STRING (public HTTPS URL or base64 data URI),
+// takes the query prompt in `question`, and answers in `answer`. So every live
+// call threw schema validation and the route returned HTTP 502: screenshot
+// intake was never working in production. Found by the authenticated live gate
+// (Verify Authenticated Worker run 35756559469), which reported
+// `FAIL live /extract-image provider path -- HTTP 502` while all five canonical
+// authority-boundary checks in the same run passed. The unit suite had driven
+// the `openai` adapter, which is correct, so the live path had no coverage at
+// all; VEX-16/17 now pin the default adapter's call shape and its read. No
+// route, auth, rate-limit, normalization or authority semantics change.
 // v21: SCREENSHOT/VISION EXTRACTION (Issue #252). POST /extract-image accepts a
 // single compressed screenshot and returns OBSERVATIONAL fields only, through a
 // pluggable server-side provider adapter (VISION_PROVIDER: workers-ai default,
@@ -411,7 +425,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '21', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '22', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -1421,13 +1435,30 @@ const VISION_PROVIDERS = {
     needs: (env) => (env.AI ? null : 'Workers AI binding (AI) is not configured on this Worker.'),
     model: (env) => env.VISION_MODEL || '@cf/moondream/moondream3.1-9B-A2B',
     async run(env, bytes, mime, model) {
+      // v22: this adapter had been calling Moondream 3.1 with `image` as a byte
+      // ARRAY and the prompt under `prompt`. That is the OLDER Workers AI vision
+      // convention (llava/uform). Moondream 3.1 documents `image` as a STRING —
+      // a public HTTPS URL or a base64 data URI — and puts the query prompt in
+      // `question`, so `env.AI.run` threw schema validation on every call and
+      // the route's catch returned HTTP 502. This is the DEFAULT provider, so
+      // screenshot intake (Issue #252) could never have worked in production;
+      // the unit suite drove the `openai` adapter, which is correct, and so
+      // never touched the live path. Observed by the authenticated live gate
+      // (run 35756559469) against the deployed v21, not deduced.
       const out = await env.AI.run(model, {
-        // Workers AI vision models take raw bytes, not a data URL.
-        image: [...bytes],
-        prompt: VISION_SYSTEM_PROMPT + '\n\nExtract the load from this screenshot.',
+        task: 'query',
+        image: 'data:' + mime + ';base64,' + bytesToBase64(bytes),
+        question: VISION_SYSTEM_PROMPT + '\n\nExtract the load from this screenshot.',
+        // The reasoning trace is a separate object and would compete for the
+        // same token budget. This route wants the JSON answer, which the shared
+        // normalizer then filters down to observational fields.
+        reasoning: false,
+        temperature: 0.1,
         max_tokens: 700,
       });
-      return String(out?.description ?? out?.response ?? out?.text ?? '');
+      // The `query` task answers in `answer`. The older keys stay as a tolerant
+      // fallback for an operator-pinned VISION_MODEL from another family.
+      return String(out?.answer ?? out?.description ?? out?.response ?? out?.text ?? '');
     },
   },
 
