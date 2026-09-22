@@ -229,7 +229,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v22 source / v22 deployed** carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v23 source** (v22 deployed until the v23 deploy lands — read `/health`) carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -4761,6 +4761,33 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## Worker v23 "Narrower Than The Key" — a certification admin credential (Issue #231)
+
+Worker **v22 → v23**, operator-approved 2026-09-22. `DB_VERSION` stays **16** and the app/PWA
+stays **24.0.32** — no app byte changed, so no cache generation moves.
+
+**Why.** The Admin Console deploy gate observes only the unauthenticated shell. The proof #231
+gates Phase C on — sign in, list, invite, re-invite, revoke against production — needed an admin
+credential, and no CI job may hold `ADMIN_TOKEN`. So it had never been observed.
+
+**What.** Admin auth accepts `ADMIN_TOKEN` exactly as before, and additionally a certification
+credential: `flac_<64 hex>`, stored only as `admcert:<sha256>` with a 15-minute KV TTL **and**
+its own `expiresAt` (so a TTL that failed to apply still cannot leave a live credential). It is
+deliberately **narrower** than `ADMIN_TOKEN`: only `GET /admin/users`, `POST /admin/invites` and
+`DELETE /admin/users/:id`. It can never reach `POST /admin/users` or `/rotate` — the two routes
+that return a permanent `flk_` token — and gets 403 there. Only the Cloudflare KV credential can
+seed one, and that credential could already rewrite `ADMIN_TOKEN`, so no new party gains authority.
+
+**Proof.** `scripts/verify-live-admin-console.mjs` + `.github/workflows/verify-admin-console.yml`
+(manual dispatch, read-only) seed the credential and one synthetic driver, drive the **real
+deployed console** in headless Chromium, and delete every key they touched. PASS / FAILURE /
+UNOBSERVED as the other live gates; at most 14 of the 20/hr admin budget.
+
+**Tests.** WIC-17…WIC-20 in `worker-invite-claim.spec.mjs`. Negative control verified: removing
+the route restriction fails WIC-18 only.
+
+---
 
 ## Worker v22 "The Default Provider Never Ran" — the #252 route that has always 502'd
 

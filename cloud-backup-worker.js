@@ -1,4 +1,15 @@
-// FreightLogic Cloud Backup Worker v22 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v23 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// v23: EPHEMERAL CERTIFICATION ADMIN CREDENTIAL (Issue #231, operator-approved
+// 2026-09-22). The Admin Console needed a live authenticated proof (list,
+// invite, re-invite, revoke) and no CI job may hold ADMIN_TOKEN. A CI run with
+// the Cloudflare KV credential may now seed `admcert:<sha256(token)>` with a
+// 15-minute TTL and an explicit `expiresAt`. That credential is DELIBERATELY
+// NARROWER than ADMIN_TOKEN: it may only GET /admin/users, POST /admin/invites
+// and DELETE /admin/users/:id. It can never reach POST /admin/users or
+// /admin/users/:id/rotate, the two routes that return a permanent `flk_` bearer
+// token. Only the hash is stored, the token format is fixed (`flac_` + 64 hex)
+// so a driver token can never be mistaken for one, and anyone able to write this
+// key can already rewrite ADMIN_TOKEN itself, so no new party gains authority.
 // v22: THE DEFAULT VISION PROVIDER ACTUALLY RUNS (Issue #252). v21 shipped the
 // `workers-ai` adapter -- the one production takes, because VISION_PROVIDER is
 // deliberately unset -- calling Moondream 3.1 with `image` as a byte ARRAY and
@@ -116,6 +127,32 @@ async function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
+// v23 — admin authentication. ADMIN_TOKEN is the operator credential and is
+// checked first, exactly as before. A certification credential is accepted only
+// in its fixed shape, only while its KV record exists (15-minute TTL) AND its own
+// `expiresAt` is in the future — the second check means a KV TTL that failed to
+// apply still cannot leave a live admin credential behind.
+const CERT_ADMIN_TOKEN_RE = /^flac_[a-f0-9]{64}$/;
+async function resolveAdminAuth(env, adminToken) {
+  if (!adminToken) return null;
+  if (env.ADMIN_TOKEN && await timingSafeEqual(adminToken, env.ADMIN_TOKEN)) return 'operator';
+  if (!CERT_ADMIN_TOKEN_RE.test(adminToken)) return null;
+  const raw = await env.BACKUPS.get('admcert:' + await hashToken(adminToken));
+  if (!raw) return null;
+  let rec;
+  try { rec = JSON.parse(raw); } catch { return null; }
+  const expires = Date.parse(rec && rec.expiresAt);
+  if (!rec || rec.purpose !== 'certification' || !Number.isFinite(expires) || expires <= Date.now()) return null;
+  return 'certification';
+}
+
+function isCertificationAdminRoute(method, path) {
+  if (method === 'GET' && path === '/admin/users') return true;
+  if (method === 'POST' && path === '/admin/invites') return true;
+  if (method === 'DELETE' && /^\/admin\/users\/[^/]+$/.test(path)) return true;
+  return false;
+}
+
 async function hashToken(token) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -193,8 +230,14 @@ export default {
           return json({ ok: false, error: 'Too many admin requests. Try again later.' }, 429, cors);
         }
         const adminToken = request.headers.get('X-Admin-Token');
-        if (!adminToken || !env.ADMIN_TOKEN || !(await timingSafeEqual(adminToken, env.ADMIN_TOKEN))) {
+        const adminAuth = await resolveAdminAuth(env, adminToken);
+        if (!adminAuth) {
           return json({ ok: false, error: 'Unauthorized' }, 401, cors);
+        }
+        if (adminAuth === 'certification' && !isCertificationAdminRoute(request.method, path)) {
+          // The certification credential never reaches a route that returns a
+          // permanent bearer token (POST /admin/users, /rotate).
+          return json({ ok: false, error: 'Forbidden for certification access' }, 403, cors);
         }
 
         if (request.method === 'POST' && path === '/admin/users') {
@@ -425,7 +468,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '22', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '23', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
