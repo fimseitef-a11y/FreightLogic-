@@ -37,15 +37,15 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 **v24.0.28 observed-production documentation reconciliation — RETIRED 2026-09-22.** PR #301 merged the current-main certification successor as `bb60aba0` after exact-head Tests, Lanes, and CodeQL passed. It records directly observed production v24.0.28 / DB16 / Worker v21, current-main Tests 746/0, and the later F-9 test-only stabilization without changing runtime, freight policy, workflows, deployment, provider/credential state, or any A1-A13 result. The four temporary documentation ownership exceptions are retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude, and the two exact `docs/` rows fall back to the Claude-owned parent lane.
 
 
-**Issue #278 long-haul policy completion takeover (2026-09-22, operator-directed).** The operator directed GPT to proceed and complete FreightLogic after Claude's v24.0.31 rate-basis slice merged and all live locks were released. For this bounded tranche, GPT may edit only the exact release-authority/test paths reassigned below plus SHARED runtime paths under the normal covering lock. Scope is limited to implementing the already-resolved policy that distance alone must not create a hard REJECT, updating the exact boundary regression, and the governed release-generation/parity markers required by that runtime change. This does not grant regional-fuel, chain/exit, Admin Console, Worker, security-settings, or physical-device authority. The exception expires immediately after the reviewed tranche merges and must then be retired.
+**Issue #278 long-haul policy completion takeover — RETIRED 2026-09-22.** PR #317 merged as `694b468e` after exact-head PR Tests **767/0 across 75 specs**, Lanes, and CodeQL passed. The temporary release/test ownership is retired: `midwest-stack-config.json`, `midwest-stack-authority.js`, and `CLAUDE.md` return to Claude, and the parity/boundary-test exact rows fall back to their Claude-owned parent lanes. Runtime paths remain SHARED. This retirement does not claim production deployment or physical-device certification; those remain evidence gates.
 
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | gpt | TEMP #278 long-haul completion tranche: release/doctrine marker only; retire immediately after merge. |
-| `midwest-stack-authority.js` | gpt | TEMP #278 long-haul completion tranche: release/doctrine marker only; retire immediately after merge. |
+| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
+| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | TEMP #278 long-haul completion tranche: release record only; retire immediately after merge. |
+| `CLAUDE.md` | claude | v24.0.32 long-haul source-candidate record landed in PR #317; normal Claude ownership restored. |
 | `FIELD_TEST_CHECKLIST.md` | claude | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -85,12 +85,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | claude | Data/contracts. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | TEMP #278 long-haul completion tranche: exact parity generation marker only. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/integration/v24-authority-boundaries.spec.mjs` | gpt | TEMP #278 long-haul completion tranche: replace retired distance-only veto assertions with the operator-resolved contextual contract; no weakening. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
