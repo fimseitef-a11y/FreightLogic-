@@ -6,7 +6,7 @@ final class BridgeAvailabilityTests: XCTestCase {
         #if canImport(WebKit)
         XCTAssertTrue(true)
         #else
-        XCTAssertFalse(FreightLogicScriptBridgeAvailability.isWebKitAvailable)
+        XCTAssertFalse(FreightLogicAppleBridgeAvailability.isWebKitAvailable)
         #endif
     }
 }
