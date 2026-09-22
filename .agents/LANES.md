@@ -10,7 +10,7 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against concurrent sessions, not just different agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
 
-**Issue #304 trip-delete safety exception — TEMPORARY 2026-09-22.** The operator directed GPT to continue completion work after Airtable surfaced a physical-iPhone data-safety UX finding that is reproduced in current source: Edit Trip → Delete closes the modal but leaves the trip card actionable for the five-second Undo window because the IndexedDB delete is deferred. GPT temporarily owns exactly `tests/integration/trip-delete-safety.spec.mjs`, `tests/run-all.mjs`, `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` for a regression-first repair plus the mechanically required release-generation markers. Runtime edits remain SHARED and require the active runtime lock. This exception grants no economics, schema, Worker, history-reconstruction, or physical-certification authority and expires immediately after #304 lands and the regression is registered.
+**Issue #304 trip-delete safety exception — RETIRED 2026-09-22.** PR #306 merged the reviewed v24.0.29 repair as `ca99d50a` after exact-head Tests, Lanes, and CodeQL passed. The temporary regression/registration/release-marker ownership grant is retired: `tests/integration/trip-delete-safety.spec.mjs` and `tests/run-all.mjs` return to the Claude-owned `tests/` lane; `midwest-stack-config.json`, `midwest-stack-authority.js`, and `scripts/verify-cloudflare-parity.mjs` return to their normal Claude/parent ownership. Runtime paths remain SHARED. No economics, schema, Worker-source, historical reconstruction, or physical-certification authority transferred.
 
 **Admin Console Phase A lane exception (2026-09-18, operator-directed takeover).** Issue #231 already carries operator approval for a separate-origin Admin / Onboarding Console. While Claude's current UX/IA lock remains limited to `app.js` and `index.html`, GPT may own only the isolated `admin-console/` subtree plus the exact Admin Console regression file named below. This is an additive Phase A seam only: it does **not** transfer `cloud-backup-worker.js`, `app.js`, `index.html`, `service-worker.js`, `.github/`, or any other Claude/SHARED path. Worker CORS, deployment, live auth verification, and Phase C driver-surface removal remain under their existing ownership/lock rules. The console must preserve #231's zero-token, session-only-admin-credential, no-freight-data, no-service-worker contract and must not be exposed as a finished privileged surface before its distinct admin origin and live verification exist.
 
@@ -37,8 +37,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
-| `midwest-stack-config.json` | gpt | TEMPORARY Issue #304 release-generation marker only; no doctrine/economics edits. Retire immediately after #304 lands. |
-| `midwest-stack-authority.js` | gpt | TEMPORARY Issue #304 release-generation marker only; no advisory/doctrine edits. Retire immediately after #304 lands. |
+| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #304 v24.0.29 release-marker ownership retired after PR #306 landed. |
+| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #304 v24.0.29 release-marker ownership retired after PR #306 landed. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
 | `CLAUDE.md` | claude | v24.0.28 observed-production documentation reconciliation completed by PR #301; normal Claude ownership restored. |
 | `FIELD_TEST_CHECKLIST.md` | claude | v24.0.28 observed-production documentation reconciliation completed by PR #301; A1-A13 acceptance/results remain unchanged. |
@@ -84,9 +84,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `scripts/verify-cloudflare-parity.mjs` | gpt | TEMPORARY Issue #304 expected app-generation markers only; no gate weakening. |
-| `tests/integration/trip-delete-safety.spec.mjs` | gpt | TEMPORARY Issue #304 regression only; retire after reviewed repair lands. |
-| `tests/run-all.mjs` | gpt | TEMPORARY Issue #304 registration only; no unrelated test/assertion edits. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
