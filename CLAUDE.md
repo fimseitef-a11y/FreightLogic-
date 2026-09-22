@@ -2,17 +2,29 @@
 
 ## Project Overview
 
-**SOURCE CANDIDATE: FreightLogic v24.0.32 / DB16 / Worker v21. LAST DIRECTLY OBSERVED PRODUCTION: v24.0.31 / DB16 / Worker v21.**
+**FreightLogic v24.0.32 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
 
 v24.0.32 is the operator-resolved Issue #278 long-haul policy repair. It removes the
 distance-only `>250mi && < $1.45 True RPM => REJECT` veto without inventing a replacement
 mileage cutoff. Distance/time commitment remains advisory context; independent geography,
 known-cost/margin, deadhead and fatigue/safety/fit/feasibility gates remain authoritative.
-The red-first exact policy proof on v24.0.31 was **764 passed / 3 failed across 75 specs**,
-with only V24-B04/B12/B13 failing on the retired behavior. Until this candidate merges,
-deploys and is observed, v24.0.31 below remains the production authority.
 
-**Last directly observed production — v24.0.31 / DB16 / Worker v21.**
+PR #317 merged as `694b468eb1c53059030dc0d8078f32816a2867a9` after exact-head Tests
+**767/0 across 75 specs**, Lanes, and CodeQL passed. The pre-fix red-first run was
+**764/3**, with only V24-B04/B12/B13 failing on the retired distance-only behavior.
+Exact-main Tests run `35701228454` then passed **767/0**, and CodeQL run
+`35701228622` passed.
+
+Production Service Worker run `35701228556` passed and directly observed app/SW
+**v24.0.32**, cache `freightlogic-24.0.32`, all 22 declared runtime assets, five driver
+tabs, no uncaught page errors, clean offline recovery, and exactly one generation cache.
+Push-triggered Live Parity run `35701228415` first observed the previous v24.0.31
+generation while Cloudflare was still propagating (manifest explicitly reported
+`FreightLogic v24.0.31`), then **attempt 2 passed with no code change**, observing
+app/SW/manifest v24.0.32, Worker v21, all 22 runtime assets, and all 20 repository-only
+paths withheld. The first attempt is deployment-race evidence, not erased.
+
+**Historical production observation — v24.0.31 / DB16 / Worker v21.**
 
 v24.0.31 carries Issue #278's operating-arrangement / rate-basis semantics and a **backup
 data-loss defect found while shipping it**. `DB_VERSION` remains **16** and the Worker remains
