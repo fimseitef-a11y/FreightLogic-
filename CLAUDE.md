@@ -520,8 +520,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.31` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.31`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.32` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.32`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4899,6 +4899,31 @@ Nothing was re-deployed to establish this. The deploy had already landed, so the
 was to re-observe rather than re-run: Live Parity first (read-only, cheap), then the
 authenticated gate once, in a **later clock hour** than the earlier dispatch, because `/claim` is
 10/hr per IP and the gate spends up to 6.
+
+---
+
+## v24.0.32 "Long Road" — Issue #278's distance-only veto retired
+
+`DB_VERSION` stays **16**. Landed by the gpt lane in PR #317 (merged `694b468e`); this
+section is backfilled because that release shipped without one — checklist item 10, again.
+
+**What changed.** `deriveUnifiedAuthority()` no longer returns `REJECT` purely because
+`totalMi > 250 && trueRPM < $1.45`. That veto was distance alone, and the operator resolved
+#278's disputed long-haul scope by removing it **without inventing a replacement mileage
+cutoff** — the code comment says so explicitly, so a later "tidy-up" does not reintroduce
+250mi or 800mi as a hard gate. Distance/time commitment is now advisory: the existing
+`>800mi && < $1.45` signal stays a warning, reworded to tell the driver what to review
+(delivery/hold time, route safety, destination/reload quality, exit cost).
+
+**What did not change.** Geography/out-of-density, known-cost and fuel-margin, deadhead,
+fatigue/safety, van-fit and pickup-feasibility gates are all unchanged and can still reject
+a long load on their own facts. V24-B04/B12/B13 were rewritten because they asserted the
+retired behaviour; red-first was **764/3** failing exactly those three, and the merged head
+passed **767/0 across 75 specs**.
+
+**Observed.** Production Service Worker `35701228556` and Live Parity `35701228415`
+(attempt 2, after the documented propagation race) observed app/SW/manifest **24.0.32**.
+Worker v22 was later deployed independently — see the Worker v22 section.
 
 ---
 
