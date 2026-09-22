@@ -2,27 +2,40 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Observed 2026-09-21: production serves v24.0.28 / DB16 / Worker v21.**
-Runtime merge `764ea091e2ae3157a9c9d7a532ab802147388220` (PR #294) has exact PR-head
-Tests `35657810077` (job `106525656602`) at **746/0 across 72 specs**.
-On documentation checkpoint `675e6fb0140f0e226219fc52955932703fc07a1c`,
-Live Parity `35661894518` (job `106538813802`) and Production Service Worker
-`35661894391` (job `106538814618`) both returned `VERDICT: PASS`. Logs directly
-observed app/SW/manifest 24.0.28, Worker v21, all 22 runtime assets, 20 repository-only
-paths withheld, `freightlogic-24.0.28` as the sole generation cache, and the five-tab
-driver shell with Today visible after reload. CodeQL `35661894363` passed.
-Exact-main Tests `35661894446` (job `106538812253`) passed **746/0 across 72 specs**. The later `0fc250cb` F-9 change is test-only stabilization; it changes no deployed/runtime byte and required no generation bump.
+**Observed 2026-09-22 UTC: production serves v24.0.29 / DB16 / Worker v21.**
+Runtime merge `ca99d50abf18557682f38e641c2b023041088ea6` (PR #306) has exact PR-head
+Tests `35678726412` at **748/0 across 73 specs**, with Lanes `35678726404`
+and CodeQL `35678726418` passing.
 
-The runtime-merge push Live Parity run `35658640376` raced deployment and failed;
-the later explicit dispatch `35658734732` passed and directly observed 24.0.28. The
-production-service-worker push `35658640358` also passed. Preserve the race as evidence
-of what production served at that earlier instant; do not cite it as the release result.
+On settled checkpoint `98e447e3dc1ffe5d00e5793ab0725bde4e6a063a`,
+Live Parity `35679841528` (job `106594200002`) and Production Service Worker
+`35679841496` (job `106594196748`) both returned **PASS** on attempt 1. Logs directly
+observed app/SW/manifest 24.0.29, Worker v21, all 22 runtime assets, 20 repository-only
+paths withheld, `freightlogic-24.0.29` as the sole generation cache, and the five-tab
+driver shell with Today visible after reload. CodeQL `35679841490` (job
+`106594197964`) passed. Exact-main Tests `35679841575` (job `106594197228`)
+passed **748/0 across 73 specs**.
+
+The runtime-merge push preserved the deployment-propagation race rather than hiding it:
+Live Parity `35679161628` and Production Service Worker `35679161632` first observed
+the prior v24.0.28 generation while Cloudflare was still settling, then both passed on
+attempt 2 with no code change once v24.0.29 was served. Those first attempts are valid
+evidence about production at that instant; the settled pass is the release observation.
 
 **Live vision remains UNOBSERVED.** The authenticated synthetic image probe exists, but the
 privileged provider invocation has not been observed and a Worker version check cannot close
 provider execution, image quality, or physical A13. Admin Console, later #278 policy work,
 repository-admin controls and Safari/native Apple work remain separate. The current dated
 authority is `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
+
+## Historical v24.0.28 observation — 2026-09-21
+
+Production v24.0.28 / DB16 / Worker v21 was directly observed before #304 advanced the
+runtime. Documentation checkpoint `675e6fb0` passed Live Parity `35661894518`,
+Production Service Worker `35661894391`, CodeQL `35661894363`, and exact-main
+Tests `35661894446` at **746/0 across 72 specs**. The detailed evidence remains in
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`; it is historical
+evidence only now that production serves v24.0.29.
 
 ## Historical v24.0.25 observation — 2026-09-20
 
@@ -108,17 +121,19 @@ deployment claim is exactly the drift it exists to catch. The rule that prevents
 it is unchanged: a superseding record is due the day a shipped file deploys, not
 the day it merges.*
 
-## Runtime state at the 2026-09-21 checkpoint
+## Runtime state at the 2026-09-22 checkpoint
 
-- App/PWA/SW **24.0.28**, DB **16**, Worker **v21**; source and observed production agree.
-- Runtime merge: `764ea091` (PR #294); exact PR-head Tests `35657810077`, job
-  `106525656602`: **746 passed / 0 failed across 72 specs**.
-- Settled current observation checkpoint: `675e6fb0`.
-- Live Parity `35661894518`, job `106538813802`: **PASS** — app/SW/manifest
-  24.0.28, Worker v21, 22/22 runtime assets, 20 repository-only paths withheld.
-- Production Service Worker `35661894391`, job `106538814618`: **PASS** —
-  activated/controlled worker, `freightlogic-24.0.28` precache with all 22 assets,
+- App/PWA/SW **24.0.29**, DB **16**, Worker **v21**; source and observed production agree.
+- Runtime merge: `ca99d50a` (PR #306); exact PR-head Tests `35678726412`:
+  **748 passed / 0 failed across 73 specs**.
+- Settled current observation checkpoint: `98e447e3`.
+- Live Parity `35679841528`, job `106594200002`: **PASS** — app/SW/manifest
+  24.0.29, Worker v21, 22/22 runtime assets, 20 repository-only paths withheld.
+- Production Service Worker `35679841496`, job `106594196748`: **PASS** —
+  activated/controlled worker, `freightlogic-24.0.29` precache with all 22 assets,
   five tabs + visible Today after reload, exactly one generation cache.
+- Exact-main Tests `35679841575`, job `106594197228`: **748/0 across 73 specs**;
+  CodeQL `35679841490`, job `106594197964`: **PASS**.
 - **HOLD remains** for physical A1-A13 and authenticated live vision-provider /
   real-screenshot evidence. Admin Console live proof, later #278 policy/evidence work,
   repository-admin controls, and Safari/native Apple work remain separate.
