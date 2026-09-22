@@ -1,6 +1,0 @@
-owner: gpt
-token: 8c8d9dc0-2a78-4e24-9ac7-27832retire001
-started_utc: 2026-09-22T07:47:00Z
-expected_release_utc: 2026-09-22T09:30:00Z
-paths: .agents/LANES.md
-task: retire temporary #278 long-haul lane after merged v24.0.32 tranche
