@@ -85,6 +85,7 @@ import { runSpec as zeroTokenOnboarding } from './integration/zero-token-onboard
 import { runSpec as fieldCertificationRunner } from './integration/field-certification-runner.spec.mjs';
 import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
 import { runSpec as driverGlancePreferences } from './integration/driver-glance-preferences.spec.mjs';
+import { runSpec as tripDeleteSafety } from './integration/trip-delete-safety.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -118,6 +119,7 @@ const specs = [
   fieldCertificationRunner,
   adminConsole,
   driverGlancePreferences,
+  tripDeleteSafety,
   laneGuard,
   dzGradeCap,
   taxCsvCorruption,
