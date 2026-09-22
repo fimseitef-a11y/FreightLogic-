@@ -303,3 +303,9 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Merged runtime main `ca99d50abf18557682f38e641c2b023041088ea6`: Tests `35679161545` **748/0** attempt 1; CodeQL `35679161583` PASS attempt 1. Live Parity `35679161628` and Production Service Worker `35679161632` first observed the prior generation during deployment propagation, then **PASS on attempt 2** with app/SW/manifest v24.0.29, Worker v21, 22 runtime assets, 20 repository-only paths withheld, one freightlogic-24.0.29 cache, and five driver tabs + Today.
 - Governance-retirement PR #307 head `6377d6d2978f07efa5dc7ae1945b51aefb1da02b`: Tests `35679394004`, Lanes `35679393998`, CodeQL `35679394021` all PASS attempt 1; merged as `98e447e3dc1ffe5d00e5793ab0725bde4e6a063a`.
 - Physical iPhone A1-A13 is not certified by these runs. Historical order 960760 absence is not attributed to #304 without separate evidence.
+
+## 2026-09-22 — final exact-main after v24.0.29 documentation retirement
+
+- Exact main `15b16d9f4e20d580669bb66679a9cf259d0f5a12` (merge PR #310): GitHub Tests `35681710524`, job `106599866460`, `node tests/run-all.mjs` = **748 passed / 0 failed across 73 spec files**.
+- Same exact main: CodeQL `35681710513` PASS; Verify Live Parity `35681710497` PASS; Verify Production Service Worker `35681710618` PASS. All completed on attempt 1.
+- This merge is governance-only; runtime bytes remain the v24.0.29 Issue #304 repair. These automated/live-origin gates do not certify physical iPhone A1-A13, authenticated vision-provider quality, Admin Console privileged operations, repository-admin settings, or native Safari/Apple tooling.
