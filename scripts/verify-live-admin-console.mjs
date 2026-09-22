@@ -29,6 +29,7 @@ import crypto from 'node:crypto';
 
 const ADMIN_ORIGIN = process.argv[2] || 'https://freightlogic-admin-console.fimseitef.workers.dev';
 const API_ORIGIN = process.argv[3] || 'https://freightlogic-backup.fimseitef.workers.dev';
+const API_ORIGIN_EXACT = new URL(API_ORIGIN).origin;
 const CF_TOKEN = process.env.FL_CF_API_TOKEN || '';
 const CF_ACCOUNT = process.env.FL_CF_ACCOUNT_ID || '';
 const KV_NS = process.env.FL_KV_NAMESPACE_ID || '';
@@ -106,7 +107,9 @@ async function run() {
     const bodies = [];
     const codes = [];
     page.on('response', async r => {
-      if (!r.url().startsWith(API_ORIGIN)) return;
+      let origin = '';
+      try { origin = new URL(r.url()).origin; } catch { return; }
+      if (origin !== API_ORIGIN_EXACT) return;
       const text = await r.text().catch(() => '');
       bodies.push(text);
       try { const j = JSON.parse(text); if (j && typeof j.code === 'string') codes.push(j.code); } catch {}
