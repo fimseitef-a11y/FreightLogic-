@@ -2,7 +2,17 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.31 / DB16 / Worker v21 is DIRECTLY OBSERVED in production.**
+**SOURCE CANDIDATE: FreightLogic v24.0.32 / DB16 / Worker v21. LAST DIRECTLY OBSERVED PRODUCTION: v24.0.31 / DB16 / Worker v21.**
+
+v24.0.32 is the operator-resolved Issue #278 long-haul policy repair. It removes the
+distance-only `>250mi && < $1.45 True RPM => REJECT` veto without inventing a replacement
+mileage cutoff. Distance/time commitment remains advisory context; independent geography,
+known-cost/margin, deadhead and fatigue/safety/fit/feasibility gates remain authoritative.
+The red-first exact policy proof on v24.0.31 was **764 passed / 3 failed across 75 specs**,
+with only V24-B04/B12/B13 failing on the retired behavior. Until this candidate merges,
+deploys and is observed, v24.0.31 below remains the production authority.
+
+**Last directly observed production — v24.0.31 / DB16 / Worker v21.**
 
 v24.0.31 carries Issue #278's operating-arrangement / rate-basis semantics and a **backup
 data-loss defect found while shipping it**. `DB_VERSION` remains **16** and the Worker remains
@@ -336,7 +346,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.31';
+const APP_VERSION = '24.0.32';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';

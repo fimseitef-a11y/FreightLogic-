@@ -1,7 +1,16 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.31 USA ENGINE
+/** FreightLogic v24.0.32 USA ENGINE
+ *  v24.0.32 "Long Road": Issue #278 operator policy resolution. Retires the
+ *          distance-only >250mi / <$1.45 True RPM hard veto. Long-haul
+ *          distance/time commitment remains contextual advisory evidence;
+ *          distance alone never creates REJECT and no replacement mileage
+ *          cutoff is invented. Independent geography, economics/margin,
+ *          deadhead, fatigue/safety, fit and feasibility gates are unchanged.
+ *          The existing >800mi thin-rate signal remains advisory only and its
+ *          wording now tells the driver what context to review. DB stays 16,
+ *          Worker stays v21.
  *  v24.0.31 "Whose Dollar": Issue #278's operating-arrangement / rate-basis
  *          semantics — the addendum both independent audits back with HIGH
  *          confidence. 49 CFR 376.12 makes the compensation basis a LEASE TERM,
@@ -465,7 +474,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.31';
+const APP_VERSION = '24.0.32';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -10589,8 +10598,6 @@ const UNIFIED_DECISION_POLICY = Object.freeze({
   normalFloorRPM: MW.normalFloorRPM,
   preferredFloorRPM: MW.preferredFloorRPM,
   strategicFloorRPM: MW.strategicFloorRPM,
-  longHaulMinRPM: MW.longHaulMinRPM,
-  longHaulMiles: 250,
   strongRPM: 1.60,
   healthyTrueMarginPct: 25,
   healthyFuelMarginPct: 30,
@@ -10685,14 +10692,11 @@ function deriveUnifiedAuthority(facts, policy = UNIFIED_DECISION_POLICY){
     steps.push({ pass: true, label: 'Dead Zone Exit', detail: `${Number(f.dzCheck?.distanceSaved || 0)}mi saved toward home corridor • Survival scoring active` });
   }
 
-  // Long-haul minimum — only home/replace strategic exceptions or active DZ.
-  if (!isDZActive && totalMi > policy.longHaulMiles && trueRPM < policy.longHaulMinRPM){
-    const allowLongHaulStrategic = effectiveStrategic && (effectiveReason === 'home' || effectiveReason === 'replace');
-    if (!allowLongHaulStrategic){
-      verdict = 'REJECT';
-      verdictReason = `Long haul under $${policy.longHaulMinRPM}`;
-    }
-  }
+  // Issue #278 operator policy resolution: long-haul distance/time commitment
+  // is contextual evidence, never a distance-only hard veto. Do not replace the
+  // retired 250mi cutoff with 800mi or any invented mileage threshold here.
+  // Independent geography, cost/margin, deadhead and fatigue/safety gates below
+  // remain authoritative and may still reject a long load on their own facts.
 
   // Explicit strategic band.
   if (effectiveStrategic && trueRPM >= policy.strategicFloorRPM && trueRPM < policy.normalFloorRPM && verdict !== 'REJECT'){
@@ -11989,7 +11993,7 @@ async function mwEvaluateLoad(){
   const warnings = [];
   if (deadMi > 150 && trueRPM < 1.50) warnings.push({ icon: '⚠️', text: 'High deadhead disguised by loaded RPM — true cost is higher' });
   if (!geo.intoDensity && trueRPM >= 1.40 && trueRPM < 1.60) warnings.push({ icon: '🎭', text: 'Weak destination hidden by rate — reload risk is real' });
-  if (totalMi > 800 && trueRPM < 1.45) warnings.push({ icon: '🛣️', text: 'Long haul under $1.45 — locks you for 2+ days at thin margin' });
+  if (totalMi > 800 && trueRPM < 1.45) warnings.push({ icon: '🛣️', text: 'Long-haul commitment — review delivery/hold time, route safety, destination/reload quality, and exit cost before committing' });
   if (effectiveStrategic && trueRPM >= 1.25 && trueRPM < 1.40) warnings.push({ icon: '🌉', text: 'Strategic bridge — do NOT confuse this with a money load' });
   if (fatigue >= 6) warnings.push({ icon: '😴', text: 'Fatigue elevated — demand stronger economics before committing' });
   if (weekendOverlay.weekendHold){
