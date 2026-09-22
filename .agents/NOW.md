@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | Queue: #231 Phase C → v24.0.33 (PR open) → v24.5 redesign + Shortcuts deep-link router + Web Push client (one release). Holding `app-js` lock. | 2026-09-22T19:50Z |
-| gpt | #204/#205 Apple track: establishing bounded `native-ios/` + exact native CI lane, then implementing typed bridge contract/scaffold without claiming physical Safari/Xcode certification | 2026-09-22T09:35Z |
+| gpt | Queue: Shortcuts URL contract → Web Push contract/Worker → Shortcuts pack + Dispatchland capture. Task 1 blocked only on docs/ lane transfer; native iOS frozen per operator. | 2026-09-22T20:38Z |
 
 ---
 
