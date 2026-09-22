@@ -1,0 +1,38 @@
+name: Native iOS Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native-ios/**'
+      - '.github/workflows/native-ios.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native-ios/**'
+      - '.github/workflows/native-ios.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-package:
+    name: swift-package
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the exact ref under analysis
+        uses: actions/checkout@v7
+
+      - name: Record Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Test native bridge package
+        run: swift test --package-path native-ios
