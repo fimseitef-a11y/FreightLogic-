@@ -419,6 +419,64 @@ test('[WIC-15] /claim requires NO backup token, and /health reports this Worker 
     `/health and the Worker header must name the same generation, got ${health.version} vs ${headerVersion}`);
 });
 
+// ── Worker v23: ephemeral certification admin credential (Issue #231) ────────
+//
+// A CI run seeds `admcert:<sha256(token)>` so the Admin Console can be proven
+// live without any job holding ADMIN_TOKEN. The load-bearing property is that
+// this credential is NARROWER than ADMIN_TOKEN: it must never reach the two
+// routes that hand back a permanent `flk_` bearer token.
+const CERT = 'flac_' + 'a1'.repeat(32);
+async function seedCert(kv, token = CERT, expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()) {
+  await kv.put('admcert:' + await sha256Hex(token), JSON.stringify({ purpose: 'certification', expiresAt }), { expirationTtl: 900 });
+}
+const certReq = (url, method = 'GET', body, token = CERT) => REQ(url, {
+  method,
+  headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
+
+test('[WIC-17] a live certification credential may list, invite, re-invite and revoke', async () => {
+  const kv = makeKV({ 'user:u_0123456789abcdef': JSON.stringify({ userId: 'u_0123456789abcdef', name: 'Cert', active: true, createdAt: new Date().toISOString(), backupCount: 0 }) });
+  const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  await seedCert(kv);
+  eq((await worker.fetch(certReq('/admin/users'), env)).status, 200, 'list must be allowed');
+  eq((await worker.fetch(certReq('/admin/invites', 'POST', { name: 'New' }), env)).status, 201, 'invite must be allowed');
+  eq((await worker.fetch(certReq('/admin/invites', 'POST', { userId: 'u_0123456789abcdef' }), env)).status, 201, 're-invite must be allowed');
+  eq((await worker.fetch(certReq('/admin/users/u_0123456789abcdef', 'DELETE'), env)).status, 200, 'revoke must be allowed');
+});
+
+test('[WIC-18] a certification credential can NEVER mint a permanent bearer token', async () => {
+  const kv = makeKV({ 'user:u_0123456789abcdef': JSON.stringify({ userId: 'u_0123456789abcdef', name: 'Cert', active: true, tokenHash: 'x', createdAt: new Date().toISOString() }) });
+  const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  await seedCert(kv);
+  const create = await worker.fetch(certReq('/admin/users', 'POST', { name: 'X' }), env);
+  eq(create.status, 403, `POST /admin/users must be 403 for certification access, got ${create.status}`);
+  const rotate = await worker.fetch(certReq('/admin/users/u_0123456789abcdef/rotate', 'POST'), env);
+  eq(rotate.status, 403, `rotate must be 403 for certification access, got ${rotate.status}`);
+  ok(!/flk_/.test(await create.text() + await rotate.text()), 'no response may carry a flk_ token');
+  ok(!kv.dump().includes('tokh:'), 'no bearer token record may be written');
+});
+
+test('[WIC-19] an expired, missing or wrongly-shaped certification credential is 401', async () => {
+  const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  eq((await worker.fetch(certReq('/admin/users'), env)).status, 401, 'no record: 401');
+  await seedCert(kv, CERT, new Date(Date.now() - 1000).toISOString());
+  eq((await worker.fetch(certReq('/admin/users'), env)).status, 401, 'expiresAt in the past: 401 even while the KV key survives');
+  const badShape = 'flk_' + 'b2'.repeat(16);
+  await seedCert(kv, badShape);
+  eq((await worker.fetch(certReq('/admin/users', 'GET', undefined, badShape), env)).status, 401, 'a driver-shaped token is never a certification credential');
+  const live = 'flac_' + 'c3'.repeat(32);
+  await seedCert(kv, live);
+  kv.now = () => Date.now() + 901_000;
+  eq((await worker.fetch(certReq('/admin/users', 'GET', undefined, live), env)).status, 401, 'after the 15-minute TTL the credential is gone');
+});
+
+test('[WIC-20] the operator ADMIN_TOKEN keeps full authority', async () => {
+  const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  const res = await worker.fetch(REQ('/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN }, body: JSON.stringify({ name: 'Op' }) }), env);
+  eq(res.status, 201, `operator create must still work, got ${res.status}`);
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
