@@ -1,7 +1,22 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.30 USA ENGINE
+/** FreightLogic v24.0.31 USA ENGINE
+ *  v24.0.31 "Whose Dollar": Issue #278's operating-arrangement / rate-basis
+ *          semantics — the addendum both independent audits back with HIGH
+ *          confidence. 49 CFR 376.12 makes the compensation basis a LEASE TERM,
+ *          not a market constant, and the operator runs without their own
+ *          MC/DOT authority, so a quoted/market amount and the operator's
+ *          settlement are two different facts. RATE_BASIS records which
+ *          arrangement is in force (UNKNOWN / LEASED_SETTLEMENT /
+ *          OWN_AUTHORITY_CARRIER_GROSS / DIRECT_SHIPPER_GROSS) and fails closed
+ *          to UNKNOWN. NO guessed "no authority" haircut is ever applied: with a
+ *          leased basis and no stated split the settlement is UNKNOWN, not the
+ *          quoted amount scaled by an invented constant and not the quoted
+ *          amount relabelled. The layer is DESCRIPTIVE — RB-07 asserts the
+ *          rendered canonical decision is byte-identical whether or not a basis
+ *          is declared. No economics, verdict, grade, bid, schema or Worker
+ *          semantics change. DB stays 16, Worker stays v21.
  *  v24.0.30 "Not A Loss": Issue #278's DEACTIVATED/WITHDRAWN outcome class, the
  *          one later addendum on which the ChatGPT evidence pass (2026-09-20)
  *          and the independent Claude audit (2026-09-22) agree with no
@@ -450,7 +465,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.30';
+const APP_VERSION = '24.0.31';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -4217,6 +4232,10 @@ async function importJSON(file, opts={}){
       }))
     }));
     const ALLOWED_SETTINGS_KEYS = new Set(['uiMode','perDiemRate','brokerWindow','weeklyGoal','omegaLastInputs','lastExportDate','vehicleMpg','fuelPrice','weeklyReflection','mwLastInputs','mwLastTab','opCostPerMile','nonFuelVariableCpm','fixedCostPerMile','costModelVersion','homeLocation','lastBackupDate','datApiEnabled','datApiBaseUrl','mwMode','lastCloudSync','vehicleClass','canadaEnabled','cadUsdRate','borderAdminCost','canadaDocsReady','scoreWeights','monthlyInsurance','monthlyVehicle','monthlyMaintenance','monthlyOther','monthlyMiles','flRollbackSnapshot','flRollbackSnapshotAt','tripDraft','lastRecurringMonth','autoRecurringExpenses','fuelPriceUpdatedAt','lastWeeklyReportGenerated','v18OnboardingSeen','lastCloudCheckTimestamp','reloadPromptPending','quickEvalOnboardingSeen','driverDisplayName',
+      // Issue #278 — operating arrangement / rate basis. Added in the same change
+      // that introduces them: a key the app writes but the importer drops is the
+      // X-07 class of gap this list has needed retrofitting for three times.
+      'rateBasis','settlementPct',
       // v21 new settings keys
       'lastCloudSyncedAt','eiaLastPrice','eiaLastDate','eiaLastFetchTs','localUserId',
       // v22 F21/F22/F23 onboarding flags
@@ -8000,6 +8019,22 @@ async function renderInsights(){
   $('#vehicleMpg').value = await getSetting('vehicleMpg', '') || '';
   $('#fuelPrice').value = await getSetting('fuelPrice', '') || '';
   {
+    const rb = deriveRateBasis({
+      rateBasis: await getSetting('rateBasis', null),
+      settlementPct: await getSetting('settlementPct', null),
+    });
+    const sel = $('#rateBasisSelect');
+    if (sel) sel.value = rb.basis;
+    const pct = $('#settlementPct');
+    if (pct) pct.value = rb.settlementPct === null ? '' : rb.settlementPct;
+    const hint = $('#rateBasisHint');
+    if (hint){
+      hint.textContent = rb.basis === RATE_BASIS.LEASED_SETTLEMENT && rb.settlementPct === null
+        ? 'Leased: your split is not recorded, so the amount you enter is treated as your own settlement and the market spread stays UNKNOWN. FreightLogic never guesses a percentage.'
+        : `Rate basis: ${rateBasisLabel(rb.basis)}.`;
+    }
+  }
+  {
     const savedVariable = await getSetting('nonFuelVariableCpm', null);
     $('#opCostPerMile').value = _hasCostValue(savedVariable) ? savedVariable : '';
     const hint = $('#costModelHint');
@@ -9698,6 +9733,91 @@ function deriveWeekendOverlay({ pickupDay='', deliveryDay='', weakDestination=fa
     hardReject: false,
     strategicBridgeAllowed: !!strategic,
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Issue #278 — OPERATING ARRANGEMENT / RATE BASIS
+
+   49 CFR 376.12 makes the compensation basis a LEASE TERM, not a market
+   constant: a carrier arrangement may pay a percentage of gross revenue, a
+   flat mileage rate, a directional or commodity-variable rate, or another
+   mutually agreed method. So a quoted/market amount and the operator's
+   settlement amount are two different facts, and which one an entered number
+   represents depends on an arrangement only the operator knows.
+
+   The operator confirmed they currently run WITHOUT their own MC/DOT
+   authority. That is recorded here as a first-class dimension rather than
+   inferred, and — the rule both independent audits state in the same words —
+   NO guessed universal "no authority" haircut is ever applied. When the
+   arrangement implies a spread and nobody has supplied the actual split, the
+   settlement is UNKNOWN: not the quoted amount scaled by an invented constant,
+   and not the quoted amount silently relabelled. That is knownNum() doctrine
+   applied to money provenance.
+
+   This layer is DESCRIPTIVE. It never moves verdict, grade, True RPM or the
+   canonical bid range — RB-07 asserts that as byte-equality of the rendered
+   decision — for the same reason the v24.1 confidence contract may not.
+   ═══════════════════════════════════════════════════════════════ */
+
+const RATE_BASIS = Object.freeze({
+  UNKNOWN: 'UNKNOWN',
+  LEASED_SETTLEMENT: 'LEASED_SETTLEMENT',
+  OWN_AUTHORITY_CARRIER_GROSS: 'OWN_AUTHORITY_CARRIER_GROSS',
+  DIRECT_SHIPPER_GROSS: 'DIRECT_SHIPPER_GROSS',
+});
+
+// Bases on which the operator actually receives the amount entered. On these
+// the settlement IS the quoted number — known, with no spread — rather than
+// being assumed equal to it.
+const RATE_BASIS_GROSS_TO_OPERATOR = Object.freeze([
+  RATE_BASIS.OWN_AUTHORITY_CARRIER_GROSS,
+  RATE_BASIS.DIRECT_SHIPPER_GROSS,
+]);
+
+function deriveRateBasis(settings = {}){
+  const invalid = [];
+  const raw = settings.rateBasis;
+  // Fail closed. An unrecognized value is not a basis, and guessing one is the
+  // defect this issue names.
+  const basis = RATE_BASIS[raw] ? raw : RATE_BASIS.UNKNOWN;
+
+  // There is deliberately NO default split. A missing one stays missing.
+  let settlementPct = null;
+  if (settings.settlementPct !== undefined && settings.settlementPct !== null && settings.settlementPct !== ''){
+    const n = knownNum(settings.settlementPct);
+    if (n === null || n <= 0 || n > 1) invalid.push('settlementPct');
+    else settlementPct = n;
+  }
+  return Object.freeze({
+    basis,
+    settlementPct,
+    declared: basis !== RATE_BASIS.UNKNOWN,
+    invalid: Object.freeze(invalid),
+  });
+}
+
+function deriveSettlement(quotedRevenue, rateBasisResult){
+  const rb = rateBasisResult || deriveRateBasis({});
+  const quoted = knownNum(quotedRevenue);
+  const base = { basis: rb.basis, quoted, settlement: null, settlementKnown: false, spreadKnown: false };
+  if (quoted === null) return Object.freeze(base);
+
+  if (RATE_BASIS_GROSS_TO_OPERATOR.includes(rb.basis)){
+    return Object.freeze({ ...base, settlement: quoted, settlementKnown: true, spreadKnown: true });
+  }
+  if (rb.basis === RATE_BASIS.LEASED_SETTLEMENT && rb.settlementPct !== null){
+    return Object.freeze({ ...base, settlement: roundCents(quoted * rb.settlementPct), settlementKnown: true, spreadKnown: true });
+  }
+  // Leased with no stated split, or no declared basis at all. The spread is
+  // genuinely unknown and is reported as such.
+  return Object.freeze(base);
+}
+
+function rateBasisLabel(basis){
+  return basis === RATE_BASIS.LEASED_SETTLEMENT ? 'Leased to carrier (settlement)'
+    : basis === RATE_BASIS.OWN_AUTHORITY_CARRIER_GROSS ? 'Own authority (carrier gross)'
+    : basis === RATE_BASIS.DIRECT_SHIPPER_GROSS ? 'Direct shipper (gross)'
+    : 'Not stated';
 }
 
 function deriveCostProfile(settings = {}){
@@ -14858,6 +14978,16 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
     setSetting('fuelPriceProvenance', null).catch(()=>{});
   }
 
+  {
+    const chosen = $('#rateBasisSelect')?.value;
+    await setSetting('rateBasis', RATE_BASIS[chosen] ? chosen : null);
+    // An empty or out-of-range split CLEARS the setting rather than storing a
+    // fallback — the v24.0.9 planningAvgMph rule. A stored bound would run the
+    // model on a number the operator never chose.
+    const pctRaw = knownNum($('#settlementPct')?.value);
+    await setSetting('settlementPct', pctRaw !== null && pctRaw > 0 && pctRaw <= 1 ? pctRaw : null);
+  }
+
   const variableRaw = knownNum($('#opCostPerMile')?.value);
   await setSetting('nonFuelVariableCpm', variableRaw !== null && variableRaw >= 0 ? variableRaw : null);
 
@@ -17129,6 +17259,25 @@ async function cloudPushBackup(silent = true){
     // that lands mid-upload writes a newer value and therefore stays pending
     // instead of being erased by this push's success.
     const dirtyAt = finiteNum(await getSetting('syncDirtyAt', 0), 0);
+    // The watermark this push may advance to is the instant the rows are
+    // SELECTED, not the instant the upload finishes.
+    //
+    // Stamping Date.now() on success looks right and silently loses data: the
+    // rows below were chosen with `updatedAt > lastSynced` BEFORE encrypting and
+    // uploading, so a record saved while that upload is in flight carries an
+    // `updatedAt` older than a completion-time watermark. The next push then
+    // selects `updatedAt > watermark` and excludes it — and `updatedAt` never
+    // changes again, so it is excluded PERMANENTLY. Save a trip while a backup
+    // is uploading and that trip is never backed up, with every surface
+    // reporting Synced.
+    //
+    // Anchoring the watermark to the selection instant means anything written
+    // during the upload is still newer than it and is picked up by the next
+    // push. Re-sending a record that did make it into this payload is safe and
+    // is the fail-safe direction: restore is revision-aware (X-07) and a delta
+    // is idempotent by design. `lastCloudSync` stays Date.now(), because that
+    // one is a display fact about when the sync happened.
+    const selectedAt = Date.now();
     const allTrips = await dumpStore('trips'); const allExpenses = await dumpStore('expenses');
     const allFuel = await dumpStore('fuel');
     // v24.0.4 item 5: the SAME export-safety policy exportJSON() uses. Cloud
@@ -17211,7 +17360,7 @@ async function cloudPushBackup(silent = true){
     if (res.ok){
       _lastCloudSync = Date.now(); _cloudRetryCount = 0;
       await setSetting('lastCloudSync', _lastCloudSync);
-      await setSetting('lastCloudSyncedAt', _lastCloudSync);
+      await setSetting('lastCloudSyncedAt', selectedAt);
       // A success clears the durable failure marker (#205 §3). Without this the
       // status row would say "Sync problem" forever after one transient 500.
       await setSetting('lastCloudSyncError', null);
@@ -23774,6 +23923,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // M2 (R-TOCTOU-EXPENSE-FUEL): concurrency regression surface.
     addExpense, updateExpense, addFuel, updateFuel, dumpStore,
     // v24.2 Load Lifecycle
+    RATE_BASIS, deriveRateBasis, deriveSettlement, rateBasisLabel,
     sanitizeLifecycle, newLifecycleId, lifecycleDisplayStage, lifecycleWinRate,
     lifecycleDeliveryReliability, lifecycleMatchCandidate, upsertLifecycle,
     getLifecycle, listLifecycle, linkLifecycle, mergeRestoreData,

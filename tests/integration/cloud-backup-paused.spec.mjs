@@ -773,4 +773,59 @@ test('[SQ-12] a store that cannot be read can never report Synced, and never sup
   } finally { await close(); }
 });
 
+test('[SQ-13] a record written DURING an in-flight push stays pending — the watermark is the selection instant, not the completion instant', async () => {
+  // Found by the parallel suite, and it is a production defect rather than a
+  // test artefact. cloudPushBackup() selects rows with `updatedAt > watermark`
+  // BEFORE it encrypts and uploads, then on success stamped the watermark with
+  // Date.now() at COMPLETION. A trip saved while that upload was in flight
+  // therefore carried an `updatedAt` older than the new watermark, so the next
+  // push excluded it — and `updatedAt` never changes again, so it was excluded
+  // PERMANENTLY. Silent, unrecoverable backup loss in the one component whose
+  // entire purpose is disaster recovery, on an ordinary save-while-syncing.
+  const { page, close } = await launchApp();
+  try {
+    const r = await page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      await T.setSetting('cloudBackupToken', 'flk_' + 'd'.repeat(32));
+      await T.setSetting('cloudBackupUrl', 'http://127.0.0.1:9/fake');
+      sessionStorage.setItem('fl_cloud_pass', 'passphrase-for-sq13');
+      // Watermark old enough that the push has real content to send — otherwise
+      // it takes the "Up to date" early-out and never uploads at all.
+      await T.setSetting('lastCloudSyncedAt', 1);
+
+      const mk = (orderNo) => T.upsertTrip({
+        orderNo, origin: 'A', destination: 'B',
+        loadedMiles: 100, emptyMiles: 0, revenue: 200,
+        deliveryDate: new Date().toISOString().slice(0, 10), paymentStatusKnown: true,
+      });
+      await mk('SQ13-BEFORE');
+
+      const realFetch = window.fetch;
+      let midUploadUpdatedAt = null;
+      let sawUpload = false;
+      window.fetch = async (...args) => {
+        if (String(args[0] || '').includes('/backup')) {
+          sawUpload = true;
+          const t = await mk('SQ13-INFLIGHT');      // saved WHILE uploading
+          midUploadUpdatedAt = t?.updatedAt ?? null;
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return realFetch(...args);
+      };
+      try { await T.cloudPushBackup({ silent: true }); } finally { window.fetch = realFetch; }
+
+      const watermark = Number(await T.getSetting('lastCloudSyncedAt', 0) || 0);
+      const summary = await T.syncPendingSummary();
+      return { sawUpload, midUploadUpdatedAt, watermark, pending: summary.pending };
+    });
+    ok(r.sawUpload, 'the fixture must actually have reached the upload');
+    ok(r.midUploadUpdatedAt, 'the fixture must actually have written a trip mid-upload');
+    ok(r.watermark <= r.midUploadUpdatedAt,
+      `the watermark (${r.watermark}) must not advance past a record written during the upload (${r.midUploadUpdatedAt}) — otherwise that record can never be selected again`);
+    ok(r.pending >= 1, `the mid-upload record must still be pending — got pending=${r.pending}`);
+  } finally { await close(); }
+});
+
 export async function runSpec() { return run(); }
