@@ -1,0 +1,6 @@
+owner: gpt
+token: d3b7c9e4-2a61-4f85-b830-9e14c6725f0a
+started_utc: 2026-09-22T02:36:10Z
+expected_release_utc: 2026-09-22T04:30:00Z
+paths: .agents/LANES.md
+task: Grant and retire exact four-file v24.0.29 observed-production certification documentation lane; no runtime/test/freight-policy/deployment/credential/physical-device authority.
