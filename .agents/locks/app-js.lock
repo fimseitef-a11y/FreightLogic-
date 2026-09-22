@@ -1,1 +1,6 @@
-owner: claude | token: 4a9bb278-8218-4da3-912e-337f73e5db39 | started_utc: 2026-09-22T19:04:37Z | expected_release_utc: 2026-09-22T22:04:37Z | paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, admin-driver-ui.js, .assetsignore | task: #231 Phase C remove driver-app admin surface + 24.0.33 generation
+owner: claude
+token: 4a9bb278-8218-4da3-912e-337f73e5db39
+started_utc: 2026-09-22T19:04:37Z
+expected_release_utc: 2026-09-23T03:00:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, admin-driver-ui.js, .assetsignore
+task: #231 Phase C remove driver-app admin surface + 24.0.33 generation; then v24.5 redesign queue
