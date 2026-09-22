@@ -1,0 +1,6 @@
+owner: gpt
+token: 7a8d3c21-5f49-4e6b-9a20-3d7f84c1b652
+started_utc: 2026-09-22T01:49:00Z
+expected_release_utc: 2026-09-22T03:30:00Z
+paths: .agents/LANES.md
+task: Grant and later retire exact test-path ownership for GitHub #304 trip-delete safety regression; no freight policy or unrelated runtime authority.
