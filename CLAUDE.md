@@ -2,7 +2,18 @@
 
 ## Project Overview
 
-**FreightLogic v24.0.29 / DB16 / Worker v21 is now directly observed in production.**
+**SOURCE CANDIDATE IS v24.0.30. LAST DIRECTLY OBSERVED PRODUCTION IS v24.0.29 / DB16 / Worker v21.**
+
+v24.0.30 is the Issue #278 `DEACTIVATED`/`WITHDRAWN` outcome class — the one later #278
+addendum on which the ChatGPT evidence pass of 2026-09-20 and the independent Claude audit of
+2026-09-22 agree with no disagreement, because it is data semantics rather than the disputed
+market policy. It is **source-only until it merges, deploys and is observed**; the production
+paragraphs below describe v24.0.29 and stay true until a superseding observation exists.
+`DB_VERSION` remains **16** and the Worker remains **v21**. No economics, verdict, grade, bid,
+schema or Worker semantics change. Nothing in #278's disputed long-haul scope is implemented
+here, and this does not close #278.
+
+**Production observation of record — v24.0.29.**
 
 PR #306 merged the v24.0.29 trip-delete safety runtime as `ca99d50abf18557682f38e641c2b023041088ea6`. Its exact PR head `cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed Tests `35678726412` at **748 passed / 0 failed across 73 specs**, with Lanes `35678726404` and CodeQL `35678726418` passing. The release fixes Issue #304 by making an Undo-pending trip immediately non-actionable, refusing duplicate queueing for the same stable id, restoring the row on Undo/failure, and deleting only the exact stable-id record after the Undo window. DB remains 16 and Worker remains v21.
 
@@ -291,7 +302,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.29';
+const APP_VERSION = '24.0.30';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -436,8 +447,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.29` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.29`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.30` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.30`; caches `sw-bridge.js` and `modern-shell.js`; injects both the `admin-driver-ui.js` and `midwest-stack-authority.js` script tags into HTML responses via `injectEnhancementScripts()` (each guarded by an `injectBeforeBodyClose()` idempotency check); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4677,6 +4688,130 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.30 "Not A Loss" — Issue #278's DEACTIVATED outcome class
+
+`DB_VERSION` stays **16** and the Worker stays **v21**. **No canonical economics, verdict,
+grade, bid range, routing, import schema, storage or security behaviour changes anywhere in
+this release** — what changes is which outcomes a denominator is allowed to contain.
+
+### Why this item and not the rest of #278
+
+#278 carries several later addenda. Two independent audits now exist: the ChatGPT evidence pass
+(issue comment `5754460458`, 2026-09-20) and the Claude independent audit the issue had been
+explicitly gated on (`5770614303`, 2026-09-22). They **disagree** about the long-haul authority —
+Claude's audit declines to delete a protective floor and replace it with a model in one step on a
+live app, with no calibrated cargo-van clearing data to build the model from — and that item stays
+unimplemented until joint consensus exists.
+
+`DEACTIVATED`/`WITHDRAWN` is the one addendum where the two audits converge with no disagreement,
+and both say why in the same words: it is a **data-semantics requirement, not a public-market
+inference**. Implementing it encodes no disputed policy, which is the issue's own test for what
+may proceed ahead of reconciliation.
+
+### The evidence it comes from
+
+The operator's 2026-09-19 DispatchLand auction history: quote #1173654, Villa Rica GA →
+Baltimore MD, 709 loaded + 91 empty, bid $1,000, pickup Saturday, delivery Monday, platform
+outcome **DEACTIVATED**. The operator reports similar deactivations when their ask was high and
+*suspects* the broker withdraws the auction. That is recorded as a **hypothesis**, which is the
+correct strength: nothing here infers a cause.
+
+### Why it is its own member and not folded into a neighbour
+
+`CANCELLED` already existed and means **the load** was cancelled. A broker or platform
+withdrawing **the operator's bid** is a different event with a different subject. The lifecycle
+header comment has said since v24.2 that the three dimensions are kept separate precisely because
+`EXPIRED is not LOST` and `CANCELLED is not LOST`; this is that rule applied once more rather
+than an exception to it.
+
+### What a deactivation is: censored evidence
+
+Nobody outbid the operator — the auction was withdrawn — so a deactivation is **not a win, not a
+loss, and not a clearing-price observation** unless later evidence shows the load awarded at a
+known rate. The damage a convenient mapping would do is exact rather than abstract, and the
+Claude audit supplied the addresses:
+
+- `lifecycleWinRate()` — mapping a deactivation onto `LOST` would put a loss that never happened
+  into the **win-rate denominator**.
+- `calibrateFromLifecycle()` — and would then train the clearing-price model with it.
+
+Both exclude it now, and `lifecycleWinRate()` **reports** the exclusion as
+`excludedDeactivated` beside `excludedExpired` and `excludedCancelled`, so the denominator can be
+audited rather than trusted. `calibrateFromLifecycle()` filters `WON || LOST` and therefore
+excluded it by construction; `DEACT-05` pins that as a property instead of an accident, with a
+deactivated row carrying a real RPM and a real timestamp so it can only be excluded by its
+outcome class.
+
+### The defect found while implementing it
+
+`getBidWinRateStats()` computed `excludedExpired: recent.length - adjudicated.length` — a
+**residual bucket**, which silently absorbs every non-adjudicated outcome added later. The first
+deactivation would therefore have been reported to the operator as an expired bid: the same
+conflation this issue exists to remove, one layer down. Measured, not deduced — the red-first run
+of `DEACT-07` reported `excludedExpired` as **5** where **3** bids had actually expired. Both are
+counted explicitly now.
+
+### The input path
+
+An outcome class with no way to enter it is the X-11 dead-claim shape — a vocabulary the app
+documents and nobody can reach. `logBid()` accepts `'deactivated'` and still **fails closed** to
+`'expired'` on anything unknown, so widening the set did not turn the validator into a
+pass-through; the evaluator result card offers a fourth `🚫 Deactivated` pill beside Won / Lost /
+Expired; and `importHistoricalOpportunities()` preserves an operator-confirmed deactivation
+instead of downgrading it to `SEEN`.
+
+### Tests
+
+`tests/integration/deactivated-outcome.spec.mjs` (8, new, registered in `tests/run-all.mjs`).
+Red-first evidence on the unmodified tree: **1 passed / 7 failed**, the single pass being
+`DEACT-05`, whose exclusion was already correct by construction and is pinned rather than
+claimed. After the repair the spec is 8/0.
+
+Every negative control was applied against a pristine copy and verified by `sha256sum`
+afterwards, and each fires on exactly the assertions it guards and on no others:
+
+| Control | Fires |
+|---|---|
+| remove `DEACTIVATED` from `LIFECYCLE_OPPORTUNITY` | DEACT-01, DEACT-02 |
+| count a deactivation as `LOST` (the damage this issue names) | DEACT-04 |
+| `logBid` stops accepting `'deactivated'` | DEACT-06, DEACT-07 |
+| restore the `excludedExpired` residual bucket | DEACT-07 only |
+| remove the Deactivated pill | DEACT-08 only |
+| drop `excludedDeactivated` from `lifecycleWinRate` | DEACT-04 only |
+
+`DEACT-07` asserts a **delta**, not an absolute: `bidHistory` is shared page state and an earlier
+test in the same spec also logs a deactivation, so an absolute count would assert another test's
+bookkeeping rather than this rule — the TIA-06/07 lesson.
+
+### Why this is a version bump
+
+`app.js` and `index.html` changed and v24.0.29 is live. `CACHE_NAME` is
+`freightlogic-${SW_VERSION}` and the `?v=` query is the only other identity a child asset
+carries, so an installed PWA holding the 24.0.29 shell would never fetch either file.
+`scripts/verify-release-generation.mjs` refused the tree at a reused 24.0.29, which is the gate
+working as designed. Every governed marker moves together to **24.0.30**; all **14** CG
+assertions and `verify-cloudflare-parity --static-only` are green, CSP byte-identical, and the
+declared runtime asset count stays **22**.
+
+The blanket marker sed relabelled v24.0.29's own changelog entry as v24.0.30 — checklist item
+1's exact failure mode, the one that let v24.0.0 ship claiming v23.9's work. It was restored and
+v24.0.30 was given its own entry, rather than inheriting a neighbour's.
+
+Full suite on the exact candidate head, real headless Chromium, **first attempt: 758 passed, 0
+failed across 74 spec files.** Nothing was skipped, quarantined or weakened.
+
+### Not deployed
+
+**Source-only.** After merging, let Cloudflare deploy, then **re-dispatch** live parity and the
+production service-worker gate rather than citing the push-triggered runs, which race the deploy
+— ten recorded occurrences.
+
+**Still HOLD.** Physical iPhone **A1-A13** (#226), the M6 conflict review, #252's privileged
+provider invocation and real-screenshot benchmark, #231's guarded Admin Console proof and #222's
+repository-admin controls are all unchanged and none is touched here.
+
+---
 
 ## v24.0.29 "Delete Once, Know It Happened" — Issue #304 trip-delete safety
 

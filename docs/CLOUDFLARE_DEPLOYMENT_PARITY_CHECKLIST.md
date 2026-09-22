@@ -2,7 +2,14 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Observed 2026-09-22 UTC: production serves v24.0.29 / DB16 / Worker v21.**
+**Source candidate is v24.0.30. Observed 2026-09-22 UTC: production serves v24.0.29 / DB16 / Worker v21.**
+v24.0.30 (Issue #278's `DEACTIVATED` outcome class) is source-only: it has not deployed and
+has not been observed. The production evidence below is about v24.0.29 and stays true until a
+superseding observation exists — a superseding record is due the day a shipped file DEPLOYS,
+not the day it merges. DB stays 16 and Worker stays v21, so no Worker deploy is required for
+this generation; deploy the app, then **re-dispatch** both live gates rather than citing the
+push-triggered runs.
+
 Runtime merge `ca99d50abf18557682f38e641c2b023041088ea6` (PR #306) has exact PR-head
 Tests `35678726412` at **748/0 across 73 specs**, with Lanes `35678726404`
 and CodeQL `35678726418` passing.
@@ -123,7 +130,9 @@ the day it merges.*
 
 ## Runtime state at the 2026-09-22 checkpoint
 
-- App/PWA/SW **24.0.29**, DB **16**, Worker **v21**; source and observed production agree.
+- Observed production: App/PWA/SW **24.0.29**, DB **16**, Worker **v21**.
+- Source candidate: App/PWA/SW **24.0.30**, DB **16**, Worker **v21** — source and production
+  deliberately do NOT agree yet, and will not until v24.0.30 deploys and is re-observed.
 - Runtime merge: `ca99d50a` (PR #306); exact PR-head Tests `35678726412`:
   **748 passed / 0 failed across 73 specs**.
 - Settled current observation checkpoint: `98e447e3`.

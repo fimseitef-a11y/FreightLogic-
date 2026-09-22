@@ -107,6 +107,32 @@ test('[V24-B11] canonical authority is deterministic for identical inputs', asyn
   eq(JSON.stringify(a), JSON.stringify(b), 'identical facts must yield byte-equivalent JSON');
 });
 
+test('[V24-B12] long-haul distance threshold is exact: 250 survives, 251 rejects by the long-haul rule', async () => {
+  // The long-haul gate is `totalMi > policy.longHaulMiles` with longHaulMiles = 250.
+  // Every neighbouring authority boundary in this spec is pinned on BOTH sides
+  // (1.39/1.40, 1.59/1.60, 35.01/35, 9.99/10, 1.24/1.25); this one was not, and
+  // V24-B04 exercises 500mi, comfortably inside the band. A contextual replacement
+  // could therefore move or drop the real threshold with the suite still green —
+  // the OI-11 failure mode. This pins the SHIPPED number; it takes no position on
+  // whether 250 is the right number (see issue #278's long-haul addendum).
+  const at = await derive({ trueRPM: 1.44, totalMi: 250 });
+  eq(at.verdict, 'ACCEPT', '250mi is not greater than longHaulMiles, so the long-haul rule must not fire');
+
+  const over = await derive({ trueRPM: 1.44, totalMi: 251 });
+  eq(over.verdict, 'REJECT', '251mi must cross the long-haul distance threshold');
+  // Assert the REASON, not just the verdict: a rejection produced by any other rule
+  // would satisfy a verdict-only assertion while the long-haul threshold had moved.
+  eq(over.verdictReason, 'Long haul under $1.45', 'the rejection must come from the long-haul rule specifically');
+});
+
+test('[V24-B13] long-haul RPM threshold is exact at a fixed long distance: 1.44 rejects, 1.45 survives', async () => {
+  const under = await derive({ trueRPM: 1.44, totalMi: 251 });
+  eq(under.verdict, 'REJECT', '1.44 is below longHaulMinRPM');
+  eq(under.verdictReason, 'Long haul under $1.45', 'rejection must be the long-haul rule');
+  const atFloor = await derive({ trueRPM: 1.45, totalMi: 251 });
+  eq(atFloor.verdict, 'ACCEPT', '1.45 is not below longHaulMinRPM and must clear the long-haul rule');
+});
+
 export async function runSpec() {
   app = await launchApp();
   try { return await run(); }
