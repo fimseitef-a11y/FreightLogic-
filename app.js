@@ -17322,18 +17322,26 @@ function parseDeepLinkFragment(fragment){
   let sp;
   try { sp = new URLSearchParams(frag); } catch(_) { return { ok:false, error:'That FreightLogic link is not recognized.' }; }
   const action = sp.get('do') || '';
-  const raw = {};
-  for (const [k, v] of sp){
-    if (k === 'do') continue;
-    if (DEEP_LINK_CREDENTIAL_RE.test(k)) return { ok:false, error:'FreightLogic links never carry credentials, so this one was refused.' };
-    if (!Object.prototype.hasOwnProperty.call(raw, k)) raw[k] = v;
+  for (const k of sp.keys()){
+    if (k !== 'do' && DEEP_LINK_CREDENTIAL_RE.test(k)) return { ok:false, error:'FreightLogic links never carry credentials, so this one was refused.' };
   }
+  const own = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
   if (action === 'open'){
-    const route = DEEP_LINK_OPEN_ROUTES[raw.to];
-    return route ? { ok:true, do:'open', route, params:{}, dropped:[] } : { ok:false, error:'That FreightLogic link names a screen that does not exist.' };
+    const to = sp.get('to') || '';
+    return own(DEEP_LINK_OPEN_ROUTES, to)
+      ? { ok:true, do:'open', route: DEEP_LINK_OPEN_ROUTES[to], params:{}, dropped:[] }
+      : { ok:false, error:'That FreightLogic link names a screen that does not exist.' };
   }
   if (action === 'relay'){
-    return RELAY_ID_RE.test(raw.id || '') ? { ok:true, do:'relay', id: raw.id, params:{}, dropped:[] } : { ok:false, error:'That Shortcuts item link is not valid.' };
+    const id = sp.get('id') || '';
+    return RELAY_ID_RE.test(id) ? { ok:true, do:'relay', id, params:{}, dropped:[] } : { ok:false, error:'That Shortcuts item link is not valid.' };
+  }
+  if (!own(RELAY_ACTIONS, action)) return { ok:false, error:'That FreightLogic link is not recognized.' };
+  // Only names the contract defines are ever copied, so a link-supplied name
+  // (`__proto__`, `constructor`, …) can never become a property write.
+  const raw = {};
+  for (const name of Object.keys(RELAY_ACTIONS[action])){
+    if (sp.has(name)) raw[name] = sp.get(name);
   }
   return validateDeepLinkParams(action, raw);
 }

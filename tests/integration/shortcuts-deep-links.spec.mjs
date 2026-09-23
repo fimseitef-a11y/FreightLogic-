@@ -181,6 +181,12 @@ test('[SDL-08] refusals: credentials, unknown actions, oversized links; unusable
     await openLink(app, 'do=intake&text=' + 'x'.repeat(9000));
     ok(!(await modal(p)).open, 'an oversized link opens nothing');
 
+    await openLink(app, 'do=expense&amount=7&__proto__%5Bpolluted%5D=1&__proto__=x&constructor=y');
+    eq(await p.evaluate(() => ({}).polluted), undefined, 'a link cannot write to Object.prototype');
+    eq((await modal(p)).title, 'Add Expense', 'the link still opens normally');
+    eq(await val(p, 'f_amt'), '7', 'with its real parameters');
+    await p.evaluate(() => { document.getElementById('modalClose')?.click(); }); await sleep(400);
+
     await openLink(app, 'do=expense&amount=999999&category=Tolls');
     ok((await modal(p)).title === 'Add Expense', 'the form still opens');
     eq(await val(p, 'f_amt'), '', 'an out-of-range amount is dropped, not clamped');
@@ -405,6 +411,11 @@ test('[SDL-17] open links route to the named screen while the app is running', a
     ok(await p.evaluate(() => document.getElementById('view-money')?.style.display !== 'none'), 'Money is visible');
     await openLink(app, 'do=open&to=nowhere');
     ok(/does not exist/i.test(await toastText(p)), 'an unknown screen is explained');
+    for (const inherited of ['__proto__', 'constructor', 'toString']) {
+      await openLink(app, 'do=open&to=' + inherited);
+      ok(/does not exist/i.test(await toastText(p)), `an inherited property name (${inherited}) is not a screen`);
+      ok(!/object/i.test(await p.evaluate(() => location.hash)), 'and never lands on a bogus route');
+    }
   } finally { await app.close(); }
 });
 
