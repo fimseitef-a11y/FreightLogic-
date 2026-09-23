@@ -240,6 +240,40 @@ test('[DAC-08] the live parity gate proves the withheld paths are actually non-p
     'the sweep must accept 404 or 403 as non-public and nothing weaker');
 });
 
+test('[DAC-09] the driver origin never serves the Admin Console or the native-ios source', () => {
+  // Observed 2026-09-23 by external fetch against production: the DRIVER origin
+  // answered `/admin-console/` with the Admin Console UI and served
+  // `admin-console/worker.js` and `native-ios/README.md`, because neither
+  // directory was in the root `.assetsignore` and wrangler.jsonc publishes ".".
+  // #231 exists to keep admin capability OFF the driver origin; a copy of the
+  // console served from it defeats that separation even though the Worker's
+  // exact-origin CORS stops it working. The console has its own origin and its
+  // own `admin-console/.assetsignore`; the root file does not govern it.
+  // The repository README/CONTRIBUTING docs are repository-only for the same
+  // reason as the #228 set.
+  const repoOnly = [
+    'admin-console/index.html',
+    'admin-console/app.js',
+    'admin-console/worker.js',
+    'admin-console/wrangler.jsonc',
+    'native-ios/Package.swift',
+    'native-ios/README.md',
+    'README.md',
+    'CONTRIBUTING.md',
+  ];
+  for (const f of repoOnly) {
+    const { excluded } = isExcluded(f);
+    ok(excluded, `${f} must be withheld from the driver origin's deployed assets`);
+  }
+  // And the live sweep must actually request the two directories, or the static
+  // half is the only thing standing between a regression and production.
+  const live = read('scripts/verify-cloudflare-parity.mjs')
+    .split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  for (const p of ['admin-console/index.html', 'admin-console/worker.js', 'native-ios/Package.swift']) {
+    ok(live.includes(`'${p}'`), `the live withheld-path sweep must request ${p} by name`);
+  }
+});
+
 export async function runSpec() {
   return await run();
 }
