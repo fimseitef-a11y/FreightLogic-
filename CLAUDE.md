@@ -8,7 +8,8 @@ Synced from the shared Airtable coordination table (`ChatGPT Coordination`, base
 Workspace Cleanup") on 2026-09-23. Treat these as checkpoint facts, and re-verify anything
 version-shaped against source, `/health` and a re-dispatched live gate before repeating it.
 
-- **Production is v24.0.33 / DB16 / Worker v23, OBSERVED by the repository gates.** #231
+- **Superseded 2026-09-23: production is now v24.0.34 / DB16 / Worker v24** (see the paragraph
+  after this list). Kept as history: **Production is v24.0.33 / DB16 / Worker v23, OBSERVED by the repository gates.** #231
   Phase C merged in PR #330. The external 2026-09-22 spot-check was followed by re-dispatched
   Verify Live Parity `35776465060` and Production Service Worker `35776467510`, both PASS on
   `8caf6a4`, and **#231 is closed**. *Corrected 2026-09-23 by the v24.0.34 session: this bullet
@@ -65,12 +66,26 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.33 / DB16 / Worker v23, DIRECTLY OBSERVED.** Live Parity run `35776465060`
-and Production Service Worker run `35776467510` (both `workflow_dispatch` on `main` @ `8caf6a4`)
-PASS; Worker v23 was deployed by run `35771229876` and verified by Verify Authenticated Worker run
-`35771369383`. **v24.0.34 / Worker v24 is the source candidate**: Apple Shortcuts deep links, the
-Shortcuts relay and Web Push to the installed Home Screen app (see its section). It is not live
-until it deploys and a re-dispatched parity run observes it. The paragraphs below are history.
+**Production is v24.0.34 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-23.** PR #333 merged as
+`8f4585e`. Worker v24 was deployed by run `35932504325`; re-dispatched Live Parity run `35932842955`
+and Production Service Worker run `35932845279` (both `workflow_dispatch` on `main` @ `8f4585e`)
+PASS; Verify Authenticated Worker run `35936015903` PASS (authority, backup/delta/restore,
+invite/claim). Tests `35932498542` and CodeQL `35932498469` passed on the same SHA.
+
+*Two failures on that SHA are recorded and are not the evidence.* Push-triggered parity
+`35932498401` raced the Cloudflare deploy. The auto-triggered authenticated gate `35932541854`
+started two seconds after the Worker deploy finished and failed exactly one check — the 4th claim
+of one invite answered 200 instead of 410 — with every other check green. The claim path is
+unchanged since Worker v23 passed it, and the settled re-dispatch passed, so this is read as the
+known KV race on the claim counter during rollout (the Worker source already documents that the
+increment is not atomic). If it recurs on a settled Worker it is a real finding, not a flake.
+
+Still unobserved: a real iPhone receiving one of these pushes (requested as A14). The paragraphs
+below are history.
+
+*Superseded, kept as history:* production was v24.0.33 / DB16 / Worker v23 (Live Parity
+`35776465060`, Production Service Worker `35776467510`, Worker deploy `35771229876`, authenticated
+gate `35771369383`), with v24.0.34 / Worker v24 as the source candidate.
 
 **FreightLogic v24.0.32 / DB16 / Worker v22 is DIRECTLY OBSERVED in production, and
 screenshot intake works live for the first time.** Live Parity run `35762451735` on `main` @
@@ -299,7 +314,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v24 source** (v23 deployed until the v24 deploy lands — read `/health`) adds v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v24** (deployed 2026-09-23 — still read `/health` rather than trusting this line) adds v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -4975,6 +4990,14 @@ accepts 24.0.34, all 14 CG assertions pass, and `--static-only` parity passes wi
 assets. The live parity gate gains one Worker check, that `/push/key` serves a real 65-byte P-256
 key, because key generation and re-import run on Cloudflare's WebCrypto, which Node's cannot stand
 in for.
+
+### DEPLOYED and OBSERVED LIVE 2026-09-23
+
+Merged as `8f4585e`. Worker v24 deployed by run `35932504325`. Re-dispatched Live Parity
+`35932842955` (which includes the `/push/key` check above) and Production Service Worker
+`35932845279` PASS; the settled authenticated gate `35936015903` PASS. The auto-triggered
+authenticated run `35932541854` failed only the 4th-claim-refused check while the deploy was
+still rolling out; see the Project Overview for why that is recorded rather than cited.
 
 ### What this does not claim
 
