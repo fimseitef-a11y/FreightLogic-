@@ -1,6 +1,0 @@
-owner: claude
-token: 4a9bb278-8218-4da3-912e-337f73e5db39
-started_utc: 2026-09-22T19:04:37Z
-expected_release_utc: 2026-09-23T03:00:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, manifest.json, modern-shell.js, .assetsignore, styles.css, .agents/LANES.md
-task: v24.5 redesign + Shortcuts deep-link router + Web Push client (one release); #231 Phase C landed as 8caf6a4
