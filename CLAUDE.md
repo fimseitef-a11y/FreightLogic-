@@ -2,6 +2,69 @@
 
 ## Project Overview
 
+### Current direction — 2026-09-23 (read this first)
+
+Synced from the shared Airtable coordination table (`ChatGPT Coordination`, base "Claude
+Workspace Cleanup") on 2026-09-23. Treat these as checkpoint facts, and re-verify anything
+version-shaped against source, `/health` and a re-dispatched live gate before repeating it.
+
+- **Source head is v24.0.33 / DB16 / Worker v23.** #231 Phase C (admin surface removed from
+  the driver app) merged in PR #330. An *external* spot-check on 2026-09-22 saw production
+  serving app/SW/manifest 24.0.33 and Worker `/health` v23, with `admin-driver-ui.js`
+  returning 404. That is not the repository's Verify Live Parity / Production Service Worker
+  gate, so **#231 stays open until that gate is re-dispatched and passes**. The v24.0.32 text
+  below is history.
+- **PR #331 (`5a86d72`) closed a live exposure.** The driver origin was serving
+  `/admin-console/` (the Admin Console UI and its `worker.js`) and `native-ios/*`. Both are
+  now in `.assetsignore`, with DAC-09 and live must-404 checks. Do not re-publish either from
+  the driver origin: the Admin Console deploys from its own origin.
+- **Next release: v24.0.34 / Worker v24, Apple Shortcuts deep links + Web Push, built by
+  Claude end to end.** The operator decided this on 2026-09-23. The release covers both
+  contracts (`docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md`), the Worker
+  endpoints, the service worker and the client. Claude may merge PRs and dispatch the Worker
+  deploy once every gate is green. This supersedes the 2026-09-22 assignment to GPT. The
+  contracts were first drafted on branch `claude/repo-airtable-review-13j8hi` (`0bb6e4e`) and
+  were **not on `main`** at the time of this sync. The app-js lock for this work was held by
+  Claude.
+- **iPhone platform fact that shapes the design:** a Shortcut's *Open URLs* opens in Safari,
+  and Safari's storage is separate from the Home Screen PWA. So any Shortcut that *saves*
+  data must go through the relay: Shortcut → `POST /relay` (relay-only Shortcut key) →
+  encrypted Web Push → a tap opens the installed app. DispatchLand capture runs on the device
+  (Extract Text from Image), then goes to the relay as `do=intake`. A Shortcut must never
+  write straight into Safari's storage and assume the PWA can see it.
+- **Locked direction: PWA + Shortcuts + Web Push. The native iOS track (`native-ios/`) is
+  FROZEN.** There is no paid Apple Developer Program for now. Free third-party iOS bridge
+  apps (Live Activities/widgets) are unverified. Do not treat them as equal to native
+  capability.
+- **GPT's parallel queue (documentation only, see `.agents/LANES.md`):**
+  `docs/SHORTCUTS_PACK.md`, `README.md`, `CONTRIBUTING.md`, the phase 5–6 reconciliation in
+  `AUDIT_REPORT.md` (keep every finding), and `docs/VENDOR_DEPENDENCY_REVIEW.md` (SheetJS
+  0.18.5 advisories, report only). Do not edit those paths while their rows stand.
+- **Adopted from the DeepSeek audit reconciliation, and what was rejected:**
+  - **Do NOT** modularize `app.js`, add a bundler or build system, or introduce ESLint in the
+    current release.
+  - Rotate a credential only when it is *proven* still live. Do not rotate everything as a
+    blanket measure. Investigate whether any tokens minted under Worker v7 still authenticate.
+  - DeepSeek's earlier CI, npm-audit and blanket-rotation advice was stale, and DeepSeek
+    acknowledged it.
+- **Proposed next intelligence layer. It is not authorized, so do not start it unprompted.**
+  The layer moves from grading one load to judging the best next 24 hours. Suggested first
+  modules: Next Move (WAIT / REPOSITION / TAKE), Day Value / opportunity cost, a per-market
+  operating clock, and reload latency. Build it only after the Shortcuts/Push release is
+  stable, as additions that keep the current engine and UI. Evidence states stay strict:
+  BOARD OBSERVATION → QUOTE → BID → WON/LOST → BOOKED → PICKED UP → COMPLETED → PAID. No state
+  implies another, and unknown deadhead stays UNKNOWN.
+- **Freight doctrine reminders from operator evidence:**
+  - The operator runs under a carrier's authority and has **no own MC/DOT**.
+  - Emergency bidding at about $0.89–$0.90 True RPM is tactical escape pricing only. It is
+    not a new floor, and it is worth doing only when it buys geography toward
+    TN/KY/OH/IN/MI/PA/IL/MO.
+  - An expired quote is a lost bid, not a win. DEACTIVATED is censored evidence, not a loss.
+  - Keep conflicting source records separate. Never deduplicate DispatchLand quotes by route
+    alone.
+- **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
+  repository protection. #278's long-haul item stays unresolved pending joint consensus.
+
 **FreightLogic v24.0.32 / DB16 / Worker v22 is DIRECTLY OBSERVED in production, and
 screenshot intake works live for the first time.** Live Parity run `35762451735` on `main` @
 `d3c02ca` PASS with the `workerVersion` pin at **22**, and Verify Authenticated Worker run
