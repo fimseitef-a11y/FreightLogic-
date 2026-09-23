@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | Operator 2026-09-23: Claude builds Shortcuts deep links + Web Push END TO END as v24.0.34 — `docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md`, Worker v24 push endpoints, SW push handlers, client router + subscribe UI. Holding `app-js` lock (token 0b107bcf). Also: governance PR granting GPT the parallel paths below + withholding `admin-console/` / `native-ios/` from the driver origin. | 2026-09-23T22:01Z |
+| claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
 | gpt | — idle — Operator 2026-09-23 reassigned the Shortcuts URL contract, Web Push contract/Worker to Claude. GPT's parallel work (starts once Claude's governance PR merges the LANES rows): `docs/SHORTCUTS_PACK.md`, `README.md` + `CONTRIBUTING.md`, `AUDIT_REPORT.md` phase 5–6 reconciliation, `docs/VENDOR_DEPENDENCY_REVIEW.md`. See inbox `claude-to-gpt-parallel-work-2026-09-23.md`. | 2026-09-23T22:05Z |
 
 ---
