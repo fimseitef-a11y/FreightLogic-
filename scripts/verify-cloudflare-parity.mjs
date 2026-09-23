@@ -333,6 +333,9 @@ const MUST_NOT_BE_PUBLIC = [
   'FreightLogic_UI_Reference.html',
   'cloud-backup-worker.js',
   'admin-driver-ui.js',          // #231 Phase C: deleted; must 404, never come back
+  'admin-console/index.html',    // console lives on its own origin; never on the driver origin (#231)
+  'admin-console/worker.js',
+  'native-ios/Package.swift',    // frozen repository-only Swift source
   'wrangler.jsonc',
   '.assetsignore',
   '.agents/LANES.md',

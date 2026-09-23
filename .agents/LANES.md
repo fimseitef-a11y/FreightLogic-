@@ -39,6 +39,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 **Issue #278 long-haul policy completion takeover — RETIRED 2026-09-22.** PR #317 merged as `694b468e` after exact-head PR Tests **767/0 across 75 specs**, Lanes, and CodeQL passed. The temporary release/test ownership is retired: `midwest-stack-config.json`, `midwest-stack-authority.js`, and `CLAUDE.md` return to Claude, and the parity/boundary-test exact rows fall back to their Claude-owned parent lanes. Runtime paths remain SHARED. This retirement does not claim production deployment or physical-device certification; those remain evidence gates.
 
+**Apple native capability lane — FROZEN 2026-09-22 by operator decision** (#204/#205 comments 5785564546 / 5785565022: no paid Apple Developer Program for now, no new Swift, Apple Shortcuts + Web Push to the installed PWA are the current substitutes). Ownership below is unchanged so the scaffold and its CI are preserved as history/future work; freezing means no new scope, not deletion. The driver origin withholds `native-ios/` via `.assetsignore` because it is repository-only source.
+
 **Apple native capability lane (2026-09-22, operator-directed under #204/#205).** The operator explicitly directed GPT to proceed with the Safari/native Apple work. GPT may own only the new `native-ios/` subtree plus the exact `.github/workflows/native-ios.yml` workflow used to validate that subtree. This is an additive thin-native scaffold: it does **not** transfer `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `cloud-backup-worker.js`, existing tests, release/version markers, or deterministic freight economics. The native layer may expose typed bridge contracts, App Intents/Shortcuts/Spotlight/Live Activity capability adapters, and Apple-model/Vision extraction adapters, but it must treat FreightLogic web/core calculations as authoritative and may not persist or expose admin/driver credentials. Safari MCP, Xcode signing, entitlements, real-device behavior, and physical A1-A13 remain external evidence gates until observed on actual Apple hardware/software.
 
 | Top-level path | Owner | Notes |
@@ -53,7 +55,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
 | `admin-console/` | gpt | Issue #231 additive separate-origin Admin Console subtree only; no Worker, driver-app, or deployment authority. |
-| `native-ios/` | gpt | #204/#205 thin Apple-native scaffold and typed bridge contracts only; no web-core/economics authority, credentials, or physical-device certification claims. |
+| `native-ios/` | gpt | FROZEN 2026-09-22 (operator): preserve, no new Swift scope. #204/#205 thin Apple-native scaffold and typed bridge contracts only; no web-core/economics authority, credentials, or physical-device certification claims. |
 | `.github/workflows/native-ios.yml` | gpt | Exact bounded workflow for native-ios SwiftPM/static validation only; no other `.github/` ownership transfer. |
 | `tests/integration/admin-console.spec.mjs` | gpt | Exact regression exception for the isolated #231 Admin Console contract only; no other `tests/` ownership transfer. |
 | `field-certification.html` | gpt | Operator-approved same-origin physical-device certification companion; no app.js or decision-engine authority. |
@@ -65,7 +67,11 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `.gitignore` | SHARED | Repository-wide behavior. |
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
 | `AGENTS.md` | SHARED | Coordination contract. |
-| `AUDIT_REPORT.md` | claude | Core audit record; findings are recorded with their reproduction and their live production status. |
+| `AUDIT_REPORT.md` | gpt | TEMPORARY 2026-09-23: phase 5–6 reconciliation only; preserve every finding and reproduction. Returns to Claude when that PR merges. |
+| `README.md` | gpt | 2026-09-23 parallel queue: concise repository README; repository-only (withheld by `.assetsignore`). |
+| `CONTRIBUTING.md` | gpt | 2026-09-23 parallel queue: contributor/agent workflow summary; repository-only (withheld by `.assetsignore`). |
+| `docs/SHORTCUTS_PACK.md` | gpt | 2026-09-23 parallel queue: Apple Shortcuts recipes against the Claude-owned `docs/SHORTCUTS_URL_CONTRACT.md`. |
+| `docs/VENDOR_DEPENDENCY_REVIEW.md` | gpt | 2026-09-23 parallel queue: vendored-dependency advisory review; report-only, `vendor/` stays Claude. |
 | `README.txt` | claude | General/non-core documentation. |
 | `RECON_24_0_2.md` | claude | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
 | `_headers` | claude | CSP/security/deployment headers. |
@@ -97,6 +103,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `vendor/` | claude | Bundled runtime dependencies/security provenance. |
 | `wrangler.jsonc` | claude | Worker deployment/configuration. |
 
+**Shortcuts + Web Push completion and GPT parallel queue (2026-09-23, operator-directed).** The operator reassigned the Shortcuts URL contract, the Web Push contract, the Worker push endpoints and the client side to Claude as one release (v24.0.34 / Worker v24). That supersedes the 2026-09-22 GPT assignment and its lane-transfer request, which is declined as superseded: `docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md` and `cloud-backup-worker.js` stay under their Claude parent rows. The operator also asked GPT to work in parallel on paths that cannot collide with that release, so GPT owns exactly these, documentation only: `docs/SHORTCUTS_PACK.md` (Shortcuts recipes, including DispatchLand capture, written against the Claude-owned URL contract; a missing link parameter goes to `/.agents/inbox/`, not into the pack); `README.md` and `CONTRIBUTING.md` (concise repository docs, withheld from the deployed origin by `.assetsignore`); `AUDIT_REPORT.md` (phase 5–6 reconciliation against current source and evidence: every finding and reproduction is preserved and marked superseded or fixed with evidence, never deleted); and `docs/VENDOR_DEPENDENCY_REVIEW.md` (vendored-dependency advisory review, report-only: any `vendor/` change stays Claude-owned and needs a governed release generation). These rows retire when the corresponding PRs merge, and `AUDIT_REPORT.md` then returns to Claude.
+
 **PR #282 documentation continuation — RETIRED 2026-09-21.** Clean successor PR #289 merged as `9cdd1fd2` after exact-head Lanes, CodeQL, and Tests passed. The temporary six-file documentation ownership exception is retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude, and the four exact `docs/` overrides fall back to the Claude-owned `docs/` parent row. No runtime, policy, test, workflow, deployment, or physical-device certification authority changed; physical A1-A13 and the separately tracked external evidence gates remain open.
 
 **v24.0.27/v24.0.28 certification documentation continuation — RETIRED 2026-09-21.** PR #295 merged the reviewed documentation successor after runtime PR #294 advanced source to v24.0.28. The successor preserved the directly observed v24.0.27 production evidence, recorded exact v24.0.28 source/CI evidence, and kept unobserved deployment/device/provider gates open. The temporary GPT ownership is now retired: `CLAUDE.md` and `FIELD_TEST_CHECKLIST.md` return to Claude, and the exact `docs/` overrides fall back to the Claude-owned `docs/` parent row. No runtime, test, policy, workflow, deployment, authenticated-provider, or physical-device authority changed.
@@ -109,6 +117,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 - PR #210 zero-token onboarding is authoritative; nothing may reinstate the superseded raw-token/admin-handler flow.
 - The post-PR-210 and v24.0.22 integration exceptions are retired. Persistent GPT-owned seams are `styles.css`, the three UI-redesign authority documents, the isolated `admin-console/` + its exact regression, the exact field-certification companion paths, and the bounded `native-ios/` + exact `native-ios.yml` Apple track.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
+- The 2026-09-23 GPT parallel-queue rows (`docs/SHORTCUTS_PACK.md`, `README.md`, `CONTRIBUTING.md`, `docs/VENDOR_DEPENDENCY_REVIEW.md`, temporary `AUDIT_REPORT.md`) are documentation only.
 - Every other non-excepted path remains Claude-owned.
 
 The CSS seam stays a real physical boundary and is worth keeping: presentation changes in `styles.css` do not need an `app.js` lock. It does **not** cover UI sections that still live inside `app.js` — those remain `SHARED` until an approved extraction creates more physical paths.
