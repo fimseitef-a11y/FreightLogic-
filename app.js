@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.33 USA ENGINE
+/** FreightLogic v24.0.34 USA ENGINE
+ *  v24.0.34 "Shortcuts In, Notifications Out": Apple Shortcuts deep links
+ *          (#do=<action>, docs/SHORTCUTS_URL_CONTRACT.md), the Shortcuts
+ *          relay and Web Push to the installed Home Screen app
+ *          (docs/WEB_PUSH_CONTRACT.md) — the operator's 2026-09-22 substitute
+ *          for the frozen native track. Links only fill in: every save is the
+ *          driver's own tap, UNKNOWN deadhead stays blank, out-of-range values
+ *          are dropped and named, credentials refuse the link, and the fragment
+ *          runs once. Also fixes Load Intake 'Save as Trip Draft' dropping
+ *          destination/loaded/deadhead and inventing a DRAFT-<ts> order number,
+ *          and routes the overdue alert through the service worker (iOS has no
+ *          `new Notification()`). DB16 / Worker v24.
  *  v24.0.33 "One Least-Privilege Client": Issue #231 Phase C. The driver app
  *          no longer carries the owner/admin surface — admin panel, admin
  *          credential entry, PIN-encrypted admin storage, invite/re-invite/
@@ -481,7 +492,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.33';
+const APP_VERSION = '24.0.34';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -6103,6 +6114,13 @@ async function navigate(){
     return;
   }
 
+  // v24.0.34: Apple Shortcuts deep link (docs/SHORTCUTS_URL_CONTRACT.md). The
+  // fragment is replaced before anything renders, so it runs exactly once.
+  if (hash.startsWith('do=')) {
+    await handleDeepLinkHash(hash);
+    return;
+  }
+
   const name = views[hash] ? hash : 'home';
   Object.entries(views).forEach(([k,el]) => {
     if (k === name){
@@ -8148,6 +8166,7 @@ async function renderInsights(){
   if (cbToken) cbToken.value = await getSetting('cloudBackupToken', '') || '';
   _lastCloudSync = Number(await getSetting('lastCloudSync', 0) || 0);
   cloudInitUI();
+  initPushShortcutsUI();   // v24.0.34 Notifications & Shortcuts
   initCollapsibleSettings();
   invalidateKPICache();
   await computeKPIs();
@@ -14179,7 +14198,10 @@ function openTripWizard(existing=null){
   const isEvalPrefill = existing && existing._evalPrefill;
   const mode = (existing && !isEvalPrefill) ? 'edit' : 'add';
   const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
-  if (isEvalPrefill) delete trip._evalPrefill;
+  // v24.0.34: a prefill from a Shortcuts link / relay item or from Load Intake
+  // names its source instead of claiming it came from the evaluator.
+  const prefillLabel = isEvalPrefill && existing._prefillLabel ? String(existing._prefillLabel).slice(0, 40) : '';
+  if (isEvalPrefill){ delete trip._evalPrefill; delete trip._prefillLabel; }
   const body = document.createElement('div');
   const step1 = document.createElement('div');
   const step2 = document.createElement('div');
@@ -14187,7 +14209,9 @@ function openTripWizard(existing=null){
   if (isEvalPrefill){
     const banner = document.createElement('div');
     banner.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);margin-bottom:12px;font-size:12px';
-    banner.innerHTML = '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
+    banner.innerHTML = prefillLabel
+      ? `📲 <b>${escapeHtml(prefillLabel)}</b> — review every field, then Save. <span class="muted">Nothing is saved until you do.</span>`
+      : '⚡ <b>Evaluator Load</b> — Pay &amp; miles pre-filled. <span class="muted">Enter Order # to book.</span>';
     body.appendChild(banner);
   } else if (mode === 'add'){
     // First-trip helper: show guidance if user has few trips
@@ -14263,10 +14287,11 @@ function openTripWizard(existing=null){
     $('#f_notes', body).value = trip.notes || '';
     $('#f_runAgain', body).checked = !!trip.wouldRunAgain;
   } else if (isEvalPrefill){
-    // Evaluator pre-fill — origin/dest from evaluator if available
+    // Evaluator / Shortcuts / Load Intake pre-fill
     $('#f_origin', body).value = trip.origin || '';
     $('#f_dest', body).value = trip.destination || '';
-    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+    $('#f_customer', body).value = trip.customer || '';
+    $('#f_delivery', body).value = trip.deliveryDate || isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
   } else {
     // Pure add mode: auto-fill origin from last trip destination
     $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
@@ -14552,7 +14577,7 @@ function openTripWizard(existing=null){
       queueTripDelete(trip, { purgeReceiptCache: true });
     });
   }
-  openModal(isEvalPrefill ? '⚡ Book Load' : (mode==='add' ? 'Add Trip' : `Edit Trip • ${escapeHtml(trip.orderNo)}`), body);
+  openModal(isEvalPrefill ? (prefillLabel ? 'Add Trip' : '⚡ Book Load') : (mode==='add' ? 'Add Trip' : `Edit Trip • ${escapeHtml(trip.orderNo)}`), body);
 
   // Eval prefill: auto-focus Order # so the user only needs to type one thing
   if (isEvalPrefill){
@@ -14603,9 +14628,11 @@ function openTripWizard(existing=null){
 }
 
 // P1-6: expense form with category autocomplete
-function openExpenseForm(existing=null){
+function openExpenseForm(existing=null, prefill=null){
   const mode = existing ? 'edit' : 'add';
-  const e = existing ? {...existing} : { date:isoDate(), amount:0, category:'', notes:'', type:'expense' };
+  // v24.0.34: `prefill` fills an ADD form (a Shortcuts link or relay item); it
+  // is never an edit, so it can never show Delete or overwrite a record.
+  const e = existing ? {...existing} : { date:isoDate(), amount:0, category:'', notes:'', type:'expense', ...(prefill || {}) };
   const body = document.createElement('div');
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
     <label>Date</label><input id="f_date" type="date" />
@@ -14702,9 +14729,9 @@ function openExpenseForm(existing=null){
 }
 
 // P1-3: fuel form with edit support
-function openFuelForm(existing=null){
+function openFuelForm(existing=null, prefill=null){
   const mode = existing ? 'edit' : 'add';
-  const f = existing || { date:isoDate(), gallons:0, amount:0, state:'', notes:'' };
+  const f = existing || { date:isoDate(), gallons:0, amount:0, state:'', notes:'', ...(prefill || {}) };
   const body = document.createElement('div');
   body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
     <label>Date</label><input id="f_date" type="date" />
@@ -16039,11 +16066,14 @@ async function checkOverduePayments(){
       // Only notify once per 24h
       if (now - lastNotify > 86400000){
         const total = overdueTrips.reduce((s, t) => s + t.pay, 0);
-        new Notification('Freight Logic — Overdue Payments', {
+        // v24.0.34: through the service worker — iOS web apps have no
+        // `new Notification()` at all, so this alert never fired on iPhone.
+        await showLocalNotification('Freight Logic — Overdue Payments', {
           body: `${overdueTrips.length} load${overdueTrips.length > 1 ? 's' : ''} unpaid 30+ days (${fmtMoney(total)}). Follow up!`,
           icon: 'icon192.png',
           badge: 'icon64.png',
-          tag: 'overdue-payments'
+          tag: 'overdue-payments',
+          data: { url: './#money' },
         });
         await setSetting('lastOverdueNotify', now);
       }
@@ -16522,7 +16552,7 @@ async function openMonthlyExpenseManager(){
 // exactly what was parsed and can correct it before it hits the evaluator.
 // ════════════════════════════════════════════════════════════════════════════
 
-function openLoadIntake(){
+function openLoadIntake(opts = {}){
   let rawText = '';
   let parsed = null; // will hold parseLoadTextForInbox result
 
@@ -16827,29 +16857,35 @@ function openLoadIntake(){
   stage2.querySelector('#liSaveTrip').addEventListener('click', async ()=>{
     haptic();
     const f = readDraftFields();
-    const draft = {
-      orderNo:     f.orderNo || ('DRAFT-' + Date.now()),
-      customer:    f.broker || '',
-      origin:      f.origin || '',
-      destination: f.destination || '',
-      pay:         f.pay || 0,
-      loadedMiles: f.loadedMiles || 0,
-      // v24.0.4 item 2: omit the key entirely when deadhead is unknown, rather
-      // than recording a fabricated verified zero on the draft trip.
-      ...(knownNum(f.deadheadMiles) === null ? {} : { deadMiles: knownNum(f.deadheadMiles) }),
-      weight:      f.weight || 0,
-      notes:       f.notes || '',
-      status:      'pending',
-      created:     Date.now(),
-    };
-    await setSetting('tripDraft', draft);
+    // v24.0.34: open the trip form prefilled, in add mode, instead of stashing a
+    // `tripDraft`. The old path wrote `destination`/`loadedMiles`/`deadMiles`,
+    // while the trip form's draft restore reads `dest`/`loaded`/`empty` — so the
+    // destination, loaded miles and deadhead were silently dropped, and an empty
+    // order number came back as an invented `DRAFT-<timestamp>` the driver could
+    // save as if it were real. The shared prefill path carries every field and
+    // leaves an unknown order number, and an unknown deadhead, blank.
     closeModal();
-    toast('Load draft saved — tap + Trip to review and complete it.');
-    // Open trip form pre-filled
-    setTimeout(()=> openQuickAddSheet(), 300);
+    openTripWizard({
+      _evalPrefill: true, _prefillLabel: 'From Load Intake',
+      orderNo: f.orderNo || '',
+      customer: f.broker || '',
+      origin: f.origin || '',
+      destination: f.destination || '',
+      pay: f.pay || '',
+      loadedMiles: f.loadedMiles || '',
+      ...(knownNum(f.deadheadMiles) === null ? {} : { emptyMiles: knownNum(f.deadheadMiles) }),
+    });
   });
 
   openModal('Load Intake', body);
+
+  // v24.0.34: a Shortcuts `intake` link / relay item arrives with text already
+  // captured (often Apple's on-device OCR of a DispatchLand screenshot). Run the
+  // same parse the Parse button runs, so the driver lands on the review draft.
+  if (opts && opts.text){
+    const ta = getField('liRawText');
+    if (ta){ ta.value = String(opts.text).slice(0, 6000); stage1.querySelector('#liParse')?.click(); }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -17156,6 +17192,546 @@ async function cloudExtractLoad(rawText){
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
   return data.fields;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// v24.0.34 — Apple Shortcuts deep links + Web Push client
+//
+// docs/SHORTCUTS_URL_CONTRACT.md and docs/WEB_PUSH_CONTRACT.md are the
+// authority. The operator froze the native iOS track on 2026-09-22: Apple
+// Shortcuts replaces Siri, and Web Push to the installed Home Screen app is the
+// notification layer. Everything here is plumbing into surfaces that already
+// exist — the canonical evaluator, Load Intake, and the Add Trip / Expense /
+// Fuel forms. Nothing in this section scores a load or saves a record:
+//
+//   * a link only fills in; every save is still the driver's own tap on Save;
+//   * UNKNOWN stays UNKNOWN (an absent deadhead is blank, `0` is a verified 0);
+//   * an out-of-range value is DROPPED and named, never clamped to a bound;
+//   * a credential-shaped parameter refuses the whole link;
+//   * the fragment is replaced as soon as it is read, so a reload or a history
+//     entry cannot replay the action.
+// ════════════════════════════════════════════════════════════════════════════
+
+// The relay action contract. Byte-compared with the identical block in
+// cloud-backup-worker.js by tests/unit/worker-web-push.spec.mjs WP-14 — the app
+// and the Worker must never disagree about what a Shortcut may send.
+// @contract:relay-actions:begin
+const RELAY_ACTIONS = Object.freeze({
+  evaluate: { revenue: 'money', loaded: 'miles', deadhead: 'deadhead', origin: 'place', dest: 'place', broker: 'text60', weight: 'weight', length: 'inches', width: 'inches', height: 'inches', pickup: 'datetime' },
+  intake: { text: 'lines6000' },
+  trip: { order: 'text40', pay: 'money', loaded: 'miles', deadhead: 'deadhead', pickup: 'date', delivery: 'date', customer: 'text60', origin: 'place', dest: 'place' },
+  expense: { amount: 'money', category: 'text60', date: 'date', note: 'text300' },
+  fuel: { gallons: 'gallons', total: 'money', state: 'state', date: 'date', note: 'text300' },
+});
+// @contract:relay-actions:end
+const DEEP_LINK_CREDENTIAL_RE = /token|key|pass|pin|secret|auth|bearer|session|cookie/i;
+const DEEP_LINK_MAX_CHARS = 8192;
+const DEEP_LINK_OPEN_ROUTES = Object.freeze({ today:'home', loads:'loads', evaluate:'omega', trips:'trips',
+  money:'money', expenses:'expenses', fuel:'fuel', settings:'insights', intel:'intel', more:'more' });
+const DEEP_LINK_LANDING = Object.freeze({ evaluate:'omega', intake:'loads', trip:'trips', expense:'expenses', fuel:'fuel' });
+const RELAY_ID_RE = /^rl_[0-9a-z]{8,40}$/;
+
+function _dlNum(v){
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v ?? '').replace(/[$,\s]/g, '');
+  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+function _dlText(v, max){
+  const s = String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s ? s.slice(0, max) : null;
+}
+/** Multi-line text (`lines<N>`): the Load Intake parser reads load text line
+ *  by line, so line breaks are kept; every other control character is not. */
+function _dlLines(v, max){
+  const s = String(v ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, ' ')
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s ? s.slice(0, max) : null;
+}
+function _dlRealDate(y, m, d){
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+/** One value against its contract type. `null` means "not usable" — the caller
+ *  reports it as dropped. Mirrors relayValue() in the Worker. */
+function _dlValue(type, raw){
+  const bounded = (lo, hi, inclusiveLo) => {
+    const n = _dlNum(raw);
+    if (n === null) return null;
+    return (inclusiveLo ? n >= lo : n > lo) && n <= hi ? Math.round(n * 100) / 100 : null;
+  };
+  switch (type){
+    case 'money': return bounded(0, 100000, false);
+    case 'miles': return bounded(0, 5000, true);
+    case 'deadhead': return bounded(0, 3000, true);
+    case 'weight': return bounded(0, 10000, false);
+    case 'inches': return bounded(0, 600, false);
+    case 'gallons': return bounded(0, 500, false);
+    case 'date': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw ?? '').trim());
+      return m && _dlRealDate(+m[1], +m[2], +m[3]) ? m[0] : null;
+    }
+    case 'datetime': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(raw ?? '').trim());
+      return m && _dlRealDate(+m[1], +m[2], +m[3]) && +m[4] < 24 && +m[5] < 60 ? m[0] : null;
+    }
+    case 'state': {
+      const s = String(raw ?? '').trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(s) ? s : null;
+    }
+    case 'place': return _dlText(raw, 80);
+    default: {
+      const lines = /^lines(\d+)$/.exec(type);
+      if (lines) return _dlLines(raw, Number(lines[1]));
+      const m = /^text(\d+)$/.exec(type);
+      return m ? _dlText(raw, Number(m[1])) : null;
+    }
+  }
+}
+
+/** Validate an action + raw params against RELAY_ACTIONS. Unknown names are
+ *  ignored; credential-shaped names refuse the whole thing. Unlike the Worker's
+ *  relay, a direct link may carry no parameters at all — `#do=expense` simply
+ *  opens an empty Add Expense form. */
+function validateDeepLinkParams(action, raw){
+  const spec = Object.prototype.hasOwnProperty.call(RELAY_ACTIONS, action) ? RELAY_ACTIONS[action] : null;
+  if (!spec) return { ok:false, error:'That FreightLogic link is not recognized.' };
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  if (Object.keys(src).some(n => DEEP_LINK_CREDENTIAL_RE.test(n))){
+    return { ok:false, error:'FreightLogic links never carry credentials, so this one was refused.' };
+  }
+  const params = {};
+  const dropped = [];
+  for (const [name, type] of Object.entries(spec)){
+    if (!Object.prototype.hasOwnProperty.call(src, name)) continue;
+    const v = src[name];
+    if (v === null || v === undefined || String(v).trim() === '') continue;
+    const val = _dlValue(type, v);
+    if (val === null) dropped.push(name); else params[name] = val;
+  }
+  return { ok:true, do:action, params, dropped };
+}
+
+/** Parse `#do=…` into a validated link, or null when the fragment is not a
+ *  deep link at all. Never throws. */
+function parseDeepLinkFragment(fragment){
+  const frag = String(fragment || '').replace(/^#/, '');
+  if (!frag.startsWith('do=')) return null;
+  if (frag.length > DEEP_LINK_MAX_CHARS) return { ok:false, error:'That FreightLogic link is too long to open.' };
+  let sp;
+  try { sp = new URLSearchParams(frag); } catch(_) { return { ok:false, error:'That FreightLogic link is not recognized.' }; }
+  const action = sp.get('do') || '';
+  for (const k of sp.keys()){
+    if (k !== 'do' && DEEP_LINK_CREDENTIAL_RE.test(k)) return { ok:false, error:'FreightLogic links never carry credentials, so this one was refused.' };
+  }
+  const own = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
+  if (action === 'open'){
+    const to = sp.get('to') || '';
+    return own(DEEP_LINK_OPEN_ROUTES, to)
+      ? { ok:true, do:'open', route: DEEP_LINK_OPEN_ROUTES[to], params:{}, dropped:[] }
+      : { ok:false, error:'That FreightLogic link names a screen that does not exist.' };
+  }
+  if (action === 'relay'){
+    const id = sp.get('id') || '';
+    return RELAY_ID_RE.test(id) ? { ok:true, do:'relay', id, params:{}, dropped:[] } : { ok:false, error:'That Shortcuts item link is not valid.' };
+  }
+  if (!own(RELAY_ACTIONS, action)) return { ok:false, error:'That FreightLogic link is not recognized.' };
+  // Only names the contract defines are ever copied, so a link-supplied name
+  // (`__proto__`, `constructor`, …) can never become a property write.
+  const raw = {};
+  for (const name of Object.keys(RELAY_ACTIONS[action])){
+    if (sp.has(name)) raw[name] = sp.get(name);
+  }
+  return validateDeepLinkParams(action, raw);
+}
+
+function deepLinkLandingRoute(link){
+  if (!link || !link.ok) return 'home';
+  if (link.do === 'open') return link.route;
+  return DEEP_LINK_LANDING[link.do] || 'home';
+}
+
+/** iPhone/iPad Safari tab (not the installed app): a separate storage
+ *  partition that cannot see the installed app's records or settings. */
+function deepLinkInSafariTab(){
+  let standalone = false;
+  try { standalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true; } catch(_) {}
+  return isIOS() && !standalone;
+}
+
+/** Ask before saving anything in an iPhone Safari tab. Resolves true/false. */
+function confirmSafariHandoff(){
+  return new Promise(resolve => {
+    let settled = false;
+    const done = (v) => { if (settled) return; settled = true; obs.disconnect(); resolve(v); };
+    const body = document.createElement('div');
+    body.innerHTML = `<p style="font-size:14px;line-height:1.5;margin:0 0 10px">You opened this in <b>Safari</b>, not the FreightLogic app on your Home Screen. On iPhone they keep separate records, so anything saved here will <b>not</b> show up in your installed app.</p>
+      <p class="muted" style="font-size:12px;line-height:1.5;margin:0 0 12px">To send items straight into the installed app, use the Shortcuts relay in Settings → Notifications &amp; Shortcuts.</p>
+      <div class="btn-row"><button class="btn" id="dlSafariCancel">Cancel</button><button class="btn primary" id="dlSafariGo">Continue in Safari</button></div>`;
+    const obs = new MutationObserver(() => { if ($('#modal')?.style.display === 'none') done(false); });
+    $('#dlSafariCancel', body).addEventListener('click', () => { closeModal(); done(false); });
+    $('#dlSafariGo', body).addEventListener('click', () => { closeModal(); done(true); });
+    openModal('Opened in Safari', body);
+    obs.observe($('#modal'), { attributes:true, attributeFilter:['style'] });
+  });
+}
+
+async function _deepLinkEvaluate(p){
+  if ((location.hash || '').slice(1) !== 'omega'){
+    try { history.replaceState(null, '', location.pathname + location.search + '#omega'); } catch(_) {}
+    await navigate();
+  }
+  // The link REPLACES the load: every load field it does not carry is cleared,
+  // so a previous load's deadhead, dimensions or broker can never leak in.
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === undefined || v === null) ? '' : String(v); };
+  set('mwRevenue', p.revenue); set('mwLoadedMi', p.loaded); set('mwDeadMi', p.deadhead);
+  set('mwOrigin', p.origin); set('mwDest', p.dest); set('mwBroker', p.broker);
+  set('mwLoadWeightLbs', p.weight); set('mwLoadLengthIn', p.length); set('mwLoadWidthIn', p.width); set('mwLoadHeightIn', p.height);
+  set('mwPickupCutoff', p.pickup);
+  const st = $('#mwStrategic'); if (st) st.checked = false;
+  const sr = $('#mwStrategicReason'); if (sr){ sr.value = ''; sr.disabled = true; }
+  $('#mwBroker')?.dispatchEvent(new Event('input', { bubbles:true }));
+  await mwEvaluateLoad();
+  $('#mwEvalOutput')?.scrollIntoView?.({ behavior:'smooth', block:'start' });
+}
+
+/** Run a validated link. `source` is 'link' (a URL the driver opened) or
+ *  'relay' (an item fetched from the Worker inside the installed app). */
+async function runDeepLink(link, { source = 'link' } = {}){
+  if (!link) return false;
+  if (!link.ok){ toast(link.error || 'That FreightLogic link is not recognized.', true); return false; }
+  if (link.do === 'relay') return runRelayItem(link.id);
+  const saves = link.do === 'trip' || link.do === 'expense' || link.do === 'fuel';
+  if (source === 'link' && deepLinkInSafariTab()){
+    if (saves){ if (!(await confirmSafariHandoff())) return false; }
+    else if (link.do !== 'open') toast('Opened in Safari — your Home Screen app keeps its own settings, so this uses defaults.');
+  }
+  if (link.dropped && link.dropped.length){
+    toast('Left blank because the value was not usable: ' + link.dropped.join(', '), true);
+  }
+  const p = link.params || {};
+  switch (link.do){
+    case 'open': return true;
+    case 'evaluate': await _deepLinkEvaluate(p); return true;
+    case 'intake': openLoadIntake({ text: p.text || '' }); return true;
+    case 'trip':
+      openTripWizard({ _evalPrefill: true, _prefillLabel: source === 'relay' ? 'From Shortcuts' : 'From a link',
+        orderNo: p.order || '', pay: p.pay, loadedMiles: p.loaded,
+        ...(p.deadhead === undefined ? {} : { emptyMiles: p.deadhead }),
+        ...(p.pickup ? { pickupDate: p.pickup } : {}), ...(p.delivery ? { deliveryDate: p.delivery } : {}),
+        customer: p.customer || '', origin: p.origin || '', destination: p.dest || '' });
+      return true;
+    case 'expense':
+      openExpenseForm(null, { amount: p.amount, category: p.category || '', notes: p.note || '', ...(p.date ? { date: p.date } : {}) });
+      return true;
+    case 'fuel':
+      openFuelForm(null, { gallons: p.gallons, amount: p.total, state: p.state || '', notes: p.note || '', ...(p.date ? { date: p.date } : {}) });
+      return true;
+  }
+  return false;
+}
+
+/** Called by navigate() when the hash is a deep link. */
+async function handleDeepLinkHash(hash){
+  const link = parseDeepLinkFragment(hash);
+  // Replace the fragment FIRST, so a reload or a history entry cannot replay
+  // the action, then render the landing screen and run the action over it.
+  try { history.replaceState(null, '', location.pathname + location.search + '#' + deepLinkLandingRoute(link)); } catch(_) {}
+  await navigate();
+  try { await runDeepLink(link); }
+  catch(e){ console.warn('[FL] deep link failed:', e); toast('Could not open that link.', true); }
+}
+
+/** The service worker hands a tapped notification's URL to an open window. */
+function applyOpenUrlMessage(url){
+  try {
+    const u = new URL(String(url || ''), location.href);
+    if (u.origin !== location.origin) return;
+    history.replaceState(null, '', location.pathname + location.search + (u.hash || '#home'));
+    navigate();
+  } catch(_) {}
+}
+
+// ── Relay inbox (items a Shortcut sent for the installed app) ───────────────
+
+async function _relayConfig(){
+  const token = await getSetting('cloudBackupToken', '');
+  if (!token) return null;
+  const url = (await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL;
+  return { url, headers: { 'Content-Type':'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token } };
+}
+
+async function fetchRelayItems(){
+  const cfg = await _relayConfig();
+  if (!cfg) return null;
+  const res = await cloudFetch(cfg.url + '/relay', { headers: cfg.headers }, 10000);
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => ({}));
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+async function consumeRelayItem(id){
+  const cfg = await _relayConfig();
+  if (!cfg || !RELAY_ID_RE.test(String(id || ''))) return;
+  await cloudFetch(cfg.url + '/relay/' + encodeURIComponent(id), { method:'DELETE', headers: cfg.headers }, 10000).catch(() => {});
+}
+
+function relayItemLabel(item){
+  const p = item.params || {};
+  const money = (n) => Number.isFinite(Number(n)) ? fmtMoney(Number(n)) : '';
+  switch (item.do){
+    case 'evaluate': return 'Load to score' + (p.origin && p.dest ? ` — ${p.origin} → ${p.dest}` : '') + (p.revenue ? ` · ${money(p.revenue)}` : '');
+    case 'intake': return 'Load text to review';
+    case 'trip': return 'Trip' + (p.order ? ` #${p.order}` : '') + (p.pay ? ` · ${money(p.pay)}` : '');
+    case 'expense': return 'Expense' + (p.amount ? ` ${money(p.amount)}` : '') + (p.category ? ` ${p.category}` : '');
+    case 'fuel': return 'Fuel' + (p.gallons ? ` ${p.gallons} gal` : '') + (p.total ? ` · ${money(p.total)}` : '');
+  }
+  return 'Item from Shortcuts';
+}
+
+/** Fetch one relay item, consume it, and run it through the same contract a
+ *  direct link uses. Consumed BEFORE running, so a crash cannot loop it. */
+async function runRelayItem(id){
+  if (!(await _relayConfig())){ toast('Shortcuts items need cloud backup set up on this device.', true); return false; }
+  let items;
+  try { items = await fetchRelayItems(); } catch(_) { items = null; }
+  if (items === null){ toast('Could not reach FreightLogic to fetch that item. Try again when online.', true); return false; }
+  const item = items.find(i => i && i.id === id);
+  if (!item){ toast('That Shortcuts item was already used or has expired.'); renderRelayInbox(true).catch(()=>{}); return false; }
+  await consumeRelayItem(id);
+  const link = validateDeepLinkParams(item.do, item.params || {});
+  const ran = await runDeepLink(link, { source:'relay' });
+  renderRelayInbox(true).catch(()=>{});
+  return ran;
+}
+
+let _relayInboxCheckedAt = 0;
+/** The "From Shortcuts" card on Today. Throttled: it costs a network call. */
+async function renderRelayInbox(force = false){
+  const card = document.getElementById('homeRelayInbox');
+  if (!card) return;
+  if (!force && Date.now() - _relayInboxCheckedAt < 60_000) return;
+  _relayInboxCheckedAt = Date.now();
+  let items = null;
+  try { items = await fetchRelayItems(); } catch(_) { items = null; }
+  if (!items || !items.length){ card.style.display = 'none'; card.innerHTML = ''; return; }
+  card.style.display = '';
+  card.className = 'card';
+  card.innerHTML = `<h3 style="margin:0 0 8px">📲 From Shortcuts <span class="muted" style="font-size:13px;font-weight:600">${items.length} waiting</span></h3>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Review each one — nothing is saved until you tap Save.</div>
+    ${items.slice(0, 5).map(i => `<div class="relay-row" style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <div style="flex:1;font-size:14px">${escapeHtml(relayItemLabel(i))}</div>
+      <button class="btn primary" data-relay-run="${escapeHtml(i.id)}" style="min-height:44px">Review</button>
+      <button class="btn" data-relay-drop="${escapeHtml(i.id)}" aria-label="Dismiss" style="min-height:44px">✕</button></div>`).join('')}`;
+  card.querySelectorAll('[data-relay-run]').forEach(b => b.addEventListener('click', () => { haptic(10); runRelayItem(b.dataset.relayRun).catch(()=>{}); }));
+  card.querySelectorAll('[data-relay-drop]').forEach(b => b.addEventListener('click', async () => {
+    haptic(10); await consumeRelayItem(b.dataset.relayDrop); renderRelayInbox(true).catch(()=>{});
+  }));
+}
+
+// ── Web Push (docs/WEB_PUSH_CONTRACT.md §6) ─────────────────────────────────
+// Device-local state lives in localStorage on purpose: a push subscription
+// belongs to THIS device, so it must never ride a backup or an export onto
+// another one.
+const PUSH_KEY_STORAGE = 'fl_push_vapid';
+
+function _b64uToBytes(s){
+  const b64 = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+
+/** 'ok' | 'needs-install' (iPhone Safari tab) | 'unsupported' */
+function pushSupportState(){
+  if (deepLinkInSafariTab()) return 'needs-install';
+  const has = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  return has ? 'ok' : 'unsupported';
+}
+
+async function _pushRegistration(){
+  if (!('serviceWorker' in navigator)) return null;
+  return await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 8000))]);
+}
+
+async function _pushSubscribe(cfg){
+  const keyRes = await cloudFetch(cfg.url + '/push/key', {}, 10000);
+  const keyData = await keyRes.json().catch(() => ({}));
+  if (!keyRes.ok || !keyData.publicKey) throw new Error('The notification service is not available yet.');
+  const reg = await _pushRegistration();
+  if (!reg || !reg.pushManager) throw new Error('This browser cannot receive notifications.');
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && localStorage.getItem(PUSH_KEY_STORAGE) !== keyData.publicKey){ try { await sub.unsubscribe(); } catch(_) {} sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _b64uToBytes(keyData.publicKey) });
+  const res = await cloudFetch(cfg.url + '/push/subscribe', { method:'POST', headers: cfg.headers,
+    body: JSON.stringify({ subscription: sub.toJSON ? sub.toJSON() : sub, publicKey: keyData.publicKey }) }, 10000);
+  if (!res.ok) throw new Error('FreightLogic could not register this device for notifications.');
+  try { localStorage.setItem(PUSH_KEY_STORAGE, keyData.publicKey); } catch(_) {}
+  return true;
+}
+
+/** Only ever called from the Turn on tap: iOS ignores a permission prompt that
+ *  is not tied to a user gesture, and a prompt at boot trains people to deny. */
+async function pushEnable(){
+  const cfg = await _relayConfig();
+  if (!cfg) throw new Error('Set up cloud backup first — notifications use the same account.');
+  const state = pushSupportState();
+  if (state === 'needs-install') throw new Error('On iPhone, notifications work in the FreightLogic app on your Home Screen, not in Safari.');
+  if (state !== 'ok') throw new Error('This browser cannot receive notifications.');
+  const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('Notifications are blocked. Allow them for FreightLogic in Settings, then try again.');
+  return _pushSubscribe(cfg);
+}
+
+async function pushDisable(){
+  const cfg = await _relayConfig();
+  const reg = await _pushRegistration();
+  const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+  if (cfg){
+    await cloudFetch(cfg.url + '/push/subscribe', { method:'DELETE', headers: cfg.headers,
+      body: JSON.stringify(sub ? { endpoint: sub.endpoint } : {}) }, 10000).catch(() => {});
+  }
+  if (sub){ try { await sub.unsubscribe(); } catch(_) {} }
+  try { localStorage.removeItem(PUSH_KEY_STORAGE); } catch(_) {}
+}
+
+async function pushIsOn(){
+  if (pushSupportState() !== 'ok' || Notification.permission !== 'granted') return false;
+  const reg = await _pushRegistration();
+  const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription().catch(() => null) : null;
+  return !!sub && !!localStorage.getItem(PUSH_KEY_STORAGE);
+}
+
+/** Foreground self-heal: a rotated Worker key or a dropped subscription is
+ *  repaired without a prompt (permission is already granted). */
+async function pushSelfHeal(){
+  try {
+    if (!localStorage.getItem(PUSH_KEY_STORAGE) || pushSupportState() !== 'ok' || Notification.permission !== 'granted') return;
+    const cfg = await _relayConfig();
+    if (!cfg) return;
+    const keyRes = await cloudFetch(cfg.url + '/push/key', {}, 8000);
+    const keyData = await keyRes.json().catch(() => ({}));
+    const reg = await _pushRegistration();
+    const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+    if (!sub || (keyData.publicKey && keyData.publicKey !== localStorage.getItem(PUSH_KEY_STORAGE))) await _pushSubscribe(cfg);
+  } catch(_) {}
+}
+
+/** Show a local notification through the service worker when one is
+ *  available: iOS has no `new Notification()` for web apps at all. */
+async function showLocalNotification(title, opts){
+  try {
+    const reg = await _pushRegistration();
+    if (reg && reg.showNotification){ await reg.showNotification(title, opts); return; }
+  } catch(_) {}
+  try { new Notification(title, opts); } catch(_) {}
+}
+
+async function refreshPushShortcutsUI(){
+  const statusEl = document.getElementById('pushStatusText');
+  if (!statusEl) return;
+  const hint = document.getElementById('pushShortcutsHint');
+  const btnOn = document.getElementById('btnPushEnable');
+  const btnTest = document.getElementById('btnPushTest');
+  const btnOff = document.getElementById('btnPushDisable');
+  const keyStatus = document.getElementById('shortcutKeyStatus');
+  const btnKey = document.getElementById('btnShortcutKeyCreate');
+  const btnRevoke = document.getElementById('btnShortcutKeyRevoke');
+  const cfg = await _relayConfig();
+  const state = pushSupportState();
+  let on = false;
+  try { on = await pushIsOn(); } catch(_) {}
+  statusEl.textContent = state === 'needs-install' ? 'Home Screen app only'
+    : state !== 'ok' ? 'Not available here'
+    : (typeof Notification !== 'undefined' && Notification.permission === 'denied') ? 'Blocked'
+    : on ? 'On' : 'Off';
+  if (btnOn) btnOn.disabled = !cfg || on || state !== 'ok';
+  if (btnTest) btnTest.disabled = !cfg || !on;
+  if (btnOff) btnOff.disabled = !on;
+  if (hint && !hint.dataset.busy){
+    hint.textContent = !cfg ? 'Set up cloud backup above first — notifications and Shortcuts use the same account.'
+      : state === 'needs-install' ? 'On iPhone, open FreightLogic from your Home Screen to turn notifications on.' : '';
+  }
+  if (keyStatus){
+    if (!cfg){ keyStatus.textContent = '—'; if (btnKey) btnKey.disabled = true; if (btnRevoke) btnRevoke.disabled = true; return; }
+    try {
+      const res = await cloudFetch(cfg.url + '/shortcut-key', { headers: cfg.headers }, 8000);
+      const d = await res.json().catch(() => ({}));
+      keyStatus.textContent = res.ok ? (d.exists ? 'Active' : 'None') : 'Unavailable';
+      if (btnKey){ btnKey.disabled = !res.ok; btnKey.textContent = d.exists ? 'Replace Shortcut key' : 'Create Shortcut key'; }
+      if (btnRevoke) btnRevoke.disabled = !(res.ok && d.exists);
+    } catch(_) { keyStatus.textContent = 'Offline'; if (btnKey) btnKey.disabled = true; if (btnRevoke) btnRevoke.disabled = true; }
+  }
+}
+
+function _pushHint(msg, bad){
+  const hint = document.getElementById('pushShortcutsHint');
+  if (!hint) return;
+  hint.textContent = msg;
+  hint.style.color = bad ? 'var(--bad)' : '';
+}
+
+/** The key is shown exactly once and never stored on this device. */
+function showShortcutKeyOnce(key){
+  const body = document.createElement('div');
+  body.innerHTML = `<p style="font-size:14px;line-height:1.5;margin:0 0 10px">Paste this into your Shortcut's <b>Text</b> action. It is shown <b>only once</b> — if you lose it, create a new one.</p>
+    <input id="sckValue" readonly style="width:100%;box-sizing:border-box;font-family:monospace;font-size:16px" />
+    <p class="muted" style="font-size:12px;line-height:1.5;margin:10px 0 12px">It can only send items for you to review. It cannot read your trips or backups, and creating a new key turns this one off.</p>
+    <div class="btn-row"><button class="btn primary" id="sckCopy">Copy</button><button class="btn" id="sckDone">Done</button></div>`;
+  const input = $('#sckValue', body);
+  input.value = key;
+  $('#sckCopy', body).addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(key); toast('Shortcut key copied'); }
+    catch(_) { input.select(); toast('Select and copy the key', true); }
+  });
+  $('#sckDone', body).addEventListener('click', () => { input.value = ''; closeModal(); });
+  openModal('Your Shortcut key', body);
+}
+
+function initPushShortcutsUI(){
+  const card = document.getElementById('pushShortcutsCard');
+  if (!card) return;
+  if (card.dataset.wired !== '1'){
+    card.dataset.wired = '1';
+    const busy = async (btn, fn) => {
+      const hint = document.getElementById('pushShortcutsHint');
+      if (hint) hint.dataset.busy = '1';
+      btn.disabled = true;
+      try { await fn(); }
+      catch(e){ _pushHint(e && e.message ? e.message : 'Something went wrong.', true); }
+      finally { if (hint) delete hint.dataset.busy; await refreshPushShortcutsUI(); }
+    };
+    $('#btnPushEnable', card)?.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      await pushEnable(); _pushHint('Notifications are on for this device.');
+    }));
+    $('#btnPushTest', card)?.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      const cfg = await _relayConfig();
+      const res = await cloudFetch(cfg.url + '/push/test', { method:'POST', headers: cfg.headers }, 15000);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'The test notification could not be sent.');
+      _pushHint(d.sent ? 'Test sent — it should arrive in a few seconds.' : 'No device received it. Turn notifications off and on again.', !d.sent);
+    }));
+    $('#btnPushDisable', card)?.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      await pushDisable(); _pushHint('Notifications are off for this device.');
+    }));
+    $('#btnShortcutKeyCreate', card)?.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      const cfg = await _relayConfig();
+      if (!cfg) throw new Error('Set up cloud backup first.');
+      const res = await cloudFetch(cfg.url + '/shortcut-key', { method:'POST', headers: cfg.headers }, 10000);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.key) throw new Error(d.error || 'Could not create a Shortcut key.');
+      showShortcutKeyOnce(d.key);
+      _pushHint('');
+    }));
+    $('#btnShortcutKeyRevoke', card)?.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      if (!confirm('Revoke your Shortcut key? Shortcuts using it will stop working.')) return;
+      const cfg = await _relayConfig();
+      const res = await cloudFetch(cfg.url + '/shortcut-key', { method:'DELETE', headers: cfg.headers }, 10000);
+      if (!res.ok) throw new Error('Could not revoke the Shortcut key.');
+      _pushHint('Shortcut key revoked.');
+    }));
+  }
+  refreshPushShortcutsUI().catch(()=>{});
 }
 
 /** Downscale and re-encode a screenshot before upload (Issue #252).
@@ -23704,6 +24280,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // ships" are only answerable from inside.
     flCaptureClaimCode, claimInvite,
     purgeLegacyAdminCredential,               // #231 Phase C — delete-only
+    // v24.0.34 Shortcuts + Web Push
+    parseDeepLinkFragment, validateDeepLinkParams, runDeepLink, renderRelayInbox,
+    pushSupportState, refreshPushShortcutsUI, openTripWizard,
   };
 }
 
@@ -23757,6 +24336,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (ev) => {
         if (ev.data?.type === 'SW_ACTIVATED') toast(`FreightLogic ${ev.data.version} installed.`);
+        // v24.0.34: a tapped notification, handed over by the service worker.
+        if (ev.data?.type === 'FL_OPEN_URL') applyOpenUrlMessage(ev.data.url);
       });
       navigator.serviceWorker.register('./service-worker.js').then(reg => {
         // sw-bridge.js owns the controllerchange reload — no duplicate handler here
@@ -23808,6 +24389,17 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
 
     await navigate();
     _updateOnlineStatus();
+
+    // v24.0.34: items a Shortcut sent while the app was closed, and a push
+    // subscription that needs re-registering after a Worker key change. Both
+    // fire-and-forget after first paint, and both no-op without cloud backup.
+    renderRelayInbox(true).catch(()=>{});
+    pushSelfHeal().catch(()=>{});
+    addManagedListener(document, 'visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      renderRelayInbox().catch(()=>{});
+      pushSelfHeal().catch(()=>{});
+    });
 
     // Issue #205 §3: drain any sync the previous session could not finish.
     // cloudScheduleSync()'s 30s debounce is in-memory, so closing the app inside

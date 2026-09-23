@@ -2,6 +2,21 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
+**Current target — v24.0.34 / DB16 / Worker v24 (source candidate, 2026-09-23).** Deploy
+**Worker v24 first** (Deploy Backup Worker, `DEPLOY`). It only adds routes (`/push/*`,
+`/shortcut-key`, `/relay`), so the live v24.0.33 app is unaffected. Then let Cloudflare deploy
+the app, and **re-dispatch** Verify Live Parity rather than citing the push-triggered run. Expected
+markers: `app.js?v=24.0.34`, `sw-bridge.js?v=24.0.34`, `SW_VERSION = '24.0.34'`, cache
+`freightlogic-24.0.34`, manifest `FreightLogic v24.0.34`, `modern-shell.js?v=24.0.34`, and
+`/health` `{"ok":true,"version":"24"}`. **21** declared runtime assets (unchanged from
+v24.0.33). The withheld set now also covers `admin-console/` and `native-ios/` (PR #331):
+`admin-console/index.html`, `admin-console/worker.js` and `native-ios/Package.swift` must answer
+404/403 on the driver origin.
+
+*Superseded below and kept as history: **observed 2026-09-22, production served v24.0.33 / DB16 /
+Worker v23**. Live Parity `35776465060` and Production Service Worker `35776467510` PASS on `main`
+@ `8caf6a4`; Worker v23 deployed by `35771229876`.*
+
 **Observed 2026-09-22 UTC: production serves v24.0.32 / DB16 / Worker v22.** Live Parity run
 `35762451735` PASS on `main` @ `d3c02ca` with the `workerVersion` pin at 22, and Verify
 Authenticated Worker run `35762633659` PASS, reporting

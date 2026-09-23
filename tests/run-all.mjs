@@ -93,6 +93,9 @@ import { runSpec as fieldCertificationRunner } from './integration/field-certifi
 import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
 import { runSpec as driverGlancePreferences } from './integration/driver-glance-preferences.spec.mjs';
 import { runSpec as tripDeleteSafety } from './integration/trip-delete-safety.spec.mjs';
+import { runSpec as workerWebPush } from './unit/worker-web-push.spec.mjs';
+import { runSpec as swPush } from './unit/sw-push.spec.mjs';
+import { runSpec as shortcutsDeepLinks } from './integration/shortcuts-deep-links.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -119,6 +122,8 @@ const specs = [
   workerTokenAuthority,
   workerInviteClaim,
   workerVisionExtract,
+  workerWebPush,
+  swPush,
   visionBenchmark,
   liveInviteClaimGate,
   vehicleProfileRace,
@@ -144,6 +149,7 @@ const specs = [
   positionAuthority,
   todayIA,
   screenshotIntake,
+  shortcutsDeepLinks,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,
