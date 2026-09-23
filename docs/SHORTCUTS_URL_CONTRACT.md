@@ -65,6 +65,7 @@ https://freightlogic-v2.fimseitef.workers.dev/#do=<action>&<name>=<value>&...
 | `datetime` | `YYYY-MM-DDTHH:MM` (device local time) | a real date and time |
 | `place` | free text, e.g. `Chicago, IL` | trimmed, at most 80 characters |
 | `text` | free text | trimmed, at most 120 characters unless stated |
+| `lines` | multi-line text; line breaks are kept, other control characters removed | at most the stated length |
 
 ---
 
@@ -106,7 +107,7 @@ Example:
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `text` | text (**6000**) | a rate confirmation, board copy, or on-device OCR of a screenshot |
+| `text` | lines (**6000**) | a rate confirmation, board copy, or on-device OCR of a screenshot; line breaks are kept because the parser reads line by line |
 
 Opens **Load Intake** with the text filled in and runs the same parse as tapping **Parse Load**.
 The driver lands on the review draft; nothing is scored or saved until they tap. This is how a

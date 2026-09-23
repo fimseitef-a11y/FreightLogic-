@@ -2,6 +2,13 @@
 
 ## Project Overview
 
+**Production is v24.0.33 / DB16 / Worker v23, DIRECTLY OBSERVED.** Live Parity run `35776465060`
+and Production Service Worker run `35776467510` (both `workflow_dispatch` on `main` @ `8caf6a4`)
+PASS; Worker v23 was deployed by run `35771229876` and verified by Verify Authenticated Worker run
+`35771369383`. **v24.0.34 / Worker v24 is the source candidate**: Apple Shortcuts deep links, the
+Shortcuts relay and Web Push to the installed Home Screen app (see its section). It is not live
+until it deploys and a re-dispatched parity run observes it. The paragraphs below are history.
+
 **FreightLogic v24.0.32 / DB16 / Worker v22 is DIRECTLY OBSERVED in production, and
 screenshot intake works live for the first time.** Live Parity run `35762451735` on `main` @
 `d3c02ca` PASS with the `workerVersion` pin at **22**, and Verify Authenticated Worker run
@@ -229,7 +236,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v23 source** (v22 deployed until the v23 deploy lands — read `/health`) carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v24 source** (v23 deployed until the v24 deploy lands — read `/health`) adds v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -377,7 +384,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.33';
+const APP_VERSION = '24.0.34';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -503,6 +510,12 @@ the separate-origin Admin Console. Do not reintroduce an admin surface into the 
 - `POST /extract` — AI field extraction from raw load text; rate limited 50 req/hr per user (hourly window); returns `{ ok, fields: { orderNo, customer, broker, origin, destination, pay, loadedMiles, deadheadMiles, pickupDate, deliveryDate, weight, commodity, notes }, model, user }`
 - `POST /backup/delta` — store delta (partial sync payload); max 2MB; expires after 7 days; keeps last 20 deltas
 - `GET /backup/delta` — (v11, X-01) retrieve every currently-retained delta for this user+device, chronological oldest-first, plus `retainedCount`/`totalCreated` so the client can detect pruning; returns `{ ok, deltas: [{key, ts, payload}], retainedCount, totalCreated }`
+- `GET /push/key` — (v24) VAPID public key; unauthenticated (public by design); operator secrets `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_JWK` win, else self-provisioned once in KV `push:vapid`
+- `POST` / `DELETE /push/subscribe` — (v24) driver auth; store/remove this device's Web Push subscription; endpoint must be https on a known push-service host (SSRF guard); max 5 per driver in one index key `push:subs:<userId>`
+- `POST /push/test` — (v24) driver auth; RFC 8291 aes128gcm + RFC 8292 VAPID test notification; 10/hr
+- `GET` / `POST` / `DELETE /shortcut-key` — (v24) driver auth; relay-only `fls_<48 hex>` key, hash stored, shown once, rotation revokes the old key; 10/hr
+- `POST /relay` — (v24) `X-Shortcut-Key` auth, ABOVE the driver-token gate like `/claim`; validates against the shared `@contract:relay-actions` block (docs/SHORTCUTS_URL_CONTRACT.md), stores ≤20 items for 72h in `relay:<userId>`, pushes a Worker-built summary that never carries the parameters; 60/hr per key, 120/hr per IP
+- `GET /relay` / `DELETE /relay/:id` — (v24) driver auth; the installed app reads and consumes relay items
 
 Token format: `flk_<uuid-no-dashes>`
 
@@ -521,8 +534,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.33` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.33`; caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.34` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.34`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4762,6 +4775,158 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.34 "Shortcuts In, Notifications Out" — Apple Shortcuts deep links + Web Push (Worker v24)
+
+App **24.0.33 → 24.0.34**, Worker **v23 → v24**. `DB_VERSION` stays **16**. **No canonical
+economics, verdict, grade, bid, UNKNOWN-deadhead, storage-schema or routing behaviour changes.**
+This release adds new doors into surfaces that already exist: the canonical evaluator, Load Intake,
+and the Add Trip / Expense / Fuel forms.
+
+**Why.** On 2026-09-22 the operator froze the native iOS track (#204/#205): no paid Apple Developer
+Program, no new Swift. Apple Shortcuts became the Siri replacement and Web Push to the installed
+Home Screen app became the notification layer. On 2026-09-23 the operator assigned the whole
+thing, contracts included, to this lane as one release, and asked the GPT lane to work in parallel
+on documentation-only paths (PR #331). The two contracts are the authority:
+`docs/SHORTCUTS_URL_CONTRACT.md` and `docs/WEB_PUSH_CONTRACT.md`.
+
+### The platform fact that shaped the design
+
+On iPhone, a Shortcut's **Open URLs opens Safari, not the Home Screen app**, and the two keep
+separate storage. The `webapp://` scheme from the iOS 26 betas is unreliable (later reports say it
+fails). So a direct link from a Shortcut lands somewhere that cannot see the driver's trips,
+settings or cost profile, and a record saved there silently never reaches the installed app. That
+is the data-split failure this release had to design around, not paper over:
+
+- **Direct links** (`#do=<action>&…`) work everywhere and are the only path on Android and desktop.
+  In an iPhone/iPad Safari tab, the saving actions (`trip`, `expense`, `fuel`) show a
+  **"Opened in Safari"** warning before any form opens. The read-only ones (`evaluate`,
+  `intake`, `open`) run with a notice that installed-app settings aren't available there.
+- **The relay** is the iPhone path into the installed app. The Shortcut sends the action to
+  `POST /relay` with a relay-only **Shortcut key**. The Worker validates it, stores it for 72
+  hours, and sends an encrypted Web Push. Tapping the notification opens the installed app at
+  `#do=relay&id=…`, and the app fetches the item with its own driver credential.
+
+### Rules that hold on every path
+
+- A link **only fills in**; every save is still the driver's own tap on **Save**. `evaluate` runs
+  the canonical evaluator and saves no trip.
+- The link **replaces** the evaluator's load: every field it does not carry is cleared, so a
+  previous load's deadhead, dimensions or broker can never leak into this one.
+- **UNKNOWN stays UNKNOWN.** An absent deadhead is blank and the evaluator asks for it; `0` is a
+  verified zero.
+- **Out-of-range values are dropped and named**, never clamped (the `planningAvgMph` rule).
+- **A credential-shaped parameter refuses the whole link.** Credentials travel only as headers.
+- **One shot.** The fragment is replaced before anything renders, so a reload or a history entry
+  cannot replay the action.
+- **One contract, byte-compared.** The action/parameter table exists once in `app.js` and once in
+  `cloud-backup-worker.js`, between `@contract:relay-actions` markers, and **WP-14 fails if they
+  differ**. Two transcriptions of one rule is how the X-07 restore gap and the 2026-09-13 asset
+  defect both happened.
+
+### Worker v24
+
+`GET /push/key` (VAPID public key: operator secrets `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_JWK` if set,
+else self-provisioned once in KV); `POST`/`DELETE /push/subscribe`; `POST /push/test`;
+`GET`/`POST`/`DELETE /shortcut-key`; `POST /relay` (Shortcut-key auth, above the driver-token gate
+like `/claim`); `GET /relay`; `DELETE /relay/:id`.
+
+- **SSRF guard.** A push endpoint is a client-supplied URL this Worker POSTs to, so it must be
+  `https:` on a known push-service host: exact host or dot-bounded suffix, so
+  `web.push.apple.com.evil.example` fails. No userinfo and no port.
+- **RFC 8291 `aes128gcm` + RFC 8292 VAPID** via WebCrypto. **WP-01 first proves the test's own
+  decryptor against RFC 8291 Appendix A**, written from the RFC's pseudocode with explicit HMAC
+  steps (the Worker uses WebCrypto HKDF). Only then is that decryptor trusted to open what the
+  Worker actually sends (WP-07/WP-11). A round trip through the same code would pass with both
+  halves equally wrong.
+- **The Shortcut key** (`fls_` + 48 hex) is stored only as a hash and shown once. Minting a new one
+  revokes the old one, and revoking the driver kills it. Its worst case is a notification plus a
+  prefilled form the driver still has to confirm.
+- **A notification never carries the parameters.** Its text is built by the Worker from validated
+  fields, and load text never rides in the push payload.
+- **No KV `list()`.** Subscriptions (at most 5) and relay items (at most 20, 72h TTL) each live in
+  one index key per driver: `list()` is budgeted at 1,000/day on the free tier. WP-06/WP-12 count
+  the calls and require zero.
+
+### The app
+
+- `navigate()` hands any `#do=` fragment to `handleDeepLinkHash()`, both on cold start and on
+  `hashchange`.
+- The service worker's new `push` / `notificationclick` handlers are a **delivery layer only**:
+  no IndexedDB, no cache, no credentials, no fetch (SWP-06). A notification can only open this app's
+  scope (SWP-02/05), and a push always shows something, because iOS revokes permission from silent
+  pushes.
+- **Settings → Notifications & Shortcuts**: Turn on / Send test / Turn off, and Create / Replace /
+  Revoke Shortcut key. Permission is requested **only from the Turn on tap**; iOS ignores a
+  gesture-less prompt. Push state is kept in `localStorage`, never in the settings store: a
+  subscription belongs to this device and must not ride a backup onto another one.
+- **Today → From Shortcuts** lists relay items a missed notification left waiting. It refreshes on
+  boot and on foreground, throttled to once a minute.
+- The existing overdue-payment alert now goes through the service worker. iOS web apps have no
+  `new Notification()` at all, so **that alert had never fired on iPhone**.
+
+### A pre-existing defect found while wiring this
+
+Load Intake's **Save as Trip Draft** wrote `destination` / `loadedMiles` / `deadMiles` into
+`tripDraft`, while the trip form's draft restore reads `dest` / `loaded` / `empty`. So the
+destination, loaded miles and deadhead were silently dropped, and an empty order number came back
+as an invented `DRAFT-<timestamp>` the driver could save as if it were real. It now opens the trip
+form directly through the same add-mode prefill path the links use (SDL-13). An earlier read of
+this code also suspected Quick Evaluate's "Book This Load" of the same loss. That was wrong,
+checked, and not changed: the prefill branch already sets origin and destination, and the draft
+restore is already guarded by `!existing`.
+
+A second defect was found in this release's own first draft: the validator collapsed all
+whitespace, which would have flattened intake text onto one line for a parser that reads line by
+line. SDL-07 caught it, and the `lines6000` type now keeps line breaks and nothing else.
+
+### Tests
+
+`tests/unit/worker-web-push.spec.mjs` (15), `tests/unit/sw-push.spec.mjs` (6),
+`tests/integration/shortcuts-deep-links.spec.mjs` (17), plus DAC-09 from PR #331. Red-first: SDL
+**0/17** against the pre-change app, SWP **0/6** against the pre-change service worker, and WP
+failing on every route that did not yet exist (WP-01 passed, proving the reference decryptor;
+WP-04 passed vacuously because the gate already refused unknown routes).
+
+Every negative control was applied against checksum-verified copies of the runtime files and
+restored afterwards. Each one fires on exactly what it guards:
+
+| Control | Fires |
+|---|---|
+| push endpoint allowlist disabled (SSRF) | WP-05 |
+| relay params stored unvalidated | WP-10, WP-12 |
+| relay params leak into the push payload | WP-11 |
+| key rotation leaves the old key live | WP-09 |
+| one contract type changed in app.js only | WP-14 |
+| service-worker scope check removed | SWP-02, SWP-05 |
+| evaluate link keeps stale fields | SDL-03 |
+| absent deadhead becomes 0 | SDL-02 |
+| fragment not replaced | SDL-08, SDL-09, SDL-17 |
+| iPhone Safari guard skipped | SDL-10 |
+| Shortcut key written to device storage | SDL-15 |
+| Load Intake back to the `tripDraft` path | SDL-13 |
+
+Full suite on the exact candidate, real headless Chromium, first attempt: **809 passed, 0 failed
+across 78 spec files** (771 before this release, plus 15 + 6 + 17). `verify-release-generation`
+accepts 24.0.34, all 14 CG assertions pass, and `--static-only` parity passes with 21 declared
+assets. The live parity gate gains one Worker check, that `/push/key` serves a real 65-byte P-256
+key, because key generation and re-import run on Cloudflare's WebCrypto, which Node's cannot stand
+in for.
+
+### What this does not claim
+
+- **No real iPhone has received one of these notifications yet.** Headless Chromium has no push
+  service. Delivery through Apple, the permission prompt, and a notification tap opening the
+  installed app are physical-device evidence. They were requested as a new **A14** row from the GPT
+  lane, which owns the field-certification runner (inbox
+  `claude-to-gpt-a14-shortcuts-push-device-row-2026-09-23.md`).
+- **The Shortcuts recipes are not in this release.** `docs/SHORTCUTS_PACK.md` is the GPT lane's
+  parallel task against the URL contract.
+- Apple's VAPID constraints are met as written: `exp` is 12h (Apple rejects more than 24h) and
+  `sub` is an `https://` URL on a real host (Apple returns `403 BadJwtToken` for anything else). A
+  real 201 from `web.push.apple.com` is still unobserved.
+
+---
 
 ## v24.0.33 "One Least-Privilege Client" — Issue #231 Phase C
 

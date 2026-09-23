@@ -1,4 +1,18 @@
-// FreightLogic Cloud Backup Worker v23 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Health
+// FreightLogic Cloud Backup Worker v24 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// v24: WEB PUSH + SHORTCUTS RELAY (operator decision 2026-09-22: native iOS frozen;
+// Apple Shortcuts replaces Siri, Web Push to the installed Home Screen app is the
+// notification layer). GET /push/key serves a VAPID key (operator secrets
+// VAPID_PUBLIC_KEY/VAPID_PRIVATE_JWK, else self-provisioned once in KV);
+// POST/DELETE /push/subscribe store up to 5 subscriptions per driver, restricted
+// to known push-service hosts so a client cannot aim this Worker at an arbitrary
+// URL; payloads are RFC 8291 aes128gcm with RFC 8292 VAPID, verified in tests
+// against the RFC's own Appendix A vector. POST /shortcut-key mints a relay-only
+// `fls_` key (hash stored, shown once). POST /relay lets an Apple Shortcut hand
+// one action to the installed app: validated against the SAME action contract
+// app.js enforces (byte-compared by WP-14), stored for 72h (cap 20), announced by
+// a push whose text is built here from validated fields and which never carries
+// the parameters. The Worker never scores a load: the app runs the canonical
+// evaluator after the driver taps. No KV list() anywhere on these paths.
 // v23: EPHEMERAL CERTIFICATION ADMIN CREDENTIAL (Issue #231, operator-approved
 // 2026-09-22). The Admin Console needed a live authenticated proof (list,
 // invite, re-invite, revoke) and no CI job may hold ADMIN_TOKEN. A CI run with
@@ -107,8 +121,8 @@
 // cap or 7-day TTL) instead of reporting a silent complete restore.
 // Optimized for Cloudflare free tier: pointer keys replace list() calls; hourly rate-limit windows.
 // KV binding: BACKUPS
-// Secrets: ADMIN_TOKEN, OPENAI_API_KEY
-// Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini)
+// Secrets: ADMIN_TOKEN, OPENAI_API_KEY; optional VAPID_PUBLIC_KEY + VAPID_PRIVATE_JWK (v24)
+// Vars: ALLOWED_ORIGIN, OPENAI_MODEL (optional, default: gpt-4.1-mini), VAPID_SUBJECT (optional)
 
 async function timingSafeEqual(a, b) {
   const enc = new TextEncoder();
@@ -468,7 +482,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '23', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '24', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -578,6 +592,66 @@ export default {
         return json({ ok: true, userId, name: rec.name, token }, 200, cors);
       }
 
+      // GET /push/key — v24: the VAPID public key. Public by design (it is the
+      // applicationServerKey every browser subscription is created against),
+      // so it sits above the token gate.
+      if (request.method === 'GET' && path === '/push/key') {
+        const vapid = await getVapid(env);
+        return json({ ok: true, publicKey: vapid.publicKey }, 200, cors);
+      }
+
+      // POST /relay — v24: a Shortcut hands one action to the installed app
+      // (docs/SHORTCUTS_URL_CONTRACT.md §5). Above the token gate for the same
+      // reason as /claim: the caller is an Apple Shortcut, which must never
+      // hold a driver token. It authenticates with a relay-only Shortcut key
+      // whose worst case is a notification and a prefilled form the driver
+      // still has to confirm.
+      if (request.method === 'POST' && path === '/relay') {
+        const relayIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+        if (await checkRateLimit(env, 'ip:' + relayIp, 120, 'relayip')) {
+          return json({ ok: false, error: 'Too many requests. Try again later.' }, 429, cors);
+        }
+        const shortcutKey = String(request.headers.get('X-Shortcut-Key') || '');
+        if (!SHORTCUT_KEY_RE.test(shortcutKey)) {
+          return json({ ok: false, error: 'Missing or invalid Shortcut key' }, 401, cors);
+        }
+        const keyHash = await hashToken(shortcutKey);
+        let keyRec = null;
+        try { keyRec = JSON.parse(await env.BACKUPS.get('sck:' + keyHash) || 'null'); } catch { keyRec = null; }
+        if (!keyRec || !keyRec.userId) {
+          return json({ ok: false, error: 'Missing or invalid Shortcut key' }, 401, cors);
+        }
+        let owner = null;
+        try { owner = JSON.parse(await env.BACKUPS.get('user:' + keyRec.userId) || 'null'); } catch { owner = null; }
+        if (!owner || owner.active === false) {
+          return json({ ok: false, error: 'Missing or invalid Shortcut key' }, 401, cors);
+        }
+        if (await checkRateLimit(env, keyHash, 60, 'relay')) {
+          return json({ ok: false, error: 'Too many relay items this hour.' }, 429, cors);
+        }
+        const declared = Number(request.headers.get('Content-Length') || 0);
+        if (declared > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
+        const text = await request.text();
+        if (TE.encode(text).length > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
+        let item;
+        try { item = JSON.parse(text); } catch { return json({ ok: false, error: 'Body must be JSON' }, 400, cors); }
+        const v = validateRelayItem(item);
+        if (!v.ok) return json({ ok: false, error: v.error }, 400, cors);
+
+        const now = Date.now();
+        const id = 'rl_' + now.toString(36) + b32(crypto.getRandomValues(new Uint8Array(5))).toLowerCase();
+        const items = await readRelay(env, keyRec.userId);
+        items.push({ id, do: v.do, params: v.params, createdAt: now });
+        while (items.length > RELAY_MAX_ITEMS) items.shift();
+        await writeRelay(env, keyRec.userId, items);
+
+        const pushed = await pushToUser(env, keyRec.userId, {
+          title: 'FreightLogic', body: relaySummary(v.do, v.params),
+          url: './#do=relay&id=' + id, tag: 'relay-' + id,
+        }, { urgency: 'high' });
+        return json({ ok: true, id, pushed: pushed.sent, dropped: v.dropped }, 200, cors);
+      }
+
       // DRIVER ENDPOINTS — require token
       const driverToken = request.headers.get('X-Backup-Token');
       if (!driverToken) {
@@ -665,6 +739,86 @@ export default {
         }
       }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
+
+      // ── v24: Web Push subscriptions (docs/WEB_PUSH_CONTRACT.md §4–5) ──────
+      if (path === '/push/subscribe' && (request.method === 'POST' || request.method === 'DELETE')) {
+        const body = await request.json().catch(() => ({}));
+        const subs = await readUserSubs(env, driverUserId);
+        if (request.method === 'DELETE') {
+          const endpoint = String(body.endpoint || body.subscription?.endpoint || '');
+          // With an endpoint, remove exactly that subscription; without one,
+          // remove whatever this device registered.
+          const kept = endpoint ? subs.filter(s => s.endpoint !== endpoint) : subs.filter(s => s.deviceId !== deviceId);
+          await writeUserSubs(env, driverUserId, kept);
+          return json({ ok: true, removed: subs.length - kept.length }, 200, cors);
+        }
+        const sub = await validatePushSubscription(body.subscription);
+        if (!sub) return json({ ok: false, error: 'Not a valid push subscription' }, 400, cors);
+        const rec = { ...sub, deviceId, createdAt: Date.now(), publicKey: String(body.publicKey || '').slice(0, 100) };
+        const i = subs.findIndex(s => s.endpoint === sub.endpoint);
+        if (i >= 0) subs[i] = rec; else subs.push(rec);
+        while (subs.length > PUSH_MAX_SUBS) subs.shift();
+        await writeUserSubs(env, driverUserId, subs);
+        return json({ ok: true, devices: subs.length }, 200, cors);
+      }
+
+      if (request.method === 'POST' && path === '/push/test') {
+        if (await checkRateLimit(env, driverUserId, 10, 'pushtest')) {
+          return json({ ok: false, error: 'Too many test notifications. Try again later.' }, 429, cors);
+        }
+        const r = await pushToUser(env, driverUserId, {
+          title: 'FreightLogic', body: 'Notifications are working on this device.', url: './#home', tag: 'push-test',
+        });
+        return json({ ok: true, ...r }, 200, cors);
+      }
+
+      // ── v24: Shortcut key (relay-only credential, shown once) ──────────────
+      if (path === '/shortcut-key') {
+        const userKeyRaw = await env.BACKUPS.get('sckuser:' + driverUserId);
+        let userKey = null;
+        try { userKey = userKeyRaw ? JSON.parse(userKeyRaw) : null; } catch { userKey = null; }
+        if (request.method === 'GET') {
+          return json({ ok: true, exists: !!userKey, createdAt: userKey ? userKey.createdAt : null }, 200, cors);
+        }
+        if (request.method === 'DELETE') {
+          if (userKey && userKey.hash) await env.BACKUPS.delete('sck:' + userKey.hash);
+          await env.BACKUPS.delete('sckuser:' + driverUserId);
+          return json({ ok: true, revoked: !!userKey }, 200, cors);
+        }
+        if (request.method === 'POST') {
+          if (await checkRateLimit(env, driverUserId, 10, 'sckey')) {
+            return json({ ok: false, error: 'Too many Shortcut keys this hour.' }, 429, cors);
+          }
+          const bytes = crypto.getRandomValues(new Uint8Array(24));
+          const key = 'fls_' + [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+          const hash = await hashToken(key);
+          const createdAt = new Date().toISOString();
+          const ops = [
+            env.BACKUPS.put('sck:' + hash, JSON.stringify({ userId: driverUserId, createdAt })),
+            env.BACKUPS.put('sckuser:' + driverUserId, JSON.stringify({ hash, createdAt })),
+          ];
+          if (userKey && userKey.hash && userKey.hash !== hash) ops.push(env.BACKUPS.delete('sck:' + userKey.hash));
+          await Promise.all(ops);
+          // The only time the key is ever transmitted.
+          return json({ ok: true, key, createdAt }, 201, cors);
+        }
+      }
+
+      // ── v24: relay inbox, read by the installed app ────────────────────────
+      if (request.method === 'GET' && path === '/relay') {
+        const items = await readRelay(env, driverUserId);
+        items.sort((a, b) => a.createdAt - b.createdAt);
+        return json({ ok: true, items: items.map(i => ({ id: i.id, do: i.do, params: i.params, createdAt: i.createdAt })) }, 200, cors);
+      }
+      if (request.method === 'DELETE' && path.startsWith('/relay/')) {
+        let id = '';
+        try { id = decodeURIComponent(path.slice('/relay/'.length)); } catch { id = ''; }
+        if (!RELAY_ID_RE.test(id)) return json({ ok: false, error: 'Invalid relay id' }, 400, cors);
+        const items = await readRelay(env, driverUserId);
+        const kept = items.filter(i => i.id !== id);
+        if (kept.length !== items.length) await writeRelay(env, driverUserId, kept);
+        return json({ ok: true, removed: items.length - kept.length }, 200, cors);
+      }
 
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
@@ -1795,6 +1949,310 @@ function safeDate(v) {
   }
   return null;
 }
+
+// ─── v24: Web Push + Shortcuts relay ─────────────────────────────────────────
+//
+// docs/WEB_PUSH_CONTRACT.md and docs/SHORTCUTS_URL_CONTRACT.md §5 are the
+// authority. Three properties are load-bearing:
+//
+//   1. The Worker never scores anything. A relay item is validated against the
+//      same action contract the app enforces (the @contract block below is
+//      byte-compared with app.js by WP-14) and handed to the app, which runs
+//      the canonical evaluator. A notification only invites the driver in.
+//   2. Push endpoints are client-supplied URLs this Worker will POST to, so
+//      they are restricted to known push-service hosts. Without that, a
+//      driver token (or a stolen one) could point the Worker at any URL.
+//   3. No KV list(). Subscriptions and relay items live in one index key per
+//      driver, because list() is budgeted at 1,000/day on the free tier and
+//      the rest of this Worker was already rewritten once to avoid it.
+
+const B64U_RE = /^[A-Za-z0-9_-]+$/;
+function b64uEncode(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64uDecode(str) {
+  const s = String(str || '');
+  if (!s || !B64U_RE.test(s)) return null;
+  try {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch { return null; }
+}
+function concatBytes(...parts) {
+  const n = parts.reduce((a, p) => a + p.length, 0);
+  const out = new Uint8Array(n); let i = 0;
+  for (const p of parts) { out.set(p, i); i += p.length; }
+  return out;
+}
+const TE = new TextEncoder();
+
+// Host suffixes of the push services browsers actually use. Exact host or a
+// dot-bounded suffix, never a substring: `web.push.apple.com.evil.example`
+// must not pass.
+const PUSH_SERVICE_HOSTS = ['web.push.apple.com', 'push.apple.com', 'fcm.googleapis.com',
+  'updates.push.services.mozilla.com', 'push.services.mozilla.com', 'notify.windows.com'];
+function isAllowedPushEndpoint(endpoint) {
+  let u;
+  try { u = new URL(String(endpoint || '')); } catch { return false; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
+  const host = u.hostname.toLowerCase();
+  return PUSH_SERVICE_HOSTS.some(h => host === h || host.endsWith('.' + h));
+}
+
+const PUSH_MAX_SUBS = 5;
+const RELAY_MAX_ITEMS = 20;
+const RELAY_TTL_S = 72 * 3600;
+const RELAY_MAX_BODY = 16 * 1024;
+
+/** VAPID key pair: operator secrets first, else self-provisioned once in KV.
+ *  The KV copy sits beside the subscriptions it signs for, so storing it there
+ *  grants nobody anything they could not already read. */
+async function getVapid(env) {
+  if (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_JWK) {
+    const jwk = typeof env.VAPID_PRIVATE_JWK === 'string' ? JSON.parse(env.VAPID_PRIVATE_JWK) : env.VAPID_PRIVATE_JWK;
+    const privateKey = await crypto.subtle.importKey('jwk', { ...jwk, key_ops: ['sign'] },
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    return { publicKey: String(env.VAPID_PUBLIC_KEY), privateKey };
+  }
+  let stored = null;
+  try { stored = JSON.parse(await env.BACKUPS.get('push:vapid') || 'null'); } catch { stored = null; }
+  if (!stored || !stored.publicKey || !stored.privateJwk) {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    stored = {
+      publicKey: b64uEncode(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))),
+      privateJwk: await crypto.subtle.exportKey('jwk', kp.privateKey),
+      createdAt: new Date().toISOString(),
+    };
+    await env.BACKUPS.put('push:vapid', JSON.stringify(stored));
+  }
+  const privateKey = await crypto.subtle.importKey('jwk', { ...stored.privateJwk, key_ops: ['sign'] },
+    { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  return { publicKey: stored.publicKey, privateKey };
+}
+
+/** RFC 8292 VAPID Authorization header. WebCrypto ECDSA signatures are already
+ *  the 64-byte r||s form JOSE requires. */
+async function vapidAuthorization(env, endpoint, vapid) {
+  const u = new URL(endpoint);
+  const header = b64uEncode(TE.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = b64uEncode(TE.encode(JSON.stringify({
+    aud: u.protocol + '//' + u.host,
+    exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: env.VAPID_SUBJECT || PRODUCTION_APP_ORIGIN,
+  })));
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, vapid.privateKey,
+    TE.encode(header + '.' + claims)));
+  return 'vapid t=' + header + '.' + claims + '.' + b64uEncode(sig) + ', k=' + vapid.publicKey;
+}
+
+async function hkdfBytes(salt, ikm, info, len) {
+  const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, key, len * 8));
+}
+
+/** RFC 8291 aes128gcm: one record, rs 4096, fresh ephemeral key + salt. */
+async function encryptPushPayload(plaintext, p256dhB64u, authB64u) {
+  const uaPublic = b64uDecode(p256dhB64u);
+  const authSecret = b64uDecode(authB64u);
+  const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const as = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey('raw', as.publicKey));
+  const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, as.privateKey, 256));
+  const ikm = await hkdfBytes(authSecret, ecdh, concatBytes(TE.encode('WebPush: info'), new Uint8Array([0]), uaPublic, asPublic), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdfBytes(salt, ikm, concatBytes(TE.encode('Content-Encoding: aes128gcm'), new Uint8Array([0])), 16);
+  const nonce = await hkdfBytes(salt, ikm, concatBytes(TE.encode('Content-Encoding: nonce'), new Uint8Array([0])), 12);
+  const aes = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aes,
+    concatBytes(plaintext, new Uint8Array([2]))));
+  const rs = new Uint8Array([0, 0, 0x10, 0]); // 4096, big-endian
+  return concatBytes(salt, rs, new Uint8Array([asPublic.length]), asPublic, ct);
+}
+
+async function validatePushSubscription(sub) {
+  if (!sub || typeof sub !== 'object') return null;
+  const endpoint = String(sub.endpoint || '');
+  if (endpoint.length > 1024 || !isAllowedPushEndpoint(endpoint)) return null;
+  const p256dh = b64uDecode(sub.keys && sub.keys.p256dh);
+  const auth = b64uDecode(sub.keys && sub.keys.auth);
+  if (!p256dh || p256dh.length !== 65 || p256dh[0] !== 4) return null;
+  if (!auth || auth.length !== 16) return null;
+  // Raw import rejects a point that is not on P-256 (RFC 8291 §7 requires the check).
+  try { await crypto.subtle.importKey('raw', p256dh, { name: 'ECDH', namedCurve: 'P-256' }, false, []); }
+  catch { return null; }
+  return { endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth };
+}
+
+async function readUserSubs(env, userId) {
+  try { const v = JSON.parse(await env.BACKUPS.get('push:subs:' + userId) || '[]'); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+async function writeUserSubs(env, userId, subs) {
+  if (!subs.length) { await env.BACKUPS.delete('push:subs:' + userId); return; }
+  await env.BACKUPS.put('push:subs:' + userId, JSON.stringify(subs));
+}
+
+/** Send one small JSON payload to every device of a driver. 404/410 means the
+ *  subscription is dead and it is removed; anything else is counted and kept. */
+async function pushToUser(env, userId, payload, { urgency = 'normal' } = {}) {
+  const subs = await readUserSubs(env, userId);
+  if (!subs.length) return { sent: 0, failed: 0, removed: 0 };
+  const vapid = await getVapid(env);
+  const body = TE.encode(JSON.stringify({ v: 1, ...payload }));
+  let sent = 0, failed = 0;
+  const dead = new Set();
+  await Promise.all(subs.map(async (s) => {
+    try {
+      const res = await fetch(s.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Encoding': 'aes128gcm',
+          'Content-Type': 'application/octet-stream',
+          'TTL': '86400',
+          'Urgency': urgency,
+          'Authorization': await vapidAuthorization(env, s.endpoint, vapid),
+        },
+        body: await encryptPushPayload(body, s.p256dh, s.auth),
+      });
+      if (res.status === 404 || res.status === 410) dead.add(s.endpoint);
+      else if (res.ok) sent++;
+      else failed++;
+    } catch { failed++; }
+  }));
+  if (dead.size) await writeUserSubs(env, userId, subs.filter(s => !dead.has(s.endpoint)));
+  return { sent, failed, removed: dead.size };
+}
+
+// The relay action contract. Byte-compared with the identical block in app.js
+// by tests/unit/worker-web-push.spec.mjs WP-14 — change both or neither.
+// @contract:relay-actions:begin
+const RELAY_ACTIONS = Object.freeze({
+  evaluate: { revenue: 'money', loaded: 'miles', deadhead: 'deadhead', origin: 'place', dest: 'place', broker: 'text60', weight: 'weight', length: 'inches', width: 'inches', height: 'inches', pickup: 'datetime' },
+  intake: { text: 'lines6000' },
+  trip: { order: 'text40', pay: 'money', loaded: 'miles', deadhead: 'deadhead', pickup: 'date', delivery: 'date', customer: 'text60', origin: 'place', dest: 'place' },
+  expense: { amount: 'money', category: 'text60', date: 'date', note: 'text300' },
+  fuel: { gallons: 'gallons', total: 'money', state: 'state', date: 'date', note: 'text300' },
+});
+// @contract:relay-actions:end
+const CREDENTIAL_PARAM_RE = /token|key|pass|pin|secret|auth|bearer|session|cookie/i;
+
+function relayNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v ?? '').replace(/[$,\s]/g, '');
+  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+function relayText(v, max) {
+  const s = String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s ? s.slice(0, max) : null;
+}
+/** Multi-line text (`lines<N>`): load text is parsed line by line in the app,
+ *  so line breaks survive; every other control character does not. */
+function relayLines(v, max) {
+  const s = String(v ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, ' ')
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s ? s.slice(0, max) : null;
+}
+function relayRealDate(y, m, d) {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+function relayValue(type, raw) {
+  const bounded = (lo, hi, inclusiveLo) => {
+    const n = relayNum(raw);
+    if (n === null) return null;
+    return (inclusiveLo ? n >= lo : n > lo) && n <= hi ? Math.round(n * 100) / 100 : null;
+  };
+  switch (type) {
+    case 'money': return bounded(0, 100000, false);
+    case 'miles': return bounded(0, 5000, true);
+    case 'deadhead': return bounded(0, 3000, true);
+    case 'weight': return bounded(0, 10000, false);
+    case 'inches': return bounded(0, 600, false);
+    case 'gallons': return bounded(0, 500, false);
+    case 'date': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw ?? '').trim());
+      return m && relayRealDate(+m[1], +m[2], +m[3]) ? m[0] : null;
+    }
+    case 'datetime': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(raw ?? '').trim());
+      return m && relayRealDate(+m[1], +m[2], +m[3]) && +m[4] < 24 && +m[5] < 60 ? m[0] : null;
+    }
+    case 'state': {
+      const s = String(raw ?? '').trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(s) ? s : null;
+    }
+    case 'place': return relayText(raw, 80);
+    default: {
+      const lines = /^lines(\d+)$/.exec(type);
+      if (lines) return relayLines(raw, Number(lines[1]));
+      const m = /^text(\d+)$/.exec(type);
+      return m ? relayText(raw, Number(m[1])) : null;
+    }
+  }
+}
+
+/** Validate one relay item against RELAY_ACTIONS. Unknown names are ignored,
+ *  credential-shaped names refuse the whole item, out-of-range values are
+ *  dropped (never clamped) and reported. An absent deadhead stays absent. */
+function validateRelayItem(item) {
+  const action = item && typeof item === 'object' ? String(item.do || '') : '';
+  const spec = Object.prototype.hasOwnProperty.call(RELAY_ACTIONS, action) ? RELAY_ACTIONS[action] : null;
+  if (!spec) return { ok: false, error: 'Unknown action. See docs/SHORTCUTS_URL_CONTRACT.md §3.' };
+  const raw = item.params && typeof item.params === 'object' && !Array.isArray(item.params) ? item.params : {};
+  const names = Object.keys(raw);
+  if (names.some(n => CREDENTIAL_PARAM_RE.test(n))) return { ok: false, error: 'Credentials never travel in a relay item.' };
+  const params = {};
+  const dropped = [];
+  for (const [name, type] of Object.entries(spec)) {
+    if (!Object.prototype.hasOwnProperty.call(raw, name)) continue;
+    const blank = raw[name] === null || raw[name] === undefined || String(raw[name]).trim() === '';
+    if (blank) continue;
+    const v = relayValue(type, raw[name]);
+    if (v === null) dropped.push(name); else params[name] = v;
+  }
+  if (!Object.keys(params).length) return { ok: false, error: 'No usable parameters for this action.' };
+  if (action === 'intake' && !params.text) return { ok: false, error: 'intake needs text.' };
+  return { ok: true, do: action, params, dropped };
+}
+
+function relayMoney(n) {
+  const [whole, cents] = Number(n).toFixed(2).split('.');
+  return '$' + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + cents;
+}
+/** The notification text, built here from VALIDATED parameters only. */
+function relaySummary(action, p) {
+  let s;
+  if (action === 'evaluate') {
+    const lane = p.origin && p.dest ? ' — ' + p.origin + ' → ' + p.dest : '';
+    s = 'Load ready to score' + lane + (p.revenue ? ' · ' + relayMoney(p.revenue) : '');
+  } else if (action === 'intake') s = 'Load text captured — tap to review';
+  else if (action === 'trip') s = 'Trip ready to save' + (p.order ? ' — #' + p.order : '') + (p.pay ? ' · ' + relayMoney(p.pay) : '');
+  else if (action === 'expense') s = 'Expense ready to save' + (p.amount ? ' — ' + relayMoney(p.amount) : '') + (p.category ? ' ' + p.category : '');
+  else if (action === 'fuel') s = 'Fuel stop ready to save' + (p.gallons ? ' — ' + p.gallons + ' gal' : '') + (p.total ? ' · ' + relayMoney(p.total) : '');
+  else s = 'New item from Shortcuts';
+  return relayText(s, 180);
+}
+
+async function readRelay(env, userId) {
+  let items;
+  try { items = JSON.parse(await env.BACKUPS.get('relay:' + userId) || '[]'); } catch { items = []; }
+  if (!Array.isArray(items)) return [];
+  const cutoff = Date.now() - RELAY_TTL_S * 1000;
+  return items.filter(i => i && typeof i.id === 'string' && Number(i.createdAt) > cutoff);
+}
+async function writeRelay(env, userId, items) {
+  if (!items.length) { await env.BACKUPS.delete('relay:' + userId); return; }
+  await env.BACKUPS.put('relay:' + userId, JSON.stringify(items), { expirationTtl: RELAY_TTL_S });
+}
+
+const SHORTCUT_KEY_RE = /^fls_[a-f0-9]{48}$/;
+const RELAY_ID_RE = /^rl_[0-9a-z]{8,40}$/;
 
 // ─── Response helper ──────────────────────────────────────────────────────────
 
