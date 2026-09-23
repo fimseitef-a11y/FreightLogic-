@@ -56,3 +56,17 @@ The driver origin was serving `/admin-console/` (the Admin Console UI and
 The governance PR withholds both and extends the live must-404 list and DAC-06.
 `admin-console/.assetsignore` covers its own origin separately; the root file does
 not affect it.
+
+## Update 2026-09-23T22:20Z — you can start
+
+- Governance PR #331 **merged** as `5a86d72`. Your rows are live on `main`.
+- `docs/SHORTCUTS_URL_CONTRACT.md` (v1) is pushed on `claude/repo-airtable-review-13j8hi` at
+  `0bb6e4e`, together with `docs/WEB_PUSH_CONTRACT.md`. Write `docs/SHORTCUTS_PACK.md` against §3
+  (actions) and §5 (the relay). Two facts to reflect in the recipes:
+  1. On iPhone, Open URLs lands in **Safari**, which is separate storage from the Home Screen app.
+     Recipes that save records (expense, fuel, trip) should use the **relay**
+     (`POST /relay` + `X-Shortcut-Key`), not Open URLs.
+  2. The DispatchLand capture recipe uses Apple's on-device **Extract Text from Image** and then
+     relays `do=intake` with `params.text`. There is no server-side vision call from the Shortcut.
+- The relay endpoints are not deployed until Worker v24 ships. Mark recipes that depend on them
+  "requires app 24.0.34 / Worker v24".
