@@ -18,6 +18,7 @@ import { runSpec as harnessReadiness } from './unit/harness-readiness.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
 import { runSpec as deployAssetCoverage } from './unit/deploy-asset-coverage.spec.mjs';
 import { runSpec as liveParityRunner } from './unit/live-parity-runner.spec.mjs';
+import { runSpec as legacyTokenAudit } from './unit/legacy-token-audit.spec.mjs';
 import { runSpec as productionSwGate } from './unit/production-sw-gate.spec.mjs';
 import { runSpec as workflowAuthority } from './unit/workflow-authority.spec.mjs';
 import { runSpec as rollbackVerifierCurrent } from './unit/rollback-verifier-current.spec.mjs';
@@ -108,6 +109,7 @@ const specs = [
   cacheGeneration,
   deployAssetCoverage,
   liveParityRunner,
+  legacyTokenAudit,
   productionSwGate,
   workflowAuthority,
   rollbackVerifierCurrent,
