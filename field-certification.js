@@ -128,7 +128,7 @@
         'The result was the ordinary canonical evaluator output, not an AI-authored grade, RPM, bid, or recommendation.',
         'With the network unavailable, screenshot extraction failed plainly while paste/type manual intake remained usable and no empty review form opened.'
       ]
-    ,
+    },
     A14: {
       expected: 'On the physical iPhone Home Screen app, notification permission, Web Push delivery, Shortcut relay prefill, Safari storage-split warning, and Shortcut-key revocation behave exactly as shipped without auto-saving freight data.',
       checks: [
