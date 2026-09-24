@@ -87,7 +87,13 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.35 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #341 merged as
+**Production is v24.0.36 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #348 merged as
+`b3d1ec9` (Next Move S1, app-only; Worker not redeployed). Re-dispatched Live Parity `36045433308`
+and Production Service Worker `36045436407` (both `workflow_dispatch` on `main` @ `b3d1ec9`) PASS:
+app/SW/manifest 24.0.36, Worker `/health` 24, `/push/key` valid, all 21 declared assets, 24 withheld
+paths non-public.
+
+*Superseded, kept as history:* **Production was v24.0.35 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #341 merged as
 `c58a9f9`. App-only generation (no Worker redeploy). Re-dispatched Live Parity `35941949948` and
 Production Service Worker `35941952081` (both `workflow_dispatch` on `main` @ `c58a9f9`) PASS:
 app/SW/manifest 24.0.35, Worker `/health` 24, `/push/key` valid, all 21 declared assets, 24
@@ -4910,7 +4916,9 @@ the date defect is invisible. Negative controls, each verified against a checksu
 `app.js`: disabling the evidence filter fails NM1-01/02 only; restoring the UTC parse fails
 NM1-03/04 only; counting missing hours as 0 fails NM1-05 only.
 
-**Source-only** until merged, deployed and a re-dispatched Live Parity observes 24.0.36.
+**DEPLOYED and OBSERVED LIVE 2026-09-24.** Merged as `b3d1ec9` (PR #348). Re-dispatched Live Parity
+`36045433308` and Production Service Worker `36045436407` PASS on that SHA, observing 24.0.36;
+Worker `/health` stays 24. *This line first read "Source-only until merged, deployed and observed".*
 
 ---
 
