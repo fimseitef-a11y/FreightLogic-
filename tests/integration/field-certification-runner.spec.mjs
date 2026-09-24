@@ -48,7 +48,7 @@ async function completeBaseEvidence(page, id, observation = 'Observed on the req
   for (let i = 0; i < count; i++) await checks.nth(i).check();
 }
 
-test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A13 as NOT_RUN', async () => {
+test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A14 as NOT_RUN', async () => {
   const app = await launchBlank();
   try {
     const page = await openRunner(app);
@@ -56,9 +56,9 @@ test('[FIELD CERT / NEW] FC-01 runner loads and exposes exactly A1-A13 as NOT_RU
       id: node.getAttribute('data-gate'),
       status: node.getAttribute('data-status'),
     })));
-    eq(gates.length, 13, 'the companion must render exactly the thirteen physical-device gates');
-    eq(gates.map(g => g.id).join(','), 'A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13',
-      'the companion must preserve the canonical A1-A13 identity and order');
+    eq(gates.length, 14, 'the companion must render exactly the fourteen physical-device gates');
+    eq(gates.map(g => g.id).join(','), 'A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14',
+      'the companion must preserve the canonical A1-A14 identity and order');
     eq(gates.every(g => g.status === 'NOT_RUN'), true,
       'every physical-device gate must start in the canonical NOT_RUN state; nothing is pre-certified');
   } finally {
@@ -313,12 +313,12 @@ test('[FIELD CERT / NEW] FC-11 a RUNNING physical row resumes locally only under
   }
 });
 
-test('[FIELD CERT / NEW] FC-12 every A1-A13 row is a guided evidence instrument, not an empty PASS button', async () => {
+test('[FIELD CERT / NEW] FC-12 every A1-A14 row is a guided evidence instrument, not an empty PASS button', async () => {
   const app = await launchBlank();
   try {
     const page = await openRunner(app);
     await waitEnvironment(page);
-    for (const id of ['A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12','A13']) {
+    for (const id of ['A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12','A13','A14']) {
       const row = gate(page, id);
       eq(await row.locator('[data-expected]').count(), 1, `${id} must state expected behavior`);
       eq((await row.locator('[data-required-check]').count()) > 0, true, `${id} must expose required physical checkpoints`);
@@ -341,6 +341,10 @@ test('[FIELD CERT / NEW] FC-12 every A1-A13 row is a guided evidence instrument,
     eq(await gate(page, 'A13').locator('[data-a13-camera]').count(), 1, 'A13 must record the screenshot/camera delivery result');
     eq(await gate(page, 'A13').locator('[data-a13-clipboard]').count(), 1, 'A13 must record the clipboard-image delivery result');
     eq(await gate(page, 'A13').locator('[data-a13-unknown-deadhead]').count(), 1, 'A13 must separately record the UNKNOWN-deadhead outcome');
+    eq(await gate(page, 'A14').locator('[data-a14-notification]').count(), 1, 'A14 must record the physical notification tap target');
+    eq(await gate(page, 'A14').locator('[data-a14-relay]').count(), 1, 'A14 must record relay prefill versus unsafe auto-save');
+    eq(await gate(page, 'A14').locator('[data-a14-safari-warning]').count(), 1, 'A14 must record the direct-link Safari warning');
+    eq(await gate(page, 'A14').locator('[data-a14-revoke]').count(), 1, 'A14 must record key revocation behavior');
   } finally {
     await app.close();
   }
@@ -494,7 +498,7 @@ test('[FIELD CERT / NEGATIVE] FC-15 A13 blocks below Worker v21 and accepts reco
   }
 });
 
-test('[FIELD CERT / NEGATIVE] FC-16 an A1-A12 saved session cannot resume or masquerade as complete after A13 is added', async () => {
+test('[FIELD CERT / NEGATIVE] FC-16 an A1-A13 saved session cannot resume or masquerade as complete after A14 is added', async () => {
   const app = await launchBlank();
   try {
     let page = await openRunner(app);
@@ -503,7 +507,7 @@ test('[FIELD CERT / NEGATIVE] FC-16 an A1-A12 saved session cannot resume or mas
     await page.evaluate(({ key, candidate }) => {
       localStorage.setItem(key, JSON.stringify({
         schemaVersion: 1,
-        checklistVersion: 'A1-A12-2026-09-17',
+        checklistVersion: 'A1-A13-2026-09-18',
         sessionState: 'COMPLETE',
         candidate,
         deviceModel: 'old fixture',
@@ -515,7 +519,60 @@ test('[FIELD CERT / NEGATIVE] FC-16 an A1-A12 saved session cannot resume or mas
     await waitEnvironment(page);
     eq(await page.locator('body').getAttribute('data-session-state'), 'IDLE',
       'an older checklist session must be discarded rather than resumed as COMPLETE');
-    eq(await gateStatus(page, 'A13'), 'NOT_RUN', 'the newly-added physical gate must start unobserved');
+    eq(await gateStatus(page, 'A14'), 'NOT_RUN', 'the newly-added physical gate must start unobserved');
+  } finally {
+    await app.close();
+  }
+});
+
+test('[FIELD CERT / NEGATIVE] FC-17 A14 cannot pass from CI-style checkboxes or unsafe Shortcuts outcomes', async () => {
+  const app = await launchBlank();
+  try {
+    const page = await openRunner(app);
+    await startCertification(page);
+    await startGate(page, 'A14');
+    await completeBaseEvidence(page, 'A14', 'Observed Shortcuts relay and Web Push on the physical iPhone.');
+    const row = gate(page, 'A14');
+
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A14'), 'RUNNING', 'A14 cannot pass while the physical iOS outcomes are unrecorded');
+
+    await row.locator('[data-a14-notification]').selectOption('SAFARI');
+    await row.locator('[data-a14-relay]').selectOption('AUTO_SAVED');
+    await row.locator('[data-a14-safari-warning]').selectOption('NO_WARNING');
+    await row.locator('[data-a14-revoke]').selectOption('STILL_AUTHORIZED');
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A14'), 'RUNNING', 'unsafe or incorrect Shortcuts/push outcomes must not be certifiable');
+
+    await row.locator('[data-a14-notification]').selectOption('HOME_SCREEN_PWA');
+    await row.locator('[data-a14-relay]').selectOption('UNSAVED_PREFILL');
+    await row.locator('[data-a14-safari-warning]').selectOption('WARNING_SHOWN');
+    await row.locator('[data-a14-revoke]').selectOption('HTTP_401_NO_PUSH');
+    await row.locator('[data-action="pass"]').click();
+    eq(await gateStatus(page, 'A14'), 'PASS', 'A14 may pass only after the required physical-device outcomes are explicitly recorded');
+  } finally {
+    await app.close();
+  }
+});
+
+test('[FIELD CERT / NEGATIVE] FC-18 A14 Shortcut-key-shaped evidence is redacted from local storage and export', async () => {
+  const app = await launchBlank();
+  try {
+    const page = await openRunner(app);
+    await startCertification(page);
+    await startGate(page, 'A14');
+    const row = gate(page, 'A14');
+    const secret = 'flk_SHORTCUT_SECRET_123';
+    await row.locator('[data-operator-observation]').fill(`Shortcut key token=${secret}; physical behavior observed.`);
+    await row.locator('[data-reason]').fill(`blocked token=${secret}`);
+    await row.locator('[data-action="block"]').click();
+    const stored = await page.evaluate(key => localStorage.getItem(key) || '', STORE_KEY);
+    eq(stored.includes(secret), false, 'A14 must never persist the Shortcut key value');
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('[data-export]').click();
+    const download = await downloadPromise;
+    const exported = await readFile(await download.path(), 'utf8');
+    eq(exported.includes(secret), false, 'A14 privacy-safe export must never contain the Shortcut key value');
   } finally {
     await app.close();
   }
