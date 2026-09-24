@@ -490,7 +490,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.35';
+const APP_VERSION = '24.0.36';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -640,8 +640,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.35` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.35`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.36` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.36`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4881,6 +4881,38 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.36 "Evidence Before Advice" — Next Move S1
+
+App **24.0.35 → 24.0.36**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
+generation, **do not redeploy the Worker**. No canonical economics, verdict, grade, bid, storage
+schema or routing change.
+
+The first slice of the operator-authorized intelligence layer (`docs/NEXT_MOVE_LAYER_SPEC.md`).
+Next Move will read the same evidence as the Today card's `getPositioningBrief()`, so three
+existing defects in that brief are fixed first:
+
+- **Unknown deadhead in lane statistics.** Outbound lane RPM and day patterns summed
+  `Number(t.emptyMiles || 0)` and did not exclude `needsReview` trips, so a trip whose deadhead
+  was never stated put a loaded-only rate into a lane average and its count. Only evidenced trips
+  (`_positioningTripIsEvidence`: known deadhead via `tripAllMiles`, not flagged) count now.
+- **Best day off by one.** `new Date('YYYY-MM-DD')` is UTC midnight, the previous local day in
+  every US timezone. `_localDayOfWeek()` reads the date at local noon, the same fix
+  `recordReloadOutcome()` already used.
+- **Missing reload time counted as instant.** `hoursToReload || 0` made a missing value a
+  0-hour reload ("Hot market"). `_reloadHoursKnown()` excludes it in `getCityReloadScore()` and
+  the Reload Scoring panel, and `recordReloadOutcome()` refuses to store one. An explicit `0` is
+  still a verified instant reload.
+
+**Tests.** `tests/integration/next-move-s1.spec.mjs` (6, new, registered) runs in
+`America/Chicago` via a new optional `timezoneId` on `launchApp()`, because CI runs in UTC where
+the date defect is invisible. Negative controls, each verified against a checksum-restored
+`app.js`: disabling the evidence filter fails NM1-01/02 only; restoring the UTC parse fails
+NM1-03/04 only; counting missing hours as 0 fails NM1-05 only.
+
+**Source-only** until merged, deployed and a re-dispatched Live Parity observes 24.0.36.
+
+---
 
 ## v24.0.35 "Only From The Tap" — the boot-time permission prompt v24.0.34 left behind
 

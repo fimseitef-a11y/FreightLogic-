@@ -1,7 +1,13 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.35 USA ENGINE
+/** FreightLogic v24.0.36 USA ENGINE
+ *  v24.0.36 "Evidence Before Advice": Next Move S1 (docs/NEXT_MOVE_LAYER_SPEC.md).
+ *          The positioning brief behind the Today Next Move card now counts only
+ *          evidenced trips (known deadhead, not flagged for review) in lane RPM
+ *          and day patterns, reads pickup dates at local noon so "best day" is not
+ *          off by one in US timezones, and stops treating a missing reload time as
+ *          an instant reload. No economics, verdict, grade or bid change.
  *  v24.0.35 "Only From The Tap": removes the legacy boot-time
  *          Notification.requestPermission() (no user gesture, any driver
  *          with a trip), which broke docs/WEB_PUSH_CONTRACT.md's Turn-on-only
@@ -496,7 +502,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.35';
+const APP_VERSION = '24.0.36';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -20323,6 +20329,27 @@ async function openTaxSeasonExport(){
 
 let _positioningCache = null; // { city, brief, ts }
 
+// v24.0.36 (Next Move S1) — the positioning brief's evidence rules
+// (docs/NEXT_MOVE_LAYER_SPEC.md §4). A trip is lane/market evidence only when
+// its deadhead is known and it is not flagged for review.
+function _positioningTripIsEvidence(t){
+  return !!t && !t.needsReview && tripAllMiles(t) !== null;
+}
+// A bare YYYY-MM-DD parses as UTC midnight, which is the PREVIOUS local day in
+// every US timezone, so getDay() was off by one. Read it at local noon.
+function _localDayOfWeek(dateStr){
+  const s = String(dateStr || '');
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+  const day = d.getDay();
+  return Number.isFinite(day) ? day : null;
+}
+// A reload outcome counts only with a recorded, non-negative hour figure; a
+// missing value is not an instant reload.
+function _reloadHoursKnown(r){
+  const h = knownNum(r && r.hoursToReload);
+  return h !== null && h >= 0 ? h : null;
+}
+
 async function getPositioningBrief(city) {
   if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
 
@@ -20343,7 +20370,11 @@ async function getPositioningBrief(city) {
   try {
     const { trips } = await _getTripsAndExps();
     const normCity = normalizeLanePart(city);
-    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity);
+    // v24.0.36 (Next Move S1): only EVIDENCED trips feed lane statistics. A trip
+    // whose deadhead was never stated, or that is flagged for review, would put a
+    // loaded-only rate into a lane average ("Target: X at $1.80 avg") — the
+    // unknown-deadhead-as-zero class fixed in tripRow (v24.0.15) and CSV export.
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity && _positioningTripIsEvidence(t));
 
     // Group by normalized destination
     const destMap = {};
@@ -20360,9 +20391,7 @@ async function getPositioningBrief(city) {
       let minRpm = Infinity, maxRpm = 0;
       for (const t of ts) {
         const pay = Number(t.pay || 0);
-        const loaded = Number(t.loadedMiles || 0);
-        const empty = Number(t.emptyMiles || 0);
-        const miles = loaded + empty;
+        const miles = tripAllMiles(t) || 0;
         if (pay > 0 && miles > 0) {
           const rpm = pay / miles;
           if (rpm < minRpm) minRpm = rpm;
@@ -20443,14 +20472,15 @@ async function getPositioningBrief(city) {
   try {
     const { trips } = await _getTripsAndExps();
     const normCity = normalizeLanePart(city);
-    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity && t.pickupDate);
+    const fromHere = trips.filter(t => t.origin && normalizeLanePart(t.origin) === normCity && t.pickupDate && _positioningTripIsEvidence(t));
     patterns.totalTrips = fromHere.length;
 
     if (fromHere.length >= 3) {
       const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
       const byDay = {};
       for (const t of fromHere) {
-        const day = new Date(t.pickupDate).getDay();
+        const day = _localDayOfWeek(t.pickupDate);
+        if (day === null) continue;
         if (!byDay[day]) byDay[day] = [];
         byDay[day].push(t);
       }
@@ -20460,7 +20490,7 @@ async function getPositioningBrief(city) {
         let totalPay = 0, totalMiles = 0;
         for (const t of ts) {
           totalPay += Number(t.pay || 0);
-          totalMiles += Number(t.loadedMiles || 0) + Number(t.emptyMiles || 0);
+          totalMiles += tripAllMiles(t) || 0;
         }
         const avgRPM = totalMiles > 0 ? roundCents(totalPay / totalMiles) : 0;
         dayStats.push({ name: dayNames[Number(day)], avgRPM, count: ts.length });
@@ -21243,7 +21273,9 @@ async function recordReloadOutcome(trip, hoursToReload){
     const id = 'ro_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
     const dt = trip.deliveryDate || isoDate(new Date());
     const dayOfWeek = new Date(dt + 'T12:00:00').getDay(); // 0=Sun
-    const rec = { id, city, date: dt, dayOfWeek, hoursToReload: Number(hoursToReload)||0, tripId: trip.orderNo||'' };
+    const hours = knownNum(hoursToReload);
+    if (hours === null || hours < 0) return; // never record a missing value as an instant reload
+    const rec = { id, city, date: dt, dayOfWeek, hoursToReload: hours, tripId: trip.orderNo||'' };
     const {t, stores} = tx('reloadOutcomes', 'readwrite');
     await idbReq(stores.reloadOutcomes.put(rec));
     await new Promise(r => { t.oncomplete = r; t.onerror = r; });
@@ -21256,9 +21288,9 @@ async function getCityReloadScore(city){
     const norm = normalizeLanePart(city);
     const {stores} = tx('reloadOutcomes');
     const idx = stores.reloadOutcomes.index('city');
-    const recs = await idbReq(idx.getAll(norm));
-    if (!recs || recs.length < 2) return null;
-    const avg = recs.reduce((s, r) => s + (r.hoursToReload||0), 0) / recs.length;
+    const recs = (await idbReq(idx.getAll(norm)) || []).filter(r => _reloadHoursKnown(r) !== null);
+    if (recs.length < 2) return null;
+    const avg = recs.reduce((s, r) => s + _reloadHoursKnown(r), 0) / recs.length;
     // Score: <8h = great, 8-24h = ok, 24-48h = slow, >48h = dead zone
     let grade, color, label;
     if (avg < 8){ grade='A'; color='var(--good)'; label='Hot market'; }
@@ -21285,8 +21317,10 @@ async function openReloadScoring(){
       const all = await dumpStore('reloadOutcomes');
       const cities = {};
       for (const r of all){
+        const h = _reloadHoursKnown(r);
+        if (h === null) continue;
         if (!cities[r.city]) cities[r.city] = [];
-        cities[r.city].push(r.hoursToReload||0);
+        cities[r.city].push(h);
       }
       const entries = Object.entries(cities).map(([city, hrs]) => {
         const avg = hrs.reduce((a,b)=>a+b,0)/hrs.length;
@@ -24172,6 +24206,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     LIFECYCLE_OPPORTUNITY, LIFECYCLE_EXECUTION, LIFECYCLE_SETTLEMENT, DB_VERSION,
     _lifecycleStateFromTrip, logBid, upsertTrip, _lifecycleStageChip, _postTripSaveLaneHook,
     getBidWinRateStats,
+    // v24.0.36 Next Move S1 — positioning-brief evidence integrity
+    getPositioningBrief, getCityReloadScore, recordReloadOutcome, _localDayOfWeek,
+    _clearPositioningCache: () => { _positioningCache = null; _kpiCache.ts = 0; },
     // v24.2 M5A/5B normalized opportunity ingestion
     normalizeOpportunity, intakeOpportunity,
     PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
