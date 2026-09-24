@@ -63,7 +63,13 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
     rather than a Re-invite) with the original still unrotated; that is recorded, not the
     evidence. The second account is an extra login the operator can revoke; it is not a v7
     credential.
-- **Proposed next intelligence layer. It is not authorized, so do not start it unprompted.**
+- **Next intelligence layer: AUTHORIZED 2026-09-24** (operator reply "Both"). The contract is
+  `docs/NEXT_MOVE_LAYER_SPEC.md`: Next Move v1 (TAKE / WAIT / REPOSITION / UNKNOWN) evolves the
+  existing F24 Today card rather than adding a second directive, is advisory only, and ships in
+  slices (S1 evidence integrity of the positioning brief, S2 derivation, S3 TAKE linkage). Day
+  Value, the operating clock and reload latency are later and need their own specs. The
+  original proposal, kept as history:
+  **Proposed next intelligence layer. It is not authorized, so do not start it unprompted.**
   The layer moves from grading one load to judging the best next 24 hours. Suggested first
   modules: Next Move (WAIT / REPOSITION / TAKE), Day Value / opportunity cost, a per-market
   operating clock, and reload latency. Build it only after the Shortcuts/Push release is
