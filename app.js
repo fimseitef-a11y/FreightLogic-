@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.34 USA ENGINE
+/** FreightLogic v24.0.35 USA ENGINE
+ *  v24.0.35 "Only From The Tap": removes the legacy boot-time
+ *          Notification.requestPermission() (no user gesture, any driver
+ *          with a trip), which broke docs/WEB_PUSH_CONTRACT.md's Turn-on-only
+ *          permission rule. DB16, Worker v24; no economics/storage/routing change.
  *  v24.0.34 "Shortcuts In, Notifications Out": Apple Shortcuts deep links
  *          (#do=<action>, docs/SHORTCUTS_URL_CONTRACT.md), the Shortcuts
  *          relay and Web Push to the installed Home Screen app
@@ -492,7 +496,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.34';
+const APP_VERSION = '24.0.35';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -16081,19 +16085,12 @@ async function checkOverduePayments(){
   } catch(e){ console.warn('[NOTIFY] overdue check failed:', e); }
 }
 
-async function requestNotificationPermission(){
-  try{
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'default'){
-      // Only ask after user has added at least 1 trip
-      const cnt = await countStore('trips');
-      if (cnt >= 1){
-        const perm = await Notification.requestPermission();
-        if (perm === 'granted') toast('Notifications enabled — we\'ll alert you about late payments');
-      }
-    }
-  } catch(e){ console.warn("[FL]", e); }
-}
+// v24.0.35: requestNotificationPermission() is gone. It asked for notification
+// permission ~2 s after boot, with no user gesture, for any driver with a trip.
+// docs/WEB_PUSH_CONTRACT.md requires permission ONLY from the Notifications &
+// Shortcuts "Turn on" tap: iOS ignores a gesture-less prompt, and on Chrome a
+// prompt the driver never asked for is usually denied, which blocks Web Push
+// permanently. The overdue-payment alert still fires once Turn on has granted it.
 
 // ════════════════════════════════════════════════════════════════
 // v14.4.0 FEATURE: PWA INSTALL BANNER
@@ -24419,7 +24416,6 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // v14.4.0: Deferred boot tasks (non-blocking)
     setTimeout(async ()=>{
       try{ await requestPersistentStorage(); }catch(e){ console.warn("[FL]", e); }
-      try{ await requestNotificationPermission(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkBackupReminder(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkRecurringExpenses(); }catch(e){ console.warn("[FL]", e); }
       try{ await checkQuarterlyExportReminder(); }catch(e){ console.warn("[FL]", e); }

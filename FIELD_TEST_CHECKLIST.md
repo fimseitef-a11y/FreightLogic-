@@ -4,7 +4,14 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-**Current production synchronization point (observed 2026-09-22 UTC): FreightLogic v24.0.29 / IndexedDB v16 / Worker v21.**
+**Current production synchronization point (observed 2026-09-23 UTC): FreightLogic v24.0.34 / IndexedDB v16 / Worker v24.**
+PR #333 merged as `8f4585e`; Worker v24 deployed by run `35932504325`; re-dispatched Live Parity
+`35932842955`, Production Service Worker `35932845279` and the settled authenticated gate
+`35936015903` all PASS on that SHA. v24.0.34 adds Apple Shortcuts deep links, the Shortcuts relay
+and Web Push, which is why **A14** exists below. As with every observation here, deploying a
+generation does not select it as the certification candidate.
+
+*Previous synchronization point, kept as history:* **FreightLogic v24.0.29 / IndexedDB v16 / Worker v21**, observed 2026-09-22 UTC.
 PR #306 merged runtime v24.0.29 as `ca99d50abf18557682f38e641c2b023041088ea6`; its exact PR head
 `cbdc36e133fc8e265e7c410dd3a6c29920ce6348` passed Tests `35678726412` at **748/0 across 73 specs**, with Lanes and CodeQL green.
 On settled checkpoint `98e447e3`, exact-main Tests `35679841575` (job `106594197228`) passed **748/0 across 73 specs** and CodeQL `35679841490` (job `106594197964`) passed. Live Parity `35679841528` (job `106594200002`) and Production Service Worker `35679841496` (job `106594196748`) both passed on attempt 1, directly observing app/SW/manifest 24.0.29, Worker v21, all 22 runtime assets, `freightlogic-24.0.29`, five tabs + Today after reload, and exactly one generation cache.
@@ -247,6 +254,61 @@ accepts a recorded iOS non-delivery without accepting a fabricated deadhead zero
 The reason the old wording mattered still holds and is why this correction is recorded rather
 than quietly overwritten: **a runner that has never heard of A13 cannot report it missing**, so
 A1-A12 complete was never A13 evidence. That gap is now closed in the instrument itself.
+
+## A14. Shortcuts relay + Web Push on a real iPhone (added v24.0.34)
+
+**Requires Worker v24 deployed — SATISFIED at the synchronization point above.** The relay and
+push routes (`/push/*`, `/shortcut-key`, `/relay`) do not exist below Worker v24; against an older
+Worker this row is BLOCKED, not FAIL. Confirm `/health` reports **24** or later before starting.
+Contracts: `docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md`. Recipes:
+`docs/SHORTCUTS_PACK.md`.
+
+This row exists because headless Chromium has no push service. Everything below has regression
+coverage in source (WP-*, SWP-*, SDL-*), but delivery through Apple, the permission prompt and
+a notification tap opening the **installed** app have never been observed. Run every step from
+the **Home Screen app**, not a Safari tab, unless the step says otherwise.
+
+1. **Permission comes only from the tap.** Settings → **Notifications & Shortcuts** →
+   **Turn on**. Confirm iOS shows its permission prompt at that tap and not before (not at
+   launch, not on opening Settings). Allow it.
+2. **A test notification arrives and opens the installed app.** Tap **Send test**, lock the
+   phone, wait. Confirm the notification arrives. Tap it: the **Home Screen app** must open,
+   not Safari. Record how long delivery took.
+3. **The Shortcut key is shown once.** Tap **Create Shortcut key**. Copy the `fls_…` key into a
+   Shortcut built from `docs/SHORTCUTS_PACK.md` §4 (expense). Leave Settings and come back:
+   the key must not be shown again.
+4. **Relay → notification → prefilled form, nothing saved.** Force-quit FreightLogic. Run the
+   expense Shortcut with an amount and category. Confirm a notification arrives, and that
+   tapping it opens the installed app on a **prefilled** Add Expense form. Confirm nothing is
+   in the expense list until you tap **Save**.
+5. **A missed notification is not a lost item.** Run the Shortcut again, **dismiss** the
+   notification, then open the app yourself. Confirm Today shows **From Shortcuts** with the
+   item, that opening it prefills the form, and that it is gone from the list afterwards.
+6. **A direct link lands in Safari and says so.** From a Shortcut, *Open URLs* a
+   `#do=trip&…` link. Confirm it opens in **Safari** and shows the **Opened in Safari** warning
+   before any form, and that no trip appears in the installed app afterwards. This is the
+   storage split the relay exists for; a trip silently saved into Safari is a FAIL.
+7. **UNKNOWN deadhead survives the relay.** Relay a `do=evaluate` item with revenue and loaded
+   miles but **no** deadhead. Confirm the evaluator's Deadhead box is blank and it asks for the
+   figure instead of grading. Repeat with `deadhead=0` and confirm it grades.
+8. **Out-of-range values are dropped, not clamped.** Relay `do=fuel` with `gallons=999`
+   (the contract ceiling is 500). Record the Shortcut's response: it must be HTTP 200 with
+   `"dropped":["gallons"]`, and the prefilled Fuel form must have **no** gallons value, not 500.
+9. **Replacing the key revokes the old one.** Tap **Replace Shortcut key**. Run the old
+   Shortcut unchanged: the response must be **401**. Update it to the new key and confirm it
+   works again.
+10. **Turn off stops delivery.** Tap **Turn off**, then run the Shortcut. Record the response's
+    `pushed` value (expected `0`) and confirm no notification arrives. The item may still
+    appear under From Shortcuts when the app is opened; that is intended.
+
+PASS requires steps 1, 2, 4, 6, 7, 8 and 9 correct, with the iOS version and delivery times
+recorded. Step 5 and step 10 are recorded with whatever they actually did.
+
+**The certification runner does not carry this row yet.** `field-certification.js` and its
+regression are GPT-owned under `.agents/LANES.md`, so the runner row was requested through the
+shared coordination table rather than edited across lanes. Until it lands, record A14 manually
+alongside the runner's A1-A13 export. A runner that has never heard of A14 cannot report it
+missing — the A13 lesson, applied before the fact this time.
 
 # B. Live deployment blockers
 

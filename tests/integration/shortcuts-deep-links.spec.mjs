@@ -419,6 +419,40 @@ test('[SDL-17] open links route to the named screen while the app is running', a
   } finally { await app.close(); }
 });
 
+test('[SDL-18] boot never asks for notification permission; only the Turn on tap does', async () => {
+  // docs/WEB_PUSH_CONTRACT.md: permission is requested ONLY from the Turn on
+  // tap. v24.0.34 shipped that for push, while a legacy boot task still called
+  // Notification.requestPermission() ~2 s after start for any driver with a
+  // trip. Seed the precondition that path needed (a saved trip, permission still
+  // "default"), reboot, and let the deferred boot tasks run in full.
+  const app = await boot();
+  try {
+    const p = app.page;
+    await p.evaluate(async () => {
+      const t = window.__FL_TESTS.sanitizeTrip({ orderNo: 'SDL18', pay: 500, loadedMiles: 400, emptyMiles: 20, pickupDate: '2026-09-20', deliveryDate: '2026-09-21', origin: 'Columbus, OH', destination: 'Atlanta, GA' });
+      await window.__FL_TESTS.upsertTrip(t);
+    });
+    ok(await count(p, 'trips') >= 1, 'precondition: a saved trip exists');
+    await p.addInitScript(() => {
+      window.__permAsks = 0;
+      try {
+        Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'default' });
+        Notification.requestPermission = () => { window.__permAsks++; return Promise.resolve('default'); };
+      } catch (_) {}
+    });
+    await p.reload({ waitUntil: 'load' });
+    await waitForAppReady(p);
+    await sleep(3500); // the deferred boot block runs at +2000 ms
+    eq(await p.evaluate(() => window.__permAsks), 0, 'no permission prompt without a user gesture');
+  } finally { await app.close(); }
+
+  // The only call site left is the Turn on handler.
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
+  const sites = src.split('\n').filter(l => /requestPermission\s*\(/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
+  eq(sites.length, 1, `exactly one requestPermission call site, got ${sites.length}`);
+});
+
 export async function runSpec() {
   return await run();
 }

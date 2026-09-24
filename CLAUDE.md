@@ -462,7 +462,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.34';
+const APP_VERSION = '24.0.35';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -612,8 +612,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.34` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.34`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.35` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.35`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4853,6 +4853,37 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.35 "Only From The Tap" — the boot-time permission prompt v24.0.34 left behind
+
+App **24.0.34 → 24.0.35**. `DB_VERSION` stays **16** and the Worker stays **v24**, so this is an
+app-only generation: **do not redeploy the Worker**. No economics, storage, routing or Worker
+behaviour changes.
+
+**The defect.** `docs/WEB_PUSH_CONTRACT.md` says notification permission is requested **only from
+the Turn on tap**, and v24.0.34's `pushEnable()` honours it. But a legacy boot task,
+`requestNotificationPermission()`, still ran about 2 s after every start and called
+`Notification.requestPermission()` with no user gesture for any driver with at least one trip. On
+iOS a gesture-less prompt is ignored, which is harmless. On Chrome and Android it shows a prompt the
+driver never asked for, and a denial there is permanent for the origin, which blocks Web Push
+before the driver ever reaches Settings. It was found by reading the code against the new A14
+field-test row, not reported.
+
+**The fix.** The function and its boot call are deleted. The overdue-payment alert, which is what
+the prompt originally served, still fires once Turn on has granted permission, because it already
+goes through the service worker.
+
+**Tests.** SDL-18 seeds a trip (the old code path's precondition), stubs `Notification` with
+permission `default`, reboots, lets the deferred boot block run, and requires zero permission
+requests. It also requires exactly one non-comment `requestPermission(` call site in `app.js`,
+which is the one inside `pushEnable()`. Negative control: `main`'s pre-fix `app.js` fails SDL-18.
+
+**Also in this generation, documentation only:** `FIELD_TEST_CHECKLIST.md` gains **A14**
+(Shortcuts relay + Web Push on a real iPhone) and its production header moves to v24.0.34 /
+Worker v24. The A14 runner row was requested from the GPT lane through the coordination table;
+the v24.0.34 section above cited an inbox file for that request which was never actually written.
+
+---
 
 ## v24.0.34 "Shortcuts In, Notifications Out" — Apple Shortcuts deep links + Web Push (Worker v24)
 
