@@ -1,6 +1,0 @@
-owner: claude
-token: 076dfabf-6c94-4689-bea8-c54a956c1811
-started_utc: 2026-09-24T00:16:20Z
-expected_release_utc: 2026-09-24T03:16:20Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.0.35 remove gesture-less boot Notification.requestPermission (WEB_PUSH_CONTRACT line 105)
