@@ -48,6 +48,14 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
     blanket measure. Investigate whether any tokens minted under Worker v7 still authenticate.
   - DeepSeek's earlier CI, npm-audit and blanket-rotation advice was stale, and DeepSeek
     acknowledged it.
+  - **Answered 2026-09-24** by `Audit Legacy Driver Tokens` run `35947512839` on `main` @
+    `79f1059` (read-only, `scripts/audit-legacy-tokens.mjs`). **VERDICT: FINDINGS.** 1 driver
+    account exists and its live token was issued before v14 (2026-09-13T05:06:45Z) and never
+    rotated or re-claimed, so it is the same bytes v7 stored in plaintext: rotate it from the
+    Admin Console (Re-invite). Rotation is the operator's action. 3 leftover plaintext `token:`
+    index keys remain, and **none still authenticates** (the account record names a different
+    hash), so they are dead residue, not live credentials. After a rotation, re-dispatch the
+    audit: CLEAN is the closing evidence.
 - **Proposed next intelligence layer. It is not authorized, so do not start it unprompted.**
   The layer moves from grading one load to judging the best next 24 hours. Suggested first
   modules: Next Move (WAIT / REPOSITION / TAKE), Day Value / opportunity cost, a per-market
