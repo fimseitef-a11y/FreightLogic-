@@ -2,16 +2,18 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Current target — v24.0.34 / DB16 / Worker v24 (source candidate, 2026-09-23).** Deploy
-**Worker v24 first** (Deploy Backup Worker, `DEPLOY`). It only adds routes (`/push/*`,
-`/shortcut-key`, `/relay`), so the live v24.0.33 app is unaffected. Then let Cloudflare deploy
-the app, and **re-dispatch** Verify Live Parity rather than citing the push-triggered run. Expected
-markers: `app.js?v=24.0.34`, `sw-bridge.js?v=24.0.34`, `SW_VERSION = '24.0.34'`, cache
-`freightlogic-24.0.34`, manifest `FreightLogic v24.0.34`, `modern-shell.js?v=24.0.34`, and
-`/health` `{"ok":true,"version":"24"}`. **21** declared runtime assets (unchanged from
-v24.0.33). The withheld set now also covers `admin-console/` and `native-ios/` (PR #331):
-`admin-console/index.html`, `admin-console/worker.js` and `native-ios/Package.swift` must answer
-404/403 on the driver origin.
+**Current target — v24.0.35 / DB16 / Worker v24 (source candidate, 2026-09-24).** App-only
+generation: the Worker is unchanged, so **do not redeploy it**. Let Cloudflare deploy the app, then
+**re-dispatch** Verify Live Parity rather than citing the push-triggered run. Expected markers:
+`app.js?v=24.0.35`, `sw-bridge.js?v=24.0.35`, `SW_VERSION = '24.0.35'`, cache
+`freightlogic-24.0.35`, manifest `FreightLogic v24.0.35`, `modern-shell.js?v=24.0.35`, and
+`/health` `{"ok":true,"version":"24"}`. **21** declared runtime assets. The withheld set still
+covers `admin-console/` and `native-ios/`.
+
+*Superseded, kept as history: **observed 2026-09-23, production served v24.0.34 / DB16 / Worker
+v24**. Worker v24 deployed by `35932504325`; re-dispatched Live Parity `35932842955` and
+Production Service Worker `35932845279` PASS on `main` @ `8f4585e`; settled authenticated gate
+`35936015903` PASS.*
 
 *Superseded below and kept as history: **observed 2026-09-22, production served v24.0.33 / DB16 /
 Worker v23**. Live Parity `35776465060` and Production Service Worker `35776467510` PASS on `main`
