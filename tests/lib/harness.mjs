@@ -347,12 +347,15 @@ async function waitForAppBoot(page, enableTestExports, rec) {
  * IndexedDB-backed test operation so callers cannot race app DB initialization.
  * Returns { browser, context, page, baseUrl, close() }.
  */
-export async function launchApp({ headless = true, geolocation = null, permissions = [], enableTestExports = true } = {}) {
+export async function launchApp({ headless = true, geolocation = null, permissions = [], enableTestExports = true, timezoneId = undefined } = {}) {
   const { port } = await ensureServer();
   const browser = await chromium.launch({ headless, ...(process.env.FL_CHROME_PATH ? { executablePath: process.env.FL_CHROME_PATH } : {}) });
   const context = await browser.newContext({
     geolocation: geolocation || undefined,
     permissions: geolocation ? ['geolocation', ...permissions] : permissions,
+    // Optional: a spec that depends on local-date behaviour pins a non-UTC zone,
+    // because CI runs in UTC where a UTC-parse defect is invisible.
+    ...(timezoneId ? { timezoneId } : {}),
   });
   // Opt-in to window.__FL_TESTS (gated on __FL_TESTS_ENABLED as of the F-5 fix).
   // Defaults to true because most of this suite drives pure functions through
