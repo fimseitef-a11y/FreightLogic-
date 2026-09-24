@@ -8,7 +8,7 @@ Synced from the shared Airtable coordination table (`ChatGPT Coordination`, base
 Workspace Cleanup") on 2026-09-23. Treat these as checkpoint facts, and re-verify anything
 version-shaped against source, `/health` and a re-dispatched live gate before repeating it.
 
-- **Superseded 2026-09-23: production is now v24.0.34 / DB16 / Worker v24** (see the paragraph
+- **Superseded 2026-09-24: production is now v24.0.35 / DB16 / Worker v24** (see the paragraph
   after this list). Kept as history: **Production is v24.0.33 / DB16 / Worker v23, OBSERVED by the repository gates.** #231
   Phase C merged in PR #330. The external 2026-09-22 spot-check was followed by re-dispatched
   Verify Live Parity `35776465060` and Production Service Worker `35776467510`, both PASS on
@@ -66,7 +66,14 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.34 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-23.** PR #333 merged as
+**Production is v24.0.35 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #341 merged as
+`c58a9f9`. App-only generation (no Worker redeploy). Re-dispatched Live Parity `35941949948` and
+Production Service Worker `35941952081` (both `workflow_dispatch` on `main` @ `c58a9f9`) PASS:
+app/SW/manifest 24.0.35, Worker `/health` 24, `/push/key` valid, all 21 declared assets, 24
+withheld paths non-public. Tests `35941568018` and CodeQL `35941568061` passed on the same SHA.
+The push-triggered parity run `35941568017` raced the deploy and is not the evidence.
+
+*Superseded, kept as history:* **Production was v24.0.34 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-23.** PR #333 merged as
 `8f4585e`. Worker v24 was deployed by run `35932504325`; re-dispatched Live Parity run `35932842955`
 and Production Service Worker run `35932845279` (both `workflow_dispatch` on `main` @ `8f4585e`)
 PASS; Verify Authenticated Worker run `35936015903` PASS (authority, backup/delta/restore,
@@ -4877,6 +4884,10 @@ goes through the service worker.
 permission `default`, reboots, lets the deferred boot block run, and requires zero permission
 requests. It also requires exactly one non-comment `requestPermission(` call site in `app.js`,
 which is the one inside `pushEnable()`. Negative control: `main`'s pre-fix `app.js` fails SDL-18.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-24.** Merged as `c58a9f9`; re-dispatched Live Parity
+`35941949948` and Production Service Worker `35941952081` PASS on that SHA. Worker not
+redeployed; `/health` stays 24.
 
 **Also in this generation, documentation only:** `FIELD_TEST_CHECKLIST.md` gains **A14**
 (Shortcuts relay + Web Push on a real iPhone) and its production header moves to v24.0.34 /

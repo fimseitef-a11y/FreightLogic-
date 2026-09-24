@@ -4,7 +4,13 @@ Purpose: finite **Milestone 7 physical-device certification gate** for the Freig
 
 Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-**Current production synchronization point (observed 2026-09-23 UTC): FreightLogic v24.0.34 / IndexedDB v16 / Worker v24.**
+**Current production synchronization point (observed 2026-09-24 UTC): FreightLogic v24.0.35 / IndexedDB v16 / Worker v24.**
+PR #341 merged as `c58a9f9`; re-dispatched Live Parity `35941949948` and Production Service Worker
+`35941952081` PASS on that SHA. App-only generation: v24.0.35 removes a boot-time notification
+permission prompt so A14 step 1 can hold. As always, this does not select a certification
+candidate.
+
+*Previous synchronization point, kept as history:* **FreightLogic v24.0.34 / IndexedDB v16 / Worker v24**, observed 2026-09-23 UTC.
 PR #333 merged as `8f4585e`; Worker v24 deployed by run `35932504325`; re-dispatched Live Parity
 `35932842955`, Production Service Worker `35932845279` and the settled authenticated gate
 `35936015903` all PASS on that SHA. v24.0.34 adds Apple Shortcuts deep links, the Shortcuts relay
