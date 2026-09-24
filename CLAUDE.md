@@ -56,6 +56,13 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
     index keys remain, and **none still authenticates** (the account record names a different
     hash), so they are dead residue, not live credentials. After a rotation, re-dispatch the
     audit: CLEAN is the closing evidence.
+  - **Closed 2026-09-24.** The operator rotated the account in the Admin Console, and
+    re-dispatched audit run `35950554808` on `main` @ `4bb7e10` reports **VERDICT: CLEAN**:
+    2 driver accounts, both issued by v14+, 0 live pre-v14 tokens, the 3 leftover `token:` keys
+    still dead. The intermediate run `35950350988` showed a second account (a new claim link
+    rather than a Re-invite) with the original still unrotated; that is recorded, not the
+    evidence. The second account is an extra login the operator can revoke; it is not a v7
+    credential.
 - **Proposed next intelligence layer. It is not authorized, so do not start it unprompted.**
   The layer moves from grading one load to judging the best next 24 hours. Suggested first
   modules: Next Move (WAIT / REPOSITION / TAKE), Day Value / opportunity cost, a per-market
