@@ -71,18 +71,11 @@ export function verdictFor(summary) {
   return live === 0 ? { verdict: 'CLEAN', code: 0 } : { verdict: 'FINDINGS', code: 1 };
 }
 
-async function main() {
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const ns = process.env.FL_KV_NAMESPACE_ID;
-  if (!token || !account || !ns) {
-    console.log('UNOBSERVED — Cloudflare credential or namespace not supplied. No claim is made.');
-    console.log('VERDICT: UNOBSERVED');
-    process.exit(2);
-  }
+// Read-only Cloudflare KV REST client, shared with the dead-residue cleanup so
+// both scripts list and read keys the same way. It exposes no write method.
+export function createKvReader({ token, account, ns }) {
   const api = `https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces/${ns}`;
   const headers = { Authorization: `Bearer ${token}` };
-
   async function listKeys(prefix) {
     const names = [];
     let cursor = '';
@@ -105,6 +98,19 @@ async function main() {
     if (!r.ok) throw new Error(`read → HTTP ${r.status}`);
     try { return JSON.parse(await r.text()); } catch { return undefined; }
   }
+  return { api, headers, listKeys, getJson };
+}
+
+async function main() {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const ns = process.env.FL_KV_NAMESPACE_ID;
+  if (!token || !account || !ns) {
+    console.log('UNOBSERVED — Cloudflare credential or namespace not supplied. No claim is made.');
+    console.log('VERDICT: UNOBSERVED');
+    process.exit(2);
+  }
+  const { listKeys, getJson } = createKvReader({ token, account, ns });
 
   const summary = { users: 0, inactive: 0, current: 0, legacyPlaintext: [], preV14: [],
     unknownAge: [], legacyIndexKeys: 0, liveLegacyIndex: 0 };
