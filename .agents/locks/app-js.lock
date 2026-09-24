@@ -1,0 +1,6 @@
+owner: claude
+token: f15b57cc-23d9-422a-836c-8ecf49f2618f
+started_utc: 2026-09-24T18:45:55Z
+expected_release_utc: 2026-09-24T22:45:55Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json, midwest-stack-authority.js, midwest-stack-config.json
+task: v24.0.36 Next Move S1 — positioning-brief evidence integrity (docs/NEXT_MOVE_LAYER_SPEC.md)
