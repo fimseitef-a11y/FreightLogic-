@@ -304,11 +304,14 @@ the **Home Screen app**, not a Safari tab, unless the step says otherwise.
 PASS requires steps 1, 2, 4, 6, 7, 8 and 9 correct, with the iOS version and delivery times
 recorded. Step 5 and step 10 are recorded with whatever they actually did.
 
-**The certification runner does not carry this row yet.** `field-certification.js` and its
-regression are GPT-owned under `.agents/LANES.md`, so the runner row was requested through the
-shared coordination table rather than edited across lanes. Until it lands, record A14 manually
-alongside the runner's A1-A13 export. A runner that has never heard of A14 cannot report it
-missing — the A13 lesson, applied before the fact this time.
+**The certification runner carries this row** (GPT lane, PR #340, checklist version
+`A1-A14-2026-09-23`). It refuses an A14 PASS unless four outcomes are recorded as directly
+observed: the notification tap opened the Home Screen app (step 2), the relay prefilled Add
+Expense without saving (step 4), the Opened in Safari warning appeared (step 6), and the revoked
+key answered HTTP 401 with no notification (step 9). This checklist's PASS rule is wider: steps 1,
+7 and 8 are also required, and the operator records those by hand alongside the runner export.
+A runner that did not know about A14 could not report it missing; that was the A13 lesson, and it
+was closed here before the row was ever run.
 
 # B. Live deployment blockers
 

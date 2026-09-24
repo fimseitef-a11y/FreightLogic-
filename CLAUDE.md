@@ -4880,8 +4880,10 @@ which is the one inside `pushEnable()`. Negative control: `main`'s pre-fix `app.
 
 **Also in this generation, documentation only:** `FIELD_TEST_CHECKLIST.md` gains **A14**
 (Shortcuts relay + Web Push on a real iPhone) and its production header moves to v24.0.34 /
-Worker v24. The A14 runner row was requested from the GPT lane through the coordination table;
-the v24.0.34 section above cited an inbox file for that request which was never actually written.
+Worker v24. The GPT lane added A14 to the field-certification runner in PR #340 (four enforced
+evidence controls: tap target, unsaved relay prefill, Safari warning, revoked-key 401). The
+v24.0.34 section above cited an inbox file for that request which was never actually written; the
+request went through the coordination table instead.
 
 ---
 
