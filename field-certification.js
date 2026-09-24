@@ -3,7 +3,7 @@
 
   const STORE_KEY = 'freightlogic_field_cert_v1';
   const SCHEMA_VERSION = 1;
-  const CHECKLIST_VERSION = 'A1-A13-2026-09-18';
+  const CHECKLIST_VERSION = 'A1-A14-2026-09-23';
   const BACKUP_WORKER_HEALTH = 'https://freightlogic-backup.fimseitef.workers.dev/health';
 
   const GATES = {
@@ -127,6 +127,18 @@
         'A manual edit to an extracted value overrode the model before canonical scoring.',
         'The result was the ordinary canonical evaluator output, not an AI-authored grade, RPM, bid, or recommendation.',
         'With the network unavailable, screenshot extraction failed plainly while paste/type manual intake remained usable and no empty review form opened.'
+      ]
+    ,
+    A14: {
+      expected: 'On the physical iPhone Home Screen app, notification permission, Web Push delivery, Shortcut relay prefill, Safari storage-split warning, and Shortcut-key revocation behave exactly as shipped without auto-saving freight data.',
+      checks: [
+        'From Settings → Notifications & Shortcuts, tapped Turn on; the iOS permission prompt came from that tap and FreightLogic status became On.',
+        'Tapped Send test; a notification arrived and tapping it opened the installed Home Screen app rather than Safari.',
+        'Created a Shortcut key, used it only in the Shortcut relay request, and did not record the key in this certification evidence.',
+        'With the app closed, ran the expense relay for $12.34 / Tolls; the notification tap opened Add Expense prefilled and nothing was saved until Save was tapped.',
+        'Ran the DispatchLand screenshot → Extract Text from Image → intake relay; notification tap opened the Load Intake review draft.',
+        'Opened a direct #do=expense link from Shortcuts Open URLs; Safari showed the Opened in Safari warning for the documented storage split.',
+        'Revoked the Shortcut key; rerunning the Shortcut returned HTTP 401 and no notification arrived.'
       ]
     }
   };
@@ -477,6 +489,12 @@
       rec.clipboardImageOutcome = qs('[data-a13-clipboard]', row)?.value || 'UNANSWERED';
       rec.unknownDeadheadOutcome = qs('[data-a13-unknown-deadhead]', row)?.value || 'UNANSWERED';
     }
+    if (row.dataset.gate === 'A14') {
+      rec.notificationTapOutcome = qs('[data-a14-notification]', row)?.value || 'UNANSWERED';
+      rec.relayExpenseOutcome = qs('[data-a14-relay]', row)?.value || 'UNANSWERED';
+      rec.safariWarningOutcome = qs('[data-a14-safari-warning]', row)?.value || 'UNANSWERED';
+      rec.revokeOutcome = qs('[data-a14-revoke]', row)?.value || 'UNANSWERED';
+    }
   }
 
   function restoreGateInputs(row, rec) {
@@ -506,6 +524,16 @@
       if (camera) camera.value = rec.cameraCaptureOutcome || 'UNANSWERED';
       if (clipboard) clipboard.value = rec.clipboardImageOutcome || 'UNANSWERED';
       if (unknownDeadhead) unknownDeadhead.value = rec.unknownDeadheadOutcome || 'UNANSWERED';
+    }
+    if (row.dataset.gate === 'A14') {
+      const notification = qs('[data-a14-notification]', row);
+      const relay = qs('[data-a14-relay]', row);
+      const warning = qs('[data-a14-safari-warning]', row);
+      const revoke = qs('[data-a14-revoke]', row);
+      if (notification) notification.value = rec.notificationTapOutcome || 'UNANSWERED';
+      if (relay) relay.value = rec.relayExpenseOutcome || 'UNANSWERED';
+      if (warning) warning.value = rec.safariWarningOutcome || 'UNANSWERED';
+      if (revoke) revoke.value = rec.revokeOutcome || 'UNANSWERED';
     }
     renderAutomatedObservations(row, rec);
   }
@@ -548,6 +576,12 @@
         return 'A13 requires direct observation that unstated deadhead stayed blank/UNKNOWN and scoring requested the figure instead of inventing zero.';
       }
     }
+    if (row.dataset.gate === 'A14') {
+      if (rec.notificationTapOutcome !== 'HOME_SCREEN_PWA') return 'A14 requires direct observation that the test notification tap opened the installed Home Screen app, not Safari.';
+      if (rec.relayExpenseOutcome !== 'UNSAVED_PREFILL') return 'A14 requires direct observation that the relay prefilled Add Expense without saving before the operator Save tap.';
+      if (rec.safariWarningOutcome !== 'WARNING_SHOWN') return 'A14 requires direct observation of the Opened in Safari warning from a direct Shortcuts Open URLs deep link.';
+      if (rec.revokeOutcome !== 'HTTP_401_NO_PUSH') return 'A14 requires direct observation that the revoked Shortcut key returned HTTP 401 and delivered no notification.';
+    }
     return null;
   }
 
@@ -573,6 +607,10 @@
       rec.cameraCaptureOutcome = 'UNANSWERED';
       rec.clipboardImageOutcome = 'UNANSWERED';
       rec.unknownDeadheadOutcome = 'UNANSWERED';
+      rec.notificationTapOutcome = 'UNANSWERED';
+      rec.relayExpenseOutcome = 'UNANSWERED';
+      rec.safariWarningOutcome = 'UNANSWERED';
+      rec.revokeOutcome = 'UNANSWERED';
       rec.environmentFingerprint = null;
       if (id === 'A5') {
         rec.automatedObservations = (rec.automatedObservations || []).filter(item => !String(item).startsWith('A5 export structure:'));
@@ -639,7 +677,7 @@
     const statuses = Object.values(session.gates).map(g => g.status);
     if (statuses.every(status => status === 'PASS')) {
       session.completedAt = nowIso();
-      setSessionState('COMPLETE', 'A1–A13 all show operator-recorded PASS for the frozen candidate.');
+      setSessionState('COMPLETE', 'A1–A14 all show operator-recorded PASS for the frozen candidate.');
     }
   }
 
@@ -675,6 +713,13 @@
           <label>Clipboard image paste outcome <select data-a13-clipboard><option value="UNANSWERED">Not recorded yet</option><option value="ARRIVED">Image arrived</option><option value="NOT_DELIVERED">No image delivered</option><option value="OTHER">Other observed behavior</option></select></label>
           <label>Posting with no stated deadhead <select data-a13-unknown-deadhead><option value="UNANSWERED">Not recorded yet</option><option value="BLANK_PROMPTED">Stayed blank/UNKNOWN and scoring requested the figure</option><option value="FABRICATED_ZERO">A zero was fabricated or scoring proceeded as zero</option><option value="OTHER">Other observed behavior</option></select></label>
           <p class="safety">Camera and clipboard results are observations, not assumptions: “no image delivered” is a valid recorded result. UNKNOWN deadhead is stricter and must remain blank through review until the operator supplies the figure.</p>
+        </div>` : ''}
+        ${id === 'A14' ? `<div class="special">
+          <label>Test notification tap <select data-a14-notification><option value="UNANSWERED">Not recorded yet</option><option value="HOME_SCREEN_PWA">Opened installed Home Screen app</option><option value="SAFARI">Opened Safari</option><option value="NO_DELIVERY">No notification delivered</option><option value="OTHER">Other observed behavior</option></select></label>
+          <label>Relay expense result <select data-a14-relay><option value="UNANSWERED">Not recorded yet</option><option value="UNSAVED_PREFILL">Prefilled Add Expense; nothing saved before Save tap</option><option value="AUTO_SAVED">Data was saved without operator Save tap</option><option value="OTHER">Other observed behavior</option></select></label>
+          <label>Direct Open URLs result <select data-a14-safari-warning><option value="UNANSWERED">Not recorded yet</option><option value="WARNING_SHOWN">Safari opened and “Opened in Safari” warning appeared</option><option value="NO_WARNING">Safari opened without warning</option><option value="OTHER">Other observed behavior</option></select></label>
+          <label>After key revoke <select data-a14-revoke><option value="UNANSWERED">Not recorded yet</option><option value="HTTP_401_NO_PUSH">Shortcut returned 401; no notification arrived</option><option value="STILL_AUTHORIZED">Relay still authorized or delivered</option><option value="OTHER">Other observed behavior</option></select></label>
+          <p class="safety">Never paste or record the Shortcut key here. A14 is physical-device evidence only; CI cannot certify APNs delivery, the iOS permission prompt, or the notification tap target.</p>
         </div>` : ''}
         <label class="field">Operator observation<textarea data-operator-observation rows="3" placeholder="Describe only the non-sensitive physical-device observation. Never paste credentials."></textarea></label>
         <label class="attestation"><input type="checkbox" data-attestation> I personally observed the required physical-device behavior described above.</label>
@@ -725,7 +770,11 @@
         storagePartition: 'UNANSWERED',
         cameraCaptureOutcome: 'UNANSWERED',
         clipboardImageOutcome: 'UNANSWERED',
-        unknownDeadheadOutcome: 'UNANSWERED'
+        unknownDeadheadOutcome: 'UNANSWERED',
+        notificationTapOutcome: 'UNANSWERED',
+        relayExpenseOutcome: 'UNANSWERED',
+        safariWarningOutcome: 'UNANSWERED',
+        revokeOutcome: 'UNANSWERED'
       };
     }
     return {
@@ -876,7 +925,11 @@
         environmentFingerprint: gate.environmentFingerprint,
         backgroundMinutes: id === 'A6' ? gate.backgroundMinutes : undefined,
         realDevice: id === 'A6' ? gate.realDevice : undefined,
-        storagePartition: id === 'A12' ? gate.storagePartition : undefined
+        storagePartition: id === 'A12' ? gate.storagePartition : undefined,
+        notificationTapOutcome: id === 'A14' ? gate.notificationTapOutcome : undefined,
+        relayExpenseOutcome: id === 'A14' ? gate.relayExpenseOutcome : undefined,
+        safariWarningOutcome: id === 'A14' ? gate.safariWarningOutcome : undefined,
+        revokeOutcome: id === 'A14' ? gate.revokeOutcome : undefined
       }]))
     };
     const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
