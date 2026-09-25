@@ -116,6 +116,47 @@ For simple navigation, direct links may use:
 
 Contract surfaces: `today`, `loads`, `evaluate`, `trips`, `money`, `expenses`, `fuel`, `settings`, `intel`, `more`.
 
+
+## 7. Batch DispatchLand intake — last 30 screenshots
+
+Use this for daily capture. OCR stays on the iPhone and only text that looks like DispatchLand freight evidence is submitted.
+
+1. Create a Shortcut key in FreightLogic Settings and keep it only in the Shortcut.
+2. Create a Shortcut named **FreightLogic — Send DispatchLand Screenshots**.
+3. Find Photos where Media Type is Screenshot; sort Date Taken newest first; limit 30.
+4. Read a small last-sent timestamp file from the Shortcuts folder. If none exists, treat it as the first run; do not invent a timestamp.
+5. Keep only screenshots newer than that timestamp. If none remain, show **Nothing new** and stop.
+6. For each image, Extract Text from Image. Keep it only when text contains **Loaded mi**, **Empty mi**, or **Dispatchland**. Drop exact duplicate extracted text within this run.
+7. Preserve the screenshot Date Taken as source identity. Unreadable values stay UNKNOWN. Displayed order miles are not automatically loaded miles; MM:SS badges are countdowns, not timestamps.
+8. Submit accepted intake items through the existing authenticated relay in batches of 20 or fewer. With 30 qualifying screenshots, send 20 and then the remainder. Keep the Shortcut credential in its authentication header; never put it in the payload, screenshots, or documentation.
+9. Advance the last-sent timestamp only after every batch receives a successful response. On any failure, leave the old timestamp untouched so a rerun can safely resend; FreightLogic evidence dedup handles cross-run duplicates.
+10. Show **N loads sent**, then review the FreightLogic intake queue before evaluating or saving.
+
+This workflow never deletes or alters Photos. Nonmatching screenshots stay on the phone and are not submitted.
+
+### Back Tap
+
+After the Shortcut works manually, go to iPhone **Settings → Accessibility → Touch → Back Tap → Double Tap** and select **FreightLogic — Send DispatchLand Screenshots**. Keep the manual Shortcut as a fallback.
+
+### First-run check
+
+Start with one or two known DispatchLand screenshots. Confirm that Load/Quote ID, origin, destination, loaded miles and empty miles remain distinct and missing values remain UNKNOWN. A board/auction screenshot is listing evidence only; it does not prove booked, picked up, completed, invoiced, or paid status.
+
+### Batch troubleshooting
+
+- **Nothing new:** no newer screenshots exist, or none matched the local DispatchLand text filter.
+- **Text extraction stops on a large selection:** retry with a smaller recent set. Do not run the full historical photo library through the daily Shortcut.
+- **Authentication error:** recreate/check the Shortcut credential in FreightLogic; never paste it into chat or documentation.
+- **Request too large:** keep each batch at 20 or fewer and reduce unusually large OCR text.
+- **Rate limited:** wait for the rate-limit window instead of looping retries.
+- **Partial failure:** do not manually advance the timestamp. Rerun and let evidence dedup absorb already accepted items.
+- **Personal screenshot concern:** filtering happens locally before submission, so nonmatching screenshots are not sent.
+- **Duplicate/repost:** exact text duplicates within one run are dropped. Similar lanes with different IDs, prices, or times remain separate evidence.
+
+### Historical backfill
+
+Keep the one-time backfill separate. Use the approved Photos/Drive corpus workflow for older screenshots rather than processing months of images in one Shortcut run; large all-history runs can exceed iPhone Shortcut memory.
+
 ## Relay troubleshooting
 
 - **401:** Shortcut key is missing, revoked, or incorrect.
