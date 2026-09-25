@@ -2,6 +2,8 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
+**Observed 2026-09-25 UTC: production serves v24.0.39 / DB16 / Worker v24.** Re-dispatched Live Parity `36099921819` and Production Service Worker `36099923630` PASS on `main` @ `6c99980` (PR #355). The target below was the source candidate and is now what production serves.
+
 **Target — v24.0.39 / DB16 / Worker v24 (source candidate, 2026-09-25).** App-only
 generation (Load Intake: Score This Load scores; screenshot errors visible): the Worker is
 unchanged, so **do not redeploy it**. Let Cloudflare deploy the app, then **re-dispatch** Verify

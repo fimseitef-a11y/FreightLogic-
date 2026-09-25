@@ -87,7 +87,12 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.39 (Load Intake scoring + visible screenshot errors) is not yet observed live; see its release section.** **Production is v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
+**Production is v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
+`6c99980` (Load Intake: Score This Load scores, visible screenshot errors, labelled text parse;
+app-only, Worker not redeployed). Re-dispatched Live Parity `36099921819` and Production Service
+Worker `36099923630` PASS on that SHA.
+
+*Superseded, kept as history:* **Production was v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
 `9c3564c` (Next Move S3 + the Scan Screenshot picker fix, app-only; Worker not redeployed).
 Re-dispatched Live Parity `36096515728` and Production Service Worker `36096517168` PASS on `main`
 @ `a3bdf1f`, whose runtime tree is identical to `9c3564c` (the only later merge, #353, is docs).
@@ -4938,6 +4943,9 @@ skips a match followed by `:` and label words such as `Load`, and the number-the
 longer cross a line break. `tests/integration/load-text-parse.spec.mjs` (LTP-01..05, new,
 registered) fails 0/5 against `main`. Negative controls: removing the label override fails
 LTP-01/02/03/05; removing the label-word skip fails only LTP-02.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-25.** Merged as `6c99980` (PR #355). Re-dispatched Live Parity
+`36099921819` and Production Service Worker `36099923630` PASS on that SHA; Worker `/health` stays 24.
 
 **Not claimed:** whether screenshot *reading* returns fields for the operator's real screenshots.
 That is still #252's benchmark, and the new visible error is what will now say why a read failed.
