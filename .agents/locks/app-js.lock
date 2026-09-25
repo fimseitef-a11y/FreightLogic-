@@ -1,6 +1,0 @@
-owner: claude
-token: d3e2888f-ba04-41ab-814c-7fb76981b315
-started_utc: 2026-09-25T04:39:52Z
-expected_release_utc: 2026-09-25T08:39:52Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.0.38 Next Move S3 (TAKE linkage in evaluator result) per docs/NEXT_MOVE_LAYER_SPEC.md
