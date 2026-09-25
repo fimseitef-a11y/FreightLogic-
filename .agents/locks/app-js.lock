@@ -1,6 +1,0 @@
-owner: claude
-token: 6381ffe4-5091-462b-85b3-b864b8364aea
-started_utc: 2026-09-25T05:07:05Z
-expected_release_utc: 2026-09-25T09:07:05Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.0.39 Load Intake: Score This Load actually scores; screenshot errors visible
