@@ -395,19 +395,27 @@ test('[VEX-14] the response carries no provider secret', async () => {
 // wrong. Asserting the response body alone cannot catch it — a stub that
 // answers whatever it is asked passes either way.
 
-/** An env whose `AI` binding records the payload it was handed and answers the
- *  way the documented Moondream `query` task does. */
-function workersAiEnv(kv, answer) {
+/** An env whose `AI` binding records every call and answers per model family
+ *  the way each documents: Moondream's `query` task in `answer`, a Workers AI
+ *  chat model in `response`. By default the first model in the v26 chain (Llama
+ *  4 Scout) answers EMPTY, so the Moondream call these tests pin is reached. */
+function workersAiEnv(kv, answer, { scout = '', scoutThrows = false, moondreamThrows = false, extra = {} } = {}) {
   const seen = [];
   return {
     seen,
     env: {
       BACKUPS: kv,
       ADMIN_TOKEN: ADMIN,
+      ...extra,
       AI: {
         async run(model, payload) {
           seen.push({ model, payload });
-          return { answer, caption: null, points: null, objects: null, reasoning: null };
+          if (/moondream/i.test(model)) {
+            if (moondreamThrows) throw new Error('AiError: moondream unavailable');
+            return { answer, caption: null, points: null, objects: null, reasoning: null, finish_reason: 'stop' };
+          }
+          if (scoutThrows) throw new Error('AiError: scout unavailable');
+          return { response: scout, usage: {} };
         },
       },
     },
@@ -423,9 +431,10 @@ test('[VEX-16] the DEFAULT provider calls Workers AI with the schema that model 
   const body = await res.json();
 
   eq(res.status, 200, `the default provider path must reach normalization, got ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
-  eq(seen.length, 1, 'the default provider must invoke the AI binding exactly once');
+  const md = seen.find((c) => /moondream/i.test(c.model));
+  ok(md, `the chain must reach Moondream when the first model answers empty, saw ${seen.map((c) => c.model).join(', ')}`);
 
-  const { model, payload } = seen[0];
+  const { model, payload } = md;
   ok(/^@cf\//.test(model), `a Workers AI model id is expected, got ${model}`);
 
   // `image` is a STRING. A byte array is the older convention and is exactly
@@ -462,6 +471,65 @@ test('[VEX-17] the DEFAULT provider reads the field that model answers in', asyn
   eq(body.ok, true, `the adapter must read the model's answer field — got ${JSON.stringify(body).slice(0, 200)}`);
   eq(body.fields.orderNo, '1079840', 'and the answer must reach the normalizer intact');
   eq(body.provider, 'workers-ai', 'provenance must name the default provider');
+});
+
+// ── v26: the Workers AI model chain ───────────────────────────────────────────
+// On the operator's first real screenshot (2026-09-25) Moondream returned an
+// empty answer and the route said "Vision provider returned no output." v26
+// tries Llama 4 Scout first and Moondream second, and reports every attempt.
+
+test('[VEX-22] Llama 4 Scout goes first, as a chat model with the image as an image_url part', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { seen, env } = workersAiEnv(kv, '', { scout: FULL });
+  const token = await seedDriver(worker, env);
+  const res = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), env);
+  const body = await res.json();
+  eq(res.status, 200, `Scout's answer must be normalized, got ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
+  eq(seen.length, 1, 'a model that answers usefully ends the chain');
+  ok(/llama-4-scout/.test(seen[0].model), `Scout must be tried first, got ${seen[0].model}`);
+  const parts = seen[0].payload.messages?.[1]?.content || [];
+  const img = parts.find((p) => p.type === 'image_url');
+  ok(img && /^data:image\/jpeg;base64,/.test(img.image_url?.url || ''), 'the image rides an image_url data URI');
+  eq(seen[0].payload.messages?.[0]?.role, 'system', 'the observer prompt rides the system message');
+  eq(body.fields.orderNo, '1079840', 'and the fields come back as usual');
+  ok(/llama-4-scout/.test(body.model), `provenance names the model that answered, got ${body.model}`);
+});
+
+test('[VEX-23] when every model answers empty, the 422 names what each one returned', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { seen, env } = workersAiEnv(kv, '');
+  const token = await seedDriver(worker, env);
+  const res = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), env);
+  const body = await res.json();
+  eq(res.status, 422, `empty answers fail closed, got ${res.status}`);
+  eq(body.ok, false, 'ok:false');
+  eq(seen.length, 2, 'both models are tried');
+  ok(Array.isArray(body.attempts) && body.attempts.length === 2, `attempts lists both models, got ${JSON.stringify(body.attempts)}`);
+  ok(body.attempts.every((a) => /no output/i.test(a.outcome) && a.chars === 0), 'each attempt says it answered empty');
+  ok(body.attempts.some((a) => /moondream/.test(a.model)) && body.attempts.some((a) => /scout/.test(a.model)), 'each attempt names its model');
+});
+
+test('[VEX-24] one model failing is not a provider failure; all failing is a 502', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const a = workersAiEnv(kv, FULL, { scoutThrows: true });
+  const token = await seedDriver(worker, a.env);
+  const r1 = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), a.env);
+  eq(r1.status, 200, `Moondream answers when Scout throws, got ${r1.status}`);
+  const b = workersAiEnv(kv, FULL, { scoutThrows: true, moondreamThrows: true });
+  const r2 = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), b.env);
+  const body = await r2.json();
+  eq(r2.status, 502, `every model throwing is a provider failure, got ${r2.status}`);
+  ok(Array.isArray(body.attempts) && body.attempts.every((x) => x.outcome === 'error'), 'and names each error');
+});
+
+test('[VEX-25] an operator-pinned VISION_MODEL is exactly that one model', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { seen, env } = workersAiEnv(kv, FULL, { extra: { VISION_MODEL: '@cf/moondream/moondream3.1-9B-A2B' } });
+  const token = await seedDriver(worker, env);
+  const res = await worker.fetch(imageReq(token, { image: TINY_JPEG_B64, mime: 'image/jpeg' }), env);
+  eq(res.status, 200, `pinned model answers, got ${res.status}`);
+  eq(seen.length, 1, 'no chain when a model is pinned');
+  ok(/moondream/.test(seen[0].model), 'the pinned model is the one called');
 });
 
 // ── Generation ───────────────────────────────────────────────────────────────
