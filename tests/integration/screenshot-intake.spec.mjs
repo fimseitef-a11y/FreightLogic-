@@ -242,21 +242,30 @@ test('[SSI-07] a failed extraction falls back to typing — it never opens an em
   } finally { await app.close(); }
 });
 
-test('[SSI-08] with no cloud token the driver is told why, and no image is uploaded', async () => {
+test('[SSI-08] with no cloud login the screenshot is still read, and no token is sent', async () => {
+  // v24.0.41 / Worker v25 (operator-approved 2026-09-25): "no work for user".
+  // The installed iPhone app could never be connected, so screenshot reading now
+  // needs no login; the Worker bounds it by app origin, per IP and per day.
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
-    const seen = await stubExtractImage(app.page, OK_EXTRACTION);
+    const seen = { calls: 0, token: null };
+    await app.page.route('**/extract-image', async (route) => {
+      seen.calls++;
+      seen.token = route.request().headers()['x-backup-token'] || null;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(OK_EXTRACTION) });
+    });
     await app.page.evaluate(async () => {
       await window.__FL_TESTS.setSetting('cloudBackupToken', '');
       window.__FL_TESTS.openLoadIntake();
     });
     await sleep(250);
     await chooseImage(app.page);
-    await sleep(900);
-    eq(seen.calls, 0, 'no image may be uploaded without a configured credential');
-    const err = await app.page.evaluate(() => document.querySelector('#liParseError')?.innerText || '');
-    ok(/settings|connect/i.test(err), `the driver must be told how to fix it, got: ${err}`);
+    await sleep(1200);
+    eq(seen.calls, 1, 'the screenshot is uploaded once, with no login');
+    eq(seen.token, null, 'no token header is sent when there is no login');
+    const origin = await app.page.evaluate(() => document.querySelector('#liOrigin')?.value || '');
+    eq(origin, 'Columbus, OH', 'the review opens with the fields the server read');
   } finally { await app.close(); }
 });
 
@@ -673,6 +682,32 @@ test('[SSI-24] a failed screenshot read is reported where the driver is looking'
     console.log(`    [evidence] ${JSON.stringify(r)}`);
     ok(r.errTop < r.taTop, `the error must sit above the text box, next to the screenshot buttons — ${JSON.stringify(r)}`);
     ok(r.errTop >= 0 && r.errBottom <= r.vh, `the error must be inside the viewport — ${JSON.stringify(r)}`);
+  } finally { await app.close(); }
+});
+
+test('[SSI-25] details the server reads (times, pieces, dimensions, commodity) reach the review', async () => {
+  // v24.0.41: the Worker has always returned these fields; the review sheet
+  // dropped every one of them.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const detailed = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    Object.assign(detailed.fields, { pickupDate: '2026-09-24', pickupTime: '15:00', deliveryDate: '2026-09-25',
+      deliveryTime: '08:00', timezone: 'CDT', pieces: 3, dimensions: '40x48x50 in', commodity: 'Machine parts', notes: 'Team not required' });
+    await stubExtractImage(app.page, detailed);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    const r = await app.page.evaluate(() => {
+      const v = (id) => document.getElementById(id)?.value;
+      return { route: document.getElementById('liRoute')?.textContent || '', puDate: v('liPuDate'), puTime: v('liPuTime'),
+        delDate: v('liDelDate'), delTime: v('liDelTime'), pieces: v('liPieces'), dims: v('liDims'), commodity: v('liCommodity'), notes: v('liNotes') };
+    });
+    ok(/Columbus, OH/.test(r.route) && /Chicago, IL/.test(r.route), `route line — got ${JSON.stringify(r.route)}`);
+    eq(r.puDate, '2026-09-24', 'pickup date'); eq(r.puTime, '15:00', 'pickup time');
+    eq(r.delDate, '2026-09-25', 'delivery date'); eq(r.delTime, '08:00', 'delivery time');
+    eq(r.pieces, '3', 'pieces'); eq(r.dims, '40x48x50 in', 'dimensions');
+    eq(r.commodity, 'Machine parts', 'commodity'); eq(r.notes, 'Team not required', 'notes');
   } finally { await app.close(); }
 });
 

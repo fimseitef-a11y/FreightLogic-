@@ -2,7 +2,13 @@
 
 Purpose: prove that the **production** Cloudflare app and backup/API Worker serve the exact FreightLogic completion candidate. Green source CI, a successful Cloudflare build, or a source version bump is not enough by itself.
 
-**Target — v24.0.40 / DB16 / Worker v24 (source candidate, 2026-09-25).** App-only
+**Target — v24.0.41 / DB16 / Worker v25 (source candidate, 2026-09-25).** **Deploy Worker v25
+first** (Deploy Backup Worker, typed `DEPLOY`), then let Cloudflare deploy the app. Expected markers:
+`app.js?v=24.0.41`, `sw-bridge.js?v=24.0.41`, `SW_VERSION = '24.0.41'`, cache `freightlogic-24.0.41`,
+manifest `FreightLogic v24.0.41`, `modern-shell.js?v=24.0.41`, and `/health`
+`{"ok":true,"version":"25"}`. **21** declared runtime assets.
+
+*History:* **Target — v24.0.40 / DB16 / Worker v24 (source candidate, 2026-09-25).** App-only
 generation (paste an invite into the installed app): the Worker is unchanged, so **do not redeploy
 it**. Expected markers: `app.js?v=24.0.40`, `sw-bridge.js?v=24.0.40`, `SW_VERSION = '24.0.40'`,
 cache `freightlogic-24.0.40`, manifest `FreightLogic v24.0.40`, `modern-shell.js?v=24.0.40`, and

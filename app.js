@@ -1,7 +1,18 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.40 USA ENGINE
+/** FreightLogic v24.0.41 USA ENGINE
+ *  v24.0.41 "No Setup": screenshot reading needs no login (operator-approved
+ *          2026-09-25). With no cloud token the app sends the screenshot to
+ *          Worker v25's no-login route (app origin only, 20/hr per IP,
+ *          300/day total). "Connect with invite link" now appears only when the
+ *          server refuses a login (401/403). SSI-08, INV-04, VEX-01/18..21.
+ *          Also: the route and every detail. The review shows a route line
+ *          (both ends, loaded + DH = total, pickup/delivery times) and new
+ *          pickup/delivery date+time, pieces, dimensions, commodity and notes
+ *          fields, filled from the screenshot read or from labelled text lines.
+ *          Score carries dimensions and the pickup time to the evaluator; Save
+ *          as Trip carries the dates and details. LTP-06..09, SSI-25.
  *  v24.0.40 "Paste The Invite": the installed iPhone app could never connect
  *          cloud backup, because an invite link opens in Safari (separate
  *          storage), so screenshot reading always said "not connected". The
@@ -532,7 +543,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.40';
+const APP_VERSION = '24.0.41';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -13970,6 +13981,32 @@ function _labelledNum(v){
   const m = String(v || '').match(/^\s*\$?\s*(\d[\d,]*(?:\.\d{1,2})?)/);
   return m ? Number(m[1].replace(/,/g, '')) : null;
 }
+// v24.0.41: "09/24 at 03:00 PM CDT (today)" -> { date, time, tz }. A bare
+// month/day takes this year (next year if it is more than six months back).
+function _labelledWhen(v){
+  const s = String(v || '');
+  const out = {};
+  let m = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (m) out.date = `${m[1]}-${m[2]}-${m[3]}`;
+  else if ((m = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/))){
+    const mo = +m[1], d = +m[2];
+    let y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : new Date().getFullYear();
+    if (!m[3] && mo < (new Date().getMonth() + 1) - 6) y++;
+    const iso = `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (isValidISODate(iso)) out.date = iso;
+  } else if (/\btoday\b/i.test(s)) out.date = isoDate();
+  else if (/\btomorrow\b/i.test(s)) out.date = isoDate(new Date(Date.now() + 86400000));
+  const t = s.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/i);
+  if (t){
+    let h = +t[1]; const ap = (t[3] || '').toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    if (h < 24 && +t[2] < 60) out.time = `${String(h).padStart(2,'0')}:${t[2]}`;
+  }
+  const z = s.match(/\b(AKDT|AKST|HST|[ECMP][SD]T|UTC)\b/);
+  if (z) out.tz = z[1];
+  return out;
+}
 function parseLabelledLoadFields(text){
   const out = {};
   const lines = String(text || '').slice(0, 10000).split(/\r?\n/);
@@ -13995,6 +14032,24 @@ function parseLabelledLoadFields(text){
       if (!/\/\s*mi|per\s*mile|\bcpm\b|\brpm\b/i.test(val)){
         const n = _labelledNum(val); if (n !== null && n > 50 && n < 50000) out.pay = n;
       }
+    } else if (/^(pick ?up|pu|ship(ping)?|shipper|origin)( #?\d+)? (time|date|window|appt|appointment|date\/time|ready)$/.test(label)){
+      const w = _labelledWhen(val);
+      if (out.pickupDate === undefined && w.date) out.pickupDate = w.date;
+      if (out.pickupTime === undefined && w.time) out.pickupTime = w.time;
+      if (out.timezone === undefined && w.tz) out.timezone = w.tz;
+    } else if (/^(delivery|deliver|drop|del|consignee|destination)( #?\d+)? (time|date|window|appt|appointment|date\/time|by)$/.test(label)){
+      const w = _labelledWhen(val); // last stop wins
+      if (w.date) out.deliveryDate = w.date;
+      if (w.time) out.deliveryTime = w.time;
+      if (out.timezone === undefined && w.tz) out.timezone = w.tz;
+    } else if (/^(pieces|pcs|pallets|skids|qty|quantity|pieces\/pallets)$/.test(label)){
+      const n = _labelledNum(val); if (n !== null) out.pieces = Math.round(n);
+    } else if (/^(dims?|dimensions?|size)$/.test(label)){
+      out.dimensions = val.slice(0, 60);
+    } else if (/^(commodity|freight|description|item|product)$/.test(label)){
+      out.commodity = val.slice(0, 80);
+    } else if (/^(notes?|special instructions|instructions|comments?|remarks?)$/.test(label)){
+      out.notes = val.slice(0, 300);
     } else if (/^weight$/.test(label)){
       const n = _labelledNum(val); if (n !== null) out.weight = Math.round(n);
     } else if (/^(broker|posted by|customer|company)$/.test(label)){
@@ -14060,7 +14115,8 @@ function parseLoadTextEnhanced(rawText){
 
   // Labelled lines are stated facts and override every guess above.
   const lab = parseLabelledLoadFields(text);
-  for (const k of ['orderNo','origin','destination','loadedMiles','deadheadMiles','pay','weight','customer']){
+  for (const k of ['orderNo','origin','destination','loadedMiles','deadheadMiles','pay','weight','customer',
+                   'pickupDate','pickupTime','deliveryDate','deliveryTime','timezone','pieces','dimensions','commodity','notes']){
     if (lab[k] !== undefined) base[k] = lab[k];
   }
   // A labelled per-mile rate with no flat total leaves revenue unknown rather
@@ -16683,6 +16739,17 @@ async function openMonthlyExpenseManager(){
 // exactly what was parsed and can correct it before it hits the evaluator.
 // ════════════════════════════════════════════════════════════════════════════
 
+// v24.0.41: "48x40x36 in" / "4 x 3.3 x 3 ft" -> { length, width, height } in
+// inches, for the van-fit gate. Anything it cannot read confidently is left
+// out (blank), never guessed.
+function parseDimsInches(v){
+  const m = String(v || '').match(/(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(in(?:ch(?:es)?)?|"|ft|feet|')?/i);
+  if (!m) return {};
+  const f = /^(ft|feet|')$/i.test(m[4] || '') ? 12 : 1;
+  const r = (x) => String(Math.round(Number(x) * f));
+  return { length: r(m[1]), width: r(m[2]), height: r(m[3]) };
+}
+
 function openLoadIntake(opts = {}){
   let rawText = '';
   let parsed = null; // will hold parseLoadTextForInbox result
@@ -16718,6 +16785,7 @@ function openLoadIntake(opts = {}){
     <div style="padding:10px 12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;border:1px solid var(--accent-border);margin-bottom:14px;font-size:12px">
       <b style="color:var(--accent)">Review your load draft</b> — edit any field before scoring.
     </div>
+    <div id="liRoute" style="margin-bottom:14px;padding:10px 12px;background:var(--surface-1);border-radius:10px;font-size:13px;line-height:1.5"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Revenue ($)</label>
@@ -16756,8 +16824,38 @@ function openLoadIntake(opts = {}){
         <input id="liBroker" type="text" class="input" style="width:100%;box-sizing:border-box" />
       </div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Pickup date</label>
+        <input id="liPuDate" type="date" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Pickup time</label>
+        <input id="liPuTime" type="time" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Delivery date</label>
+        <input id="liDelDate" type="date" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Delivery time</label>
+        <input id="liDelTime" type="time" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Pieces</label>
+        <input id="liPieces" type="number" min="0" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Dimensions (L×W×H)</label>
+        <input id="liDims" type="text" placeholder="48x40x36 in" class="input" style="width:100%;box-sizing:border-box" />
+      </div>
+    </div>
     <div style="margin-bottom:8px">
-      <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Commodity / Notes</label>
+      <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Commodity</label>
+      <input id="liCommodity" type="text" class="input" style="width:100%;box-sizing:border-box" />
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Notes</label>
       <input id="liNotes" type="text" class="input" style="width:100%;box-sizing:border-box" />
     </div>
     <div id="liConfidence" style="margin-bottom:6px;font-size:11px;color:var(--text-tertiary)"></div>
@@ -16770,6 +16868,9 @@ function openLoadIntake(opts = {}){
       <button class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
     </div>`;
   body.appendChild(stage2);
+  for (const id of ['liOrigin','liDest','liMiles','liDead','liPuDate','liPuTime','liDelDate','liDelTime']){
+    stage2.querySelector('#'+id)?.addEventListener('input', ()=> updateRouteLine());
+  }
 
   // Helpers
   // v24.0.39: the error sits beside the screenshot buttons, not under the text
@@ -16815,7 +16916,38 @@ function openLoadIntake(opts = {}){
     getField('liDest').value     = clampStr(get('destination'),80);
     getField('liOrderNo').value  = clampStr(get('orderNo'),40);
     getField('liBroker').value   = clampStr(get('broker'),60);
-    getField('liNotes').value    = clampStr(get('commodity')||get('notes'),120);
+    getField('liNotes').value    = clampStr(get('notes'),300);
+    // v24.0.41: the route and the details the server or the parser found.
+    getField('liCommodity').value = clampStr(get('commodity'),80);
+    getField('liPuDate').value   = isValidISODate(get('pickupDate')) ? get('pickupDate') : '';
+    getField('liPuTime').value   = /^\d{2}:\d{2}$/.test(get('pickupTime')) ? get('pickupTime') : '';
+    getField('liDelDate').value  = isValidISODate(get('deliveryDate')) ? get('deliveryDate') : '';
+    getField('liDelTime').value  = /^\d{2}:\d{2}$/.test(get('deliveryTime')) ? get('deliveryTime') : '';
+    getField('liPieces').value   = intNum(get('pieces')) || '';
+    getField('liDims').value     = clampStr(get('dimensions'),60);
+    draftTz = clampStr(get('timezone'),12);
+    updateRouteLine();
+  }
+
+  let draftTz = '';
+  // The route summary a driver reads first: both ends, the miles that make True
+  // RPM, and the pickup/delivery times. Display only: it computes nothing the
+  // evaluator owns, and an unknown deadhead says so rather than showing 0.
+  function updateRouteLine(){
+    const el = getField('liRoute'); if (!el) return;
+    const o = (getField('liOrigin')?.value || '').trim() || 'Origin ?';
+    const d = (getField('liDest')?.value || '').trim() || 'Destination ?';
+    const lm = knownNum(getField('liMiles')?.value);
+    const dh = knownNum(getField('liDead')?.value);
+    let miles = '';
+    if (lm !== null) miles = dh !== null ? `${lm} loaded + ${dh} DH = ${lm + dh} mi` : `${lm} loaded + DH unknown`;
+    const when = (date, time) => [date ? date.slice(5).replace('-','/') : '', time].filter(Boolean).join(' ');
+    const pu = when(getField('liPuDate')?.value, getField('liPuTime')?.value);
+    const del = when(getField('liDelDate')?.value, getField('liDelTime')?.value);
+    const tz = draftTz ? ' ' + draftTz : '';
+    el.innerHTML = `<b>${escapeHtml(o)} → ${escapeHtml(d)}</b>` +
+      (miles ? `<br>${escapeHtml(miles)}` : '') +
+      ((pu || del) ? `<br>Pickup ${escapeHtml(pu || '?')}${escapeHtml(tz)} · Delivery ${escapeHtml(del || '?')}${escapeHtml(tz)}` : '');
   }
 
   function readDraftFields(){
@@ -16830,7 +16962,14 @@ function openLoadIntake(opts = {}){
       destination:   clampStr(getField('liDest')?.value.trim(),80),
       orderNo:       clampStr(getField('liOrderNo')?.value.trim(),40),
       broker:        clampStr(getField('liBroker')?.value.trim(),60),
-      notes:         clampStr(getField('liNotes')?.value.trim(),120),
+      notes:         clampStr(getField('liNotes')?.value.trim(),300),
+      commodity:     clampStr(getField('liCommodity')?.value.trim(),80),
+      pickupDate:    getField('liPuDate')?.value || '',
+      pickupTime:    getField('liPuTime')?.value || '',
+      deliveryDate:  getField('liDelDate')?.value || '',
+      deliveryTime:  getField('liDelTime')?.value || '',
+      pieces:        intNum(getField('liPieces')?.value),
+      dimensions:    clampStr(getField('liDims')?.value.trim(),60),
     };
   }
 
@@ -16942,7 +17081,8 @@ function openLoadIntake(opts = {}){
       setImgBusy('');
       if (preview){ preview.style.display = 'none'; preview.removeAttribute('src'); }
       // Fail closed to the path that always works, and say so.
-      const notConnected = /not connected/i.test(e?.message || '');
+      // Only a login refusal is fixable by connecting; offer the invite entry then.
+      const notConnected = e?.status === 401 || e?.status === 403;
       showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.', { connect: notConnected });
     }
   }
@@ -17000,6 +17140,10 @@ function openLoadIntake(opts = {}){
       revenue: f.pay || '', loaded: f.loadedMiles || '', deadhead: knownNum(f.deadheadMiles),
       origin: f.origin || '', dest: f.destination || '', broker: f.broker || '',
       weight: f.weight || '',
+      // v24.0.41: dimensions feed the van-fit check, and the pickup date+time
+      // feed the pickup-feasibility check (inert until a planning speed is set).
+      ...parseDimsInches(f.dimensions),
+      pickup: (f.pickupDate && f.pickupTime) ? `${f.pickupDate}T${f.pickupTime}` : '',
     }).catch(e => console.warn('[FL] intake score failed:', e));
   });
 
@@ -17024,6 +17168,17 @@ function openLoadIntake(opts = {}){
       pay: f.pay || '',
       loadedMiles: f.loadedMiles || '',
       ...(knownNum(f.deadheadMiles) === null ? {} : { emptyMiles: knownNum(f.deadheadMiles) }),
+      ...(isValidISODate(f.pickupDate) ? { pickupDate: f.pickupDate } : {}),
+      ...(isValidISODate(f.deliveryDate) ? { deliveryDate: f.deliveryDate } : {}),
+      notes: [
+        f.commodity ? 'Commodity: ' + f.commodity : '',
+        f.pieces ? 'Pieces: ' + f.pieces : '',
+        f.dimensions ? 'Dims: ' + f.dimensions : '',
+        f.weight ? 'Weight: ' + f.weight + ' lbs' : '',
+        f.pickupTime ? 'PU ' + f.pickupTime + (draftTz ? ' ' + draftTz : '') : '',
+        f.deliveryTime ? 'DEL ' + f.deliveryTime + (draftTz ? ' ' + draftTz : '') : '',
+        f.notes || '',
+      ].filter(Boolean).join(' · ').slice(0, 500),
     });
   });
 
@@ -17942,16 +18097,28 @@ async function downscaleImageForExtraction(file, maxEdge = 1600, quality = 0.82)
  *  load is worse than no load, because the evaluator would price whatever survived.
  */
 async function cloudExtractLoadImage(dataUrl, mime){
+  // v24.0.41 / Worker v25: no login needed. Without a token the screenshot goes
+  // to the Worker's no-login route (app origin only, 20/hr per IP, 300/day in
+  // total); with one it uses the driver's own per-driver limit.
   const token = await getSetting('cloudBackupToken', '');
-  if (!token) throw new Error('Cloud backup is not connected. Screenshot reading runs on the FreightLogic server — connect in Settings, or paste the load text instead.');
-  const url = (await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL;
-  const res = await cloudFetch(url + '/extract-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
-    body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
-  }, 45000);
+  const url = token ? ((await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL) : CLOUD_WORKER_URL;
+  const headers = { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId() };
+  if (token) headers['X-Backup-Token'] = token;
+  let res;
+  try {
+    res = await cloudFetch(url + '/extract-image', {
+      method: 'POST', headers,
+      body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
+    }, 45000);
+  } catch(_) {
+    throw new Error('Could not reach the FreightLogic server. Check your connection, or paste the load text instead.');
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not read that screenshot.');
+  if (!res.ok || !data.ok){
+    const err = new Error(data.error || 'Could not read that screenshot.');
+    err.status = res.status;
+    throw err;
+  }
   return { fields: data.fields || {}, fieldMeta: data.fieldMeta || {}, provider: data.provider, model: data.model };
 }
 
@@ -24141,7 +24308,10 @@ function parseLoadTextForInbox(rawText) {
   let pickupDate = '';
   const lc = safe.toLowerCase();
   const todayISO = isoDate(), tomorrowISO = isoDate(new Date(Date.now() + 86400000));
-  if (/\btoday\b/.test(lc)) { pickupDate = todayISO; confidence += 10; fieldsFound.push('pickup'); }
+  // v24.0.41: a labelled pickup line wins. "(tomorrow)" on a DELIVERY line was
+  // being taken as the pickup date.
+  if (base.pickupDate && isValidISODate(base.pickupDate)) { pickupDate = base.pickupDate; confidence += 10; fieldsFound.push('pickup'); }
+  else if (/\btoday\b/.test(lc)) { pickupDate = todayISO; confidence += 10; fieldsFound.push('pickup'); }
   else if (/\btomorrow\b/.test(lc)) { pickupDate = tomorrowISO; confidence += 10; fieldsFound.push('pickup'); }
   else {
     const dm = safe.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
@@ -24154,9 +24324,9 @@ function parseLoadTextForInbox(rawText) {
   }
 
   // Pickup time
-  let pickupTime = '';
+  let pickupTime = base.pickupTime || '';
   const tm1 = safe.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)/i);
-  if (tm1) pickupTime = `${tm1[1]}:${tm1[2]} ${tm1[3].toUpperCase()}`;
+  if (tm1 && !pickupTime) pickupTime = `${tm1[1]}:${tm1[2]} ${tm1[3].toUpperCase()}`;
   if (!pickupTime) {
     const tm2 = safe.match(/\b([01]\d|2[0-3])([0-5]\d)\s*(?:hrs?)?\b/);
     if (tm2) { pickupTime = `${tm2[1]}:${tm2[2]}`; }
@@ -24176,6 +24346,9 @@ function parseLoadTextForInbox(rawText) {
     pay: base.pay || 0, payType, ratePerMile,
     pickupDate, pickupTime, broker: base.customer || '',
     weight: base.weight || 0, orderNo: base.orderNo || '', isUrgent,
+    deliveryDate: base.deliveryDate || '', deliveryTime: base.deliveryTime || '',
+    timezone: base.timezone || '', pieces: base.pieces || 0,
+    dimensions: base.dimensions || '', commodity: base.commodity || '', notes: base.notes || '',
     confidence: Math.min(100, confidence),
     fieldsFound, fieldsMissing, rawText: safe,
   };
@@ -24582,7 +24755,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // normalizer, so a lookup-based test passes with the defect reinstated.
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
-    parseInviteInput, openInviteEntry,
+    parseInviteInput, openInviteEntry, parseDimsInches,
     isSettingExportSafe, exportSafeSettings,
     isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
     loadTesseract,                             // Issue #220 — null when OCR is not installed

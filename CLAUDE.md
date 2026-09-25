@@ -87,7 +87,7 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.40 (paste an invite into the installed app) is not yet observed live; see its release section.** **Production is v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
+**Source candidate v24.0.41 / Worker v25 (screenshot reading without a login) is not yet deployed or observed; see its release section. v24.0.40 (invite paste) merged as `e89a427`; its live observation is pending.** **Production is v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
 `6c99980` (Load Intake: Score This Load scores, visible screenshot errors, labelled text parse;
 app-only, Worker not redeployed). Re-dispatched Live Parity `36099921819` and Production Service
 Worker `36099923630` PASS on that SHA.
@@ -511,7 +511,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.40';
+const APP_VERSION = '24.0.41';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -661,8 +661,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.40` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.40`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.41` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.41`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4902,6 +4902,62 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.41 / Worker v25 "No Setup" — screenshot reading without a login
+
+App **24.0.40 → 24.0.41**, Worker **v24 → v25**. `DB_VERSION` stays **16**. **Deploy Worker v25
+first**, then let Cloudflare deploy the app, then re-dispatch the live gates.
+
+**Why.** Screenshot reading (`POST /extract-image`) sat inside the driver-token gate, and the only
+way to get a token is an invite link, which on iPhone opens Safari's separate storage. v24.0.40
+added a paste-the-invite path, and the operator rejected any setup at all: *"Needs to be fixed. No
+work for user."* The operator then explicitly approved a no-login route with these limits
+(2026-09-25). An earlier attempt was blocked by the session's permission classifier as a security
+weakening, and was stopped until the operator approved.
+
+**Worker v25.** Above the driver gate, `POST /extract-image` with **no** `X-Backup-Token` is
+served only when:
+1. the `Origin` is the FreightLogic app (`APP_ORIGIN` var, else the production origin). This stops
+   other websites; it is **not** authentication, since a script can forge it;
+2. the caller is within `ANON_IMAGE_PER_IP_HOUR` = **20** per IP per hour;
+3. the day is within `ANON_IMAGE_PER_DAY` = **300** in total (key `rlday:anon-image:<day>`).
+
+It runs `extractImageFromRequest()`, the same function the authenticated route now calls, so the
+size ceilings, mime allow-list, fail-closed normalizer and observational-fields-only rule cannot
+drift between the two. It stores nothing and touches no backup data. A request that carries a
+token, even a bad one, always takes the authenticated route (VEX-21), so a revoked login is refused
+rather than silently downgraded.
+
+**The residual risk, stated plainly:** anyone who forges the app's Origin can spend up to 300 reads
+a day of the vision provider's allocation. The daily cap bounds the cost, and it is the price of no
+setup.
+
+**App.** `cloudExtractLoadImage()` sends no token header when there is no login. The Load Intake
+"Connect with invite link" button now appears only on a 401/403 from the server.
+
+**The route and every detail (same release, operator request).** The Worker has always returned
+pickup/delivery date and time, timezone, pieces, dimensions, commodity and notes. The review sheet
+dropped all of them, and the text parser read none of them (it also took "(tomorrow)" on a
+*delivery* line as the pickup date). The review now opens with a route line (both ends, loaded + DH =
+total, or "DH unknown", plus pickup and delivery times) and has fields for each detail.
+`parseLabelledLoadFields()` reads `Pickup Time:`, `Delivery Time:`, `Pieces:`, `Dimensions:`,
+`Commodity:` and `Notes:`. **Score This Load** sends the dimensions to the van-fit gate and the
+pickup date and time to the pickup check (`parseDimsInches()`; the pickup check stays inert until a
+planning speed is set). **Save as Trip Draft** carries the pickup and delivery dates, plus a notes
+line with the commodity, pieces, dimensions, weight and times. LTP-06..09 and SSI-25 fail 0/5
+against `main`. Negative controls: dropping the dimensions hand-off fails only LTP-09; not filling
+commodity fails only LTP-08 and SSI-25.
+
+**Tests.** VEX-01 is rewritten on purpose, because it asserted the old "no login, no read" rule:
+no Origin, or a foreign one, is refused with no provider call. New: VEX-18 (app origin is read and
+normalized), VEX-19 (the 21st read per IP per hour is 429 and another IP is unaffected), VEX-20
+(past 300 per day, 429 with no provider call) and VEX-21 (a bad token is not downgraded). SSI-08 is
+rewritten (no login still reads, and sends no token) and INV-04 is retargeted (a 403 offers the
+connect button). Red-first: VEX-18/19/20 fail against `main`'s Worker, and SSI-08 fails against
+`main`'s app. Negative controls: dropping the Origin check fails only VEX-01; dropping the daily cap
+fails only VEX-20.
+
+---
 
 ## v24.0.40 "Paste The Invite" — connecting the installed iPhone app
 
