@@ -87,7 +87,7 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
+**Source candidate v24.0.39 (Load Intake scoring + visible screenshot errors) is not yet observed live; see its release section.** **Production is v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
 `9c3564c` (Next Move S3 + the Scan Screenshot picker fix, app-only; Worker not redeployed).
 Re-dispatched Live Parity `36096515728` and Production Service Worker `36096517168` PASS on `main`
 @ `a3bdf1f`, whose runtime tree is identical to `9c3564c` (the only later merge, #353, is docs).
@@ -506,7 +506,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.38';
+const APP_VERSION = '24.0.39';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -656,8 +656,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.38` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.38`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.39` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.39`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4897,6 +4897,41 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.39 "Score Means Score" — Load Intake, reported from a real iPhone
+
+App **24.0.38 → 24.0.39**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
+generation, **do not redeploy the Worker**. No canonical economics, verdict, grade, bid, schema or
+routing change.
+
+The operator reported on 2026-09-25, from the installed iPhone app: *"It goes back to this, and the
+second one is after I get Parse Load."* It was two defects, both in `openLoadIntake()`:
+
+- **Score This Load did not score.** It filled only the fields the draft had, closed the sheet, set
+  `#omega` and scrolled to the **top**, so the driver saw the Scan Screenshot button again and no
+  result. The live eval, if it ran, was below the fold. It also left the previous load's deadhead
+  and broker in place. It now calls `_deepLinkEvaluate()`, the Shortcuts evaluate path: the load
+  **replaces** the evaluator's load, the canonical evaluator runs, and the result is scrolled into
+  view. An unknown deadhead stays blank, so the evaluator asks for it rather than inheriting one.
+  The reviewed weight now also reaches `#mwLoadWeightLbs`, so the van-fit gate sees it.
+- **A failed screenshot read was invisible.** `#liParseError` sat under the text box and Parse
+  Load, off-screen on a phone, so a failed read looked like the sheet had reset. It now sits beside
+  the screenshot buttons (`role="alert"`) and scrolls into view when shown.
+
+**Tests.** SSI-22 (a verdict is produced and on screen), SSI-23 (the previous load's deadhead and
+broker are not inherited) and SSI-24 (the error sits above the text box, inside the viewport) in
+the registered `screenshot-intake.spec.mjs`. Red-first against `main`: all three fail. Negative
+controls on a checksum-restored `app.js`: restoring the old score handler fails SSI-22/23 (and
+SSI-05/06, which need the field hand-off); moving the error back fails SSI-24 only.
+
+Also in this generation, test-only: `pin-lockout` F-4 waited a fixed 600ms for a correct PIN to
+close the unlock modal, which raced PBKDF2 plus two settings writes once on a loaded full-suite
+run (3/3 green alone). It now waits for the modal to close, bounded at 5s.
+
+**Not claimed:** whether screenshot *reading* returns fields for the operator's real screenshots.
+That is still #252's benchmark, and the new visible error is what will now say why a read failed.
+
+---
 
 ## v24.0.38 "Take It Or Say Why" — Next Move S3
 

@@ -1,7 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.38 USA ENGINE
+/** FreightLogic v24.0.39 USA ENGINE
+ *  v24.0.39 "Score Means Score": Load Intake, reported from a real iPhone.
+ *          "Score This Load" filled the evaluator, closed the sheet and scrolled
+ *          Evaluate to the top, so the driver saw the Scan Screenshot button and
+ *          no result; it now replaces the load, runs the canonical evaluator and
+ *          scrolls the result into view (the Shortcuts evaluate path). A failed
+ *          screenshot read now reports beside the screenshot buttons instead of
+ *          under the text box, off-screen on a phone. SSI-22..24.
  *  v24.0.38 "Take It Or Say Why": Next Move S3 (docs/NEXT_MOVE_LAYER_SPEC.md).
  *          The evaluator result carries the Next Move line for the load just
  *          scored, above Show Details. A complete canonical ACCEPT/STRATEGIC
@@ -516,7 +523,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.38';
+const APP_VERSION = '24.0.39';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -16627,12 +16634,13 @@ function openLoadIntake(opts = {}){
     <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
     <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
     <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
+    <div id="liParseError" role="alert" style="display:none;margin-bottom:12px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>
     <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
     <textarea id="liRawText" class="input" rows="7" placeholder="…or paste load text here — rate confirmation, load board copy, or free text" style="width:100%;box-sizing:border-box;resize:vertical;font-size:16px;line-height:1.5;font-family:monospace"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn primary" id="liParse" style="flex:1;font-size:13px;min-height:44px">Parse Load →</button>
     </div>
-    <div id="liParseError" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>`;
+    `;
   body.appendChild(stage1);
 
   // Stage 2: Draft review pane (hidden until parsed)
@@ -16696,7 +16704,10 @@ function openLoadIntake(opts = {}){
   body.appendChild(stage2);
 
   // Helpers
-  function showError(msg){ const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display=''; }
+  // v24.0.39: the error sits beside the screenshot buttons, not under the text
+  // box and Parse Load, where on a phone it was off-screen and a failed read
+  // looked like the sheet had simply reset.
+  function showError(msg){ const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display=''; try { el.scrollIntoView({ block:'nearest' }); } catch(_) {} }
   function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
   function getField(id){ return body.querySelector('#'+id); }
 
@@ -16893,24 +16904,22 @@ function openLoadIntake(opts = {}){
   });
 
   // Score load — pushes fields into evaluator and navigates
+  // v24.0.39: "Score This Load" used to fill only the fields it had, close the
+  // sheet and scroll Evaluate to the TOP, so the driver landed back on the Scan
+  // Screenshot button with no result on screen, and a previous load's deadhead
+  // or broker could survive into this one. It now takes the same path a
+  // Shortcuts evaluate link takes: the load REPLACES the evaluator's load, the
+  // canonical evaluator runs, and the result is scrolled into view. An unknown
+  // deadhead stays blank, so the evaluator asks for it rather than inheriting one.
   stage2.querySelector('#liScore').addEventListener('click', ()=>{
     haptic();
     const f = readDraftFields();
-    // Fill evaluator fields
-    const rev = $('#mwRevenue'), mi = $('#mwLoadedMi'), dead = $('#mwDeadMi');
-    const orig = $('#mwOrigin'), dest = $('#mwDest'), brk = $('#mwBroker');
-    if (rev && f.pay)          { rev.value  = f.pay;          rev.dispatchEvent(new Event('input')); }
-    if (mi  && f.loadedMiles)  { mi.value   = f.loadedMiles;  mi.dispatchEvent(new Event('input')); }
-    // `if (f.deadheadMiles)` dropped an explicit 0, leaving #mwDeadMi blank --
-    // which the evaluator correctly reads as UNKNOWN, so a driver who told us
-    // the deadhead was zero got asked for it again and the load went ungraded.
-    if (dead && knownNum(f.deadheadMiles) !== null){ dead.value = String(knownNum(f.deadheadMiles)); dead.dispatchEvent(new Event('input')); }
-    if (orig && f.origin)      { orig.value = f.origin;       orig.dispatchEvent(new Event('input')); }
-    if (dest && f.destination) { dest.value = f.destination;  dest.dispatchEvent(new Event('input')); }
-    if (brk && f.broker)       { brk.value  = f.broker;       brk.dispatchEvent(new Event('input')); }
     closeModal();
-    location.hash = '#omega';
-    setTimeout(()=> window.scrollTo({top:0,behavior:'instant'}), 100);
+    _deepLinkEvaluate({
+      revenue: f.pay || '', loaded: f.loadedMiles || '', deadhead: knownNum(f.deadheadMiles),
+      origin: f.origin || '', dest: f.destination || '', broker: f.broker || '',
+      weight: f.weight || '',
+    }).catch(e => console.warn('[FL] intake score failed:', e));
   });
 
   // Save as trip draft
