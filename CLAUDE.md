@@ -87,10 +87,11 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.37 (Next Move S2), app-only, NOT yet deployed or observed** — see the
-v24.0.37 section. Until a re-dispatched Live Parity observes it, production is the line below.
+**Production is v24.0.37 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #350 merged as
+`0af03d4` (Next Move S2, app-only; Worker not redeployed). Re-dispatched Live Parity `36093836038`
+and Production Service Worker `36093837857` (both `workflow_dispatch` on `main` @ `0af03d4`) PASS.
 
-**Production is v24.0.36 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #348 merged as
+*Superseded, kept as history:* **Production was v24.0.36 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #348 merged as
 `b3d1ec9` (Next Move S1, app-only; Worker not redeployed). Re-dispatched Live Parity `36045433308`
 and Production Service Worker `36045436407` (both `workflow_dispatch` on `main` @ `b3d1ec9`) PASS:
 app/SW/manifest 24.0.36, Worker `/health` 24, `/push/key` valid, all 21 declared assets, 24 withheld
@@ -4921,8 +4922,9 @@ exactly one test: minimum sample 2 → NM2-04; REJECT as TAKE → NM2-03; ignori
 NM2-03; ignoring ambiguity → NM2-02; VERIFIED distance → NM2-06. Full suite **834 passed, 0 failed
 across 81 spec files**; `verify-cloudflare-parity --static-only` PASS.
 
-**Source-only until merged, deployed and observed.** After merge, let Cloudflare deploy, then
-re-dispatch Verify Live Parity and Production Service Worker rather than citing push-triggered runs.
+**DEPLOYED and OBSERVED LIVE 2026-09-25.** Merged as `0af03d4` (PR #350). Re-dispatched Live Parity
+`36093836038` and Production Service Worker `36093837857` PASS on that SHA, observing 24.0.37;
+Worker `/health` stays 24. *This line first read "Source-only until merged, deployed and observed".*
 
 ---
 
