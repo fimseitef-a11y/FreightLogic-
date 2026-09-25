@@ -1,0 +1,6 @@
+owner: claude
+token: e1128006-7e39-4b37-addf-b35016c751dd
+started_utc: 2026-09-25T05:52:08Z
+expected_release_utc: 2026-09-25T09:52:08Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: v24.0.40 invite link entry inside the installed app
