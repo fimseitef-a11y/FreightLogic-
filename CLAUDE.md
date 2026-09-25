@@ -87,7 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate: Worker v26 (screenshot model chain; app unchanged at 24.0.41), not yet deployed; see its section.** **Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
+**Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
+
+*Superseded, kept as history:* **Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
 `378ec45` (screenshot reading without a login, route line and every load detail). Worker v25
 deployed by run `36103732108`; Verify Authenticated Worker `36103772392` (auto-triggered after the
 deploy) PASS; re-dispatched Live Parity `36103952440` and Production Service Worker `36103954364`
@@ -4931,6 +4933,8 @@ throwing is not a provider failure; every model throwing is still 502. An operat
 `VISION_MODEL` still means exactly that one model. A failed read now carries `attempts` (each
 model's outcome, answer length, `finish_reason` and output keys), the Worker logs it, and the live
 authority gate prints it, so the next failure says what each model actually returned.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-25:** deploy `36174888850`, authenticated gate `36174957845` (Scout answered 453 chars on the synthetic image; Moondream 0), Live Parity `36174982077`.
 
 **Not claimed:** that Scout reads DispatchLand screenshots well. That is still #252's benchmark and
 the operator's next screenshot.
