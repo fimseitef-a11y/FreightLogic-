@@ -11,6 +11,45 @@ For an installed iPhone Home Screen PWA, use the **relay** workflow for actions 
 
 In FreightLogic, open **Settings → Notifications & Shortcuts**, enable notifications, and create a Shortcut key. Keep that `fls_...` key in the Shortcut itself; never put it in a FreightLogic URL.
 
+## Screenshot → FreightLogic on iPhone
+
+### A. Free and instant — no connection required
+
+1. Open the DispatchLand screenshot in **Photos**.
+2. Tap **Live Text**, then **Copy All**.
+3. Open the installed FreightLogic Home Screen app.
+4. Go to **Evaluate → Scan Screenshot**.
+5. Paste the copied text.
+6. Tap **Parse Load**.
+7. Review Pickup, Delivery, Loaded Miles, Empty Miles, rate and Load ID before evaluating or saving.
+
+v24.0.39+ reads labelled lines such as `Pickup:`, `Delivery:`, `Loaded Miles:` and `Empty Miles:`. Missing values stay unknown; do not replace them with zero.
+
+### B. Server read — Choose Screenshot
+
+This path requires the installed app to be connected first.
+
+1. In the Admin Console, create an invite. Use **Re-invite** for an existing driver so existing backups remain associated correctly.
+2. Long-press the invite link and tap **Copy**.
+3. In the installed FreightLogic app, go to **Settings → Cloud Backup → I have an invite link**.
+4. Paste the invite link and connect.
+5. Return to **Evaluate → Scan Screenshot → Choose Screenshot** and select the DispatchLand image.
+6. Review every extracted field before evaluating or saving.
+
+v24.0.40+ supports pasting the invite link into the connection flow. Never store an invite link in documentation or screenshots.
+
+### C. Apple Shortcut — local text extraction
+
+Create a Shortcut with:
+
+1. **Select Photos** (or receive an image from the Share Sheet).
+2. **Extract Text from Image**.
+3. **Copy to Clipboard**.
+4. Open the **FreightLogic Home Screen app**.
+5. In FreightLogic, paste into **Evaluate → Scan Screenshot**, tap **Parse Load**, and review the result.
+
+Do **not** use **Open URL** as the save path. It opens Safari, which has separate storage from the installed Home Screen PWA.
+
 ## 1. Evaluate a load from typed values
 
 Use this when you already have the rate and mileage.
