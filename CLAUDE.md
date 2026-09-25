@@ -87,10 +87,13 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.38 (Next Move S3), app-only, NOT yet deployed or observed** — see the
-v24.0.38 section. Until a re-dispatched Live Parity observes it, production is the line below.
+**Production is v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
+`9c3564c` (Next Move S3 + the Scan Screenshot picker fix, app-only; Worker not redeployed).
+Re-dispatched Live Parity `36096515728` and Production Service Worker `36096517168` PASS on `main`
+@ `a3bdf1f`, whose runtime tree is identical to `9c3564c` (the only later merge, #353, is docs).
+Next Move v1 (S1–S3) is complete.
 
-**Production is v24.0.37 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #350 merged as
+*Superseded, kept as history:* **Production was v24.0.37 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #350 merged as
 `0af03d4` (Next Move S2, app-only; Worker not redeployed). Re-dispatched Live Parity `36093836038`
 and Production Service Worker `36093837857` (both `workflow_dispatch` on `main` @ `0af03d4`) PASS.
 
@@ -4928,8 +4931,10 @@ here.
 moved inside Show Details → NM3-01 only; every result rendered as TAKE → NM3-02 only. Full suite
 **839 passed, 0 failed across 82 spec files**; `verify-cloudflare-parity --static-only` PASS.
 
-**Source-only until merged, deployed and observed.** After merge, let Cloudflare deploy, then
-re-dispatch Verify Live Parity and Production Service Worker rather than citing push-triggered runs.
+**DEPLOYED and OBSERVED LIVE 2026-09-25.** Merged as `9c3564c` (PR #352). Re-dispatched Live Parity
+`36096515728` and Production Service Worker `36096517168` PASS on `main` @ `a3bdf1f` (runtime tree
+identical to `9c3564c`), observing 24.0.38; Worker `/health` stays 24. *This line first read
+"Source-only until merged, deployed and observed".*
 
 ---
 
