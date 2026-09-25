@@ -87,6 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
+**Source candidate v24.0.37 (Next Move S2), app-only, NOT yet deployed or observed** — see the
+v24.0.37 section. Until a re-dispatched Live Parity observes it, production is the line below.
+
 **Production is v24.0.36 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-24.** PR #348 merged as
 `b3d1ec9` (Next Move S1, app-only; Worker not redeployed). Re-dispatched Live Parity `36045433308`
 and Production Service Worker `36045436407` (both `workflow_dispatch` on `main` @ `b3d1ec9`) PASS:
@@ -496,7 +499,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.36';
+const APP_VERSION = '24.0.37';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -646,8 +649,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.36` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.36`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.37` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.37`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4887,6 +4890,41 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.37 "Say What's Missing" — Next Move S2
+
+App **24.0.36 → 24.0.37**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
+generation, **do not redeploy the Worker**. No canonical economics, verdict, grade, bid, storage
+schema or routing change.
+
+The second slice of `docs/NEXT_MOVE_LAYER_SPEC.md`. `deriveNextMove(brief, position, decision)`
+is now the single owner of the Today card's directive and the post-delivery brief's, rendered by
+one shared `_nextMoveBlockHtml()`. `getPositioningBrief()` no longer decides a move at all: its
+HOLD / REPOSITION / HUNT block is deleted, not left beside the new one.
+
+- **`UNKNOWN` replaces the no-evidence `HUNT`** and names what is missing (reload outcomes and
+  evidenced outbound trips, each as "have N of 3", plus an unrecognised market or no known
+  anchor). "HUNT — watch boards" was a directive built from missing data.
+- **An ambiguous position is `UNKNOWN`.** The card used to render nothing there (v24.0.20); it
+  now says why no move is directed. TIA-03 still holds: no HOLD/REPOSITION/HUNT.
+- **Sample tiers from the v24.1 contract** (HIGH ≥ 10, MEDIUM 3–9, LOW ≤ 2). A LOW reload or
+  lane sample cannot direct a move on its own history. The old code acted on two reload records.
+- **Static market roles inform only at LOW**, with `STATIC` evidence provenance and "static
+  classification" in the reason. A trap with no known anchor nearby is `UNKNOWN`.
+- **Reposition targets are `ESTIMATED`** (straight-line from market coordinates), never deadhead.
+- **`TAKE` only from a canonical ACCEPT/STRATEGIC with `factsComplete`.** REJECT, UNAVAILABLE,
+  DZ-EXIT and unknown verdicts never become TAKE. No caller passes a decision yet; that is S3.
+
+**Tests.** `tests/integration/next-move-s2.spec.mjs` (8, new, registered). Red-first against
+`main`'s `app.js`: **0/8**. Negative controls, each against a checksum-restored `app.js`, fail
+exactly one test: minimum sample 2 → NM2-04; REJECT as TAKE → NM2-03; ignoring factsComplete →
+NM2-03; ignoring ambiguity → NM2-02; VERIFIED distance → NM2-06. Full suite **834 passed, 0 failed
+across 81 spec files**; `verify-cloudflare-parity --static-only` PASS.
+
+**Source-only until merged, deployed and observed.** After merge, let Cloudflare deploy, then
+re-dispatch Verify Live Parity and Production Service Worker rather than citing push-triggered runs.
+
+---
 
 ## v24.0.36 "Evidence Before Advice" — Next Move S1
 

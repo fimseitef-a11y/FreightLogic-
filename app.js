@@ -1,7 +1,15 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.36 USA ENGINE
+/** FreightLogic v24.0.37 USA ENGINE
+ *  v24.0.37 "Say What's Missing": Next Move S2 (docs/NEXT_MOVE_LAYER_SPEC.md).
+ *          deriveNextMove() is the single owner of the Today card's directive:
+ *          WAIT / REPOSITION / TAKE / UNKNOWN. UNKNOWN replaces the no-evidence
+ *          HUNT and names what is missing; an ambiguous position is UNKNOWN; a
+ *          reload or lane sample under 3 cannot direct a move on its own; static
+ *          market roles are labelled static; reposition distances are ESTIMATED.
+ *          TAKE only ever reads a canonical ACCEPT/STRATEGIC with complete facts.
+ *          No economics, verdict, grade or bid change.
  *  v24.0.36 "Evidence Before Advice": Next Move S1 (docs/NEXT_MOVE_LAYER_SPEC.md).
  *          The positioning brief behind the Today Next Move card now counts only
  *          evidenced trips (known deadhead, not flagged for review) in lane RPM
@@ -502,7 +510,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.36';
+const APP_VERSION = '24.0.37';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -20350,8 +20358,123 @@ function _reloadHoursKnown(r){
   return h !== null && h >= 0 ? h : null;
 }
 
+// v24.0.37 (Next Move S2) — docs/NEXT_MOVE_LAYER_SPEC.md §1–5.
+// Sample tiers reuse the v24.1 confidence contract: HIGH >= 10, MEDIUM 3-9,
+// LOW <= 2. A LOW sample cannot direct a move on its own history.
+const NEXT_MOVE = Object.freeze({ TAKE: 'TAKE', WAIT: 'WAIT', REPOSITION: 'REPOSITION', UNKNOWN: 'UNKNOWN' });
+const NEXT_MOVE_MIN_SAMPLE = 3;
+function _nextMoveSampleConfidence(n){
+  return n >= 10 ? 'HIGH' : n >= NEXT_MOVE_MIN_SAMPLE ? 'MEDIUM' : 'LOW';
+}
+// Only a canonical ACCEPT or STRATEGIC may become TAKE. REJECT, UNAVAILABLE,
+// DZ-EXIT and anything unrecognised never do, and neither does a decision whose
+// canonical facts are incomplete. This reads the decision; it computes nothing.
+const NEXT_MOVE_TAKE_VERDICTS = Object.freeze(['ACCEPT', 'STRATEGIC']);
+
+// Pure. `brief` is getPositioningBrief() output, `position` is
+// resolveDriverPosition() output (or null), `decision` is a
+// buildUnifiedDecisionContract() result for a candidate load (or null).
+function deriveNextMove(brief, position, decision){
+  const out = (move, reason, extra = {}) => ({
+    move, reason,
+    missing: extra.missing || [],
+    target: extra.target || null,
+    confidence: extra.confidence || 'LOW',
+    evidence: extra.evidence || [],
+  });
+
+  // TAKE comes only from the canonical decision for the load being evaluated.
+  if (decision && decision.authority) {
+    const verdict = String(decision.authority.verdict || '').toUpperCase();
+    if (decision.factsComplete === true && NEXT_MOVE_TAKE_VERDICTS.includes(verdict)) {
+      return out(NEXT_MOVE.TAKE,
+        `Canonical decision is ${verdict}${decision.authority.grade ? ' (grade ' + decision.authority.grade + ')' : ''}. Take this load.`,
+        { confidence: (decision.confidence && decision.confidence.overall) || 'MEDIUM',
+          evidence: [{ kind: 'canonicalDecision', count: 1, provenance: 'CANONICAL' }] });
+    }
+  }
+
+  if (position && position.ambiguous) {
+    return out(NEXT_MOVE.UNKNOWN, 'Your most recent position is ambiguous, so no move is directed.',
+      { missing: ['a confirmed current position'] });
+  }
+  if (!brief || !brief.city || (position && position.known === false)) {
+    return out(NEXT_MOVE.UNKNOWN, 'Your position is not known yet.',
+      { missing: ['your current position (GPS or a delivered trip)'] });
+  }
+
+  const reload = brief.reloadScore || null;
+  const reloadN = reload ? (Number(reload.count) || 0) : 0;
+  const lanes = Array.isArray(brief.outboundLanes) ? brief.outboundLanes : [];
+  const laneN = lanes.reduce((s, l) => s + (Number(l.count) || 0), 0);
+  const role = brief.market && brief.market.role ? String(brief.market.role) : null;
+  const anchor = (Array.isArray(brief.nearbyMarkets) ? brief.nearbyMarkets : [])
+    .find(m => m && (m.role === 'anchor' || m.role === 'support')) || null;
+  // Straight-line distance from market coordinates: an estimate, never deadhead.
+  const target = anchor ? { city: anchor.displayName || anchor.city, distanceMi: anchor.distanceMi, distanceProvenance: 'ESTIMATED' } : null;
+
+  const reloadEv = reload ? { kind: 'reloadOutcomes', count: reloadN, provenance: 'OPERATOR_HISTORY' } : null;
+  const laneEv = laneN ? { kind: 'evidencedOutboundTrips', count: laneN, provenance: 'OPERATOR_HISTORY' } : null;
+  const evidence = [reloadEv, laneEv].filter(Boolean);
+  const reloadUsable = reloadN >= NEXT_MOVE_MIN_SAMPLE;
+  const lanesUsable = laneN >= NEXT_MOVE_MIN_SAMPLE;
+  const bestLane = lanes[0] || null;
+  const laneReason = () => `You have ${laneN} evidenced run${laneN === 1 ? '' : 's'} out of here` +
+    (bestLane && bestLane.avgRPM > 0 ? `; best lane ${bestLane.destDisplay} at $${bestLane.avgRPM.toFixed(2)} avg.` : '.');
+
+  // 1. The operator's own reload history, when there is enough of it.
+  if (reloadUsable) {
+    const conf = _nextMoveSampleConfidence(reloadN);
+    if (reload.grade === 'A' || reload.grade === 'B') {
+      return out(NEXT_MOVE.WAIT, `${reload.label} — avg ${reload.avg}h reload over ${reloadN} records. Work this market.`,
+        { confidence: conf, evidence });
+    }
+    // Evidenced slow (C) or dead (D).
+    if (lanesUsable) {
+      return out(NEXT_MOVE.WAIT, `${reload.label}, but ${laneReason()}`,
+        { confidence: _nextMoveSampleConfidence(Math.min(reloadN, laneN)), evidence });
+    }
+    if (target) {
+      return out(NEXT_MOVE.REPOSITION,
+        `${reload.label} — avg ${reload.avg}h reload over ${reloadN} records. Move toward ${target.city} (~${target.distanceMi} mi, estimated).`,
+        { confidence: conf, evidence, target });
+    }
+    return out(NEXT_MOVE.UNKNOWN, `${reload.label}, and no anchor or support market within 150 mi is known.`,
+      { confidence: 'LOW', evidence, missing: ['a known anchor/support market nearby', `evidenced outbound trips from here (have ${laneN} of ${NEXT_MOVE_MIN_SAMPLE})`] });
+  }
+
+  // 2. The operator's own outbound history.
+  if (lanesUsable) {
+    return out(NEXT_MOVE.WAIT, laneReason(), { confidence: _nextMoveSampleConfidence(laneN), evidence });
+  }
+
+  // 3. Static market classification. It may inform, labelled as static; it is
+  //    never presented as the operator's evidence.
+  const staticEv = role ? [...evidence, { kind: 'marketClassification', count: 1, provenance: 'STATIC' }] : evidence;
+  if (role === 'anchor' || role === 'support') {
+    return out(NEXT_MOVE.WAIT,
+      `${role.charAt(0).toUpperCase() + role.slice(1)} market (static classification). Reloads are likely, but you have little history here yet.`,
+      { confidence: 'LOW', evidence: staticEv });
+  }
+  if (role === 'trap' && target) {
+    return out(NEXT_MOVE.REPOSITION,
+      `Trap market (static classification). Move toward ${target.city} (~${target.distanceMi} mi, estimated).`,
+      { confidence: 'LOW', evidence: staticEv, target });
+  }
+
+  // 4. Not enough to direct. Say what would unlock a move.
+  const missing = [
+    `reload outcomes for this market (have ${reloadN} of ${NEXT_MOVE_MIN_SAMPLE})`,
+    `evidenced outbound trips from here (have ${laneN} of ${NEXT_MOVE_MIN_SAMPLE})`,
+  ];
+  if (!role) missing.push('a recognised market for this city');
+  else if (role === 'trap' && !target) missing.push('a known anchor/support market nearby');
+  return out(NEXT_MOVE.UNKNOWN, 'Not enough evidence to direct a move from here yet.',
+    { confidence: 'LOW', evidence: staticEv, missing });
+}
+
 async function getPositioningBrief(city) {
-  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, command: 'HUNT', commandReason: 'Unknown market. No history yet — watch boards.', repositionTarget: null, confidence: 'LOW' };
+  if (!city) return { city: '', market: null, reloadScore: null, outboundLanes: [], nearbyMarkets: [], weatherAlerts: [], patterns: { totalTrips: 0, bestDay: null, worstDay: null, topDest: null }, confidence: 'LOW' };
 
   // Return cached result if same city within 5 min
   if (_positioningCache && _positioningCache.city === city && (Date.now() - _positioningCache.ts) < 300000) {
@@ -20513,46 +20636,11 @@ async function getPositioningBrief(city) {
     }
   } catch(e) { /* non-critical */ }
 
-  // 7. Command logic
-  let command = 'HUNT';
-  let commandReason = 'Unknown market. No history yet — watch boards.';
-  let repositionTarget = null;
-
-  const nearestAnchor = nearbyMarkets.find(m => m.role === 'anchor' || m.role === 'support');
-
-  if (reloadScore) {
-    if (reloadScore.grade === 'A' || reloadScore.grade === 'B') {
-      command = 'HOLD';
-      commandReason = `${reloadScore.label} \u2014 avg ${reloadScore.avg}h reload (${reloadScore.count} records). Wait for a strong load.`;
-    } else if (reloadScore.grade === 'D' && outboundLanes.length === 0) {
-      command = 'REPOSITION';
-      if (nearestAnchor) {
-        commandReason = `Dead reload zone. No outbound history. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
-        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
-      } else {
-        commandReason = 'Dead reload zone. No outbound history. No nearby anchor found.';
-      }
-    } else {
-      command = 'HUNT';
-      const best = outboundLanes[0];
-      commandReason = best
-        ? `Slow reload but you have options. Target: ${escapeHtml(best.destDisplay)} at $${best.avgRPM.toFixed(2)} avg.`
-        : 'Slow reload. Check boards for outbound loads.';
-    }
-  } else if (market) {
-    if (market.role === 'anchor' || market.role === 'support') {
-      command = 'HOLD';
-      commandReason = `${market.role.charAt(0).toUpperCase() + market.role.slice(1)} market \u2014 reloads likely. Log outcomes to sharpen your data.`;
-    } else if (market.role === 'trap') {
-      command = 'REPOSITION';
-      if (nearestAnchor) {
-        commandReason = `Known trap market. Move toward ${nearestAnchor.displayName} (${nearestAnchor.distanceMi}mi).`;
-        repositionTarget = { city: nearestAnchor.city, distanceMi: nearestAnchor.distanceMi };
-      } else {
-        commandReason = 'Known trap market. Find nearest anchor market.';
-      }
-    }
-  }
+  // 7. The move itself is no longer decided here. v24.0.37 (Next Move S2):
+  // deriveNextMove() is the single owner of WAIT / REPOSITION / TAKE / UNKNOWN,
+  // and it is the only thing that can read the brief as a directive. The old
+  // HOLD / REPOSITION / HUNT block issued "HUNT" from missing data and treated a
+  // two-record reload average as enough to direct the driver.
 
   // 8. Confidence — weighted by data richness and market knowledge
   let confidencePts = 0;
@@ -20569,7 +20657,7 @@ async function getPositioningBrief(city) {
   if (confidencePts >= 7) confidence = 'HIGH';
   else if (confidencePts >= 3) confidence = 'MEDIUM';
 
-  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason, repositionTarget, confidence };
+  const brief = { city, market, reloadScore, outboundLanes, nearbyMarkets, weatherAlerts, patterns, confidence };
   _positioningCache = { city, brief, ts: Date.now() };
   return brief;
 }
@@ -22981,6 +23069,28 @@ async function resumeTrackingIfActive() {
 // F24: POSITIONING CARD + POST-DELIVERY BRIEF (v23.0.0)
 // ================================================================================
 
+// v24.0.37 (Next Move S2): the one renderer for a Next Move directive, used by
+// the Today card and the post-delivery brief so the two cannot drift apart.
+const NEXT_MOVE_STYLES = Object.freeze({
+  WAIT:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+  TAKE:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
+  REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
+  UNKNOWN:    'background:var(--surface-0);border:1px solid var(--border-subtle);color:var(--text-secondary)',
+});
+function _nextMoveBlockHtml(nm, extraHtml = ''){
+  const style = NEXT_MOVE_STYLES[nm.move] || NEXT_MOVE_STYLES.UNKNOWN;
+  const missingHtml = nm.move === NEXT_MOVE.UNKNOWN && nm.missing.length
+    ? `<div class="nm-missing" style="font-size:12px;margin-top:6px;opacity:.85">Needs: ${nm.missing.map(escapeHtml).join('; ')}</div>`
+    : '';
+  const confHtml = nm.move === NEXT_MOVE.UNKNOWN ? ''
+    : `<div class="nm-confidence" style="font-size:11px;margin-top:6px;opacity:.7">Confidence: ${escapeHtml(nm.confidence)}</div>`;
+  return `<div class="nm-block" data-move="${escapeHtml(nm.move)}" style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${style}">
+      <div class="nm-move" style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(nm.move)}</div>
+      <div class="nm-reason" style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(nm.reason)}</div>
+      ${missingHtml}${extraHtml}${confHtml}
+    </div>`;
+}
+
 async function renderPositioningCard(overrideCity, isExploring) {
   const card = $('#homePositioningCard');
   if (!card) return;
@@ -23038,15 +23148,8 @@ async function renderPositioningCard(overrideCity, isExploring) {
   // already unread here before this change -- it is checked, not assumed: the
   // name appears exactly once in the function, in the destructure itself. It
   // stays on the brief object, which getPositioningBrief()'s other callers use.
-  const { outboundLanes, nearbyMarkets, weatherAlerts, patterns, command, commandReason } = brief;
-
-  // Command badge styles
-  const cmdStyles = {
-    HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
-    REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
-    HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
-  };
-  const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+  const { outboundLanes, nearbyMarkets, weatherAlerts, patterns } = brief;
+  const nextMove = deriveNextMove(brief, pos, null);
 
   // Best day line
   const bestDayLine = patterns.bestDay
@@ -23136,13 +23239,9 @@ async function renderPositioningCard(overrideCity, isExploring) {
   const ambiguityHtml = pos.ambiguous
     ? `<div style="padding:8px 12px;border-radius:8px;background:var(--warn-muted);border:1px solid var(--warn);font-size:12px;color:var(--warn);margin-bottom:8px">\u26A0\uFE0F Two trips tie for most recent. Confirm your position before acting on this.</div>`
     : '';
-  const commandBlockHtml = pos.ambiguous
-    ? ''
-    : `<div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
-      <div style="font-size:20px;font-weight:900;letter-spacing:.5px">${escapeHtml(command)}</div>
-      <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
-      ${bestDayLine}
-    </div>`;
+  // v24.0.37 (Next Move S2): an ambiguous position now renders UNKNOWN, which
+  // names what is missing, instead of an empty space. It is still not a command.
+  const commandBlockHtml = _nextMoveBlockHtml(nextMove, pos.ambiguous ? '' : bestDayLine);
 
   if (myGen !== _positionCardRenderSeq) return;   // last guard before the paint
   card.innerHTML = `<div class="card" style="padding:16px 14px">
@@ -23221,13 +23320,9 @@ async function _triggerPostDeliveryBrief(city) {
     const count = (await getSetting('f24PostDeliveryCount', 0)) + 1;
     await setSetting('f24PostDeliveryCount', count);
 
-    const { market, reloadScore, outboundLanes, patterns, command, commandReason } = brief;
-    const cmdStyles = {
-      HOLD:       'background:rgba(107,255,149,.08);border:1px solid rgba(107,255,149,.25);color:var(--good)',
-      REPOSITION: 'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:var(--warn)',
-      HUNT:       'background:rgba(107,179,255,.08);border:1px solid rgba(107,179,255,.25);color:var(--accent)',
-    };
-    const cmdStyle = cmdStyles[command] || cmdStyles.HUNT;
+    const { market, reloadScore, outboundLanes, patterns } = brief;
+    // A delivery city is a known, unambiguous position by construction.
+    const nextMove = deriveNextMove(brief, { known: true, ambiguous: false, city }, null);
 
     const cityDisplay = city.trim().charAt(0).toUpperCase() + city.trim().slice(1);
     let marketSub = '';
@@ -23258,10 +23353,7 @@ async function _triggerPostDeliveryBrief(city) {
         <div style="font-size:20px;font-weight:700;margin-top:4px">${escapeHtml(cityDisplay)}</div>
         ${marketSub}
       </div>
-      <div style="border-radius:10px;padding:12px 14px;margin-bottom:12px;${cmdStyle}">
-        <div style="font-size:20px;font-weight:900">${escapeHtml(command)}</div>
-        <div style="font-size:13px;margin-top:4px;opacity:.9">${escapeHtml(commandReason)}</div>
-      </div>
+      ${_nextMoveBlockHtml(nextMove)}
       ${statsBullets ? `<ul style="font-size:13px;padding-left:18px;margin:0 0 8px;line-height:1.8">${statsBullets}</ul>` : ''}
       ${optOutHtml}
       <div style="display:flex;gap:10px;margin-top:14px">
@@ -24209,6 +24301,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // v24.0.36 Next Move S1 — positioning-brief evidence integrity
     getPositioningBrief, getCityReloadScore, recordReloadOutcome, _localDayOfWeek,
     _clearPositioningCache: () => { _positioningCache = null; _kpiCache.ts = 0; },
+    deriveNextMove,
     // v24.2 M5A/5B normalized opportunity ingestion
     normalizeOpportunity, intakeOpportunity,
     PRICE_SEMANTIC, MILEAGE_SEMANTIC, OPPORTUNITY_SOURCE_TYPE,
