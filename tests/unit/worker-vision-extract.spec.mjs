@@ -77,6 +77,12 @@ const TINY_JPEG_B64 =
   'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' +
   'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
 
+/** Exact-host match for the OpenAI endpoint the adapter calls (a substring
+ *  test would also match an unrelated host that merely contains the name). */
+function isOpenAIUrl(u) {
+  try { return new URL(String(u)).hostname === 'api.openai.com'; } catch { return false; }
+}
+
 /** Build an env whose vision provider is a stub returning `raw`.
  *
  *  `VISION_PROVIDER: 'openai'` plus a stubbed global fetch is deliberate: it
@@ -86,7 +92,7 @@ function visionEnv(kv, raw, { fail = false } = {}) {
   const realFetch = globalThis.fetch;
   const restore = () => { globalThis.fetch = realFetch; };
   globalThis.fetch = async (url) => {
-    if (String(url).includes('openai.com')) {
+    if (isOpenAIUrl(url)) {
       if (fail) return new Response('upstream boom', { status: 500 });
       return new Response(JSON.stringify({ choices: [{ message: { content: raw } }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -150,7 +156,7 @@ test('[VEX-01] a no-login request from any other origin is rejected, and calls n
   const kv = makeKV(); const worker = await loadWorker();
   let providerCalled = false;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (u) => { if (String(u).includes('openai.com')) providerCalled = true; return realFetch(u); };
+  globalThis.fetch = async (u) => { if (isOpenAIUrl(u)) providerCalled = true; return realFetch(u); };
   const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN, OPENAI_API_KEY: 'sk-test', VISION_PROVIDER: 'openai' };
   try {
     const none = await worker.fetch(anonReq({}), env);
@@ -194,7 +200,7 @@ test('[VEX-20] the no-login route stops at 300 reads per day in total', async ()
   let providerCalled = false;
   const { env, restore } = visionEnv(kv, '{}');
   const inner = globalThis.fetch;
-  globalThis.fetch = async (u, o) => { if (String(u).includes('openai.com')) providerCalled = true; return inner(u, o); };
+  globalThis.fetch = async (u, o) => { if (isOpenAIUrl(u)) providerCalled = true; return inner(u, o); };
   try {
     const res = await worker.fetch(anonReq({ Origin: APP_ORIGIN, 'CF-Connecting-IP': '198.51.100.10' }), env);
     eq(res.status, 429, 'past the daily total every no-login read is refused');
@@ -342,7 +348,7 @@ test('[VEX-12] a non-image mime is refused before any provider call', async () =
   const token = await seedDriver(worker, { BACKUPS: kv, ADMIN_TOKEN: ADMIN });
   let providerCalled = false;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (u) => { if (String(u).includes('openai.com')) providerCalled = true; return realFetch(u); };
+  globalThis.fetch = async (u) => { if (isOpenAIUrl(u)) providerCalled = true; return realFetch(u); };
   try {
     const res = await worker.fetch(
       imageReq(token, { image: TINY_JPEG_B64, mime: 'application/pdf' }),
