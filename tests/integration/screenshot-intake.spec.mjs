@@ -559,6 +559,48 @@ test('[SSI-18] compact decision facts consume the Driver/Glance semantic present
   } finally { await app.close(); }
 });
 
+test('[SSI-20] "Choose Screenshot" opens the photo library, not the camera', async () => {
+  // Reported on a real iPhone 2026-09-25: the Screenshot button opened the
+  // camera (capture="environment"), so the posting just screenshotted could
+  // never be picked. Clicking a file input records which one was asked for.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await openIntake(app.page);
+    const r = await app.page.evaluate(() => {
+      const clicked = [];
+      for (const id of ['liImgFile', 'liImgCamera']) {
+        const el = document.getElementById(id);
+        el.click = () => clicked.push({ id, capture: el.hasAttribute('capture'), accept: el.accept });
+      }
+      document.getElementById('liShot').click();
+      document.getElementById('liPickImg').click();
+      return { clicked, shotLabel: document.getElementById('liShot').textContent };
+    });
+    eq(r.clicked.length, 2, 'both buttons must open a file input');
+    eq(r.clicked[0].capture, false, 'the screenshot button must open an input WITHOUT capture — capture forces the camera on iPhone');
+    ok(/image\/\*/.test(r.clicked[0].accept), 'and must accept any image type the Photos library hands over');
+    ok(/Screenshot/.test(r.shotLabel), 'the screenshot button is labelled as such');
+    eq(r.clicked[1].capture, true, 'the camera is its own, separate control');
+  } finally { await app.close(); }
+});
+
+test('[SSI-21] the Scan Screenshot button stacks its subtitle under the title', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await app.page.evaluate(() => { location.hash = '#omega'; });
+    await sleep(400);
+    const g = await app.page.evaluate(() => {
+      const b = document.getElementById('btnLoadIntake');
+      const title = b.querySelector('span').getBoundingClientRect();
+      const sub = b.querySelector('small').getBoundingClientRect();
+      return { titleBottom: title.bottom, subTop: sub.top };
+    });
+    ok(g.subTop >= g.titleBottom - 1, `the subtitle must sit below the title, not beside it — ${JSON.stringify(g)}`);
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -99,6 +99,7 @@ import { runSpec as swPush } from './unit/sw-push.spec.mjs';
 import { runSpec as shortcutsDeepLinks } from './integration/shortcuts-deep-links.spec.mjs';
 import { runSpec as nextMoveS1 } from './integration/next-move-s1.spec.mjs';
 import { runSpec as nextMoveS2 } from './integration/next-move-s2.spec.mjs';
+import { runSpec as nextMoveS3 } from './integration/next-move-s3.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -156,6 +157,7 @@ const specs = [
   shortcutsDeepLinks,
   nextMoveS1,
   nextMoveS2,
+  nextMoveS3,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,

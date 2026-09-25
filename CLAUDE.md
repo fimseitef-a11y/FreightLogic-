@@ -87,6 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
+**Source candidate v24.0.38 (Next Move S3), app-only, NOT yet deployed or observed** — see the
+v24.0.38 section. Until a re-dispatched Live Parity observes it, production is the line below.
+
 **Production is v24.0.37 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #350 merged as
 `0af03d4` (Next Move S2, app-only; Worker not redeployed). Re-dispatched Live Parity `36093836038`
 and Production Service Worker `36093837857` (both `workflow_dispatch` on `main` @ `0af03d4`) PASS.
@@ -500,7 +503,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.37';
+const APP_VERSION = '24.0.38';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -650,8 +653,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.37` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.37`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.38` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.38`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4891,6 +4894,44 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.38 "Take It Or Say Why" — Next Move S3
+
+App **24.0.37 → 24.0.38**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
+generation, **do not redeploy the Worker**. No canonical economics, verdict, grade, bid, storage
+schema or routing change.
+
+The last v1 slice of `docs/NEXT_MOVE_LAYER_SPEC.md`. `_renderEvalNextMove()` puts a Next Move line
+in the evaluator result, **above** the collapsed Show Details, for the load just scored. It reads
+the canonical decision and computes nothing:
+
+- A **complete** canonical `ACCEPT`/`STRATEGIC` renders **TAKE** at once, naming the verdict and
+  grade it read.
+- Any other verdict (or an incomplete decision) says **"Not a take: the canonical decision is
+  <verdict>"** and then shows the move from the driver's position, via the same
+  `resolveDriverPosition()` → `getPositioningBrief()` → `deriveNextMove()` path as the Today card.
+- There is deliberately **no render counter**: every evaluation replaces `out.innerHTML`, so an
+  older slot is detached before its async fill lands. A counter was tried and its negative control
+  did not fire, so it was removed rather than kept as an unproven guard.
+
+**Also in this generation — the Scan Screenshot flow, reported from a real iPhone 2026-09-25.**
+The Load Intake **📷 Screenshot** button clicked the file input carrying `capture="environment"`,
+so on iPhone it opened the **camera** and the posting just screenshotted could never be picked.
+It is now **🖼️ Choose Screenshot**, opening a Photos-library input (`accept="image/*"`, no
+`capture`), and the camera is a separate **📷 Camera** button. The `#btnLoadIntake` subtitle also
+rendered beside the title (the `.btn` flex row ignored the inner `display:block`); the button now
+stacks them. SSI-20/SSI-21 (in the registered `screenshot-intake.spec.mjs`) fail on `main` and pass
+here.
+
+**Tests.** `tests/integration/next-move-s3.spec.mjs` (3, new, registered). Red-first against
+`main`'s `app.js`: **0/3**. Negative controls, each against a checksum-restored `app.js`: slot
+moved inside Show Details → NM3-01 only; every result rendered as TAKE → NM3-02 only. Full suite
+**839 passed, 0 failed across 82 spec files**; `verify-cloudflare-parity --static-only` PASS.
+
+**Source-only until merged, deployed and observed.** After merge, let Cloudflare deploy, then
+re-dispatch Verify Live Parity and Production Service Worker rather than citing push-triggered runs.
+
+---
 
 ## v24.0.37 "Say What's Missing" — Next Move S2
 

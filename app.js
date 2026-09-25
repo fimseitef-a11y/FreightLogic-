@@ -1,7 +1,13 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.37 USA ENGINE
+/** FreightLogic v24.0.38 USA ENGINE
+ *  v24.0.38 "Take It Or Say Why": Next Move S3 (docs/NEXT_MOVE_LAYER_SPEC.md).
+ *          The evaluator result carries the Next Move line for the load just
+ *          scored, above Show Details. A complete canonical ACCEPT/STRATEGIC
+ *          renders TAKE; any other verdict says why the load is not a take and
+ *          shows the move from the driver's position. Reads the canonical
+ *          decision only; no economics, verdict, grade or bid change.
  *  v24.0.37 "Say What's Missing": Next Move S2 (docs/NEXT_MOVE_LAYER_SPEC.md).
  *          deriveNextMove() is the single owner of the Today card's directive:
  *          WAIT / REPOSITION / TAKE / UNKNOWN. UNKNOWN replaces the no-evidence
@@ -510,7 +516,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.37';
+const APP_VERSION = '24.0.38';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -11714,6 +11720,44 @@ async function mwIsGoingHome(dest) {
   return homeParts.some(part => destLower.includes(part) && part.length > 2);
 }
 
+// v24.0.38 (Next Move S3) — docs/NEXT_MOVE_LAYER_SPEC.md §6 S3. The evaluator
+// result carries the Next Move line for the load just scored. It reads the
+// canonical decision and computes nothing: a complete ACCEPT/STRATEGIC renders
+// TAKE at once; anything else says the load is not a take and shows the move
+// from the driver's position, from the same deriveNextMove() the Today card uses.
+// No render counter: every evaluation replaces out.innerHTML, so an older slot is
+// detached before its async fill lands and cannot paint over a newer result.
+// A counter here was tried and its negative control did not fire (NM3-03).
+function _renderEvalNextMove(out, decision){
+  if (!out) return;
+  const slot = document.createElement('div');
+  slot.id = 'mwNextMove';
+  slot.style.marginBottom = '12px';
+  const details = out.querySelector('#mwEvalDetails');
+  if (details) details.before(slot); else out.appendChild(slot);
+
+  const take = deriveNextMove(null, null, decision);
+  if (take.move === NEXT_MOVE.TAKE) { slot.innerHTML = _nextMoveBlockHtml(take); return; }
+
+  const verdict = String(decision?.authority?.verdict || 'UNAVAILABLE').toUpperCase();
+  const notTake = decision?.factsComplete === false
+    ? 'Not a take: this load is missing facts, so the decision is incomplete.'
+    : `Not a take: the canonical decision is ${verdict}.`;
+  slot.innerHTML = `<div class="nm-eval-note muted" style="font-size:12px">${escapeHtml(notTake)} Checking your next move…</div>`;
+  (async () => {
+    let nm;
+    try {
+      const pos = await resolveDriverPosition();
+      const brief = pos.known ? await getPositioningBrief(pos.city) : null;
+      nm = deriveNextMove(brief, pos, decision);
+    } catch (e) {
+      nm = deriveNextMove(null, null, decision);
+    }
+    if (!slot.isConnected) return;   // a newer evaluation replaced the card
+    slot.innerHTML = `<div class="nm-eval-note" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(notTake)}</div>` + _nextMoveBlockHtml(nm);
+  })();
+}
+
 async function mwEvaluateLoad(){
   const origin = ($('#mwOrigin')?.value || '').trim();
   const dest = ($('#mwDest')?.value || '').trim();
@@ -12076,6 +12120,7 @@ async function mwEvaluateLoad(){
     isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
   });
   _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
+  _renderEvalNextMove(out, unifiedDecision);
   mwRenderWeekStructure(weeklyGross);
 
   // Save to eval history (session, last 5)
@@ -16575,11 +16620,11 @@ function openLoadIntake(opts = {}){
   stage1.innerHTML = `
     <p class="muted" style="font-size:12px;margin:0 0 12px 0">Share a screenshot of the load, or paste the text. Either way you review what was found before anything is scored.</p>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn" id="liShot" style="flex:1;font-size:13px;min-height:44px">📷 Screenshot</button>
-      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:44px">🖼️ Photos / Files</button>
+      <button class="btn primary" id="liShot" style="flex:2;font-size:14px;min-height:48px">🖼️ Choose Screenshot</button>
+      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:48px">📷 Camera</button>
     </div>
+    <input type="file" id="liImgFile" accept="image/*" style="display:none" />
     <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
-    <input type="file" id="liImgFile" accept="image/jpeg,image/png,image/webp" style="display:none" />
     <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
     <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
     <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
@@ -16810,8 +16855,12 @@ function openLoadIntake(opts = {}){
     }
   }
 
-  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
-  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  // v24.0.38: "Screenshot" used to open the CAMERA input (capture="environment"),
+  // so on iPhone it launched the camera and a driver could never pick the
+  // posting they had just screenshotted. Choosing a screenshot now opens the
+  // Photos library; the camera is its own, clearly labelled button.
+  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
   for (const id of ['liImgCamera','liImgFile']){
     stage1.querySelector('#'+id)?.addEventListener('change', (ev)=>{
       const f = ev.target?.files?.[0];
