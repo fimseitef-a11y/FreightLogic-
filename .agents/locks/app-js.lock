@@ -1,0 +1,6 @@
+owner: claude
+token: 6dd5e7ca-2708-4b3c-b451-460be4b06219
+started_utc: 2026-09-25T06:09:48Z
+expected_release_utc: 2026-09-25T10:09:48Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: v24.0.41 / Worker v25 screenshot reading without a login (operator-approved 2026-09-25)
