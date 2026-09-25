@@ -82,7 +82,8 @@ Contract surfaces: `today`, `loads`, `evaluate`, `trips`, `money`, `expenses`, `
 - **401:** Shortcut key is missing, revoked, or incorrect.
 - **400:** action/parameter failed contract validation.
 - **413:** request body exceeds 16 KB.
-- **429:** more than 60 relay requests for the key in one hour.
+- **429:** rate limited. The Worker enforces both **60 relay requests/hour per Shortcut key** and **120 relay requests/hour per IP address**.
+- A successful **200** can include `"dropped": ["<parameter>", ...]`. Out-of-range values are **dropped, not clamped** (for example, `gallons` over 500 or `miles` over 5000). If `dropped` is non-empty, show those names to the driver instead of treating 200 as “every field arrived.”
 - `pushed: 0`: the relay item was accepted, but no device is currently subscribed to notifications; FreightLogic can still offer the pending item when the app returns to the foreground.
 
 Relay items expire after 72 hours and the Worker retains at most 20 per driver. Treat relay content accordingly.
