@@ -87,7 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate: v24.0.42 / Worker v27 (duplicate protection), not yet deployed; see its section.** **Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
+**Production is v24.0.42 / DB16 / Worker v27, DIRECTLY OBSERVED 2026-09-25.** PR #366 merged as `a0fd704` (duplicate protection). Worker v27 deployed by run `36178623509`; Verify Authenticated Worker `36178670202` PASS; re-dispatched Live Parity `36178967389` and Production Service Worker `36178970084` PASS on that SHA.
+
+*Superseded, kept as history:* **Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
 
 *Superseded, kept as history:* **Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
 `378ec45` (screenshot reading without a login, route line and every load detail). Worker v25
@@ -4933,6 +4935,8 @@ bunch of duplicates." A relay item never saves anything; the trip form does. So 
    stops once and lists the saved trip(s) (date, route, pay) with **Open existing** and
    **Save anyway (different load)**. It warns and never blocks for good or merges, because
    different brokers can reuse an order number. Editing a trip never warns.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-25:** Worker deploy `36178623509`, authenticated gate `36178670202`, Live Parity `36178967389`, Production Service Worker `36178970084`, all on `a0fd704`.
 
 **Tests.** WP-16/17 (repeat skipped, still skipped after consumption, new again after 14 days) fail
 against v26. `tests/integration/trip-duplicate-warning.spec.mjs` (TDW-01..04, new, registered):
