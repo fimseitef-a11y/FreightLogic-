@@ -79,6 +79,81 @@ test('[LTP-05] the review sheet shows the parsed fields after Parse Load', async
   eq(r.weight, '550', 'review weight');
 });
 
+// v24.0.41 — "I want route and details pulled also if available." Times,
+// timezone, pieces, dimensions and commodity were never read from text, and the
+// review sheet had nowhere to show them even when a screenshot read them.
+const DETAILED = DISPATCHLAND + '\n' + [
+  'Pieces: 2',
+  'Dimensions: 48x40x36 in',
+  'Commodity: Auto parts',
+  'Notes: Liftgate not required',
+].join('\n');
+
+test('[LTP-06] pickup/delivery date, time and timezone come from their labelled lines', async () => {
+  const r = await parse(DETAILED);
+  const yr = new Date().getFullYear();
+  console.log(`    [evidence] ${JSON.stringify({ pd: r.pickupDate, pt: r.pickupTime, dd: r.deliveryDate, dt: r.deliveryTime, tz: r.timezone })}`);
+  ok([`${yr}-09-24`, `${yr + 1}-09-24`].includes(r.pickupDate), `pickup date from "Pickup Time: 09/24" — got ${r.pickupDate}`);
+  eq(r.pickupTime, '15:00', '03:00 PM is 15:00');
+  ok([`${yr}-09-25`, `${yr + 1}-09-25`].includes(r.deliveryDate), `delivery date from "Delivery Time: 09/25" — got ${r.deliveryDate}`);
+  eq(r.deliveryTime, '08:00', 'delivery appointment time');
+  eq(r.timezone, 'CDT', 'timezone');
+});
+
+test('[LTP-07] pieces, dimensions, commodity and notes are read', async () => {
+  const r = await parse(DETAILED);
+  eq(r.pieces, 2, 'pieces');
+  eq(r.dimensions, '48x40x36 in', 'dimensions');
+  eq(r.commodity, 'Auto parts', 'commodity');
+  eq(r.notes, 'Liftgate not required', 'notes');
+});
+
+test('[LTP-08] the review sheet shows the route and every detail after Parse Load', async () => {
+  const r = await app.page.evaluate(async (text) => {
+    window.__FL_TESTS.openLoadIntake();
+    await new Promise(res => setTimeout(res, 250));
+    document.getElementById('liRawText').value = text;
+    document.getElementById('liParse').click();
+    await new Promise(res => setTimeout(res, 250));
+    const v = (id) => document.getElementById(id)?.value;
+    const out = {
+      route: (document.getElementById('liRoute')?.textContent || '').replace(/\s+/g, ' '),
+      puTime: v('liPuTime'), delTime: v('liDelTime'), puDate: v('liPuDate'), delDate: v('liDelDate'),
+      pieces: v('liPieces'), dims: v('liDims'), commodity: v('liCommodity'), notes: v('liNotes'),
+    };
+    window.__FL_TESTS.closeModal?.();
+    return out;
+  }, DETAILED);
+  console.log(`    [evidence] route=${JSON.stringify(r.route)}`);
+  ok(/Mobile, AL/.test(r.route) && /Pascagoula, MS/.test(r.route), 'the route line names both ends');
+  ok(/380/.test(r.route) && /44/.test(r.route) && /424/.test(r.route), 'and the loaded, deadhead and total miles');
+  eq(r.puTime, '15:00', 'pickup time field');
+  eq(r.delTime, '08:00', 'delivery time field');
+  ok(/-09-24$/.test(r.puDate || ''), 'pickup date field');
+  ok(/-09-25$/.test(r.delDate || ''), 'delivery date field');
+  eq(r.pieces, '2', 'pieces field');
+  eq(r.dims, '48x40x36 in', 'dimensions field');
+  eq(r.commodity, 'Auto parts', 'commodity field');
+  eq(r.notes, 'Liftgate not required', 'notes field');
+});
+
+test('[LTP-09] Score This Load carries dimensions and the pickup time into the evaluator', async () => {
+  const r = await app.page.evaluate(async (text) => {
+    window.__FL_TESTS.openLoadIntake();
+    await new Promise(res => setTimeout(res, 250));
+    document.getElementById('liRawText').value = text;
+    document.getElementById('liParse').click();
+    await new Promise(res => setTimeout(res, 250));
+    document.getElementById('liScore').click();
+    await new Promise(res => setTimeout(res, 1500));
+    const v = (id) => document.getElementById(id)?.value;
+    return { len: v('mwLoadLengthIn'), wid: v('mwLoadWidthIn'), hgt: v('mwLoadHeightIn'), wt: v('mwLoadWeightLbs'), cutoff: v('mwPickupCutoff') };
+  }, DETAILED);
+  eq(r.len, '48', 'length'); eq(r.wid, '40', 'width'); eq(r.hgt, '36', 'height');
+  eq(r.wt, '550', 'weight');
+  ok(/-09-24T15:00$/.test(r.cutoff || ''), `pickup time reaches the pickup check — got ${r.cutoff}`);
+});
+
 export async function runSpec() {
   app = await launchApp();
   // The first-run setup wizard opens ~800ms after boot and would replace the

@@ -4935,6 +4935,19 @@ setup.
 **App.** `cloudExtractLoadImage()` sends no token header when there is no login. The Load Intake
 "Connect with invite link" button now appears only on a 401/403 from the server.
 
+**The route and every detail (same release, operator request).** The Worker has always returned
+pickup/delivery date and time, timezone, pieces, dimensions, commodity and notes. The review sheet
+dropped all of them, and the text parser read none of them (it also took "(tomorrow)" on a
+*delivery* line as the pickup date). The review now opens with a route line (both ends, loaded + DH =
+total, or "DH unknown", plus pickup and delivery times) and has fields for each detail.
+`parseLabelledLoadFields()` reads `Pickup Time:`, `Delivery Time:`, `Pieces:`, `Dimensions:`,
+`Commodity:` and `Notes:`. **Score This Load** sends the dimensions to the van-fit gate and the
+pickup date and time to the pickup check (`parseDimsInches()`; the pickup check stays inert until a
+planning speed is set). **Save as Trip Draft** carries the pickup and delivery dates, plus a notes
+line with the commodity, pieces, dimensions, weight and times. LTP-06..09 and SSI-25 fail 0/5
+against `main`. Negative controls: dropping the dimensions hand-off fails only LTP-09; not filling
+commodity fails only LTP-08 and SSI-25.
+
 **Tests.** VEX-01 is rewritten on purpose, because it asserted the old "no login, no read" rule:
 no Origin, or a foreign one, is refused with no provider call. New: VEX-18 (app origin is read and
 normalized), VEX-19 (the 21st read per IP per hour is 429 and another IP is unaffected), VEX-20

@@ -685,6 +685,32 @@ test('[SSI-24] a failed screenshot read is reported where the driver is looking'
   } finally { await app.close(); }
 });
 
+test('[SSI-25] details the server reads (times, pieces, dimensions, commodity) reach the review', async () => {
+  // v24.0.41: the Worker has always returned these fields; the review sheet
+  // dropped every one of them.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const detailed = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    Object.assign(detailed.fields, { pickupDate: '2026-09-24', pickupTime: '15:00', deliveryDate: '2026-09-25',
+      deliveryTime: '08:00', timezone: 'CDT', pieces: 3, dimensions: '40x48x50 in', commodity: 'Machine parts', notes: 'Team not required' });
+    await stubExtractImage(app.page, detailed);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    const r = await app.page.evaluate(() => {
+      const v = (id) => document.getElementById(id)?.value;
+      return { route: document.getElementById('liRoute')?.textContent || '', puDate: v('liPuDate'), puTime: v('liPuTime'),
+        delDate: v('liDelDate'), delTime: v('liDelTime'), pieces: v('liPieces'), dims: v('liDims'), commodity: v('liCommodity'), notes: v('liNotes') };
+    });
+    ok(/Columbus, OH/.test(r.route) && /Chicago, IL/.test(r.route), `route line — got ${JSON.stringify(r.route)}`);
+    eq(r.puDate, '2026-09-24', 'pickup date'); eq(r.puTime, '15:00', 'pickup time');
+    eq(r.delDate, '2026-09-25', 'delivery date'); eq(r.delTime, '08:00', 'delivery time');
+    eq(r.pieces, '3', 'pieces'); eq(r.dims, '40x48x50 in', 'dimensions');
+    eq(r.commodity, 'Machine parts', 'commodity'); eq(r.notes, 'Team not required', 'notes');
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
