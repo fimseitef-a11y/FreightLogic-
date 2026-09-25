@@ -1,7 +1,13 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.37 USA ENGINE
+/** FreightLogic v24.0.38 USA ENGINE
+ *  v24.0.38 "Take It Or Say Why": Next Move S3 (docs/NEXT_MOVE_LAYER_SPEC.md).
+ *          The evaluator result carries the Next Move line for the load just
+ *          scored, above Show Details. A complete canonical ACCEPT/STRATEGIC
+ *          renders TAKE; any other verdict says why the load is not a take and
+ *          shows the move from the driver's position. Reads the canonical
+ *          decision only; no economics, verdict, grade or bid change.
  *  v24.0.37 "Say What's Missing": Next Move S2 (docs/NEXT_MOVE_LAYER_SPEC.md).
  *          deriveNextMove() is the single owner of the Today card's directive:
  *          WAIT / REPOSITION / TAKE / UNKNOWN. UNKNOWN replaces the no-evidence
@@ -510,7 +516,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.37';
+const APP_VERSION = '24.0.38';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -11714,6 +11720,44 @@ async function mwIsGoingHome(dest) {
   return homeParts.some(part => destLower.includes(part) && part.length > 2);
 }
 
+// v24.0.38 (Next Move S3) — docs/NEXT_MOVE_LAYER_SPEC.md §6 S3. The evaluator
+// result carries the Next Move line for the load just scored. It reads the
+// canonical decision and computes nothing: a complete ACCEPT/STRATEGIC renders
+// TAKE at once; anything else says the load is not a take and shows the move
+// from the driver's position, from the same deriveNextMove() the Today card uses.
+// No render counter: every evaluation replaces out.innerHTML, so an older slot is
+// detached before its async fill lands and cannot paint over a newer result.
+// A counter here was tried and its negative control did not fire (NM3-03).
+function _renderEvalNextMove(out, decision){
+  if (!out) return;
+  const slot = document.createElement('div');
+  slot.id = 'mwNextMove';
+  slot.style.marginBottom = '12px';
+  const details = out.querySelector('#mwEvalDetails');
+  if (details) details.before(slot); else out.appendChild(slot);
+
+  const take = deriveNextMove(null, null, decision);
+  if (take.move === NEXT_MOVE.TAKE) { slot.innerHTML = _nextMoveBlockHtml(take); return; }
+
+  const verdict = String(decision?.authority?.verdict || 'UNAVAILABLE').toUpperCase();
+  const notTake = decision?.factsComplete === false
+    ? 'Not a take: this load is missing facts, so the decision is incomplete.'
+    : `Not a take: the canonical decision is ${verdict}.`;
+  slot.innerHTML = `<div class="nm-eval-note muted" style="font-size:12px">${escapeHtml(notTake)} Checking your next move…</div>`;
+  (async () => {
+    let nm;
+    try {
+      const pos = await resolveDriverPosition();
+      const brief = pos.known ? await getPositioningBrief(pos.city) : null;
+      nm = deriveNextMove(brief, pos, decision);
+    } catch (e) {
+      nm = deriveNextMove(null, null, decision);
+    }
+    if (!slot.isConnected) return;   // a newer evaluation replaced the card
+    slot.innerHTML = `<div class="nm-eval-note" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(notTake)}</div>` + _nextMoveBlockHtml(nm);
+  })();
+}
+
 async function mwEvaluateLoad(){
   const origin = ($('#mwOrigin')?.value || '').trim();
   const dest = ($('#mwDest')?.value || '').trim();
@@ -12076,6 +12120,7 @@ async function mwEvaluateLoad(){
     isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
   });
   _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
+  _renderEvalNextMove(out, unifiedDecision);
   mwRenderWeekStructure(weeklyGross);
 
   // Save to eval history (session, last 5)
