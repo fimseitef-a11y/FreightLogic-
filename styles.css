@@ -2289,3 +2289,143 @@ html, body, button, input, select, textarea {
   font-size: 22px;
   color: var(--accent);
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   v24.5 parallel presentation pass — compact decision surfaces
+   CSS-only. No IDs, behavior, data contracts, or release markers change.
+   A future Load Compare renderer can opt into the reserved fl-load-compare
+   classes without another evaluator-wide visual rewrite.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:is(.kpi, .kpi-card, .kpi-pill, [class*="kpi-"]) {
+  font-variant-numeric: tabular-nums;
+}
+:is(.kpi, .kpi-card, .kpi-pill, [class*="kpi-"]) :is(.label, small, .muted) {
+  color: var(--text-tertiary);
+  letter-spacing: .02em;
+}
+:is(.kpi, .kpi-card, .kpi-pill, [class*="kpi-"]) :is(strong, b, .value) {
+  color: var(--text);
+  font-weight: 800;
+}
+
+/* Dense operational forms should read like one grouped sheet, not a stack of
+   unrelated boxes. Existing markup/handlers remain authoritative. */
+:is(.modal, .sheet, [role="dialog"]) :is(input, select, textarea),
+:is(#view-omega, #view-trips, #view-money, #view-settings) :is(input, select, textarea) {
+  border-color: var(--border);
+  background: var(--surface-1);
+  box-shadow: none;
+}
+:is(.modal, .sheet, [role="dialog"]) :is(input, select, textarea):focus,
+:is(#view-omega, #view-trips, #view-money, #view-settings) :is(input, select, textarea):focus {
+  border-color: var(--accent-border);
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 1px;
+}
+
+/* Keep secondary pills quiet so grade, bid, money and Next Move remain the
+   dominant scan targets. */
+:is(.pill, .chip):not(.good):not(.bad):not(.warn):not(.primary) {
+  box-shadow: none;
+}
+
+/* Reserved Load Compare presentation seam. This is intentionally dormant until
+   the Claude-owned renderer supplies real current-load data. */
+.fl-load-compare {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.fl-load-compare-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fl-load-compare-head > div:first-child {
+  min-width: 0;
+}
+.fl-load-compare-head h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -.25px;
+}
+.fl-load-compare-head p {
+  margin: 3px 0 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.fl-load-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.fl-load-compare-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface-1);
+  box-shadow: none;
+}
+.fl-load-compare-card[data-preferred="true"] {
+  border-color: var(--accent-border);
+  background: linear-gradient(180deg, var(--accent-muted), var(--surface-1) 55%);
+}
+.fl-load-compare-route {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -.15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-load-compare-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.fl-load-compare-metric {
+  min-width: 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+}
+.fl-load-compare-metric span {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .35px;
+  text-transform: uppercase;
+}
+.fl-load-compare-metric b {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-load-compare-why {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 430px) {
+  .fl-load-compare-grid {
+    grid-template-columns: 1fr;
+  }
+  .fl-load-compare-card {
+    padding: 11px 12px;
+  }
+}
