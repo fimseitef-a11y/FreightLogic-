@@ -87,7 +87,12 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.39 (Load Intake scoring + visible screenshot errors) is not yet observed live; see its release section.** **Production is v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
+**Source candidate v24.0.40 (paste an invite into the installed app) is not yet observed live; see its release section.** **Production is v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
+`6c99980` (Load Intake: Score This Load scores, visible screenshot errors, labelled text parse;
+app-only, Worker not redeployed). Re-dispatched Live Parity `36099921819` and Production Service
+Worker `36099923630` PASS on that SHA.
+
+*Superseded, kept as history:* **Production was v24.0.38 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #352 merged as
 `9c3564c` (Next Move S3 + the Scan Screenshot picker fix, app-only; Worker not redeployed).
 Re-dispatched Live Parity `36096515728` and Production Service Worker `36096517168` PASS on `main`
 @ `a3bdf1f`, whose runtime tree is identical to `9c3564c` (the only later merge, #353, is docs).
@@ -506,7 +511,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.39';
+const APP_VERSION = '24.0.40';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -656,8 +661,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.39` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.39`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.40` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.40`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4898,6 +4903,31 @@ guaranteed path and the clipboard is only ever an addition to it.
 ---
 
 
+## v24.0.40 "Paste The Invite" — connecting the installed iPhone app
+
+App **24.0.39 → 24.0.40**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
+generation, **do not redeploy the Worker**. No economics, storage schema, routing or Worker change.
+
+**The defect.** v24.0.39 made the screenshot error visible, and the first thing it said on the
+operator's iPhone was *"Cloud backup is not connected"*. Screenshot reading runs on the Worker and
+needs a driver token, and the only way to get one is an invite link (`#i=CODE`). On iPhone a tapped
+link opens in **Safari**, whose storage is separate from the Home Screen app, so the installed app
+could never be connected, and screenshot reading could never work there. The legacy Settings
+"Your Token" field needs an `flk_` token that is no longer shared with anyone (v24.0.13).
+
+**The fix.** `parseInviteInput()` accepts a pasted invite link or its 24-letter code (spaces,
+dashes and case ignored; a bearer token is refused), and `openInviteEntry()` opens the **same**
+`openClaimWizard()` the link would have. There is no new credential path and no Worker change. It is
+reachable from Settings → Cloud Backup (**🔗 I have an invite link**) and from a **Connect with invite
+link** button on the Load Intake "not connected" error. The Settings button is assigned rather than
+added, because `renderInsights()` runs on every Settings visit.
+
+**Tests.** `tests/integration/invite-paste.spec.mjs` (INV-01..04, new, registered). Red-first
+against `main`: 0/4. Negative controls against a checksum-restored `app.js`: ignoring the `#i=`
+fragment fails INV-01/02; dropping the connect button fails only INV-04.
+
+---
+
 ## v24.0.39 "Score Means Score" — Load Intake, reported from a real iPhone
 
 App **24.0.38 → 24.0.39**. `DB_VERSION` stays **16** and the Worker stays **v24**: app-only
@@ -4938,6 +4968,9 @@ skips a match followed by `:` and label words such as `Load`, and the number-the
 longer cross a line break. `tests/integration/load-text-parse.spec.mjs` (LTP-01..05, new,
 registered) fails 0/5 against `main`. Negative controls: removing the label override fails
 LTP-01/02/03/05; removing the label-word skip fails only LTP-02.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-25.** Merged as `6c99980` (PR #355). Re-dispatched Live Parity
+`36099921819` and Production Service Worker `36099923630` PASS on that SHA; Worker `/health` stays 24.
 
 **Not claimed:** whether screenshot *reading* returns fields for the operator's real screenshots.
 That is still #252's benchmark, and the new visible error is what will now say why a read failed.

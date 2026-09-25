@@ -101,6 +101,7 @@ import { runSpec as nextMoveS1 } from './integration/next-move-s1.spec.mjs';
 import { runSpec as nextMoveS2 } from './integration/next-move-s2.spec.mjs';
 import { runSpec as nextMoveS3 } from './integration/next-move-s3.spec.mjs';
 import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs';
+import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -160,6 +161,7 @@ const specs = [
   nextMoveS2,
   nextMoveS3,
   loadTextParse,
+  invitePaste,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,
