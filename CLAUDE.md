@@ -87,7 +87,15 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Source candidate v24.0.41 / Worker v25 (screenshot reading without a login) is not yet deployed or observed; see its release section. v24.0.40 (invite paste) merged as `e89a427`; its live observation is pending.** **Production is v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
+**Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
+`378ec45` (screenshot reading without a login, route line and every load detail). Worker v25
+deployed by run `36103732108`; Verify Authenticated Worker `36103772392` (auto-triggered after the
+deploy) PASS; re-dispatched Live Parity `36103952440` and Production Service Worker `36103954364`
+PASS on that SHA. The push-triggered parity `36103485561` failed because Worker v25 was not yet
+deployed, which is the documented deploy order, not the evidence. v24.0.40 (`e89a427`) was observed
+by Live Parity `36103339424` and Production Service Worker `36103341395`.
+
+*Superseded, kept as history:* **Production was v24.0.39 / DB16 / Worker v24, DIRECTLY OBSERVED 2026-09-25.** PR #355 merged as
 `6c99980` (Load Intake: Score This Load scores, visible screenshot errors, labelled text parse;
 app-only, Worker not redeployed). Re-dispatched Live Parity `36099921819` and Production Service
 Worker `36099923630` PASS on that SHA.
@@ -4907,6 +4915,10 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 App **24.0.40 → 24.0.41**, Worker **v24 → v25**. `DB_VERSION` stays **16**. **Deploy Worker v25
 first**, then let Cloudflare deploy the app, then re-dispatch the live gates.
+
+**DEPLOYED and OBSERVED LIVE 2026-09-25** in that order: Worker deploy `36103732108`, authenticated
+gate `36103772392`, Live Parity `36103952440`, Production Service Worker `36103954364`, all on
+`378ec45`. A real iPhone reading a screenshot without a login is still unobserved.
 
 **Why.** Screenshot reading (`POST /extract-image`) sat inside the driver-token gate, and the only
 way to get a token is an invite link, which on iPhone opens Safari's separate storage. v24.0.40
