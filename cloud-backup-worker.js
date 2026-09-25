@@ -1,4 +1,8 @@
-// FreightLogic Cloud Backup Worker v25 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// FreightLogic Cloud Backup Worker v26 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// v26: SCREENSHOT READING THAT ANSWERS. The default Workers AI path tries Llama
+// 4 Scout, then Moondream 3.1; the first answer the normalizer accepts wins. On
+// the operator's first real screenshot Moondream returned an empty answer. A
+// failed read now reports each model's outcome in `attempts`.
 // v25: SCREENSHOT READING WITHOUT A LOGIN (operator-approved 2026-09-25).
 // POST /extract-image with no driver token is served from the FreightLogic app
 // origin, 20/hr per IP and 300/day in total, through the same normalizer. The
@@ -489,7 +493,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '25', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '26', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -1405,20 +1409,33 @@ async function extractImageFromRequest(request, env, cors, userName) {
           return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
         }
 
-        const visionModel = provider.model(env);
+        let visionModel = provider.model(env);
         let rawOut = '';
+        let attempts;
         try {
-          rawOut = await provider.run(env, bytes, mime, visionModel);
+          const out = await provider.run(env, bytes, mime, visionModel);
+          // An adapter may return the raw text, or { text, model, attempts }
+          // when it tried more than one model.
+          if (out && typeof out === 'object') {
+            rawOut = String(out.text || '');
+            if (out.model) visionModel = out.model;
+            attempts = out.attempts;
+          } else {
+            rawOut = String(out || '');
+          }
         } catch (e) {
           console.error('[FL] vision provider error:', providerName, String(e).slice(0, 200));
-          return json({ ok: false, error: 'Image extraction service error. Paste the load text instead.' }, 502, cors);
+          return json({ ok: false, error: 'Image extraction service error. Paste the load text instead.',
+            provider: providerName, ...(e && e.attempts ? { attempts: e.attempts } : {}) }, 502, cors);
         }
 
         const norm = normalizeVisionExtraction(rawOut);
         if (!norm.ok) {
           // Fail closed to manual entry. An empty-but-confident load is worse
           // than no load: the evaluator would price whatever survived.
-          return json({ ok: false, error: norm.error, provider: providerName, model: visionModel }, 422, cors);
+          if (attempts) console.error('[FL] vision attempts:', JSON.stringify(attempts).slice(0, 600));
+          return json({ ok: false, error: norm.error, provider: providerName, model: visionModel,
+            ...(attempts ? { attempts } : {}) }, 422, cors);
         }
 
         return json({
@@ -1685,32 +1702,54 @@ const VISION_PROVIDERS = {
   // free daily allocation, which is what makes screenshot intake cost nothing.
   'workers-ai': {
     needs: (env) => (env.AI ? null : 'Workers AI binding (AI) is not configured on this Worker.'),
-    model: (env) => env.VISION_MODEL || '@cf/moondream/moondream3.1-9B-A2B',
-    async run(env, bytes, mime, model) {
-      // v22: this adapter had been calling Moondream 3.1 with `image` as a byte
-      // ARRAY and the prompt under `prompt`. That is the OLDER Workers AI vision
-      // convention (llava/uform). Moondream 3.1 documents `image` as a STRING —
-      // a public HTTPS URL or a base64 data URI — and puts the query prompt in
-      // `question`, so `env.AI.run` threw schema validation on every call and
-      // the route's catch returned HTTP 502. This is the DEFAULT provider, so
-      // screenshot intake (Issue #252) could never have worked in production;
-      // the unit suite drove the `openai` adapter, which is correct, and so
-      // never touched the live path. Observed by the authenticated live gate
-      // (run 35756559469) against the deployed v21, not deduced.
-      const out = await env.AI.run(model, {
-        task: 'query',
-        image: 'data:' + mime + ';base64,' + bytesToBase64(bytes),
-        question: VISION_SYSTEM_PROMPT + '\n\nExtract the load from this screenshot.',
-        // The reasoning trace is a separate object and would compete for the
-        // same token budget. This route wants the JSON answer, which the shared
-        // normalizer then filters down to observational fields.
-        reasoning: false,
-        temperature: 0.1,
-        max_tokens: 700,
-      });
-      // The `query` task answers in `answer`. The older keys stay as a tolerant
-      // fallback for an operator-pinned VISION_MODEL from another family.
-      return String(out?.answer ?? out?.description ?? out?.response ?? out?.text ?? '');
+    model: (env) => env.VISION_MODEL || WORKERS_AI_VISION_CHAIN[0],
+    // v26: a CHAIN, not one model. Moondream 3.1 was the only model here from
+    // v22 to v25, and on the operator's first real DispatchLand screenshot
+    // (2026-09-25) it answered with an EMPTY `answer`, so the route returned
+    // "Vision provider returned no output." Its only live evidence before that
+    // was a 1x1 synthetic PNG, which fails closed either way, so an empty answer
+    // had never been distinguishable from a working one. Llama 4 Scout (tagged
+    // Vision in the Workers AI catalog) now goes first and Moondream second;
+    // the first answer the shared normalizer accepts wins. Every attempt is
+    // reported, so the next failure names what each model actually returned.
+    // An operator-pinned VISION_MODEL still means exactly that one model.
+    async run(env, bytes, mime) {
+      const dataUri = 'data:' + mime + ';base64,' + bytesToBase64(bytes);
+      const chain = env.VISION_MODEL ? [env.VISION_MODEL] : WORKERS_AI_VISION_CHAIN;
+      const attempts = [];
+      let last = { text: '', model: chain[0] };
+      let anyAnswered = false;
+      for (const model of chain) {
+        let out;
+        try {
+          out = await env.AI.run(model, workersAiVisionPayload(model, dataUri));
+        } catch (e) {
+          attempts.push({ model, outcome: 'error', detail: String(e && e.message || e).slice(0, 160) });
+          continue;
+        }
+        anyAnswered = true;
+        const text = workersAiVisionText(out);
+        const norm = normalizeVisionExtraction(text);
+        if (norm.ok) {
+          attempts.push({ model, outcome: 'ok' });
+          return { text, model, attempts };
+        }
+        attempts.push({
+          model,
+          outcome: norm.error,
+          chars: text.length,
+          finishReason: out && typeof out.finish_reason === 'string' ? out.finish_reason.slice(0, 40) : null,
+          keys: out && typeof out === 'object' ? Object.keys(out).slice(0, 12) : [],
+        });
+        last = { text, model };
+      }
+      // Every model threw: that is a provider failure (502), not an extraction.
+      if (!anyAnswered) {
+        const err = new Error('workers-ai: every vision model failed');
+        err.attempts = attempts;
+        throw err;
+      }
+      return { text: last.text, model: last.model, attempts };
     },
   },
 
@@ -1798,6 +1837,50 @@ const VISION_PROVIDERS = {
 };
 
 const VISION_DEFAULT_PROVIDER = 'workers-ai';
+
+// Tried in order; the first answer the shared normalizer accepts wins.
+const WORKERS_AI_VISION_CHAIN = [
+  '@cf/meta/llama-4-scout-17b-16e-instruct',
+  '@cf/moondream/moondream3.1-9B-A2B',
+];
+
+/** The two Workers AI vision families take different input schemas. Moondream
+ *  documents `task`/`image` (a string: URL or data URI)/`question`; a chat model
+ *  takes `messages` with an image_url content part. */
+function workersAiVisionPayload(model, dataUri) {
+  if (/moondream/i.test(model)) {
+    return {
+      task: 'query',
+      image: dataUri,
+      question: VISION_SYSTEM_PROMPT + '\n\nExtract the load from this screenshot.',
+      // The reasoning trace would compete with the JSON answer for the budget.
+      reasoning: false,
+      temperature: 0.1,
+      max_tokens: 700,
+    };
+  }
+  return {
+    messages: [
+      { role: 'system', content: VISION_SYSTEM_PROMPT },
+      { role: 'user', content: [
+        { type: 'text', text: 'Extract the load from this screenshot.' },
+        { type: 'image_url', image_url: { url: dataUri } },
+      ] },
+    ],
+    temperature: 0.1,
+    max_tokens: 1024,
+  };
+}
+
+/** Moondream answers in `answer`; chat models in `response` (a string, or an
+ *  object when the model emitted parseable JSON) or an OpenAI-style `choices`. */
+function workersAiVisionText(out) {
+  if (!out || typeof out !== 'object') return typeof out === 'string' ? out : '';
+  const r = out.answer ?? out.response ?? out.choices?.[0]?.message?.content
+    ?? out.description ?? out.text ?? '';
+  if (r && typeof r === 'object') { try { return JSON.stringify(r); } catch { return ''; } }
+  return String(r || '');
+}
 const VISION_ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 // The exact observational field list. Anything the model returns that is not on

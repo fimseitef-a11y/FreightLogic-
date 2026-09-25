@@ -181,9 +181,14 @@ function assertVisionProviderSmoke(r) {
     if (r.json?.ok !== false) bad.push('HTTP 422 did not carry ok:false');
   }
 
+  // v26: a failed read carries each model's outcome. Print it, so the live gate
+  // shows what the provider actually returned rather than only that it failed.
+  const attempts = Array.isArray(r.json?.attempts)
+    ? ' — attempts: ' + r.json.attempts.map((a) => `${a.model}=${a.outcome}${a.chars != null ? `(${a.chars} chars)` : ''}`).join('; ')
+    : '';
   bad.length
-    ? fail(label, bad.join('; '))
-    : pass(label, `HTTP ${r.status} via ${provider} / ${model}`);
+    ? fail(label, bad.join('; ') + attempts)
+    : pass(label, `HTTP ${r.status} via ${provider} / ${model}${attempts}`);
 }
 
 async function run() {

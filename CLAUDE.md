@@ -87,7 +87,7 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
+**Source candidate: Worker v26 (screenshot model chain; app unchanged at 24.0.41), not yet deployed; see its section.** **Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
 `378ec45` (screenshot reading without a login, route line and every load detail). Worker v25
 deployed by run `36103732108`; Verify Authenticated Worker `36103772392` (auto-triggered after the
 deploy) PASS; re-dispatched Live Parity `36103952440` and Production Service Worker `36103954364`
@@ -4910,6 +4910,37 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## Worker v26 "An Answer, Or Why Not" — the screenshot model chain
+
+Worker **v25 → v26**. The app stays **24.0.41** and `DB_VERSION` stays **16**: no app byte changed, so
+no cache generation moves. Deploy the Worker only.
+
+**The defect, from a real iPhone (2026-09-25).** The operator's first real screenshot through
+v24.0.41 answered *"Vision provider returned no output."* The default `workers-ai` provider called
+only Moondream 3.1, with the schema Cloudflare documents, and Moondream returned an empty `answer`.
+Its only live evidence before that was the authenticated gate's synthetic 1x1 PNG, which fails
+closed (422) whether the model answers or not, so an empty answer had never been distinguishable
+from a working one.
+
+**The fix.** The `workers-ai` adapter now tries a chain: **Llama 4 Scout**
+(`@cf/meta/llama-4-scout-17b-16e-instruct`, Vision in the Workers AI catalog) as a chat model with
+the image as an `image_url` data URI, then **Moondream 3.1** with its documented `query` schema.
+The first answer the shared normalizer accepts wins, and the response names that model. One model
+throwing is not a provider failure; every model throwing is still 502. An operator-pinned
+`VISION_MODEL` still means exactly that one model. A failed read now carries `attempts` (each
+model's outcome, answer length, `finish_reason` and output keys), the Worker logs it, and the live
+authority gate prints it, so the next failure says what each model actually returned.
+
+**Not claimed:** that Scout reads DispatchLand screenshots well. That is still #252's benchmark and
+the operator's next screenshot.
+
+**Tests.** VEX-16 now finds the Moondream call in the chain; VEX-22..25 are new (Scout first with an
+`image_url` part; both empty is a 422 naming both; one throwing falls through, all throwing is 502;
+a pinned model is called alone). Red-first: VEX-22/23/24 fail against v25. Negative control:
+putting Moondream first fails VEX-22 only.
+
+---
 
 ## v24.0.41 / Worker v25 "No Setup" — screenshot reading without a login
 
