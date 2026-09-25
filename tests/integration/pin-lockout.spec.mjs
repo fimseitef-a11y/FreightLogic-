@@ -168,8 +168,13 @@ test('[FINDING F-4] the correct PIN unlocks and resets the fail counter to zero'
   // only removes its DOM content 350ms later (an unrelated close-animation
   // detail, not part of this fix) — wait past that, not just the settings
   // round-trip, before checking the modal is gone.
-  await app.page.waitForTimeout(600);
-  const modalGone = await app.page.evaluate(() => !document.getElementById('unlockPin'));
+  // A correct PIN also runs PBKDF2 verification and two settings writes before
+  // closeModal(), and a fixed 600ms raced that on a loaded full-suite run
+  // (observed once, 2026-09-25; 3/3 green alone). Wait for the modal to close,
+  // bounded, so a PIN that never unlocks still fails. The predicate is
+  // synchronous on purpose: waitForFunction does not await an async one (#224).
+  const modalGone = await app.page.waitForFunction(() => !document.getElementById('unlockPin'), null, { timeout: 5000 })
+    .then(() => true, () => false);
   ok(modalGone, 'a correct PIN must close the unlock modal');
   const failCount = Number(await getAppLockSetting(app.page, 'appLockFailCount') || 0);
   const lockedUntil = Number(await getAppLockSetting(app.page, 'appLockLockedUntil') || 0);

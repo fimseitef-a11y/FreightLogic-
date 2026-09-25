@@ -601,6 +601,81 @@ test('[SSI-21] the Scan Screenshot button stacks its subtitle under the title', 
   } finally { await app.close(); }
 });
 
+// v24.0.39 — reported from a real iPhone 2026-09-25: "It goes back to this, and
+// the second one is after I get Parse Load." Score This Load filled the fields,
+// closed the sheet and scrolled Evaluate to the TOP, so the driver saw the Scan
+// Screenshot button again and no result (the live eval, if any, sat below the
+// fold). And a failed screenshot read printed its error under the text box and
+// Parse Load, off-screen on a phone, so the sheet looked like it had simply
+// reset. These pin what the driver sees, not internal state.
+const scoreFrom = async (page, payload, seedStale) => {
+  await stubExtractImage(page, payload);
+  await page.evaluate((stale) => {
+    location.hash = '#omega';
+    if (stale) for (const [id, v] of Object.entries(stale)) { const el = document.getElementById(id); if (el) el.value = v; }
+  }, seedStale || null);
+  await sleep(400);
+  await openIntake(page);
+  await chooseImage(page);
+  await sleep(1200);
+  await page.evaluate(() => document.querySelector('#liScore')?.click());
+  await sleep(1500);
+};
+
+test('[SSI-22] Score This Load scores the load and shows the result on screen', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await scoreFrom(app.page, { ...OK_EXTRACTION, fields: { ...OK_EXTRACTION.fields, deadheadMiles: 20 } });
+    const r = await app.page.evaluate(() => {
+      const out = document.getElementById('mwEvalOutput');
+      const rect = out.getBoundingClientRect();
+      const text = (out.textContent || '').replace(/\s+/g, ' ');
+      return { verdict: (text.match(/\b(ACCEPT|REJECT|STRATEGIC|DZ-EXIT|UNAVAILABLE)\b/) || [])[1] || null,
+        top: rect.top, vh: window.innerHeight, modal: !!document.querySelector('#liScore') };
+    });
+    console.log(`    [evidence] ${JSON.stringify(r)}`);
+    ok(!r.modal, 'the intake sheet closes');
+    ok(r.verdict, 'tapping Score This Load must produce a canonical verdict');
+    ok(r.top >= -1 && r.top < r.vh * 0.6, `the result must be on screen, not below the fold — top=${r.top} vh=${r.vh}`);
+  } finally { await app.close(); }
+});
+
+test('[SSI-23] a scored intake replaces the previous load — an unstated deadhead is not inherited', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await scoreFrom(app.page, OK_EXTRACTION, { mwDeadMi: '77', mwBroker: 'Old Broker LLC' });
+    const r = await app.page.evaluate(() => ({
+      dead: document.getElementById('mwDeadMi')?.value,
+      broker: document.getElementById('mwBroker')?.value,
+      rev: document.getElementById('mwRevenue')?.value,
+    }));
+    eq(r.rev, '1250', 'the new revenue lands');
+    eq(r.dead, '', 'a previous load\'s deadhead must not leak into this one — unknown stays blank');
+    eq(r.broker, 'DispatchLand', 'the new broker replaces the old one');
+  } finally { await app.close(); }
+});
+
+test('[SSI-24] a failed screenshot read is reported where the driver is looking', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    await stubExtractImage(app.page, { ok: false, error: 'Nothing readable was extracted from that image.' }, 422);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    const r = await app.page.evaluate(() => {
+      const e = document.querySelector('#liParseError').getBoundingClientRect();
+      const t = document.querySelector('#liRawText').getBoundingClientRect();
+      return { errTop: e.top, errBottom: e.bottom, taTop: t.top, vh: window.innerHeight };
+    });
+    console.log(`    [evidence] ${JSON.stringify(r)}`);
+    ok(r.errTop < r.taTop, `the error must sit above the text box, next to the screenshot buttons — ${JSON.stringify(r)}`);
+    ok(r.errTop >= 0 && r.errBottom <= r.vh, `the error must be inside the viewport — ${JSON.stringify(r)}`);
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
