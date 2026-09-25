@@ -1,4 +1,8 @@
-// FreightLogic Cloud Backup Worker v24 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// FreightLogic Cloud Backup Worker v25 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// v25: SCREENSHOT READING WITHOUT A LOGIN (operator-approved 2026-09-25).
+// POST /extract-image with no driver token is served from the FreightLogic app
+// origin, 20/hr per IP and 300/day in total, through the same normalizer. The
+// installed iPhone app could never be connected (an invite opens Safari).
 // v24: WEB PUSH + SHORTCUTS RELAY (operator decision 2026-09-22: native iOS frozen;
 // Apple Shortcuts replaces Siri, Web Push to the installed Home Screen app is the
 // notification layer). GET /push/key serves a VAPID key (operator secrets
@@ -194,6 +198,9 @@ function b32(bytes) {
 }
 
 const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
+// v25: bounds on the no-login /extract-image route (see that route).
+const ANON_IMAGE_PER_IP_HOUR = 20;
+const ANON_IMAGE_PER_DAY = 300;
 // Issue #221 — the legacy `freightlogic.pages.dev` / `www.freightlogic.pages.dev`
 // entries are removed. That Pages origin is not the live app and has not been
 // for the whole v24.0.x line; "accepted during migration" outlived the migration.
@@ -482,7 +489,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '24', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '25', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -650,6 +657,34 @@ export default {
           url: './#do=relay&id=' + id, tag: 'relay-' + id,
         }, { urgency: 'high' });
         return json({ ok: true, id, pushed: pushed.sent, dropped: v.dropped }, 200, cors);
+      }
+
+      // POST /extract-image WITHOUT a driver token (v25, operator-approved
+      // 2026-09-25: "no work for user"). On iPhone the installed app could only
+      // be connected by an invite link, and a tapped link opens Safari, whose
+      // storage is separate, so screenshot reading never worked for a driver who
+      // had not been through setup. It now works from the app with no login,
+      // bounded three ways because it spends provider allocation:
+      //   1. the request must come from the FreightLogic app origin (this stops
+      //      other websites; it is not authentication, a script can forge it);
+      //   2. ANON_IMAGE_PER_IP_HOUR reads per IP per hour;
+      //   3. ANON_IMAGE_PER_DAY reads per UTC day in total, across everyone.
+      // It returns only observational fields (the same normalizer), stores
+      // nothing, and never touches backup data. A request carrying a token falls
+      // through to the authenticated route below, with its own per-driver limit.
+      if (request.method === 'POST' && path === '/extract-image' && !request.headers.get('X-Backup-Token')) {
+        const appOrigin = env.APP_ORIGIN || PRODUCTION_APP_ORIGIN;
+        if (requestOrigin !== appOrigin) {
+          return json({ ok: false, error: 'Missing token' }, 401, cors);
+        }
+        const anonIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+        if (await checkRateLimit(env, 'ip:' + anonIp, ANON_IMAGE_PER_IP_HOUR, 'anon-image')) {
+          return json({ ok: false, error: `Screenshot reading limit reached (${ANON_IMAGE_PER_IP_HOUR}/hr). Paste the load text instead.` }, 429, cors);
+        }
+        if (await checkDailyCap(env, 'anon-image', ANON_IMAGE_PER_DAY)) {
+          return json({ ok: false, error: 'Screenshot reading is busy today. Paste the load text instead.' }, 429, cors);
+        }
+        return extractImageFromRequest(request, env, cors, null);
       }
 
       // DRIVER ENDPOINTS — require token
@@ -1033,80 +1068,7 @@ export default {
           return json({ ok: false, error: `Image extraction limit reached (25/hr). Resets in ~${resetMins} min. Paste the load text instead.` }, 429, cors);
         }
 
-        const providerName = String(env.VISION_PROVIDER || VISION_DEFAULT_PROVIDER);
-        const provider = VISION_PROVIDERS[providerName];
-        if (!provider) {
-          return json({ ok: false, error: 'Image extraction provider is misconfigured on the server.' }, 500, cors);
-        }
-        const missing = provider.needs(env);
-        if (missing) {
-          // Named honestly rather than reported as a failed extraction: the
-          // operator can act on "not configured" and cannot act on "AI error".
-          return json({ ok: false, error: 'Image extraction is not configured on the server. ' + missing }, 501, cors);
-        }
-
-        // Bound the body BEFORE reading it. The ceiling has to bind before
-        // materialization, which is the #232 rule applied to the upload path.
-        const clImg = parseInt(request.headers.get('Content-Length') || '0', 10);
-        const MAX_IMAGE_REQUEST = 3 * 1024 * 1024;
-        if (clImg > MAX_IMAGE_REQUEST) {
-          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
-        }
-
-        const imgPayload = await request.json().catch(() => null);
-        if (!imgPayload || !imgPayload.image) {
-          return json({ ok: false, error: 'Missing required field: image' }, 400, cors);
-        }
-
-        let mime = String(imgPayload.mime || '').toLowerCase().trim();
-        let b64 = String(imgPayload.image);
-        const dataUrl = /^data:([a-z0-9.+/-]+);base64,(.*)$/is.exec(b64);
-        if (dataUrl) { mime = mime || dataUrl[1].toLowerCase(); b64 = dataUrl[2]; }
-        if (!mime) mime = 'image/jpeg';
-        if (!VISION_ALLOWED_MIME.includes(mime)) {
-          return json({ ok: false, error: 'Unsupported image type. Use JPEG, PNG or WebP.' }, 415, cors);
-        }
-
-        let bytes;
-        try {
-          const bin = atob(b64.replace(/\s/g, ''));
-          if (bin.length > MAX_IMAGE_REQUEST) {
-            return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
-          }
-          bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        } catch {
-          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
-        }
-        if (!bytes.length) {
-          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
-        }
-
-        const visionModel = provider.model(env);
-        let rawOut = '';
-        try {
-          rawOut = await provider.run(env, bytes, mime, visionModel);
-        } catch (e) {
-          console.error('[FL] vision provider error:', providerName, String(e).slice(0, 200));
-          return json({ ok: false, error: 'Image extraction service error. Paste the load text instead.' }, 502, cors);
-        }
-
-        const norm = normalizeVisionExtraction(rawOut);
-        if (!norm.ok) {
-          // Fail closed to manual entry. An empty-but-confident load is worse
-          // than no load: the evaluator would price whatever survived.
-          return json({ ok: false, error: norm.error, provider: providerName, model: visionModel }, 422, cors);
-        }
-
-        return json({
-          ok: true,
-          fields: norm.fields,
-          fieldMeta: norm.fieldMeta,
-          observedCount: norm.observedCount,
-          provider: providerName,
-          model: visionModel,
-          user: tokenData.name
-        }, 200, cors);
+        return extractImageFromRequest(request, env, cors, tokenData.name);
       }
 
       // POST /backup — save encrypted data
@@ -1387,6 +1349,99 @@ async function incrementUserBackupCount(env, userId) {
 // concurrent requests in the same window can both pass by reading the same count.
 // The burst headroom (100 eval / 50 extract per hour) is generous enough that
 // this race does not meaningfully undermine the abuse-prevention intent.
+
+// v25: the /extract-image work, shared by the authenticated route (inside the
+// driver-token gate) and the no-login app route (above it). Everything that
+// protects the provider and the canonical decision (size ceilings, mime
+// allow-list, fail-closed normalizer, observational fields only) lives here, so
+// the two routes cannot drift apart.
+async function extractImageFromRequest(request, env, cors, userName) {
+        const providerName = String(env.VISION_PROVIDER || VISION_DEFAULT_PROVIDER);
+        const provider = VISION_PROVIDERS[providerName];
+        if (!provider) {
+          return json({ ok: false, error: 'Image extraction provider is misconfigured on the server.' }, 500, cors);
+        }
+        const missing = provider.needs(env);
+        if (missing) {
+          // Named honestly rather than reported as a failed extraction: the
+          // operator can act on "not configured" and cannot act on "AI error".
+          return json({ ok: false, error: 'Image extraction is not configured on the server. ' + missing }, 501, cors);
+        }
+
+        // Bound the body BEFORE reading it. The ceiling has to bind before
+        // materialization, which is the #232 rule applied to the upload path.
+        const clImg = parseInt(request.headers.get('Content-Length') || '0', 10);
+        const MAX_IMAGE_REQUEST = 3 * 1024 * 1024;
+        if (clImg > MAX_IMAGE_REQUEST) {
+          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+        }
+
+        const imgPayload = await request.json().catch(() => null);
+        if (!imgPayload || !imgPayload.image) {
+          return json({ ok: false, error: 'Missing required field: image' }, 400, cors);
+        }
+
+        let mime = String(imgPayload.mime || '').toLowerCase().trim();
+        let b64 = String(imgPayload.image);
+        const dataUrl = /^data:([a-z0-9.+/-]+);base64,(.*)$/is.exec(b64);
+        if (dataUrl) { mime = mime || dataUrl[1].toLowerCase(); b64 = dataUrl[2]; }
+        if (!mime) mime = 'image/jpeg';
+        if (!VISION_ALLOWED_MIME.includes(mime)) {
+          return json({ ok: false, error: 'Unsupported image type. Use JPEG, PNG or WebP.' }, 415, cors);
+        }
+
+        let bytes;
+        try {
+          const bin = atob(b64.replace(/\s/g, ''));
+          if (bin.length > MAX_IMAGE_REQUEST) {
+            return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+          }
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        } catch {
+          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
+        }
+        if (!bytes.length) {
+          return json({ ok: false, error: 'Image could not be decoded.' }, 400, cors);
+        }
+
+        const visionModel = provider.model(env);
+        let rawOut = '';
+        try {
+          rawOut = await provider.run(env, bytes, mime, visionModel);
+        } catch (e) {
+          console.error('[FL] vision provider error:', providerName, String(e).slice(0, 200));
+          return json({ ok: false, error: 'Image extraction service error. Paste the load text instead.' }, 502, cors);
+        }
+
+        const norm = normalizeVisionExtraction(rawOut);
+        if (!norm.ok) {
+          // Fail closed to manual entry. An empty-but-confident load is worse
+          // than no load: the evaluator would price whatever survived.
+          return json({ ok: false, error: norm.error, provider: providerName, model: visionModel }, 422, cors);
+        }
+
+        return json({
+          ok: true,
+          fields: norm.fields,
+          fieldMeta: norm.fieldMeta,
+          observedCount: norm.observedCount,
+          provider: providerName,
+          model: visionModel,
+          user: userName
+        }, 200, cors);
+}
+
+// v25: a per-UTC-day counter, the global ceiling on no-login provider spend.
+async function checkDailyCap(env, ns, limit) {
+  const day = Math.floor(Date.now() / 86400000);
+  const key = 'rlday:' + ns + ':' + day;
+  const raw = await env.BACKUPS.get(key);
+  const count = raw ? (parseInt(raw, 10) || 0) : 0;
+  if (count >= limit) return true;
+  await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 172800 });
+  return false;
+}
 
 async function checkRateLimit(env, userId, limit, ns = 'eval') {
   const hour = Math.floor(Date.now() / 3600000);

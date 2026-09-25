@@ -242,21 +242,30 @@ test('[SSI-07] a failed extraction falls back to typing — it never opens an em
   } finally { await app.close(); }
 });
 
-test('[SSI-08] with no cloud token the driver is told why, and no image is uploaded', async () => {
+test('[SSI-08] with no cloud login the screenshot is still read, and no token is sent', async () => {
+  // v24.0.41 / Worker v25 (operator-approved 2026-09-25): "no work for user".
+  // The installed iPhone app could never be connected, so screenshot reading now
+  // needs no login; the Worker bounds it by app origin, per IP and per day.
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
-    const seen = await stubExtractImage(app.page, OK_EXTRACTION);
+    const seen = { calls: 0, token: null };
+    await app.page.route('**/extract-image', async (route) => {
+      seen.calls++;
+      seen.token = route.request().headers()['x-backup-token'] || null;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(OK_EXTRACTION) });
+    });
     await app.page.evaluate(async () => {
       await window.__FL_TESTS.setSetting('cloudBackupToken', '');
       window.__FL_TESTS.openLoadIntake();
     });
     await sleep(250);
     await chooseImage(app.page);
-    await sleep(900);
-    eq(seen.calls, 0, 'no image may be uploaded without a configured credential');
-    const err = await app.page.evaluate(() => document.querySelector('#liParseError')?.innerText || '');
-    ok(/settings|connect/i.test(err), `the driver must be told how to fix it, got: ${err}`);
+    await sleep(1200);
+    eq(seen.calls, 1, 'the screenshot is uploaded once, with no login');
+    eq(seen.token, null, 'no token header is sent when there is no login');
+    const origin = await app.page.evaluate(() => document.querySelector('#liOrigin')?.value || '');
+    eq(origin, 'Columbus, OH', 'the review opens with the fields the server read');
   } finally { await app.close(); }
 });
 

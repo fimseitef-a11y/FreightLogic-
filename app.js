@@ -1,7 +1,12 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.40 USA ENGINE
+/** FreightLogic v24.0.41 USA ENGINE
+ *  v24.0.41 "No Setup": screenshot reading needs no login (operator-approved
+ *          2026-09-25). With no cloud token the app sends the screenshot to
+ *          Worker v25's no-login route (app origin only, 20/hr per IP,
+ *          300/day total). "Connect with invite link" now appears only when the
+ *          server refuses a login (401/403). SSI-08, INV-04, VEX-01/18..21.
  *  v24.0.40 "Paste The Invite": the installed iPhone app could never connect
  *          cloud backup, because an invite link opens in Safari (separate
  *          storage), so screenshot reading always said "not connected". The
@@ -532,7 +537,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.40';
+const APP_VERSION = '24.0.41';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -16942,7 +16947,8 @@ function openLoadIntake(opts = {}){
       setImgBusy('');
       if (preview){ preview.style.display = 'none'; preview.removeAttribute('src'); }
       // Fail closed to the path that always works, and say so.
-      const notConnected = /not connected/i.test(e?.message || '');
+      // Only a login refusal is fixable by connecting; offer the invite entry then.
+      const notConnected = e?.status === 401 || e?.status === 403;
       showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.', { connect: notConnected });
     }
   }
@@ -17942,16 +17948,28 @@ async function downscaleImageForExtraction(file, maxEdge = 1600, quality = 0.82)
  *  load is worse than no load, because the evaluator would price whatever survived.
  */
 async function cloudExtractLoadImage(dataUrl, mime){
+  // v24.0.41 / Worker v25: no login needed. Without a token the screenshot goes
+  // to the Worker's no-login route (app origin only, 20/hr per IP, 300/day in
+  // total); with one it uses the driver's own per-driver limit.
   const token = await getSetting('cloudBackupToken', '');
-  if (!token) throw new Error('Cloud backup is not connected. Screenshot reading runs on the FreightLogic server — connect in Settings, or paste the load text instead.');
-  const url = (await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL;
-  const res = await cloudFetch(url + '/extract-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
-    body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
-  }, 45000);
+  const url = token ? ((await getSetting('cloudBackupUrl', CLOUD_WORKER_URL)) || CLOUD_WORKER_URL) : CLOUD_WORKER_URL;
+  const headers = { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId() };
+  if (token) headers['X-Backup-Token'] = token;
+  let res;
+  try {
+    res = await cloudFetch(url + '/extract-image', {
+      method: 'POST', headers,
+      body: JSON.stringify({ image: dataUrl, mime: mime || 'image/jpeg' }),
+    }, 45000);
+  } catch(_) {
+    throw new Error('Could not reach the FreightLogic server. Check your connection, or paste the load text instead.');
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not read that screenshot.');
+  if (!res.ok || !data.ok){
+    const err = new Error(data.error || 'Could not read that screenshot.');
+    err.status = res.status;
+    throw err;
+  }
   return { fields: data.fields || {}, fieldMeta: data.fieldMeta || {}, provider: data.provider, model: data.model };
 }
 

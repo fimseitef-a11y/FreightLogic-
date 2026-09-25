@@ -6,7 +6,7 @@
 // matched "<number> empty" across the line break), and no order number
 // ("Load ID:" was not a recognised label). These drive the real parser the
 // sheet calls and assert the fields the review step shows.
-import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/load-text-parse.spec.mjs');
 let app;
@@ -81,6 +81,9 @@ test('[LTP-05] the review sheet shows the parsed fields after Parse Load', async
 
 export async function runSpec() {
   app = await launchApp();
+  // The first-run setup wizard opens ~800ms after boot and would replace the
+  // Load Intake sheet LTP-05 drives.
+  await skipFirstRunWizard(app.page);
   try { return await run(); }
   finally { await app.close(); }
 }

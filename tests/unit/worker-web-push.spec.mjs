@@ -450,10 +450,12 @@ test('[WP-14] the Worker and the app enforce the SAME relay action contract', as
   for (const action of ['evaluate', 'intake', 'trip', 'expense', 'fuel']) ok(w.includes(action + ':'), `contract names ${action}`);
 });
 
-test('[WP-15] /health reports Worker v24', async () => {
+test('[WP-15] /health reports a Worker generation that carries Web Push (v24+)', async () => {
+  // Pinned exactly at '24' until Worker v25; CG-09 already asserts header,
+  // /health and the parity pin agree, so this only needs the Web Push floor.
   const env = newEnv(); const worker = await loadWorker();
   const body = await (await worker.fetch(REQ('/health'), env)).json();
-  eq(body.version, '24', `expected version 24, got ${body.version}`);
+  ok(Number(body.version) >= 24, `expected version >= 24, got ${body.version}`);
 });
 
 export async function runSpec() {

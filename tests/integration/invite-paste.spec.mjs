@@ -69,14 +69,15 @@ test('[INV-03] a bad paste says why and opens nothing', async () => {
   ok(!r.wizard, 'no claim wizard for a bad paste');
 });
 
-test('[INV-04] the Load Intake "not connected" error offers the invite entry', async () => {
-  const r = await app.page.evaluate(async () => {
-    await window.__FL_TESTS.setSetting('cloudBackupToken', '');
+test('[INV-04] a login refusal from the server offers the invite entry', async () => {
+  // v24.0.41: with no login the screenshot is read anyway (Worker v25). Only a
+  // server refusal (401/403, e.g. a revoked login) is fixable by connecting.
+  await app.page.route('**/extract-image', (route) => route.fulfill({
+    status: 403, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Invalid token' }) }));
+  await app.page.evaluate(async () => {
     window.__FL_TESTS.openLoadIntake();
     await new Promise(res => setTimeout(res, 250));
-    return true;
   });
-  ok(r, 'intake opened');
   await app.page.setInputFiles('#liImgFile', {
     name: 's.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
@@ -86,10 +87,11 @@ test('[INV-04] the Load Intake "not connected" error offers the invite entry', a
     const btn = document.getElementById('liConnectInvite');
     const vis = !!(btn && btn.offsetParent);
     if (btn) btn.click();
-    await new Promise(res => setTimeout(res, 400));
+    await new Promise(res => setTimeout(res, 500));
     return { vis, entry: !!document.getElementById('inviteLinkInput') };
   });
-  ok(s.vis, 'the not-connected error carries a visible "connect" button');
+  await app.page.unroute('**/extract-image');
+  ok(s.vis, 'a login refusal carries a visible "connect" button');
   ok(s.entry, 'tapping it opens the invite paste field');
 });
 

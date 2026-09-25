@@ -136,19 +136,82 @@ const FULL = JSON.stringify({
 
 // ── Auth and configuration boundaries ────────────────────────────────────────
 
-test('[VEX-01] /extract-image without a driver token is rejected, and calls no provider', async () => {
+const APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
+function anonReq(headers = {}, body = { image: TINY_JPEG_B64, mime: 'image/jpeg' }) {
+  return REQ('/extract-image', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+// v25 (operator-approved 2026-09-25): a request with NO driver token is served
+// only from the FreightLogic app origin, 20/hr per IP and 300/day in total.
+test('[VEX-01] a no-login request from any other origin is rejected, and calls no provider', async () => {
   const kv = makeKV(); const worker = await loadWorker();
   let providerCalled = false;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (u) => { if (String(u).includes('openai.com')) providerCalled = true; return realFetch(u); };
+  const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN, OPENAI_API_KEY: 'sk-test', VISION_PROVIDER: 'openai' };
   try {
-    const res = await worker.fetch(REQ('/extract-image', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: TINY_JPEG_B64 }),
-    }), { BACKUPS: kv, ADMIN_TOKEN: ADMIN, OPENAI_API_KEY: 'sk-test', VISION_PROVIDER: 'openai' });
-    ok(res.status === 401 || res.status === 403, `expected 401/403, got ${res.status}`);
+    const none = await worker.fetch(anonReq({}), env);
+    ok(none.status === 401 || none.status === 403, `no Origin must be refused, got ${none.status}`);
+    const foreign = await worker.fetch(anonReq({ Origin: 'https://evil.example' }), env);
+    ok(foreign.status === 401 || foreign.status === 403, `a foreign Origin must be refused, got ${foreign.status}`);
   } finally { globalThis.fetch = realFetch; }
-  ok(!providerCalled, 'an unauthenticated request must never spend provider allocation');
+  ok(!providerCalled, 'a refused request must never spend provider allocation');
+});
+
+test('[VEX-18] a no-login request from the app origin is read, through the same normalizer', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { env, restore } = visionEnv(kv, JSON.stringify({ fields: { origin: 'Mobile, AL', loadedMiles: 380, grade: 'A' }, confidence: { origin: 0.9, loadedMiles: 0.9 } }));
+  try {
+    const res = await worker.fetch(anonReq({ Origin: APP_ORIGIN, 'CF-Connecting-IP': '198.51.100.7' }), env);
+    eq(res.status, 200, `expected 200, got ${res.status}`);
+    const body = await res.json();
+    eq(body.fields.origin, 'Mobile, AL', 'fields come back');
+    ok(!('grade' in body.fields), 'a volunteered grade is still dropped');
+    eq(body.fields.deadheadMiles, null, 'an unstated deadhead is still null');
+  } finally { restore(); }
+});
+
+test('[VEX-19] the no-login route stops at 20 reads per IP per hour', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { env, restore } = visionEnv(kv, JSON.stringify({ fields: { origin: 'Mobile, AL' }, confidence: { origin: 0.9 } }));
+  try {
+    const statuses = [];
+    for (let i = 0; i < 21; i++) statuses.push((await worker.fetch(anonReq({ Origin: APP_ORIGIN, 'CF-Connecting-IP': '198.51.100.8' }), env)).status);
+    eq(statuses.slice(0, 20).every(x => x === 200), true, 'the first 20 are served');
+    eq(statuses[20], 429, 'the 21st in the hour is refused');
+    const other = await worker.fetch(anonReq({ Origin: APP_ORIGIN, 'CF-Connecting-IP': '198.51.100.9' }), env);
+    eq(other.status, 200, 'another IP is unaffected');
+  } finally { restore(); }
+});
+
+test('[VEX-20] the no-login route stops at 300 reads per day in total', async () => {
+  const day = Math.floor(Date.now() / 86400000);
+  const kv = makeKV({ ['rlday:anon-image:' + day]: '300' });
+  const worker = await loadWorker();
+  let providerCalled = false;
+  const { env, restore } = visionEnv(kv, '{}');
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (u, o) => { if (String(u).includes('openai.com')) providerCalled = true; return inner(u, o); };
+  try {
+    const res = await worker.fetch(anonReq({ Origin: APP_ORIGIN, 'CF-Connecting-IP': '198.51.100.10' }), env);
+    eq(res.status, 429, 'past the daily total every no-login read is refused');
+  } finally { globalThis.fetch = inner; restore(); }
+  ok(!providerCalled, 'and no provider call is made');
+});
+
+test('[VEX-21] a request WITH a token still uses the authenticated route', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const { env, restore } = visionEnv(kv, FULL);
+  try {
+    const bad = await worker.fetch(REQ('/extract-image', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: APP_ORIGIN, 'X-Backup-Token': 'flk_' + '0'.repeat(32) },
+      body: JSON.stringify({ image: TINY_JPEG_B64 }),
+    }), env);
+    ok(bad.status === 401 || bad.status === 403, `a bad token is refused, not downgraded to no-login, got ${bad.status}`);
+  } finally { restore(); }
 });
 
 test('[VEX-02] an unconfigured provider reports NOT CONFIGURED, not a failed extraction', async () => {
