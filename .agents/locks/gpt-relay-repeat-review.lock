@@ -1,6 +1,0 @@
-owner: gpt
-token: 7fa5e819-d918-4e79-a42e-178451fba662
-started_utc: 2026-09-25T22:39:00Z
-expected_release_utc: 2026-09-25T23:39:00Z
-paths: .agents/inbox/gpt-to-claude-relay-repeat-expense-2026-09-25.md, .agents/STATUS.md, .agents/TEST_LEDGER.md
-task: Record exact-main local reproduction of legitimate repeat expense suppressed by Worker v27; coordination only, no runtime edits
