@@ -1,24 +1,24 @@
-/* FreightLogic v24.0.41 — Browser Hardened Service Worker */
-const SW_VERSION = '24.0.41';
+/* FreightLogic v24.0.42 — Browser Hardened Service Worker */
+const SW_VERSION = '24.0.42';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.41"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.42"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=24.0.41',
+  './app.js?v=24.0.42',
   './styles.css',
-  './midwest-stack-authority.js?v=24.0.41',
-  './manifest.json?v=24.0.41',
+  './midwest-stack-authority.js?v=24.0.42',
+  './manifest.json?v=24.0.42',
   './midwest-stack-config.json',
   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
   // import works fully offline from the very first install.
   './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=24.0.41',
-  './modern-shell.js?v=24.0.41'
+  './sw-bridge.js?v=24.0.42',
+  './modern-shell.js?v=24.0.42'
 ];
 
 // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
@@ -27,7 +27,7 @@ const CORE = [
 // generation is handled separately (a known asset may fall back to a
 // query-insensitive cache hit; an unknown path may not).
 function normalizeAssetPath(pathname) {
-  // './app.js?v=24.0.41' and '/app.js' must resolve to the same identity.
+  // './app.js?v=24.0.42' and '/app.js' must resolve to the same identity.
   return new URL(pathname, self.location.href).pathname;
 }
 const KNOWN_ASSET_PATHS = new Set(
@@ -66,7 +66,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.41', './styles.css', './sw-bridge.js?v=24.0.41', './modern-shell.js?v=24.0.41', './manifest.json?v=24.0.41', './midwest-stack-authority.js?v=24.0.41', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.42', './styles.css', './sw-bridge.js?v=24.0.42', './modern-shell.js?v=24.0.42', './manifest.json?v=24.0.42', './midwest-stack-authority.js?v=24.0.42', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
