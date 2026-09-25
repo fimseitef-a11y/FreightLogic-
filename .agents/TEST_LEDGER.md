@@ -309,3 +309,11 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Exact main `15b16d9f4e20d580669bb66679a9cf259d0f5a12` (merge PR #310): GitHub Tests `35681710524`, job `106599866460`, `node tests/run-all.mjs` = **748 passed / 0 failed across 73 spec files**.
 - Same exact main: CodeQL `35681710513` PASS; Verify Live Parity `35681710497` PASS; Verify Production Service Worker `35681710618` PASS. All completed on attempt 1.
 - This merge is governance-only; runtime bytes remain the v24.0.29 Issue #304 repair. These automated/live-origin gates do not certify physical iPhone A1-A13, authenticated vision-provider quality, Admin Console privileged operations, repository-admin settings, or native Safari/Apple tooling.
+
+
+## 2026-09-25T22:38Z — GPT repeat-expense diagnostic (not full suite)
+- Exact source: main 358e2d37ed200767b183975dd73eca58abd2dcda; cloud-backup-worker.js blob d528eabe1e04945896af829673580c68b48e0264.
+- Environment/command: Node v24.19.0; `node /workspace/scratch/7fd5bdf46f87/relay-diagnostic/repro.mjs`; unmodified source loaded as ESM, existing worker-web-push test fixture helpers, in-memory KV, all network disabled.
+- Result: exit 1; new intended-behavior assertion FAILED: independent toll expense next day must create a new relay item. Actual ok=true, duplicate=true, waiting=false, pushed=0, same id, queue=0. Control with different amount accepted. Setup/consume assertions passed.
+- No rerun; root cause visible in #366 unconditional value-fingerprint suppression. Existing exact-main CI separately reports Tests 36179477121, CodeQL 36179477067, Live Parity 36179477147, Production SW 36179477046 success; that does not negate this new case.
+- Repro/owner request: .agents/inbox/gpt-to-claude-relay-repeat-expense-2026-09-25.md. No production requests, real history adoption or physical iPhone certification.
