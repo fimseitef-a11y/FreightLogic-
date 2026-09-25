@@ -4928,6 +4928,17 @@ Also in this generation, test-only: `pin-lockout` F-4 waited a fixed 600ms for a
 close the unlock modal, which raced PBKDF2 plus two settings writes once on a loaded full-suite
 run (3/3 green alone). It now waits for the modal to close, bounded at 5s.
 
+**The text parser, from the same report.** Pasting a DispatchLand block (`Load ID: 1214704`,
+`Pickup:`/`Delivery:` lines, `Loaded Miles: 380`, `Empty Miles: 44`) parsed the origin as
+**"Load, ID"** (the label read as a city in Idaho), the deadhead as **380** (`380⏎Empty Miles`
+matched "number then empty" across the line break), and no order number. `parseLabelledLoadFields()`
+now reads `Label: value` lines first, and a labelled value outranks every heuristic. A labelled
+per-mile rate is never revenue, and an absent deadhead stays UNKNOWN. The generic City/State scan
+skips a match followed by `:` and label words such as `Load`, and the number-then-label patterns no
+longer cross a line break. `tests/integration/load-text-parse.spec.mjs` (LTP-01..05, new,
+registered) fails 0/5 against `main`. Negative controls: removing the label override fails
+LTP-01/02/03/05; removing the label-word skip fails only LTP-02.
+
 **Not claimed:** whether screenshot *reading* returns fields for the operator's real screenshots.
 That is still #252's benchmark, and the new visible error is what will now say why a read failed.
 

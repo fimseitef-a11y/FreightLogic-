@@ -8,7 +8,11 @@
  *          no result; it now replaces the load, runs the canonical evaluator and
  *          scrolls the result into view (the Shortcuts evaluate path). A failed
  *          screenshot read now reports beside the screenshot buttons instead of
- *          under the text box, off-screen on a phone. SSI-22..24.
+ *          under the text box, off-screen on a phone. SSI-22..24. The text
+ *          parser now reads labelled lines first (Pickup:/Delivery:/Loaded
+ *          Miles:/Empty Miles:/Load ID:/Rate:), so "Load ID:" is no longer a
+ *          city in Idaho and the loaded miles no longer become the deadhead.
+ *          LTP-01..05.
  *  v24.0.38 "Take It Or Say Why": Next Move S3 (docs/NEXT_MOVE_LAYER_SPEC.md).
  *          The evaluator result carries the Next Move line for the load just
  *          scored, above Show Details. A complete canonical ACCEPT/STRATEGIC
@@ -13948,6 +13952,53 @@ function ocrCorrectText(text){
 }
 
 /** v18 Enhanced OCR parsing — Sylectus, Dispatchland, DAT, Truckstop formats */
+// v24.0.39: labelled load-board lines ("Pickup: Mobile, AL, 36602, US",
+// "Empty Miles: 44", "Load ID: 1214704"), read one line at a time. A labelled
+// value is a stated fact, so it outranks every heuristic below. Reported from a
+// real iPhone: the heuristics read "Load ID:" as a city in Idaho and took the
+// loaded miles on the line above "Empty Miles" as the deadhead.
+function _labelledPlace(v){
+  const m = String(v || '').match(/^\s*([A-Za-z][A-Za-z .'\-]{1,40}?)\s*,\s*([A-Za-z]{2})\b/);
+  return m ? `${m[1].trim()}, ${m[2].toUpperCase()}` : '';
+}
+function _labelledNum(v){
+  const m = String(v || '').match(/^\s*\$?\s*(\d[\d,]*(?:\.\d{1,2})?)/);
+  return m ? Number(m[1].replace(/,/g, '')) : null;
+}
+function parseLabelledLoadFields(text){
+  const out = {};
+  const lines = String(text || '').slice(0, 10000).split(/\r?\n/);
+  for (const raw of lines){
+    const line = raw.trim();
+    const m = line.match(/^([A-Za-z][A-Za-z #.\/-]{1,30}?)\s*:\s*(.+)$/);
+    if (!m) continue;
+    const label = m[1].toLowerCase().replace(/\s+/g, ' ').trim();
+    const val = m[2].trim();
+    if (/^(load|order|reference|ref|confirmation|conf)( ?(id|#|no\.?|number))?$/.test(label)){
+      const id = val.match(/^#?\s*([A-Za-z0-9][A-Za-z0-9-]{2,20})/);
+      if (id && out.orderNo === undefined) out.orderNo = id[1];
+    } else if (/^(pick ?up|origin|shipper|from)( #?\d+)?$/.test(label)){
+      const p = _labelledPlace(val); if (p && out.origin === undefined) out.origin = p;
+    } else if (/^(delivery|deliver|drop|destination|consignee|to)( #?\d+)?$/.test(label)){
+      const p = _labelledPlace(val); if (p) out.destination = p; // last stop wins
+    } else if (/^(loaded miles?|loaded|trip miles?|load miles?)$/.test(label)){
+      const n = _labelledNum(val); if (n !== null) out.loadedMiles = Math.round(n);
+    } else if (/^(empty miles?|deadhead( miles?)?|dh( miles?)?|empty)$/.test(label)){
+      const n = _labelledNum(val); if (n !== null) out.deadheadMiles = Math.round(n);
+    } else if (/^(rate|pay|total|total rate|price|line ?haul|all[ -]?in|offer|bid)$/.test(label)){
+      // A per-mile figure is not the load revenue.
+      if (!/\/\s*mi|per\s*mile|\bcpm\b|\brpm\b/i.test(val)){
+        const n = _labelledNum(val); if (n !== null && n > 50 && n < 50000) out.pay = n;
+      }
+    } else if (/^weight$/.test(label)){
+      const n = _labelledNum(val); if (n !== null) out.weight = Math.round(n);
+    } else if (/^(broker|posted by|customer|company)$/.test(label)){
+      if (out.customer === undefined) out.customer = val.slice(0, 80);
+    }
+  }
+  return out;
+}
+
 function parseLoadTextEnhanced(rawText){
   const text = ocrCorrectText(rawText);
   const base = parseLoadText(text);
@@ -13966,11 +14017,11 @@ function parseLoadTextEnhanced(rawText){
   }
 
   // Loaded miles: "185 loaded mi" or "185 loaded miles"
-  const loadedMiMatch = text.match(/(\d[\d,]{0,5})\s*(?:loaded\s*)?(?:mi(?:les?)?)\b/i);
+  const loadedMiMatch = text.match(/(\d[\d,]{0,5})[ \t]*(?:loaded[ \t]*)?(?:mi(?:les?)?)\b/i);
   if (loadedMiMatch && !base.loadedMiles) base.loadedMiles = parseInt(loadedMiMatch[1].replace(/,/g,''),10)||0;
 
   // Deadhead/empty miles: "22 DH" or "22 empty miles" or "empty: 22"
-  const dhMatch = text.match(/(\d[\d,]{0,5})\s*(?:dh|empty|deadhead)\s*(?:mi(?:les?)?)?(?:\s|$)/i) ||
+  const dhMatch = text.match(/(\d[\d,]{0,5})[ \t]*(?:dh|empty|deadhead)[ \t]*(?:mi(?:les?)?)?(?:\s|$)/i) ||
                   text.match(/(?:empty|dh|deadhead)\s*:?\s*(\d[\d,]{0,5})\s*(?:mi(?:les?)?)?/i);
   if (dhMatch && base.deadheadMiles == null) base.deadheadMiles = parseInt(dhMatch[1].replace(/,/g,''),10)||0;
 
@@ -14001,6 +14052,15 @@ function parseLoadTextEnhanced(rawText){
   // Broker/company name: "Posted by: Acme Transport" or "Broker: Acme"
   const brokerMatch = text.match(/(?:posted\s*by|broker(?:age)?|company|carrier\s*contact)\s*:?\s*([A-Z][a-zA-Z0-9\s&.,'-]{3,50})/i);
   if (brokerMatch && !base.customer) base.customer = brokerMatch[1].trim().slice(0,80);
+
+  // Labelled lines are stated facts and override every guess above.
+  const lab = parseLabelledLoadFields(text);
+  for (const k of ['orderNo','origin','destination','loadedMiles','deadheadMiles','pay','weight','customer']){
+    if (lab[k] !== undefined) base[k] = lab[k];
+  }
+  // A labelled per-mile rate with no flat total leaves revenue unknown rather
+  // than guessing a total from a per-mile figure.
+  if (lab.pay === undefined && /(?:rate|pay)\s*:?\s*\$?\s*\d+(?:\.\d+)?\s*(?:\/\s*mi|per\s*mile)/i.test(text) && base.pay > 0 && base.pay < 10) base.pay = 0;
 
   return base;
 }
@@ -14196,6 +14256,9 @@ function parseLoadText(text){
   while ((cs = cityStatePat.exec(full)) !== null){
     const city = cs[1].trim();
     const state = cs[2].toUpperCase();
+    // v24.0.39: "Load ID: 1214704" is a label, not Load, Idaho.
+    if (/^\s*:/.test(full.slice(cs.index + cs[0].length))) continue;
+    if (/^(load|order|ref|reference|pickup|pick up|delivery|trip|unit|truck)$/i.test(city)) continue;
     // Filter out noise by requiring known US state abbreviations
     if (/^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)$/.test(state)){
       cities.push(`${city}, ${state}`);
@@ -24048,7 +24111,7 @@ function parseLoadTextForInbox(rawText) {
     emptyMiles: knownNum(base.deadheadMiles),
     pay: base.pay || 0, payType, ratePerMile,
     pickupDate, pickupTime, broker: base.customer || '',
-    weight: base.weight || 0, isUrgent,
+    weight: base.weight || 0, orderNo: base.orderNo || '', isUrgent,
     confidence: Math.min(100, confidence),
     fieldsFound, fieldsMissing, rawText: safe,
   };
