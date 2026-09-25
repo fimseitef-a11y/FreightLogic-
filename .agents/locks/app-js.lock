@@ -1,0 +1,6 @@
+owner: claude
+token: 0e187460-a563-4269-b8e1-4081a3e0ed21
+started_utc: 2026-09-25T19:04:05Z
+expected_release_utc: 2026-09-25T23:04:05Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: v24.0.42 / Worker v27 duplicate protection (relay repeat skip + trip order # warning)
