@@ -1,7 +1,12 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.39 USA ENGINE
+/** FreightLogic v24.0.40 USA ENGINE
+ *  v24.0.40 "Paste The Invite": the installed iPhone app could never connect
+ *          cloud backup, because an invite link opens in Safari (separate
+ *          storage), so screenshot reading always said "not connected". The
+ *          app now takes a pasted invite link or code (Settings, and a button
+ *          on that Load Intake error) and opens the same claim wizard. INV-01..04.
  *  v24.0.39 "Score Means Score": Load Intake, reported from a real iPhone.
  *          "Score This Load" filled the evaluator, closed the sheet and scrolled
  *          Evaluate to the top, so the driver saw the Scan Screenshot button and
@@ -527,7 +532,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.39';
+const APP_VERSION = '24.0.40';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -16770,7 +16775,19 @@ function openLoadIntake(opts = {}){
   // v24.0.39: the error sits beside the screenshot buttons, not under the text
   // box and Parse Load, where on a phone it was off-screen and a failed read
   // looked like the sheet had simply reset.
-  function showError(msg){ const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display=''; try { el.scrollIntoView({ block:'nearest' }); } catch(_) {} }
+  function showError(msg, opts = {}){
+    const el=stage1.querySelector('#liParseError'); el.textContent=msg; el.style.display='';
+    // v24.0.40: "not connected" is fixable right here — offer the invite entry.
+    if (opts.connect){
+      const b = document.createElement('button');
+      b.className = 'btn primary'; b.id = 'liConnectInvite'; b.type = 'button';
+      b.style.cssText = 'display:block;width:100%;margin-top:10px;min-height:44px;font-weight:700';
+      b.textContent = '🔗 Connect with invite link';
+      b.addEventListener('click', ()=>{ haptic(); closeModal(); setTimeout(openInviteEntry, 380); });
+      el.appendChild(b);
+    }
+    try { el.scrollIntoView({ block:'nearest' }); } catch(_) {}
+  }
   function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
   function getField(id){ return body.querySelector('#'+id); }
 
@@ -16925,7 +16942,8 @@ function openLoadIntake(opts = {}){
       setImgBusy('');
       if (preview){ preview.style.display = 'none'; preview.removeAttribute('src'); }
       // Fail closed to the path that always works, and say so.
-      showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.');
+      const notConnected = /not connected/i.test(e?.message || '');
+      showError((e?.message || 'Could not read that screenshot.') + ' You can still paste or type the load below.', { connect: notConnected });
     }
   }
 
@@ -19017,6 +19035,49 @@ function flCaptureClaimCode(){
   } catch(_) { return null; }
 }
 
+/** v24.0.40: an invite pasted INTO the installed app. On iPhone a tapped link
+ *  opens in Safari, whose storage is separate from the Home Screen app, so the
+ *  `#i=` path could never connect the installed app. Accepts a full invite link
+ *  or the bare code (spaces/dashes ignored). Returns the code, or null. Never
+ *  accepts a bearer token: those are not shared any more (v24.0.13). */
+function parseInviteInput(text){
+  const raw = String(text || '').trim().slice(0, 500);
+  if (!raw) return null;
+  const frag = raw.match(/#i=([^&\s]+)/i);
+  let code = frag ? frag[1] : raw;
+  try { code = decodeURIComponent(code); } catch(_) {}
+  code = code.replace(/[\s-]+/g, '').toUpperCase();
+  return CLAIM_CODE_RE.test(code) ? code : null;
+}
+
+function openInviteEntry(){
+  const body = document.createElement('div');
+  body.innerHTML =
+    '<p class="muted" style="font-size:13px;line-height:1.5;margin:0 0 12px">' +
+    'On iPhone, tapping an invite link opens Safari, which cannot connect the app on your Home Screen. ' +
+    'Copy the invite link (long-press it in Messages or Mail, then Copy) and paste it here.</p>' +
+    '<label for="inviteLinkInput">Invite link or code</label>' +
+    '<input id="inviteLinkInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
+    'placeholder="https://…/#i=… or the 24-letter code" style="width:100%;box-sizing:border-box;font-size:16px" />' +
+    '<div id="inviteLinkError" role="alert" style="display:none;margin-top:10px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>' +
+    '<button class="btn primary" id="inviteLinkGo" style="width:100%;margin-top:12px;min-height:48px;font-weight:700">Continue</button>';
+  const go = ()=>{
+    const code = parseInviteInput(body.querySelector('#inviteLinkInput').value);
+    const err = body.querySelector('#inviteLinkError');
+    if (!code){
+      err.textContent = 'That is not an invite link. Paste the whole link you were sent, or its 24-letter code.';
+      err.style.display = '';
+      return;
+    }
+    err.style.display = 'none';
+    closeModal();
+    openClaimWizard(code).catch(()=>{ toast('Could not open setup. Try again.', true); });
+  };
+  body.querySelector('#inviteLinkGo').addEventListener('click', ()=>{ haptic(); go(); });
+  body.querySelector('#inviteLinkInput').addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); go(); } });
+  openModal('Connect with an invite', body);
+}
+
 /** Redeem a code for a token and connect cloud backup under `passphrase`.
  *  Returns { ok, error } — the token never appears in the return value, and
  *  never in `error`. */
@@ -19207,6 +19268,9 @@ function cloudInitUI(){
   $('#cloudBackupPass')?.addEventListener('input', function(e){ var str = cloudPassStrength(e.target.value); var fill = $('#passStrengthFill'); var label = $('#passStrengthLabel'); if (fill){ fill.style.width = str.score + '%'; fill.style.background = str.color || 'var(--surface-2)'; } if (label && e.target.value){ label.textContent = str.label; label.style.color = str.color; } else if (label){ label.textContent = 'If you forget this, backups cannot be recovered.'; label.style.color = ''; } });
   $('#btnCloudTest')?.addEventListener('click', async ()=>{ haptic(20); await cloudTestConnection(); });
   $('#btnCloudSave')?.addEventListener('click', async ()=>{ haptic(20); await cloudSaveConfig(); });
+  // Assigned, not added: renderInsights() runs on every Settings visit, and an
+  // added listener would open one invite sheet per visit.
+  { const b = $('#btnCloudInvite'); if (b) b.onclick = ()=>{ haptic(15); openInviteEntry(); }; }
   $('#btnCloudPush')?.addEventListener('click', async ()=>{ haptic(20); await cloudPushBackup(false); });
   $('#btnCloudPull')?.addEventListener('click', async ()=>{ haptic(20); await cloudPullBackup(); });
   $('#btnCloudClear')?.addEventListener('click', async ()=>{
@@ -24518,6 +24582,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // normalizer, so a lookup-based test passes with the defect reinstated.
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
+    parseInviteInput, openInviteEntry,
     isSettingExportSafe, exportSafeSettings,
     isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
     loadTesseract,                             // Issue #220 — null when OCR is not installed
