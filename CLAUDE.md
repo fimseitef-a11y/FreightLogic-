@@ -4914,10 +4914,19 @@ the canonical decision and computes nothing:
   older slot is detached before its async fill lands. A counter was tried and its negative control
   did not fire, so it was removed rather than kept as an unproven guard.
 
+**Also in this generation — the Scan Screenshot flow, reported from a real iPhone 2026-09-25.**
+The Load Intake **📷 Screenshot** button clicked the file input carrying `capture="environment"`,
+so on iPhone it opened the **camera** and the posting just screenshotted could never be picked.
+It is now **🖼️ Choose Screenshot**, opening a Photos-library input (`accept="image/*"`, no
+`capture`), and the camera is a separate **📷 Camera** button. The `#btnLoadIntake` subtitle also
+rendered beside the title (the `.btn` flex row ignored the inner `display:block`); the button now
+stacks them. SSI-20/SSI-21 (in the registered `screenshot-intake.spec.mjs`) fail on `main` and pass
+here.
+
 **Tests.** `tests/integration/next-move-s3.spec.mjs` (3, new, registered). Red-first against
 `main`'s `app.js`: **0/3**. Negative controls, each against a checksum-restored `app.js`: slot
 moved inside Show Details → NM3-01 only; every result rendered as TAKE → NM3-02 only. Full suite
-**837 passed, 0 failed across 82 spec files**; `verify-cloudflare-parity --static-only` PASS.
+**839 passed, 0 failed across 82 spec files**; `verify-cloudflare-parity --static-only` PASS.
 
 **Source-only until merged, deployed and observed.** After merge, let Cloudflare deploy, then
 re-dispatch Verify Live Parity and Production Service Worker rather than citing push-triggered runs.

@@ -16620,11 +16620,11 @@ function openLoadIntake(opts = {}){
   stage1.innerHTML = `
     <p class="muted" style="font-size:12px;margin:0 0 12px 0">Share a screenshot of the load, or paste the text. Either way you review what was found before anything is scored.</p>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn" id="liShot" style="flex:1;font-size:13px;min-height:44px">📷 Screenshot</button>
-      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:44px">🖼️ Photos / Files</button>
+      <button class="btn primary" id="liShot" style="flex:2;font-size:14px;min-height:48px">🖼️ Choose Screenshot</button>
+      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:48px">📷 Camera</button>
     </div>
+    <input type="file" id="liImgFile" accept="image/*" style="display:none" />
     <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
-    <input type="file" id="liImgFile" accept="image/jpeg,image/png,image/webp" style="display:none" />
     <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
     <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
     <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
@@ -16855,8 +16855,12 @@ function openLoadIntake(opts = {}){
     }
   }
 
-  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
-  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  // v24.0.38: "Screenshot" used to open the CAMERA input (capture="environment"),
+  // so on iPhone it launched the camera and a driver could never pick the
+  // posting they had just screenshotted. Choosing a screenshot now opens the
+  // Photos library; the camera is its own, clearly labelled button.
+  stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
+  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
   for (const id of ['liImgCamera','liImgFile']){
     stage1.querySelector('#'+id)?.addEventListener('change', (ev)=>{
       const f = ev.target?.files?.[0];
