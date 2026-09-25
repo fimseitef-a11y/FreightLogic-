@@ -53,8 +53,7 @@ logic. Test suite lives in `tests/` and is committed. **All 8 findings are now F
 see the Findings table's Status column and each finding's own section for the fix, the commit,
 and the post-fix reproduction. F-7 and F-8 surfaced during phase 4, were logged rather than
 fixed pending the owner's decision, and were **fixed in v23.8.4** once that decision came —
-see "New findings from Phase 4" below. Phases 5–6 (full E2E journeys, one-handed usability)
-are still outstanding.
+see "New findings from Phase 4" below. Phases 5–6 were not executed as part of this 2026-08-19 audit. That historical scope statement remains true; it must not be read as a current release-task queue. The current physical-device journey/usability authority is `FIELD_TEST_CHECKLIST.md` plus the completion-release certification/deferral documents it cites. Those rows deliberately remain deferred to the final post-v24.5 candidate unless their own evidence says otherwise. Automated, source, CI, or production-parity evidence does not substitute for a physical-iPhone PASS.
 
 ## Executive Summary
 
@@ -82,8 +81,10 @@ transient GPS blip mid-trip killed tracking with only an undocumented reload as 
 (F-7, High). Neither was offline-specific; F-8 in particular reproduced on every attempt,
 online or off. Both were logged rather than fixed on the spot, and both were **fixed in
 v23.8.4** after the owner approved. Phases 5–6 (full E2E journeys, one-handed usability) were
-**not executed dynamically** — see "What could NOT be tested" — this report does not claim
-coverage there.
+**not executed dynamically in this audit** — see "What could NOT be tested" — and this report does
+not retroactively claim that coverage. Current physical-device certification lives in
+`FIELD_TEST_CHECKLIST.md` and its cited completion-release authority; keep its deferred rows and
+manual evidence requirements separate from this historical audit.
 
 ## Findings
 
