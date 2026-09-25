@@ -154,6 +154,64 @@ test('[LTP-09] Score This Load carries dimensions and the pickup time into the e
   ok(/-09-24T15:00$/.test(r.cutoff || ''), `pickup time reaches the pickup check — got ${r.cutoff}`);
 });
 
+// docs/DISPATCHLAND_SAMPLES.md is the sanitized corpus of real operator
+// DispatchLand posts. It is read from disk rather than copied here, so a row
+// added to the corpus is tested without an edit to this file. UNKNOWN cells
+// produce no labelled line, and the parser must then leave that field unset.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const CORPUS_MD = readFileSync(fileURLToPath(new URL('../../docs/DISPATCHLAND_SAMPLES.md', import.meta.url)), 'utf8');
+const corpusRows = () => CORPUS_MD.split('\n')
+  .filter(l => /^\|\s*\d{5,}\s*\|/.test(l))
+  .map(l => l.split('|').slice(1, -1).map(c => c.trim()))
+  .map(([id, pickup, puTime, delivery, delTime, loaded, empty, weight, pieces, , expO, expD]) =>
+    ({ id, pickup, puTime, delivery, delTime, loaded, empty, weight, pieces, expO, expD }));
+const known = (v) => v && !/^UNKNOWN$/i.test(v);
+const labelled = (r) => [
+  `Load ID: ${r.id}`,
+  `Pickup: ${r.pickup}`,
+  known(r.puTime) && `Pickup Time: ${r.puTime}`,
+  `Delivery: ${r.delivery}`,
+  known(r.delTime) && `Delivery Time: ${r.delTime}`,
+  known(r.loaded) && `Loaded Miles: ${r.loaded}`,
+  known(r.empty) && `Empty Miles: ${r.empty}`,
+  known(r.weight) && `Weight: ${r.weight}`,
+  known(r.pieces) && `Pieces: ${r.pieces}`,
+].filter(Boolean).join('\n');
+
+test('[LTP-10] every DispatchLand corpus row parses to its expected route, miles, weight and load id', async () => {
+  const rows = corpusRows();
+  ok(rows.length >= 10, `corpus rows found — got ${rows.length}`);
+  const bad = [];
+  for (const r of rows){
+    const p = await parse(labelled(r));
+    const want = {
+      orderNo: r.id, origin: r.expO, destination: r.expD,
+      loadedMiles: Number(r.loaded), emptyMiles: Number(r.empty), weight: parseInt(r.weight, 10),
+    };
+    for (const [k, v] of Object.entries(want)) if (p[k] !== v) bad.push(`${r.id} ${k}: want ${JSON.stringify(v)} got ${JSON.stringify(p[k])}`);
+  }
+  eq(bad.length, 0, `corpus mismatches:\n      ${bad.join('\n      ')}`);
+});
+
+test('[LTP-11] corpus: pieces are read when shown and stay unset when UNKNOWN; loaded miles never become deadhead', async () => {
+  const bad = [];
+  for (const r of corpusRows()){
+    const f = await parse(labelled(r));
+    if (known(r.pieces) ? f.pieces !== Number(r.pieces) : !!f.pieces) bad.push(`${r.id} pieces: want ${known(r.pieces) ? r.pieces : 'unset'} got ${f.pieces}`);
+    if (f.emptyMiles === f.loadedMiles) bad.push(`${r.id} deadhead equals loaded miles (${f.loadedMiles})`);
+  }
+  const noEmpty = await parse(labelled({ ...corpusRows()[2], empty: 'UNKNOWN' }));
+  if (noEmpty.emptyMiles !== null) bad.push(`missing Empty Miles must stay UNKNOWN — got ${noEmpty.emptyMiles}`);
+  eq(bad.length, 0, `corpus mismatches:\n      ${bad.join('\n      ')}`);
+});
+
+test('[LTP-12] corpus: identical routes keep their distinct load ids', async () => {
+  const [a, b] = await Promise.all(['1201521', '1201423'].map(id => parse(labelled(corpusRows().find(r => r.id === id)))));
+  eq(a.orderNo, '1201521', 'first posting id'); eq(b.orderNo, '1201423', 'second posting id');
+  eq(a.origin, b.origin, 'same route origin'); eq(a.destination, b.destination, 'same route destination');
+});
+
 export async function runSpec() {
   app = await launchApp();
   // The first-run setup wizard opens ~800ms after boot and would replace the
