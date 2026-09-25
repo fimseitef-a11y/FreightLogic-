@@ -1,4 +1,7 @@
-// FreightLogic Cloud Backup Worker v26 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// FreightLogic Cloud Backup Worker v27 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// v27: NO DUPLICATE RELAY ITEMS. An exact repeat of a Shortcut item sent in the
+// last 14 days (same action, same validated parameters) is not stored or pushed
+// again; the reply says duplicate:true and names the first item.
 // v26: SCREENSHOT READING THAT ANSWERS. The default Workers AI path tries Llama
 // 4 Scout, then Moondream 3.1; the first answer the normalizer accepts wins. On
 // the operator's first real screenshot Moondream returned an empty answer. A
@@ -493,7 +496,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '26', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '27', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -650,11 +653,28 @@ export default {
         if (!v.ok) return json({ ok: false, error: v.error }, 400, cors);
 
         const now = Date.now();
+        // v27: an exact repeat (same action, same validated parameters) of an
+        // item sent in the last RELAY_SEEN_TTL_S is not stored or pushed again,
+        // even if the app already consumed the first one. Re-running a Shortcut
+        // over screenshots already sent is the ordinary way this happens, and
+        // identical OCR text is the same screenshot. Nothing is merged: a
+        // different screenshot of a similar load has different text.
+        const fp = await relayFingerprint(v.do, v.params);
+        const seen = await readRelaySeen(env, keyRec.userId);
+        const prior = seen.find(e => e.fp === fp);
+        if (prior) {
+          const items0 = await readRelay(env, keyRec.userId);
+          const waiting = items0.some(i => i.id === prior.id);
+          return json({ ok: true, id: prior.id, duplicate: true, waiting, pushed: 0, dropped: v.dropped }, 200, cors);
+        }
         const id = 'rl_' + now.toString(36) + b32(crypto.getRandomValues(new Uint8Array(5))).toLowerCase();
         const items = await readRelay(env, keyRec.userId);
         items.push({ id, do: v.do, params: v.params, createdAt: now });
         while (items.length > RELAY_MAX_ITEMS) items.shift();
         await writeRelay(env, keyRec.userId, items);
+        seen.push({ fp, id, at: now });
+        while (seen.length > RELAY_SEEN_MAX) seen.shift();
+        await env.BACKUPS.put('relayseen:' + keyRec.userId, JSON.stringify(seen), { expirationTtl: RELAY_SEEN_TTL_S });
 
         const pushed = await pushToUser(env, keyRec.userId, {
           title: 'FreightLogic', body: relaySummary(v.do, v.params),
@@ -2383,6 +2403,24 @@ async function readRelay(env, userId) {
   if (!Array.isArray(items)) return [];
   const cutoff = Date.now() - RELAY_TTL_S * 1000;
   return items.filter(i => i && typeof i.id === 'string' && Number(i.createdAt) > cutoff);
+}
+// v27: fingerprints of recently relayed items, so an exact repeat is skipped.
+// Only a SHA-256 of the action and its validated parameters is kept, never the
+// parameters themselves.
+const RELAY_SEEN_TTL_S = 14 * 24 * 3600;
+const RELAY_SEEN_MAX = 200;
+async function relayFingerprint(action, params) {
+  const keys = Object.keys(params || {}).sort();
+  const canon = JSON.stringify([action, keys.map(k => [k, params[k]])]);
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+}
+async function readRelaySeen(env, userId) {
+  let seen;
+  try { seen = JSON.parse(await env.BACKUPS.get('relayseen:' + userId) || '[]'); } catch { seen = []; }
+  if (!Array.isArray(seen)) return [];
+  const cutoff = Date.now() - RELAY_SEEN_TTL_S * 1000;
+  return seen.filter(e => e && typeof e.fp === 'string' && typeof e.id === 'string' && Number(e.at) > cutoff);
 }
 async function writeRelay(env, userId, items) {
   if (!items.length) { await env.BACKUPS.delete('relay:' + userId); return; }

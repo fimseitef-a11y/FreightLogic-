@@ -87,7 +87,7 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
+**Source candidate: v24.0.42 / Worker v27 (duplicate protection), not yet deployed; see its section.** **Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
 
 *Superseded, kept as history:* **Production is v24.0.41 / DB16 / Worker v25, DIRECTLY OBSERVED 2026-09-25.** PR #358 merged as
 `378ec45` (screenshot reading without a login, route line and every load detail). Worker v25
@@ -521,7 +521,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.41';
+const APP_VERSION = '24.0.42';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -671,8 +671,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.41` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.41`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.42` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.42`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4912,6 +4912,33 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.42 / Worker v27 "Once Is Enough" — duplicate protection
+
+App **24.0.41 → 24.0.42**, Worker **v26 → v27**. `DB_VERSION` stays **16**. **Deploy Worker v27
+first**, then let Cloudflare deploy the app, then re-dispatch the live gates.
+
+**Why (operator, 2026-09-25):** "I sent screenshots already sent before … I don't end up with a
+bunch of duplicates." A relay item never saves anything; the trip form does. So there are two fixes.
+
+1. **Worker v27: an exact repeat relay item is skipped.** `POST /relay` keeps a SHA-256 fingerprint
+   of each item's action and validated parameters in `relayseen:<userId>` (14 days, at most 200,
+   fingerprints only, never the parameters). A repeat is not stored and not pushed; the reply is
+   `{ ok: true, duplicate: true, id: <first id>, waiting, pushed: 0 }`. It stays a repeat after the
+   app has consumed the first item. A different screenshot of a similar load has different text and
+   is a new item: nothing is merged by route.
+2. **App 24.0.42: the trip form's duplicate warning actually shows.** `validateStep1()` wrote
+   "Order # already exists" and then overwrote it with "Looks good." on the next line, so a second
+   save of the same load went through silently. A **new** trip whose order # is already saved now
+   stops once and lists the saved trip(s) (date, route, pay) with **Open existing** and
+   **Save anyway (different load)**. It warns and never blocks for good or merges, because
+   different brokers can reuse an order number. Editing a trip never warns.
+
+**Tests.** WP-16/17 (repeat skipped, still skipped after consumption, new again after 14 days) fail
+against v26. `tests/integration/trip-duplicate-warning.spec.mjs` (TDW-01..04, new, registered):
+TDW-01..03 fail against `main`'s app; letting the duplicate save through fails the same three.
+
+---
 
 ## Worker v26 "An Answer, Or Why Not" — the screenshot model chain
 

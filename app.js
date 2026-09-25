@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.41 USA ENGINE
+/** FreightLogic v24.0.42 USA ENGINE
+ *  v24.0.42 "Once Is Enough": saving a new trip whose order # is already saved
+ *          stops once and shows the saved trip, with Open existing / Save anyway.
+ *          The old warning was overwritten by "Looks good." and never shown.
+ *          Paired with Worker v27, which skips an exact repeat relay item.
  *  v24.0.41 "No Setup": screenshot reading needs no login (operator-approved
  *          2026-09-25). With no cloud token the app sends the screenshot to
  *          Worker v25's no-login route (app origin only, 20/hr per IP,
@@ -543,7 +547,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.41';
+const APP_VERSION = '24.0.42';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -14538,18 +14542,54 @@ function openTripWizard(existing=null){
   // v14.5.0: Camera button opens receipt camera
   $('#f_camera', body)?.addEventListener('click', ()=> { haptic(15); openReceiptCamera(trip.orderNo || 'new').catch(()=>{}); });
 
+  // v24.0.42: a new trip whose order # is already saved stops once and shows the
+  // saved trip(s), with Open existing / Save anyway. Before this the warning was
+  // written and then overwritten by "Looks good." on the next line, so a second
+  // save of the same load went through silently. It warns and never blocks or
+  // merges: different brokers can reuse an order number.
+  let dupAckOrderNo = '';
+  let dupBlocked = false;
   async function validateStep1(){
+    dupBlocked = false;
     const orderNo = normOrderNo($('#f_orderNo', body).value);
     const pay = Number($('#f_pay', body).value || 0);
     const hint = $('#tripHint', body);
     if (!orderNo){ hint.textContent = 'Order # is required.'; return false; }
     if (!(pay > 0)){ hint.textContent = 'Pay must be > 0.'; return false; }
-    if (mode==='add' && await tripExists(orderNo)){
-      // External order numbers can be reused by different brokers/loads. Warn, do not merge identities.
-      hint.textContent = 'Order # already exists — allowed if this is a distinct load.';
+    if (mode==='add' && dupAckOrderNo !== orderNo){
+      const matches = await findTripsByOrderNo(orderNo, 5).catch(() => []);
+      if (matches.length){
+        dupBlocked = true;
+        const rows = matches.map((t, i) => {
+          const route = [t.origin, t.destination].filter(Boolean).join(' → ') || 'no route saved';
+          const when = t.pickupDate || t.deliveryDate || '';
+          const pay$ = Number(t.pay) > 0 ? fmtMoney(t.pay) : '';
+          return `<div style="margin-top:4px">• ${escapeHtml([when, route, pay$].filter(Boolean).join(' · '))}
+            <button class="btn sm" type="button" data-dup-open="${i}" style="margin-left:6px">Open existing</button></div>`;
+        }).join('');
+        hint.innerHTML = `<div id="tripDupWarn" role="alert" style="color:var(--warn,#e0a100)">
+          <strong>Order # ${escapeHtml(orderNo)} is already saved${matches.length > 1 ? ` (${matches.length} trips)` : ''}.</strong>
+          If this is the same load, open the saved trip instead of adding it again.${rows}
+          <div style="margin-top:6px"><button class="btn sm" type="button" id="tripDupSave">Save anyway (different load)</button></div></div>`;
+        hint.querySelectorAll('[data-dup-open]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const t = matches[Number(btn.getAttribute('data-dup-open'))];
+            closeModal();
+            if (t) setTimeout(() => openTripWizard(t), 50);
+          });
+        });
+        $('#tripDupSave', hint)?.addEventListener('click', () => {
+          dupAckOrderNo = orderNo;
+          hint.textContent = 'OK — this will be saved as a separate load. Tap Save again.';
+        });
+        if (step2.style.display !== 'none'){ step2.style.display = 'none'; step1.style.display = ''; }
+        hint.scrollIntoView?.({ block: 'nearest' });
+        return false;
+      }
     }
     hint.textContent = 'Looks good.'; return true;
   }
+  const step1Toast = (fallback) => toast(dupBlocked ? 'This order # is already saved — check below' : fallback, true);
   async function collectTrip(stepNo){
     trip.orderNo = normOrderNo($('#f_orderNo', body).value);
     trip.pay = Number($('#f_pay', body).value || 0);
@@ -14582,7 +14622,7 @@ function openTripWizard(existing=null){
     }
   }
   async function save(stepNo){
-    if (!(await validateStep1())){ toast('Fix required fields', true); return; }
+    if (!(await validateStep1())){ step1Toast('Fix required fields'); return; }
     await collectTrip(stepNo);
     // v21 T1C: Auto-estimate loaded miles from market coords if blank
     if (!(Number(trip.loadedMiles) > 0) && trip.origin && trip.destination){
@@ -14679,7 +14719,7 @@ function openTripWizard(existing=null){
   });
 
   $('#toStep2', body).addEventListener('click', async ()=>{
-    if (!(await validateStep1())){ toast('Fix required fields first', true); return; }
+    if (!(await validateStep1())){ step1Toast('Fix required fields first'); return; }
     step1.style.display = 'none'; step2.style.display = '';
     // Auto-populate intel if editing
     updateBrokerIntel(); updateLaneIntel();

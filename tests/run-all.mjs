@@ -102,6 +102,7 @@ import { runSpec as nextMoveS2 } from './integration/next-move-s2.spec.mjs';
 import { runSpec as nextMoveS3 } from './integration/next-move-s3.spec.mjs';
 import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs';
 import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
+import { runSpec as tripDuplicateWarning } from './integration/trip-duplicate-warning.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -162,6 +163,7 @@ const specs = [
   nextMoveS3,
   loadTextParse,
   invitePaste,
+  tripDuplicateWarning,
   importCredentialTrustBoundary,
   ocrSelfHosted,
   m1DoctrineIntegrity,

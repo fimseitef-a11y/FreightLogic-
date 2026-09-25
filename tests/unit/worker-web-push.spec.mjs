@@ -450,6 +450,50 @@ test('[WP-14] the Worker and the app enforce the SAME relay action contract', as
   for (const action of ['evaluate', 'intake', 'trip', 'expense', 'fuel']) ok(w.includes(action + ':'), `contract names ${action}`);
 });
 
+// v27: re-running a Shortcut over screenshots already sent must not pile up
+// duplicate relay items or notifications.
+test('[WP-16] an exact repeat of a relay item is not stored or pushed again', async () => {
+  const env = newEnv(); const worker = await loadWorker();
+  const a = await seedDriver(worker, env, 'Dup Driver', '203.0.113.41');
+  const { body: { key } } = await mintShortcutKey(worker, env, a.token);
+  const text = 'Load ID: 1214704\nPickup: Mobile, AL\nDelivery: Pascagoula, MS\nLoaded Miles: 380';
+  const first = await (await worker.fetch(relayReq(key, { do: 'intake', params: { text } }), env)).json();
+  eq(first.ok, true, 'first send accepted');
+  ok(!first.duplicate, 'first send is not a duplicate');
+  const again = await (await worker.fetch(relayReq(key, { do: 'intake', params: { text } }), env)).json();
+  eq(again.ok, true, 'a repeat is not an error');
+  eq(again.duplicate, true, 'a repeat says duplicate');
+  eq(again.id, first.id, 'and names the first item');
+  eq(again.pushed, 0, 'and sends no second notification');
+  eq(again.waiting, true, 'the first item is still waiting');
+  const list = await (await worker.fetch(REQ('/relay', { headers: driverHdrs(a.token) }), env)).json();
+  eq(list.items.length, 1, `one stored item, got ${list.items.length}`);
+  const other = await (await worker.fetch(relayReq(key, { do: 'intake', params: { text: text + '\nEmpty Miles: 44' } }), env)).json();
+  ok(!other.duplicate && other.id !== first.id, 'a different screenshot is a new item');
+  ok(!env.BACKUPS.dump().includes('Pascagoula') || JSON.parse(await env.BACKUPS.get('relayseen:' + a.userId)).every(e => !('params' in e)),
+    'the repeat record holds a fingerprint, never the parameters');
+  eq(env.BACKUPS.listCalls, 0, 'no KV list()');
+});
+
+test('[WP-17] a repeat is still skipped after the app consumed the first; after 14 days it is new', async () => {
+  const env = newEnv(); const worker = await loadWorker();
+  const a = await seedDriver(worker, env, 'Dup Driver 2', '203.0.113.42');
+  const { body: { key } } = await mintShortcutKey(worker, env, a.token);
+  const item = { do: 'expense', params: { amount: '42.10', category: 'Tolls' } };
+  const first = await (await worker.fetch(relayReq(key, item), env)).json();
+  eq((await worker.fetch(REQ('/relay/' + first.id, { method: 'DELETE', headers: driverHdrs(a.token) }), env)).status, 200, 'app consumes it');
+  const again = await (await worker.fetch(relayReq(key, item), env)).json();
+  eq(again.duplicate, true, 'still a duplicate after it was consumed');
+  eq(again.waiting, false, 'and says it is no longer waiting');
+  eq((await (await worker.fetch(REQ('/relay', { headers: driverHdrs(a.token) }), env)).json()).items.length, 0, 'nothing re-stored');
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 15 * 24 * 3600 * 1000;
+    const later = await (await worker.fetch(relayReq(key, item), env)).json();
+    ok(later.ok && !later.duplicate, 'after the 14-day window the same item is accepted again');
+  } finally { Date.now = realNow; }
+});
+
 test('[WP-15] /health reports a Worker generation that carries Web Push (v24+)', async () => {
   // Pinned exactly at '24' until Worker v25; CG-09 already asserts header,
   // /health and the parity pin agree, so this only needs the Web Push floor.
