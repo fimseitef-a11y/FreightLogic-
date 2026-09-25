@@ -1,6 +1,0 @@
-owner: claude
-token: ac6e242b-330b-4bb3-b116-edc715bec70d
-started_utc: 2026-09-25T04:01:01Z
-expected_release_utc: 2026-09-25T08:01:01Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.0.37 Next Move S2 (deriveNextMove; UNKNOWN replaces no-evidence HUNT) per docs/NEXT_MOVE_LAYER_SPEC.md
