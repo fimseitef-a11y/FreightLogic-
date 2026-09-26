@@ -1,4 +1,10 @@
-// FreightLogic Cloud Backup Worker v27 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// FreightLogic Cloud Backup Worker v28 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// v28: A REAL REPEAT EXPENSE GETS THROUGH. v27 skipped every relay item whose
+// action and values matched one sent in the last 14 days, so a second $12.50
+// toll a day later was dropped as a "duplicate". Equal values are not the same
+// transaction. The repeat check now applies only to intake (screenshot text),
+// where identical text is the same screenshot. Expense, fuel, trip, evaluate
+// and open items are always stored and pushed.
 // v27: NO DUPLICATE RELAY ITEMS. An exact repeat of a Shortcut item sent in the
 // last 14 days (same action, same validated parameters) is not stored or pushed
 // again; the reply says duplicate:true and names the first item.
@@ -496,7 +502,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '27', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '28', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -653,15 +659,19 @@ export default {
         if (!v.ok) return json({ ok: false, error: v.error }, 400, cors);
 
         const now = Date.now();
-        // v27: an exact repeat (same action, same validated parameters) of an
-        // item sent in the last RELAY_SEEN_TTL_S is not stored or pushed again,
-        // even if the app already consumed the first one. Re-running a Shortcut
-        // over screenshots already sent is the ordinary way this happens, and
+        // v27: an exact repeat of an INTAKE item sent in the last
+        // RELAY_SEEN_TTL_S is not stored or pushed again, even if the app
+        // already consumed the first one. Re-running a Shortcut over
+        // screenshots already sent is the ordinary way this happens, and
         // identical OCR text is the same screenshot. Nothing is merged: a
         // different screenshot of a similar load has different text.
-        const fp = await relayFingerprint(v.do, v.params);
-        const seen = await readRelaySeen(env, keyRec.userId);
-        const prior = seen.find(e => e.fp === fp);
+        // v28: intake only. Two expenses or fuel-ups with the same amount are
+        // two transactions, and the app's own forms still need the driver's
+        // Save tap, so every other action is always delivered.
+        const dedup = RELAY_DEDUP_ACTIONS.has(v.do);
+        const fp = dedup ? await relayFingerprint(v.do, v.params) : null;
+        const seen = dedup ? await readRelaySeen(env, keyRec.userId) : [];
+        const prior = dedup ? seen.find(e => e.fp === fp) : null;
         if (prior) {
           const items0 = await readRelay(env, keyRec.userId);
           const waiting = items0.some(i => i.id === prior.id);
@@ -672,9 +682,11 @@ export default {
         items.push({ id, do: v.do, params: v.params, createdAt: now });
         while (items.length > RELAY_MAX_ITEMS) items.shift();
         await writeRelay(env, keyRec.userId, items);
-        seen.push({ fp, id, at: now });
-        while (seen.length > RELAY_SEEN_MAX) seen.shift();
-        await env.BACKUPS.put('relayseen:' + keyRec.userId, JSON.stringify(seen), { expirationTtl: RELAY_SEEN_TTL_S });
+        if (dedup) {
+          seen.push({ fp, id, at: now });
+          while (seen.length > RELAY_SEEN_MAX) seen.shift();
+          await env.BACKUPS.put('relayseen:' + keyRec.userId, JSON.stringify(seen), { expirationTtl: RELAY_SEEN_TTL_S });
+        }
 
         const pushed = await pushToUser(env, keyRec.userId, {
           title: 'FreightLogic', body: relaySummary(v.do, v.params),
@@ -2409,6 +2421,8 @@ async function readRelay(env, userId) {
 // parameters themselves.
 const RELAY_SEEN_TTL_S = 14 * 24 * 3600;
 const RELAY_SEEN_MAX = 200;
+// v28: only screenshot text is deduplicated by content (see POST /relay).
+const RELAY_DEDUP_ACTIONS = new Set(['intake']);
 async function relayFingerprint(action, params) {
   const keys = Object.keys(params || {}).sort();
   const canon = JSON.stringify([action, keys.map(k => [k, params[k]])]);
