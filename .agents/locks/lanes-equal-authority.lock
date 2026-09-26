@@ -1,0 +1,6 @@
+owner: claude
+token: 08a27a4c-4a53-452c-8a52-822c43d3e7b0
+started_utc: 2026-09-26T02:06:20Z
+expected_release_utc: 2026-09-26T04:06:20Z
+paths: .agents/LANES.md, AGENTS.md
+task: operator 2026-09-26: give the GPT lane the same authority as Claude across the whole repo
