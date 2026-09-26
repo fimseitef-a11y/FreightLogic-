@@ -1,6 +1,0 @@
-owner: claude
-token: 5162b06d-019b-4f3a-888a-95ef9e4fb269
-started_utc: 2026-09-26T10:18:12Z
-expected_release_utc: 2026-09-26T13:18:12Z
-paths: .agents/LANES.md
-task: operator-approved bounded styles.css exception for PR #388 (v24.0.46, #386), retired on merge
