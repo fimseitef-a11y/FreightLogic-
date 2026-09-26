@@ -158,7 +158,7 @@
 
   function sanitizeText(value) {
     let text = String(value || '');
-    text = text.replace(/\bflk_[A-Za-z0-9_-]+\b/gi, '[REDACTED_TOKEN]');
+    text = text.replace(/\b(?:flk|fls)_[A-Za-z0-9_-]+\b/gi, '[REDACTED_TOKEN]');
     text = text.replace(/\b(bearer|token|admin[_ -]?token|passphrase|password|pin(?:hash)?|invite(?:code)?|claim(?:code)?|secret)\s*[:=]\s*([^\s,;]+)/gi, (_m, key) => `${key}=[REDACTED]`);
     text = text.replace(/\bAuthorization\s*:\s*Bearer\s+[^\s,;]+/gi, 'Authorization: Bearer [REDACTED]');
     return text.slice(0, 4000);
@@ -926,6 +926,9 @@
         backgroundMinutes: id === 'A6' ? gate.backgroundMinutes : undefined,
         realDevice: id === 'A6' ? gate.realDevice : undefined,
         storagePartition: id === 'A12' ? gate.storagePartition : undefined,
+        cameraCaptureOutcome: id === 'A13' ? gate.cameraCaptureOutcome : undefined,
+        clipboardImageOutcome: id === 'A13' ? gate.clipboardImageOutcome : undefined,
+        unknownDeadheadOutcome: id === 'A13' ? gate.unknownDeadheadOutcome : undefined,
         notificationTapOutcome: id === 'A14' ? gate.notificationTapOutcome : undefined,
         relayExpenseOutcome: id === 'A14' ? gate.relayExpenseOutcome : undefined,
         safariWarningOutcome: id === 'A14' ? gate.safariWarningOutcome : undefined,
