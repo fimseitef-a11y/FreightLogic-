@@ -1,8 +1,8 @@
-// Worker v29 — server reminders + HookTap delivery.
+// Worker v30 — server reminders + PushWard Live Activity delivery.
 //
 // These drive the REAL exported fetch and scheduled handlers from
 // cloud-backup-worker.js against an in-memory KV, with global fetch stubbed
-// only at the outbound boundary (HookTap). Drivers are minted through the real
+// only at the outbound boundary (PushWard). Drivers are minted through the real
 // invite/claim path.
 import { createSuite, ok, eq } from '../lib/harness.mjs';
 import path from 'node:path';
@@ -13,8 +13,7 @@ const { test, run } = createSuite('unit/worker-reminders.spec.mjs');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ADMIN = 'test-admin-token-value';
-const HOOK_TPL = 'https://hooks.example.test/w/{id}';
-const HOOK_ID = 'dcd6f546009d4bb5a96e915c';
+const PUSH_KEY = 'hlk_test_key_123456789012345678901234';
 
 function makeKV() {
   const m = new Map();
@@ -67,7 +66,7 @@ function stubFetch(status = 200) {
   const real = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+    calls.push({ url: String(url), headers: new Headers(init.headers || {}), body: init.body ? JSON.parse(init.body) : null });
     return new Response(null, { status });
   };
   return { calls, restore() { globalThis.fetch = real; } };
@@ -79,9 +78,9 @@ const post = (worker, env, token, items) => worker.fetch(REQ('/reminders', {
 
 const iso = (ms) => new Date(ms).toISOString();
 
-test('[RM-01] reminder and HookTap routes refuse a request with no driver token', async () => {
+test('[RM-01] reminder and PushWard routes refuse a request with no driver token', async () => {
   const env = newEnv(); const worker = await loadWorker();
-  for (const [m, p] of [['GET', '/reminders'], ['POST', '/reminders'], ['POST', '/hooktap'], ['POST', '/hooktap/test']]) {
+  for (const [m, p] of [['GET', '/reminders'], ['POST', '/reminders'], ['GET', '/pushward'], ['POST', '/pushward/test']]) {
     const res = await worker.fetch(REQ(p, { method: m, headers: { 'Content-Type': 'application/json' }, body: m === 'GET' ? undefined : '{}' }), env);
     ok(res.status === 401 || res.status === 403, `${m} ${p} without a token must be refused, got ${res.status}`);
   }
@@ -110,11 +109,9 @@ test('[RM-02] an upload keeps only valid reminders and names the rejected ones',
   eq(tooMany.status, 400, 'more than 50 items is refused');
 });
 
-test('[RM-03] a due reminder is sent once through HookTap, never twice', async () => {
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  const now = Date.now();
-  eq((await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env)).status, 200, 'webhook ID saved');
+test('[RM-03] a due reminder is sent once through PushWard, never twice', async () => {
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env); const now = Date.now();
   await post(worker, env, d.token, [
     { id: 'due', kind: 'pickup', at: iso(now - 60e3), title: 'Leave now for pickup', body: 'Toledo, OH' },
     { id: 'later', kind: 'delivery', at: iso(now + 3600e3), title: 'Delivery due' },
@@ -122,127 +119,101 @@ test('[RM-03] a due reminder is sent once through HookTap, never twice', async (
   const f = stubFetch(200);
   try {
     await worker.scheduled({ scheduledTime: now }, env);
-    eq(f.calls.length, 1, 'exactly one HookTap call for the one due reminder');
-    eq(f.calls[0].url, 'https://hooks.example.test/w/' + HOOK_ID, 'sent to the operator template with the driver ID');
-    eq(f.calls[0].body.title, 'Leave now for pickup', 'title carried');
+    eq(f.calls.length, 1, 'exactly one PushWard call');
+    ok(f.calls[0].url.startsWith('https://api.pushward.app/activities/freightlogic-'), 'fixed PushWard API origin');
+    eq(f.calls[0].headers.get('Authorization'), 'Bearer ' + PUSH_KEY, 'Worker secret used as bearer auth');
+    eq(f.calls[0].body.content.state, 'Leave now for pickup', 'title carried');
+    eq(f.calls[0].body.content.subtitle, 'Toledo, OH', 'minimal body carried');
+    ok(!JSON.stringify(f.calls[0].body).includes(d.userId), 'driver user id is not sent');
     await worker.scheduled({ scheduledTime: now + 5 * 60e3 }, env);
-    eq(f.calls.length, 1, 'a second run does not resend it');
+    eq(f.calls.length, 1, 'second run does not resend');
   } finally { f.restore(); }
   const got = await (await worker.fetch(REQ('/reminders', { headers: hdrs(d.token) }), env)).json();
-  ok(got.items.find(i => i.id === 'due').sentAt, 'sent reminder is marked');
-  ok(!got.items.find(i => i.id === 'later').sentAt, 'future reminder is untouched');
+  ok(got.items.find(i => i.id === 'due').sentAt, 'sent reminder marked');
+  ok(!got.items.find(i => i.id === 'later').sentAt, 'future reminder untouched');
 });
 
 test('[RM-04] a reminder more than 6h late is missed, not sent; old ones are pruned', async () => {
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  const now = Date.now();
-  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env);
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env); const now = Date.now();
   await post(worker, env, d.token, [{ id: 'late', kind: 'pickup', at: iso(now - 7 * 3600e3), title: 'Leave now' }]);
   const f = stubFetch(200);
   try {
     await worker.scheduled({ scheduledTime: now }, env);
-    eq(f.calls.length, 0, 'a stale reminder is not sent');
+    eq(f.calls.length, 0, 'stale reminder not sent');
     const got = await (await worker.fetch(REQ('/reminders', { headers: hdrs(d.token) }), env)).json();
     eq(got.items[0].missed, true, 'recorded as missed');
     await worker.scheduled({ scheduledTime: now + 25 * 3600e3 }, env);
-    eq(await env.BACKUPS.get('rem:' + d.userId), null, 'pruned a day after its time');
-    eq(await env.BACKUPS.get('rem:index'), '[]', 'driver leaves the index once nothing is left');
-    eq(f.calls.length, 0, 'still nothing sent');
+    eq(await env.BACKUPS.get('rem:' + d.userId), null, 'pruned');
+    eq(await env.BACKUPS.get('rem:index'), '[]', 'driver leaves index');
   } finally { f.restore(); }
 });
 
-test('[RM-05] re-uploading an unchanged sent reminder does not resend it; a new time does', async () => {
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  const now = Date.now();
-  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env);
+test('[RM-05] re-uploading unchanged sent reminder does not resend; a new time does', async () => {
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env); const now = Date.now();
   const item = { id: 'r1', kind: 'delivery', at: iso(now - 60e3), title: 'Delivery due' };
-  await post(worker, env, d.token, [item]);
-  const f = stubFetch(200);
+  await post(worker, env, d.token, [item]); const f = stubFetch(200);
   try {
     await worker.scheduled({ scheduledTime: now }, env);
     await post(worker, env, d.token, [item]);
     await worker.scheduled({ scheduledTime: now + 60e3 }, env);
-    eq(f.calls.length, 1, 'same id + same time is not sent again');
+    eq(f.calls.length, 1, 'same id + time not resent');
     await post(worker, env, d.token, [{ ...item, at: iso(now + 30e3) }]);
     await worker.scheduled({ scheduledTime: now + 120e3 }, env);
-    eq(f.calls.length, 2, 'a changed time is a new reminder');
+    eq(f.calls.length, 2, 'changed time is new reminder');
   } finally { f.restore(); }
 });
 
-test('[RM-06] HookTap: the ID is validated, never returned, and nothing is sent without the operator template', async () => {
-  const env = newEnv(); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  eq((await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: 'https://evil.example/x' }) }), env)).status, 400, 'a URL is not a webhook ID');
-  eq((await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env)).status, 200, 'a real ID is accepted');
-  const info = await (await worker.fetch(REQ('/hooktap', { headers: hdrs(d.token) }), env)).json();
-  eq(info.configured, true, 'configured');
-  eq(info.deliveryReady, false, 'no template, not ready');
-  ok(!JSON.stringify(info).includes(HOOK_ID), 'the ID is never returned');
+test('[RM-06] PushWard secret stays server-side and missing configuration fails closed', async () => {
+  const worker = await loadWorker(); const env = newEnv(); const d = await seedDriver(worker, env);
+  const info = await (await worker.fetch(REQ('/pushward', { headers: hdrs(d.token) }), env)).json();
+  eq(info.configured, false, 'missing secret reported without a value');
   const f = stubFetch(200);
   try {
-    const t = await worker.fetch(REQ('/hooktap/test', { method: 'POST', headers: hdrs(d.token) }), env);
-    eq(t.status, 409, 'test reports delivery not configured');
-    eq((await t.json()).status, 'delivery-not-configured', 'reason named');
-    const bad = newEnv({ HOOKTAP_URL_TEMPLATE: 'http://hooks.example.test/{id}' });
-    const d2 = await seedDriver(worker, bad);
-    await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d2.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), bad);
-    eq((await (await worker.fetch(REQ('/hooktap/test', { method: 'POST', headers: hdrs(d2.token) }), bad)).json()).status, 'delivery-not-configured', 'a non-https template is refused');
-    eq(f.calls.length, 0, 'no outbound call without a valid template');
+    const t = await worker.fetch(REQ('/pushward/test', { method: 'POST', headers: hdrs(d.token) }), env);
+    eq(t.status, 409, 'test fails closed');
+    eq((await t.json()).status, 'not-configured', 'reason named');
+    eq(f.calls.length, 0, 'no outbound request');
   } finally { f.restore(); }
-  const envOk = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL });
-  const d3 = await seedDriver(worker, envOk);
-  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d3.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), envOk);
+  const envOk = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const d2 = await seedDriver(worker, envOk);
   const g = stubFetch(200);
   try {
-    const t = await worker.fetch(REQ('/hooktap/test', { method: 'POST', headers: hdrs(d3.token) }), envOk);
-    eq(t.status, 200, 'test sends with a template');
+    const t = await worker.fetch(REQ('/pushward/test', { method: 'POST', headers: hdrs(d2.token) }), envOk);
+    const body = await t.json();
+    eq(t.status, 200, 'test sends with secret');
     eq(g.calls.length, 1, 'one outbound call');
+    eq(g.calls[0].headers.get('Authorization'), 'Bearer ' + PUSH_KEY, 'secret only on outbound auth');
+    ok(!JSON.stringify(body).includes(PUSH_KEY), 'secret absent from response');
   } finally { g.restore(); }
 });
 
 test('[RM-07] a revoked driver gets nothing, and is dropped from the index', async () => {
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  const now = Date.now();
-  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env);
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env); const now = Date.now();
   await post(worker, env, d.token, [{ id: 'r1', kind: 'custom', at: iso(now - 60e3), title: 'x' }]);
-  const del = await worker.fetch(REQ('/admin/users/' + d.userId, { method: 'DELETE', headers: { 'X-Admin-Token': ADMIN } }), env);
-  eq(del.status, 200, 'driver revoked');
+  eq((await worker.fetch(REQ('/admin/users/' + d.userId, { method: 'DELETE', headers: { 'X-Admin-Token': ADMIN } }), env)).status, 200, 'driver revoked');
   const f = stubFetch(200);
-  try {
-    await worker.scheduled({ scheduledTime: now }, env);
-    eq(f.calls.length, 0, 'nothing sent to a revoked driver');
-  } finally { f.restore(); }
-  eq(await env.BACKUPS.get('rem:' + d.userId), null, 'their reminders are deleted');
-  eq(await env.BACKUPS.get('rem:index'), '[]', 'and they leave the index');
+  try { await worker.scheduled({ scheduledTime: now }, env); eq(f.calls.length, 0, 'nothing sent'); } finally { f.restore(); }
+  eq(await env.BACKUPS.get('rem:' + d.userId), null, 'reminders deleted');
+  eq(await env.BACKUPS.get('rem:index'), '[]', 'driver removed from index');
 });
 
-test('[RM-08] the scheduled run and the routes never call KV list()', async () => {
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: HOOK_TPL }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  const now = Date.now();
-  const before = env.BACKUPS.listCalls;
+test('[RM-08] the scheduled run and routes never call KV list()', async () => {
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env); const now = Date.now(); const before = env.BACKUPS.listCalls;
   await post(worker, env, d.token, [{ id: 'r1', kind: 'custom', at: iso(now - 60e3), title: 'x' }]);
   const f = stubFetch(200);
   try { await worker.scheduled({ scheduledTime: now }, env); } finally { f.restore(); }
   await worker.fetch(REQ('/reminders', { method: 'DELETE', headers: hdrs(d.token) }), env);
-  eq(env.BACKUPS.listCalls - before, 0, 'list() is budgeted at 1,000/day on the free tier');
+  eq(env.BACKUPS.listCalls - before, 0, 'no KV list()');
 });
 
-test('[RM-09] the deploy config sends HookTap to hooks.hooktap.me with the driver ID', async () => {
+test('[RM-09] deploy config contains no PushWard or HookTap credential', async () => {
   const cfg = readFileSync(path.join(ROOT, 'scripts/wrangler.backup-worker.jsonc'), 'utf8');
-  const m = cfg.match(/"HOOKTAP_URL_TEMPLATE"\s*:\s*"([^"]+)"/);
-  ok(m, 'HOOKTAP_URL_TEMPLATE is set in scripts/wrangler.backup-worker.jsonc');
-  const env = newEnv({ HOOKTAP_URL_TEMPLATE: m[1] }); const worker = await loadWorker();
-  const d = await seedDriver(worker, env);
-  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env);
-  const f = stubFetch(200);
-  try {
-    eq((await worker.fetch(REQ('/hooktap/test', { method: 'POST', headers: hdrs(d.token) }), env)).status, 200, 'test sent');
-    eq(f.calls[0].url, 'https://hooks.hooktap.me/webhook/' + HOOK_ID, 'the address HookTap shows in its Webhooks tab');
-  } finally { f.restore(); }
+  ok(!cfg.includes('hlk_'), 'no PushWard key committed');
+  ok(!cfg.includes('HOOKTAP_URL_TEMPLATE'), 'HookTap config removed');
+  ok(!cfg.includes('hooks.hooktap.me'), 'HookTap host removed');
 });
 
 export async function runSpec() {
