@@ -97,7 +97,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `schemas/` | claude | Data/contracts. |
 | `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
-| `styles.css` | claude | **TEMPORARY 2026-09-26, operator-approved (#386):** PR #388 carries GPT's #384 commits `85daac7` + `fa55403` byte-identical for the v24.0.46 Today fix, because a CSS-only GPT PR cannot pass RG-03 without Claude-owned markers. **Returns to `gpt` when #388 merges** (delete this row; the row below then owns the path again). |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
 | `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
