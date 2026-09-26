@@ -6,6 +6,8 @@ This map reflects the post-extraction v24.1 repository. The CSS presentation sea
 
 **UI redesign takeover (2026-09-14, operator-directed).** The operator explicitly directed GPT to take over and handle the approved FreightLogic reference-image redesign. `styles.css` is therefore reassigned to `gpt` for the presentation implementation. All other non-`SHARED` paths remain `claude`; this is a targeted presentation takeover, not a blanket ownership transfer.
 
+**Issue #380 PushWard bridge takeover (2026-09-26, operator-directed).** The operator explicitly reassigned the optional third-party Live Activity bridge from HookTap to PushWard and directed GPT to own and complete the integration. Until PR #380's implementation successor merges, GPT owns exactly `cloud-backup-worker.js`, `tests/unit/worker-reminders.spec.mjs`, `scripts/wrangler.backup-worker.jsonc`, and `scripts/verify-cloudflare-parity.mjs` for this migration. The PWA + Shortcuts + first-party Web Push core remains authoritative; native iOS remains frozen. The PushWard `hlk_` credential is a Worker secret only and must never enter repository content, Airtable, logs, fixtures, or client code. This exception retires after the reviewed integration lands.
+
 **Field certification runner exception (2026-09-17, operator-approved).** The operator approved a bounded physical-device certification companion so A1-A12 can be executed on the real iPhone with structured evidence instead of ad-hoc notes. The runner is isolated from `app.js` and the service worker: GPT owns only `field-certification.html`, `field-certification.js`, and `tests/integration/field-certification-runner.spec.mjs`. The one-time `tests/run-all.mjs` registration grant was consumed by PR #227 and is retired; `tests/run-all.mjs` again inherits the `tests/` Claude ownership so RH-01 cannot deadlock future Claude regressions. The runner may record device-observed evidence and auto-observable browser facts, but it may never auto-promote a hardware-only step to PASS without explicit observation. This exception does not transfer any other `tests/` path or runtime/core ownership.
 
 `SHARED` paths — `app.js`, `index.html`, `service-worker.js`, `sw-bridge.js`, `modern-shell.js`, `manifest.json`, `.agents/`, `AGENTS.md`, `.gitignore`, `.assetsignore` — stay SHARED and still require a held lock, because that serialization protects against concurrent sessions, not just different agents. Commit-prefix discipline, the full-suite gate and release-marker discipline are unchanged. A path with no row still fails closed.
@@ -45,7 +47,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `cloud-backup-worker.js` | claude | Worker source. The temporary v19 legacy plaintext-token cleanup exception is retired; preserve PR #210 zero-token onboarding. |
+| `cloud-backup-worker.js` | gpt | Temporary Issue #380 operator-directed PushWard bridge takeover; retires after the reviewed integration lands. Preserve PR #210 zero-token onboarding. |
+| `tests/unit/worker-reminders.spec.mjs` | gpt | Temporary Issue #380 PushWard regression exception only. |
+| `scripts/wrangler.backup-worker.jsonc` | gpt | Temporary Issue #380 deploy-config exception; secrets remain out of repository config. |
+| `scripts/verify-cloudflare-parity.mjs` | gpt | Temporary Issue #380 Worker-version parity marker exception. |
 | `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `voice-load.js` | claude | Voice input module; carries a governed header version marker. |

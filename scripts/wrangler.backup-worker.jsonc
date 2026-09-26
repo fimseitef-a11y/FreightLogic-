@@ -86,11 +86,7 @@
     // `Access-Control-Allow-Origin: *` — which PROVES this var is currently
     // unset in production. Setting it is part of the v14 repair, not an
     // incidental config change.
-    "ALLOWED_ORIGIN": "https://freightlogic-admin-console.fimseitef.workers.dev",
-
-    // v29: HookTap delivery address (operator-supplied 2026-09-26). {id} is
-    // each driver's own webhook ID, stored per driver in KV, never here.
-    "HOOKTAP_URL_TEMPLATE": "https://hooks.hooktap.me/webhook/{id}"
+    "ALLOWED_ORIGIN": "https://freightlogic-admin-console.fimseitef.workers.dev"
 
     // VISION_PROVIDER / VISION_MODEL are intentionally omitted: the Worker
     // already defaults to `workers-ai` + Moondream 3.1, and pinning either here
@@ -105,6 +101,7 @@
   // SECRETS ARE NOT IN THIS FILE AND MUST NOT BE ADDED TO IT.
   //   ADMIN_TOKEN     — admin endpoint auth
   //   OPENAI_API_KEY  — /evaluate and /extract
+  //   PUSHWARD_INTEGRATION_KEY — optional PushWard Live Activity bridge (Worker v30)
   // Optional, only if VISION_PROVIDER is switched away from the default
   // `workers-ai` (which needs no secret, just the `ai` binding above):
   //   GEMINI_API_KEY    — /extract-image via Gemini
