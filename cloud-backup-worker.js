@@ -1,10 +1,14 @@
-// FreightLogic Cloud Backup Worker v29 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Health
+// FreightLogic Cloud Backup Worker v30 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Health
+// v30: PUSHWARD LIVE ACTIVITY BRIDGE (operator-approved 2026-09-26). PushWard
+// replaces HookTap for the optional iPhone Lock Screen / Dynamic Island layer.
+// The integration key is read only from PUSHWARD_INTEGRATION_KEY, a Worker
+// secret; it is never returned, logged, stored in KV, or sent to the client.
+// Due reminders still go through first-party Web Push and additionally update
+// a minimal PushWard generic Live Activity when the secret is configured.
 // v29: SERVER REMINDERS (operator-approved 2026-09-26). The app uploads a small
 // reminder list (time, kind, short title/body; never pay, broker or history)
-// to POST /reminders, and a cron trigger sends each one once when it is due,
-// through Web Push and, if the driver saved a HookTap webhook ID, through
-// HookTap. A reminder more than 6h late is recorded as missed, not sent.
-// HookTap delivery stays off until the operator sets HOOKTAP_URL_TEMPLATE.
+// to POST /reminders, and a cron trigger sends each one once when it is due.
+// A reminder more than 6h late is recorded as missed, not sent.
 // v28: A REAL REPEAT EXPENSE GETS THROUGH. v27 skipped every relay item whose
 // action and values matched one sent in the last 14 days, so a second $12.50
 // toll a day later was dropped as a "duplicate". Equal values are not the same
@@ -508,7 +512,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '29', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '30', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -905,8 +909,7 @@ export default {
       if (path === '/reminders') {
         if (request.method === 'GET') {
           const items = await readReminders(env, driverUserId);
-          const hook = await readHookTap(env, driverUserId);
-          return json({ ok: true, items, hooktap: !!hook }, 200, cors);
+          return json({ ok: true, items, pushward: pushWardConfigured(env) }, 200, cors);
         }
         if (request.method === 'POST') {
           if (await checkRateLimit(env, driverUserId, 60, 'rem')) {
@@ -938,37 +941,18 @@ export default {
         }
       }
 
-      // ── v29: HookTap (third-party iPhone app) delivery ─────────────────────
-      // The driver's HookTap webhook ID can send notifications to their phone,
-      // so it is stored only here, per driver, and is never returned.
-      if (path === '/hooktap') {
-        if (request.method === 'GET') {
-          const hook = await readHookTap(env, driverUserId);
-          return json({ ok: true, configured: !!hook, deliveryReady: !!hookTapUrl(env, 'x'), createdAt: hook ? hook.createdAt : null }, 200, cors);
-        }
-        if (request.method === 'DELETE') {
-          await env.BACKUPS.delete('hooktap:' + driverUserId);
-          return json({ ok: true }, 200, cors);
-        }
-        if (request.method === 'POST') {
-          if (await checkRateLimit(env, driverUserId, 10, 'hooktap')) {
-            return json({ ok: false, error: 'Too many HookTap changes this hour.' }, 429, cors);
-          }
-          const body = await request.json().catch(() => ({}));
-          const id = String(body.webhookId || '').trim();
-          if (!HOOKTAP_ID_RE.test(id)) {
-            return json({ ok: false, error: 'That does not look like a HookTap webhook ID.' }, 400, cors);
-          }
-          await env.BACKUPS.put('hooktap:' + driverUserId, JSON.stringify({ id, createdAt: new Date().toISOString() }));
-          return json({ ok: true, configured: true, deliveryReady: !!hookTapUrl(env, id) }, 200, cors);
-        }
+      // ── v30: PushWard Live Activity bridge ────────────────────────────────
+      // PushWard is optional. The integration key is a Worker secret and is
+      // never accepted from or returned to a driver.
+      if (request.method === 'GET' && path === '/pushward') {
+        return json({ ok: true, configured: pushWardConfigured(env) }, 200, cors);
       }
-      if (request.method === 'POST' && path === '/hooktap/test') {
-        if (await checkRateLimit(env, driverUserId, 10, 'hooktaptest')) {
-          return json({ ok: false, error: 'Too many test notifications. Try again later.' }, 429, cors);
+      if (request.method === 'POST' && path === '/pushward/test') {
+        if (await checkRateLimit(env, driverUserId, 10, 'pushwardtest')) {
+          return json({ ok: false, error: 'Too many test Live Activities. Try again later.' }, 429, cors);
         }
-        const r = await hookTapSend(env, driverUserId, {
-          title: 'FreightLogic', body: 'HookTap notifications are working.', kind: 'test',
+        const r = await pushWardSend(env, driverUserId, {
+          title: 'FreightLogic', body: 'PushWard Live Activities are working.', kind: 'test',
         });
         return json({ ok: r.status === 'sent', ...r }, r.status === 'sent' ? 200 : 409, cors);
       }
@@ -2536,7 +2520,7 @@ async function writeRelay(env, userId, items) {
 const SHORTCUT_KEY_RE = /^fls_[a-f0-9]{48}$/;
 const RELAY_ID_RE = /^rl_[0-9a-z]{8,40}$/;
 
-// ─── v29: server reminders + HookTap ─────────────────────────────────────────
+// ─── v30: server reminders + PushWard ────────────────────────────────────────
 //
 // The scheduled handler reads ONE index key (`rem:index`, the drivers who have
 // reminders), then each listed driver's `rem:<userId>`. It never calls
@@ -2554,7 +2538,6 @@ const REMINDER_LATE_MS = 6 * 3600 * 1000;
 const REMINDER_KEEP_MS = 24 * 3600 * 1000;
 const REMINDER_HORIZON_MS = 60 * 24 * 3600 * 1000;
 const REMINDER_INDEX_MAX = 1000;
-const HOOKTAP_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
 function reminderText(v, max) {
   if (typeof v !== 'string') return '';
@@ -2605,36 +2588,41 @@ async function writeReminders(env, userId, items) {
   }
 }
 
-async function readHookTap(env, userId) {
-  try { const v = JSON.parse(await env.BACKUPS.get('hooktap:' + userId) || 'null'); return v && HOOKTAP_ID_RE.test(v.id || '') ? v : null; }
-  catch { return null; }
+function pushWardConfigured(env) {
+  return /^hlk_[A-Za-z0-9_-]{20,}$/.test(String(env.PUSHWARD_INTEGRATION_KEY || ''));
 }
 
-/** The HookTap delivery URL for a webhook ID, or null when delivery is not
- *  configured. The template comes only from the operator (HOOKTAP_URL_TEMPLATE,
- *  containing `{id}`), never from a driver, so no request can point this
- *  Worker at an arbitrary host. It must be plain https with no credentials or
- *  port. */
-function hookTapUrl(env, id) {
-  const tpl = String(env.HOOKTAP_URL_TEMPLATE || '');
-  if (!tpl.includes('{id}')) return null;
-  let u;
-  try { u = new URL(tpl.replace('{id}', encodeURIComponent(id))); } catch { return null; }
-  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
-  return u.href;
+async function pushWardSlug(userId) {
+  const bytes = new TextEncoder().encode(String(userId));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return 'freightlogic-' + Array.from(digest.slice(0, 8), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Send one notification through the driver's HookTap webhook. */
-async function hookTapSend(env, userId, msg) {
-  const hook = await readHookTap(env, userId);
-  if (!hook) return { status: 'not-configured' };
-  const url = hookTapUrl(env, hook.id);
-  if (!url) return { status: 'delivery-not-configured' };
+function pushWardIcon(kind) {
+  if (kind === 'pickup') return 'shippingbox.fill';
+  if (kind === 'delivery') return 'location.fill';
+  if (kind === 'unpaid') return 'dollarsign.circle.fill';
+  if (kind === 'backup') return 'icloud.and.arrow.up.fill';
+  if (kind === 'brief') return 'list.bullet.clipboard.fill';
+  return 'bell.fill';
+}
+
+/** Update one minimal PushWard Live Activity. The bearer key is a Worker
+ * secret only. No broker, pay, freight history, user id, or relay parameters
+ * are sent. PushWard is additive: a failure never blocks first-party Web Push. */
+async function pushWardSend(env, userId, msg) {
+  const key = String(env.PUSHWARD_INTEGRATION_KEY || '');
+  if (!pushWardConfigured(env)) return { status: 'not-configured' };
+  const slug = await pushWardSlug(userId);
+  const state = reminderText(msg.title || 'FreightLogic', 80);
+  const subtitle = reminderText(msg.body || '', 120);
+  const content = { template: 'generic', state, icon: pushWardIcon(msg.kind), accent_color: 'blue' };
+  if (subtitle) content.subtitle = subtitle;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: msg.title, body: msg.body || '', message: msg.body || '', source: 'FreightLogic', kind: msg.kind || 'custom' }),
+    const res = await fetch('https://api.pushward.app/activities/' + encodeURIComponent(slug) + '?upsert=true', {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/merge-patch+json' },
+      body: JSON.stringify({ state: 'ongoing', priority: 5, stale_ttl: 3600, dismissal_ttl: 3600, content }),
     });
     return res.ok ? { status: 'sent' } : { status: 'failed', http: res.status };
   } catch {
@@ -2643,7 +2631,7 @@ async function hookTapSend(env, userId, msg) {
 }
 
 /** The scheduled handler's work: send every due reminder once, through Web
- *  Push and HookTap, and prune old ones. Returns counts for tests and logs. */
+ *  Push and PushWard, and prune old ones. Returns counts for tests and logs. */
 async function runDueReminders(env, now) {
   const out = { drivers: 0, sent: 0, missed: 0, pruned: 0 };
   const index = await readReminderIndex(env);
@@ -2664,7 +2652,7 @@ async function runDueReminders(env, now) {
           it.sentAt = new Date(now).toISOString(); it.missed = true; out.missed++;
         } else {
           await pushToUser(env, userId, { title: it.title, body: it.body, url: it.url, tag: 'rem-' + it.id }, { urgency: 'high' });
-          await hookTapSend(env, userId, { title: it.title, body: it.body, kind: it.kind });
+          await pushWardSend(env, userId, { title: it.title, body: it.body, kind: it.kind });
           it.sentAt = new Date(now).toISOString(); out.sent++;
         }
         changed = true;
