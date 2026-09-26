@@ -96,6 +96,7 @@ import { runSpec as adminConsole } from './integration/admin-console.spec.mjs';
 import { runSpec as driverGlancePreferences } from './integration/driver-glance-preferences.spec.mjs';
 import { runSpec as tripDeleteSafety } from './integration/trip-delete-safety.spec.mjs';
 import { runSpec as workerWebPush } from './unit/worker-web-push.spec.mjs';
+import { runSpec as workerReminders } from './unit/worker-reminders.spec.mjs';
 import { runSpec as swPush } from './unit/sw-push.spec.mjs';
 import { runSpec as shortcutsDeepLinks } from './integration/shortcuts-deep-links.spec.mjs';
 import { runSpec as nextMoveS1 } from './integration/next-move-s1.spec.mjs';
@@ -132,6 +133,7 @@ const specs = [
   workerInviteClaim,
   workerVisionExtract,
   workerWebPush,
+  workerReminders,
   swPush,
   visionBenchmark,
   liveInviteClaimGate,

@@ -4921,7 +4921,7 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ## v24.0.44 "Say What Is Missing" — the operator's first screenshot through v24.0.43
 
-App **24.0.43 → 24.0.44**. `DB_VERSION` stays **16** and the Worker stays **v28**: app-only,
+App **24.0.43 → 24.0.44**. `DB_VERSION` stays **16** and the Worker stays **v29** (merged in #375 while this was in review): app-only,
 **do not redeploy the Worker**.
 
 **Reported from a real iPhone (2026-09-26).** A DispatchLand screenshot (Atlanta, GA → Americus, GA,
@@ -4991,6 +4991,38 @@ still imports. It never deduplicates on the order # alone.
 
 **Not claimed:** the operator's already-imported dirty database is not repaired by this. Those
 records have to be deleted and re-imported, or corrected by hand.
+
+---
+
+## Worker v29 "Remind Me" — server reminders + HookTap (source-only)
+
+Worker **v28 → v29**. The app stays **24.0.43** and `DB_VERSION` stays **16**: no app byte changed.
+Operator-approved 2026-09-26: the installed PWA cannot run in the background, so the server does
+the timing.
+
+- `GET` / `POST` / `DELETE /reminders` (driver auth). The app uploads its whole reminder list
+  (at most 50: `id`, `at`, `kind` ∈ pickup/delivery/unpaid/backup/brief/custom, `title` ≤ 80,
+  `body` ≤ 160, `url` from a fixed set of app hashes). An invalid item is rejected and named,
+  never clamped. Stored in `rem:<userId>`; `rem:index` lists drivers with reminders. The operator
+  approved storing this list unencrypted; it must never carry pay, broker or history.
+- A **cron trigger every 5 minutes** (`triggers.crons` in `scripts/wrangler.backup-worker.jsonc`)
+  runs `scheduled()` → `runDueReminders()`: each due reminder is sent **once** through Web Push
+  and, if configured, HookTap. More than 6 h late is recorded as missed, not sent; items are
+  pruned a day after their time; a revoked driver's list is deleted. No KV `list()`.
+- `GET` / `POST` / `DELETE /hooktap`, `POST /hooktap/test` (driver auth). The driver's HookTap
+  webhook ID is stored in `hooktap:<userId>` and never returned. **Delivery is off until the
+  operator sets `HOOKTAP_URL_TEMPLATE`** (https, containing `{id}`); the host comes only from the
+  operator, so a driver cannot point the Worker at an arbitrary URL. The template is not set yet
+  because HookTap's send format has not been confirmed. HookTap's Live Activity / Dynamic Island
+  is a paid HookTap Premium feature.
+
+**Tests.** `tests/unit/worker-reminders.spec.mjs` (RM-01..08, new, registered). Negative
+controls: resending on every run fails RM-03/05; allowing a non-https template fails RM-06.
+Full suite **887/0 across 87 specs**.
+
+**Not yet built:** the app side (building the reminder list from trips and a Settings field for
+the HookTap ID) needs `lock/app-js`, held by another session at the time of writing.
+**Not deployed.**
 
 ---
 

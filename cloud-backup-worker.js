@@ -1,4 +1,10 @@
-// FreightLogic Cloud Backup Worker v28 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Health
+// FreightLogic Cloud Backup Worker v29 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Health
+// v29: SERVER REMINDERS (operator-approved 2026-09-26). The app uploads a small
+// reminder list (time, kind, short title/body; never pay, broker or history)
+// to POST /reminders, and a cron trigger sends each one once when it is due,
+// through Web Push and, if the driver saved a HookTap webhook ID, through
+// HookTap. A reminder more than 6h late is recorded as missed, not sent.
+// HookTap delivery stays off until the operator sets HOOKTAP_URL_TEMPLATE.
 // v28: A REAL REPEAT EXPENSE GETS THROUGH. v27 skipped every relay item whose
 // action and values matched one sent in the last 14 days, so a second $12.50
 // toll a day later was dropped as a "duplicate". Equal values are not the same
@@ -502,7 +508,7 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '28', ts: new Date().toISOString() }, 200, cors);
+        return json({ ok: true, version: '29', ts: new Date().toISOString() }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -891,6 +897,82 @@ export default {
         return json({ ok: true, removed: items.length - kept.length }, 200, cors);
       }
 
+      // ── v29: server reminders (sent by the scheduled handler) ──────────────
+      // The app uploads its whole reminder list; this replaces what was there.
+      // Backups are encrypted with the driver's passphrase and stay unreadable
+      // here, so a reminder carries only what it needs to be shown: a time, a
+      // kind, a short title and body. Never pay, broker or history.
+      if (path === '/reminders') {
+        if (request.method === 'GET') {
+          const items = await readReminders(env, driverUserId);
+          const hook = await readHookTap(env, driverUserId);
+          return json({ ok: true, items, hooktap: !!hook }, 200, cors);
+        }
+        if (request.method === 'POST') {
+          if (await checkRateLimit(env, driverUserId, 60, 'rem')) {
+            return json({ ok: false, error: 'Too many reminder updates this hour.' }, 429, cors);
+          }
+          const body = await request.json().catch(() => null);
+          const raw = body && Array.isArray(body.items) ? body.items : null;
+          if (!raw || raw.length > REMINDER_MAX_ITEMS) {
+            return json({ ok: false, error: `Send items as a list of at most ${REMINDER_MAX_ITEMS}.` }, 400, cors);
+          }
+          const now = Date.now();
+          const prev = await readReminders(env, driverUserId);
+          const items = [];
+          const rejected = [];
+          for (const r of raw) {
+            const v = validateReminder(r, now);
+            if (!v) { rejected.push(r && typeof r.id === 'string' ? r.id.slice(0, 40) : null); continue; }
+            // An unchanged reminder that already went out is not sent again.
+            const old = prev.find(p => p.id === v.id && p.at === v.at);
+            if (old && old.sentAt) v.sentAt = old.sentAt;
+            items.push(v);
+          }
+          await writeReminders(env, driverUserId, items);
+          return json({ ok: true, stored: items.length, rejected }, 200, cors);
+        }
+        if (request.method === 'DELETE') {
+          await writeReminders(env, driverUserId, []);
+          return json({ ok: true }, 200, cors);
+        }
+      }
+
+      // ── v29: HookTap (third-party iPhone app) delivery ─────────────────────
+      // The driver's HookTap webhook ID can send notifications to their phone,
+      // so it is stored only here, per driver, and is never returned.
+      if (path === '/hooktap') {
+        if (request.method === 'GET') {
+          const hook = await readHookTap(env, driverUserId);
+          return json({ ok: true, configured: !!hook, deliveryReady: !!hookTapUrl(env, 'x'), createdAt: hook ? hook.createdAt : null }, 200, cors);
+        }
+        if (request.method === 'DELETE') {
+          await env.BACKUPS.delete('hooktap:' + driverUserId);
+          return json({ ok: true }, 200, cors);
+        }
+        if (request.method === 'POST') {
+          if (await checkRateLimit(env, driverUserId, 10, 'hooktap')) {
+            return json({ ok: false, error: 'Too many HookTap changes this hour.' }, 429, cors);
+          }
+          const body = await request.json().catch(() => ({}));
+          const id = String(body.webhookId || '').trim();
+          if (!HOOKTAP_ID_RE.test(id)) {
+            return json({ ok: false, error: 'That does not look like a HookTap webhook ID.' }, 400, cors);
+          }
+          await env.BACKUPS.put('hooktap:' + driverUserId, JSON.stringify({ id, createdAt: new Date().toISOString() }));
+          return json({ ok: true, configured: true, deliveryReady: !!hookTapUrl(env, id) }, 200, cors);
+        }
+      }
+      if (request.method === 'POST' && path === '/hooktap/test') {
+        if (await checkRateLimit(env, driverUserId, 10, 'hooktaptest')) {
+          return json({ ok: false, error: 'Too many test notifications. Try again later.' }, 429, cors);
+        }
+        const r = await hookTapSend(env, driverUserId, {
+          title: 'FreightLogic', body: 'HookTap notifications are working.', kind: 'test',
+        });
+        return json({ ok: r.status === 'sent', ...r }, r.status === 'sent' ? 200 : 409, cors);
+      }
+
       // POST /evaluate — AI load analysis via OpenAI
       if (request.method === 'POST' && path === '/evaluate') {
         // Rate limit: 100 requests per hour per user (hourly window = far fewer KV writes than per-minute)
@@ -1270,6 +1352,16 @@ export default {
     } catch (err) {
       console.error('[FL] Worker error:', err);
       return json({ ok: false, error: 'Server error' }, 500, cors);
+    }
+  },
+
+  // v29: cron trigger (scripts/wrangler.backup-worker.jsonc `triggers.crons`).
+  async scheduled(event, env) {
+    try {
+      const r = await runDueReminders(env, Number(event && event.scheduledTime) || Date.now());
+      if (r.sent || r.missed) console.log('[FL] reminders', JSON.stringify(r));
+    } catch (err) {
+      console.error('[FL] reminder run failed:', err);
     }
   }
 };
@@ -2443,6 +2535,161 @@ async function writeRelay(env, userId, items) {
 
 const SHORTCUT_KEY_RE = /^fls_[a-f0-9]{48}$/;
 const RELAY_ID_RE = /^rl_[0-9a-z]{8,40}$/;
+
+// ─── v29: server reminders + HookTap ─────────────────────────────────────────
+//
+// The scheduled handler reads ONE index key (`rem:index`, the drivers who have
+// reminders), then each listed driver's `rem:<userId>`. It never calls
+// KV list(), which is budgeted at 1,000/day on the free tier, and it writes
+// only when something was sent or pruned.
+
+const REMINDER_MAX_ITEMS = 50;
+const REMINDER_KINDS = new Set(['pickup', 'delivery', 'unpaid', 'backup', 'brief', 'custom']);
+const REMINDER_URLS = new Set(['./#home', './#trips', './#money', './#omega', './#loads', './#insights', './#more']);
+const REMINDER_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+// A reminder more than this late is recorded as missed, not sent: a
+// "leave now for pickup" six hours after the fact is noise, not help.
+const REMINDER_LATE_MS = 6 * 3600 * 1000;
+// Sent or missed reminders are dropped a day after their time.
+const REMINDER_KEEP_MS = 24 * 3600 * 1000;
+const REMINDER_HORIZON_MS = 60 * 24 * 3600 * 1000;
+const REMINDER_INDEX_MAX = 1000;
+const HOOKTAP_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+function reminderText(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** One reminder, validated. Anything unrecognised makes the item invalid;
+ *  nothing is clamped into range. */
+function validateReminder(r, now) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const id = String(r.id || '');
+  if (!REMINDER_ID_RE.test(id)) return null;
+  const kind = String(r.kind || '');
+  if (!REMINDER_KINDS.has(kind)) return null;
+  const atMs = Date.parse(String(r.at || ''));
+  if (!Number.isFinite(atMs) || atMs < now - REMINDER_KEEP_MS || atMs > now + REMINDER_HORIZON_MS) return null;
+  const title = reminderText(r.title, 80);
+  const body = reminderText(r.body, 160);
+  if (!title) return null;
+  const url = r.url == null ? './#home' : String(r.url);
+  if (!REMINDER_URLS.has(url)) return null;
+  return { id, kind, at: new Date(atMs).toISOString(), title, body, url };
+}
+
+async function readReminders(env, userId) {
+  try { const v = JSON.parse(await env.BACKUPS.get('rem:' + userId) || '[]'); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+
+async function readReminderIndex(env) {
+  try { const v = JSON.parse(await env.BACKUPS.get('rem:index') || '[]'); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+
+async function writeReminders(env, userId, items) {
+  const index = await readReminderIndex(env);
+  const listed = index.includes(userId);
+  if (!items.length) {
+    await env.BACKUPS.delete('rem:' + userId);
+    if (listed) await env.BACKUPS.put('rem:index', JSON.stringify(index.filter(u => u !== userId)));
+    return;
+  }
+  await env.BACKUPS.put('rem:' + userId, JSON.stringify(items));
+  if (!listed) {
+    index.push(userId);
+    while (index.length > REMINDER_INDEX_MAX) index.shift();
+    await env.BACKUPS.put('rem:index', JSON.stringify(index));
+  }
+}
+
+async function readHookTap(env, userId) {
+  try { const v = JSON.parse(await env.BACKUPS.get('hooktap:' + userId) || 'null'); return v && HOOKTAP_ID_RE.test(v.id || '') ? v : null; }
+  catch { return null; }
+}
+
+/** The HookTap delivery URL for a webhook ID, or null when delivery is not
+ *  configured. The template comes only from the operator (HOOKTAP_URL_TEMPLATE,
+ *  containing `{id}`), never from a driver, so no request can point this
+ *  Worker at an arbitrary host. It must be plain https with no credentials or
+ *  port. */
+function hookTapUrl(env, id) {
+  const tpl = String(env.HOOKTAP_URL_TEMPLATE || '');
+  if (!tpl.includes('{id}')) return null;
+  let u;
+  try { u = new URL(tpl.replace('{id}', encodeURIComponent(id))); } catch { return null; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  return u.href;
+}
+
+/** Send one notification through the driver's HookTap webhook. */
+async function hookTapSend(env, userId, msg) {
+  const hook = await readHookTap(env, userId);
+  if (!hook) return { status: 'not-configured' };
+  const url = hookTapUrl(env, hook.id);
+  if (!url) return { status: 'delivery-not-configured' };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: msg.title, body: msg.body || '', message: msg.body || '', source: 'FreightLogic', kind: msg.kind || 'custom' }),
+    });
+    return res.ok ? { status: 'sent' } : { status: 'failed', http: res.status };
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
+/** The scheduled handler's work: send every due reminder once, through Web
+ *  Push and HookTap, and prune old ones. Returns counts for tests and logs. */
+async function runDueReminders(env, now) {
+  const out = { drivers: 0, sent: 0, missed: 0, pruned: 0 };
+  const index = await readReminderIndex(env);
+  const dropped = new Set();
+  for (const userId of index) {
+    const userRaw = await env.BACKUPS.get('user:' + userId);
+    let user = null;
+    try { user = userRaw ? JSON.parse(userRaw) : null; } catch { user = null; }
+    if (!user || user.active === false) { await env.BACKUPS.delete('rem:' + userId); dropped.add(userId); continue; }
+    const items = await readReminders(env, userId);
+    let changed = false;
+    const next = [];
+    for (const it of items) {
+      const at = Date.parse(it.at);
+      if (!Number.isFinite(at) || at < now - REMINDER_KEEP_MS) { out.pruned++; changed = true; continue; }
+      if (!it.sentAt && at <= now) {
+        if (now - at > REMINDER_LATE_MS) {
+          it.sentAt = new Date(now).toISOString(); it.missed = true; out.missed++;
+        } else {
+          await pushToUser(env, userId, { title: it.title, body: it.body, url: it.url, tag: 'rem-' + it.id }, { urgency: 'high' });
+          await hookTapSend(env, userId, { title: it.title, body: it.body, kind: it.kind });
+          it.sentAt = new Date(now).toISOString(); out.sent++;
+        }
+        changed = true;
+      }
+      next.push(it);
+    }
+    out.drivers++;
+    if (changed) {
+      if (next.length) await env.BACKUPS.put('rem:' + userId, JSON.stringify(next));
+      else await env.BACKUPS.delete('rem:' + userId);
+    }
+    if (!next.length) dropped.add(userId);
+  }
+  if (dropped.size) {
+    // Re-read rather than write back the snapshot: a driver who uploaded
+    // reminders while this run was going must not be dropped from the index.
+    const current = await readReminderIndex(env);
+    const remove = new Set();
+    for (const u of dropped) {
+      if (!(await env.BACKUPS.get('rem:' + u))) remove.add(u);
+    }
+    if (remove.size) await env.BACKUPS.put('rem:index', JSON.stringify(current.filter(u => !remove.has(u))));
+  }
+  return out;
+}
 
 // ─── Response helper ──────────────────────────────────────────────────────────
 

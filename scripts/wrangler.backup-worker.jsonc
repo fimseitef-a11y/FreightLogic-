@@ -39,6 +39,12 @@
   // that is exactly what makes the root config unsafe here.
   "workers_dev": true,
 
+  // v29: server reminders. Every 5 minutes; the free plan allows up to 3 cron
+  // triggers per Worker and bills each run as one ordinary invocation.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
   // `env.AI` — Workers AI, the DEFAULT vision provider for POST /extract-image
   // (Issue #252, Worker v21). Without this binding that endpoint is not broken,
   // it is INERT: the adapter's needs() check reports 501 "Workers AI binding (AI)
