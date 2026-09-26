@@ -1,0 +1,1 @@
+Operator-directed completion takeover is being formalized through PR on main; no core runtime ownership changes are requested.
