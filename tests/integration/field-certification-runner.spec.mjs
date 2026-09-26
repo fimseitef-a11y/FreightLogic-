@@ -562,9 +562,12 @@ test('[FIELD CERT / NEGATIVE] FC-18 A14 Shortcut-key-shaped evidence is redacted
     await startCertification(page);
     await startGate(page, 'A14');
     const row = gate(page, 'A14');
-    const secret = 'flk_SHORTCUT_SECRET_123';
-    await row.locator('[data-operator-observation]').fill(`Shortcut key token=${secret}; physical behavior observed.`);
-    await row.locator('[data-reason]').fill(`blocked token=${secret}`);
+    // Real Shortcut keys use the fls_ prefix. Keep the value bare (no
+    // "token=" label) so this proves prefix-shaped redaction itself rather
+    // than passing through the generic labelled-secret scrubber.
+    const secret = 'fls_SHORTCUT_SECRET_123';
+    await row.locator('[data-operator-observation]').fill(`Physical behavior observed with ${secret} on device.`);
+    await row.locator('[data-reason]').fill(`blocked after observing ${secret}`);
     await row.locator('[data-action="block"]').click();
     const stored = await page.evaluate(key => localStorage.getItem(key) || '', STORE_KEY);
     eq(stored.includes(secret), false, 'A14 must never persist the Shortcut key value');
