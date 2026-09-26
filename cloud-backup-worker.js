@@ -2607,7 +2607,7 @@ function pushWardIcon(kind) {
   return 'bell.fill';
 }
 
-/** Update one minimal PushWard Live Activity. The bearer key is a Worker
+/** Update one minimal PushWard alert Live Activity. The bearer key is a Worker
  * secret only. No broker, pay, freight history, user id, or relay parameters
  * are sent. PushWard is additive: a failure never blocks first-party Web Push. */
 async function pushWardSend(env, userId, msg) {
@@ -2616,7 +2616,7 @@ async function pushWardSend(env, userId, msg) {
   const slug = await pushWardSlug(userId);
   const state = reminderText(msg.title || 'FreightLogic', 80);
   const subtitle = reminderText(msg.body || '', 120);
-  const content = { template: 'generic', state, icon: pushWardIcon(msg.kind), accent_color: 'blue' };
+  const content = { template: 'alert', state, icon: pushWardIcon(msg.kind), accent_color: 'blue' };
   if (subtitle) content.subtitle = subtitle;
   try {
     const res = await fetch('https://api.pushward.app/activities/' + encodeURIComponent(slug) + '?upsert=true', {
