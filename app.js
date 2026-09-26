@@ -5,7 +5,8 @@
  *  v24.0.44 "Say What Is Missing" (operator iPhone report): a screenshot date
  *    with a misread year (DispatchLand shows none) takes the year that puts it
  *    near today; the evaluator's Pay/Loaded/Deadhead placeholders are labels,
- *    not numbers that read as data; a load scored without pay names the pay.
+ *    not numbers that read as data; a quote posting with no pay shows the
+ *    canonical bid targets for its total miles instead of a dead end.
  *  v24.0.43 "Read What Is There": trip CSV/XLSX import reads US, month-name and
  *    Excel-serial dates instead of dating an unreadable row today (such a row is
  *    skipped and named); a blank pay or loaded-miles cell flags the trip for
@@ -11917,6 +11918,21 @@ async function mwEvaluateLoad(){
   if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){
     // v24.0.44: name what is missing. A screenshot without the pay used to leave
     // a generic line under a grey "420" placeholder that read like a real value.
+    // v24.0.44: a DispatchLand "NEW QUOTE" is an auction and posts no pay; the
+    // driver sets it. With both mile figures known, show the canonical bid
+    // targets (deriveUnifiedBid depends on miles only) and no verdict or grade,
+    // since there is no rate to judge. Nothing here invents a revenue.
+    const loadedOk = !(loadedMi === null || loadedMi <= 0 || loadedMi > 300000);
+    if (!revenue && loadedOk && deadMi !== null && deadMi >= 0 && deadMi <= 300000){
+      const quoteMi = loadedMi + deadMi;
+      const qb = deriveUnifiedBid(quoteMi, { urgencyBoost: urgency.boost });
+      out.innerHTML = `<div class="card" data-eval-quote style="padding:14px">
+        <div style="font-weight:800;font-size:15px">No pay posted — what to bid</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(String(loadedMi))} loaded + ${escapeHtml(String(deadMi))} deadhead = ${escapeHtml(String(quoteMi))} miles. No grade or verdict until there is a rate: enter the pay you are offered (or your bid) to score it.</div>
+        ${bidRangeHTML(qb.range)}
+      </div>`;
+      return;
+    }
     const missing = [];
     if (!revenue) missing.push('the pay (Revenue)');
     if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000) missing.push('loaded miles');

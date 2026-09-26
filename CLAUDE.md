@@ -4930,8 +4930,12 @@ miles and revenue." Three defects:
 - **The evaluator placeholders looked like data.** `#mwRevenue` showed a grey `420` (and loaded/deadhead
   `185`/`22`), so an empty revenue box read as a filled one. They are now `Pay $` / `Loaded mi` /
   `Deadhead mi`, and the intake dimensions placeholder is `L × W × H (inches)`, not `48x40x36 in`.
-- **The message did not say what was missing.** It now names it: "Enter the pay (Revenue) to score
-  this load."
+- **The posting was a DispatchLand "NEW QUOTE" (an auction), so there was no pay to read.** When the
+  pay is blank but loaded and deadhead miles are known, the evaluator now shows **"No pay posted —
+  what to bid"** with the canonical bid targets for the total miles (`deriveUnifiedBid`, which
+  depends on miles only: $1.40 / $1.60 / $1.75 / $2.00 per true mile) and no verdict or grade, since
+  there is no rate to judge. Nothing invents a revenue. When a mile figure is also missing, the message
+  names what is missing ("Enter the pay (Revenue) …").
 - **The screenshot reader guessed the year.** DispatchLand shows "Sep 25" with no year, and the model
   returned 2024, so the pickup cutoff was two years in the past. `loadDateNearToday()` keeps the month
   and day and changes the year only when another year puts the date within 60 days of today;
@@ -4944,8 +4948,8 @@ Large/Glance rule sets that text's font size back with `!important`, so both sho
 requested through the agent-coordination inbox and Airtable.
 
 **Tests.** SSI-26 (misread year corrected; near and far dates untouched), SSI-27 (placeholders are
-not numbers), SSI-28 (no pay → the message names the pay, not loaded miles). Red-first: 25/3 against
-main. SSI-25's fixture dates are now relative to today, since a fixed 2026 date would be re-yeared
+not numbers), SSI-28 (a quote with no pay shows the bid card: 355 + 40 = 395 mi, $553 minimum, no
+grade), SSI-29 (no pay and no deadhead names the pay). Red-first: SSI-26..28 fail against main. SSI-25's fixture dates are now relative to today, since a fixed 2026 date would be re-yeared
 once the suite runs months later.
 
 ---

@@ -752,7 +752,8 @@ test('[SSI-27] the evaluator placeholders are labels, never numbers that read as
   } finally { await app.close(); }
 });
 
-test('[SSI-28] scoring a screenshot with no pay names the pay as what is missing', async () => {
+test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade', async () => {
+  // DispatchLand "NEW QUOTE" postings are auctions: no pay, the driver bids.
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
@@ -764,9 +765,34 @@ test('[SSI-28] scoring a screenshot with no pay names the pay as what is missing
     await sleep(1200);
     await app.page.evaluate(() => document.querySelector('#liScore')?.click());
     await sleep(800);
-    const msg = await app.page.evaluate(() => document.querySelector('#mwEvalOutput [data-eval-missing]')?.textContent || document.querySelector('#mwEvalOutput')?.textContent || '');
-    ok(/the pay \(Revenue\)/.test(msg), `the evaluator names the missing pay — got ${JSON.stringify(msg)}`);
-    ok(!/loaded miles/.test(msg), 'loaded miles were read, so they are not named as missing');
+    const r = await app.page.evaluate(() => {
+      const q = document.querySelector('#mwEvalOutput [data-eval-quote]');
+      return { text: q?.textContent || document.querySelector('#mwEvalOutput')?.textContent || '',
+        grade: !!document.querySelector('#mwEvalOutput .grade-badge, #mwEvalOutput [data-grade]') };
+    });
+    ok(/No pay posted/.test(r.text), `a quote shows the bid card — got ${JSON.stringify(r.text.slice(0, 160))}`);
+    ok(/355 loaded \+ 40 deadhead = 395 miles/.test(r.text), 'it states the miles the targets are built on');
+    // $1.40 x 395 true miles = $553, the canonical minimum (generateBidRange).
+    ok(/\$553/.test(r.text), `the minimum bid is the canonical $1.40 x total miles — got ${JSON.stringify(r.text)}`);
+    ok(!r.grade, 'no grade is shown without a rate');
+  } finally { await app.close(); }
+});
+
+test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const x = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    x.fields.pay = null; x.fieldMeta.pay = { state: 'ABSENT', confidence: null };
+    await stubExtractImage(app.page, x);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    await app.page.evaluate(() => document.querySelector('#liScore')?.click());
+    await sleep(800);
+    const msg = await app.page.evaluate(() => document.querySelector('#mwEvalOutput')?.textContent || '');
+    ok(/the pay \(Revenue\)/.test(msg), `the evaluator names the missing pay — got ${JSON.stringify(msg.slice(0, 160))}`);
+    ok(!/No pay posted/.test(msg), 'no bid card without the deadhead figure');
   } finally { await app.close(); }
 });
 
