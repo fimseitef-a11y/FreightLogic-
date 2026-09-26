@@ -1,6 +1,0 @@
-owner: claude
-token: c4b8e5f6-e234-4b7a-98ce-22f7f9b89c7e
-started_utc: 2026-09-26T01:56:58Z
-expected_release_utc: 2026-09-26T04:56:58Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.0.44 operator iPhone report: placeholder values read as data, vision year 2024, TodayToday tab label
