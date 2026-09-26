@@ -87,7 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.42 / DB16 / Worker v28, DIRECTLY OBSERVED 2026-09-26.** PR #368 (`db38b2c`) merged Worker v28 without a deploy, so push-triggered Live Parity `36206048956` failed on the Worker pin. Deploy run `36206485189`; re-dispatched Live Parity `36206658992` PASS on `db38b2c`. App unchanged.
+**Production is v24.0.43 / DB16 / Worker v28, DIRECTLY OBSERVED 2026-09-26.** PR #371 merged as `6a80282` (trip import integrity, app-only). Re-dispatched Live Parity `36208352685` and Production Service Worker `36208353917` PASS on `main` @ `0c582bf`, whose runtime tree is identical to `6a80282` (#369 is docs). Push-triggered parity `36208205933` on `6a80282` raced the Cloudflare deploy and is not the evidence.
+
+*Superseded, kept as history:* **Production is v24.0.42 / DB16 / Worker v28, DIRECTLY OBSERVED 2026-09-26.** PR #368 (`db38b2c`) merged Worker v28 without a deploy, so push-triggered Live Parity `36206048956` failed on the Worker pin. Deploy run `36206485189`; re-dispatched Live Parity `36206658992` PASS on `db38b2c`. App unchanged.
 
 *Superseded, kept as history:* **Production is v24.0.42 / DB16 / Worker v27, DIRECTLY OBSERVED 2026-09-25.** PR #366 merged as `a0fd704` (duplicate protection). Worker v27 deployed by run `36178623509`; Verify Authenticated Worker `36178670202` PASS; re-dispatched Live Parity `36178967389` and Production Service Worker `36178970084` PASS on that SHA.
 
@@ -4942,6 +4944,8 @@ added when there is no order #) is skipped as already saved, and the same order 
 still imports. It never deduplicates on the order # alone.
 
 **Tests.** `tests/integration/trip-import-integrity.spec.mjs` (TII-01..05, new, registered).
+
+**DEPLOYED and OBSERVED LIVE 2026-09-26** (see the Project Overview for the run ids).
 
 **Not claimed:** the operator's already-imported dirty database is not repaired by this. Those
 records have to be deleted and re-imported, or corrected by hand.
