@@ -2,5 +2,5 @@ owner: gpt
 token: pw-20260926-0439-gpt
 started_utc: 2026-09-26T04:39:00Z
 expected_release_utc: 2026-09-26T06:39:00Z
-paths: cloud-backup-worker.js, tests/unit/worker-reminders.spec.mjs, scripts/wrangler.backup-worker.jsonc, .agents/LANES.md, CLAUDE.md
+paths: cloud-backup-worker.js, tests/unit/worker-reminders.spec.mjs, scripts/wrangler.backup-worker.jsonc, scripts/verify-cloudflare-parity.mjs, .agents/LANES.md, CLAUDE.md
 task: Replace HookTap optional Live Activity bridge with PushWard per operator directive; issue #380.
