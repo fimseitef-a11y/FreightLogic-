@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -m 10 https://api.github.com/repos/fimseitef-a11y/FreightLogic-:*)",
+      "Bash(curl -s -m 10 -X POST https://api.github.com/repos/fimseitef-a11y/FreightLogic-/rulesets:*)",
+      "Bash(curl -s -m 10 -X PATCH https://api.github.com/repos/fimseitef-a11y/FreightLogic-:*)"
+    ]
+  }
+}
