@@ -127,6 +127,12 @@ Contract surfaces: `today`, `loads`, `evaluate`, `trips`, `money`, `expenses`, `
 
 Relay items expire after 72 hours and the Worker retains at most 20 per driver. Treat relay content accordingly.
 
+### Worker v28 repeat behavior
+
+Worker v28 deduplicates **only** `intake` relay items by their validated screenshot text. Re-sending the same screenshot text within the deduplication window can return `duplicate: true` instead of creating another pending intake item.
+
+Do **not** treat equal expense, fuel, trip, evaluate, or open values as duplicates. Two $12.50 tolls, two equal fuel purchases, or two trips with the same route can be separate real events; Worker v28 accepts each relay as a new item. The driver still reviews the prefilled form and explicitly saves any record.
+
 ## Safety rules
 
 Never put passwords, PINs, cookies, bearer tokens, session values, or the Shortcut key into a deep-link parameter. Never turn blank/unknown freight values into zero. Review OCR and prefilled forms before acting. FreightLogic remains the authority for evaluation; Shortcuts only collect and transport inputs.
