@@ -1,7 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.45 USA ENGINE
+/** FreightLogic v24.0.46 USA ENGINE
+ *  v24.0.46 "Weigh The Destination" (#386 hotfix): the Recommended Market Bid
+ *  reads the destination. Out of Tier 1/2 density adds the canonical Strong-vs-
+ *  normal gap (+$0.20/mi); a proven slow reload (3+ outcomes) in density does
+ *  the same; an unrecognised destination is marked LIMITED EVIDENCE instead of
+ *  passing the baseline off as a market bid. The no-pay quote card now applies
+ *  cross-border like the scored card (one helper feeds both). Carries GPT's
+ *  styles.css fix for the doubled "Today" tab label (#384 @ fa55403).
  *  v24.0.45 "Two Numbers" (operator bidding method, 2026-09-25): the evaluator shows
  *  a Baseline / Cost-Protected Bid (loaded x $1.25 + deadhead x marginal cost) and a
  *  Recommended Market Bid (baseline + named evidence: urgency, cross-border,
@@ -562,7 +569,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.45';
+const APP_VERSION = '24.0.46';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -10789,12 +10796,22 @@ function deriveUnifiedBid(totalMiles, opts={}){
 // miles x the canonical MARGINAL cost per mile (fuel + variable reserve; $0.296
 // at the dated profile defaults). Deliberately NOT the all-in cost: fixed costs
 // are paid whether or not this load moves.
-// Output 2, RECOMMENDED MARKET BID = the baseline plus only the adjustments this
-// evaluator has evidence for (urgency words in the notes, cross-border, weekend
-// or weekend-hold timing). Each adjustment is named. With none, it equals the
-// baseline and says so: this never invents a market fact or a live quote.
+// Output 2, RECOMMENDED MARKET BID = the baseline plus only adjustments this
+// evaluator has evidence for, each named: urgency words in the notes,
+// cross-border, weekend or weekend-hold timing, and (v24.0.46, #386) the
+// destination. A destination outside Tier 1/2 density carries the doctrine gap
+// the canonical authority already applies there (Strong $1.60 instead of the
+// normal $1.40 floor, so +$0.20/mi); an in-density destination where the
+// driver's own reload history (3+ outcomes) is slow or dead carries the same
+// premium. A destination this app does not recognise is LIMITED evidence: the
+// card says the number is not market-adjusted rather than presenting the
+// baseline as a recommendation. No live market fact is invented.
 // Unknown loaded or deadhead miles fail closed: no dollar figure at all.
-const TWO_OUTPUT_BID_POLICY = Object.freeze({ loadedRate: 1.25, crossBorderRpm: 0.10 });
+const TWO_OUTPUT_BID_POLICY = Object.freeze({
+  loadedRate: 1.25,
+  crossBorderRpm: 0.10,
+  reloadMinSample: 3,
+});
 function deriveTwoOutputBid(input = {}){
   const loadedMi = knownNum(input.loadedMi);
   const deadMi = knownNum(input.deadMi);
@@ -10804,13 +10821,14 @@ function deriveTwoOutputBid(input = {}){
   if (deadMi === null || deadMi < 0) unknownFacts.push('deadMi');
   if (deadheadCPM === null || deadheadCPM < 0) unknownFacts.push('deadheadCPM');
   if (unknownFacts.length){
-    return Object.freeze({ available: false, unknownFacts: Object.freeze(unknownFacts), baseline: null, recommended: null, adjustments: Object.freeze([]) });
+    return Object.freeze({ available: false, unknownFacts: Object.freeze(unknownFacts), baseline: null, recommended: null, adjustments: Object.freeze([]), notes: Object.freeze([]), evidence: 'NONE' });
   }
   const totalMi = loadedMi + deadMi;
   const loadedPart = loadedMi * TWO_OUTPUT_BID_POLICY.loadedRate;
   const deadheadPart = deadMi * deadheadCPM;
   const baseline = Math.round(loadedPart + deadheadPart);
   const adjustments = [];
+  const notes = [];
   const urgencyRpm = Math.max(0, Math.min(0.30, finiteNum(input.urgencyBoost, 0)));
   if (urgencyRpm > 0){
     adjustments.push(Object.freeze({ key:'urgency', label:`Urgent load (+$${urgencyRpm.toFixed(2)}/mi)`, amount: Math.round(urgencyRpm * totalMi) }));
@@ -10828,6 +10846,33 @@ function deriveTwoOutputBid(input = {}){
       adjustments.push(Object.freeze({ key:'weekendHold', label:`Lost weekend time (+$${wk.holdPremium.min}; up to $${wk.holdPremium.max})`, amount: Math.round(wk.holdPremium.min) }));
     }
   }
+  // Destination evidence (#386).
+  const dest = input.destination || null;
+  const destName = String(dest?.name || '').trim();
+  const weakRpm = _roundCPM(UNIFIED_DECISION_POLICY.strongRPM - UNIFIED_DECISION_POLICY.normalFloorRPM);
+  let evidence = 'LIMITED';
+  if (dest && dest.known){
+    evidence = 'DESTINATION';
+    if (!dest.intoDensity){
+      adjustments.push(Object.freeze({ key:'weakDestination', label:`Out-of-density destination${destName ? ` (${destName})` : ''} (+$${weakRpm.toFixed(2)}/mi)`, amount: Math.round(weakRpm * totalMi) }));
+    } else {
+      const r = input.reload || null;
+      const count = knownNum(r?.count);
+      const slow = r && (r.grade === 'C' || r.grade === 'D');
+      if (slow && count !== null && count >= TWO_OUTPUT_BID_POLICY.reloadMinSample){
+        adjustments.push(Object.freeze({ key:'slowReload', label:`Your reload history: ${r.label || 'slow'} (${count} outcomes, avg ${r.avg}h) (+$${weakRpm.toFixed(2)}/mi)`, amount: Math.round(weakRpm * totalMi) }));
+      } else {
+        notes.push(`${dest.tier === 'TIER1' ? 'Tier 1' : 'Tier 2'} destination${destName ? ` (${destName})` : ''}: no destination premium.`);
+        if (slow && count !== null){
+          notes.push(`Reload history looks ${r.label || 'slow'}, but only ${count} outcome${count === 1 ? '' : 's'}: too few to price on.`);
+        }
+      }
+    }
+  } else {
+    notes.push(destName
+      ? `Destination "${destName}" is not a market this app recognises, so this is not market-adjusted. Check the board, lane and reload outlook before bidding.`
+      : 'No destination entered, so this is not market-adjusted. Check the board, lane and reload outlook before bidding.');
+  }
   const recommended = baseline + adjustments.reduce((sum, a) => sum + a.amount, 0);
   return Object.freeze({
     available: true,
@@ -10840,7 +10885,26 @@ function deriveTwoOutputBid(input = {}){
     baseline,
     recommended,
     adjustments: Object.freeze(adjustments),
+    notes: Object.freeze(notes),
+    evidence,
     marketEvidence: adjustments.length > 0,
+  });
+}
+// One owner for the evidence both render paths feed the two-output bid, so the
+// scored card and the no-pay quote card cannot disagree (#386: the quote card
+// dropped cross-border). Everything read here is canonical: the fail-closed
+// market lookup, mwGeoCheck density, the weekend overlay, and the driver's own
+// reload outcomes.
+async function evaluateTwoOutputBid({ loadedMi, deadMi, deadheadCPM, urgencyBoost = 0, origin = '', dest = '', pickupDay = '', deliveryDay = '' } = {}){
+  const geo = mwGeoCheck(origin, dest);
+  const crossBorder = !!caScoreCrossBorder(naLookupMarket(origin), naLookupMarket(dest), 0, 'USD', null).isCrossBorder;
+  const weekendOverlay = deriveWeekendOverlay({ pickupDay, deliveryDay, weakDestination: !geo.intoDensity });
+  const cls = String(dest || '').trim() ? classifyPositionMarket(dest) : { known: false, tier: null };
+  const reload = cls.known && geo.intoDensity ? await getCityReloadScore(dest) : null;
+  return deriveTwoOutputBid({
+    loadedMi, deadMi, deadheadCPM, urgencyBoost, crossBorder, weekendOverlay,
+    destination: { known: cls.known, tier: cls.tier, intoDensity: !!geo.intoDensity, name: String(dest || '').trim() },
+    reload,
   });
 }
 function twoOutputBidHTML(b){
@@ -10848,20 +10912,20 @@ function twoOutputBidHTML(b){
   if (!b.available){
     return `<div data-two-bid data-two-bid-unavailable style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;font-size:12px;text-align:left" class="muted">Bid not calculated: ${escapeHtml(b.unknownFacts.join(', '))} unknown.</div>`;
   }
-  const adj = b.adjustments.length
-    ? b.adjustments.map(a => `<div style="display:flex;justify-content:space-between;font-size:11px"><span class="muted">${escapeHtml(a.label)}</span><span style="font-family:var(--font-mono)">+${fmtMoney(a.amount)}</span></div>`).join('')
-    : `<div class="muted" style="font-size:11px">No market signal entered (urgency, cross-border, weekend), so this equals the baseline. Raise it for what the board, lane and reload outlook show.</div>`;
-  return `<div data-two-bid style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;text-align:left">
+  const adj = b.adjustments.map(a => `<div style="display:flex;justify-content:space-between;font-size:11px"><span class="muted">${escapeHtml(a.label)}</span><span style="font-family:var(--font-mono)">+${fmtMoney(a.amount)}</span></div>`).join('');
+  const notes = (b.notes || []).map(n => `<div class="muted" style="font-size:11px">${escapeHtml(n)}</div>`).join('');
+  const limited = b.evidence === 'LIMITED';
+  return `<div data-two-bid data-two-bid-evidence="${escapeHtml(b.evidence)}" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
       <span style="font-size:13px;font-weight:700">Baseline / Cost-Protected Bid</span>
       <span data-two-bid-baseline="${b.baseline}" style="font-size:18px;font-weight:800;font-family:var(--font-mono)">${fmtMoney(b.baseline)}</span>
     </div>
     <div class="muted" style="font-size:11px;margin-bottom:8px">${escapeHtml(String(b.loadedMi))} loaded × $${b.loadedRate.toFixed(2)} + ${escapeHtml(String(b.deadMi))} deadhead × $${b.deadheadCPM.toFixed(3)} marginal cost</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-      <span style="font-size:13px;font-weight:700">Recommended Market Bid</span>
-      <span data-two-bid-recommended="${b.recommended}" style="font-size:18px;font-weight:800;font-family:var(--font-mono);color:var(--good)">${fmtMoney(b.recommended)}</span>
+      <span style="font-size:13px;font-weight:700">Recommended Market Bid${limited ? ' <span data-two-bid-limited style="font-size:10px;font-weight:700;color:var(--warn)">LIMITED EVIDENCE</span>' : ''}</span>
+      <span data-two-bid-recommended="${b.recommended}" style="font-size:18px;font-weight:800;font-family:var(--font-mono);color:${limited ? 'var(--warn)' : 'var(--good)'}">${fmtMoney(b.recommended)}</span>
     </div>
-    ${adj}
+    ${adj}${notes}
   </div>`;
 }
 
@@ -12018,12 +12082,9 @@ async function mwEvaluateLoad(){
       const quoteMi = loadedMi + deadMi;
       const qb = deriveUnifiedBid(quoteMi, { urgencyBoost: urgency.boost });
       const qProfile = await resolveCanonicalCostProfile();
-      const qGeo = mwGeoCheck(origin, dest);
-      const qTwo = deriveTwoOutputBid({
-        loadedMi, deadMi,
-        deadheadCPM: qProfile.available ? qProfile.marginalCPM : null,
-        urgencyBoost: urgency.boost,
-        weekendOverlay: deriveWeekendOverlay({ pickupDay: dayOfWeek, deliveryDay, weakDestination: !qGeo.intoDensity }),
+      const qTwo = await evaluateTwoOutputBid({
+        loadedMi, deadMi, deadheadCPM: qProfile.available ? qProfile.marginalCPM : null,
+        urgencyBoost: urgency.boost, origin, dest, pickupDay: dayOfWeek, deliveryDay,
       });
       out.innerHTML = `<div class="card" data-eval-quote style="padding:14px">
         <div style="font-weight:800;font-size:15px">No pay posted — what to bid</div>
@@ -12373,7 +12434,14 @@ async function mwEvaluateLoad(){
     turnoverType, warnings, weekendOverlay,
     isDZActive, isDZEligible, dzSubTier, dzCheck, dzFloor, noReloadConfirmed,
   });
+  // #386: computed before the render so the slot fills in the same task.
+  const twoOutputBid = await evaluateTwoOutputBid({
+    loadedMi, deadMi, deadheadCPM: marginalCPM, urgencyBoost: urgency.boost,
+    origin, dest, pickupDay: dayOfWeek, deliveryDay,
+  });
   _mwRenderDecision(out, unifiedDecisionToLegacy(unifiedDecision));
+  const _twoBidSlot = out.querySelector('[data-two-bid-slot]');
+  if (_twoBidSlot) _twoBidSlot.outerHTML = twoOutputBidHTML(twoOutputBid);
   _renderEvalNextMove(out, unifiedDecision);
   mwRenderWeekStructure(weeklyGross);
 
@@ -12535,10 +12603,7 @@ function _mwRenderDecision(out, d){
       </div>
     </div>
     ${_compactFacts}
-    ${twoOutputBidHTML(deriveTwoOutputBid({
-      loadedMi, deadMi, deadheadCPM: marginalCPM,
-      urgencyBoost: urgency?.boost, crossBorder: !!crossBorder?.isCrossBorder, weekendOverlay,
-    }))}
+    <div data-two-bid-slot></div>
   </div>
   <details id="mwEvalDetails" style="margin-bottom:12px">
     <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
@@ -24928,7 +24993,7 @@ function _renderInboxFailure(card) {
 if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
   window.__FL_TESTS = {
     // v24.0.45: the operator's two-output bid (baseline + recommended market bid).
-    deriveTwoOutputBid, twoOutputBidHTML,
+    deriveTwoOutputBid, twoOutputBidHTML, evaluateTwoOutputBid,
     // Cloud-backup paused state (configured token, session-scoped passphrase gone)
     cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
     // F-9: the shared #toast severity rule. Exposed so the escalation control can
