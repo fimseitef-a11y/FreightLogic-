@@ -87,7 +87,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production is v24.0.42 / DB16 / Worker v27, DIRECTLY OBSERVED 2026-09-25.** PR #366 merged as `a0fd704` (duplicate protection). Worker v27 deployed by run `36178623509`; Verify Authenticated Worker `36178670202` PASS; re-dispatched Live Parity `36178967389` and Production Service Worker `36178970084` PASS on that SHA.
+**Production is v24.0.42 / DB16 / Worker v28, DIRECTLY OBSERVED 2026-09-26.** PR #368 (`db38b2c`) merged Worker v28 without a deploy, so push-triggered Live Parity `36206048956` failed on the Worker pin. Deploy run `36206485189`; re-dispatched Live Parity `36206658992` PASS on `db38b2c`. App unchanged.
+
+*Superseded, kept as history:* **Production is v24.0.42 / DB16 / Worker v27, DIRECTLY OBSERVED 2026-09-25.** PR #366 merged as `a0fd704` (duplicate protection). Worker v27 deployed by run `36178623509`; Verify Authenticated Worker `36178670202` PASS; re-dispatched Live Parity `36178967389` and Production Service Worker `36178970084` PASS on that SHA.
 
 *Superseded, kept as history:* **Production is v24.0.41 / DB16 / Worker v26, DIRECTLY OBSERVED 2026-09-25.** PR #364 merged as `fb65e36` (screenshot model chain; app unchanged). Worker deploy `36174888850`; Verify Authenticated Worker `36174957845` PASS, its vision line reading `llama-4-scout … (453 chars); moondream … Vision provider returned no output.(0 chars)`: Scout answers live and Moondream answers empty, as on the operator's phone. Re-dispatched Live Parity `36174982077` PASS. A real DispatchLand screenshot read by Scout is still unobserved.
 
@@ -523,7 +525,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.42';
+const APP_VERSION = '24.0.43';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -673,8 +675,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.42` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.42`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.43` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.43`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4914,6 +4916,37 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.43 "Read What Is There" — trip import integrity (Airtable recG8I51SR28EQb34)
+
+App **24.0.42 → 24.0.43**. `DB_VERSION` stays **16** and the Worker stays **v28**: app-only
+generation, **do not redeploy the Worker**.
+
+**Why.** A real 142-trip work-history import came out dirty: 30 pickup dates reset to the import
+day, 29 $0-pay records, 62 zero-loaded-mile records and duplicate order numbers. In the trips branch
+of `importCSVFile()` (which the XLSX and TXT routes also go through):
+- `sanitizeTrip()` accepts only `YYYY-MM-DD`, so `9/24/2026`, `Sep 24 2026` or an Excel serial
+  became **today**;
+- a blank pay or loaded-miles cell became `0`;
+- any non-empty `Status` (e.g. "Completed") was recorded as **known unpaid**;
+- every row got a fresh id, so re-importing a file added it all again.
+
+**Fix.** `normalizeImportDate()` reads ISO, US month-first slash/dash, month-name and Excel-serial
+dates. A row whose pickup date is blank or unreadable is **skipped and named in the toast** (row
+numbers), never dated today. Pay and miles read through `importNumberOrNull()`; the trip still stores
+0 but is flagged for review (`computeTripReviewReasons()` now adds "Loaded miles are unknown" for any
+trip with no loaded miles), so it stays out of RPM and lane stats. `importPaidState()` makes payment
+known only for a recognisable answer (paid/yes/settled… or unpaid/no/open/invoiced…). A row matching a
+saved trip or an earlier row on order # + pickup + origin + destination (with pay + loaded miles
+added when there is no order #) is skipped as already saved, and the same order # on a different load
+still imports. It never deduplicates on the order # alone.
+
+**Tests.** `tests/integration/trip-import-integrity.spec.mjs` (TII-01..05, new, registered).
+
+**Not claimed:** the operator's already-imported dirty database is not repaired by this. Those
+records have to be deleted and re-imported, or corrected by hand.
+
+---
 
 ## Worker v28 "Equal Is Not Same" — a real repeat expense gets through
 

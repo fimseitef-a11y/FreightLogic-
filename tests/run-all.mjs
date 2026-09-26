@@ -52,6 +52,7 @@ import { runSpec as todayIA } from './integration/today-ia.spec.mjs';
 import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
 // Issue #219 — untrusted-import credential trust boundary
 import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
+import { runSpec as tripImportIntegrity } from './integration/trip-import-integrity.spec.mjs';
 // Issue #220 — self-hosted-only executable code
 import { runSpec as ocrSelfHosted } from './integration/ocr-self-hosted.spec.mjs';
 import { runSpec as m1DoctrineIntegrity } from './integration/m1-doctrine-integrity.spec.mjs';
@@ -165,6 +166,7 @@ const specs = [
   invitePaste,
   tripDuplicateWarning,
   importCredentialTrustBoundary,
+  tripImportIntegrity,
   ocrSelfHosted,
   m1DoctrineIntegrity,
   m2ExpenseFuelConcurrency,
