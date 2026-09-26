@@ -115,6 +115,23 @@ test('[TII-05] re-importing the same file adds nothing; a reused order # on anot
   } finally { await app.close(); }
 });
 
+test('[TII-06] a missing pickup date takes the delivery date, in CSV and JSON import', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const trips = await importCsv(app.page, [HEADER, 'F1,Broker,,2/21/2026,Racine WI,Elk Grove Village IL,450,70,10,Paid'].join('\n'));
+    eq(trips.find(t => t.orderNo === 'F1')?.pickupDate, '2026-02-21', 'CSV: blank pickup uses the delivery date');
+    const json = await app.page.evaluate(async () => {
+      const T = window.__FL_TESTS;
+      const payload = { meta: { app: 'FreightLogic' }, trips: [{ id: 'hist-f2', orderNo: 'F2', deliveryDate: '2026-02-03',
+        origin: 'South Bend IN', destination: 'Milwaukee WI', pay: 400, loadedMiles: 90, emptyMiles: 5 }] };
+      await T.importJSON(new File([JSON.stringify(payload)], 'h.json', { type: 'application/json' }), { mode: 'merge' });
+      return (await T.dumpStore('trips')).find(t => t.orderNo === 'F2');
+    });
+    eq(json?.pickupDate, '2026-02-03', 'JSON: a trip with only a delivery date is not dated today');
+  } finally { await app.close(); }
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

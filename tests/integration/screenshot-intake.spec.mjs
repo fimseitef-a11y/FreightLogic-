@@ -692,7 +692,10 @@ test('[SSI-25] details the server reads (times, pieces, dimensions, commodity) r
   try {
     await skipFirstRunWizard(app.page);
     const detailed = JSON.parse(JSON.stringify(OK_EXTRACTION));
-    Object.assign(detailed.fields, { pickupDate: '2026-09-24', pickupTime: '15:00', deliveryDate: '2026-09-25',
+    // Dates near today: v24.0.44 re-years a date far from today as a misread.
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const PU = iso(new Date()), DEL = iso(new Date(Date.now() + 86400000));
+    Object.assign(detailed.fields, { pickupDate: PU, pickupTime: '15:00', deliveryDate: DEL,
       deliveryTime: '08:00', timezone: 'CDT', pieces: 3, dimensions: '40x48x50 in', commodity: 'Machine parts', notes: 'Team not required' });
     await stubExtractImage(app.page, detailed);
     await openIntake(app.page);
@@ -704,10 +707,92 @@ test('[SSI-25] details the server reads (times, pieces, dimensions, commodity) r
         delDate: v('liDelDate'), delTime: v('liDelTime'), pieces: v('liPieces'), dims: v('liDims'), commodity: v('liCommodity'), notes: v('liNotes') };
     });
     ok(/Columbus, OH/.test(r.route) && /Chicago, IL/.test(r.route), `route line — got ${JSON.stringify(r.route)}`);
-    eq(r.puDate, '2026-09-24', 'pickup date'); eq(r.puTime, '15:00', 'pickup time');
-    eq(r.delDate, '2026-09-25', 'delivery date'); eq(r.delTime, '08:00', 'delivery time');
+    eq(r.puDate, PU, 'pickup date'); eq(r.puTime, '15:00', 'pickup time');
+    eq(r.delDate, DEL, 'delivery date'); eq(r.delTime, '08:00', 'delivery time');
     eq(r.pieces, '3', 'pieces'); eq(r.dims, '40x48x50 in', 'dimensions');
     eq(r.commodity, 'Machine parts', 'commodity'); eq(r.notes, 'Team not required', 'notes');
+  } finally { await app.close(); }
+});
+
+// v24.0.44 — reported from a real iPhone 2026-09-26. The screenshot had no pay,
+// and the evaluator's grey "420" placeholder read like a real revenue; the
+// reader also guessed the year 2024 for a "Sep 25" posting.
+test('[SSI-26] a screenshot date with a misread year takes the year nearest today', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const now = new Date();
+    const TODAY = iso(now);
+    const misread = `${now.getFullYear() - 2}${TODAY.slice(4)}`;
+    const x = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    Object.assign(x.fields, { pickupDate: misread, pickupTime: '18:30' });
+    await stubExtractImage(app.page, x);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    const r = await app.page.evaluate(() => ({ pu: document.getElementById('liPuDate')?.value,
+      far: window.__FL_TESTS.loadDateNearToday('2026-03-01', new Date(2026, 8, 26)),
+      near: window.__FL_TESTS.loadDateNearToday('2026-09-01', new Date(2026, 8, 26)),
+      bad: window.__FL_TESTS.loadDateNearToday('nope') }));
+    eq(r.pu, TODAY, `a two-years-off pickup date is corrected to this year (read ${misread})`);
+    eq(r.near, '2026-09-01', 'a date within 60 days is left alone');
+    eq(r.far, '2026-03-01', 'a date no year brings near today is left as read');
+    eq(r.bad, '', 'an invalid date stays empty');
+  } finally { await app.close(); }
+});
+
+test('[SSI-27] the evaluator placeholders are labels, never numbers that read as data', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const ph = await app.page.evaluate(() => ['mwRevenue', 'mwLoadedMi', 'mwDeadMi']
+      .map((id) => document.getElementById(id)?.getAttribute('placeholder') || ''));
+    for (const p of ph) ok(!/^\s*[\d.,$]+\s*$/.test(p), `placeholder "${p}" must not look like a value`);
+  } finally { await app.close(); }
+});
+
+test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade', async () => {
+  // DispatchLand "NEW QUOTE" postings are auctions: no pay, the driver bids.
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const x = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    x.fields.pay = null; x.fields.deadheadMiles = 40; x.fieldMeta.pay = { state: 'ABSENT', confidence: null };
+    await stubExtractImage(app.page, x);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    await app.page.evaluate(() => document.querySelector('#liScore')?.click());
+    await sleep(800);
+    const r = await app.page.evaluate(() => {
+      const q = document.querySelector('#mwEvalOutput [data-eval-quote]');
+      return { text: q?.textContent || document.querySelector('#mwEvalOutput')?.textContent || '',
+        grade: !!document.querySelector('#mwEvalOutput .grade-badge, #mwEvalOutput [data-grade]') };
+    });
+    ok(/No pay posted/.test(r.text), `a quote shows the bid card — got ${JSON.stringify(r.text.slice(0, 160))}`);
+    ok(/355 loaded \+ 40 deadhead = 395 miles/.test(r.text), 'it states the miles the targets are built on');
+    // $1.40 x 395 true miles = $553, the canonical minimum (generateBidRange).
+    ok(/\$553/.test(r.text), `the minimum bid is the canonical $1.40 x total miles — got ${JSON.stringify(r.text)}`);
+    ok(!r.grade, 'no grade is shown without a rate');
+  } finally { await app.close(); }
+});
+
+test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
+  const app = await launchApp();
+  try {
+    await skipFirstRunWizard(app.page);
+    const x = JSON.parse(JSON.stringify(OK_EXTRACTION));
+    x.fields.pay = null; x.fieldMeta.pay = { state: 'ABSENT', confidence: null };
+    await stubExtractImage(app.page, x);
+    await openIntake(app.page);
+    await chooseImage(app.page);
+    await sleep(1200);
+    await app.page.evaluate(() => document.querySelector('#liScore')?.click());
+    await sleep(800);
+    const msg = await app.page.evaluate(() => document.querySelector('#mwEvalOutput')?.textContent || '');
+    ok(/the pay \(Revenue\)/.test(msg), `the evaluator names the missing pay — got ${JSON.stringify(msg.slice(0, 160))}`);
+    ok(!/No pay posted/.test(msg), 'no bid card without the deadhead figure');
   } finally { await app.close(); }
 });
 

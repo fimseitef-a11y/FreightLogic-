@@ -1,7 +1,12 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.43 USA ENGINE
+/** FreightLogic v24.0.44 USA ENGINE
+ *  v24.0.44 "Say What Is Missing" (operator iPhone report): a screenshot date
+ *    with a misread year (DispatchLand shows none) takes the year that puts it
+ *    near today; the evaluator's Pay/Loaded/Deadhead placeholders are labels,
+ *    not numbers that read as data; a quote posting with no pay shows the
+ *    canonical bid targets for its total miles instead of a dead end.
  *  v24.0.43 "Read What Is There": trip CSV/XLSX import reads US, month-name and
  *    Excel-serial dates instead of dating an unreadable row today (such a row is
  *    skipped and named); a blank pay or loaded-miles cell flags the trip for
@@ -552,7 +557,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.43';
+const APP_VERSION = '24.0.44';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -3415,7 +3420,11 @@ function sanitizeTrip(raw){
   t.id = clampStr(raw.id || t.id, 80);
   t.orderNo = normOrderNo(raw.orderNo);
   t.customer = clampStr(raw.customer, 80);
-  t.pickupDate = isValidISODate(raw.pickupDate) ? raw.pickupDate : isoDate();
+  // v24.0.44: a trip with no pickup date takes its own delivery date before it
+  // takes today. A JSON import of work history with delivery-only dates used to
+  // stamp every such trip with the import day (41 of 142 in the operator's DB).
+  t.pickupDate = isValidISODate(raw.pickupDate) ? raw.pickupDate
+    : isValidISODate(raw.deliveryDate) ? raw.deliveryDate : isoDate();
   t.deliveryDate = isValidISODate(raw.deliveryDate) ? raw.deliveryDate : t.pickupDate;
   t.invoiceDate = isValidISODate(raw.invoiceDate) ? raw.invoiceDate : t.deliveryDate;
   t.dueDate = isValidISODate(raw.dueDate) ? raw.dueDate : '';
@@ -4690,10 +4699,11 @@ async function importCSVFile(file){
         const rowNo = i + 2; // header is row 1
         try{
           const rawOrder = cellAt(row, 'Order#','OrderNo','Order','LoadID','Load');
-          const pickupDate = normalizeImportDate(cellAt(row, 'Pickup','PickupDate','Date','ShipDate'));
-          // No readable pickup date: skip the row rather than date it today.
-          if (!pickupDate){ skippedDate.push(rowNo); return; }
           const deliveryDate = normalizeImportDate(cellAt(row, 'Delivery','DeliveryDate','DropDate')) || '';
+          // No readable pickup date: use the row's delivery date; with neither,
+          // skip the row rather than date it today.
+          const pickupDate = normalizeImportDate(cellAt(row, 'Pickup','PickupDate','Date','ShipDate')) || deliveryDate;
+          if (!pickupDate){ skippedDate.push(rowNo); return; }
           const paidCell = cellAt(row, 'Paid','IsPaid','Status');
           const paid = importPaidState(paidCell);
           const orderNo = rawOrder || `CSV-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
@@ -11910,7 +11920,30 @@ async function mwEvaluateLoad(){
   if (!out) return;
   // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
   const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
-  if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){ out.innerHTML = '<div class="muted" style="font-size:13px">Enter loaded miles and revenue.</div>'; return; }
+  if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){
+    // v24.0.44: name what is missing. A screenshot without the pay used to leave
+    // a generic line under a grey "420" placeholder that read like a real value.
+    // v24.0.44: a DispatchLand "NEW QUOTE" is an auction and posts no pay; the
+    // driver sets it. With both mile figures known, show the canonical bid
+    // targets (deriveUnifiedBid depends on miles only) and no verdict or grade,
+    // since there is no rate to judge. Nothing here invents a revenue.
+    const loadedOk = !(loadedMi === null || loadedMi <= 0 || loadedMi > 300000);
+    if (!revenue && loadedOk && deadMi !== null && deadMi >= 0 && deadMi <= 300000){
+      const quoteMi = loadedMi + deadMi;
+      const qb = deriveUnifiedBid(quoteMi, { urgencyBoost: urgency.boost });
+      out.innerHTML = `<div class="card" data-eval-quote style="padding:14px">
+        <div style="font-weight:800;font-size:15px">No pay posted — what to bid</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(String(loadedMi))} loaded + ${escapeHtml(String(deadMi))} deadhead = ${escapeHtml(String(quoteMi))} miles. No grade or verdict until there is a rate: enter the pay you are offered (or your bid) to score it.</div>
+        ${bidRangeHTML(qb.range)}
+      </div>`;
+      return;
+    }
+    const missing = [];
+    if (!revenue) missing.push('the pay (Revenue)');
+    if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000) missing.push('loaded miles');
+    out.innerHTML = `<div class="muted" style="font-size:13px" data-eval-missing>Enter ${missing.join(' and ')} to score this load.</div>`;
+    return;
+  }
   // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
   // True RPM, so the evaluator asks for it instead of assuming zero. Entering
   // 0 is one keystroke and records a verified zero.
@@ -16885,6 +16918,25 @@ function parseDimsInches(v){
   return { length: r(m[1]), width: r(m[2]), height: r(m[3]) };
 }
 
+// v24.0.44: a load date read from a posting or screenshot. If it is more than
+// 60 days from today but another year puts it within 60 days, the year was
+// misread (the posting shows none): keep the month and day, take that year.
+function loadDateNearToday(iso, now = new Date()){
+  if (!isValidISODate(iso)) return '';
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const [y, m, d] = iso.split('-').map(Number);
+  const at = (yy) => Date.UTC(yy, m - 1, d);
+  if (Math.abs(at(y) - today) <= 60 * 86400000) return iso;
+  let best = null;
+  for (const yy of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]){
+    const cand = `${yy}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (!isValidISODate(cand)) continue;
+    if (best === null || Math.abs(at(yy) - today) < Math.abs(at(Number(best.slice(0,4))) - today)) best = cand;
+  }
+  // Only a correction that lands near today is a correction; otherwise keep it.
+  return (best && Math.abs(at(Number(best.slice(0,4))) - today) <= 60 * 86400000) ? best : iso;
+}
+
 function openLoadIntake(opts = {}){
   let rawText = '';
   let parsed = null; // will hold parseLoadTextForInbox result
@@ -16982,7 +17034,7 @@ function openLoadIntake(opts = {}){
       </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:4px">Dimensions (L×W×H)</label>
-        <input id="liDims" type="text" placeholder="48x40x36 in" class="input" style="width:100%;box-sizing:border-box" />
+        <input id="liDims" type="text" placeholder="L × W × H (inches)" class="input" style="width:100%;box-sizing:border-box" />
       </div>
     </div>
     <div style="margin-bottom:8px">
@@ -17043,6 +17095,10 @@ function openLoadIntake(opts = {}){
 
   function populateDraft(fields){
     const get = k => fields[k] ?? '';
+    // v24.0.44: DispatchLand shows "Sep 25" with no year, and the screenshot
+    // reader guessed 2024. A load being offered now is never months away, so a
+    // date far from today keeps its month and day and takes the nearest year.
+    const nearYear = (d) => loadDateNearToday(isValidISODate(d) ? d : '');
     getField('liRevenue').value  = posNum(get('pay')) || posNum(get('revenue')) || '';
     getField('liMiles').value    = intNum(get('loadedMiles')) || '';
     getField('liDead').value     = deadheadToInput(fields.deadheadMiles);
@@ -17054,9 +17110,9 @@ function openLoadIntake(opts = {}){
     getField('liNotes').value    = clampStr(get('notes'),300);
     // v24.0.41: the route and the details the server or the parser found.
     getField('liCommodity').value = clampStr(get('commodity'),80);
-    getField('liPuDate').value   = isValidISODate(get('pickupDate')) ? get('pickupDate') : '';
+    getField('liPuDate').value   = nearYear(get('pickupDate'));
     getField('liPuTime').value   = /^\d{2}:\d{2}$/.test(get('pickupTime')) ? get('pickupTime') : '';
-    getField('liDelDate').value  = isValidISODate(get('deliveryDate')) ? get('deliveryDate') : '';
+    getField('liDelDate').value  = nearYear(get('deliveryDate'));
     getField('liDelTime').value  = /^\d{2}:\d{2}$/.test(get('deliveryTime')) ? get('deliveryTime') : '';
     getField('liPieces').value   = intNum(get('pieces')) || '';
     getField('liDims').value     = clampStr(get('dimensions'),60);
@@ -24832,7 +24888,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     exportJSON, importJSON, getSetting, setSetting,
     // Issue #232 — import ceiling enforced before materialization
     importFile, importTXTFile, importXLSXFile, importExceedsSizeLimit, LIMITS,
-    normalizeImportDate, importNumberOrNull, importPaidState,
+    normalizeImportDate, importNumberOrNull, importPaidState, loadDateNearToday,
     // X-01/X-07 (v23.9 Phase 4)
     cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
     // Issue #205 section 3 — automatic sync: pending state, status, durability
