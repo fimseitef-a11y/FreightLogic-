@@ -4968,13 +4968,15 @@ the timing.
   and, if configured, HookTap. More than 6 h late is recorded as missed, not sent; items are
   pruned a day after their time; a revoked driver's list is deleted. No KV `list()`.
 - `GET` / `POST` / `DELETE /hooktap`, `POST /hooktap/test` (driver auth). The driver's HookTap
-  webhook ID is stored in `hooktap:<userId>` and never returned. **Delivery is off until the
-  operator sets `HOOKTAP_URL_TEMPLATE`** (https, containing `{id}`); the host comes only from the
-  operator, so a driver cannot point the Worker at an arbitrary URL. The template is not set yet
-  because HookTap's send format has not been confirmed. HookTap's Live Activity / Dynamic Island
-  is a paid HookTap Premium feature.
+  webhook ID is stored in `hooktap:<userId>` and never returned. The delivery address comes only
+  from the operator's `HOOKTAP_URL_TEMPLATE` (https, containing `{id}`), so a driver cannot point
+  the Worker at an arbitrary URL. It is set in `scripts/wrangler.backup-worker.jsonc` to
+  `https://hooks.hooktap.me/webhook/{id}`, the format HookTap's Webhooks tab shows (RM-09). The
+  JSON body HookTap reads is not documented anywhere reachable from here; the Worker sends
+  `title`, `body` and `message`. HookTap's Live Activity / Dynamic Island is a paid HookTap
+  Premium feature.
 
-**Tests.** `tests/unit/worker-reminders.spec.mjs` (RM-01..08, new, registered). Negative
+**Tests.** `tests/unit/worker-reminders.spec.mjs` (RM-01..09, new, registered). Negative
 controls: resending on every run fails RM-03/05; allowing a non-https template fails RM-06.
 Full suite **887/0 across 87 specs**.
 

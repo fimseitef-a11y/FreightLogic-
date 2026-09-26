@@ -6,6 +6,7 @@
 // invite/claim path.
 import { createSuite, ok, eq } from '../lib/harness.mjs';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { test, run } = createSuite('unit/worker-reminders.spec.mjs');
@@ -228,6 +229,20 @@ test('[RM-08] the scheduled run and the routes never call KV list()', async () =
   try { await worker.scheduled({ scheduledTime: now }, env); } finally { f.restore(); }
   await worker.fetch(REQ('/reminders', { method: 'DELETE', headers: hdrs(d.token) }), env);
   eq(env.BACKUPS.listCalls - before, 0, 'list() is budgeted at 1,000/day on the free tier');
+});
+
+test('[RM-09] the deploy config sends HookTap to hooks.hooktap.me with the driver ID', async () => {
+  const cfg = readFileSync(path.join(ROOT, 'scripts/wrangler.backup-worker.jsonc'), 'utf8');
+  const m = cfg.match(/"HOOKTAP_URL_TEMPLATE"\s*:\s*"([^"]+)"/);
+  ok(m, 'HOOKTAP_URL_TEMPLATE is set in scripts/wrangler.backup-worker.jsonc');
+  const env = newEnv({ HOOKTAP_URL_TEMPLATE: m[1] }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env);
+  await worker.fetch(REQ('/hooktap', { method: 'POST', headers: hdrs(d.token), body: JSON.stringify({ webhookId: HOOK_ID }) }), env);
+  const f = stubFetch(200);
+  try {
+    eq((await worker.fetch(REQ('/hooktap/test', { method: 'POST', headers: hdrs(d.token) }), env)).status, 200, 'test sent');
+    eq(f.calls[0].url, 'https://hooks.hooktap.me/webhook/' + HOOK_ID, 'the address HookTap shows in its Webhooks tab');
+  } finally { f.restore(); }
 });
 
 export async function runSpec() {
