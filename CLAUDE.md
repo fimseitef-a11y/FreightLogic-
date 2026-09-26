@@ -529,7 +529,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.45';
+const APP_VERSION = '24.0.46';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -679,8 +679,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.45` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.45`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.46` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.46`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4920,6 +4920,36 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.46 "Weigh The Destination" — Issue #386 hotfix
+
+App **24.0.45 → 24.0.46**. `DB_VERSION` stays **16** and the Worker stays **v30 source** (v28
+deployed; #380): app-only, **do not redeploy the Worker for this**.
+
+1. **Recommended Market Bid reads the destination.** v24.0.45 adjusted only for urgency,
+   cross-border and weekend, so an ordinary weekday load into a weak market showed
+   recommended = baseline. Now, through one helper `evaluateTwoOutputBid()`:
+   - a recognised destination outside Tier 1/2 density (`mwGeoCheck`, the same density the
+     canonical authority uses) adds **+$0.20/mi**, the doctrine gap the authority already applies
+     there (Strong $1.60 instead of the normal $1.40 floor);
+   - an in-density destination whose own reload history is slow or dead (`getCityReloadScore`,
+     **3+ outcomes**) adds the same; fewer outcomes are shown as a note, not priced;
+   - an unrecognised or blank destination (`classifyPositionMarket`, fail-closed) is marked
+     **LIMITED EVIDENCE**, with a note that the number is not market-adjusted. No premium is invented.
+2. **No-pay cross-border parity.** The quote card called `deriveTwoOutputBid()` without
+   `crossBorder`. Both paths now call `evaluateTwoOutputBid()`, so they cannot disagree.
+3. **"TodayToday" tab label.** GPT's `styles.css` commits from #384 (`85daac7`, `fa55403`) are
+   cherry-picked unchanged: the obsolete Home `.nl` font-size:0 + `::after "Today"` relabel is
+   deleted. The Intel → Market relabel is untouched. Latent, not fixed here: inside `.bottom` the
+   generic label rule outranks the Intel `font-size:0`, so an Intel tab there would read
+   "IntelMarket". The five-tab shell has no Intel tab.
+
+**Tests.** `two-output-bid.spec.mjs` TOB-08..11 (new) plus TOB-01/05 updated for the evidence
+qualifier; `nav-today-label.spec.mjs` NTL-01/02 (new, registered) measures computed style in
+standard/large/xlarge/glance. Red-first against `main`: TOB 5/11, NTL-01 fails. Negative
+control: dropping the destination premium fails only TOB-08/10.
+
+---
 
 ## v24.0.45 "Two Numbers" — the operator's two-output bidding method
 
