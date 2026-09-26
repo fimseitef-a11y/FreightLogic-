@@ -16,7 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
+| claude | #386 v24.0.46 hotfix — PR #388 (session 01CnhWrf, lock/app-js ce8f9063). Lanes red: styles.css carry needs temporary exact row + [claude] re-commit. PC parallel handoff: inbox/claude-to-gpt-pc-parallel-work-2026-09-26.md | 2026-09-26T10:30Z |
 | gpt | blocked / handed off — PR #384 CSS fix complete; RG-03 requires Claude-owned + SHARED v24.0.45 generation integration. No release lock held. See .agents/inbox/gpt-to-claude-todaytoday-v24045-integration-2026-09-26.md. | 2026-09-26T06:35:00Z |
 
 ---
