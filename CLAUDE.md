@@ -4952,6 +4952,38 @@ records have to be deleted and re-imported, or corrected by hand.
 
 ---
 
+## Worker v29 "Remind Me" — server reminders + HookTap (source-only)
+
+Worker **v28 → v29**. The app stays **24.0.43** and `DB_VERSION` stays **16**: no app byte changed.
+Operator-approved 2026-09-26: the installed PWA cannot run in the background, so the server does
+the timing.
+
+- `GET` / `POST` / `DELETE /reminders` (driver auth). The app uploads its whole reminder list
+  (at most 50: `id`, `at`, `kind` ∈ pickup/delivery/unpaid/backup/brief/custom, `title` ≤ 80,
+  `body` ≤ 160, `url` from a fixed set of app hashes). An invalid item is rejected and named,
+  never clamped. Stored in `rem:<userId>`; `rem:index` lists drivers with reminders. The operator
+  approved storing this list unencrypted; it must never carry pay, broker or history.
+- A **cron trigger every 5 minutes** (`triggers.crons` in `scripts/wrangler.backup-worker.jsonc`)
+  runs `scheduled()` → `runDueReminders()`: each due reminder is sent **once** through Web Push
+  and, if configured, HookTap. More than 6 h late is recorded as missed, not sent; items are
+  pruned a day after their time; a revoked driver's list is deleted. No KV `list()`.
+- `GET` / `POST` / `DELETE /hooktap`, `POST /hooktap/test` (driver auth). The driver's HookTap
+  webhook ID is stored in `hooktap:<userId>` and never returned. **Delivery is off until the
+  operator sets `HOOKTAP_URL_TEMPLATE`** (https, containing `{id}`); the host comes only from the
+  operator, so a driver cannot point the Worker at an arbitrary URL. The template is not set yet
+  because HookTap's send format has not been confirmed. HookTap's Live Activity / Dynamic Island
+  is a paid HookTap Premium feature.
+
+**Tests.** `tests/unit/worker-reminders.spec.mjs` (RM-01..08, new, registered). Negative
+controls: resending on every run fails RM-03/05; allowing a non-https template fails RM-06.
+Full suite **887/0 across 87 specs**.
+
+**Not yet built:** the app side (building the reminder list from trips and a Settings field for
+the HookTap ID) needs `lock/app-js`, held by another session at the time of writing.
+**Not deployed.**
+
+---
+
 ## Worker v28 "Equal Is Not Same" — a real repeat expense gets through
 
 Worker **v27 → v28**. The app stays **24.0.42** and `DB_VERSION` stays **16**: no app byte changed
