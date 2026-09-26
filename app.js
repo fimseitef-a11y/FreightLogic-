@@ -1,7 +1,12 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.42 USA ENGINE
+/** FreightLogic v24.0.43 USA ENGINE
+ *  v24.0.43 "Read What Is There": trip CSV/XLSX import reads US, month-name and
+ *    Excel-serial dates instead of dating an unreadable row today (such a row is
+ *    skipped and named); a blank pay or loaded-miles cell flags the trip for
+ *    review; payment is known only for a recognisable Paid/Status answer; and a
+ *    re-import skips rows already saved (order # + pickup + origin + destination).
  *  v24.0.42 "Once Is Enough": saving a new trip whose order # is already saved
  *          stops once and shows the saved trip, with Open existing / Save anyway.
  *          The old warning was overwritten by "Looks good." and never shown.
@@ -547,7 +552,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.42';
+const APP_VERSION = '24.0.43';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -3394,6 +3399,8 @@ function computeTripReviewReasons(raw){
   const empty = knownNum(raw?.emptyMiles);
   const total = empty === null ? null : loaded + empty;
   if (!(pay > 0)) reasons.push('Pay must be greater than 0');
+  // v24.0.43: a load with no loaded miles is missing data, not a zero-mile load.
+  if (!(loaded > 0)) reasons.push('Loaded miles are unknown');
   if (empty === null) reasons.push('Deadhead miles are unknown');
   if (total !== null && !(total > 0)) reasons.push('Total miles must be greater than 0');
   if (loaded > 2500) reasons.push('Loaded miles exceed cargo-van sanity threshold');
@@ -4564,6 +4571,64 @@ async function parseCSVTextAsync(text){
 
 function normalizeHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 
+// v24.0.43 (Airtable recG8I51SR28EQb34): trip import integrity. A date the
+// importer cannot read used to become TODAY, a blank pay or loaded-miles cell
+// became 0, any non-empty Status read as "known unpaid", and re-importing the
+// same file added every row again. The rules below read what is there and
+// never invent a value.
+const IMPORT_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+function _importIso(y, m, d){
+  y = Number(y); m = Number(m); d = Number(d);
+  if (y < 100) y += 2000;
+  const iso = `${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  return isValidISODate(iso) ? iso : null;
+}
+// Returns YYYY-MM-DD, '' for a blank cell, or null for a value that is present
+// but unreadable. US month-first order for slash dates (the operator is US).
+function normalizeImportDate(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/))) return _importIso(m[1], m[2], m[3]);
+  if ((m = s.match(/^(\d{4})[\/.](\d{1,2})[\/.](\d{1,2})$/))) return _importIso(m[1], m[2], m[3]);
+  if ((m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})(?:[ T].*)?$/))) return _importIso(m[3], m[1], m[2]);
+  if ((m = s.match(/^(?:[a-z]+,?\s+)?([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/i)) && IMPORT_MONTHS[m[1].slice(0,3).toLowerCase()]) return _importIso(m[3], IMPORT_MONTHS[m[1].slice(0,3).toLowerCase()], m[2]);
+  if ((m = s.match(/^(\d{1,2})[\s-]([a-z]{3,9})\.?[\s-](\d{2}|\d{4})$/i)) && IMPORT_MONTHS[m[2].slice(0,3).toLowerCase()]) return _importIso(m[3], IMPORT_MONTHS[m[2].slice(0,3).toLowerCase()], m[1]);
+  // Excel serial day number (1900 system), limited to years 1982-2064.
+  if (/^\d{5}$/.test(s)){
+    const n = Number(s);
+    if (n >= 30000 && n <= 60000){
+      const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+      return _importIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    }
+  }
+  return null;
+}
+// A money or mile cell: null when blank or unreadable, never 0.
+function importNumberOrNull(v){
+  const s = String(v ?? '').replace(/[$,\s]/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+// Paid column: true / false only for a recognisable answer, else unknown.
+const IMPORT_PAID_YES = ['yes','y','true','paid','1','settled','received'];
+const IMPORT_PAID_NO = ['no','n','false','unpaid','0','open','pending','invoiced','outstanding','due'];
+function importPaidState(v){
+  const s = String(v ?? '').trim().toLowerCase();
+  if (IMPORT_PAID_YES.includes(s)) return true;
+  if (IMPORT_PAID_NO.includes(s)) return false;
+  return null;
+}
+// Duplicate identity: order # + pickup + origin + destination, never the order
+// # alone (brokers reuse them). A row with no order # also needs pay and loaded
+// miles to match.
+function importTripKey(t, hasRealOrderNo){
+  const n = (x) => String(x ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const base = [n(t.pickupDate), n(t.origin), n(t.destination)];
+  return hasRealOrderNo ? ['o', n(t.orderNo), ...base].join('|') : ['x', ...base, Number(t.pay || 0), Number(t.loadedMiles || 0)].join('|');
+}
+
 async function importCSVFile(file){
   try{
     if (importExceedsSizeLimit(file)){ toast('File too large', true); return; }
@@ -4611,31 +4676,61 @@ async function importCSVFile(file){
     let imported = 0;
 
     if (type === 'trips'){
-      const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
-      for (const row of data){
+      // Existing trips first (outside the write transaction), so a re-import
+      // is recognised row by row.
+      const seen = new Set();
+      for (const t of (await dumpStore('trips'))){
+        const real = !!t.orderNo && !/^CSV-/.test(t.orderNo);
+        seen.add(importTripKey(t, real));
+        if (real) seen.add(importTripKey(t, false));
+      }
+      const skippedDate = [], skippedDup = [];
+      const prepared = [];
+      data.forEach((row, i) => {
+        const rowNo = i + 2; // header is row 1
         try{
-          const orderNo = cellAt(row, 'Order#','OrderNo','Order','LoadID','Load') || `CSV-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+          const rawOrder = cellAt(row, 'Order#','OrderNo','Order','LoadID','Load');
+          const pickupDate = normalizeImportDate(cellAt(row, 'Pickup','PickupDate','Date','ShipDate'));
+          // No readable pickup date: skip the row rather than date it today.
+          if (!pickupDate){ skippedDate.push(rowNo); return; }
+          const deliveryDate = normalizeImportDate(cellAt(row, 'Delivery','DeliveryDate','DropDate')) || '';
+          const paidCell = cellAt(row, 'Paid','IsPaid','Status');
+          const paid = importPaidState(paidCell);
+          const orderNo = rawOrder || `CSV-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
           const trip = sanitizeTrip({
             orderNo,
             customer: cellAt(row, 'Customer','Broker','Carrier','Shipper'),
-            pickupDate: cellAt(row, 'Pickup','PickupDate','Date','ShipDate') || isoDate(),
-            deliveryDate: cellAt(row, 'Delivery','DeliveryDate','DropDate') || '',
+            pickupDate,
+            deliveryDate,
             origin: cellAt(row, 'Origin','PickupCity','From','OriginCity'),
             destination: cellAt(row, 'Destination','DropCity','To','DestCity','Dest'),
-            pay: Number(cellAt(row, 'Pay','Revenue','Rate','LineHaul','Amount','Total').replace(/[$,]/g,'') || 0),
-            loadedMiles: Number(cellAt(row, 'LoadedMiles','Loaded','Miles','LoadMiles').replace(/[,]/g,'') || 0),
-            emptyMiles: (() => { const v = cellAt(row, 'EmptyMiles','Empty','Deadhead','DeadheadMiles','DH').replace(/[,]/g,'').trim(); return v === '' ? null : Number(v); })(),
+            // Blank/unreadable stays blank: sanitizeTrip stores 0 and flags
+            // the trip for review ("Pay must be greater than 0" / "Loaded
+            // miles are unknown"), which keeps it out of RPM and lane stats.
+            pay: importNumberOrNull(cellAt(row, 'Pay','Revenue','Rate','LineHaul','Amount','Total')),
+            loadedMiles: importNumberOrNull(cellAt(row, 'LoadedMiles','Loaded','Miles','LoadMiles')),
+            emptyMiles: importNumberOrNull(cellAt(row, 'EmptyMiles','Empty','Deadhead','DeadheadMiles','DH')),
             notes: cellAt(row, 'Notes','Note','Comments','Memo'),
-            isPaid: ['yes','true','paid','1'].includes(cellAt(row, 'Paid','IsPaid','Status').toLowerCase()),
-            paymentStatusKnown: cellAt(row, 'Paid','IsPaid','Status').trim() !== '',
-            paidDate: cellAt(row, 'PaidDate','PayDate','PaymentDate') || null,
+            ...(paid === null ? { paymentStatusKnown: false } : { isPaid: paid, paymentStatusKnown: true }),
+            paidDate: normalizeImportDate(cellAt(row, 'PaidDate','PayDate','PaymentDate')) || null,
             wouldRunAgain: ['yes','true','1'].includes(cellAt(row, 'WouldRunAgain','RunAgain','Repeat').toLowerCase()) ? true : null,
           });
-          if (trip.orderNo) { validateRecordSize(trip, 'Trip'); stores.trips.put(trip); imported++; }
+          const key = importTripKey(trip, !!rawOrder);
+          if (seen.has(key)){ skippedDup.push(rowNo); return; }
+          seen.add(key);
+          if (trip.orderNo){ validateRecordSize(trip, 'Trip'); prepared.push(trip); }
         }catch(e){ console.warn("[FL]", e); }
-      }
+      });
+      const {t:txn, stores} = tx(['trips','auditLog'],'readwrite');
+      for (const trip of prepared){ stores.trips.put(trip); imported++; }
       await waitTxn(txn);
-      toast(`Imported ${imported} trip${imported!==1?'s':''} from CSV`);
+      const review = prepared.filter(t => t.needsReview).length;
+      const rowsList = (a) => a.slice(0, 8).join(', ') + (a.length > 8 ? '…' : '');
+      const parts = [`Imported ${imported} trip${imported!==1?'s':''} from CSV`];
+      if (review) parts.push(`${review} need review (missing pay, miles or payment status)`);
+      if (skippedDup.length) parts.push(`${skippedDup.length} already saved, skipped`);
+      if (skippedDate.length) parts.push(`${skippedDate.length} skipped: no readable pickup date (row ${rowsList(skippedDate)})`);
+      toast(parts.join(' · '), skippedDate.length > 0);
       invalidateKPICache();
       await renderTrips(true); await renderHome();
 
@@ -24737,6 +24832,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     exportJSON, importJSON, getSetting, setSetting,
     // Issue #232 — import ceiling enforced before materialization
     importFile, importTXTFile, importXLSXFile, importExceedsSizeLimit, LIMITS,
+    normalizeImportDate, importNumberOrNull, importPaidState,
     // X-01/X-07 (v23.9 Phase 4)
     cloudPushBackup, cloudPullBackup, mergeRestoreData, cloudGetConfig,
     // Issue #205 section 3 — automatic sync: pending state, status, durability
