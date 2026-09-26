@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.43">
+  <link rel="manifest" href="manifest.json?v=24.0.44">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -451,16 +451,16 @@
         <!-- ── Primary 3 Fields ── -->
         <div class="field" style="margin-bottom:10px">
           <label for="mwRevenue" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Revenue ($)</label>
-          <input id="mwRevenue" inputmode="decimal" placeholder="420" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px;letter-spacing:-0.5px" />
+          <input id="mwRevenue" inputmode="decimal" placeholder="Pay $" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px;letter-spacing:-0.5px" />
         </div>
         <div class="grid2" style="gap:10px;margin-bottom:10px">
           <div class="field" style="margin-bottom:0">
             <label for="mwLoadedMi" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Loaded Miles</label>
-            <input id="mwLoadedMi" inputmode="numeric" placeholder="185" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+            <input id="mwLoadedMi" inputmode="numeric" placeholder="Loaded mi" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
           </div>
           <div class="field" style="margin-bottom:0">
             <label for="mwDeadMi" style="font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--text-tertiary)">Deadhead Miles</label>
-            <input id="mwDeadMi" inputmode="numeric" placeholder="22" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
+            <input id="mwDeadMi" inputmode="numeric" placeholder="Deadhead mi" style="font-size:20px;font-family:var(--font-mono);font-weight:700;text-align:right;padding:14px 16px;min-height:56px" />
           </div>
         </div>
 
@@ -697,7 +697,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.43"></script>
-  <script src="sw-bridge.js?v=24.0.43"></script>
+  <script src="app.js?v=24.0.44"></script>
+  <script src="sw-bridge.js?v=24.0.44"></script>
 </body>
 </html>

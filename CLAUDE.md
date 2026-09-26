@@ -527,7 +527,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.43';
+const APP_VERSION = '24.0.44';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -677,8 +677,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.43` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.43`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.44` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.44`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4918,6 +4918,37 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.44 "Say What Is Missing" — the operator's first screenshot through v24.0.43
+
+App **24.0.43 → 24.0.44**. `DB_VERSION` stays **16** and the Worker stays **v28**: app-only,
+**do not redeploy the Worker**.
+
+**Reported from a real iPhone (2026-09-26).** A DispatchLand screenshot (Atlanta, GA → Americus, GA,
+128 loaded / 193 empty, no pay on screen) was read, and Score This Load showed only "Enter loaded
+miles and revenue." Three defects:
+- **The evaluator placeholders looked like data.** `#mwRevenue` showed a grey `420` (and loaded/deadhead
+  `185`/`22`), so an empty revenue box read as a filled one. They are now `Pay $` / `Loaded mi` /
+  `Deadhead mi`, and the intake dimensions placeholder is `L × W × H (inches)`, not `48x40x36 in`.
+- **The message did not say what was missing.** It now names it: "Enter the pay (Revenue) to score
+  this load."
+- **The screenshot reader guessed the year.** DispatchLand shows "Sep 25" with no year, and the model
+  returned 2024, so the pickup cutoff was two years in the past. `loadDateNearToday()` keeps the month
+  and day and changes the year only when another year puts the date within 60 days of today;
+  otherwise the date stays as read. It runs in `populateDraft()` (screenshot and text intake).
+
+**Also reported, not fixed here:** the tab bar reads "TodayToday" with Large text or Glance. Cause:
+`styles.css` hides the Home tab's text (`font-size: 0`) and draws "Today" with `::after`, and the
+Large/Glance rule sets that text's font size back with `!important`, so both show. The markup has read
+"Today" since the modern shell, so the `::after` relabel is obsolete. `styles.css` is GPT-owned;
+requested through the agent-coordination inbox and Airtable.
+
+**Tests.** SSI-26 (misread year corrected; near and far dates untouched), SSI-27 (placeholders are
+not numbers), SSI-28 (no pay → the message names the pay, not loaded miles). Red-first: 25/3 against
+main. SSI-25's fixture dates are now relative to today, since a fixed 2026 date would be re-yeared
+once the suite runs months later.
+
+---
 
 ## v24.0.43 "Read What Is There" — trip import integrity (Airtable recG8I51SR28EQb34)
 
