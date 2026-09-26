@@ -4915,6 +4915,31 @@ guaranteed path and the clipboard is only ever an addition to it.
 ---
 
 
+## Worker v28 "Equal Is Not Same" — a real repeat expense gets through
+
+Worker **v27 → v28**. The app stays **24.0.42** and `DB_VERSION` stays **16**: no app byte changed
+(`verify-release-generation` reports `changedRuntime: []`), so deploy the Worker only.
+
+**The defect** (reproduced by the GPT lane against `358e2d3`, inbox
+`gpt-to-claude-relay-repeat-expense-2026-09-25.md` on `agent-coordination`, Airtable
+`recqNJU5hQ2Phlols`). v27's `/relay` repeat check fingerprinted **every** action, so a second
+$12.50 toll sent a day after the first one was answered `duplicate:true, pushed:0` and never
+reached the app. Equal values are not the same transaction. WP-17 asserted exactly that
+suppression on an expense, so CI enshrined the defect.
+
+**The fix.** `RELAY_DEDUP_ACTIONS = new Set(['intake'])`: only screenshot text is deduplicated,
+because identical OCR text is the same screenshot. Expense, fuel, trip, evaluate and open items
+are always stored and pushed, and no `relayseen:` fingerprint is written for them. A relayed item
+only prefills a form; the driver's own Save tap still decides, and the trip form keeps its v24.0.42
+order-# warning.
+
+**Tests.** WP-17 now uses an intake item (same assertions). WP-18 (new) sends an equal-value
+expense, fuel-up and trip twice (immediately and a day later) and requires a new item each time
+and no fingerprint. Red-first: WP-18 is the only failure against v27. Negative control: an empty
+dedup set fails only WP-16/17.
+
+---
+
 ## v24.0.42 / Worker v27 "Once Is Enough" — duplicate protection
 
 App **24.0.41 → 24.0.42**, Worker **v26 → v27**. `DB_VERSION` stays **16**. **Deploy Worker v27

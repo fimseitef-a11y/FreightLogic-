@@ -479,7 +479,7 @@ test('[WP-17] a repeat is still skipped after the app consumed the first; after 
   const env = newEnv(); const worker = await loadWorker();
   const a = await seedDriver(worker, env, 'Dup Driver 2', '203.0.113.42');
   const { body: { key } } = await mintShortcutKey(worker, env, a.token);
-  const item = { do: 'expense', params: { amount: '42.10', category: 'Tolls' } };
+  const item = { do: 'intake', params: { text: 'Load ID: 1214705\nPickup: Dayton, OH\nDelivery: Toledo, OH' } };
   const first = await (await worker.fetch(relayReq(key, item), env)).json();
   eq((await worker.fetch(REQ('/relay/' + first.id, { method: 'DELETE', headers: driverHdrs(a.token) }), env)).status, 200, 'app consumes it');
   const again = await (await worker.fetch(relayReq(key, item), env)).json();
@@ -492,6 +492,36 @@ test('[WP-17] a repeat is still skipped after the app consumed the first; after 
     const later = await (await worker.fetch(relayReq(key, item), env)).json();
     ok(later.ok && !later.duplicate, 'after the 14-day window the same item is accepted again');
   } finally { Date.now = realNow; }
+});
+
+// v28: equal values are not the same transaction. Only intake (screenshot
+// text) is deduplicated; a second identical toll or fuel-up must get through.
+test('[WP-18] a repeat expense, fuel-up or trip with equal values is a new item', async () => {
+  const env = newEnv(); const worker = await loadWorker();
+  const a = await seedDriver(worker, env, 'Repeat Driver', '203.0.113.44');
+  const { body: { key } } = await mintShortcutKey(worker, env, a.token);
+  for (const item of [
+    { do: 'expense', params: { amount: '12.50', category: 'Tolls' } },
+    { do: 'fuel', params: { gallons: '10', total: '38.90' } },
+  ]) {
+    const first = await (await worker.fetch(relayReq(key, item), env)).json();
+    eq(first.ok, true, `${item.do}: first accepted`);
+    const same = await (await worker.fetch(relayReq(key, item), env)).json();
+    ok(same.ok && !same.duplicate && same.id !== first.id, `${item.do}: an immediate equal-value repeat is a new item`);
+    eq((await worker.fetch(REQ('/relay/' + first.id, { method: 'DELETE', headers: driverHdrs(a.token) }), env)).status, 200, `${item.do}: app consumes the first`);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 24 * 3600 * 1000;
+      const nextDay = await (await worker.fetch(relayReq(key, item), env)).json();
+      ok(nextDay.ok && !nextDay.duplicate && nextDay.id !== first.id, `${item.do}: an equal-value one a day later is a new item`);
+      ok(nextDay.pushed !== undefined && nextDay.waiting === undefined, `${item.do}: and is delivered, not reported as waiting`);
+    } finally { Date.now = realNow; }
+  }
+  const tripItem = { do: 'trip', params: { origin: 'Dayton, OH', dest: 'Toledo, OH' } };
+  const t1 = await (await worker.fetch(relayReq(key, tripItem), env)).json();
+  const t2 = await (await worker.fetch(relayReq(key, tripItem), env)).json();
+  ok(t1.ok && t2.ok && !t2.duplicate && t2.id !== t1.id, 'trip: an equal-value repeat is a new item (the trip form warns on order #)');
+  eq(await env.BACKUPS.get('relayseen:' + a.userId), null, 'no repeat fingerprints are kept for non-intake actions');
 });
 
 test('[WP-15] /health reports a Worker generation that carries Web Push (v24+)', async () => {
