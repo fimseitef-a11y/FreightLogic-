@@ -1,0 +1,6 @@
+owner: claude
+token: fe3ab330-f0b0-4ed0-9133-3fa8f0c8ae61
+started_utc: 2026-09-26T09:45:54Z
+expected_release_utc: 2026-09-26T13:45:54Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: v24.0.45 two-output bid (Baseline / Recommended Market Bid) in canonical evaluator + generation markers
