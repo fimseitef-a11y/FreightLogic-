@@ -1859,8 +1859,7 @@ html[data-fl-driver-mode="glance"] body :is(
 html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav {
   height: max(72px, calc(var(--fl-road-target) + 22px));
 }
-html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a .nl,
-html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a[data-nav="home"] .nl::after {
+html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a .nl {
   font-size: var(--fl-label-size) !important;
 }
 html:is([data-fl-text-size="large"],[data-fl-text-size="xlarge"],[data-fl-driver-mode="glance"]) body .bottom .nav a.nav-eval-center .ni {
