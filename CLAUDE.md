@@ -527,7 +527,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.44';
+const APP_VERSION = '24.0.45';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -677,8 +677,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.44` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.44`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.45` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.45`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
@@ -4918,6 +4918,38 @@ guaranteed path and the clipboard is only ever an addition to it.
 
 ---
 
+
+## v24.0.45 "Two Numbers" — the operator's two-output bidding method
+
+App **24.0.44 → 24.0.45**. `DB_VERSION` stays **16** and the Worker stays **v30 source** (v28
+deployed at the time of writing): app-only, **do not redeploy the Worker for this**.
+Airtable `recyg8y3wyovg2Jo8` (operator decision, 2026-09-25).
+
+The evaluator now shows two separately labelled bids, from one pure owner,
+`deriveTwoOutputBid()`:
+
+- **Baseline / Cost-Protected Bid** = loaded miles × **$1.25** + deadhead miles × the canonical
+  **marginal** cost per mile (`costProfile.marginalCPM`, $0.296 at the dated profile defaults).
+  The $0.405 all-in cost is deliberately not used: fixed costs are paid whether or not this load
+  moves.
+- **Recommended Market Bid** = the baseline plus only the adjustments the evaluator has evidence
+  for, each named on the card: urgency words in the notes (the existing `detectUrgency()` boost,
+  capped at $0.30/mi), cross-border (+$0.10/mi, as in `generateBidRange()`), and the existing
+  weekend overlay (`rpmAdder` per mile, plus the $150 minimum for a weekend hold). With none, it
+  equals the baseline and says so. No market fact, live quote or reload probability is invented;
+  the driver raises it for what the board shows.
+- Unknown loaded miles, deadhead or cost gives **no dollar figure**. An explicit 0 deadhead is a
+  verified zero.
+
+Both outputs render on the scored card (inside the hero, above Show Details) and on the no-pay
+quote card. Verdict, grade, True RPM and the existing rate targets (`deriveUnifiedBid`) are
+unchanged.
+
+**Tests.** `tests/integration/two-output-bid.spec.mjs` (TOB-01..07, new, registered). Red-first
+against `main`: 1/7 (TOB-07 passes vacuously). Negative control: using `allInCPM` for the
+deadhead fails only TOB-05.
+
+---
 
 ## v24.0.44 "Say What Is Missing" — the operator's first screenshot through v24.0.43
 
