@@ -4941,6 +4941,13 @@ miles and revenue." Three defects:
   and day and changes the year only when another year puts the date within 60 days of today;
   otherwise the date stays as read. It runs in `populateDraft()` (screenshot and text intake).
 
+**The operator's export showed the same date defect on the JSON path.** Their 142-trip work history
+arrived as a JSON import (`hist-…` ids) whose rows often carry only a delivery date, and `sanitizeTrip()`
+stamped 41 of them with the import day. `sanitizeTrip()` now uses the trip's own delivery date when the
+pickup date is missing (today only when both are missing), and the CSV route does the same (it skips a
+row only when both are unreadable). TII-06 covers both routes. The operator's 30 recoverable trips were
+repaired with a merge-import patch file; 11 have no date in the source and need the operator.
+
 **Also reported, not fixed here:** the tab bar reads "TodayToday" with Large text or Glance. Cause:
 `styles.css` hides the Home tab's text (`font-size: 0`) and draws "Today" with `::after`, and the
 Large/Glance rule sets that text's font size back with `!important`, so both show. The markup has read

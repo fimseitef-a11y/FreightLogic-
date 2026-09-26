@@ -3420,7 +3420,11 @@ function sanitizeTrip(raw){
   t.id = clampStr(raw.id || t.id, 80);
   t.orderNo = normOrderNo(raw.orderNo);
   t.customer = clampStr(raw.customer, 80);
-  t.pickupDate = isValidISODate(raw.pickupDate) ? raw.pickupDate : isoDate();
+  // v24.0.44: a trip with no pickup date takes its own delivery date before it
+  // takes today. A JSON import of work history with delivery-only dates used to
+  // stamp every such trip with the import day (41 of 142 in the operator's DB).
+  t.pickupDate = isValidISODate(raw.pickupDate) ? raw.pickupDate
+    : isValidISODate(raw.deliveryDate) ? raw.deliveryDate : isoDate();
   t.deliveryDate = isValidISODate(raw.deliveryDate) ? raw.deliveryDate : t.pickupDate;
   t.invoiceDate = isValidISODate(raw.invoiceDate) ? raw.invoiceDate : t.deliveryDate;
   t.dueDate = isValidISODate(raw.dueDate) ? raw.dueDate : '';
@@ -4695,10 +4699,11 @@ async function importCSVFile(file){
         const rowNo = i + 2; // header is row 1
         try{
           const rawOrder = cellAt(row, 'Order#','OrderNo','Order','LoadID','Load');
-          const pickupDate = normalizeImportDate(cellAt(row, 'Pickup','PickupDate','Date','ShipDate'));
-          // No readable pickup date: skip the row rather than date it today.
-          if (!pickupDate){ skippedDate.push(rowNo); return; }
           const deliveryDate = normalizeImportDate(cellAt(row, 'Delivery','DeliveryDate','DropDate')) || '';
+          // No readable pickup date: use the row's delivery date; with neither,
+          // skip the row rather than date it today.
+          const pickupDate = normalizeImportDate(cellAt(row, 'Pickup','PickupDate','Date','ShipDate')) || deliveryDate;
+          if (!pickupDate){ skippedDate.push(rowNo); return; }
           const paidCell = cellAt(row, 'Paid','IsPaid','Status');
           const paid = importPaidState(paidCell);
           const orderNo = rawOrder || `CSV-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
