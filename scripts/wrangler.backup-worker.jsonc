@@ -101,6 +101,7 @@
   // SECRETS ARE NOT IN THIS FILE AND MUST NOT BE ADDED TO IT.
   //   ADMIN_TOKEN     — admin endpoint auth
   //   OPENAI_API_KEY  — /evaluate and /extract
+  //   PUSHWARD_INTEGRATION_KEY — optional PushWard Live Activity bridge (Worker v30)
   // Optional, only if VISION_PROVIDER is switched away from the default
   // `workers-ai` (which needs no secret, just the `ai` binding above):
   //   GEMINI_API_KEY    — /extract-image via Gemini
