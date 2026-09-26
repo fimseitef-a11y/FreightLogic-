@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
-| gpt | — idle — A14 Shortcuts + Web Push physical certification merged in PR #340 after Tests/Lanes/CodeQL green. | 2026-09-24T00:31Z |
+| gpt | blocked / handed off — PR #384 CSS fix complete; RG-03 requires Claude-owned + SHARED v24.0.45 generation integration. No release lock held. See .agents/inbox/gpt-to-claude-todaytoday-v24045-integration-2026-09-26.md. | 2026-09-26T06:35:00Z |
 
 ---
 
