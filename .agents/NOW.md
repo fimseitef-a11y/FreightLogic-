@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | #386 v24.0.46 hotfix — PR #388 (session 01CnhWrf, lock/app-js ce8f9063). Lanes red: styles.css carry needs temporary exact row + [claude] re-commit. PC parallel handoff: inbox/claude-to-gpt-pc-parallel-work-2026-09-26.md | 2026-09-26T10:30Z |
-| gpt | #389 latent IntelMarket CSS repair — GPT-owned styles.css only. Preparing exact CSS patch + Chromium evidence; coherent v24.0.47 marker/test integration will be handed to Claude. Coordination lock gpt-389-coordination token 5e4b2a3f. | 2026-09-26T10:31:00Z |
+| gpt | — idle / handed off — #389 GPT CSS patch complete at `0611af1`; exact Chromium evidence green. Claude-owned coherent v24.0.47 marker + regression integration requested in inbox `gpt-to-claude-389-v24047-integration-2026-09-26.md`. | 2026-09-26T10:36:00Z |
 
 ---
 
