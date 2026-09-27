@@ -1,6 +1,6 @@
 # FreightLogic Multi-Agent Protocol
 
-This file is the durable coordination contract for Claude Code and ChatGPT/GPT. Protocol state on `main` is authoritative. Live coordination state is stored only on the long-lived `agent-coordination` branch and that branch is never merged to `main`.
+This file is the durable coordination contract for FreightLogic engineering. As of 2026-09-27, ChatGPT/GPT is the primary coordinator and implementation lane. Claude is not a required dependency and has no active ownership unless the operator explicitly reauthorizes a bounded Claude task. Protocol state on `main` is authoritative. Live coordination state is stored only on the long-lived `agent-coordination` branch and that branch is never merged to `main`.
 
 ## Current architecture and safety boundary
 
@@ -9,8 +9,8 @@ This file is the durable coordination contract for Claude Code and ChatGPT/GPT. 
 - `tests/` contains the Playwright/Chromium regression suite. The aggregate entry point is `node tests/run-all.mjs`.
 - No `TEST_MAP.md` while `app.js` is monolithic. Filename-based selective testing is false precision at this size.
 - **Any `app.js` change requires the full suite. No exceptions and no judgment calls.**
-- Service-worker, IndexedDB/storage, crypto/PIN, cloud restore, tax/accounting, decision-engine, and other core-path changes remain Claude-owned unless `LANES.md` explicitly changes ownership after extraction.
-- GPT does not edit Claude-owned paths. Claude does not edit GPT-owned paths. SHARED paths require the lock protocol below.
+- Service-worker, IndexedDB/storage, crypto/PIN, cloud restore, tax/accounting, decision-engine, and other core-path changes follow the current owner in `LANES.md`; under the 2026-09-27 control-plane transfer, active repository ownership defaults to the GPT lane unless a row is `SHARED`.
+- GPT is the primary write lane. A specialist or legacy Claude session may not edit GPT-owned paths or claim new work unless the operator explicitly reauthorizes that bounded role. `SHARED` paths still require the lock protocol below.
 
 ## Durable vs live state
 
@@ -42,10 +42,11 @@ If the branch does not yet exist remotely, create and push it without switching 
 
 ## Lock protocol — VERBATIM
 
-LOCK PROTOCOL (document verbatim in AGENTS.md — both agents obey it):
+LOCK PROTOCOL (document verbatim in AGENTS.md — every authorized write lane obeys it):
   Claim: fetch agent-coordination, fast-forward, create
     /.agents/locks/<slug>.lock containing:
       owner: <claude|gpt> | token: <uuid> | started_utc | expected_release_utc |
+      New claims default to owner: gpt. owner: claude is valid only after explicit operator reauthorization.
       paths | task
     Commit THAT FILE ALONE — never bundle anything with a lock commit. Push.
   REJECTED PUSH = CLAIM FAILED. Never rebase, cherry-pick, or force the
@@ -154,8 +155,8 @@ A red baseline is evidence, not permission to alter the safety net. If the basel
 
 ## Git and integration
 
-- Claude task branches: `agent/claude/<task>` or `claude/<task>`; commit prefix `[claude]`.
-- GPT task branches: `agent/gpt/<task>` or `chatgpt/<task>`; commit prefix `[gpt]`.
+- GPT task branches: `agent/gpt/<task>` or `chatgpt/<task>`; commit prefix `[gpt]`. This is the default active namespace.
+- Legacy Claude namespaces `agent/claude/<task>` and `claude/<task>` remain recognized only for repository history or a future operator-explicit reauthorization; recognizing the namespace does not grant ownership.
 - Those four namespaces are the complete set **for agents**. A branch outside them fails the `commit-prefix` CI check rather than being silently accepted; add the namespace here first if a new one is genuinely needed.
 - **Managed bots are not agents** (Issue #222). Dependabot opens `dependabot/github_actions/<group>` with the `[deps]` prefix its `.github/dependabot.yml` configures. It gets a lane of its own because both obvious alternatives are wrong: mapping it to `claude` would hand a bot an entire agent lane, and exempting it from Lanes would remove the check from the one privileged path here — workflows run with repository credentials, which is why `tests/unit/workflow-authority.spec.mjs` exists at all. Its lane is strictly narrower than either agent's:
   - matched **only** on `dependabot/github_actions/*`, never `dependabot/*`, so an ecosystem this repository does not configure still fails closed;
@@ -172,7 +173,7 @@ A red baseline is evidence, not permission to alter the safety net. If the basel
 
 ## Extraction gate
 
-Parallel application work does **not** begin merely because this protocol exists. Claude must first:
+Parallel application work does **not** begin merely because this protocol exists. The owning implementation lane (currently GPT) must first:
 
 1. obtain/record a green full-suite baseline,
 2. propose a behavior-preserving UI seam extraction and stop for human approval,
