@@ -5388,7 +5388,9 @@ function computeLaneStats(trips){
       minRpm: r.minRpm === Infinity ? 0 : +r.minRpm.toFixed(2),
       maxRpm: +r.maxRpm.toFixed(2),
       trend, // -1, 0, 1
-      trendLabel: trend > 0 ? 'Rising' : trend < 0 ? 'Declining' : 'Stable',
+      // Fewer than four observations cannot support the comparison used above,
+      // so do not turn "no measurable trend yet" into a claim of stability.
+      trendLabel: sorted.length < 4 ? 'Need more history' : (trend > 0 ? 'Rising' : trend < 0 ? 'Declining' : 'Stable'),
       volatility: +volatility.toFixed(3),
       repeatRate: r.trips > 0 ? Math.round((r.repeats / r.trips) * 100) : null,
       lastDate,
@@ -25081,7 +25083,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     _historicalRowFingerprint, _orderStableKey,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
-    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, exportTripsCSV, invalidateKPICache,
+    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, computeLaneStats, exportTripsCSV, invalidateKPICache,
     // OI-15 drives the REAL row renderer, because what was wrong with the
     // unknown-deadhead coercion was what the driver SAW, not what a helper
     // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
