@@ -200,5 +200,48 @@ await test("A16 excessive privacy nesting fails closed to UNKNOWN", () => {
   assert.equal(classifyPrivacy(envelope), "UNKNOWN");
 });
 
+
+await test("A17 free-form nested context is excluded from model projection", () => {
+  const projection = buildModelProjection(baseEnvelope({
+    facts: {
+      ...baseEnvelope().facts,
+      marketSignals: { note: "arbitrary text must never reach a model" },
+      pickupWindow: { start: "2026-09-27T10:00:00Z" },
+    },
+    canonicalSnapshot: {
+      ...baseEnvelope().canonicalSnapshot,
+      marketContext: { note: "also excluded" },
+      calculatedAt: "2026-09-27T09:15:00Z",
+    },
+  }));
+  assert.equal("marketSignals" in projection.facts, false);
+  assert.equal("pickupWindow" in projection.facts, false);
+  assert.equal("marketContext" in projection.canonicalSnapshot, false);
+  assert.equal("calculatedAt" in projection.canonicalSnapshot, false);
+});
+
+await test("A18 oversized envelopes are rejected before routing", () => {
+  const envelope = baseEnvelope({
+    facts: {
+      ...baseEnvelope().facts,
+      marketSignals: { note: "x".repeat(9000) },
+    },
+  });
+  assert.throws(
+    () => validateEnvelope(envelope),
+    (error) => error instanceof ContractError && error.code === "ENVELOPE_TOO_LARGE"
+  );
+});
+
+await test("A19 cyclic envelopes are rejected before privacy traversal", () => {
+  const envelope = baseEnvelope();
+  envelope.facts.marketSignals = {};
+  envelope.facts.marketSignals.self = envelope.facts.marketSignals;
+  assert.throws(
+    () => validateEnvelope(envelope),
+    (error) => error instanceof ContractError && error.code === "INVALID_ENVELOPE"
+  );
+});
+
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
 if (failed) process.exitCode = 1;
