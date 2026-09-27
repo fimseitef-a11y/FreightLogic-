@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — Agent Phase A implementation is in PR #405; 21/21 exact-byte contracts green; awaiting full PR CI only. | 2026-09-27T09:48:00Z |
+| gpt | AIAG-TASK-0005 — harden PR #405 replay integrity + observability default-off; agent-runtime/ only. | 2026-09-27T10:00:43Z |
 
 ---
 
