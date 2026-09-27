@@ -1,0 +1,6 @@
+owner: gpt
+token: 7c2b9e34-9e7c-4de1-b9d0-00090009a117
+started_utc: 2026-09-27T12:40:00Z
+expected_release_utc: 2026-09-27T13:25:00Z
+paths: .agents/LANES.md
+task: AIAG-TASK-0009 temporary exact-path ownership grant for existing Worker caller-auth implementation
