@@ -323,3 +323,14 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Merged main `46ce473c0cd6ade89a62da814d81ca3a955c4415`; changed path is `docs/VENDOR_DEPENDENCY_REVIEW.md` only. No deployed runtime/vendor/test/release marker changed, so these checks do not claim a new app/Worker generation or production deployment.
 - Repository evidence verified on the pre-merge exact main: `vendor/xlsx.full.min.js` blob `16e013fceefc689cabc5be352099199847a0e67f` self-declares `version="0.18.5"`; current registered bundled-vendor test exercises `XLSX.read`/write offline; historical #232 and current v24.0.43 import evidence confirm operator XLSX parser reachability.
 - Security conclusion is advisory-by-version + parser reachability only. No exploit reproduction was attempted or claimed. Remediation is tracked as issue #392 in the Claude-owned vendor/release lane.
+
+## 2026-09-27T04:31Z — SheetJS 0.20.3 PC compatibility probe
+- Authorized shared PC: DESKTOP-1TFFM2S. No Git install and no retained repository edit.
+- Candidate: official SheetJS CE 0.20.3 standalone bundle, 951,904 bytes, SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`.
+- Existing specs under temporary vendor substitution: `xlsx-bundled-vendor.spec.mjs` PASS; `trip-import-integrity.spec.mjs` PASS; `service-worker-shell.spec.mjs` PASS.
+- Scratch actual XLSX import probe: PASS; real workbook imported through `__FL_TESTS.importFile()`; duplicate import stayed deduped; M/D/YYYY dates normalized; pay/loaded miles preserved; blank deadhead stayed null/UNKNOWN; paid status stayed known/true.
+- Realistic Excel serial/date-format probe: current 0.18.5 and candidate 0.20.3 both map serial 46276 / m/d/yyyy to 2026-09-11.
+- Legacy BIFF8 `.xls` import probe: PASS under both 0.18.5 and 0.20.3 with matching pickup/pay/loaded/UNKNOWN-deadhead semantics.
+- Synthetic JS Date midnight-UTC probe showed the same America/Chicago local-date presentation under both versions; recorded as fixture/timezone behavior, not a 0.20.3 regression.
+- Original `vendor/xlsx.full.min.js` restored after every probe; SHA-256 before/after `c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99`.
+- `verify-release-generation.mjs` could not execute locally because `git` is absent; this is environment UNOBSERVED, not PASS/FAIL for the migration candidate. Normal exact-head CI is still mandatory.
