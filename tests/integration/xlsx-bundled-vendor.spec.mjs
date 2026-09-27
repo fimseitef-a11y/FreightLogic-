@@ -41,10 +41,11 @@ test('[X-10] loadSheetJS() loads the bundled vendor file and it actually works, 
     const wb2 = XLSX.read(buf, { type: 'array' });
     const ws2 = wb2.Sheets[wb2.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws2);
-    return { ok: true, rows };
+    return { ok: true, version: XLSX.version, rows };
   });
 
   ok(result.ok, 'bundled vendor/xlsx.full.min.js did not load/function correctly: ' + JSON.stringify(result));
+  eq(result.version, '0.20.3', 'bundled SheetJS version is the reviewed non-affected 0.20.3 release');
   eq(result.rows.length, 1, 'round-tripped workbook must have exactly one data row');
   eq(result.rows[0].OrderNo, 'T1', 'round-tripped OrderNo must match');
   eq(result.rows[0].Pay, 1234.56, 'round-tripped Pay must match');
