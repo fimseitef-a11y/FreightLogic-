@@ -1,6 +1,0 @@
-owner: gpt
-token: c3b0d1a4-0d9e-4b64-a1d7-5a7ed02ff371
-started_utc: 2026-09-27T09:02:30Z
-expected_release_utc: 2026-09-27T12:00:00Z
-paths: .agents/LANES.md
-task: AIAG-TASK-0003 Phase A GPT ownership seam for isolated agent-runtime subtree and exact contract test
