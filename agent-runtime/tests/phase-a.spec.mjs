@@ -9,7 +9,7 @@ import {
 } from "../contracts.mjs";
 import { chooseModelTier } from "../router.mjs";
 import { stateScope } from "../state-key.mjs";
-import { sameIdempotentEvent } from "../idempotency.mjs";
+import { fingerprintEnvelope, sameIdempotentEvent } from "../idempotency.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -168,6 +168,7 @@ await test("A14 isolated Wrangler config is internet-dark and SQLite-backed", as
   assert.equal(config.main, "worker.mjs");
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
+  assert.equal(config.observability.enabled, false);
   assert.equal("routes" in config, false);
   assert.equal("route" in config, false);
   assert.equal("assets" in config, false);
@@ -249,21 +250,64 @@ await test("A19 cyclic envelopes are rejected before privacy traversal", () => {
 });
 
 
-await test("A20 idempotency identity accepts only the exact event + correlation", () => {
+await test("A20 idempotency identity accepts only exact event + correlation + payload", async () => {
+  const envelope = baseEnvelope();
+  const payloadFingerprint = await fingerprintEnvelope(envelope);
   const stored = {
     event_id: "evt-001",
     correlation_id: "corr-001",
+    payload_fingerprint: payloadFingerprint,
   };
-  assert.equal(sameIdempotentEvent(stored, baseEnvelope()), true);
-  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ id: "evt-002" })), false);
-  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ correlationId: "corr-002" })), false);
+  assert.equal(sameIdempotentEvent(stored, envelope, payloadFingerprint), true);
+  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ id: "evt-002" }), payloadFingerprint), false);
+  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ correlationId: "corr-002" }), payloadFingerprint), false);
+  assert.equal(sameIdempotentEvent(stored, envelope, "0".repeat(64)), false);
 });
 
-await test("A21 worker re-checks idempotency identity after INSERT OR IGNORE", async () => {
+await test("A21 worker re-checks fingerprint identity after INSERT OR IGNORE", async () => {
   const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
-  const matches = source.match(/sameIdempotentEvent\(stored, envelope\)/g) || [];
-  assert.equal(matches.length, 1);
   assert.equal(source.includes("INSERT OR IGNORE"), true);
+  assert.equal(source.includes("payload_fingerprint TEXT NOT NULL"), true);
+  assert.equal(source.includes("payloadFingerprint = await fingerprintEnvelope(envelope)"), true);
+  const checks = source.match(/sameIdempotentEvent\([^)]*payloadFingerprint\)/g) || [];
+  assert.equal(checks.length, 2);
+});
+
+await test("A22 replay fingerprint is stable across object key order", async () => {
+  const one = baseEnvelope({
+    facts: {
+      originMarket: "Chicago",
+      destinationMarket: "Detroit",
+      loadedMiles: 280,
+      deadheadMiles: 35,
+      weightLb: 900,
+      pieces: 2,
+    },
+  });
+  const two = baseEnvelope({
+    facts: {
+      pieces: 2,
+      weightLb: 900,
+      deadheadMiles: 35,
+      loadedMiles: 280,
+      destinationMarket: "Detroit",
+      originMarket: "Chicago",
+    },
+  });
+  assert.equal(await fingerprintEnvelope(one), await fingerprintEnvelope(two));
+});
+
+await test("A23 replay fingerprint changes when facts or canonical snapshot mutate", async () => {
+  const base = baseEnvelope();
+  const fingerprint = await fingerprintEnvelope(base);
+  const changedFacts = baseEnvelope({
+    facts: { ...base.facts, deadheadMiles: 36 },
+  });
+  const changedSnapshot = baseEnvelope({
+    canonicalSnapshot: { ...base.canonicalSnapshot, marketBid: 550 },
+  });
+  assert.notEqual(await fingerprintEnvelope(changedFacts), fingerprint);
+  assert.notEqual(await fingerprintEnvelope(changedSnapshot), fingerprint);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
