@@ -3462,7 +3462,8 @@ function sanitizeTrip(raw){
   // Appointment dates are not completion evidence. New UI-created trips carry
   // an explicit execution stage; legacy/imported rows without this field retain
   // the historical date-based inference in _lifecycleStateFromTrip().
-  t.executionStatus = LIFECYCLE_EXECUTION.includes(raw.executionStatus) ? raw.executionStatus : null;
+  if (LIFECYCLE_EXECUTION.includes(raw.executionStatus)) t.executionStatus = raw.executionStatus;
+  else delete t.executionStatus;
   const hasPaidFlag = Object.prototype.hasOwnProperty.call(raw || {}, 'isPaid') && typeof raw.isPaid === 'boolean';
   t.isPaid = hasPaidFlag ? raw.isPaid : false;
   t.paymentStatusKnown = typeof raw.paymentStatusKnown === 'boolean' ? raw.paymentStatusKnown : hasPaidFlag;
