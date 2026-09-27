@@ -402,13 +402,13 @@ leaves nothing. Source moving ahead of production does not make that claim false
 are green at the dated checkpoint above. The newly added privileged vision-provider smoke
 remains unexecuted; do not expand standard CI success into an all-live-gates claim.
 
-**Exactly one device gate remains: physical iPhone A1-A13**, deferred by the operator's 2026-09-16
+**Open manual gates (2026-09-27): physical iPhone A1-A14 (#226) and the real-iPhone PushWard smoke plus old-key confirmation (#380).** The physical gate was deferred by the operator's 2026-09-16
 decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconciliation) is no
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` is the certification
-authority — through the preserved 2026-09-20 addendum it supersedes the older records, and it is the one
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` (v24.0.47 / Worker v30) is the certification
+authority. It supersedes the 2026-09-21 addendum (v24.0.29), which chains back through the older records, and it is the one
 `scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 

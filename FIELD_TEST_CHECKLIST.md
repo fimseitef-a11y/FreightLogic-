@@ -2,9 +2,15 @@
 
 Purpose: finite **Milestone 7 physical-device certification gate** for the FreightLogic completion release.
 
-Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
+Authority: `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md`, `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`, and `docs/CERTIFICATION_DEFERRAL_2026-09-16.md`.
 
-**Current production synchronization point (observed 2026-09-24 UTC): FreightLogic v24.0.35 / IndexedDB v16 / Worker v24.**
+**Current production synchronization point (observed 2026-09-27 UTC): FreightLogic v24.0.47 / IndexedDB v16 / Worker v30.**
+Live Parity `36317109903` and Production Service Worker `36317110163` PASS on `main` @ `fe2437d`;
+Worker v30 was deployed 2026-09-26 (recorded on #380). The physical gate is **A1-A14** and has no new
+PASS claim. As always, this does not select a certification candidate. See
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`.
+
+*Previous synchronization point, kept as history:* **FreightLogic v24.0.35 / IndexedDB v16 / Worker v24**, observed 2026-09-24 UTC.
 PR #341 merged as `c58a9f9`; re-dispatched Live Parity `35941949948` and Production Service Worker
 `35941952081` PASS on that SHA. App-only generation: v24.0.35 removes a boot-time notification
 permission prompt so A14 step 1 can hold. As always, this does not select a certification
@@ -445,8 +451,10 @@ For every blocking item use exactly one of:
 
 For a failure record the checklist ID, exact candidate SHA/version, device/iOS/browser or PWA context, reproduction steps, screenshot when useful, whether local data changed/lost, and whether a safe export/backup existed.
 
-The release remains **HOLD**. The dated evidence and outstanding scope are in
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, resolved by explicit supersession through
+The release remains **HOLD**. The current dated evidence and outstanding scope are in
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` (v24.0.47 / Worker v30), which
+supersedes the 2026-09-21 addendum. The rest of this paragraph and the next describe the
+2026-09-21 checkpoint and are kept as history. That addendum was resolved by explicit supersession through
 `scripts/m7-certify.mjs`. Standard exact-main tests, live app/Worker generation parity and
 production service-worker checks pass at its named checkpoint. The new authenticated
 `/extract-image` provider probe has **not** run, and a blank-image smoke cannot replace
@@ -461,4 +469,4 @@ policy and independent review, and repository/Safari/native work are tracked sep
 in the current state. The former statement that only physical work remained overstated
 completion by omitting those pending items.
 
-Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` before the release is frozen.
+Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` before the release is frozen.
