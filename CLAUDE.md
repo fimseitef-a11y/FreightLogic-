@@ -1,4 +1,11 @@
-# FreightLogic — Claude Code Guide
+# FreightLogic — Engineering Guide
+
+## Current control plane — 2026-09-27
+
+ChatGPT/GPT is the primary coordinator and implementation lane. Claude is not an active dependency or path owner unless the operator explicitly reauthorizes a bounded Claude task. Current path authority is `.agents/LANES.md`; SHARED paths still require the lock protocol in `AGENTS.md`. The former automatic Claude↔ChatGPT usage-limit relay is superseded by `.agents/RELAY_PROTOCOL.md`.
+
+For continuation, recover the minimum verified state needed, prefer current GitHub/Airtable evidence over stale summaries, do not repeat completed audits, batch compatible work, and keep production/credential/security/external-action/manual-device gates explicit.
+
 
 ## Project Overview
 
@@ -19,11 +26,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
   `/admin-console/` (the Admin Console UI and its `worker.js`) and `native-ios/*`. Both are
   now in `.assetsignore`, with DAC-09 and live must-404 checks. Do not re-publish either from
   the driver origin: the Admin Console deploys from its own origin.
-- **Next release: v24.0.34 / Worker v24, Apple Shortcuts deep links + Web Push, built by
-  Claude end to end.** The operator decided this on 2026-09-23. The release covers both
+- **Historical 2026-09-23 plan (completed/superseded): v24.0.34 / Worker v24, Apple Shortcuts deep links + Web Push.** The operator decided this on 2026-09-23. The release covers both
   contracts (`docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md`), the Worker
-  endpoints, the service worker and the client. Claude may merge PRs and dispatch the Worker
-  deploy once every gate is green. This supersedes the 2026-09-22 assignment to GPT. The
+  endpoints, the service worker and the client. The former Claude implementation/merge assignment in this paragraph is historical and has no current authority. This superseded the 2026-09-22 assignment to GPT at that time. The
   contracts were first drafted on branch `claude/repo-airtable-review-13j8hi` (`0bb6e4e`) and
   were **not on `main`** at the time of this sync; they land with the v24.0.34 release (PR #333). The app-js lock for this work was held by
   Claude.
@@ -84,10 +89,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
   - An expired quote is a lost bid, not a win. DEACTIVATED is censored evidence, not a loss.
   - Keep conflicting source records separate. Never deduplicate DispatchLand quotes by route
     alone.
-- **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
-  repository protection. #278's long-haul item stays unresolved pending joint consensus.
+- **Open manual gates (2026-09-27):** physical iPhone A1–A14 (#226) and the real-iPhone PushWard smoke plus key-rotation confirmation (#380). Repository administration #222, authenticated live provider #252, economics #278, and the frozen native track #204/#205 are closed as repository/project blockers. Real-screenshot extraction quality is not promoted to observed unless separately evidenced.
 
-**Production app is v24.0.47 / DB16, DIRECTLY OBSERVED 2026-09-27; Worker source remains v30.** PR #395 merged as `db35cf3c`, upgrading the offline vendored SheetJS parser to official 0.20.3 and completing the Intel → Market single-label repair. Authorized-PC candidate testing passed **906/0 across 89 specs**; exact PR-head Tests/Lanes/CodeQL passed; exact-main Tests and CodeQL passed; Production Service Worker run `36296068967` passed; the first push-triggered Live Parity raced deployment, then rerun attempt 2 of run `36296068917` passed after propagation. A direct production fetch of `vendor/xlsx.full.min.js` returned **951,904 bytes**, SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`, with `XLSX.version` 0.20.3. DB/schema/economics/doctrine/Worker behavior were unchanged by this release.
+**Production app v24.0.47 / DB16 and Worker v30 are DIRECTLY OBSERVED 2026-09-27.** Current main `ed8c0727f289d5343ef0ac3c41a5f5041a871b2c` is the governance-only PR #409 merge and does not change runtime bytes. Exact-main Playwright run `36321229544` passed **906/0 across 89 specs**; Analyze JavaScript `36321229523`, Live Parity `36321229534`, Production Service Worker `36321229517`, and the Cloudflare Workers build all passed. The v24.0.47 runtime came from PR #395 (`db35cf3c`), including official vendored SheetJS 0.20.3 and the Intel → Market single-label repair. Worker v30 was deployed 2026-09-26 and is observed by the live parity gate. DB/schema/economics/doctrine were unchanged by the ChatGPT-primary governance transfer.
 
 *Superseded, kept as history:* **Production app is v24.0.46 / DB16, DIRECTLY OBSERVED 2026-09-26; the deployed Worker is v28 while source is v30.** PR #388 merged as `3e4fca2` (#386 hotfix). Re-dispatched Production Service Worker `36235827108` PASS and Live Parity `36235825920` with every app-side check at 24.0.46 and exactly one failure, `Worker reports v30 — {"version":"28"}` (#380, unchanged). The first two parity dispatches (`36235604153`, `36235624901`) and SW `36235603089` ran within 45 s of the merge, saw 24.0.45, and are the propagation race, not the evidence.
 
@@ -250,7 +254,7 @@ Production is directly observed on settled checkpoint `98e447e3dc1ffe5d00e5793ab
 
 The runtime merge also preserved the deployment-propagation evidence rather than hiding it: Live Parity `35679161628` and Production Service Worker `35679161632` first observed the prior v24.0.28 generation while Cloudflare was still settling, then both passed on attempt 2 with no code change once v24.0.29 was actually served. That is deployment-race evidence, not a product failure and not a reason to erase the first observation.
 
-**This still does not close #278 or #252.** #278's disputed later policy scope still requires its independent Claude audit/joint-consensus gate. #252's privileged authenticated live provider invocation and real-screenshot quality benchmark remain unobserved. Physical iPhone A1-A13, guarded Admin Console live proof, repository-admin controls, and Safari/native Apple work also remain separate. The current certification authority remains `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
+**Historical boundary at the v24.0.29 checkpoint.** At that time #278, #252, physical iPhone A1-A13, Admin Console live proof, repository-admin controls, and Safari/native Apple work were still separate/open. Those statuses were later superseded. The current authority is `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`; the historical v24.0.29 paragraph does not reopen closed items.
 
 **Historical v24.0.25 observation.** PR #277 merged as
 `436d677876c238bb6773d56a15d8f00a5699a3f9`; governance-only #280 was
@@ -258,8 +262,9 @@ The runtime merge also preserved the deployment-propagation evidence rather than
 production service worker `35542851411` were re-dispatched on that checkpoint and
 observed v24.0.25 / DB16 / Worker v21. The complete dated record is preserved in
 `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`, superseded first by
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` and now by
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`. The previous overview's
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, then by
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and currently by
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`. The previous overview's
 claim that v24.0.26 was still source-only is now superseded by the logs above.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
@@ -349,18 +354,13 @@ different event from a merge, which is the entire mechanism: merging leaves a co
 leaves nothing. Source moving ahead of production does not make that claim false, it makes it
 *superseded*, and re-verify before repeating it in any release or certification claim.
 
-**Issues #224, #240 and #221 are CLOSED.** The standard exact-main suite and release checks
-are green at the dated checkpoint above. The newly added privileged vision-provider smoke
-remains unexecuted; do not expand standard CI success into an all-live-gates claim.
+**Issues #224, #240 and #221 are CLOSED.** The standard exact-main suite and release checks are green at the dated checkpoint above. The privileged authenticated live-provider invocation is also observed in later evidence (#252); real-screenshot extraction quality remains separately unobserved. Do not expand CI success into physical-device or real-image quality claims.
 
-**Exactly one device gate remains: physical iPhone A1-A13**, deferred by the operator's 2026-09-16
-decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconciliation) is no
+**The physical-device gate is A1-A14**, deferred by the operator's 2026-09-16 decision to the final post-v24.5 candidate. The separate PushWard real-iPhone/key-rotation confirmation (#380) is also still manual. **Gate C (M6 private-history reconciliation) is no
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` is the certification
-authority — through the preserved 2026-09-20 addendum it supersedes the older records, and it is the one
-`scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` is the current certification authority. It explicitly supersedes the 2026-09-21 addendum; `scripts/m7-certify.mjs` resolves the authority chain by explicit supersession rather than assuming newest filename/date. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 
 **Recent generations, as history.** Each of these shipped with a "source-only: not deployed"
@@ -385,7 +385,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v24** (deployed 2026-09-23 — still read `/health` rather than trusting this line) adds v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v30** is deployed and observed as of 2026-09-27; v25–v30 added no-login screenshot reads, the model chain, relay dedup, reminders and the PushWard bridge. Always read `/health` and the current live-parity evidence rather than trusting a stale prose version.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -458,7 +458,7 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 ```
 
 ### Bundled vs. optional offline vendor files
-- `vendor/xlsx.full.min.js` — SheetJS v0.18.5 (Excel import). **Bundled, not optional**
+- `vendor/xlsx.full.min.js` — SheetJS 0.20.3 (Excel import; upgraded from 0.18.5 in v24.0.47, PR #395). **Bundled, not optional**
   as of v23.9 (X-10) — no CDN fallback exists; `loadSheetJS()` (`app.js`) loads only this
   file, and the service worker precaches it in the install-blocking critical shell.
 - `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js
@@ -533,7 +533,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.46';
+const APP_VERSION = '24.0.47';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -683,8 +683,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.46` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.46`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.47` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.47`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
