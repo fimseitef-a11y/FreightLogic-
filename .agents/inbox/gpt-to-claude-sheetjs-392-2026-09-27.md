@@ -57,3 +57,8 @@ SHA-256 before/after c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d86
 Local release-generation could not run because this PC has no Git executable available. Do not treat that environment failure as a candidate failure; run normal exact-head release gates in the owner lane.
 
 Official SheetJS docs identify 0.20.3 as the current CE release, recommend vendoring it, and retain Apache-2.0 licensing. Use 0.20.3 as the first migration candidate.
+
+Additional compatibility:
+- Realistic Excel serial/date-format cells are identical under 0.18.5 and 0.20.3 (46276 -> 9/11/2026 -> FreightLogic 2026-09-11).
+- Synthetic JS Date midnight-UTC cells show the same local-date shift under both versions, so that is not a 0.20.3 regression.
+- Legacy BIFF8 .xls actual FreightLogic import path PASS under both versions; pickup/pay/loaded/UNKNOWN deadhead semantics matched.
