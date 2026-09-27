@@ -136,7 +136,7 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
 - **Still HOLD:** physical iPhone A1–A13 (#226), #252's real-screenshot benchmark, and #222
   repository protection. #278's long-haul item stays unresolved pending joint consensus.
 
-**Production app is v24.0.47 / DB16, DIRECTLY OBSERVED 2026-09-27; Worker source remains v30.** PR #395 merged as `db35cf3c`, upgrading the offline vendored SheetJS parser to official 0.20.3 and completing the Intel → Market single-label repair. Authorized-PC candidate testing passed **906/0 across 89 specs**; exact PR-head Tests/Lanes/CodeQL passed; exact-main Tests and CodeQL passed; Production Service Worker run `36296068967` passed; the first push-triggered Live Parity raced deployment, then rerun attempt 2 of run `36296068917` passed after propagation. A direct production fetch of `vendor/xlsx.full.min.js` returned **951,904 bytes**, SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`, with `XLSX.version` 0.20.3. DB/schema/economics/doctrine/Worker behavior were unchanged by this release.
+**Production app is v24.0.47 / DB16, DIRECTLY OBSERVED 2026-09-27; Worker v30 is deployed and observed** (deployed 2026-09-26 from the operator's PC, Cloudflare version `24cc3ac6-1daf-4476-a805-2c975d9fc03d`; rerun of Live Parity `36235825920` PASS at Worker v30, recorded on #380; push-triggered Live Parity `36317109903` on `fe2437d` PASS). #380 stays open only for the real-iPhone PushWard test. PR #395 merged as `db35cf3c`, upgrading the offline vendored SheetJS parser to official 0.20.3 and completing the Intel → Market single-label repair. Authorized-PC candidate testing passed **906/0 across 89 specs**; exact PR-head Tests/Lanes/CodeQL passed; exact-main Tests and CodeQL passed; Production Service Worker run `36296068967` passed; the first push-triggered Live Parity raced deployment, then rerun attempt 2 of run `36296068917` passed after propagation. A direct production fetch of `vendor/xlsx.full.min.js` returned **951,904 bytes**, SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`, with `XLSX.version` 0.20.3. DB/schema/economics/doctrine/Worker behavior were unchanged by this release.
 
 *Superseded, kept as history:* **Production app is v24.0.46 / DB16, DIRECTLY OBSERVED 2026-09-26; the deployed Worker is v28 while source is v30.** PR #388 merged as `3e4fca2` (#386 hotfix). Re-dispatched Production Service Worker `36235827108` PASS and Live Parity `36235825920` with every app-side check at 24.0.46 and exactly one failure, `Worker reports v30 — {"version":"28"}` (#380, unchanged). The first two parity dispatches (`36235604153`, `36235624901`) and SW `36235603089` ran within 45 s of the merge, saw 24.0.45, and are the propagation race, not the evidence.
 
@@ -434,7 +434,7 @@ note that was true on the day it was written; all three are now live and the not
 
 **Stack:** Vanilla JS (IIFE, `'use strict'`), HTML5, CSS custom properties, IndexedDB, Service Worker, Cloudflare Worker (cloud backup + AI evaluate).
 
-**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v24** (deployed 2026-09-23 — still read `/health` rather than trusting this line) adds v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
+**Current cloud identities:** app/assets service `freightlogic-v2` serves `https://freightlogic-v2.fimseitef.workers.dev`; backup/API is `https://freightlogic-backup.fimseitef.workers.dev`. Worker **v30** (deployed 2026-09-26 — still read `/health` rather than trusting this line; v25–v30 added no-login screenshot reads, the model chain, relay dedup, reminders and the PushWard bridge — see their sections) carries v24's Web Push + Shortcuts relay (`/push/*`, `/shortcut-key`, `/relay`; see the v24.0.34 section) and carries #252's `POST /extract-image` vision route (working only from v22 — v21 answered it 502; see the Worker v22 section), PR #210's zero-token driver onboarding (`POST /admin/invites` + unauthenticated `POST /claim`), v19's proactive legacy-plaintext cleanup, and #221's canonical-user token authority — the account record, not the token index, decides which hash is current.
 
 *This overview has now carried a superseded production claim **seven** times. Before this
 correction it read "**v24.0.19 source candidate** … Source-only: not deployed and not
@@ -489,7 +489,7 @@ wrangler.jsonc             — Wrangler config for the Pages/Worker deploy (`fre
 favicon*.png / icon*.png   — App icons
 README.txt                 — Notes on optional offline vendor files (Tesseract OCR only, v23.9)
 vendor/                    — Bundled third-party scripts committed to the repo (v23.9, X-10):
-                             `xlsx.full.min.js` (SheetJS v0.18.5) + its Apache-2.0
+                             `xlsx.full.min.js` (SheetJS 0.20.3 since v24.0.47) + its Apache-2.0
                              `xlsx.full.min.js.LICENSE`. Precached by the service worker's
                              critical shell — see PWA / Service Worker below.
 docs/                      — Deployment parity checklist, source authority, release notes,
@@ -507,7 +507,7 @@ FIELD_TEST_CHECKLIST.md    — Device-only tests a headless harness cannot cover
 ```
 
 ### Bundled vs. optional offline vendor files
-- `vendor/xlsx.full.min.js` — SheetJS v0.18.5 (Excel import). **Bundled, not optional**
+- `vendor/xlsx.full.min.js` — SheetJS 0.20.3 (Excel import; upgraded from 0.18.5 in v24.0.47, PR #395). **Bundled, not optional**
   as of v23.9 (X-10) — no CDN fallback exists; `loadSheetJS()` (`app.js`) loads only this
   file, and the service worker precaches it in the install-blocking critical shell.
 - `tesseract.min.js` + `worker.min.js` + `tesseract-core-simd-lstm.wasm.js` — Tesseract.js
@@ -582,7 +582,7 @@ rows whose old `isPaid:false` cannot be proven explicit enter payment UNKNOWN.
 ## Key Constants
 
 ```js
-const APP_VERSION = '24.0.46';
+const APP_VERSION = '24.0.47';
 const DB_VERSION = 16;
 const DB_NAME = 'FreightLogic_v18';
 const DB_NAME_LEGACY = 'XpediteOps_v1';
@@ -732,8 +732,8 @@ Current rates are in the `IRS` constant at the top of `app.js`.
 
 ## PWA / Service Worker
 
-- `manifest.json` references `v=24.0.46` cache-busting query on the manifest link.
-- `service-worker.js` handles offline caching; version `24.0.46`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
+- `manifest.json` references `v=24.0.47` cache-busting query on the manifest link.
+- `service-worker.js` handles offline caching; version `24.0.47`; handles Web Push `push` / `notificationclick` as a delivery-only layer (v24.0.34); caches `sw-bridge.js` and `modern-shell.js`; injects the `midwest-stack-authority.js` script tag into HTML responses via `injectEnhancementScripts()` (guarded by an `injectBeforeBodyClose()` idempotency check; `admin-driver-ui.js` is no longer injected — #231 Phase C); broadcasts `SW_ACTIVATED` message to all open clients on activate. The `install` event's critical (install-blocking) shell includes `midwest-stack-authority.js` and `vendor/xlsx.full.min.js` (X-08/X-10, v23.9) — see "Cloud Backup Worker" and the v23.9 changelog section below.
 - Share-target POSTs are staged in the `freightlogic-share-v2` cache (`SHARE_CACHE`) and expire after 5 minutes.
 - `sw-bridge.js` detects waiting workers, sends `SKIP_WAITING`, and reloads once — no user prompt required.
 - Receipt blobs are cached in the Cache API under `__receipt__/<id>` URLs.
