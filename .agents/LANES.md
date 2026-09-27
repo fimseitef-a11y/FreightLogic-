@@ -60,7 +60,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `voice-load.js` | gpt | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | gpt | v24.0.32 long-haul source-candidate record landed in PR #317; normal Claude ownership restored. |
+| `CLAUDE.md` | gpt | v24.0.32 long-haul source-candidate record landed in PR #317; historically restored to the former Claude lane; current owner is GPT. |
 | `FIELD_TEST_CHECKLIST.md` | gpt | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
@@ -74,7 +74,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `field-certification.js` | gpt | Field-certification state/evidence capture. May auto-record browser-observable facts but may not infer hardware-only PASS. |
 | `tests/integration/field-certification-runner.spec.mjs` | gpt | Exact regression exception for the field-certification companion only; no other tests/ ownership transfers. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
-| `.github/` | gpt | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
+| `.github/` | gpt | Historically consolidated to the former Claude completion lane on 2026-09-14; current owner is GPT; release/certification workflows remain governed. |
 | `.githooks/` | gpt | Lane-guard git hooks; enforcement tooling for this map. |
 | `.gitignore` | SHARED | Repository-wide behavior. |
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
@@ -82,10 +82,10 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `AUDIT_REPORT.md` | gpt | TEMPORARY 2026-09-23: phase 5–6 reconciliation only; preserve every finding and reproduction. Remains GPT-owned under ChatGPT-primary governance when that PR merges. |
 | `README.md` | gpt | 2026-09-23 parallel queue: concise repository README; repository-only (withheld by `.assetsignore`). |
 | `CONTRIBUTING.md` | gpt | 2026-09-23 parallel queue: contributor/agent workflow summary; repository-only (withheld by `.assetsignore`). |
-| `docs/SHORTCUTS_PACK.md` | gpt | 2026-09-23 parallel queue: Apple Shortcuts recipes against the Claude-owned `docs/SHORTCUTS_URL_CONTRACT.md`. |
-| `docs/VENDOR_DEPENDENCY_REVIEW.md` | gpt | 2026-09-23 parallel queue: vendored-dependency advisory review; report-only, `vendor/` stays Claude. |
+| `docs/SHORTCUTS_PACK.md` | gpt | 2026-09-23 parallel queue: Apple Shortcuts recipes against `docs/SHORTCUTS_URL_CONTRACT.md`, historically owned by the former Claude lane and now GPT-owned through the `docs/` parent. |
+| `docs/VENDOR_DEPENDENCY_REVIEW.md` | gpt | 2026-09-23 parallel queue: vendored-dependency advisory review; report-only. `vendor/` is now GPT-owned under this transfer. |
 | `README.txt` | gpt | General/non-core documentation. |
-| `RECON_24_0_2.md` | gpt | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
+| `RECON_24_0_2.md` | gpt | Read-only core reconciliation/audit artifact; historically maintained with the former Claude core/audit lane; current owner is GPT. |
 | `_headers` | gpt | CSP/security/deployment headers. |
 | `admin-driver-ui.js` | gpt | PR #210 zero-token onboarding makes this module explicitly stand down; do not restore the superseded GPT admin-handler patch. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains serialized. |
