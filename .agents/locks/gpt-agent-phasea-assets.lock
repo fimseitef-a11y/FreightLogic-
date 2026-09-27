@@ -1,0 +1,6 @@
+owner: gpt
+token: 0f6d4b2c-9f2a-45d3-8c7a-2f8910d5c684
+started_utc: 2026-09-27T09:12:00Z
+expected_release_utc: 2026-09-27T12:30:00Z
+paths: .assetsignore
+task: AIAG-TASK-0003 exclude isolated agent-runtime source from FreightLogic public static assets
