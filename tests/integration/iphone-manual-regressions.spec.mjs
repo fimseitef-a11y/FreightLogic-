@@ -152,17 +152,26 @@ test('[IPR-06] deleting the last expense renders empty state immediately and Und
 });
 
 
-test('[IPR-07] one historical lane run is insufficient evidence for a Stable trend', async () => {
+test('[IPR-07] booked loads are not lane history and one completed run cannot claim Stable', async () => {
   const r = await app.page.evaluate(() => {
     const T = window.__FL_TESTS;
-    return T.computeLaneStats([{
-      orderNo: 'IPR-LANE-1', origin: 'Chicago, IL', destination: 'Indianapolis, IN',
-      pay: 500, loadedMiles: 300, emptyMiles: 0, pickupDate: '2026-09-27',
-      needsReview: false, wouldRunAgain: null,
-    }])[0];
+    return T.computeLaneStats([
+      {
+        orderNo: 'IPR-LANE-1', origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+        pay: 500, loadedMiles: 300, emptyMiles: 0, pickupDate: '2026-09-20',
+        deliveryDate: '2026-09-20', executionStatus: 'DELIVERED',
+        needsReview: false, wouldRunAgain: null,
+      },
+      {
+        orderNo: 'IPR-LANE-BOOKED', origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+        pay: 600, loadedMiles: 300, emptyMiles: 0, pickupDate: '2026-09-27',
+        deliveryDate: '2026-09-28', executionStatus: 'NOT_STARTED',
+        needsReview: false, wouldRunAgain: null,
+      },
+    ])[0];
   });
-  eq(r.trips, 1, 'fixture is a one-run lane');
-  eq(r.trendLabel, 'Need more history', 'one run cannot establish a stable trend');
+  eq(r.trips, 1, 'booked load is excluded from historical lane runs');
+  eq(r.trendLabel, 'Need more history', 'one completed run cannot establish a stable trend');
 });
 
 test('[IPR-08] deleting the last fuel entry also renders its empty state immediately', async () => {
