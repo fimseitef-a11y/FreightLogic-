@@ -1,7 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.47 USA ENGINE
+/** FreightLogic v24.0.48 USA ENGINE
+ *  v24.0.48 "Field-Test Workflow Repair": repairs real-iPhone findings from
+ *  2026-09-27: evaluator booking preserves an editable Order #, new trips carry
+ *  an explicit operational stage instead of treating appointment dates as
+ *  completion, post-trip review/history wait for delivery, imported Unknown
+ *  Destination never becomes a new origin, score chips are outcome-neutral,
+ *  Undo/empty-state UI expires cleanly, sparse lane trend fails closed, and
+ *  Share Bid is explicitly independent of cloud/AI credentials. DB16 / Worker30.
  *  v24.0.47 "Secure Workbook / One Market Label": upgrades the offline vendored
  *  SheetJS parser from 0.18.5 to 0.20.3 (#392), preserving XLS/XLSX import while
  *  leaving both reviewed affected ranges. Also completes #389 so an injected/future
@@ -574,7 +581,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.47';
+const APP_VERSION = '24.0.48';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
