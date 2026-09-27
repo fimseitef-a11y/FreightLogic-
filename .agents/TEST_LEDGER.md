@@ -344,3 +344,13 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - #389 regression exercises injected Intel nav in Standard/Large/XLarge/Glance and preserves Home Today.
 - Vendor source SHA-256: `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`.
 - Production/live verification: NOT YET OBSERVED at this checkpoint.
+
+## 2026-09-27T04:55Z — v24.0.47 integrated PC candidate
+- Local certified commit: `7e8b1a93a590e594434749984f1554985b7ddba3`; tree `e49a6c97b81a7914db60eec97c8340300ccad5e5`.
+- Remote PR #397 head: `5f79cc001b031d8bab7ad2fe0322d534d638c1cd`; tree independently compared and identical to local certified tree.
+- `node scripts/verify-release-generation.mjs`: PASS, 24.0.46 -> 24.0.47; changed runtime includes app/index/manifest/authority/config/modern-shell/service-worker/styles/sw-bridge/vendor.
+- `node scripts/verify-cloudflare-parity.mjs --static-only`: PASS; 21 declared runtime assets, CSP parity PASS.
+- `node tests/run-all.mjs`: **906 passed / 0 failed across 89 specs** on the exact local tree.
+- SheetJS candidate `vendor/xlsx.full.min.js`: 0.20.3; SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`; Git blob `21471af69ef0e4cda1613c2702c54101b92f48d2`.
+- Additional scratch probes: actual FreightLogic XLSX import PASS; legacy BIFF8 XLS PASS; realistic Excel serial/date-format parity PASS; UNKNOWN deadhead stays null; paid state preserved; duplicate import deduped.
+- PR #397 exact-head GitHub Tests/Lanes/CodeQL pending at this entry; production/live parity remain unobserved for v24.0.47.
