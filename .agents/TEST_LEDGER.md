@@ -317,3 +317,9 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Result: exit 1; new intended-behavior assertion FAILED: independent toll expense next day must create a new relay item. Actual ok=true, duplicate=true, waiting=false, pushed=0, same id, queue=0. Control with different amount accepted. Setup/consume assertions passed.
 - No rerun; root cause visible in #366 unconditional value-fingerprint suppression. Existing exact-main CI separately reports Tests 36179477121, CodeQL 36179477067, Live Parity 36179477147, Production SW 36179477046 success; that does not negate this new case.
 - Repro/owner request: .agents/inbox/gpt-to-claude-relay-repeat-expense-2026-09-25.md. No production requests, real history adoption or physical iPhone certification.
+
+## 2026-09-27T02:15Z — PR #391 SheetJS report-only reconciliation
+- Exact PR head `c9ad5d3249995637f08b3a6efb38409f5a297640`: Tests run `36287814970` PASS; Lanes `36287814897` PASS; CodeQL `36287814954` PASS, all attempt 1.
+- Merged main `46ce473c0cd6ade89a62da814d81ca3a955c4415`; changed path is `docs/VENDOR_DEPENDENCY_REVIEW.md` only. No deployed runtime/vendor/test/release marker changed, so these checks do not claim a new app/Worker generation or production deployment.
+- Repository evidence verified on the pre-merge exact main: `vendor/xlsx.full.min.js` blob `16e013fceefc689cabc5be352099199847a0e67f` self-declares `version="0.18.5"`; current registered bundled-vendor test exercises `XLSX.read`/write offline; historical #232 and current v24.0.43 import evidence confirm operator XLSX parser reachability.
+- Security conclusion is advisory-by-version + parser reachability only. No exploit reproduction was attempted or claimed. Remediation is tracked as issue #392 in the Claude-owned vendor/release lane.
