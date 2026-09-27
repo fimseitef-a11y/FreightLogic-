@@ -16,8 +16,8 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | #386 v24.0.46 hotfix — PR #388 (session 01CnhWrf, lock/app-js ce8f9063). Lanes red: styles.css carry needs temporary exact row + [claude] re-commit. PC parallel handoff: inbox/claude-to-gpt-pc-parallel-work-2026-09-26.md | 2026-09-26T10:30Z |
-| gpt | — idle / handed off — #389 GPT CSS patch complete at `0611af1`; exact Chromium evidence green. Claude-owned coherent v24.0.47 marker + regression integration requested in inbox `gpt-to-claude-389-v24047-integration-2026-09-26.md`. | 2026-09-26T10:36:00Z |
+| claude | — idle / operator reassigned remaining #392/#389 integration to PC/GPT; no active process or lock observed. | 2026-09-27T04:36:00Z |
+| gpt | Operator-directed PC takeover: formalize temporary exact-path ownership, then complete #392 SheetJS 0.20.3 migration and #389 coherent next release. Lock gpt-pc-takeover-392-389 / 9b3f8c75-49c4-4aaf-9d3b-392389260927. | 2026-09-27T04:36:00Z |
 
 ---
 
