@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle / PAUSED BY OPERATOR — v24.0.47 complete and production-verified; #389/#392 closed; no active lock or open PR. | 2026-09-27T05:15:00Z |
+| gpt | AIAG-TASK-0003 — Agent Phase A governance/takeover + isolated agent service seam; ChatGPT + Grok only; no production deploy. | 2026-09-27T09:02:00Z |
 
 ---
 
