@@ -7,7 +7,7 @@ import {
 } from "./contracts.mjs";
 import { chooseModelTier } from "./router.mjs";
 import { stateScope } from "./state-key.mjs";
-import { sameIdempotentEvent } from "./idempotency.mjs";
+import { fingerprintEnvelope, sameIdempotentEvent } from "./idempotency.mjs";
 
 function failClosed(code, reason, extra = {}) {
   return {
@@ -31,6 +31,7 @@ export class FreightLogicAgentState extends DurableObject {
         idempotency_key TEXT PRIMARY KEY,
         event_id TEXT NOT NULL,
         correlation_id TEXT NOT NULL,
+        payload_fingerprint TEXT NOT NULL,
         authority_version TEXT,
         route_tier TEXT NOT NULL,
         recommendation TEXT NOT NULL,
@@ -43,8 +44,8 @@ export class FreightLogicAgentState extends DurableObject {
 
   async getIdempotency(idempotencyKey) {
     const cursor = this.sql.exec(
-      `SELECT idempotency_key, event_id, correlation_id, authority_version,
-              route_tier, recommendation, confidence, reason, created_at
+      `SELECT idempotency_key, event_id, correlation_id, payload_fingerprint,
+              authority_version, route_tier, recommendation, confidence, reason, created_at
          FROM idempotency_results
         WHERE idempotency_key = ?`,
       idempotencyKey,
@@ -55,12 +56,13 @@ export class FreightLogicAgentState extends DurableObject {
   async putIdempotency(record) {
     this.sql.exec(
       `INSERT OR IGNORE INTO idempotency_results
-        (idempotency_key, event_id, correlation_id, authority_version,
+        (idempotency_key, event_id, correlation_id, payload_fingerprint, authority_version,
          route_tier, recommendation, confidence, reason, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       record.idempotencyKey,
       record.eventId,
       record.correlationId,
+      record.payloadFingerprint,
       record.authorityVersion || null,
       record.routeTier,
       record.recommendation,
@@ -103,12 +105,13 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
 
     const privacyClass = classifyPrivacy(envelope);
     const route = chooseModelTier(envelope, { enabled: true });
+    const payloadFingerprint = await fingerprintEnvelope(envelope);
     const scope = stateScope(envelope);
     const state = this.env.AGENT_STATE.getByName(scope.objectName);
     const existing = await state.getIdempotency(scope.idempotencyKey);
 
     if (existing) {
-      if (!sameIdempotentEvent(existing, envelope)) {
+      if (!sameIdempotentEvent(existing, envelope, payloadFingerprint)) {
         return failClosed("IDEMPOTENCY_CONFLICT", "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT");
       }
       return {
@@ -145,6 +148,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       idempotencyKey: scope.idempotencyKey,
       eventId: envelope.id,
       correlationId: envelope.correlationId,
+      payloadFingerprint,
       authorityVersion: envelope.canonicalSnapshot.authorityVersion || null,
       routeTier: route.tier,
       recommendation,
@@ -155,7 +159,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
 
     // A concurrent first-seen request may have won INSERT OR IGNORE after the
     // pre-insert read. Re-check identity against the row that actually exists.
-    if (!sameIdempotentEvent(stored, envelope)) {
+    if (!sameIdempotentEvent(stored, envelope, payloadFingerprint)) {
       return failClosed("IDEMPOTENCY_CONFLICT", "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT");
     }
 
