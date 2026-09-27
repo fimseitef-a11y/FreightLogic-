@@ -67,7 +67,7 @@ Verification:
 3. The exact candidate passed release-generation and static Cloudflare parity checks, then the full local suite: **906 passed / 0 failed across 89 spec files**.
 4. PR #395 exact-head GitHub Tests, Lanes, and CodeQL passed before merge; it merged as `db35cf3cc30becaa2c9def05228e58aa9469be7e`.
 5. Production Service Worker run `36296068967` passed on that merge SHA with app/SW **24.0.47**, all 21 runtime assets cached, offline recovery checks green, and exactly one generation cache (`freightlogic-24.0.47`).
-6. A fresh direct run of the repository live-parity verifier after propagation passed every check: app/SW/manifest **24.0.47**, Worker **v30**, all 21 runtime assets load, and all 24 withheld repository paths remain non-public. The earlier push-triggered run `36296068917` started before Cloudflare propagation and observed v24.0.46 markers; it is recorded as rollout-race evidence, not the closing evidence.
+6. GitHub Live Parity run `36296068917` attempt 1 started before Cloudflare propagation and observed the old v24.0.46 app markers while Worker v30; **attempt 2** re-ran on the same merge SHA after propagation and **PASSed** every check at app/SW/manifest **24.0.47** and Worker **v30**. A separate fresh direct run of the same repository verifier also passed all 21 runtime-asset and 24 withheld-path checks.
 
 ## Decision
 
