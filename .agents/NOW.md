@@ -16,8 +16,8 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
-| claude | — idle / operator reassigned remaining #392/#389 integration to PC/GPT; no active process or lock observed. | 2026-09-27T04:36:00Z |
-| gpt | #397 v24.0.47 integrated takeover — exact tree locally 906/0; awaiting PR-triggered Tests/Lanes/CodeQL, then merge/deploy/parity. | 2026-09-27T04:55:00Z |
+| claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
+| gpt | — idle / PAUSED BY OPERATOR — v24.0.47 complete and production-verified; #389/#392 closed; no active lock or open PR. | 2026-09-27T05:15:00Z |
 
 ---
 
