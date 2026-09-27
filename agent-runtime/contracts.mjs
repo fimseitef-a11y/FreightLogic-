@@ -114,7 +114,7 @@ export function validateEnvelope(envelope) {
   } catch {
     throw new ContractError("INVALID_ENVELOPE", "Envelope must be JSON-serializable");
   }
-  if (Buffer.byteLength(serialized, "utf8") > MAX_ENVELOPE_BYTES) {
+  if (new TextEncoder().encode(serialized).byteLength > MAX_ENVELOPE_BYTES) {
     throw new ContractError("ENVELOPE_TOO_LARGE", "Envelope exceeds Phase A size limit");
   }
 
