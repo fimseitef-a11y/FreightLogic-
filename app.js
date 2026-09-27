@@ -1,7 +1,12 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.46 USA ENGINE
+/** FreightLogic v24.0.47 USA ENGINE
+ *  v24.0.47 "Secure Workbook / One Market Label": upgrades the offline vendored
+ *  SheetJS parser from 0.18.5 to 0.20.3 (#392), preserving XLS/XLSX import while
+ *  leaving both reviewed affected ranges. Also completes #389 so an injected/future
+ *  Intel nav label renders only "Market", never "IntelMarket". DB16 / Worker30; no
+ *  economics, doctrine, storage-schema or Worker behavior change.
  *  v24.0.46 "Weigh The Destination" (#386 hotfix): the Recommended Market Bid
  *  reads the destination. Out of Tier 1/2 density adds the canonical Strong-vs-
  *  normal gap (+$0.20/mi); a proven slow reload (3+ outcomes) in density does
@@ -569,7 +574,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.46';
+const APP_VERSION = '24.0.47';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
