@@ -1,5 +1,54 @@
 # FreightLogic — Claude Code Guide
 
+## Working Efficiently (operator standing instruction, 2026-09-27)
+
+Save usage by cutting repetition, never by cutting correctness, reasoning, tests or
+verification. This extends `.agents/RELAY_PROTOCOL.md`; it does not replace it.
+
+- **Recover only what you need.** In order: the current session and worktree
+  (`git status`, `git log`), `.agents/NOW.md` and the newest handoff, then Git and CI
+  evidence, then the Airtable coordination table only if the question needs it. Do not
+  reread the whole repo, this file, or old chat to restart work that is already verified.
+- **"Proceed / Continue / Resume / Take over"** means continue from the latest verified
+  state. Do not redo finished audits or rebuild settled plans.
+- **Work in a loop:** inspect → decide → edit → test → repair → retest → verify →
+  record → continue. Do not stop at a plan you can safely carry out.
+- **Batch** independent reads, searches, commands and edits. Do not reread unchanged
+  files or repeat status checks that bring no new evidence.
+- **Test small first**, then widen. Run the targeted specs while developing; run the
+  full suite (`node tests/run-all.mjs`) before any completion or release claim and
+  whenever a SHARED or runtime file changed. An edit is not evidence.
+- **Think harder** on architecture, hard bugs, security/privacy, concurrency,
+  migrations, data integrity, production changes and conflicting evidence.
+- **Ask only** for real blockers, required approval, credentials, or choices with
+  different irreversible outcomes. Destructive, credential, production-deploy and
+  outbound-message actions still need explicit approval. Never write secrets anywhere.
+- **Claim the lane first** (`.agents/NOW.md`, locks in `AGENTS.md`). Two sessions
+  never edit the same files at once.
+- **Record** each material change where the project already records state: what
+  changed, evidence (run ids, test totals), commit/PR, blockers, exact next action.
+
+### Checkpoint before a usage or context limit
+
+Do not spend the last capacity repeating work. Commit and push, then leave this in the
+commit message, an inbox note, or the coordination table:
+
+```
+Repo / branch / verified HEAD:
+Done (with evidence):
+Files changed:
+Tests run and exact results:
+Open failures or blockers:
+Settled decisions (do not reopen):
+In progress:
+Exact next action (+ commands):
+Do NOT repeat:
+```
+
+End with a short paste-ready prompt for the next session that points at this checkpoint.
+
+---
+
 ## Project Overview
 
 ### Current direction — 2026-09-23 (read this first)
