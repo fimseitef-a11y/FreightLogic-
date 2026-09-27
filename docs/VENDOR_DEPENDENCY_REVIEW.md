@@ -58,6 +58,16 @@ Do not edit `vendor/` as part of this report. Any dependency replacement belongs
 
 ## Decision
 
-**OPEN — security-relevant vendor replacement/update required.**
+**RESOLVED 2026-09-27 — SheetJS CE 0.20.3 deployed and verified.**
 
-The earlier uncertainty is resolved: FreightLogic is shipping SheetJS CE 0.18.5 and its workbook parser is reachable through the operator XLSX import path. This report still does not claim a proven FreightLogic exploit, and it makes no runtime change. The next action belongs to the Claude-owned `vendor/` + release lane.
+PR #395 merged the reviewed official SheetJS CE **0.20.3** standalone browser bundle and advanced the coherent app/cache generation to **v24.0.47**. DB remains 16 and Worker source remains v30.
+
+Verification:
+- authorized-PC candidate full suite: **906 passed / 0 failed across 89 specs**;
+- exact PR-head Tests, Lanes, and CodeQL: PASS;
+- exact-main Tests and CodeQL on merge commit `db35cf3cc30becaa2c9def05228e58aa9469be7e`: PASS;
+- Production Service Worker: PASS (run 36296068967);
+- settled Live Parity: PASS on rerun attempt 2 (run 36296068917);
+- production-served vendor asset: **951,904 bytes**, SHA-256 `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`, and self-reported `XLSX.version === "0.20.3"`.
+
+Compatibility evidence recorded on #392 covers the real FreightLogic XLSX and legacy XLS import paths, realistic Excel date serials, UNKNOWN deadhead preservation, payment-state handling, and duplicate protection. No FreightLogic-specific exploit was required or claimed.
