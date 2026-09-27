@@ -25,6 +25,24 @@ async function test(name, fn) {
   }
 }
 
+let backupWorkerModulePromise;
+function backupWorkerModule() {
+  if (!backupWorkerModulePromise) {
+    backupWorkerModulePromise = readFile(new URL("../../cloud-backup-worker.js", import.meta.url), "utf8")
+      .then((source) => import("data:text/javascript;base64," + Buffer.from(source).toString("base64")));
+  }
+  return backupWorkerModulePromise;
+}
+
+function memoryKv() {
+  const store = new Map();
+  return {
+    store,
+    async get(key) { return store.has(key) ? store.get(key) : null; },
+    async put(key, value) { store.set(key, String(value)); },
+  };
+}
+
 function baseEnvelope(overrides = {}) {
   return {
     id: "evt-001",
@@ -308,6 +326,81 @@ await test("A23 replay fingerprint changes when facts or canonical snapshot muta
   });
   assert.notEqual(await fingerprintEnvelope(changedFacts), fingerprint);
   assert.notEqual(await fingerprintEnvelope(changedSnapshot), fingerprint);
+});
+
+await test("A24 existing Worker Agent caller guard accepts only the authenticated actor scope", async () => {
+  const { authorizeAgentRpcEnvelope } = await backupWorkerModule();
+  const envelope = baseEnvelope({ actorScope: "driver:u_test" });
+  const ok = authorizeAgentRpcEnvelope("u_test", { userId: "u_test", active: true, name: "must-not-leak" }, envelope);
+  assert.deepEqual(ok, {
+    ok: true,
+    caller: { actorScope: "driver:u_test" },
+    privacyClass: "OPERATIONAL_MINIMIZED",
+  });
+  assert.equal(JSON.stringify(ok).includes("must-not-leak"), false);
+  assert.equal(authorizeAgentRpcEnvelope("u_test", { userId: "u_other", active: true }, envelope).code, "AGENT_CALLER_UNAUTHORIZED");
+  assert.equal(authorizeAgentRpcEnvelope("u_test", { userId: "u_test", active: false }, envelope).code, "AGENT_CALLER_UNAUTHORIZED");
+  assert.equal(authorizeAgentRpcEnvelope("u_test", { userId: "u_test", active: true }, baseEnvelope({ actorScope: "driver:u_other" })).code, "AGENT_CALLER_SCOPE_MISMATCH");
+});
+
+await test("A25 existing Worker Agent privacy boundary blocks restricted and unknown payloads", async () => {
+  const { classifyAgentRpcPrivacy, authorizeAgentRpcEnvelope } = await backupWorkerModule();
+  const user = { userId: "u_test", active: true };
+  const restricted = baseEnvelope({
+    actorScope: "driver:u_test",
+    facts: { ...baseEnvelope().facts, marketSignals: { payment: { card: "do-not-forward" } } },
+  });
+  assert.equal(classifyAgentRpcPrivacy(restricted), "RESTRICTED");
+  assert.equal(authorizeAgentRpcEnvelope("u_test", user, restricted).code, "AGENT_PRIVACY_BLOCKED");
+
+  const unknown = baseEnvelope({ actorScope: "driver:u_test", privacyClass: "UNKNOWN" });
+  assert.equal(classifyAgentRpcPrivacy(unknown), "UNKNOWN");
+  assert.equal(authorizeAgentRpcEnvelope("u_test", user, unknown).code, "AGENT_PRIVACY_BLOCKED");
+});
+
+await test("A26 existing Worker Agent privacy boundary fails closed on secrets, depth, and size", async () => {
+  const { classifyAgentRpcPrivacy } = await backupWorkerModule();
+  const secret = baseEnvelope({
+    actorScope: "driver:u_test",
+    facts: { ...baseEnvelope().facts, marketSignals: { nested: { token: "never-forward" } } },
+  });
+  assert.equal(classifyAgentRpcPrivacy(secret), "RESTRICTED");
+
+  let nested = { value: "x" };
+  for (let i = 0; i < 7; i += 1) nested = { nested };
+  assert.equal(classifyAgentRpcPrivacy(baseEnvelope({ actorScope: "driver:u_test", facts: { ...baseEnvelope().facts, marketSignals: nested } })), "UNKNOWN");
+  assert.equal(classifyAgentRpcPrivacy(baseEnvelope({ actorScope: "driver:u_test", facts: { ...baseEnvelope().facts, marketSignals: { note: "x".repeat(9000) } } })), "UNKNOWN");
+});
+
+await test("A27 existing Worker Agent caller guard rate-limits per authenticated caller", async () => {
+  const { guardAgentRpcBeforeBinding } = await backupWorkerModule();
+  const kv = memoryKv();
+  const env = { BACKUPS: kv };
+  const user = { userId: "u_test", active: true };
+  const envelope = baseEnvelope({ actorScope: "driver:u_test" });
+  for (let i = 0; i < 30; i += 1) {
+    assert.equal((await guardAgentRpcBeforeBinding(env, "u_test", user, envelope)).ok, true);
+  }
+  const limited = await guardAgentRpcBeforeBinding(env, "u_test", user, envelope);
+  assert.equal(limited.ok, false);
+  assert.equal(limited.code, "AGENT_RATE_LIMITED");
+  assert.equal((await guardAgentRpcBeforeBinding(env, "u_other", { userId: "u_other", active: true }, baseEnvelope({ actorScope: "driver:u_other" }))).ok, true);
+});
+
+await test("A28 existing Worker Agent caller guard denies when rate-limit storage is unavailable", async () => {
+  const { guardAgentRpcBeforeBinding } = await backupWorkerModule();
+  const result = await guardAgentRpcBeforeBinding({}, "u_test", { userId: "u_test", active: true }, baseEnvelope({ actorScope: "driver:u_test" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "AGENT_RATE_LIMIT_UNAVAILABLE");
+});
+
+await test("A29 Agent integration remains dark: no public route or root Service Binding", async () => {
+  const workerSource = await readFile(new URL("../../cloud-backup-worker.js", import.meta.url), "utf8");
+  const rootConfig = JSON.parse(await readFile(new URL("../../wrangler.jsonc", import.meta.url), "utf8"));
+  assert.equal(/path\s*===\s*['"]\/agent(?:\/|['"])/.test(workerSource), false);
+  assert.equal(/path\.startsWith\(['"]\/agent/.test(workerSource), false);
+  assert.equal("services" in rootConfig, false);
+  assert.equal("service" in rootConfig, false);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
