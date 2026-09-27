@@ -5335,6 +5335,10 @@ function computeLaneStats(trips){
   const map = new Map();
   for (const t of trips){
     if (t.needsReview || !tripHasKnownDeadhead(t)) continue;
+    // New UI-created trips expose an explicit execution stage. Do not let a
+    // merely booked/in-transit load become historical lane evidence before it
+    // delivers. Legacy/imported rows without this field retain prior behavior.
+    if (LIFECYCLE_EXECUTION.includes(t.executionStatus) && t.executionStatus !== 'DELIVERED') continue;
     const key = laneKey(t.origin, t.destination);
     if (!key) continue;
     const pay = Number(t.pay||0);
