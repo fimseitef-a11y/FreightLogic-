@@ -2284,3 +2284,10 @@ html, body, button, input, select, textarea {
   font-size: 22px;
   color: var(--accent);
 }
+
+/* FL-INTEL-MARKET-LABEL
+   Preserve the Intel -> Market relabel through later bottom-nav and driver-mode
+   text-size overlays. The pseudo-label keeps its own explicit font size. */
+html body .bottom .nav a[data-nav="intel"] .nl {
+  font-size: 0 !important;
+}
