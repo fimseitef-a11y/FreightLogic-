@@ -46,9 +46,9 @@ LOCK PROTOCOL (document verbatim in AGENTS.md — every authorized write lane ob
   Claim: fetch agent-coordination, fast-forward, create
     /.agents/locks/<slug>.lock containing:
       owner: <claude|gpt> | token: <uuid> | started_utc | expected_release_utc |
-      New claims default to owner: gpt. owner: claude is valid only after explicit operator reauthorization.
       paths | task
     Commit THAT FILE ALONE — never bundle anything with a lock commit. Push.
+  New claims default to `owner: gpt`. `owner: claude` is valid only after explicit operator reauthorization.
   REJECTED PUSH = CLAIM FAILED. Never rebase, cherry-pick, or force the
     rejected lock commit — that silently defeats the protocol. Fetch and
     inspect the exact lock path:
