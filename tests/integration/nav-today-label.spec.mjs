@@ -4,7 +4,8 @@
 // Large and Glance set the text back to a visible size, so both labels showed
 // ("TodayToday"). The first repair (#384 @ 85daac7) only resized the second label.
 // This measures computed style, which is where the defect lived. The Intel ->
-// Market relabel is a separate rule and must keep working.
+// Market relabel is also pinned here: its real Intel text stays hidden in every
+// text-size/Glance mode while the ::after pseudo-label remains exactly "Market".
 import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/nav-today-label.spec.mjs');
@@ -39,23 +40,34 @@ test('[NTL-01] the Home tab reads "Today" exactly once in standard, large, xlarg
   }
 });
 
-test('[NTL-02] the Intel tab still relabels to "Market"', async () => {
-  const r = await app.page.evaluate(() => {
-    const nav = document.querySelector('.bottom .nav');
-    const a = document.createElement('a');
-    a.setAttribute('data-nav', 'intel');
-    a.innerHTML = '<div class="nl">Intel</div>';
-    a.id = 'ntlProbe';
-    nav.appendChild(a);
-    const nl = a.querySelector('.nl');
-    const out = { size: parseFloat(getComputedStyle(nl).fontSize), after: getComputedStyle(nl, '::after').content };
-    a.remove();
-    return out;
-  });
-  // Only the relabel content is asserted. Inside .bottom the generic label rule
-  // outranks the Intel font-size:0 on main too; the five-tab shell has no Intel
-  // tab, so that is latent and out of this hotfix's scope.
-  eq(r.after, '"Market"', 'Intel -> Market relabel is unchanged');
+test('[NTL-02] an Intel tab renders exactly one visible label, "Market", in every text mode', async () => {
+  for (const mode of MODES) {
+    const r = await app.page.evaluate((mode) => {
+      const h = document.documentElement;
+      h.removeAttribute('data-fl-driver-mode');
+      h.setAttribute('data-fl-text-size', mode === 'glance' ? 'standard' : mode);
+      if (mode === 'glance') h.setAttribute('data-fl-driver-mode', 'glance');
+      const nav = document.querySelector('.bottom .nav');
+      const a = document.createElement('a');
+      a.setAttribute('data-nav', 'intel');
+      a.innerHTML = '<div class="nl">Intel</div>';
+      nav.appendChild(a);
+      const nl = a.querySelector('.nl');
+      const out = {
+        text: nl.textContent.trim(),
+        size: parseFloat(getComputedStyle(nl).fontSize),
+        after: getComputedStyle(nl, '::after').content,
+        afterSize: parseFloat(getComputedStyle(nl, '::after').fontSize),
+      };
+      a.remove();
+      return out;
+    }, mode);
+    console.log(`    [evidence] Intel ${mode}: ${JSON.stringify(r)}`);
+    eq(r.text, 'Intel', `${mode}: source label remains Intel`);
+    eq(r.size, 0, `${mode}: real Intel label is hidden`);
+    eq(r.after, '"Market"', `${mode}: pseudo-label is Market`);
+    ok(r.afterSize > 0, `${mode}: Market pseudo-label remains visible`);
+  }
 });
 
 export async function runSpec() {
