@@ -1,6 +1,0 @@
-owner: gpt
-token: 91ac47e0-0b4a-4cc2-b6cb-24047392389
-started_utc: 2026-09-27T04:42:00Z
-expected_release_utc: 2026-09-27T08:42:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Integrated v24.0.47 release for #392 SheetJS 0.20.3 and #389 Intel Market label
