@@ -40,14 +40,34 @@ function requireNonEmptyString(value, field) {
   }
 }
 
-function containsRestrictedKey(value) {
-  if (Array.isArray(value)) return value.some(containsRestrictedKey);
-  if (!isPlainObject(value)) return false;
-  for (const [key, child] of Object.entries(value)) {
-    if (RESTRICTED_KEY.test(key)) return true;
-    if (containsRestrictedKey(child)) return true;
+const MAX_PRIVACY_NODES = 128;
+const MAX_PRIVACY_DEPTH = 4;
+
+function inspectPrivacyShape(value) {
+  const stack = [{ value, depth: 0 }];
+  let visited = 0;
+
+  while (stack.length) {
+    const current = stack.pop();
+    visited += 1;
+    if (visited > MAX_PRIVACY_NODES) return "UNKNOWN";
+
+    const node = current.value;
+    if (!node || typeof node !== "object") continue;
+
+    const entries = Array.isArray(node)
+      ? node.map((child, index) => [String(index), child])
+      : Object.entries(node);
+
+    for (const [key, child] of entries) {
+      if (!Array.isArray(node) && RESTRICTED_KEY.test(key)) return "RESTRICTED";
+      if (!child || typeof child !== "object") continue;
+      if (current.depth >= MAX_PRIVACY_DEPTH) return "UNKNOWN";
+      stack.push({ value: child, depth: current.depth + 1 });
+    }
   }
-  return false;
+
+  return "CLEAR";
 }
 
 function hasUnknownKeys(value, allowlist) {
@@ -142,7 +162,9 @@ export function classifyPrivacy(envelope) {
   if (!isPlainObject(envelope)) return "UNKNOWN";
   if (envelope.privacyClass === "RESTRICTED") return "RESTRICTED";
   if (envelope.privacyClass === "UNKNOWN") return "UNKNOWN";
-  if (containsRestrictedKey(envelope)) return "RESTRICTED";
+  const shape = inspectPrivacyShape(envelope);
+  if (shape === "RESTRICTED") return "RESTRICTED";
+  if (shape === "UNKNOWN") return "UNKNOWN";
   if (hasUnknownKeys(envelope.facts, SAFE_FACT_FIELDS)) return "UNKNOWN";
   if (hasUnknownKeys(envelope.canonicalSnapshot, SAFE_CANONICAL_FIELDS)) return "UNKNOWN";
   return PRIVACY_CLASSES.has(envelope.privacyClass)
