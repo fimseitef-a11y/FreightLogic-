@@ -324,7 +324,7 @@ was closed here before the row was ever run.
 
 # B. Live deployment blockers
 
-Run these against the same final production candidate used for A1-A13. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
+Run these against the same final production candidate used for A1-A14. See `docs/CLOUDFLARE_DEPLOYMENT_PARITY_CHECKLIST.md` for the detailed procedure.
 
 ## B1. Exact production app generation — **PASS**
 
@@ -425,7 +425,7 @@ Two measurement traps are worth knowing, because the first version of this gate 
 - `document.documentElement.scrollWidth` **cannot** detect overflow in this app — `styles.css` sets `body { overflow-x: hidden }`, so the page never reports a scrollWidth wider than the viewport however far content spills. Injecting `min-width: 900px` left a scrollWidth assertion green.
 - Under mobile emulation the layout viewport **expands** to fit content wider than the device (`innerWidth` read 900 at a 320px device), so geometry compared against `innerWidth` is compared against a viewport that already grew to accommodate the overflow. Measure against the device width the test set.
 
-This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A13.
+This is still **not** a substitute for iOS safe-area, software-keyboard, or Home Screen PWA evidence. Those are A1-A14.
 
 # E. Non-blocking resilience watch list
 
@@ -453,17 +453,8 @@ The release remains **HOLD**. The current dated evidence and outstanding scope a
 supersedes the 2026-09-21 addendum. The rest of this paragraph and the next describe the
 2026-09-21 checkpoint and are kept as history. That addendum was resolved by explicit supersession through
 `scripts/m7-certify.mjs`. Standard exact-main tests, live app/Worker generation parity and
-production service-worker checks pass at its named checkpoint. The new authenticated
-`/extract-image` provider probe has **not** run, and a blank-image smoke cannot replace
-A13 or the real-screenshot benchmark. Older authenticated text/backup evidence is not
-evidence for this new route.
+production service-worker checks pass at its named checkpoint. The authenticated live-provider invocation is observed in the current certification state; real-screenshot extraction quality remains separately unobserved. Automated/provider evidence cannot replace A13/A14 or the real-device rows.
 
-**The physical-device gate is still A1-A13 and has no new PASS claim.** The operator's
-deferral remains in force. Authentic Gate C is already complete and is not reopened by
-this documentation change; conflict/adoption review and the unavailable separate 125-row
-master remain as recorded in section C. Admin Console deployment/live auth, later #278
-policy and independent review, and repository/Safari/native work are tracked separately
-in the current state. The former statement that only physical work remained overstated
-completion by omitting those pending items.
+**The physical-device gate is A1-A14 and has no new PASS claim.** The operator's deferral remains in force. Authentic Gate C is already complete and is not reopened by this documentation change; conflict/adoption review and the unavailable separate 125-row master remain as recorded in section C. Current separate manual work is #226 plus the real-iPhone PushWard/key-rotation confirmation in #380. Closed repository items are not reopened by this checklist refresh.
 
 Any later certification-state document must explicitly supersede `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` before the release is frozen.
