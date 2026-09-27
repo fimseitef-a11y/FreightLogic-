@@ -1579,6 +1579,124 @@ async function checkRateLimit(env, userId, limit, ns = 'eval') {
   return false;
 }
 
+// ─── AIAG-TASK-0009: future Agent-RPC caller boundary ─────────────────────────
+//
+// This is deliberately NOT wired to an HTTP route or Service Binding yet.
+// A later integration gate must call guardAgentRpcBeforeBinding() only after the
+// existing canonical driver-token check above has resolved the current user
+// record. Keeping the guard here now prevents a future Agent RPC from inventing
+// a second authentication system or forwarding a raw token, name, payment data,
+// PII, or secrets into the isolated Agent runtime.
+//
+// The Agent runtime repeats validation/privacy checks. This Worker-side boundary
+// is defense in depth at the caller edge and fails closed before any future RPC.
+const AGENT_RPC_RATE_LIMIT_PER_HOUR = 30;
+const AGENT_RPC_ALLOWED_PRIVACY = new Set(['PUBLIC', 'OPERATIONAL_MINIMIZED']);
+const AGENT_RPC_TOP_LEVEL_FIELDS = new Set([
+  'id', 'type', 'occurredAt', 'source', 'actorScope', 'loadId',
+  'facts', 'provenance', 'canonicalSnapshot', 'privacyClass',
+  'correlationId', 'idempotencyKey', 'schemaVersion', 'intent', 'confidence',
+]);
+const AGENT_RPC_SAFE_FACT_FIELDS = new Set([
+  'originMarket', 'destinationMarket', 'loadedMiles', 'deadheadMiles',
+  'weightLb', 'pieces', 'equipment', 'pickupWindow', 'deliveryWindow',
+  'marketSignals',
+]);
+const AGENT_RPC_SAFE_CANONICAL_FIELDS = new Set([
+  'trueRpm', 'loadedRpm', 'grade', 'verdict', 'baselineBid', 'marketBid',
+  'costPerMile', 'fuelCost', 'deadheadCost', 'positionClass',
+  'marketContext', 'calculatedAt', 'authorityVersion',
+]);
+const AGENT_RPC_RESTRICTED_KEY = /(email|phone|address|street|zip|postal|payment|bank|card|ssn|ein|taxid|dob|birth|license|name|token|secret|password|credential|authorization|cookie|backup|rawtext|chat|message|account)/i;
+const AGENT_RPC_MAX_BYTES = 8192;
+const AGENT_RPC_MAX_NODES = 128;
+const AGENT_RPC_MAX_DEPTH = 4;
+
+function agentRpcPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function agentRpcHasUnknownKeys(value, allowlist) {
+  return !agentRpcPlainObject(value) || Object.keys(value).some((key) => !allowlist.has(key));
+}
+
+export function classifyAgentRpcPrivacy(envelope) {
+  if (!agentRpcPlainObject(envelope)) return 'UNKNOWN';
+  if (envelope.privacyClass === 'RESTRICTED') return 'RESTRICTED';
+  if (!AGENT_RPC_ALLOWED_PRIVACY.has(envelope.privacyClass)) return 'UNKNOWN';
+
+  // Match the Agent contract's structural allowlists before any future private
+  // RPC. Unknown fields must not cross the Worker boundary merely because their
+  // key names are not obviously sensitive.
+  if (Object.keys(envelope).some((key) => !AGENT_RPC_TOP_LEVEL_FIELDS.has(key))) return 'UNKNOWN';
+  if (agentRpcHasUnknownKeys(envelope.facts, AGENT_RPC_SAFE_FACT_FIELDS)) return 'UNKNOWN';
+  if (agentRpcHasUnknownKeys(envelope.canonicalSnapshot, AGENT_RPC_SAFE_CANONICAL_FIELDS)) return 'UNKNOWN';
+  if (!agentRpcPlainObject(envelope.provenance)) return 'UNKNOWN';
+
+  let serialized;
+  try { serialized = JSON.stringify(envelope); } catch { return 'UNKNOWN'; }
+  if (new TextEncoder().encode(serialized).byteLength > AGENT_RPC_MAX_BYTES) return 'UNKNOWN';
+
+  const stack = [{ value: envelope, depth: 0 }];
+  let visited = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    visited += 1;
+    if (visited > AGENT_RPC_MAX_NODES) return 'UNKNOWN';
+    const node = current.value;
+    if (!node || typeof node !== 'object') continue;
+
+    const entries = Array.isArray(node)
+      ? node.map((child, index) => [String(index), child])
+      : Object.entries(node);
+    for (const [key, child] of entries) {
+      if (!Array.isArray(node) && AGENT_RPC_RESTRICTED_KEY.test(key)) return 'RESTRICTED';
+      if (!child || typeof child !== 'object') continue;
+      if (current.depth >= AGENT_RPC_MAX_DEPTH) return 'UNKNOWN';
+      stack.push({ value: child, depth: current.depth + 1 });
+    }
+  }
+  return envelope.privacyClass;
+}
+
+export function authorizeAgentRpcEnvelope(driverUserId, canonicalUser, envelope) {
+  const userId = typeof driverUserId === 'string' ? driverUserId : '';
+  if (!userId || !canonicalUser || canonicalUser.active !== true || canonicalUser.userId !== userId) {
+    return { ok: false, code: 'AGENT_CALLER_UNAUTHORIZED' };
+  }
+
+  const expectedScope = 'driver:' + userId;
+  if (!envelope || envelope.actorScope !== expectedScope) {
+    return { ok: false, code: 'AGENT_CALLER_SCOPE_MISMATCH' };
+  }
+
+  const privacyClass = classifyAgentRpcPrivacy(envelope);
+  if (!AGENT_RPC_ALLOWED_PRIVACY.has(privacyClass)) {
+    return { ok: false, code: 'AGENT_PRIVACY_BLOCKED', privacyClass };
+  }
+
+  // Return only an opaque scope. Never return the user record or bearer token.
+  return {
+    ok: true,
+    caller: { actorScope: expectedScope },
+    privacyClass,
+  };
+}
+
+export async function guardAgentRpcBeforeBinding(env, driverUserId, canonicalUser, envelope) {
+  const authorized = authorizeAgentRpcEnvelope(driverUserId, canonicalUser, envelope);
+  if (!authorized.ok) return authorized;
+
+  // Rate limiting is mandatory. A missing KV binding is a deny, not a bypass.
+  if (!env || !env.BACKUPS || typeof env.BACKUPS.get !== 'function' || typeof env.BACKUPS.put !== 'function') {
+    return { ok: false, code: 'AGENT_RATE_LIMIT_UNAVAILABLE' };
+  }
+  if (await checkRateLimit(env, driverUserId, AGENT_RPC_RATE_LIMIT_PER_HOUR, 'agent-rpc')) {
+    return { ok: false, code: 'AGENT_RATE_LIMITED' };
+  }
+  return authorized;
+}
+
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are the review/explanation layer for FreightLogic, an expedited cargo van decision app.
