@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0005 — harden PR #405 replay integrity + observability default-off; agent-runtime/ only. | 2026-09-27T10:00:43Z |
+| gpt | — idle — AIAG-TASK-0005 hardening complete on PR #405 head c7f1130; all PR gates green; final Grok delta review queued. | 2026-09-27T10:05:37Z |
 
 ---
 
