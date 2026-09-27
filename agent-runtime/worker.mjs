@@ -7,6 +7,7 @@ import {
 } from "./contracts.mjs";
 import { chooseModelTier } from "./router.mjs";
 import { stateScope } from "./state-key.mjs";
+import { sameIdempotentEvent } from "./idempotency.mjs";
 
 function failClosed(code, reason, extra = {}) {
   return {
@@ -107,7 +108,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
     const existing = await state.getIdempotency(scope.idempotencyKey);
 
     if (existing) {
-      if (existing.event_id !== envelope.id || existing.correlation_id !== envelope.correlationId) {
+      if (!sameIdempotentEvent(existing, envelope)) {
         return failClosed("IDEMPOTENCY_CONFLICT", "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT");
       }
       return {
@@ -151,6 +152,12 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       reason,
       createdAt: new Date().toISOString(),
     });
+
+    // A concurrent first-seen request may have won INSERT OR IGNORE after the
+    // pre-insert read. Re-check identity against the row that actually exists.
+    if (!sameIdempotentEvent(stored, envelope)) {
+      return failClosed("IDEMPOTENCY_CONFLICT", "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT");
+    }
 
     return {
       ok: true,
