@@ -1,6 +1,0 @@
-owner: gpt
-token: 9b3f8c75-49c4-4aaf-9d3b-392389260927
-started_utc: 2026-09-27T04:36:00Z
-expected_release_utc: 2026-09-27T08:36:00Z
-paths: .agents/LANES.md, .agents/NOW.md, .agents/STATUS.md, .agents/TEST_LEDGER.md
-task: Operator-directed PC/GPT takeover of #392 SheetJS migration and #389 coherent release integration
