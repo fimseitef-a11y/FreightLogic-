@@ -356,3 +356,5 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - PR #397 exact-head GitHub Tests/Lanes/CodeQL pending at this entry; production/live parity remain unobserved for v24.0.47.
 
 [2026-09-27T05:12:00Z][gpt][v24.0.47] Candidate/local: 906 PASS / 0 FAIL across 89 specs on exact candidate tree (all 13 changed blobs matched GitHub PR tree). PR #395 exact head 5f79cc00: Tests PASS, Lanes PASS, CodeQL PASS. Main db35cf3c: Tests run 36296069001 PASS, CodeQL 36296069048 PASS, Production SW 36296068967 PASS, Live Parity 36296068917 attempt 2 PASS after attempt 1 deploy race. Production vendor/xlsx.full.min.js exact SHA-256 cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41 / 951904 bytes / XLSX 0.20.3. Docs PR #399 and governance PR #400 exact heads also passed required Tests/Lanes/CodeQL before merge.
+
+[2026-09-27T05:15:00Z][gpt][main-660fdc51] Post-cleanup exact-main verification: Tests 36296499411 PASS; CodeQL 36296499421 PASS; Live Parity 36296499400 PASS; Production Service Worker 36296499425 PASS. Runtime remains v24.0.47 / DB16 / Worker source v30; cleanup changed documentation/governance only.
