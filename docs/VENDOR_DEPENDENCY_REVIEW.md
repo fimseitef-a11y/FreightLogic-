@@ -1,63 +1,80 @@
 # Vendored Dependency Review — SheetJS
 
-**Review date:** 2026-09-26  
-**Reviewed main:** `55b1bdf21b622475fc9b6eabaed31cbabe397692`  
-**Scope:** report only; no `vendor/`, runtime, test, or release-marker files changed.
+**Status:** RESOLVED  
+**Resolution date:** 2026-09-27  
+**Verified main:** `db35cf3cc30becaa2c9def05228e58aa9469be7e`  
+**Release:** FreightLogic v24.0.47 / DB16 / Worker30
 
-## Inventory
+## Resolution
 
-FreightLogic vendors `vendor/xlsx.full.min.js` directly rather than through npm. The current artifact is Git blob `16e013fceefc689cabc5be352099199847a0e67f`.
+PR #395 replaced the offline vendored parser at `vendor/xlsx.full.min.js` from SheetJS CE **0.18.5** with the reviewed official SheetJS CE **0.20.3** standalone browser bundle.
 
-The bundle itself declares `version="0.18.5"`. This is no longer an inferred filename/version claim. Repository history also records the original bundling decision in commit `1399d9ff7a8865f95851fe587add89a4a2913991` as **SheetJS v0.18.5**, bundled locally for offline XLSX import.
+Resolved artifact:
 
-Because this dependency is vendored and there is no npm package manifest governing it, `npm audit` / Dependabot npm alerts are not authoritative inventory controls for this file.
+- SheetJS runtime declaration: **0.20.3**
+- repository blob: `21471af69ef0e4cda1613c2702c54101b92f48d2`
+- source/live bytes: **951,904**
+- SHA-256: `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`
+- delivery model: vendored locally; no runtime CDN dependency
 
-## Advisory status
+A direct production fetch from `/vendor/xlsx.full.min.js` after deployment returned the same byte count and SHA-256 and declared `version="0.20.3"`.
 
-SheetJS CE 0.18.5 is inside both current GitHub-reviewed affected ranges:
+## Why remediation was required
 
-- **CVE-2023-30533 / GHSA-4r6h-8v6p-xvw6 — prototype pollution.** GitHub Advisory Database: `xlsx < 0.19.3`. The advisory specifically identifies reading specially crafted workbook files as the vulnerable operation; export-only workflows are not affected.
+The superseded SheetJS CE 0.18.5 artifact was inside both GitHub-reviewed affected ranges:
+
+- **CVE-2023-30533 / GHSA-4r6h-8v6p-xvw6 — prototype pollution:** `xlsx < 0.19.3`
   - https://github.com/advisories/GHSA-4r6h-8v6p-xvw6
-- **CVE-2024-22363 / GHSA-5pgg-2g8v-p4x9 — regular-expression denial of service.** GitHub Advisory Database: `xlsx < 0.20.2`.
+- **CVE-2024-22363 / GHSA-5pgg-2g8v-p4x9 — regular-expression denial of service:** `xlsx < 0.20.2`
   - https://github.com/advisories/GHSA-5pgg-2g8v-p4x9
 
-The maintained SheetJS CE fixes are not represented by a newer npm `xlsx` release. A blind `npm update` therefore does not remediate this vendored browser bundle.
+FreightLogic's XLSX parser is operator-triggered rather than automatic, but workbook-controlled bytes do reach `XLSX.read(...)`. The old parser was therefore reachable and was not eligible for a safe-to-ignore waiver.
 
-## FreightLogic reachability
+SheetJS CE 0.20.3 is above both affected ranges.
 
-**Parser reachability is CONFIRMED.**
+## Compatibility and data-integrity evidence
 
-Evidence on current repository history and current tests:
+Before integration, the authorized PC ran reversible substitutions of the official 0.20.3 bundle and restored the 0.18.5 vendor bytes after each probe.
 
-1. Issue #232 captured the shipped XLSX import path calling `file.arrayBuffer()` followed by `XLSX.read(data, { type:'array' })`. The v24.0.17 repair moved the import-size guard before materialization/parsing; it did **not** remove XLSX parsing.
-2. Commit `1c9d5364200eec648b927a03d2e63efeb0b48011` (v24.0.43) explicitly states that the trip-import branch is shared by CSV, XLSX and TXT, confirming XLSX remains an application input path in the current generation family.
-3. Current `tests/integration/xlsx-bundled-vendor.spec.mjs` loads the exact local vendor bundle with all external network disabled and exercises `XLSX.read`, `XLSX.write`, and `XLSX.utils.sheet_to_json`. The spec is registered in current `tests/run-all.mjs`.
-4. Current `tests/integration/trip-import-integrity.spec.mjs` is the v24.0.43 CSV/XLSX trip-import integrity regression and is also registered in `tests/run-all.mjs`.
+The candidate passed:
 
-Threat-boundary qualification: FreightLogic does not automatically parse arbitrary remote workbooks. The relevant surface is a workbook deliberately selected/imported by the operator. That means user interaction is part of the path, but the vulnerable parser is still reachable with workbook-controlled bytes. This review does **not** claim that either CVE has been successfully exploited against FreightLogic.
+- the existing offline bundled-vendor browser regression;
+- the v24.0.43 trip-import integrity regression;
+- the service-worker shell regression;
+- an actual FreightLogic `.xlsx` import through the application import path;
+- an actual legacy BIFF8 `.xls` import;
+- duplicate re-import protection;
+- M/D/YYYY and realistic Excel serial/date-format normalization;
+- payment-status preservation;
+- loaded-mile/pay preservation;
+- blank deadhead remaining `null` / **UNKNOWN**, including the expected review reason.
 
-Current classification:
+A synthetic JavaScript `Date` at midnight UTC showed the same local-calendar shift under 0.18.5 and 0.20.3 in America/Chicago. The realistic Excel serial/date-format path produced identical dates under both versions, so that synthetic behavior was not a migration regression.
 
-- exact vendored version: **CONFIRMED — SheetJS CE 0.18.5**;
-- advisory applicability by version: **CONFIRMED**;
-- vulnerable parse surface reachable in FreightLogic: **CONFIRMED**;
-- FreightLogic-specific exploit demonstration: **NOT PERFORMED / NOT REQUIRED TO JUSTIFY REMEDIATION**;
-- safe-to-ignore/waive: **NOT ESTABLISHED**.
+## Release and production evidence
 
-## Required remediation gate
+Integrated PR #395 head `5f79cc001b031d8bab7ad2fe0322d534d638c1cd`:
 
-Do not edit `vendor/` as part of this report. Any dependency replacement belongs to the Claude-owned vendor/release lane and should:
+- all 13 changed GitHub blob SHAs matched the PC-certified candidate tree;
+- local exact-tree release-generation verifier: **PASS**;
+- local static Cloudflare parity: **PASS**;
+- local full suite: **906 passed / 0 failed across 89 spec files**;
+- GitHub exact-head Tests: **906 / 0**;
+- GitHub Lanes: **PASS**;
+- GitHub CodeQL: **PASS**.
 
-1. preserve offline-first XLSX import; do not replace the local bundle with an unpinned runtime CDN dependency;
-2. choose and pin either a maintained SheetJS CE distribution at or above the advisory fix levels, or a deliberately reviewed replacement parser;
-3. preserve the current pre-materialization import-size guard from #232;
-4. run the real XLSX import path against representative workbooks, including current trip-import UNKNOWN-vs-zero/date/deduplication protections;
-5. retain the bundled-vendor/offline regression or replace it with an equivalent test for the new parser;
-6. run the repository full suite and security gates;
-7. regenerate governed release/cache markers because the deployed vendor asset changes, then verify production parity and installed-PWA delivery.
+Merged main `db35cf3cc30becaa2c9def05228e58aa9469be7e`:
+
+- exact-main Tests run `36296069001`: **906 / 0 across 89 specs**;
+- CodeQL run `36296069048`: **PASS**;
+- Production Service Worker run `36296068967`: **PASS**, current cache `freightlogic-24.0.47`, all 21 runtime assets present, exactly one generation cache survives;
+- Verify Live Parity run `36296068917` attempt 2: **PASS**, app/SW/manifest v24.0.47, Worker30, all 21 runtime assets load;
+- the initial parity attempt observed the prior v24.0.46 generation during deployment propagation and is retained as a deployment-race failure rather than relabelled as a pass.
+
+The production service-worker verifier also confirmed activation, control after reload, offline subresource behavior, cached shell completeness, recovery when the network returns, and no stale generation cache. Physical iPhone offline-navigation certification remains a separate manual gate and is not claimed here.
 
 ## Decision
 
-**OPEN — security-relevant vendor replacement/update required.**
+**RESOLVED — SheetJS CE 0.18.5 has been replaced by verified, production-served SheetJS CE 0.20.3.**
 
-The earlier uncertainty is resolved: FreightLogic is shipping SheetJS CE 0.18.5 and its workbook parser is reachable through the operator XLSX import path. This report still does not claim a proven FreightLogic exploit, and it makes no runtime change. The next action belongs to the Claude-owned `vendor/` + release lane.
+The prior advisory exposure and parser reachability remain documented as historical evidence. No FreightLogic-specific exploit was required or performed. Future vendored-parser upgrades should continue to preserve offline operation, pre-materialization size limits, UNKNOWN-vs-zero semantics, date/payment handling, deduplication, full-suite coverage, coherent app/SW cache generation, and production parity.
