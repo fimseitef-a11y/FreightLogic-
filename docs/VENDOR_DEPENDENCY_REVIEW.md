@@ -2,7 +2,8 @@
 
 **Review date:** 2026-09-26  
 **Reviewed main:** `55b1bdf21b622475fc9b6eabaed31cbabe397692`  
-**Scope:** report only; no `vendor/`, runtime, test, or release-marker files changed.
+**Status:** **CLOSED 2026-09-27 — remediated in FreightLogic v24.0.47 / PR #395.**  
+**Scope of the original review:** report only; the later remediation evidence is recorded below.
 
 ## Inventory
 
@@ -56,8 +57,20 @@ Do not edit `vendor/` as part of this report. Any dependency replacement belongs
 6. run the repository full suite and security gates;
 7. regenerate governed release/cache markers because the deployed vendor asset changes, then verify production parity and installed-PWA delivery.
 
+## Remediation completed — 2026-09-27
+
+The original finding is remediated. PR #395 upgraded the offline vendored browser bundle from SheetJS CE 0.18.5 to official **0.20.3**, outside both affected ranges documented above, while preserving the existing local/offline import model. The deployed vendor Git blob is `21471af69ef0e4cda1613c2702c54101b92f48d2`; the reviewed source bundle SHA-256 is `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`.
+
+Verification:
+1. PC compatibility probes covered XLSX and legacy XLS import, Excel serial dates, UNKNOWN deadhead, payment-state handling, and duplicate protection.
+2. The bundled-vendor regression now asserts `XLSX.version === '0.20.3'` and performs an offline workbook round-trip.
+3. The exact candidate passed release-generation and static Cloudflare parity checks, then the full local suite: **906 passed / 0 failed across 89 spec files**.
+4. PR #395 exact-head GitHub Tests, Lanes, and CodeQL passed before merge; it merged as `db35cf3cc30becaa2c9def05228e58aa9469be7e`.
+5. Production Service Worker run `36296068967` passed on that merge SHA with app/SW **24.0.47**, all 21 runtime assets cached, offline recovery checks green, and exactly one generation cache (`freightlogic-24.0.47`).
+6. A fresh direct run of the repository live-parity verifier after propagation passed every check: app/SW/manifest **24.0.47**, Worker **v30**, all 21 runtime assets load, and all 24 withheld repository paths remain non-public. The earlier push-triggered run `36296068917` started before Cloudflare propagation and observed v24.0.46 markers; it is recorded as rollout-race evidence, not the closing evidence.
+
 ## Decision
 
-**OPEN — security-relevant vendor replacement/update required.**
+**CLOSED — remediated in v24.0.47.**
 
-The earlier uncertainty is resolved: FreightLogic is shipping SheetJS CE 0.18.5 and its workbook parser is reachable through the operator XLSX import path. This report still does not claim a proven FreightLogic exploit, and it makes no runtime change. The next action belongs to the Claude-owned `vendor/` + release lane.
+The vulnerable 0.18.5 vendored parser identified by this review is no longer the deployed FreightLogic bundle. Parser reachability remains intentional for operator-selected workbook imports, but the shipped version is now 0.20.3 and the offline/import integrity regressions remain in place. This closure does not claim a FreightLogic-specific exploit ever occurred.
