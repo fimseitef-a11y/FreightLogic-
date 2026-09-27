@@ -1,0 +1,6 @@
+owner: gpt
+token: 2f0a92d6-55b2-4d2a-8dbf-8f3d8d132b31
+started_utc: 2026-09-27T23:22:00Z
+expected_release_utc: 2026-09-28T01:30:00Z
+paths: app.js
+task: Real-iPhone defect repair: booking, share, trip lifecycle/review, stale Undo state
