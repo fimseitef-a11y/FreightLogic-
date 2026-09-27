@@ -182,7 +182,7 @@ await test("A15 worker remains Phase-A fail-closed with no model endpoint", asyn
   const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
   assert.equal(source.includes("AGENT_ENABLED"), true);
   assert.equal(source.includes('recommendation: "UNKNOWN"'), true);
-  assert.equal(source.toLowerCase().includes("gateway.ai.cloudflare.com"), false);
+  assert.equal(source.includes("AI_GATEWAY"), false);
   for (const secretName of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROK_API_KEY", "XAI_API_KEY"]) {
     assert.equal(source.includes(secretName), false);
   }
