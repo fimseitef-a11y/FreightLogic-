@@ -186,5 +186,17 @@ await test("A15 worker remains Phase-A fail-closed with no model endpoint", asyn
   assert.doesNotMatch(source, /OPENAI_API_KEY|ANTHROPIC_API_KEY|GROK_API_KEY|XAI_API_KEY/);
 });
 
+await test("A16 excessive privacy nesting fails closed to UNKNOWN", () => {
+  let nested = { value: "x" };
+  for (let i = 0; i < 8; i += 1) nested = { nested };
+  const envelope = baseEnvelope({
+    facts: {
+      ...baseEnvelope().facts,
+      marketSignals: nested,
+    },
+  });
+  assert.equal(classifyPrivacy(envelope), "UNKNOWN");
+});
+
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
 if (failed) process.exitCode = 1;
