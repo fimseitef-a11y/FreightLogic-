@@ -1,6 +1,0 @@
-owner: gpt
-token: 8d52e1a4-3b33-4f98-bd2a-b6a6b6df3e12
-started_utc: 2026-09-27T12:54:00Z
-expected_release_utc: 2026-09-27T14:54:00Z
-paths: AGENTS.md, .agents/LANES.md, .agents/RELAY_PROTOCOL.md
-task: AIAG-TASK-0012 — transfer active repository coordination from Claude-dependent two-lane governance to ChatGPT-primary governance without changing runtime behavior.
