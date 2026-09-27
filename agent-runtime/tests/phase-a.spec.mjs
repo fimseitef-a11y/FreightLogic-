@@ -9,6 +9,7 @@ import {
 } from "../contracts.mjs";
 import { chooseModelTier } from "../router.mjs";
 import { stateScope } from "../state-key.mjs";
+import { sameIdempotentEvent } from "../idempotency.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -152,8 +153,12 @@ await test("A13 DO scope is user/task scoped, not global", () => {
   const one = stateScope(baseEnvelope());
   const two = stateScope(baseEnvelope({ actorScope: "driver:other" }));
   const three = stateScope(baseEnvelope({ idempotencyKey: "idem-002" }));
+  const four = stateScope(baseEnvelope({ loadId: "load-99" }));
+  const five = stateScope(baseEnvelope({ type: "load.other" }));
   assert.notEqual(one.objectName, two.objectName);
   assert.equal(one.objectName, three.objectName);
+  assert.equal(one.objectName, four.objectName);
+  assert.notEqual(one.objectName, five.objectName);
   assert.notEqual(one.idempotencyKey, three.idempotencyKey);
 });
 
@@ -241,6 +246,24 @@ await test("A19 cyclic envelopes are rejected before privacy traversal", () => {
     () => validateEnvelope(envelope),
     (error) => error instanceof ContractError && error.code === "INVALID_ENVELOPE"
   );
+});
+
+
+await test("A20 idempotency identity accepts only the exact event + correlation", () => {
+  const stored = {
+    event_id: "evt-001",
+    correlation_id: "corr-001",
+  };
+  assert.equal(sameIdempotentEvent(stored, baseEnvelope()), true);
+  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ id: "evt-002" })), false);
+  assert.equal(sameIdempotentEvent(stored, baseEnvelope({ correlationId: "corr-002" })), false);
+});
+
+await test("A21 worker re-checks idempotency identity after INSERT OR IGNORE", async () => {
+  const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
+  const matches = source.match(/sameIdempotentEvent\(stored, envelope\)/g) || [];
+  assert.equal(matches.length, 1);
+  assert.equal(source.includes("INSERT OR IGNORE"), true);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
