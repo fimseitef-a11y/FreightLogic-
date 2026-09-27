@@ -26,11 +26,9 @@ version-shaped against source, `/health` and a re-dispatched live gate before re
   `/admin-console/` (the Admin Console UI and its `worker.js`) and `native-ios/*`. Both are
   now in `.assetsignore`, with DAC-09 and live must-404 checks. Do not re-publish either from
   the driver origin: the Admin Console deploys from its own origin.
-- **Next release: v24.0.34 / Worker v24, Apple Shortcuts deep links + Web Push, built by
-  Claude end to end.** The operator decided this on 2026-09-23. The release covers both
+- **Historical 2026-09-23 plan (completed/superseded): v24.0.34 / Worker v24, Apple Shortcuts deep links + Web Push.** The operator decided this on 2026-09-23. The release covers both
   contracts (`docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md`), the Worker
-  endpoints, the service worker and the client. Claude may merge PRs and dispatch the Worker
-  deploy once every gate is green. This supersedes the 2026-09-22 assignment to GPT. The
+  endpoints, the service worker and the client. The former Claude implementation/merge assignment in this paragraph is historical and has no current authority. This superseded the 2026-09-22 assignment to GPT at that time. The
   contracts were first drafted on branch `claude/repo-airtable-review-13j8hi` (`0bb6e4e`) and
   were **not on `main`** at the time of this sync; they land with the v24.0.34 release (PR #333). The app-js lock for this work was held by
   Claude.
@@ -256,7 +254,7 @@ Production is directly observed on settled checkpoint `98e447e3dc1ffe5d00e5793ab
 
 The runtime merge also preserved the deployment-propagation evidence rather than hiding it: Live Parity `35679161628` and Production Service Worker `35679161632` first observed the prior v24.0.28 generation while Cloudflare was still settling, then both passed on attempt 2 with no code change once v24.0.29 was actually served. That is deployment-race evidence, not a product failure and not a reason to erase the first observation.
 
-**This still does not close #278 or #252.** #278's disputed later policy scope still requires its independent Claude audit/joint-consensus gate. #252's privileged authenticated live provider invocation and real-screenshot quality benchmark remain unobserved. Physical iPhone A1-A13, guarded Admin Console live proof, repository-admin controls, and Safari/native Apple work also remain separate. The current certification authority remains `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`.
+**Historical boundary at the v24.0.29 checkpoint.** At that time #278, #252, physical iPhone A1-A13, Admin Console live proof, repository-admin controls, and Safari/native Apple work were still separate/open. Those statuses were later superseded. The current authority is `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`; the historical v24.0.29 paragraph does not reopen closed items.
 
 **Historical v24.0.25 observation.** PR #277 merged as
 `436d677876c238bb6773d56a15d8f00a5699a3f9`; governance-only #280 was
@@ -264,8 +262,9 @@ The runtime merge also preserved the deployment-propagation evidence rather than
 production service worker `35542851411` were re-dispatched on that checkpoint and
 observed v24.0.25 / DB16 / Worker v21. The complete dated record is preserved in
 `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-20.md`, superseded first by
-`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md` and now by
-`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`. The previous overview's
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-21.md`, then by
+`docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md`, and currently by
+`docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md`. The previous overview's
 claim that v24.0.26 was still source-only is now superseded by the logs above.
 
 *This overview previously read "SOURCE CANDIDATE IS 24.0.23 … LAST VERIFIED PRODUCTION SERVES
@@ -355,18 +354,13 @@ different event from a merge, which is the entire mechanism: merging leaves a co
 leaves nothing. Source moving ahead of production does not make that claim false, it makes it
 *superseded*, and re-verify before repeating it in any release or certification claim.
 
-**Issues #224, #240 and #221 are CLOSED.** The standard exact-main suite and release checks
-are green at the dated checkpoint above. The newly added privileged vision-provider smoke
-remains unexecuted; do not expand standard CI success into an all-live-gates claim.
+**Issues #224, #240 and #221 are CLOSED.** The standard exact-main suite and release checks are green at the dated checkpoint above. The privileged authenticated live-provider invocation is also observed in later evidence (#252); real-screenshot extraction quality remains separately unobserved. Do not expand CI success into physical-device or real-image quality claims.
 
-**Exactly one device gate remains: physical iPhone A1-A13**, deferred by the operator's 2026-09-16
-decision to the final post-v24.5 candidate. **Gate C (M6 private-history reconciliation) is no
+**The physical-device gate is A1-A14**, deferred by the operator's 2026-09-16 decision to the final post-v24.5 candidate. The separate PushWard real-iPhone/key-rotation confirmation (#380) is also still manual. **Gate C (M6 private-history reconciliation) is no
 longer part of that wait** — it was blocked on access, the operator supplied the five raw
 2026-08-27 files on 2026-09-18, and all six criteria pass. Adoption still requires the conflict
 review, and the separate 125-row master CSV remains unavailable and must not be reconstructed from
-summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_ADDENDUM_2026-09-21.md` is the certification
-authority — through the preserved 2026-09-20 addendum it supersedes the older records, and it is the one
-`scripts/m7-certify.mjs` resolves by explicit supersession rather than by date order. Read the
+summaries. `docs/COMPLETION_RELEASE_CERTIFICATION_STATE_2026-09-27.md` is the current certification authority. It explicitly supersedes the 2026-09-21 addendum; `scripts/m7-certify.mjs` resolves the authority chain by explicit supersession rather than assuming newest filename/date. Read the
 authority out of that runner rather than out of this sentence: it is a lookup, not a record.
 
 **Recent generations, as history.** Each of these shipped with a "source-only: not deployed"
