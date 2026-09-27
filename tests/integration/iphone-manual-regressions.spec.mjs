@@ -151,6 +151,44 @@ test('[IPR-06] deleting the last expense renders empty state immediately and Und
   eq(after.display, 'none', 'expired Undo container is hidden');
 });
 
+
+test('[IPR-07] one historical lane run is insufficient evidence for a Stable trend', async () => {
+  const r = await app.page.evaluate(() => {
+    const T = window.__FL_TESTS;
+    return T.computeLaneStats([{
+      orderNo: 'IPR-LANE-1', origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+      pay: 500, loadedMiles: 300, emptyMiles: 0, pickupDate: '2026-09-27',
+      needsReview: false, wouldRunAgain: null,
+    }])[0];
+  });
+  eq(r.trips, 1, 'fixture is a one-run lane');
+  eq(r.trendLabel, 'Need more history', 'one run cannot establish a stable trend');
+});
+
+test('[IPR-08] deleting the last fuel entry also renders its empty state immediately', async () => {
+  await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    await T.addFuel({ date: T.isoDate(), gallons: 10, amount: 40, state: 'TN', notes: 'IPR fuel undo' });
+    location.hash = '#fuel';
+  });
+  await app.page.waitForSelector('#fuelList .item', { timeout: 10000 });
+  await app.page.click('#fuelList [data-act="del"]');
+  await sleep(200);
+  const immediate = await app.page.evaluate(() => ({
+    list: document.getElementById('fuelList')?.textContent || '',
+    undo: document.getElementById('undoToast')?.textContent || '',
+  }));
+  ok(/No fuel entries yet/i.test(immediate.list), 'last fuel delete shows the normal empty state during Undo');
+  ok(/Fuel .* deleted/i.test(immediate.undo), 'fuel Undo affordance is visible during its window');
+  await sleep(5300);
+  const after = await app.page.evaluate(() => ({
+    text: document.getElementById('undoToast')?.textContent?.trim() || '',
+    display: getComputedStyle(document.getElementById('undoToast')).display,
+  }));
+  eq(after.text, '', 'fuel Undo content expires cleanly');
+  eq(after.display, 'none', 'fuel Undo container is hidden after expiry');
+});
+
 export async function runSpec() {
   app = await launchApp();
   await skipFirstRunWizard(app.page);
