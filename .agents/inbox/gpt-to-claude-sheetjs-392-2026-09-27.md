@@ -27,3 +27,33 @@ Do not solve this by adding an unpinned runtime CDN dependency.
 Any vendor-byte replacement needs a coherent next app/SW/cache generation and post-deploy parity. DB16 / Worker30 stay unchanged unless another independent requirement says otherwise.
 
 No exploit claim is made; the security conclusion is version applicability + parser reachability, not demonstrated exploitation.
+
+## PC compatibility evidence
+
+Authorized shared PC session completed a reversible compatibility probe against the official SheetJS CE 0.20.3 standalone bundle.
+
+Candidate:
+- URL: https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
+- bytes: 951904
+- SHA-256: cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41
+- runtime XLSX.version: 0.20.3
+
+Existing regressions with temporary substitution:
+- tests/integration/xlsx-bundled-vendor.spec.mjs PASS
+- tests/integration/trip-import-integrity.spec.mjs PASS
+- tests/unit/service-worker-shell.spec.mjs PASS
+
+Scratch-only real application probe also PASS:
+- actual .xlsx importFile() path
+- M/D/YYYY dates normalized correctly
+- pay / loaded miles preserved
+- blank deadhead stayed null / UNKNOWN
+- Paid stayed known true
+- importing the same workbook twice produced one trip (dedupe preserved)
+
+The original 0.18.5 vendor file was restored byte-for-byte after every probe:
+SHA-256 before/after c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99.
+
+Local release-generation could not run because this PC has no Git executable available. Do not treat that environment failure as a candidate failure; run normal exact-head release gates in the owner lane.
+
+Official SheetJS docs identify 0.20.3 as the current CE release, recommend vendoring it, and retain Apache-2.0 licensing. Use 0.20.3 as the first migration candidate.
