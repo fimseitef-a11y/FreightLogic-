@@ -1,5 +1,10 @@
 # FreightLogic Path Ownership
 
+## 2026-09-27 ChatGPT-primary ownership transfer
+
+The operator retired Claude as an active dependency and placed ChatGPT/GPT in charge. The **Owner column in the current table below is authoritative**: active rows formerly owned by `claude` are now owned by `gpt`. Historical prose below the table may still mention Claude to preserve provenance; those historical references do not restore current ownership. A future Claude write lane requires explicit operator reauthorization and a new bounded task. SHARED paths remain serialized and still require locks.
+
+
 Ownership is physical-path based. Conceptual ownership does not authorize an edit outside the paths below. `SHARED` means serialized through the lock protocol in `/AGENTS.md`.
 
 This map reflects the post-extraction v24.1 repository. The CSS presentation seam is now real; JavaScript UI/core code inside `app.js` remains serialized until a separately approved extraction creates additional physical paths.
@@ -51,12 +56,12 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `cloud-backup-worker.js` | gpt | **TEMPORARY AIAG-TASK-0009 ONLY:** existing-Worker caller authentication/authorization/rate limiting/privacy classification before future Agent RPC. No binding/deploy/feature/model/PWA/economics scope. Reverts to Claude when #0009 implementation is merged or abandoned. |
-| `midwest-stack-config.json` | claude | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
-| `midwest-stack-authority.js` | claude | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
-| `voice-load.js` | claude | Voice input module; carries a governed header version marker. |
-| `CLAUDE.md` | claude | v24.0.32 long-haul source-candidate record landed in PR #317; normal Claude ownership restored. |
-| `FIELD_TEST_CHECKLIST.md` | claude | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
+| `cloud-backup-worker.js` | gpt | **TEMPORARY AIAG-TASK-0009 ONLY:** existing-Worker caller authentication/authorization/rate limiting/privacy classification before future Agent RPC. No binding/deploy/feature/model/PWA/economics scope. Remains GPT-owned after #0009 is merged or abandoned; only the task-specific scope note retires. |
+| `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
+| `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
+| `voice-load.js` | gpt | Voice input module; carries a governed header version marker. |
+| `CLAUDE.md` | gpt | v24.0.32 long-haul source-candidate record landed in PR #317; historically restored to the former Claude lane; current owner is GPT. |
+| `FIELD_TEST_CHECKLIST.md` | gpt | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
 | `.claude/CLAUDE.md` | gpt | Concise Claude Code project instruction for the operator-approved UI redesign; points to the authoritative redesign brief and reference. |
 | `UI_BRIEF_V24.5.md` | gpt | Operator-approved visual-redesign authority and pre-code gate contract; `v24.5` is a working label, not an automatic runtime version bump. |
 | `FreightLogic_UI_Reference.html` | gpt | Repository-native structural/visual reconstruction of the operator-approved 10-screen mockup; reference only, never a production data source. |
@@ -69,46 +74,46 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `field-certification.js` | gpt | Field-certification state/evidence capture. May auto-record browser-observable facts but may not infer hardware-only PASS. |
 | `tests/integration/field-certification-runner.spec.mjs` | gpt | Exact regression exception for the field-certification companion only; no other tests/ ownership transfers. |
 | `.assetsignore` | SHARED | Repository/deployment metadata; coordinate changes. |
-| `.github/` | claude | Consolidated to the Claude completion lane on 2026-09-14; release/certification workflows. |
-| `.githooks/` | claude | Lane-guard git hooks; enforcement tooling for this map. |
+| `.github/` | gpt | Historically consolidated to the former Claude completion lane on 2026-09-14; current owner is GPT; release/certification workflows remain governed. |
+| `.githooks/` | gpt | Lane-guard git hooks; enforcement tooling for this map. |
 | `.gitignore` | SHARED | Repository-wide behavior. |
 | `.agents/` | SHARED | Durable protocol on `main`; live state on `agent-coordination`. Do not edit another agent's live lock/inbox entry except per protocol. |
 | `AGENTS.md` | SHARED | Coordination contract. |
-| `AUDIT_REPORT.md` | gpt | TEMPORARY 2026-09-23: phase 5–6 reconciliation only; preserve every finding and reproduction. Returns to Claude when that PR merges. |
+| `AUDIT_REPORT.md` | gpt | TEMPORARY 2026-09-23: phase 5–6 reconciliation only; preserve every finding and reproduction. Remains GPT-owned under ChatGPT-primary governance when that PR merges. |
 | `README.md` | gpt | 2026-09-23 parallel queue: concise repository README; repository-only (withheld by `.assetsignore`). |
 | `CONTRIBUTING.md` | gpt | 2026-09-23 parallel queue: contributor/agent workflow summary; repository-only (withheld by `.assetsignore`). |
-| `docs/SHORTCUTS_PACK.md` | gpt | 2026-09-23 parallel queue: Apple Shortcuts recipes against the Claude-owned `docs/SHORTCUTS_URL_CONTRACT.md`. |
-| `docs/VENDOR_DEPENDENCY_REVIEW.md` | gpt | 2026-09-23 parallel queue: vendored-dependency advisory review; report-only, `vendor/` stays Claude. |
-| `README.txt` | claude | General/non-core documentation. |
-| `RECON_24_0_2.md` | claude | Read-only core reconciliation/audit artifact; maintained with the Claude core/audit lane. |
-| `_headers` | claude | CSP/security/deployment headers. |
-| `admin-driver-ui.js` | claude | PR #210 zero-token onboarding makes this module explicitly stand down; do not restore the superseded GPT admin-handler patch. |
+| `docs/SHORTCUTS_PACK.md` | gpt | 2026-09-23 parallel queue: Apple Shortcuts recipes against `docs/SHORTCUTS_URL_CONTRACT.md`, historically owned by the former Claude lane and now GPT-owned through the `docs/` parent. |
+| `docs/VENDOR_DEPENDENCY_REVIEW.md` | gpt | 2026-09-23 parallel queue: vendored-dependency advisory review; report-only. `vendor/` is now GPT-owned under this transfer. |
+| `README.txt` | gpt | General/non-core documentation. |
+| `RECON_24_0_2.md` | gpt | Read-only core reconciliation/audit artifact; historically maintained with the former Claude core/audit lane; current owner is GPT. |
+| `_headers` | gpt | CSP/security/deployment headers. |
+| `admin-driver-ui.js` | gpt | PR #210 zero-token onboarding makes this module explicitly stand down; do not restore the superseded GPT admin-handler patch. |
 | `app.js` | SHARED | **Serialized until split. Any edit requires `lock/app-js` and full suite.** Decision/runtime/core behavior remains serialized. |
-| `dat-rateview.js` | claude | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
-| `docs/` | claude | Certification, backup/tax/authority contracts, completion plan and release documentation. |
-| `favicon16.png` | claude | Visual asset. |
-| `favicon32.png` | claude | Visual asset. |
-| `icon1024.png` | claude | Visual asset. |
-| `icon120.png` | claude | Visual asset. |
-| `icon128.png` | claude | Visual asset. |
-| `icon152.png` | claude | Visual asset. |
-| `icon167.png` | claude | Visual asset. |
-| `icon180.png` | claude | Visual asset. |
-| `icon192.png` | claude | Visual asset. |
-| `icon256.png` | claude | Visual asset. |
-| `icon512.png` | claude | Visual asset. |
-| `icon64.png` | claude | Visual asset. |
+| `dat-rateview.js` | gpt | Freight-rate source client. Frozen/dormant and non-authoritative per the completion plan; may not influence canonical cargo-van pricing without operator re-authorization. |
+| `docs/` | gpt | Certification, backup/tax/authority contracts, completion plan and release documentation. |
+| `favicon16.png` | gpt | Visual asset. |
+| `favicon32.png` | gpt | Visual asset. |
+| `icon1024.png` | gpt | Visual asset. |
+| `icon120.png` | gpt | Visual asset. |
+| `icon128.png` | gpt | Visual asset. |
+| `icon152.png` | gpt | Visual asset. |
+| `icon167.png` | gpt | Visual asset. |
+| `icon180.png` | gpt | Visual asset. |
+| `icon192.png` | gpt | Visual asset. |
+| `icon256.png` | gpt | Visual asset. |
+| `icon512.png` | gpt | Visual asset. |
+| `icon64.png` | gpt | Visual asset. |
 | `index.html` | SHARED | UI shell + CSP/script ordering; lock before editing. |
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
-| `schemas/` | claude | Data/contracts. |
-| `scripts/` | claude | Release/certification tooling and deploy-asset inventory. |
+| `schemas/` | gpt | Data/contracts. |
+| `scripts/` | gpt | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |
 | `sw-bridge.js` | SHARED | Service-worker integration/release-critical. |
-| `tests/` | claude | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
-| `vendor/` | claude | Bundled runtime dependencies/security provenance. |
-| `wrangler.jsonc` | claude | Worker deployment/configuration. |
+| `tests/` | gpt | Playwright suite. Assertions may not be weakened or quarantined to make a release green. |
+| `vendor/` | gpt | Bundled runtime dependencies/security provenance. |
+| `wrangler.jsonc` | gpt | Worker deployment/configuration. |
 
 **Shortcuts + Web Push completion and GPT parallel queue (2026-09-23, operator-directed).** The operator reassigned the Shortcuts URL contract, the Web Push contract, the Worker push endpoints and the client side to Claude as one release (v24.0.34 / Worker v24). That supersedes the 2026-09-22 GPT assignment and its lane-transfer request, which is declined as superseded: `docs/SHORTCUTS_URL_CONTRACT.md`, `docs/WEB_PUSH_CONTRACT.md` and `cloud-backup-worker.js` stay under their Claude parent rows. The operator also asked GPT to work in parallel on paths that cannot collide with that release, so GPT owns exactly these, documentation only: `docs/SHORTCUTS_PACK.md` (Shortcuts recipes, including DispatchLand capture, written against the Claude-owned URL contract; a missing link parameter goes to `/.agents/inbox/`, not into the pack); `README.md` and `CONTRIBUTING.md` (concise repository docs, withheld from the deployed origin by `.assetsignore`); `AUDIT_REPORT.md` (phase 5–6 reconciliation against current source and evidence: every finding and reproduction is preserved and marked superseded or fixed with evidence, never deleted); and `docs/VENDOR_DEPENDENCY_REVIEW.md` (vendored-dependency advisory review, report-only: any `vendor/` change stays Claude-owned and needs a governed release generation). These rows retire when the corresponding PRs merge, and `AUDIT_REPORT.md` then returns to Claude.
 
@@ -125,7 +130,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 - The post-PR-210 and v24.0.22 integration exceptions are retired. Persistent GPT-owned seams are `styles.css`, the three UI-redesign authority documents, the isolated `admin-console/` + its exact regression, the exact field-certification companion paths, and the bounded `native-ios/` + exact `native-ios.yml` Apple track.
 - The rest of the `SHARED` set remains serialized because it is release-critical or protocol surface.
 - The 2026-09-23 GPT parallel-queue rows (`docs/SHORTCUTS_PACK.md`, `README.md`, `CONTRIBUTING.md`, `docs/VENDOR_DEPENDENCY_REVIEW.md`, temporary `AUDIT_REPORT.md`) are documentation only.
-- Every other non-excepted path remains Claude-owned.
+- Every other non-excepted path is GPT-owned under ChatGPT-primary governance.
 
 The CSS seam stays a real physical boundary and is worth keeping: presentation changes in `styles.css` do not need an `app.js` lock. It does **not** cover UI sections that still live inside `app.js` — those remain `SHARED` until an approved extraction creates more physical paths.
 
@@ -136,7 +141,7 @@ The CSS seam stays a real physical boundary and is worth keeping: presentation c
 This map is enforced mechanically, not by recollection:
 
 - `scripts/lane-guard.mjs` parses **this file** as the single source of truth. There is no second machine-readable ownership file to drift.
-- `.githooks/pre-commit` rejects a staged change to a foreign lane, and a staged change to a `SHARED` path with no held lock covering that path. Enable per clone: `git config core.hooksPath .githooks` and `git config freightlogic.agent <claude|gpt>`.
+- `.githooks/pre-commit` rejects a staged change to a foreign lane, and a staged change to a `SHARED` path with no held lock covering that path. Enable per clone: `git config core.hooksPath .githooks` and, for current work, `git config freightlogic.agent gpt`. The legacy `claude` value remains recognized only for explicitly reauthorized bounded work.
 - `.github/workflows/lanes.yml` re-checks path ownership and commit prefixes on every PR to `main`. The hook is fast feedback and is bypassable; CI is the boundary.
 - A path with **no row in this table** fails closed. Adding a file means adding its row.
 - A lock past `expected_release_utc` + 2h is reported as **stale**. It grants nothing — including to its own holder — and it is never auto-stolen; reap it deliberately per `/AGENTS.md`.

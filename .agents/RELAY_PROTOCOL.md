@@ -1,78 +1,40 @@
-# Agent relay protocol — handing work over at a usage limit
+# Agent relay protocol — ChatGPT-primary coordination
 
-**Standing instruction from the repository owner (2026-09-14).** This is not a
-one-off request in an inbox; it applies to every session from now on, and both
-lanes are expected to read it before picking work up.
+**Standing instruction from the repository owner, updated 2026-09-27.**
 
-## The rule
+ChatGPT/GPT is the primary coordinator and implementation lane for FreightLogic. The former automatic Claude ↔ ChatGPT usage-limit relay is superseded. Work must not wait for Claude, route to Claude automatically, or treat Claude availability as a prerequisite.
 
-Work on this repository alternates between two agents whenever one runs out of
-usage:
+## Continuation order
 
-1. **Claude** works until its usage limit is reached and it stops coding.
-2. **ChatGPT (the `gpt` lane) takes over at that point** and continues the work
-   in progress, until *its* own limit is reached.
-3. **Claude takes over again**, and so on.
+When continuing work:
 
-Neither agent waits to be asked each time. A limit being reached IS the handoff
-signal. The owner should not have to relay it by hand.
+1. Refresh current GitHub `main` and the newest relevant Airtable/FreightLogic coordination checkpoint.
+2. Read only the minimum current governance and task state needed to avoid collision.
+3. Continue the latest verified unfinished task instead of restarting completed work.
+4. Use the `gpt` lane for repository writes unless the operator explicitly authorizes a different bounded writer.
+5. Keep SHARED-path locking, exact-head CI, testing, privacy, security, and approval gates unchanged.
 
-## What "take over" means
+## Specialists
 
-Take over the work that was actually in flight, not a fresh idea:
+Grok or another specialist may be used for bounded read-only review, research, or coordination when useful, but specialist output is advisory until ChatGPT reconciles it against primary evidence. A specialist is not a blocking dependency.
 
-- Read `CLAUDE.md` first — it is the running architecture/decision record and
-  the top section describes the current release state.
-- Read the most recent release/certification documents under `docs/` for what
-  is open. `docs/COMPLETION_RELEASE_PLAN_2026-08-25.md` is the canonical
-  roadmap; the newest `COMPLETION_RELEASE_CERTIFICATION_*` file is the current
-  certification state.
-- Check `/.agents/inbox/` on the `agent-coordination` branch for cross-lane
-  requests that are still open, and check the branch the other agent was last
-  pushing to (`git log --oneline -20`) for work that stopped mid-stream.
-- Finish what is unfinished before starting anything new. If the previous agent
-  left a spec failing, a control unverified, or a commit unpushed, that is the
-  first item — not a clean-slate task.
+Claude has no active role by default. A future Claude session may participate only when the operator explicitly reauthorizes a bounded task and current governance records that authority. Historical Claude commits, notes, branches, and inbox records remain valid provenance; they are not current ownership.
 
-## What does NOT change at a handover
+## Handoff discipline
 
-The relay changes **who is typing**. It changes nothing else:
+Before ending substantive work, the active writer should leave recoverable state:
 
-- **Path ownership still applies.** `/.agents/LANES.md` is the single source of
-  truth and is enforced by `.githooks/pre-commit` and
-  `.github/workflows/lanes.yml`. Taking over Claude's work does not grant the
-  gpt lane Claude-owned paths, or the reverse. If the work in flight needs a
-  foreign path, file a request under `/.agents/inbox/` and do the rest.
-- **`app.js`, `index.html`, `service-worker.js`, `manifest.json`,
-  `modern-shell.js`, `sw-bridge.js` stay SHARED** and still require the lock
-  protocol in `/AGENTS.md`. A handover is not a lock.
-- **Commit prefixes stay honest.** `[claude]` or `[gpt]` reflects who actually
-  wrote the commit, so the history still shows which lane did what.
-- **The full test suite still gates everything**: `node tests/run-all.mjs`, and
-  a negative control for every new assertion. An agent picking up mid-task must
-  re-run the suite rather than trusting the previous agent's last reported
-  total.
-- **Release-marker discipline is unchanged** — the version-bump checklist in
-  `CLAUDE.md` applies to whoever ships the release, and a handover mid-release
-  is exactly when a marker gets missed.
+- commit and push safe repository work;
+- record what is verified, what remains, and the exact next action in the appropriate coordination system;
+- release any live lock it owns;
+- never report a test, deployment, payment, approval, or certification as complete without evidence.
 
-## Leaving the baton where it can be picked up
+Usage limits are not a reason to hand work to Claude automatically. If ChatGPT cannot continue a step, record the specific blocker and preserve state for the next authorized ChatGPT session.
 
-Before stopping — whether at a limit or not — the outgoing agent should leave
-the work recoverable:
+## What does not change
 
-1. **Commit and push.** Uncommitted work in a container that gets reclaimed is
-   gone, and the next agent cannot continue what it cannot see.
-2. **Say what is done and what is next**, in the commit message or in a short
-   note under `/.agents/inbox/`. "Finished X; Y is written but its negative
-   control has not been run" is what makes a handover cheap.
-3. **Do not leave a green claim you did not verify.** If the suite was not run,
-   say it was not run. The next agent will build on whatever the last one
-   asserted, so an unverified "all green" costs more than an honest "unknown".
-
-## Note for the gpt lane specifically
-
-The owner has asked for this relay to be automatic. If you are reading this
-because Claude stopped at a limit: pick up the in-flight work described above,
-keep to your lane, and push. When your own limit is reached, leave the same kind
-of note, and Claude will pick it back up.
+- `/.agents/LANES.md` remains the path-ownership source of truth.
+- SHARED paths require the lock protocol in `/AGENTS.md`.
+- Commit prefixes must identify the actual writer.
+- Tests and release/certification gates remain evidence-driven and fail closed.
+- Production deployments, credential/security changes, external sends, binding freight actions, and shared/family-PC access remain separately approval-gated.
