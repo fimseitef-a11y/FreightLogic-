@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle / operator reassigned remaining #392/#389 integration to PC/GPT; no active process or lock observed. | 2026-09-27T04:36:00Z |
-| gpt | Operator-directed PC takeover: formalize temporary exact-path ownership, then complete #392 SheetJS 0.20.3 migration and #389 coherent next release. Lock gpt-pc-takeover-392-389 / 9b3f8c75-49c4-4aaf-9d3b-392389260927. | 2026-09-27T04:36:00Z |
+| gpt | #397 v24.0.47 integrated takeover — exact tree locally 906/0; awaiting PR-triggered Tests/Lanes/CodeQL, then merge/deploy/parity. | 2026-09-27T04:55:00Z |
 
 ---
 
