@@ -1592,15 +1592,46 @@ async function checkRateLimit(env, userId, limit, ns = 'eval') {
 // is defense in depth at the caller edge and fails closed before any future RPC.
 const AGENT_RPC_RATE_LIMIT_PER_HOUR = 30;
 const AGENT_RPC_ALLOWED_PRIVACY = new Set(['PUBLIC', 'OPERATIONAL_MINIMIZED']);
+const AGENT_RPC_TOP_LEVEL_FIELDS = new Set([
+  'id', 'type', 'occurredAt', 'source', 'actorScope', 'loadId',
+  'facts', 'provenance', 'canonicalSnapshot', 'privacyClass',
+  'correlationId', 'idempotencyKey', 'schemaVersion', 'intent', 'confidence',
+]);
+const AGENT_RPC_SAFE_FACT_FIELDS = new Set([
+  'originMarket', 'destinationMarket', 'loadedMiles', 'deadheadMiles',
+  'weightLb', 'pieces', 'equipment', 'pickupWindow', 'deliveryWindow',
+  'marketSignals',
+]);
+const AGENT_RPC_SAFE_CANONICAL_FIELDS = new Set([
+  'trueRpm', 'loadedRpm', 'grade', 'verdict', 'baselineBid', 'marketBid',
+  'costPerMile', 'fuelCost', 'deadheadCost', 'positionClass',
+  'marketContext', 'calculatedAt', 'authorityVersion',
+]);
 const AGENT_RPC_RESTRICTED_KEY = /(email|phone|address|street|zip|postal|payment|bank|card|ssn|ein|taxid|dob|birth|license|name|token|secret|password|credential|authorization|cookie|backup|rawtext|chat|message|account)/i;
 const AGENT_RPC_MAX_BYTES = 8192;
 const AGENT_RPC_MAX_NODES = 128;
 const AGENT_RPC_MAX_DEPTH = 4;
 
+function agentRpcPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function agentRpcHasUnknownKeys(value, allowlist) {
+  return !agentRpcPlainObject(value) || Object.keys(value).some((key) => !allowlist.has(key));
+}
+
 export function classifyAgentRpcPrivacy(envelope) {
-  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return 'UNKNOWN';
+  if (!agentRpcPlainObject(envelope)) return 'UNKNOWN';
   if (envelope.privacyClass === 'RESTRICTED') return 'RESTRICTED';
   if (!AGENT_RPC_ALLOWED_PRIVACY.has(envelope.privacyClass)) return 'UNKNOWN';
+
+  // Match the Agent contract's structural allowlists before any future private
+  // RPC. Unknown fields must not cross the Worker boundary merely because their
+  // key names are not obviously sensitive.
+  if (Object.keys(envelope).some((key) => !AGENT_RPC_TOP_LEVEL_FIELDS.has(key))) return 'UNKNOWN';
+  if (agentRpcHasUnknownKeys(envelope.facts, AGENT_RPC_SAFE_FACT_FIELDS)) return 'UNKNOWN';
+  if (agentRpcHasUnknownKeys(envelope.canonicalSnapshot, AGENT_RPC_SAFE_CANONICAL_FIELDS)) return 'UNKNOWN';
+  if (!agentRpcPlainObject(envelope.provenance)) return 'UNKNOWN';
 
   let serialized;
   try { serialized = JSON.stringify(envelope); } catch { return 'UNKNOWN'; }
