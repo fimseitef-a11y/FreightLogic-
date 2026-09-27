@@ -180,10 +180,12 @@ await test("A14 isolated Wrangler config is internet-dark and SQLite-backed", as
 
 await test("A15 worker remains Phase-A fail-closed with no model endpoint", async () => {
   const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
-  assert.match(source, /AGENT_ENABLED/);
-  assert.match(source, /recommendation:\s*"UNKNOWN"/);
-  assert.doesNotMatch(source, /gateway\.ai\.cloudflare\.com/i);
-  assert.doesNotMatch(source, /OPENAI_API_KEY|ANTHROPIC_API_KEY|GROK_API_KEY|XAI_API_KEY/);
+  assert.equal(source.includes("AGENT_ENABLED"), true);
+  assert.equal(source.includes('recommendation: "UNKNOWN"'), true);
+  assert.equal(source.toLowerCase().includes("gateway.ai.cloudflare.com"), false);
+  for (const secretName of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROK_API_KEY", "XAI_API_KEY"]) {
+    assert.equal(source.includes(secretName), false);
+  }
 });
 
 await test("A16 excessive privacy nesting fails closed to UNKNOWN", () => {
