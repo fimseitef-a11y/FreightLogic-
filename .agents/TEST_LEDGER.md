@@ -334,3 +334,13 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Synthetic JS Date midnight-UTC probe showed the same America/Chicago local-date presentation under both versions; recorded as fixture/timezone behavior, not a 0.20.3 regression.
 - Original `vendor/xlsx.full.min.js` restored after every probe; SHA-256 before/after `c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99`.
 - `verify-release-generation.mjs` could not execute locally because `git` is absent; this is environment UNOBSERVED, not PASS/FAIL for the migration candidate. Normal exact-head CI is still mandatory.
+
+## 2026-09-27T04:55Z — v24.0.47 exact-tree certification before PR #395 merge
+- Local PC candidate commit tree: all 13 changed blobs independently matched to GitHub PR #395 head `5f79cc001b031d8bab7ad2fe0322d534d638c1cd`.
+- Release generation: PASS, previous 24.0.46 -> current 24.0.47; changed runtime includes app/index/manifest/authority/config/modern shell/SW/styles/sw-bridge/vendor.
+- Static Cloudflare parity: PASS; CSP parity and all 21 declared runtime assets deployable.
+- Full suite: **906 passed / 0 failed across 89 spec files**.
+- SheetJS browser regression passed inside the full suite and asserts `XLSX.version === 0.20.3`.
+- #389 regression exercises injected Intel nav in Standard/Large/XLarge/Glance and preserves Home Today.
+- Vendor source SHA-256: `cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41`.
+- Production/live verification: NOT YET OBSERVED at this checkpoint.
