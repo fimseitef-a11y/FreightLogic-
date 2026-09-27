@@ -43,5 +43,6 @@ tests/
 # surface (#231). `native-ios/` is frozen repository-only Swift source.
 admin-console/
 native-ios/
+agent-runtime/
 README.md
 CONTRIBUTING.md
