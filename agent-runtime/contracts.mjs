@@ -55,11 +55,36 @@ function hasUnknownKeys(value, allowlist) {
   return Object.keys(value).some((key) => !allowlist.has(key));
 }
 
-function pickAllowed(value, allowlist) {
+function projectFacts(facts) {
   const out = {};
-  for (const [key, item] of Object.entries(value || {})) {
-    if (allowlist.has(key)) out[key] = item;
-  }
+  if ("originMarket" in facts) out.originMarket = facts.originMarket;
+  if ("destinationMarket" in facts) out.destinationMarket = facts.destinationMarket;
+  if ("loadedMiles" in facts) out.loadedMiles = facts.loadedMiles;
+  if ("deadheadMiles" in facts) out.deadheadMiles = facts.deadheadMiles;
+  if ("weightLb" in facts) out.weightLb = facts.weightLb;
+  if ("pieces" in facts) out.pieces = facts.pieces;
+  if ("equipment" in facts) out.equipment = facts.equipment;
+  if ("pickupWindow" in facts) out.pickupWindow = facts.pickupWindow;
+  if ("deliveryWindow" in facts) out.deliveryWindow = facts.deliveryWindow;
+  if ("marketSignals" in facts) out.marketSignals = facts.marketSignals;
+  return out;
+}
+
+function projectCanonicalSnapshot(snapshot) {
+  const out = {};
+  if ("trueRpm" in snapshot) out.trueRpm = snapshot.trueRpm;
+  if ("loadedRpm" in snapshot) out.loadedRpm = snapshot.loadedRpm;
+  if ("grade" in snapshot) out.grade = snapshot.grade;
+  if ("verdict" in snapshot) out.verdict = snapshot.verdict;
+  if ("baselineBid" in snapshot) out.baselineBid = snapshot.baselineBid;
+  if ("marketBid" in snapshot) out.marketBid = snapshot.marketBid;
+  if ("costPerMile" in snapshot) out.costPerMile = snapshot.costPerMile;
+  if ("fuelCost" in snapshot) out.fuelCost = snapshot.fuelCost;
+  if ("deadheadCost" in snapshot) out.deadheadCost = snapshot.deadheadCost;
+  if ("positionClass" in snapshot) out.positionClass = snapshot.positionClass;
+  if ("marketContext" in snapshot) out.marketContext = snapshot.marketContext;
+  if ("calculatedAt" in snapshot) out.calculatedAt = snapshot.calculatedAt;
+  if ("authorityVersion" in snapshot) out.authorityVersion = snapshot.authorityVersion;
   return out;
 }
 
@@ -134,7 +159,7 @@ export function buildModelProjection(envelope) {
 
   return {
     intent: envelope.intent,
-    facts: pickAllowed(envelope.facts, SAFE_FACT_FIELDS),
-    canonicalSnapshot: pickAllowed(envelope.canonicalSnapshot, SAFE_CANONICAL_FIELDS),
+    facts: projectFacts(envelope.facts),
+    canonicalSnapshot: projectCanonicalSnapshot(envelope.canonicalSnapshot),
   };
 }
