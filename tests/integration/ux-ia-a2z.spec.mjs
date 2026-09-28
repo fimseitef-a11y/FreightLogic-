@@ -81,8 +81,8 @@ test('[UXA2Z-08] History is records, not a Current / History / Reports navigatio
 });
 
 test('[UXA2Z-09] Settings directory is seven configuration-only groups and onboarding is two stages', () => {
-  for (const label of ['Vehicle & Capacity','Money & Accounting','Trip Planning','Connections & Backup',
-    'Notifications & Display','Privacy & Security','Advanced & Diagnostics']) {
+  for (const label of ['Vehicle &amp; Capacity','Money &amp; Accounting','Trip Planning','Connections &amp; Backup',
+    'Notifications &amp; Display','Privacy &amp; Security','Advanced &amp; Diagnostics']) {
     ok(html.includes(label), `Settings directory must include ${label}`);
   }
   ok(!/<h3>Money &amp; AR<\/h3>/.test(html), 'Settings must not carry Money/AR operational navigation');
@@ -95,7 +95,48 @@ test('[UXA2Z-09] Settings directory is seven configuration-only groups and onboa
 
 test('[UXA2Z-10] trip document workflow offers Scan Document', () => {
   ok(/id="addDvScan"/.test(appSrc), 'Add Document must offer Scan Document');
-  ok(/capture="environment"/.test(appSrc), 'Scan Document must use the rear-camera capture path on supported iPhone browsers');
+  ok(/id="addDvScanFile"[^>]+capture="environment"/.test(appSrc), 'Scan Document must use the rear-camera capture path on supported iPhone browsers');
+});
+
+test('[UXA2Z-11] explicit zero deadhead persists across reload', async () => {
+  const app = await boot();
+  try {
+    await app.page.evaluate(async () => {
+      const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
+      location.hash='#omega';
+      set('mwLoadedMi','200'); set('mwDeadMi','0'); set('mwRevenue','350');
+      await window.__FL_TESTS.mwEvaluateLoad();
+    });
+    await app.page.reload({ waitUntil:'load' });
+    await app.page.waitForFunction(() => !!window.FreightLogicModernShell, null, { timeout:10000 });
+    await app.page.waitForTimeout(800);
+    await app.page.evaluate(() => { location.hash='#omega'; });
+    await app.page.waitForTimeout(400);
+    eq(await app.page.locator('#mwDeadMi').inputValue(), '0', 'known zero must survive a fresh app load');
+  } finally { await app.close(); }
+});
+
+test('[UXA2Z-12] active execution suppresses idle Today cards', async () => {
+  const app = await boot();
+  try {
+    await app.page.evaluate(async () => {
+      await window.__FL_TESTS.upsertTrip({
+        orderNo:'UXA2Z-ACTIVE', customer:'Fixture', broker:'Fixture',
+        pay:500, loadedMiles:250, emptyMiles:10, paymentStatusKnown:true, isPaid:false,
+        origin:'Chicago, IL', destination:'Indianapolis, IN',
+        pickupDate:new Date().toISOString().slice(0,10), deliveryDate:'',
+        executionStatus:'PICKED_UP', created:Date.now(),
+      });
+      location.hash='#home';
+    });
+    await app.page.waitForTimeout(1000);
+    const r=await app.page.evaluate(() => ({
+      focus:document.getElementById('view-home')?.classList.contains('today-execution-focus'),
+      recent:getComputedStyle(document.getElementById('homeRecentTripsCard')).display,
+    }));
+    ok(r.focus, 'Today must enter execution-focus state for an active load');
+    eq(r.recent, 'none', 'idle Recent Trips card must be suppressed during active execution');
+  } finally { await app.close(); }
 });
 
 export async function runSpec(){ return run(); }

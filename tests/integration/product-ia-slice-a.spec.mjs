@@ -27,8 +27,8 @@ test('[UXIA-01] idle primary shell is five workflow destinations and History pre
   try {
     const tabs = await primaryNav(app.page);
     eq(tabs.length, 5, 'primary navigation must expose no more than five destinations');
-    eq(tabs.map(t => t.label).join('/'), 'Today/Loads/Evaluate/History/Money',
-      'idle shell must read Today / Loads / Evaluate / History / Money');
+    eq(tabs.map(t => t.label).join('/'), 'Today/Loads/Scan/History/Money',
+      'idle shell must read Today / Loads / Scan / History / Money');
     const history = tabs.find(t => t.label === 'History');
     ok(history, 'History is a visible primary destination');
     eq(history?.href, '#trips', 'History must preserve the supported #trips deep link');
@@ -49,9 +49,9 @@ test('[UXIA-02] Today has one stateful dominant action', async () => {
     const idle = await app.page.$$eval('[data-today-primary-action]', els =>
       els.map(e => ({ text:(e.textContent||'').trim().replace(/\s+/g,' '), href:e.getAttribute('href')||'' })));
     eq(idle.length, 1, 'Today must have exactly one dominant action while idle');
-    ok(/Review\s*\/\s*Scan Loads/i.test(idle[0]?.text || ''),
-      'idle Today action must say Review / Scan Loads');
-    eq(idle[0]?.href, '#loads', 'idle Today action must lead to Loads');
+    ok(/Scan Load/i.test(idle[0]?.text || ''),
+      'idle Today action must say Scan Load');
+    eq(idle[0]?.href, '#omega', 'idle Today action must lead directly to Scan');
 
     await app.page.evaluate(async () => {
       const T = window.__FL_TESTS;
@@ -156,7 +156,7 @@ test('[UXIA-06B] a booked not-started trip is still the Current Load without a f
 test('[UXIA-06C] live GPS execution controls move from Today to Current Load', () => {
   const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
   const currentStart = src.indexOf('async function renderCurrentLoad()');
-  const currentEnd = src.indexOf('\nfunction ensureTripsHistoryNav()', currentStart);
+  const currentEnd = src.indexOf('\nasync function renderReports()', currentStart);
   const todayStart = src.indexOf('async function renderTripTrackingUI()');
   const todayEnd = src.indexOf('\nfunction _renderTrackingIdle', todayStart);
   ok(currentStart >= 0 && currentEnd > currentStart, 'Current Load renderer must remain inspectable');
@@ -198,7 +198,7 @@ test('[UXIA-09A] More deduplicates report shortcuts once Reports owns them', () 
   const end = src.indexOf('];', start);
   ok(start >= 0 && end > start, 'MORE_TILES must remain inspectable');
   const block = src.slice(start, end + 2);
-  ok(/title:'Reports'[^\n]+hash:'#reports'/.test(block), 'More must keep one canonical Reports destination');
+  ok(!/title:'Reports'/.test(block), 'Reports is owned by Money and must not be duplicated in More');
   ok(!/title:'CPA Package'|title:'Tax Season Export'/.test(block),
     'CPA and tax exports must live under Reports instead of duplicate More entries');
   ok(!/title:'Money \/ AR'/.test(block),
