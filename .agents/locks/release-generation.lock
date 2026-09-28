@@ -1,0 +1,6 @@
+owner: gpt
+token: task0027-release-20260928
+started_utc: 2026-09-28T14:13:00Z
+expected_release_utc: 2026-09-28T17:13:00Z
+paths: app.js, index.html, modern-shell.js, service-worker.js, manifest.json, sw-bridge.js, midwest-stack-authority.js, midwest-stack-config.json, scripts/verify-cloudflare-parity.mjs, tests/run-all.mjs
+task: AIAG-TASK-0027 governed release generation
