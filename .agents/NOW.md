@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #418 Slice A verified and ready-for-review; no active lock. Merge/production delivery remains separately gated. | 2026-09-28T07:37:00Z |
+| gpt | AIAG-TASK-0023 — production Agent model adapter + bounded activation canary only. Owns agent-runtime/ and exact AI Agent cutover workflow/test docs; do not touch PR #418/app.js. | 2026-09-28T07:49:00Z |
 
 ---
 
