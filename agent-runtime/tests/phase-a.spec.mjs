@@ -543,5 +543,16 @@ await test("A38 model prompt binds canonical authority and treats projection val
   assert.equal(messages[1].role, "user");
 });
 
+
+await test("A39 activation workflow is explicit and rolls back to disabled on canary failure", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/ai-agent-cutover.yml", import.meta.url), "utf8");
+  assert.equal(workflow.includes("ACTIVATE_CANARY"), true);
+  assert.equal(workflow.includes("AGENT_ENABLED:true"), true);
+  assert.equal(workflow.includes("AGENT_ENABLED:false"), true);
+  assert.equal(workflow.includes("Activation canary failed; redeploying Agent disabled."), true);
+  assert.equal(workflow.includes("ACTIVE AGENT CANARY VERDICT: PASS"), true);
+  assert.equal(workflow.includes("IDEMPOTENCY_CONFLICT"), true);
+});
+
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
 if (failed) process.exitCode = 1;
