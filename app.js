@@ -8586,8 +8586,6 @@ const MORE_TILES = [
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
   { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
   { icon:'📊', title:'Reports', sub:'Weekly performance, tax and accountant exports', hash:'#reports', section:'PRIMARY', group:'business' },
-  { icon:'📦', title:'CPA Package', sub:'Quarterly report and export', act:'cpaPackage', section:'ADVANCED', group:'business' },
-  { icon:'🗂', title:'Tax Season Export', sub:'Schedule C and mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
   { icon:'💿', title:'Storage Health', sub:'Local storage and cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
