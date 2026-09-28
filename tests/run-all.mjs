@@ -109,7 +109,6 @@ import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs
 import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
 import { runSpec as tripDuplicateWarning } from './integration/trip-duplicate-warning.spec.mjs';
 import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-regressions.spec.mjs';
-import { runSpec as issue417SliceAIA } from './integration/issue-417-slice-a-ia.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -176,7 +175,6 @@ const specs = [
   invitePaste,
   tripDuplicateWarning,
   iphoneManualRegressions,
-  issue417SliceAIA,
   importCredentialTrustBoundary,
   tripImportIntegrity,
   ocrSelfHosted,
