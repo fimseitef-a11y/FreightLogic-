@@ -1,0 +1,6 @@
+owner: gpt
+token: pr424-repair-20260928
+started_utc: 2026-09-28T13:39:00Z
+expected_release_utc: 2026-09-28T15:39:00Z
+paths: tests/run-all.mjs, midwest-stack-authority.js, midwest-stack-config.json, scripts/verify-cloudflare-parity.mjs
+task: PR #424 exact-head test repair
