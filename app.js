@@ -6410,6 +6410,43 @@ async function renderReports(){
   summary.querySelector('#reportsTax')?.addEventListener('click', ()=> openTaxSeasonExport());
 }
 
+// Issue #417 Slice A — explicit IA destinations; existing lifecycle/report
+// functions remain authoritative for business state and calculations.
+function ensureIssue417SliceAViews(){
+  const main=document.querySelector('main.app'); if(!main) return;
+  if(!$('#view-current')){ const el=document.createElement('section'); el.id='view-current'; el.className='view'; el.style.display='none'; el.setAttribute('aria-label','Current Load'); el.innerHTML='<div id="currentLoadBody"></div>'; main.appendChild(el); }
+  if(!$('#view-reports')){ const el=document.createElement('section'); el.id='view-reports'; el.className='view'; el.style.display='none'; el.setAttribute('aria-label','Reports'); el.innerHTML='<div id="reportsBody"></div>'; main.appendChild(el); }
+}
+ensureIssue417SliceAViews();
+function _activeLifecycleRows(rows){ return (Array.isArray(rows)?rows:[]).filter(x=>x&&x.opportunity==='WON'&&['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(x.execution)).sort((a,b)=>finiteNum(b.updatedAt,0)-finiteNum(a.updatedAt,0)); }
+async function resolveTodayPrimaryAction(){
+  if(_activeTracking) return {label:'Open Current Load',hash:'#current',reason:'Trip tracking is active'};
+  try{ const active=_activeLifecycleRows(await listLifecycle()); if(active.length) return {label:'Open Current Load',hash:'#current',reason:lifecycleDisplayStage(active[0])}; }catch(e){ console.warn('[FL] Today primary action:',e); }
+  return {label:'Evaluate Load',hash:'#omega',reason:'No active load'};
+}
+async function renderTodayPrimaryAction(slot){
+  if(!slot) return; let card=$('#todayPrimaryAction');
+  if(!card){ card=document.createElement('div'); card.id='todayPrimaryAction'; slot.insertBefore(card,slot.firstChild); }
+  const a=await resolveTodayPrimaryAction();
+  card.innerHTML='<button class="btn primary" id="todayPrimaryActionBtn" style="width:100%;min-height:52px;font-size:15px;font-weight:800;margin-bottom:10px">'+escapeHtml(a.label)+'</button><div class="sr-only">'+escapeHtml(a.reason)+'</div>';
+  card.querySelector('#todayPrimaryActionBtn')?.addEventListener('click',()=>{haptic(15);location.hash=a.hash;});
+}
+async function renderCurrentLoad(){
+  const root=$('#currentLoadBody'); if(!root) return; let active=[]; try{active=_activeLifecycleRows(await listLifecycle());}catch(e){console.warn('[FL] current load:',e);}
+  const lc=active[0]||null;
+  if(!lc&&!_activeTracking){ root.innerHTML='<div class="card"><h2 style="margin:0 0 8px">Current Load</h2><div class="muted">No active load is recorded.</div><button class="btn primary" id="currentEvaluate" style="width:100%;min-height:48px;margin-top:14px">Evaluate a Load</button></div><div class="spacer"></div><button class="btn" id="currentHistory" style="width:100%;min-height:48px">History</button>'; root.querySelector('#currentEvaluate')?.addEventListener('click',()=>location.hash='#omega'); root.querySelector('#currentHistory')?.addEventListener('click',()=>location.hash='#history'); return; }
+  const stage=lc?lifecycleDisplayStage(lc):'TRIP IN PROGRESS'; const route=lc?[lc.origin,lc.destination].filter(Boolean).join(' → '):'';
+  root.innerHTML='<div class="card card-hero"><h2 style="margin:0">Current Load</h2><div class="muted" style="margin-top:4px">'+escapeHtml(stage)+'</div>'+(route?'<div style="font-size:18px;font-weight:800;margin-top:16px">'+escapeHtml(route)+'</div>':'')+(_activeTracking?'<div style="font-size:12px;color:var(--good);font-weight:700;margin-top:8px">● GPS trip tracking active</div>':'')+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'+(!_activeTracking?'<button class="btn primary" id="currentStart" style="min-height:48px">Start Trip</button>':'<button class="btn danger" id="currentStop" style="min-height:48px">Stop &amp; Save</button>')+'<button class="btn" id="currentHistory" style="min-height:48px">History</button></div></div>';
+  root.querySelector('#currentStart')?.addEventListener('click',()=>startTripTracking()); root.querySelector('#currentStop')?.addEventListener('click',()=>stopTripTracking()); root.querySelector('#currentHistory')?.addEventListener('click',()=>location.hash='#history');
+}
+function ensureTripsHistoryNav(){
+  const host=$('#view-trips')?.querySelector('.card'); if(!host||$('#tripsHistoryNav')) return; const row=document.createElement('div'); row.id='tripsHistoryNav'; row.style.cssText='display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px'; row.innerHTML='<a class="btn" href="#current">Current</a><a class="btn" href="#history">History</a><a class="btn" href="#reports">Reports</a>'; host.appendChild(row);
+}
+async function renderReports(){
+  const root=$('#reportsBody'); if(!root) return; let count=0; try{count=(await dumpStore('weeklyReports')).length;}catch(e){}
+  root.innerHTML='<div class="card card-hero"><h2 style="margin:0 0 6px">Reports</h2><div class="muted">Weekly performance, tax exports and accountant-ready packages.</div><div class="muted" style="font-size:12px;margin-top:8px">'+count+' saved weekly reports</div></div><div class="spacer"></div><div class="card"><div style="display:grid;gap:10px"><button class="btn primary" id="reportsWeekly">Weekly Reports</button><button class="btn" id="reportsCPA">CPA Package</button><button class="btn" id="reportsTax">Tax Season Export</button><a class="btn" href="#insights">Settings</a></div></div>';
+  root.querySelector('#reportsWeekly')?.addEventListener('click',()=>openWeeklyReports()); root.querySelector('#reportsCPA')?.addEventListener('click',()=>openCPAPackage()); root.querySelector('#reportsTax')?.addEventListener('click',()=>openTaxSeasonExport());
+}
 // ---- Router ----
 const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), current:$('#view-current'), reports:$('#view-reports'), expenses:$('#view-expenses'),\n  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
 
@@ -23589,7 +23626,7 @@ async function renderTripTrackingUI() {
     slot.insertBefore(ob, slot.firstChild);
     markOnboardingExposure(ob, 'f21OnboardingSeen');
   }
-  await renderTodayPrimaryAction(slot);\n  let trackDiv = $('#f21TrackArea');
+  await renderTodayPrimaryAction(slot);\n  await renderTodayPrimaryAction(slot);\n  let trackDiv = $('#f21TrackArea');
   if (!trackDiv) {
     trackDiv = document.createElement('div');
     trackDiv.id = 'f21TrackArea';
