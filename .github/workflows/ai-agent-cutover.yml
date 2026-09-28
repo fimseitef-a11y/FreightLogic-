@@ -1,0 +1,237 @@
+name: AI Agent Cutover
+
+# AIAG-TASK-0022 — private Agent service integration and dark production gate.
+#
+# Pull requests only run contract/dry-run checks. Production changes require a
+# deliberate manual dispatch from main with DARK_CUTOVER selected. The Agent
+# target is deployed first with AGENT_ENABLED=false; only then is the existing
+# authenticated API Worker deployed with its private Service Binding.
+#
+# This workflow intentionally has NO activation mode. Enabling model execution
+# remains a later explicit gate after dark production evidence is green and a
+# production model provider/credential has been configured.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent-runtime/**'
+      - 'cloud-backup-worker.js'
+      - 'scripts/wrangler.backup-worker.jsonc'
+      - '.github/workflows/ai-agent-cutover.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'CHECK_ONLY performs no deploy. Select DARK_CUTOVER to deploy the private Agent disabled and wire the binding.'
+        required: true
+        type: choice
+        default: CHECK_ONLY
+        options:
+          - CHECK_ONLY
+          - DARK_CUTOVER
+
+permissions:
+  contents: read
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
+  KV_NAMESPACE_ID: a80b7959b0fa401d87e55c0c62e828a8
+  API_ORIGIN: https://freightlogic-backup.fimseitef.workers.dev
+  APP_ORIGIN: https://freightlogic-v2.fimseitef.workers.dev
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Run Agent contract and boundary tests
+        run: node agent-runtime/tests/phase-a.spec.mjs
+
+      - name: Verify Agent target stays private and disabled by default
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('agent-runtime/wrangler.jsonc', 'utf8'));
+          if (cfg.name !== 'freightlogic-agent-v1') throw new Error('unexpected Agent service name');
+          if (cfg.workers_dev !== false || cfg.preview_urls !== false) throw new Error('Agent public preview/dev endpoint must stay disabled');
+          if (cfg.vars?.AGENT_ENABLED !== 'false') throw new Error('Agent must deploy dark');
+          if ('routes' in cfg || 'route' in cfg) throw new Error('Agent must not have a public route');
+          NODE
+
+      - name: Dry-run Agent deployment bundle
+        run: npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc --dry-run
+
+      - name: Dry-run authenticated API Worker with private binding
+        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
+
+  dark-cutover:
+    needs: contract
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'DARK_CUTOVER' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Require Cloudflare deploy credential
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is unavailable."
+            exit 2
+          fi
+
+      - name: Reconfirm dark target before deploy
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('agent-runtime/wrangler.jsonc', 'utf8'));
+          if (cfg.vars?.AGENT_ENABLED !== 'false') throw new Error('refusing non-dark Agent deployment');
+          if (cfg.workers_dev !== false || cfg.preview_urls !== false || 'routes' in cfg || 'route' in cfg) {
+            throw new Error('refusing publicly reachable Agent target');
+          }
+          NODE
+
+      - name: Deploy private Agent target dark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc
+
+      - name: Deploy authenticated API Worker with private Agent binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc
+
+      - name: Verify public boundary and dark private RPC with synthetic identity
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          unauth="$(curl -sS -o /tmp/agent-unauth.json -w '%{http_code}' --max-time 20             -H "Origin: $APP_ORIGIN" -H 'Content-Type: application/json'             -d '{}' "$API_ORIGIN/agent/evaluate" || true)"
+          echo "unauthenticated /agent/evaluate -> HTTP $unauth"
+          [ "$unauth" = '401' ] || {
+            echo "::error::Agent ingress did not preserve the existing authentication boundary."
+            cat /tmp/agent-unauth.json || true
+            exit 1
+          }
+
+          TOKEN="flk_$(openssl rand -hex 16)"
+          USER_ID="u_$(openssl rand -hex 10)"
+          TOKEN_HASH="$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')"
+          echo "::add-mask::$TOKEN"
+
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID"
+          AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+
+          encode_key() {
+            node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
+          }
+
+          delete_key() {
+            local key="$1" enc
+            enc="$(encode_key "$key")"
+            curl -fsS -X DELETE -H "$AUTH" "$API/values/$enc" >/dev/null 2>&1 || true
+          }
+
+          cleanup() {
+            set +e
+            delete_key "user:$USER_ID"
+            delete_key "tokh:$TOKEN_HASH"
+            delete_key "rl:agent-rpc:$USER_ID:$(($(date +%s) / 3600))"
+          }
+          trap cleanup EXIT
+
+          CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RECORD="$(node -e '
+            const [userId, createdAt, tokenHash] = process.argv.slice(1);
+            process.stdout.write(JSON.stringify({userId,name:"Agent Cutover Certification",tokenHash,createdAt,active:true,backupCount:0}));
+          ' "$USER_ID" "$CREATED_AT" "$TOKEN_HASH")"
+
+          put_value() {
+            local key="$1" value="$2" enc response
+            enc="$(encode_key "$key")"
+            response="$(curl -fsS -X PUT -H "$AUTH" -H 'Content-Type: text/plain' --data-binary "$value"               "$API/values/$enc?expiration_ttl=900")"
+            printf '%s' "$response" | node -e '
+              let s=""; process.stdin.on("data",d=>s+=d); process.stdin.on("end",()=>{
+                const j=JSON.parse(s); if (!j.success) process.exit(1);
+              });'
+          }
+
+          put_value "tokh:$TOKEN_HASH" "$RECORD"
+          put_value "user:$USER_ID" "$RECORD"
+
+          ready=0
+          for attempt in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/agent-ready.json -w '%{http_code}' --max-time 15               -H "X-Backup-Token: $TOKEN" -H 'X-Device-Id: agent-cutover' "$API_ORIGIN/status" || true)"
+            if [ "$code" = '200' ]; then ready=1; break; fi
+            sleep 5
+          done
+          [ "$ready" = '1' ] || {
+            echo "::error::Synthetic driver identity never became visible."
+            exit 2
+          }
+
+          node - "$USER_ID" > /tmp/agent-envelope.json <<'NODE'
+          const userId = process.argv[2];
+          process.stdout.write(JSON.stringify({
+            id: "evt-cutover-001",
+            type: "load.explain",
+            occurredAt: new Date().toISOString(),
+            source: "freightlogic-worker",
+            actorScope: "driver:" + userId,
+            loadId: "synthetic-cutover-load",
+            facts: {
+              originMarket: "Chicago",
+              destinationMarket: "Detroit",
+              loadedMiles: 280,
+              deadheadMiles: 35,
+              weightLb: 900,
+              pieces: 2
+            },
+            provenance: {
+              canonical: "synthetic-cutover",
+              observedAt: new Date().toISOString()
+            },
+            canonicalSnapshot: {
+              trueRpm: 1.61,
+              grade: "B",
+              verdict: "ACCEPT",
+              baselineBid: 500,
+              marketBid: 525,
+              authorityVersion: "cutover-certification"
+            },
+            privacyClass: "OPERATIONAL_MINIMIZED",
+            correlationId: "corr-cutover-001",
+            idempotencyKey: "idem-cutover-001",
+            schemaVersion: 1,
+            intent: "explain",
+            confidence: 0.9
+          }));
+          NODE
+
+          code="$(curl -sS -o /tmp/agent-dark.json -w '%{http_code}' --max-time 30             -H "Origin: $APP_ORIGIN"             -H "X-Backup-Token: $TOKEN"             -H 'X-Device-Id: agent-cutover'             -H 'Content-Type: application/json'             --data-binary @/tmp/agent-envelope.json             "$API_ORIGIN/agent/evaluate" || true)"
+          echo "authenticated dark /agent/evaluate -> HTTP $code"
+          cat /tmp/agent-dark.json; echo
+
+          [ "$code" = '503' ] || {
+            echo "::error::Dark Agent request must fail closed with HTTP 503."
+            exit 1
+          }
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/agent-dark.json', 'utf8'));
+          if (body?.ok !== false || body?.code !== 'AGENT_DISABLED' || body?.recommendation !== 'UNKNOWN') {
+            throw new Error('private binding did not reach the disabled Agent fail-closed response');
+          }
+          NODE
+
+          echo 'DARK AGENT CUTOVER VERDICT: PASS — private binding reached; Agent remained disabled; public auth boundary preserved.'
