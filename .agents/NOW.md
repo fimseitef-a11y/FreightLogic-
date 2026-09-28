@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — Issue #417 Slice C complete; main/production v24.0.52 verified green. | 2026-09-28T14:10:00Z |
+| gpt | AIAG-TASK-0027 — Issue #417 Slice D: onboarding / vehicle identity and provenance; no external spec authority. | 2026-09-28T14:13:00Z |
 
 ---
 
