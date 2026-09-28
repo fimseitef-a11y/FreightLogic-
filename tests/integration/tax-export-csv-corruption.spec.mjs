@@ -64,37 +64,12 @@ async function seedTrip(page, overrides) {
 }
 
 async function openTaxExportUI(page, year) {
-  await page.evaluate(() => { location.hash = '#more'; });
-  await page.waitForSelector('.menu-tile .tt', { state: 'attached', timeout: 10000 });
-  await page.waitForTimeout(300);
-  // Reveal any collapsed tile group. Until v24.0.20 the ADVANCED tiles sat behind
-  // a single "▶ More Tools" toggle and this step CLICKED it; Issue #205's UX/IA
-  // restructure replaced that unlabelled dump with named groups that are all
-  // visible, so there is no longer a toggle to click.
-  //
-  // What changed here is how this helper REACHES the tile, not what this spec
-  // asserts. The three [FINDING F-3 / FIXED] assertions below -- comma
-  // round-trip, three-way reconciliation, year-boundary bucketing -- are
-  // untouched, and the requirement that actually matters is still asserted, by
-  // the `ok(clicked, ...)` immediately after this: the Tax Season Export tile
-  // must be reachable from More. That is strictly stronger than asserting a
-  // particular widget exists, because it is the capability rather than the
-  // chrome. (Same shape as v24.0.1, where three specs' fixtures were updated to
-  // enter deadhead 0 explicitly and no assertion was changed or weakened.)
-  //
-  // The un-hide is written to be correct under either layout and asserts
-  // nothing: it is a no-op when every group is already visible.
-  await page.evaluate(() => {
-    document.querySelectorAll('#moreMenu .menu-grid').forEach((g) => { g.style.display = ''; });
-  });
-  await page.waitForTimeout(300);
-  const clicked = await page.evaluate(() => {
-    const tiles = Array.from(document.querySelectorAll('.menu-tile'));
-    const tile = tiles.find(el => /tax season export/i.test(el.querySelector('.tt')?.textContent || ''));
-    if (tile) { tile.click(); return true; }
-    return false;
-  });
-  ok(clicked, 'could not locate the "Tax Season Export" tile in the More menu');
+  // Slice A removed the duplicate Tax Season Export tile from More. Reach the
+  // same canonical export engine through Reports, then keep the original F-3
+  // CSV/data-integrity assertions below unchanged.
+  await page.evaluate(() => { location.hash = '#reports'; });
+  await page.waitForSelector('#reportsTax', { state: 'visible', timeout: 10000 });
+  await page.click('#reportsTax');
   await page.waitForTimeout(500);
   if (year) {
     const switched = await page.evaluate((y) => {

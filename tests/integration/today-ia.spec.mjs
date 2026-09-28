@@ -412,9 +412,10 @@ test('[ISSUE #205] TIA-10 every declared More tile reaches the DOM', async () =>
     eq(r.missing.join(','), '',
       `every declared tile must render; missing: ${JSON.stringify(r.missing)}. ` +
       'A regroup that silently dropped a tile is the orphaning this restructure exists to prevent.');
-    // Named explicitly because each was reachable ONLY through More before this
-    // change, so a drop would be silent: there is no other link to any of them.
-    ['Market Intel', 'Diagnostics', 'Tax Season Export', 'Export & Backup', 'Storage Health']
+    // Named explicitly as directory sentinels. Tax/CPA outputs now live under the
+    // single Reports tile by Slice A design, so the directory contract is Reports,
+    // not the removed duplicate Tax Season Export shortcut.
+    ['Market Intel', 'Diagnostics', 'Reports', 'Export & Backup', 'Storage Health']
       .forEach((t) => ok(r.rendered.includes(t), `${t} must survive the regroup`));
   } finally { await app.close(); }
 });
