@@ -1,6 +1,0 @@
-owner: gpt
-token: 0ed40af3-dc38-47df-a87a-0024release50
-started_utc: 2026-09-28T10:42:00Z
-expected_release_utc: 2026-09-28T13:42:00Z
-paths: sw-bridge.js
-task: AIAG-TASK-0024 governed v24.0.50 release generation
