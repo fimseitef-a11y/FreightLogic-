@@ -366,3 +366,11 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - PR remains unmerged; production/live parity and physical-device certification are not claimed by these checks.
 
 [2026-09-28T01:12:00Z][gpt][AIAG-TASK-0014][PR#413] RED 4c9016107e6a9ef4e1039515b5a53c78fa8aef6e — Tests run 36364709232/job 108748706646: 914 passed, 1 failed across 90 specs; sole failure [IPR-09] expected contextual no-match copy, observed `No trips yet`. GREEN 91a8e3c3bb08b7454845f4a63f882b3fce422ed3 — Tests run 36364739446/job 108748791191: 915 passed, 0 failed across 90 specs; iphone-manual-regressions 9/9. Lanes 36364739438 PASS; CodeQL 36364739456 PASS. Delta from prior stable PR head is app.js + test only; branch remains 0 behind main.
+
+## 2026-09-28T04:03Z — PR #413 / AIAG-TASK-0016 final exact-head CI
+- Exact head: `46226021ff8f01be5ca1270498e1714d57bde07d`.
+- GitHub Tests run `36366310489`, playwright-suite job `108753324302`: **PASS**; full-suite step completed successfully.
+- Lanes run `36366310500`: **PASS**; lock-trailer, path-ownership, and commit-prefix jobs all completed successfully.
+- CodeQL run `36366310506`, Analyze JavaScript job `108753324485`: **PASS**.
+- Compare to main `776d47d3f7f848586bd0b181dab06545c50166f0`: 26 ahead / 0 behind; 11 changed files, all within the expected app/release/test surface.
+- PR #413 remains unmerged and production-dark. These checks do not certify #226 physical-iPhone A1-A14 or #380 PushWard real-device/key-rotation evidence.
