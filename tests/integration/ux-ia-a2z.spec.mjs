@@ -116,7 +116,19 @@ test('[UXA2Z-11] explicit zero deadhead persists across reload', async () => {
   } finally { await app.close(); }
 });
 
-test('[UXA2Z-12] active execution suppresses idle Today cards', async () => {
+test('[UXA2Z-12] trip cards use a readable Status action instead of an ambiguous symbol', () => {
+  ok(/data-act="lifecycle"[^>]*>Status<\/button>/.test(appSrc),
+    'trip lifecycle correction must be labelled Status');
+});
+
+test('[UXA2Z-13] intake review names the inferred decision and GPS stays operator-triggered', () => {
+  ok(/syncDecisionAction/.test(appSrc) && /'Evaluate Offer'\s*:\s*'Build My Bid'/.test(appSrc),
+    'review action must switch automatically between Evaluate Offer and Build My Bid');
+  ok(!/_gpsTimer/.test(appSrc),
+    'typing an origin must not start an automatic GPS/deadhead estimate');
+});
+
+test('[UXA2Z-14] active execution suppresses idle Today cards', async () => {
   const app = await boot();
   try {
     await app.page.evaluate(async () => {

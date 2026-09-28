@@ -8161,7 +8161,7 @@ function tripRow(t, {compact=false}={}){
         <button class="btn sm" data-act="docs">📎</button>
         ${_mapsHtml}
         <button class="btn sm" data-act="paid">${t.isPaid?'Unpay':'Paid'}</button>
-        <button class="btn sm" data-act="lifecycle" title="Correct load lifecycle state">⧗</button>
+        <button class="btn sm" data-act="lifecycle" title="Trip status and timeline" aria-label="Trip status and timeline">Status</button>
       </div>
     </div>`;
   // Score badge tap → open breakdown
@@ -13833,15 +13833,8 @@ async function mwInit(){
     if (rev > 0 && rev < 50) toast('Revenue seems low — is that per mile?', false);
   });
 
-  // GPS deadhead — trigger on origin field changes
-  const originEl = $('#mwOrigin');
-  if (originEl){
-    let _gpsTimer = null;
-    originEl.addEventListener('input', ()=>{
-      clearTimeout(_gpsTimer);
-      _gpsTimer = setTimeout(()=> updateGPSDeadhead(originEl.value.trim()), 600);
-    });
-  }
+  // GPS estimates are operator-triggered only. Typing an origin must never
+  // request location permission or start a background estimate.
   // GPS pin button next to origin
   $('#mwGpsBtn')?.addEventListener('click', async ()=>{
     haptic(15);
@@ -17440,7 +17433,7 @@ function openLoadIntake(opts = {}){
     <div id="liReviewNote" style="display:none;margin-bottom:14px;padding:9px 11px;background:rgba(255,149,0,.10);border:1px solid rgba(255,149,0,.35);border-radius:8px;font-size:11.5px;line-height:1.45"></div>
     <div style="display:flex;gap:8px">
       <button class="btn" id="liBack" style="flex:1">← Edit Text</button>
-      <button class="btn primary" id="liScore" style="flex:2;font-weight:700">⚡ Score This Load</button>
+      <button class="btn primary" id="liScore" style="flex:2;font-weight:700">Evaluate Offer</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn" id="liSaveTrip" style="flex:1;font-size:12px">💾 Save as Trip Draft</button>
@@ -17469,6 +17462,11 @@ function openLoadIntake(opts = {}){
   }
   function hideError(){ const el=stage1.querySelector('#liParseError'); if(el) el.style.display='none'; }
   function getField(id){ return body.querySelector('#'+id); }
+  function syncDecisionAction(){
+    const btn=getField('liScore');
+    if (btn) btn.textContent = posNum(getField('liRevenue')?.value) ? 'Evaluate Offer' : 'Build My Bid';
+  }
+  getField('liRevenue')?.addEventListener('input', syncDecisionAction);
 
   // Deadhead is the one field where blank and 0 are DIFFERENT FACTS, and this
   // path could express neither. `intNum('')` returns 0 (Number('') is 0), and
@@ -17509,6 +17507,7 @@ function openLoadIntake(opts = {}){
     getField('liDims').value     = clampStr(get('dimensions'),60);
     draftTz = clampStr(get('timezone'),12);
     updateRouteLine();
+    syncDecisionAction();
   }
 
   let draftTz = '';
