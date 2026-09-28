@@ -415,13 +415,44 @@ await test("A29 existing Worker Agent caller guard denies when rate-limit storag
   assert.equal(result.code, "AGENT_RATE_LIMIT_UNAVAILABLE");
 });
 
-await test("A30 Agent integration remains dark: no public route or root Service Binding", async () => {
+await test("A30 production integration exposes Agent only through the authenticated API Worker", async () => {
   const workerSource = await readFile(new URL("../../cloud-backup-worker.js", import.meta.url), "utf8");
-  const rootConfig = JSON.parse(await readFile(new URL("../../wrangler.jsonc", import.meta.url), "utf8"));
-  assert.equal(/path\s*===\s*['"]\/agent(?:\/|['"])/.test(workerSource), false);
-  assert.equal(/path\.startsWith\(['"]\/agent/.test(workerSource), false);
-  assert.equal("services" in rootConfig, false);
-  assert.equal("service" in rootConfig, false);
+  const backupConfig = await readFile(new URL("../../scripts/wrangler.backup-worker.jsonc", import.meta.url), "utf8");
+  const agentConfig = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+
+  assert.equal(workerSource.includes("path === '/agent/evaluate'"), true);
+  assert.match(backupConfig, /"binding"\s*:\s*"AGENT"/);
+  assert.match(backupConfig, /"service"\s*:\s*"freightlogic-agent-v1"/);
+  assert.equal(agentConfig.workers_dev, false);
+  assert.equal(agentConfig.preview_urls, false);
+  assert.equal("routes" in agentConfig, false);
+  assert.equal("route" in agentConfig, false);
+});
+
+await test("A31 Agent HTTP ingress guards auth scope privacy and rate limit before private RPC", async () => {
+  const source = await readFile(new URL("../../cloud-backup-worker.js", import.meta.url), "utf8");
+  const start = source.indexOf("if (request.method === 'POST' && path === '/agent/evaluate')");
+  const end = source.indexOf("// ── v24: Web Push subscriptions", start);
+  assert.ok(start >= 0 && end > start);
+  const route = source.slice(start, end);
+
+  const guardAt = route.indexOf("guardAgentRpcBeforeBinding(");
+  const bindAt = route.indexOf("env.AGENT.evaluate(envelope)");
+  assert.ok(guardAt >= 0);
+  assert.ok(bindAt > guardAt);
+  assert.equal(route.includes("driverToken"), false);
+  assert.equal(route.includes("tokenData.name"), false);
+  assert.equal(route.includes("canonicalUser"), true);
+  assert.equal(route.includes("AGENT_BINDING_UNAVAILABLE"), true);
+  assert.equal(route.includes("AGENT_DISABLED"), true);
+});
+
+await test("A32 Agent runtime remains dark-by-default after private binding is wired", async () => {
+  const config = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
+  assert.equal(config.vars.AGENT_ENABLED, "false");
+  assert.equal(source.includes("this.env.AGENT_ENABLED === \"true\""), true);
+  assert.equal(source.includes('return new Response("Not Found"'), true);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
