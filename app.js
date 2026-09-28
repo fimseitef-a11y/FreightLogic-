@@ -3505,6 +3505,9 @@ function sanitizeTrip(raw){
 function tripPaymentKnown(t){ return !!t && t.paymentStatusKnown === true && typeof t.isPaid === 'boolean'; }
 function tripIsPaid(t){ return tripPaymentKnown(t) && t.isPaid === true; }
 function tripIsUnpaid(t){ return tripPaymentKnown(t) && t.isPaid === false; }
+// Live receivables fail closed: a row still held for import/data review is not
+// collection authority even when an explicit unpaid flag is present.
+function isLiveReceivable(t){ return !!t && !t.needsReview && tripIsUnpaid(t); }
 async function findTripsByOrderNo(orderNo, limit=10){
   const key = normOrderNo(orderNo);
   if (!key) return [];
@@ -7141,7 +7144,7 @@ async function renderSmartTip(state){
     if (!tip) {
       const overdueTrips = trips.filter(t => {
         const refDate = t.deliveryDate || t.pickupDate;
-        return !t.needsReview && tripIsUnpaid(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
+        return isLiveReceivable(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
       });
       if (overdueTrips.length >= 2) {
         const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
@@ -8209,7 +8212,7 @@ async function listUnpaidTrips(limit=200){
     req.onsuccess = (e)=>{
       const cur = e.target.result;
       if (!cur || out.length >= limit){ resolve(out); return; }
-      if (!cur.value.needsReview && tripIsUnpaid(cur.value)) out.push(cur.value);
+      if (isLiveReceivable(cur.value)) out.push(cur.value);
       cur.continue();
     };
   });
@@ -16620,7 +16623,7 @@ async function checkOverduePayments(){
       // Unknown/review-required imports are not live receivables. Use the
       // canonical explicit-unpaid predicate rather than treating "not paid" as
       // proof that money is owed.
-      if (t.needsReview || !tripIsUnpaid(t)) continue;
+      if (!isLiveReceivable(t)) continue;
       const dt = t.pickupDate || t.deliveryDate;
       if (!dt) continue;
       const pickupTs = new Date(dt).getTime();
@@ -25108,7 +25111,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     computeLoadScore, generateBidRange, detectUrgency,
     tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, computeLaneStats, exportTripsCSV, invalidateKPICache,
     // IPR-10: direct AR authority surface for deterministic badge/list regression coverage.
-    listUnpaidTrips, refreshUnpaidBadge,
+    isLiveReceivable, listUnpaidTrips, refreshUnpaidBadge,
     // OI-15 drives the REAL row renderer, because what was wrong with the
     // unknown-deadhead coercion was what the driver SAW, not what a helper
     // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
