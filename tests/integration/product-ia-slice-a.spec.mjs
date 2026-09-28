@@ -110,6 +110,17 @@ test('[UXIA-06] Current Load is an isolated execution surface backed by trip lif
     const before = await app.page.evaluate(async () =>
       (await window.__FL_TESTS.dumpStore('trips')).find(t => t.orderNo==='UXIA-CURRENT-1')?.executionStatus);
     eq(before, 'PICKED_UP', 'rendering Current Load must not auto-complete the trip');
+
+    await app.page.click('[data-current-action="delivered"]');
+    await sleep(650);
+    const after = await app.page.evaluate(async () => {
+      const T=window.__FL_TESTS;
+      const trip=(await T.dumpStore('trips')).find(t => t.orderNo==='UXIA-CURRENT-1');
+      const lifecycle=(await T.listLifecycle()).find(l => l.orderNo==='UXIA-CURRENT-1');
+      return { trip:trip?.executionStatus||'', lifecycle:lifecycle?.execution||'' };
+    });
+    eq(after.trip, 'DELIVERED', 'Delivered changes the canonical trip only after the explicit tap');
+    eq(after.lifecycle, 'DELIVERED', 'Delivered must propagate through the canonical lifecycle hook');
   } finally { await app.close(); }
 });
 
