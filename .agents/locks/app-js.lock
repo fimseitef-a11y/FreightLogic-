@@ -1,0 +1,6 @@
+owner: gpt
+token: 72cb4ff7-6cdb-4a46-af55-a2a10a8ca19d
+started_utc: 2026-09-28T01:14:00Z
+expected_release_utc: 2026-09-28T03:45:00Z
+paths: app.js
+task: AIAG-TASK-0015 — residual imported/review-row AR pollution repair
