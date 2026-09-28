@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — AIAG-TASK-0016 complete; app.js lock released after exact-head PR #413 verification. PR #413 remains held at the separate merge/production-delivery gate. | 2026-09-28T05:08:00Z |
+| gpt | Issue #417 Slice A — IA shell/ownership consolidation after PR #413; production 24.0.48 verified, acquiring fresh serialized locks and red-first UXIA tests. AIAG-TASK-0021. | 2026-09-28T05:56:00Z |
 
 ---
 
