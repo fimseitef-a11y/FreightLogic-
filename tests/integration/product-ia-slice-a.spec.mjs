@@ -32,6 +32,14 @@ test('[UXIA-01] idle primary shell is five workflow destinations and History pre
     const history = tabs.find(t => t.label === 'History');
     ok(history, 'History is a visible primary destination');
     eq(history?.href, '#trips', 'History must preserve the supported #trips deep link');
+    await app.page.evaluate(() => { location.hash='#trips'; });
+    await sleep(350);
+    const historyView = await app.page.evaluate(() => {
+      const view=document.getElementById('view-trips');
+      return { aria:view?.getAttribute('aria-label')||'', heading:(view?.querySelector('h3')?.textContent||'').trim() };
+    });
+    eq(historyView.aria, 'History', 'the preserved #trips route must announce itself as History');
+    eq(historyView.heading, 'History', 'the visible #trips screen heading must be History');
   } finally { await app.close(); }
 });
 
