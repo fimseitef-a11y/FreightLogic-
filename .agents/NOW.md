@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0031 — PR #429 governance takeover: re-home reviewed _headers hardening to GPT lane, verify, merge if green. | 2026-09-28T23:41:00Z |
+| gpt | — idle — PR #430 open for TASK-0031 exact-head CI and merge gate. | 2026-09-28T23:42:00Z |
 
 ---
 
