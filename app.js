@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.51 USA ENGINE
+/** FreightLogic v24.0.52 USA ENGINE
+ *  v24.0.52 "Unified Costs": Money owns one Costs hub and Add Cost chooser
+ *  while Fuel, Maintenance, and Expense continue through their existing typed
+ *  storage, edit/history, accounting, and deep-link contracts.
  *  v24.0.51 "Loads Decision Inbox": reviewed intake persists normalized
  *  evidence before evaluation; compact cards project canonical economics/grade;
  *  Pursue/Pass are reversible; only explicit Awarded advances opportunity to WON.
@@ -588,7 +591,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.51';
+const APP_VERSION = '24.0.52';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
