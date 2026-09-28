@@ -198,6 +198,21 @@ test('[IPR-08] deleting the last fuel entry also renders its empty state immedia
   eq(after.display, 'none', 'fuel Undo container is hidden after expiry');
 });
 
+
+test('[IPR-09] filtered Trips zero-result state uses no-match copy, not first-use onboarding', async () => {
+  const tripCount = await app.page.evaluate(async () => (await window.__FL_TESTS.dumpStore('trips')).length);
+  ok(tripCount > 0, 'fixture must contain trips so this is a filtered zero-result state, not an empty database');
+  await app.page.evaluate(() => { location.hash = '#trips'; });
+  await sleep(300);
+  await app.page.fill('#tripSearch', 'IPR-NO-MATCH-SENTINEL');
+  await sleep(500);
+  const text = await app.page.locator('#tripList').innerText();
+  ok(/No matching trips/i.test(text), `filtered zero-result state should explain the filter/search — got ${text.replace(/\s+/g, ' ').trim()}`);
+  ok(!/No trips yet/i.test(text), 'first-use onboarding copy must be reserved for a genuinely empty trip dataset');
+  await app.page.fill('#tripSearch', '');
+  await sleep(350);
+});
+
 export async function runSpec() {
   app = await launchApp();
   await skipFirstRunWizard(app.page);
