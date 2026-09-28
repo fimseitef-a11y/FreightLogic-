@@ -12,12 +12,6 @@ name: AI Agent Cutover
 # production model provider/credential has been configured.
 
 on:
-  # Temporary one-time path for AIAG-TASK-0023. The activation job additionally
-  # requires an exact merge-commit marker, so unrelated main pushes cannot enable it.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/ai-agent-cutover.yml'
   pull_request:
     branches: [main]
     paths:
@@ -245,7 +239,7 @@ jobs:
 
   activate-canary:
     needs: contract
-    if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'ACTIVATE_CANARY' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, '[gpt] ONE-TIME AIAG ACTIVATE 20260928')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'ACTIVATE_CANARY' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
