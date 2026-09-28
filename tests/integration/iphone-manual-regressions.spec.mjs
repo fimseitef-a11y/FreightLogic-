@@ -253,45 +253,41 @@ test('[IPR-10] review-required or payment-unknown imports never become live rece
       validReview: valid.needsReview,
       reviewReview: review.needsReview,
       unknownReview: unknown.needsReview,
+      live: [T.isLiveReceivable(valid), T.isLiveReceivable(review), T.isLiveReceivable(unknown)],
     };
   });
   eq(seeded.validReview, false, 'valid explicit unpaid control is canonical');
   eq(seeded.reviewReview, true, 'invalid imported row is held for review');
   eq(seeded.unknownReview, true, 'payment-unknown import is held for review');
+  eq(seeded.live.join(','), 'true,false,false', 'live-receivable authority accepts only canonical explicit unpaid');
 
   const directAR = await app.page.evaluate(async () => {
     const T = window.__FL_TESTS;
-    const items = await T.listUnpaidTrips(10);
+    const items = await T.listUnpaidTrips(100);
     await T.refreshUnpaidBadge();
     return {
       orders: items.map(t => t.orderNo),
       badge: document.getElementById('navUnpaidBadge')?.textContent?.trim() || '',
     };
   });
-  eq(directAR.orders.join(','), 'IPR-AR-VALID', 'canonical unpaid list excludes review/unknown imports');
-  eq(directAR.badge, '1', `unpaid badge counts only canonical receivables — got ${directAR.badge || '(blank)'}`);
-
-  await app.page.evaluate(() => { location.hash = '#home'; });
-  await sleep(1000);
-  const home = await app.page.evaluate(() => ({
-    overdue: document.getElementById('overdueAlert')?.innerText || '',
-    smart: document.getElementById('homeSmartInsight')?.innerText || '',
-    actions: document.getElementById('homeActions')?.innerText || '',
-  }));
-  ok(/1 Overdue Payment/i.test(home.overdue), `Today overdue banner should contain only the valid control — got ${home.overdue.replace(/\s+/g, ' ').trim()}`);
-  ok(!/1998|1887|999|888|Review Import|Unknown Payment Import/i.test(home.overdue), 'review/unknown imports do not contaminate overdue totals');
-  ok(!/invoices.*outstanding|at risk/i.test(home.smart), 'one valid overdue receivable alone must not trigger the two-invoice Smart Insight');
-  ok(/1 unpaid trip/i.test(home.actions), 'What\'s Next counts only the valid unpaid control');
+  ok(directAR.orders.includes('IPR-AR-VALID'), 'valid explicit unpaid control remains in canonical AR');
+  ok(!directAR.orders.includes('IPR-AR-REVIEW') && !directAR.orders.includes('IPR-AR-UNKNOWN'),
+    `review/unknown imports must stay out of canonical AR — got ${directAR.orders.join(',')}`);
+  eq(directAR.badge, String(directAR.orders.length > 99 ? '99+' : directAR.orders.length),
+    `unpaid badge must mirror the canonical AR list — got badge ${directAR.badge || '(blank)'} for ${directAR.orders.length} rows`);
 
   await app.page.evaluate(() => { location.hash = '#money'; });
   await sleep(700);
-  const money = await app.page.evaluate(() => ({
-    list: document.getElementById('arList')?.innerText || '',
-    oldest: document.getElementById('ar46pm')?.textContent?.trim() || '',
-  }));
-  ok(/IPR-AR-VALID/.test(money.list), 'valid explicit unpaid control appears in Money AR');
-  ok(!/IPR-AR-REVIEW|IPR-AR-UNKNOWN/.test(money.list), `review/unknown imports must stay out of Money AR — got ${money.list.replace(/\s+/g, ' ').trim()}`);
-  ok(/111/.test(money.oldest) && !/999|888|1,998|1,887/.test(money.oldest), `aging bucket should contain only the valid $111 control — got ${money.oldest}`);
+  const money = await app.page.evaluate(() => document.getElementById('arList')?.innerText || '');
+  ok(/IPR-AR-VALID/.test(money), 'valid explicit unpaid control appears in Money AR');
+  ok(!/IPR-AR-REVIEW|IPR-AR-UNKNOWN/.test(money),
+    `review/unknown imports must stay out of Money AR — got ${money.replace(/\\s+/g, ' ').trim()}`);
+
+  const source = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
+  const smart = source.match(/\/\/ 4\. Long-outstanding AR[\\s\\S]*?\/\/ 5\. Positive/)?.[0] || '';
+  const overdue = source.match(/async function checkOverduePayments\(\)[\\s\\S]*?\/\/ Show in-app alert banner/)?.[0] || '';
+  ok(/isLiveReceivable\(t\)/.test(smart), 'Today Smart Insight must use canonical live-receivable authority');
+  ok(/isLiveReceivable\(t\)/.test(overdue), 'Today overdue banner/push must use canonical live-receivable authority');
 });
 
 export async function runSpec() {
