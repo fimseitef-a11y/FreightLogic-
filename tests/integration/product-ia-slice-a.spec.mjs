@@ -113,6 +113,35 @@ test('[UXIA-06] Current Load is an isolated execution surface backed by trip lif
   } finally { await app.close(); }
 });
 
+test('[UXIA-06B] a booked not-started trip is still the Current Load without a false Delivered shortcut', async () => {
+  const app = await boot();
+  try {
+    await app.page.evaluate(async () => {
+      await window.__FL_TESTS.upsertTrip({
+        orderNo:'UXIA-BOOKED-1', customer:'Booked Fixture', broker:'Booked Fixture',
+        pay:500, loadedMiles:250, emptyMiles:15, paymentStatusKnown:true, isPaid:false,
+        origin:'Milwaukee, WI', destination:'Chicago, IL',
+        pickupDate:new Date().toISOString().slice(0,10), deliveryDate:'',
+        executionStatus:'NOT_STARTED', created:Date.now(),
+      });
+      location.hash='#current';
+    });
+    await sleep(900);
+    const s = await app.page.evaluate(() => {
+      const v=document.getElementById('view-current');
+      return {
+        text:(v?.innerText||'').replace(/\s+/g,' ').trim(),
+        edit:!!v?.querySelector('[data-current-action="edit"]'),
+        delivered:!!v?.querySelector('[data-current-action="delivered"]'),
+      };
+    });
+    ok(/UXIA-BOOKED-1/.test(s.text), 'booked trip must be identified on Current Load');
+    ok(/Booked|not started/i.test(s.text), 'Current Load must preserve NOT_STARTED rather than label it en route');
+    ok(s.edit, 'pre-pickup Current Load must route stage changes through the canonical trip editor');
+    eq(s.delivered, false, 'NOT_STARTED must not expose a shortcut that skips directly to Delivered');
+  } finally { await app.close(); }
+});
+
 test('[UXIA-09] Settings is configuration-only and Reports owns operational output', async () => {
   const app = await boot();
   try {
