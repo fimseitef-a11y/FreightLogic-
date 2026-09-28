@@ -591,7 +591,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.52';
+const APP_VERSION = '24.0.53';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -4394,7 +4394,7 @@ async function importJSON(file, opts={}){
       'maintenanceSchedule','lastMaintenanceNotify',
       // v23.3 F26/F27/F29 new keys
       'f26SetupComplete','monthlyExpensesConfig','preferredRegion','payloadLimitLbs',
-      'vehicleYear','vehicleMake','laneReviewEnabled',
+      'carrierName','vehicleYear','vehicleMake','vehicleModel','vehicleTrim','vehicleIdentityProvenance','vanProfileProvenance','laneReviewEnabled',
       // v23.4 F30/F31
       'f30LastExportYear','f31TrendView',
       // v23.5 time-windows / blitz / auction / bid-log
@@ -7000,7 +7000,7 @@ async function openSetupWizard(){
   ];
   let step = 0;
   const vals = {
-    homeBase:'', vehicleType:'Cargo Van', vehicleYear:'', vehicleMake:'',
+    homeBase:'', carrierName:'', vehicleType:'Cargo Van', vehicleYear:'', vehicleMake:'', vehicleModel:'', vehicleTrim:'',
     avgMpg:'', fuelCost:'', weeklyGoal:'', region:'',
     payloadLimit:'',
     mIns:0, mVan:0, mPhone:0, mDispatch:0, mParking:0, mSubs:0, mMaint:0,
@@ -7045,9 +7045,12 @@ async function openSetupWizard(){
     const g = id => document.getElementById(id);
     if (step === 0) vals.homeBase = g('wz_home')?.value.trim() || '';
     if (step === 1){
+      vals.carrierName = g('wz_carrier')?.value.trim() || '';
       vals.vehicleType = g('wz_vtype')?.value || 'Cargo Van';
       vals.vehicleYear = g('wz_vyear')?.value.trim() || '';
       vals.vehicleMake = g('wz_vmake')?.value.trim() || '';
+      vals.vehicleModel = g('wz_vmodel')?.value.trim() || '';
+      vals.vehicleTrim = g('wz_vtrim')?.value.trim() || '';
       vals.avgMpg = g('wz_mpg')?.value.trim() || '';
       vals.payloadLimit = g('wz_payload')?.value.trim() || '';
     }
@@ -7087,6 +7090,7 @@ async function openSetupWizard(){
       html += field('wz_home','Home Base (City, State)','text','e.g. Indianapolis, IN', vals.homeBase);
       html += `<p class="muted" style="font-size:11px;margin-top:4px">Used for strategic floor and reload positioning. Can be changed in Settings.</p>`;
     } else if (step === 1){
+      html += field('wz_carrier','Carrier / Operating Company (optional)','text','e.g. RPP Express', vals.carrierName);
       html += `<div style="margin-bottom:14px">
         <label style="font-size:12px;font-weight:700;color:var(--text-secondary);display:block;margin-bottom:6px">Vehicle Type</label>
         <select id="wz_vtype" class="input" style="width:100%">
@@ -7098,7 +7102,9 @@ async function openSetupWizard(){
         </select>
       </div>`;
       html += field('wz_vyear','Year (optional)','text','e.g. 2021', vals.vehicleYear);
-      html += field('wz_vmake','Make / Model (optional)','text','e.g. Ford Transit 250', vals.vehicleMake);
+      html += field('wz_vmake','Make (optional)','text','e.g. Ford', vals.vehicleMake);
+      html += field('wz_vmodel','Model (optional)','text','e.g. Transit T250', vals.vehicleModel);
+      html += field('wz_vtrim','Trim / Body (optional)','text','e.g. 148 Low Roof', vals.vehicleTrim);
       html += field('wz_mpg','Average MPG (optional)','number','e.g. 18', vals.avgMpg);
       html += field('wz_payload','Cargo Payload Limit (lbs, optional)','number','e.g. 2000', vals.payloadLimit);
       html += `<div style="margin-top:12px;padding:12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;font-size:12px;color:var(--text-secondary)">You are ready to Scan Load. Add monthly costs, goals and advanced operating preferences later in <b>Settings</b>.</div>`;
@@ -7155,6 +7161,7 @@ async function openSetupWizard(){
       nav.appendChild(back);
     }
     const next = document.createElement('button');
+    next.id = 'wzNext';
     next.className = 'btn primary'; next.style.cssText = 'flex:2';
     next.textContent = step < STEPS.length - 1 ? 'Next →' : 'Start Using FreightLogic ✓';
     next.addEventListener('click', async ()=>{
@@ -7188,16 +7195,34 @@ async function openSetupWizard(){
 
 async function _saveSetupWizardResults(vals){
   const tasks = [];
+  const existingVanProfile = await getVanProfile();
+  const existingLimitProvenance = await getSetting('vanProfileProvenance', null);
   if (vals.homeBase)     tasks.push(setSetting('homeLocation',   clampStr(vals.homeBase, 80)));
+  if (vals.carrierName)  tasks.push(setSetting('carrierName',    clampStr(vals.carrierName, 100)));
   if (vals.vehicleType)  tasks.push(setSetting('vehicleClass',   vals.vehicleType));
   if (vals.vehicleYear)  tasks.push(setSetting('vehicleYear',    clampStr(vals.vehicleYear, 10)));
   if (vals.vehicleMake)  tasks.push(setSetting('vehicleMake',    clampStr(vals.vehicleMake, 60)));
+  if (vals.vehicleModel) tasks.push(setSetting('vehicleModel',   clampStr(vals.vehicleModel, 80)));
+  if (vals.vehicleTrim)  tasks.push(setSetting('vehicleTrim',    clampStr(vals.vehicleTrim, 80)));
+  if (vals.carrierName || vals.vehicleYear || vals.vehicleMake || vals.vehicleModel || vals.vehicleTrim){
+    tasks.push(setSetting('vehicleIdentityProvenance', { source:'OPERATOR_ENTRY', recordedAt:Date.now() }));
+  }
   if (vals.avgMpg)       tasks.push(setSetting('vehicleMpg',     posNum(vals.avgMpg)));
   if (vals.fuelCost){    tasks.push(setSetting('fuelPrice',      posNum(vals.fuelCost)));
                          tasks.push(setFuelPriceProvenance(FUEL_PRICE_SOURCE.OPERATOR)); }
   if (vals.weeklyGoal)   tasks.push(setSetting('weeklyGoal',     posNum(vals.weeklyGoal)));
   if (vals.region)       tasks.push(setSetting('preferredRegion', clampStr(vals.region, 40)));
-  if (vals.payloadLimit) tasks.push(setSetting('payloadLimitLbs', posNum(vals.payloadLimit)));
+  if (vals.payloadLimit){
+    const payload = posNum(vals.payloadLimit);
+    tasks.push(setSetting('payloadLimitLbs', payload));
+    tasks.push(setSetting('vanProfile', { ...existingVanProfile, payloadLbs: payload }));
+    tasks.push(setSetting('vanProfileProvenance', {
+      ...(existingLimitProvenance && typeof existingLimitProvenance === 'object' ? existingLimitProvenance : {}),
+      source:'MIXED',
+      recordedAt:Date.now(),
+      fields:{ ...((existingLimitProvenance && existingLimitProvenance.fields) || {}), payloadLbs:{ source:'USER_OPERATING_LIMIT', recordedAt:Date.now() } },
+    }));
+  }
 
   // Build monthly expense config (all non-zero items)
   const monthlyItems = [
@@ -8486,6 +8511,24 @@ async function renderInsights(){
   const mMilesEl = $('#monthlyMiles'); if (mMilesEl) mMilesEl.value = await getSetting('monthlyMiles', '') || '';
   const hlEl = $('#settingsHomeLocation');
   if (hlEl) hlEl.value = await getSetting('homeLocation', '') || '';
+  {
+    const identity = {
+      carrier: await getSetting('carrierName', ''),
+      year: await getSetting('vehicleYear', ''),
+      make: await getSetting('vehicleMake', ''),
+      model: await getSetting('vehicleModel', ''),
+      trim: await getSetting('vehicleTrim', ''),
+    };
+    const setIdentity = (id, value) => { const el = $(id); if (el) el.value = value || ''; };
+    setIdentity('#carrierName', identity.carrier);
+    setIdentity('#vehicleYear', identity.year);
+    setIdentity('#vehicleMake', identity.make);
+    setIdentity('#vehicleModel', identity.model);
+    setIdentity('#vehicleTrim', identity.trim);
+    const spec = lookupStandardVehicleSpec(identity);
+    const specStatus = $('#standardVehicleSpecStatus');
+    if (specStatus) specStatus.textContent = spec.available ? 'AVAILABLE' : 'UNKNOWN — ' + spec.reason;
+  }
   // 7D: van profile
   {
     const vp = await getVanProfile();
@@ -12020,6 +12063,67 @@ const VAN_PROFILE_DEFAULT = Object.freeze({
 async function getVanProfile(){
   const stored = await getSetting('vanProfile', null);
   return { ...VAN_PROFILE_DEFAULT, ...(stored && typeof stored === 'object' ? stored : {}) };
+}
+
+
+// Issue #417 Slice D — provider boundary only. No external source is authorized
+// in this slice, so standard vehicle data fails closed to UNKNOWN.
+function lookupStandardVehicleSpec(identity = {}){
+  const clean = v => clampStr(String(v || '').trim(), 80);
+  return {
+    available: false,
+    status: 'UNKNOWN',
+    providerId: null,
+    specId: null,
+    limits: null,
+    identity: {
+      year: clean(identity.year),
+      make: clean(identity.make),
+      model: clean(identity.model),
+      trim: clean(identity.trim),
+    },
+    reason: 'No verified provider is authorized for standard vehicle specs.',
+  };
+}
+
+// Published specs are evidence, never silent authority over user operating limits.
+function planStandardSpecReplacement(userProfile, standardSpec, options = {}){
+  const current = userProfile && typeof userProfile === 'object' ? { ...userProfile } : {};
+  if (!standardSpec || standardSpec.available !== true || !standardSpec.limits || typeof standardSpec.limits !== 'object'){
+    return { applied:false, requiresConfirmation:false, materialDivergence:false, profile:current, provenance:null, reason:'Standard spec is UNKNOWN or unavailable.' };
+  }
+  const fields = ['cargoLengthIn','cargoWidthIn','wheelWellWidthIn','cargoHeightIn','doorWidthIn','doorHeightIn','payloadLbs'];
+  const incoming = {};
+  const divergentFields = [];
+  for (const field of fields){
+    const specValue = knownNum(standardSpec.limits[field]);
+    if (specValue === null) continue;
+    incoming[field] = specValue;
+    const userValue = knownNum(current[field]);
+    if (userValue === null || userValue !== specValue) divergentFields.push(field);
+  }
+  const materialDivergence = divergentFields.length > 0;
+  if (materialDivergence && options.confirmed !== true){
+    return { applied:false, requiresConfirmation:true, materialDivergence:true, divergentFields, profile:current, provenance:null };
+  }
+  if (!materialDivergence){
+    return { applied:false, requiresConfirmation:false, materialDivergence:false, divergentFields:[], profile:current, provenance:null };
+  }
+  return {
+    applied:true,
+    requiresConfirmation:false,
+    materialDivergence:true,
+    divergentFields,
+    profile:{ ...current, ...incoming },
+    provenance:{
+      source:'STANDARD_SPEC_CONFIRMED',
+      confirmedAt:Date.now(),
+      standardSpec:{
+        providerId:clampStr(standardSpec.providerId || '', 80),
+        specId:clampStr(standardSpec.specId || '', 120),
+      },
+    },
+  };
 }
 
 /** Pure gate: does this load's dimensions/weight fit the configured van?
@@ -15793,6 +15897,15 @@ $$('#taxPeriodTabs .btn').forEach(btn => {
 
 // Settings
 addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
+  const identityValues = {
+    carrierName: clampStr($('#carrierName')?.value || '', 100),
+    vehicleYear: clampStr($('#vehicleYear')?.value || '', 10),
+    vehicleMake: clampStr($('#vehicleMake')?.value || '', 60),
+    vehicleModel: clampStr($('#vehicleModel')?.value || '', 80),
+    vehicleTrim: clampStr($('#vehicleTrim')?.value || '', 80),
+  };
+  await Promise.all(Object.entries(identityValues).map(([key,value]) => setSetting(key, value)));
+  await setSetting('vehicleIdentityProvenance', { source:'OPERATOR_ENTRY', recordedAt:Date.now() });
   await setSetting('vehicleClass', $('#vehicleClass')?.value || 'cargo_van');
   await setSetting('uiMode', $('#uiMode').value);
   await setSetting('perDiemRate', Number($('#perDiemRate').value || 0));
@@ -15842,8 +15955,8 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
   await setSetting('opCostPerMile', null);
   const hlInput = $('#settingsHomeLocation');
   if (hlInput) await setSetting('homeLocation', (hlInput.value || '').trim());
-  // 7D: van profile for the dimensional/payload pre-check (checkVanFit()).
-  await setSetting('vanProfile', {
+  // 7D / Issue #417 Slice D: these are the driver's operating limits.
+  const savedVanProfile = {
     cargoLengthIn: posNum($('#vanCargoLengthIn')?.value, VAN_PROFILE_DEFAULT.cargoLengthIn),
     cargoWidthIn:  posNum($('#vanCargoWidthIn')?.value,  VAN_PROFILE_DEFAULT.cargoWidthIn),
     wheelWellWidthIn: posNum($('#vanWheelWellWidthIn')?.value, VAN_PROFILE_DEFAULT.wheelWellWidthIn),
@@ -15851,6 +15964,12 @@ addManagedListener($('#btnSaveSettings'), 'click', async ()=>{
     doorWidthIn:   posNum($('#vanDoorWidthIn')?.value,   VAN_PROFILE_DEFAULT.doorWidthIn),
     doorHeightIn:  posNum($('#vanDoorHeightIn')?.value,  VAN_PROFILE_DEFAULT.doorHeightIn),
     payloadLbs:    posNum($('#vanPayloadLbs')?.value,    VAN_PROFILE_DEFAULT.payloadLbs),
+  };
+  await setSetting('vanProfile', savedVanProfile);
+  await setSetting('vanProfileProvenance', {
+    source:'USER_OPERATING_LIMIT',
+    recordedAt:Date.now(),
+    fields:Object.fromEntries(Object.keys(savedVanProfile).map(field => [field, { source:'USER_OPERATING_LIMIT', recordedAt:Date.now() }])),
   });
   // v24.0.9: planning average speed. An empty or out-of-range entry CLEARS the
   // setting rather than storing a fallback — an inert gate is correct, a gate
@@ -25516,6 +25635,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
     // Issue #417 Slice C — presentation router over existing typed cost flows.
     openAddCostChooser,
+    // Issue #417 Slice D — onboarding and vehicle-source boundaries.
+    openSetupWizard, lookupStandardVehicleSpec, planStandardSpecReplacement, exportSafeSettings,
     // F-9: the shared #toast severity rule. Exposed so the escalation control can
     // drive every direction of it directly, rather than inferring the rule from
     // whichever callers happen to exist.
