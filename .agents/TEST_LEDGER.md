@@ -383,3 +383,14 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Lanes run `36377470817`: **PASS** (path-ownership, commit-prefix, lock-trailer).
 - CodeQL run `36377470821`, Analyze JavaScript job `108786149019`: **PASS**.
 - No review threads. PR remains open/unmerged/production-dark; automated evidence does not certify #226 or #380.
+
+
+## 2026-09-28T07:37Z — PR #418 / AIAG-TASK-0021 final exact-head CI
+- Exact head: `1ec1c9c0fb687a761e5f6b062fa4f8bd1ad979bb`.
+- Base main: `ea378bb27c1effef89d1867b394ce034f9ba4b88`.
+- GitHub Tests run `36392266654`, playwright-suite job `108830541487`: **925 passed / 0 failed across 91 spec files**.
+- Lanes run `36392266799`: **PASS**.
+- CodeQL run `36392266670`: **PASS**.
+- Review threads: none. Reviews: none. PR #418 is mergeable and was moved from draft to ready-for-review only.
+- The final stale-fixture repair closes the prior Tax Season Export modal through its real UI before re-entering the canonical Reports route; CSV quoting/reconciliation/year-boundary assertions remain unchanged.
+- No merge, production/live-parity claim, #226 physical-iPhone certification, #380 PushWard/key claim, credential/security action, or shared-PC action is implied by this CI evidence.
