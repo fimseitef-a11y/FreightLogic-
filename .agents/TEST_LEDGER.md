@@ -374,3 +374,12 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - CodeQL run `36366310506`, Analyze JavaScript job `108753324485`: **PASS**.
 - Compare to main `776d47d3f7f848586bd0b181dab06545c50166f0`: 26 ahead / 0 behind; 11 changed files, all within the expected app/release/test surface.
 - PR #413 remains unmerged and production-dark. These checks do not certify #226 physical-iPhone A1-A14 or #380 PushWard real-device/key-rotation evidence.
+
+## 2026-09-28T04:28Z — PR #413 refreshed exact-head verification
+- Exact head: `a3887f1e6ccdce51ef20e6f9f4128936e8bdf667`.
+- Current main: `4ce2c2d7caac11e70f7c01e4ec09f27ed8128c7c` (docs-only product audit merge; runtime remains 24.0.47 / DB16 / Worker30).
+- Branch refresh: true two-parent merge commit, no force push, no additional runtime-byte change; compare = **27 ahead / 0 behind**.
+- Tests run `36377470839`, playwright-suite job `108786148744`: **916 passed / 0 failed across 90 spec files**; `iphone-manual-regressions.spec.mjs` = **10/0**.
+- Lanes run `36377470817`: **PASS** (path-ownership, commit-prefix, lock-trailer).
+- CodeQL run `36377470821`, Analyze JavaScript job `108786149019`: **PASS**.
+- No review threads. PR remains open/unmerged/production-dark; automated evidence does not certify #226 or #380.
