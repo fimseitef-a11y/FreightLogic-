@@ -25107,6 +25107,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
     tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, computeLaneStats, exportTripsCSV, invalidateKPICache,
+    // IPR-10: direct AR authority surface for deterministic badge/list regression coverage.
+    listUnpaidTrips, refreshUnpaidBadge,
     // OI-15 drives the REAL row renderer, because what was wrong with the
     // unknown-deadhead coercion was what the driver SAW, not what a helper
     // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
