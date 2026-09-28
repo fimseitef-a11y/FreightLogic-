@@ -7378,7 +7378,7 @@ async function renderHome(){
     dcEval.__bound = true;
     dcEval.addEventListener('click', ()=>{ haptic(); openLoadIntake(); });
     $('#dcAddTrip').addEventListener('click', ()=>{ haptic(); openQuickAddSheet(); });
-    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); location.hash = '#expenses'; setTimeout(()=>$('#btnAddExp2')?.click(), 150); });
+    $('#dcAddExpense').addEventListener('click', ()=>{ haptic(); openAddCostChooser(); });
     $('#dcMoney').addEventListener('click', ()=>{ haptic(); location.hash = '#money'; });
     $('#dcBestMove').addEventListener('click', ()=>{
       haptic();
@@ -8583,7 +8583,6 @@ const INTEL_TILES = [
   { icon:'🤝', title:'Counter-Offers', sub:'Broker negotiation tracking', act:'counterOfferMemory' },
   { icon:'Ω', title:'Rate Tiers / Bid Calc', sub:'All-in pricing by mileage band', act:'omegaTiers' },
   { icon:'📡', title:'Market Board', sub:'Log market observations', act:'marketBoard' },
-  { icon:'🔧', title:'Maintenance', sub:'Service schedule & history', act:'maintenance' },
   { icon:'📨', title:'Opportunity Intake', sub:'Log a quote / email offer with its real semantics', act:'opportunityIntake' },
 ];
 
@@ -15371,6 +15370,51 @@ function openTripWizard(existing=null){
   }
 }
 
+// Issue #417 Slice C — one driver-facing entry point for all routine costs.
+// The chooser owns presentation only. Every choice delegates to the existing
+// typed Fuel, Maintenance, or Expense path, so store semantics and accounting
+// authority do not change.
+function openAddCostChooser(){
+  const body=document.createElement('div');
+  body.style.cssText='display:flex;flex-direction:column;gap:10px';
+  const choice=(kind,icon,title,sub,extra='') =>
+    '<button type="button" class="btn" data-cost-kind="'+kind+'" '+extra+
+    ' style="min-height:56px;width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:10px 12px">'+
+    '<span aria-hidden="true" style="font-size:22px;min-width:28px;text-align:center">'+icon+'</span>'+
+    '<span style="display:flex;flex-direction:column;gap:2px"><b>'+escapeHtml(title)+'</b>'+
+    '<span class="muted" style="font-size:11px">'+escapeHtml(sub)+'</span></span></button>';
+  body.innerHTML =
+    '<div class="muted" style="font-size:12px;line-height:1.45;margin-bottom:2px">Choose what you paid for. FreightLogic keeps each record in its existing typed history.</div>'+
+    choice('fuel','⛽','Fuel','Gallons, total, state and MPG history')+
+    choice('maintenance','🔧','Maintenance / Service','Oil changes, repairs and scheduled service')+
+    choice('expense','💸','General Expense','Tolls, parking, insurance, DEF, tires and other costs')+
+    '<div style="border-top:1px solid var(--border-subtle);padding-top:10px">'+
+      '<div class="muted" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Quick expense category</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">'+
+        ['Tolls','Parking','DEF','Oil Change','Repair','Tires','Insurance','Other'].map(cat =>
+          '<button type="button" class="btn sm" data-cost-expense-category="'+escapeHtml(cat)+'" style="min-height:44px">'+escapeHtml(cat)+'</button>'
+        ).join('')+
+      '</div>'+
+    '</div>';
+
+  body.querySelector('[data-cost-kind="fuel"]')?.addEventListener('click',()=>{
+    haptic(10); closeModal(); setTimeout(()=>openFuelForm(),80);
+  });
+  body.querySelector('[data-cost-kind="maintenance"]')?.addEventListener('click',()=>{
+    haptic(10); closeModal(); setTimeout(()=>openMaintenanceTracker().catch(()=>{}),80);
+  });
+  body.querySelector('[data-cost-kind="expense"]')?.addEventListener('click',()=>{
+    haptic(10); closeModal(); setTimeout(()=>openExpenseForm(),80);
+  });
+  body.querySelectorAll('[data-cost-expense-category]').forEach(btn=>btn.addEventListener('click',()=>{
+    haptic(8);
+    const category=btn.getAttribute('data-cost-expense-category') || '';
+    closeModal();
+    setTimeout(()=>openExpenseForm(null,{category}),80);
+  }));
+  openModal('Add Cost',body);
+}
+
 // P1-6: expense form with category autocomplete
 function openExpenseForm(existing=null, prefill=null){
   const mode = existing ? 'edit' : 'add';
@@ -15638,9 +15682,12 @@ async function openWeeklyReflection(){
 addManagedListener($('#btnQuickTrip'), 'click', ()=> openTripWizard());
 // v20: btnQuickEval is now a hidden stub (Evaluate is the center tab); keep for safety
 addManagedListener($('#btnQuickEval'), 'click', ()=> { haptic(15); location.hash = '#omega'; });
-addManagedListener($('#btnQuickExpense'), 'click', ()=> openExpenseForm());
+addManagedListener($('#btnQuickExpense'), 'click', ()=> openAddCostChooser());
 addManagedListener($('#btnAddExp2'), 'click', ()=> openExpenseForm());
+// Hidden compatibility stub retained for code/tests/deep links; daily UI has one Cost action.
 addManagedListener($('#btnQuickFuel'), 'click', ()=> openFuelForm());
+addManagedListener($('#btnAddCost'), 'click', ()=> openAddCostChooser());
+addManagedListener($('#btnMoneyMaintenance'), 'click', ()=> openMaintenanceTracker().catch(()=>{}));
 
 addManagedListener($('#btnTripMore'), 'click', ()=> renderTrips(false));
 addManagedListener($('#btnExpMore'), 'click', ()=> renderExpenses(false));
@@ -25464,6 +25511,8 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     deriveTwoOutputBid, twoOutputBidHTML, evaluateTwoOutputBid,
     // Cloud-backup paused state (configured token, session-scoped passphrase gone)
     cloudBackupPaused, renderCloudPausedBanner, openCloudReconnect, cloudIsEnabled, setSetting, getSetting,
+    // Issue #417 Slice C — presentation router over existing typed cost flows.
+    openAddCostChooser,
     // F-9: the shared #toast severity rule. Exposed so the escalation control can
     // drive every direction of it directly, rather than inferring the rule from
     // whichever callers happen to exist.
