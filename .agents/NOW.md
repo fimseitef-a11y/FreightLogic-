@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0025 — Issue #417 Slice B: Loads decision inbox; canonical details projection and lifecycle-safe Pursue/Pass/award transitions. | 2026-09-28T13:08:00Z |
+| gpt | — idle — PR verification owns TASK-0025; shared/release locks remain until exact-head green. | 2026-09-28T13:32:00Z |
 
 ---
 
