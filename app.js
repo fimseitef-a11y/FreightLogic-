@@ -6411,7 +6411,8 @@ async function renderReports(){
 }
 
 // ---- Router ----
-const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), current:$('#view-current'), reports:$('#view-reports'), expenses:$('#view-expenses'),\n  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
+const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), current:$('#view-current'), reports:$('#view-reports'), expenses:$('#view-expenses'),
+  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
 
 function setActiveNav(name){
   // Sub-sections accessible from More menu highlight the More tab
@@ -6442,7 +6443,10 @@ async function refreshUnpaidBadge(){
 }
 
 async function navigate(){
-  let hash = (location.hash || '#home').slice(1);\n  // Slice A compatibility: old History links keep landing on canonical Trips history.\n  if (hash === 'history') { location.hash = '#trips'; return; }\n  if (hash === 'reports') hash = 'reports';
+  let hash = (location.hash || '#home').slice(1);
+  // Slice A compatibility: old History links keep landing on canonical Trips history.
+  if (hash === 'history') { location.hash = '#trips'; return; }
+  if (hash === 'reports') hash = 'reports';
 
   // ── Handle share target: process shared files, then redirect to home ──
   if (hash === 'share') {
@@ -6471,7 +6475,9 @@ async function navigate(){
   window.scrollTo({top:0, behavior:'instant'});
   if (name === 'home') await renderHome();
   if (name === 'loads') await renderLoadsView();
-  if (name === 'trips') { ensureTripsHistoryNav(); await renderTrips(true); }\n  if (name === 'current') await renderCurrentLoad();\n  if (name === 'reports') await renderReports();
+  if (name === 'trips') { ensureTripsHistoryNav(); await renderTrips(true); }
+  if (name === 'current') await renderCurrentLoad();
+  if (name === 'reports') await renderReports();
   if (name === 'expenses') await renderExpenses(true);
   if (name === 'money') await renderAR();
   if (name === 'fuel') await renderFuel(true);
@@ -23589,7 +23595,8 @@ async function renderTripTrackingUI() {
     slot.insertBefore(ob, slot.firstChild);
     markOnboardingExposure(ob, 'f21OnboardingSeen');
   }
-  await renderTodayPrimaryAction(slot);\n  await renderTodayPrimaryAction(slot);\n  let trackDiv = $('#f21TrackArea');
+  await renderTodayPrimaryAction(slot);
+  let trackDiv = $('#f21TrackArea');
   if (!trackDiv) {
     trackDiv = document.createElement('div');
     trackDiv.id = 'f21TrackArea';
