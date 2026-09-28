@@ -213,6 +213,78 @@ test('[IPR-09] filtered Trips zero-result state uses no-match copy, not first-us
   await sleep(350);
 });
 
+
+test('[IPR-10] review-required or payment-unknown imports never become live receivables', async () => {
+  const seeded = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const db = await T.initDB();
+    await new Promise((resolve, reject) => {
+      const txn = db.transaction(['trips'], 'readwrite');
+      txn.objectStore('trips').clear();
+      txn.oncomplete = () => resolve();
+      txn.onerror = () => reject(txn.error);
+    });
+    const old = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+    const valid = await T.upsertTrip({
+      orderNo: 'IPR-AR-VALID', customer: 'Valid AR Control',
+      pickupDate: old, deliveryDate: old,
+      pay: 111, loadedMiles: 100, emptyMiles: 0,
+      paymentStatusKnown: true, isPaid: false,
+      origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+      created: Date.now() - 3000,
+    });
+    const review = await T.upsertTrip({
+      orderNo: 'IPR-AR-REVIEW', customer: 'Review Import',
+      pickupDate: old, deliveryDate: old,
+      pay: 999, loadedMiles: 0, emptyMiles: 0,
+      paymentStatusKnown: true, isPaid: false,
+      origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+      created: Date.now() - 2000,
+    });
+    const unknown = await T.upsertTrip({
+      orderNo: 'IPR-AR-UNKNOWN', customer: 'Unknown Payment Import',
+      pickupDate: old, deliveryDate: old,
+      pay: 888, loadedMiles: 100, emptyMiles: 0,
+      paymentStatusKnown: false, isPaid: false,
+      origin: 'Chicago, IL', destination: 'Indianapolis, IN',
+      created: Date.now() - 1000,
+    });
+    return {
+      validReview: valid.needsReview,
+      reviewReview: review.needsReview,
+      unknownReview: unknown.needsReview,
+    };
+  });
+  eq(seeded.validReview, false, 'valid explicit unpaid control is canonical');
+  eq(seeded.reviewReview, true, 'invalid imported row is held for review');
+  eq(seeded.unknownReview, true, 'payment-unknown import is held for review');
+
+  await app.page.evaluate(() => { location.hash = '#home'; });
+  await sleep(1000);
+  const home = await app.page.evaluate(() => ({
+    badge: document.getElementById('navUnpaidBadge')?.textContent?.trim() || '',
+    badgeDisplay: getComputedStyle(document.getElementById('navUnpaidBadge')).display,
+    overdue: document.getElementById('overdueAlert')?.innerText || '',
+    smart: document.getElementById('homeSmartInsight')?.innerText || '',
+    actions: document.getElementById('homeActions')?.innerText || '',
+  }));
+  eq(home.badge, '1', 'unpaid badge counts only canonical receivables');
+  ok(/1 Overdue Payment/i.test(home.overdue), `Today overdue banner should contain only the valid control — got ${home.overdue.replace(/\s+/g, ' ').trim()}`);
+  ok(!/1998|1887|999|888|Review Import|Unknown Payment Import/i.test(home.overdue), 'review/unknown imports do not contaminate overdue totals');
+  ok(!/invoices.*outstanding|at risk/i.test(home.smart), 'one valid overdue receivable alone must not trigger the two-invoice Smart Insight');
+  ok(/1 unpaid trip/i.test(home.actions), 'What\'s Next counts only the valid unpaid control');
+
+  await app.page.evaluate(() => { location.hash = '#money'; });
+  await sleep(700);
+  const money = await app.page.evaluate(() => ({
+    list: document.getElementById('arList')?.innerText || '',
+    oldest: document.getElementById('ar46pm')?.textContent?.trim() || '',
+  }));
+  ok(/IPR-AR-VALID/.test(money.list), 'valid explicit unpaid control appears in Money AR');
+  ok(!/IPR-AR-REVIEW|IPR-AR-UNKNOWN/.test(money.list), `review/unknown imports must stay out of Money AR — got ${money.list.replace(/\s+/g, ' ').trim()}`);
+  ok(/111/.test(money.oldest) && !/999|888|1,998|1,887/.test(money.oldest), `aging bucket should contain only the valid $111 control — got ${money.oldest}`);
+});
+
 export async function runSpec() {
   app = await launchApp();
   await skipFirstRunWizard(app.page);
