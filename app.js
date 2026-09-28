@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.49 USA ENGINE
+/** FreightLogic v24.0.50 USA ENGINE
+ *  v24.0.50 "Driver IA Consolidation": Scan-first workflow, single-home
+ *  navigation ownership, advisory deadhead estimation, A3 zero persistence,
+ *  two-stage onboarding, and contextual document scanning. Canonical economics,
+ *  DB16, Worker30, UNKNOWN semantics and typed stores are unchanged.
  *  v24.0.49 "Field-Test Workflow Repair": repairs real-iPhone findings from
  *  2026-09-27: evaluator booking preserves an editable Order #, new trips carry
  *  an explicit operational stage instead of treating appointment dates as
@@ -581,7 +585,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.49';
+const APP_VERSION = '24.0.50';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -6325,7 +6329,7 @@ async function resolveTodayPrimaryAction(){
     const active = _activeLifecycleRows(await listLifecycle());
     if (active.length) return { label:'Current Load', hash:'#current', reason:lifecycleDisplayStage(active[0]) };
   } catch(e){ console.warn('[FL] Today primary action:', e); }
-  return { label:'Review / Scan Loads', hash:'#loads', reason:'No active load' };
+  return { label:'Scan Load', hash:'#omega', reason:'No active load' };
 }
 async function renderTodayPrimaryAction(slot){
   if (!slot) return;
@@ -6352,7 +6356,7 @@ async function renderCurrentLoad(){
   const lc = lifecycle[0] || null;
   if (!trip && !lc && !_activeTracking){
     root.innerHTML = '<div class="card"><h2 style="margin:0 0 8px">Current Load</h2><div class="muted" style="font-size:13px;line-height:1.5">No active load is recorded.</div>'
-      + '<a class="btn primary" href="#loads" style="width:100%;min-height:48px;margin-top:14px;display:flex;align-items:center;justify-content:center;text-decoration:none">Review / Scan Loads</a></div>';
+      + '<a class="btn primary" href="#omega" style="width:100%;min-height:48px;margin-top:14px;display:flex;align-items:center;justify-content:center;text-decoration:none">Scan Load</a></div>';
     return;
   }
   const orderNo = trip?.orderNo || lc?.orderNo || '';
@@ -6406,16 +6410,6 @@ async function renderCurrentLoad(){
     } catch(e){ toast(e?.message || 'Could not mark delivered.', true); }
   });
 }
-function ensureTripsHistoryNav(){
-  const view = $('#view-trips'); if (!view || $('#tripsHistoryNav')) return;
-  const host = view.querySelector('.card'); if (!host) return;
-  const row = document.createElement('div'); row.id = 'tripsHistoryNav';
-  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px';
-  row.innerHTML = '<a class="btn" href="#current" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Current</a>'
-    + '<a class="btn" href="#history" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a>'
-    + '<a class="btn" href="#reports" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Reports</a>';
-  host.appendChild(row);
-}
 async function renderReports(){
   const root = $('#reportsBody'); if (!root) return;
   if (!root.dataset.sliceABuilt){
@@ -6448,7 +6442,10 @@ const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-tri
 
 function setActiveNav(name){
   // Sub-sections accessible from More menu highlight the More tab
-  const navName = ['expenses','fuel','insights','reports'].includes(name) ? 'more' : (name === 'current' ? 'trips' : name);
+  const navName = ['expenses','fuel','reports'].includes(name) ? 'money'
+    : (name === 'intel' ? 'loads'
+    : (name === 'current' ? 'home'
+    : (['insights','more'].includes(name) ? '' : name)));
   $$('[data-nav]').forEach(a => {
     const isActive = a.dataset.nav === navName;
     a.classList.toggle('active', isActive);
@@ -6507,7 +6504,7 @@ async function navigate(){
   window.scrollTo({top:0, behavior:'instant'});
   if (name === 'home') await renderHome();
   if (name === 'loads') await renderLoadsView();
-  if (name === 'trips') { ensureTripsHistoryNav(); await renderTrips(true); }
+  if (name === 'trips') await renderTrips(true);
   if (name === 'current') await renderCurrentLoad();
   if (name === 'reports') await renderReports();
   if (name === 'expenses') await renderExpenses(true);
@@ -6992,11 +6989,8 @@ async function checkFirstRunSetup(){
 
 async function openSetupWizard(){
   const STEPS = [
-    { id:'home',     title:'Where do you home out of?',            hint:'City, State — e.g. "Indianapolis, IN"' },
-    { id:'vehicle',  title:'Tell us about your vehicle',           hint:'' },
-    { id:'costs',    title:'Your weekly goal & fuel cost',         hint:'' },
-    { id:'monthly',  title:'Monthly fixed expenses',               hint:'We\'ll auto-log these each month so your P&L stays accurate' },
-    { id:'prefs',    title:'Operating preferences',                hint:'' },
+    { id:'home',     title:'Where do you home out of?',  hint:'City, State — used for positioning and going-home decisions' },
+    { id:'vehicle',  title:'Set your vehicle limits',    hint:'Enough to start scanning loads. Money and operating preferences can be tuned later in Settings.' },
   ];
   let step = 0;
   const vals = {
@@ -7049,6 +7043,7 @@ async function openSetupWizard(){
       vals.vehicleYear = g('wz_vyear')?.value.trim() || '';
       vals.vehicleMake = g('wz_vmake')?.value.trim() || '';
       vals.avgMpg = g('wz_mpg')?.value.trim() || '';
+      vals.payloadLimit = g('wz_payload')?.value.trim() || '';
     }
     if (step === 2){
       vals.weeklyGoal = g('wz_goal')?.value.trim() || '';
@@ -7098,7 +7093,9 @@ async function openSetupWizard(){
       </div>`;
       html += field('wz_vyear','Year (optional)','text','e.g. 2021', vals.vehicleYear);
       html += field('wz_vmake','Make / Model (optional)','text','e.g. Ford Transit 250', vals.vehicleMake);
-      html += field('wz_mpg','Average MPG','number','e.g. 18', vals.avgMpg);
+      html += field('wz_mpg','Average MPG (optional)','number','e.g. 18', vals.avgMpg);
+      html += field('wz_payload','Cargo Payload Limit (lbs, optional)','number','e.g. 2000', vals.payloadLimit);
+      html += `<div style="margin-top:12px;padding:12px;background:rgba(var(--accent-rgb),.08);border-radius:10px;font-size:12px;color:var(--text-secondary)">You are ready to Scan Load. Add monthly costs, goals and advanced operating preferences later in <b>Settings</b>.</div>`;
     } else if (step === 2){
       html += field('wz_goal','Weekly Revenue Goal ($)','number','e.g. 4000', vals.weeklyGoal);
       html += field('wz_fuel','Fuel Cost per Gallon ($)','number','e.g. 3.89', vals.fuelCost);
@@ -7468,12 +7465,19 @@ async function renderHome(){
   checkMaintenanceDue().catch(()=>{});
   // UX: Position context banner (non-blocking)
   renderPositionContextBanner().catch(()=>{});
-  // UX: Quick Evaluate button (always shown)
-  renderQuickEvalCard().catch(()=>{});
+  // v24.0.50: Scan is Today's one dominant idle action; do not add a second evaluator CTA.
   // F32: Smart Insight card (non-blocking, data-driven daily tip)
   renderSmartTip(state).catch(()=>{});
+  _applyTodayExecutionFocus().catch(()=>{});
   // UX: Calm home — hide empty cards with zero content
   _applyCalmHomeState(state).catch(()=>{});
+}
+
+async function _applyTodayExecutionFocus(){
+  const home = $('#view-home');
+  if (!home) return;
+  const action = await resolveTodayPrimaryAction();
+  home.classList.toggle('today-execution-focus', action.hash === '#current');
 }
 
 // ---- Calm Home Tab ----
@@ -7497,7 +7501,7 @@ async function _applyCalmHomeState(state){
           const msg = document.createElement('div');
           msg.id = 'homeAllClearMsg';
           msg.style.cssText = 'padding:14px 0 4px;text-align:center;font-size:13px;color:var(--text-tertiary)';
-          msg.textContent = 'All clear. Tap Evaluate to score your next load.';
+          msg.textContent = 'All clear. Tap Scan to review your next load.';
           whatNextCard.appendChild(msg);
         }
       } else {
@@ -8603,27 +8607,14 @@ const INTEL_TILES = [
 // exceptions list, so a regroup that orphaned a route would fail rather than
 // ship.
 const MORE_GROUPS = [
-  { id:'work',     label:'Work & Records' },
-  { id:'money',    label:'Money' },
-  { id:'business', label:'Business & Tax', collapsed:true },
-  { id:'data',     label:'Data & Backup', collapsed:true },
-  { id:'app',      label:'App' },
+  { id:'work', label:'Work' },
+  { id:'app',  label:'App' },
 ];
 
 const MORE_TILES = [
-  { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
-  { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
-  { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'money' },
-  { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
-  { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
-  { icon:'📊', title:'Reports', sub:'Weekly performance, tax and accountant exports', hash:'#reports', section:'PRIMARY', group:'business' },
-  { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
-  { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
-  { icon:'💿', title:'Storage Health', sub:'Local storage and cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
-  { icon:'⚙', title:'Settings', sub:'Vehicle, costs, display, backup and privacy', hash:'#insights', section:'PRIMARY', group:'app' },
-  { icon:'🔒', title:'Security Lock', sub:'PIN lock', act:'security', section:'ADVANCED', group:'app' },
-  { icon:'🔬', title:'Diagnostics', sub:'App, cache and AI self-test', act:'diagnostics', section:'ADVANCED', group:'app' },
-];
+  { icon:'▤', title:'Documents', sub:'Business and trip paperwork', act:'documents', section:'PRIMARY', group:'work' },
+  { icon:'⚙', title:'Settings', sub:'Vehicle, money, planning, backup and privacy', hash:'#insights', section:'PRIMARY', group:'app' },
+]
 
 // ── Intel Page Renderer ──
 let _intelBound = false;
@@ -12282,6 +12273,9 @@ async function mwEvaluateLoad(){
 
   const out = $('#mwEvalOutput');
   if (!out) return;
+  // A3 / v24.0.50: persist usable input even when no broker rate is posted.
+  // Numeric 0 is a known deadhead value, never a falsy "missing" value.
+  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, deliveryDay, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
   // F20: capture DZ no-reload toggle state BEFORE out.innerHTML is overwritten
   const noReloadConfirmed = !!$('#mwDZNoReloadToggle', out)?.checked;
   if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000 || !revenue){
@@ -12300,18 +12294,18 @@ async function mwEvaluateLoad(){
         loadedMi, deadMi, deadheadCPM: qProfile.available ? qProfile.marginalCPM : null,
         urgencyBoost: urgency.boost, origin, dest, pickupDay: dayOfWeek, deliveryDay,
       });
-      out.innerHTML = `<div class="card" data-eval-quote style="padding:14px">
-        <div style="font-weight:800;font-size:15px">No pay posted — what to bid</div>
-        <div class="muted" style="font-size:12px;margin-top:4px">${escapeHtml(String(loadedMi))} loaded + ${escapeHtml(String(deadMi))} deadhead = ${escapeHtml(String(quoteMi))} miles. No grade or verdict until there is a rate: enter the pay you are offered (or your bid) to score it.</div>
+      out.innerHTML = `<div class="card" data-eval-quote data-decision-mode="build-bid" style="padding:14px">
+        <div style="font-weight:800;font-size:15px">Build My Bid</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">No rate posted · ${escapeHtml(String(loadedMi))} loaded + ${escapeHtml(String(deadMi))} deadhead = ${escapeHtml(String(quoteMi))} miles. FreightLogic is building your bid without inventing revenue. Add a broker offer later to evaluate it.</div>
         ${twoOutputBidHTML(qTwo)}
         ${bidRangeHTML(qb.range)}
       </div>`;
       return;
     }
     const missing = [];
-    if (!revenue) missing.push('the pay (Revenue)');
     if (loadedMi === null || loadedMi <= 0 || loadedMi > 300000) missing.push('loaded miles');
-    out.innerHTML = `<div class="muted" style="font-size:13px" data-eval-missing>Enter ${missing.join(' and ')} to score this load.</div>`;
+    if (!revenue && (deadMi === null || deadMi < 0 || deadMi > 300000)) missing.push('deadhead miles');
+    out.innerHTML = `<div class="muted" style="font-size:13px" data-eval-missing>Enter ${missing.join(' and ') || 'the missing miles'} to continue. Revenue is optional — leave it blank to Build My Bid.</div>`;
     return;
   }
   // M1: deadhead is a material fact. Unknown deadhead cannot yield a precise
@@ -12385,9 +12379,6 @@ async function mwEvaluateLoad(){
       toast(`Tight pickup — about ${_fmtMinutes(pickupState.slackMinutes)} of slack at ${pickupState.planningMph} mph.`);
     }
   }
-
-  // Save inputs
-  setSetting('mwLastInputs', { origin, dest, broker, loadedMi, deadMi, revenue, dayOfWeek, deliveryDay, fatigue, weeklyGross, strategicEnabled, strategicReason }).catch(()=>{});
 
   // ── Auto-detect "going home" and suggest strategic mode ──
   const goingHome = dest ? await mwIsGoingHome(dest) : false;
@@ -12797,7 +12788,8 @@ function _mwRenderDecision(out, d){
   const _heroColor = _heroColorEarly;
   const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
   const _verdictBadgeLabel = isDZActive ? 'DZ EXIT' : verdictLabels[verdict] || verdict;
-  let html = `<div style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
+  let html = `<div data-decision-mode="evaluate-offer" style="background:${_heroColor}0d;border:2px solid ${_heroColor}55;border-radius:var(--r);padding:18px 16px 14px;margin-bottom:14px;text-align:center">
+    <div style="font-size:11px;font-weight:800;color:var(--text-tertiary);letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px">Evaluate Offer</div>
     <div style="font-size:13px;font-weight:700;color:${_heroColor};letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">${dispGradeEmoji} ${escapeHtml(dispGradeLabel)}</div>
     <div class="fl-eval-grade" style="color:${_heroColor}">${dispGrade}${isDZActive ? '<span style="font-size:20px;vertical-align:super;font-weight:700"> DZ</span>' : ''}</div>
     <div style="margin-bottom:10px"><span class="fl-eval-verdict ${_verdictClass}">${escapeHtml(_verdictBadgeLabel)}</span></div>
@@ -13900,7 +13892,7 @@ async function mwInit(){
     // Draft is fresh (< 30min) — use it for primary fields
     if (draft.rev) { const el=$('#mwRevenue'); if(el) el.value=draft.rev; }
     if (draft.lm) { const el=$('#mwLoadedMi'); if(el) el.value=draft.lm; }
-    if (draft.dm) { const el=$('#mwDeadMi'); if(el) el.value=draft.dm; }
+    if (draft.dm !== undefined && draft.dm !== null && draft.dm !== '') { const el=$('#mwDeadMi'); if(el) el.value=String(draft.dm); }
     if (draft.origin) { const el=$('#mwOrigin'); if(el) el.value=draft.origin; }
     if (draft.dest) { const el=$('#mwDest'); if(el) el.value=draft.dest; }
   } else if (last && typeof last === 'object'){
@@ -13908,7 +13900,7 @@ async function mwInit(){
     if (last.dest) { const el=$('#mwDest'); if(el) el.value=last.dest; }
     if (last.broker) { const el=$('#mwBroker'); if(el) el.value=last.broker; }
     if (last.loadedMi) { const el=$('#mwLoadedMi'); if(el) el.value=last.loadedMi; }
-    if (last.deadMi) { const el=$('#mwDeadMi'); if(el) el.value=last.deadMi; }
+    if (last.deadMi !== undefined && last.deadMi !== null && last.deadMi !== '') { const el=$('#mwDeadMi'); if(el) el.value=String(last.deadMi); }
     if (last.revenue) { const el=$('#mwRevenue'); if(el) el.value=last.revenue; }
     if (last.fatigue) { const el=$('#mwFatigue'); if(el) el.value=last.fatigue; }
     if (last.dayOfWeek) { const el=$('#mwDayOfWeek'); if(el) el.value=last.dayOfWeek; }
@@ -17102,6 +17094,10 @@ function initCollapsibleSettings(){
     haptic(10);
     await openMaintenanceTracker();
   });
+  addManagedListener($('#settingsMonthlyCostsBtn'), 'click', async ()=>{
+    haptic(10);
+    await openMonthlyExpenseManager();
+  });
   addManagedListener($('#settingsExportData'), 'click', async ()=>{
     haptic(10);
     await exportJSON();
@@ -17346,12 +17342,10 @@ function openLoadIntake(opts = {}){
   stage1.innerHTML = `
     <p class="muted" style="font-size:12px;margin:0 0 12px 0">Share a screenshot of the load, or paste the text. Either way you review what was found before anything is scored.</p>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn primary" id="liShot" style="flex:2;font-size:14px;min-height:48px">🖼️ Choose Screenshot</button>
-      <button class="btn" id="liPickImg" style="flex:1;font-size:13px;min-height:48px">📷 Camera</button>
+      <button class="btn primary" id="liShot" style="flex:1;font-size:14px;min-height:48px">🖼️ Choose Screenshot</button>
     </div>
     <input type="file" id="liImgFile" accept="image/*" style="display:none" />
-    <input type="file" id="liImgCamera" accept="image/*" capture="environment" style="display:none" />
-    <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone you can also long-press a screenshot and paste it into the box below.</div>
+    <div id="liImgHint" class="muted" style="font-size:11px;margin:-6px 0 12px 0">On iPhone, Choose Screenshot can use Photos, Take Photo, or Files. You can also paste a screenshot into the box below.</div>
     <div id="liImgBusy" style="display:none;margin-bottom:12px;padding:10px;background:var(--surface-1);border-radius:8px;font-size:12px"></div>
     <div id="liParseError" role="alert" style="display:none;margin-bottom:12px;padding:10px;background:rgba(255,59,48,.1);border-radius:8px;font-size:12px;color:var(--bad)"></div>
     <img id="liImgPreview" alt="" style="display:none;max-width:100%;max-height:150px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)" />
@@ -17675,20 +17669,14 @@ function openLoadIntake(opts = {}){
     }
   }
 
-  // v24.0.38: "Screenshot" used to open the CAMERA input (capture="environment"),
-  // so on iPhone it launched the camera and a driver could never pick the
-  // posting they had just screenshotted. Choosing a screenshot now opens the
-  // Photos library; the camera is its own, clearly labelled button.
+  // v24.0.50: one flexible iPhone picker is enough; a forced-camera button
+  // duplicated the same job and made Scan look more complex than it is.
   stage1.querySelector('#liShot')?.addEventListener('click', ()=>{ haptic(); getField('liImgFile')?.click(); });
-  stage1.querySelector('#liPickImg')?.addEventListener('click', ()=>{ haptic(); getField('liImgCamera')?.click(); });
-  for (const id of ['liImgCamera','liImgFile']){
-    stage1.querySelector('#'+id)?.addEventListener('change', (ev)=>{
-      const f = ev.target?.files?.[0];
-      // Reset the input so choosing the SAME file twice still fires change.
-      if (ev.target) ev.target.value = '';
-      handleIntakeImage(f);
-    });
-  }
+  stage1.querySelector('#liImgFile')?.addEventListener('change', (ev)=>{
+    const f = ev.target?.files?.[0];
+    if (ev.target) ev.target.value = '';
+    handleIntakeImage(f);
+  });
   // Clipboard paste: a convenience on top of the picker, never the only way in.
   stage1.querySelector('#liRawText')?.addEventListener('paste', (ev)=>{
     const items = ev.clipboardData?.items || [];
@@ -21928,14 +21916,15 @@ async function updateGPSDeadhead(originVal){
   hint.textContent = '📍 Estimating distance…';
   const miles = await estimateDeadheadFromGPS(originVal);
   if (miles !== null){
-    hint.textContent = `📍 ~${miles} mi from your location`;
-    if (!deadEl.value || deadEl.value === '0'){
-      deadEl.value = miles;
+    hint.innerHTML = `📍 Estimated deadhead: <b>~${escapeHtml(String(miles))} mi</b> · Approximate, not turn-by-turn routing. <button type="button" class="btn sm" id="mwGpsUseEstimate" style="margin-left:5px;padding:4px 8px">Use estimate</button>`;
+    hint.querySelector('#mwGpsUseEstimate')?.addEventListener('click', ()=>{
+      haptic(8);
+      deadEl.value = String(miles);
       deadEl.dispatchEvent(new Event('input', {bubbles:true}));
-    }
-  } else {
-    hint.textContent = '';
-  }
+      _saveEvalDraft();
+      toast('Estimated deadhead applied — verify against your route.');
+    });
+  } else hint.textContent = '';
 }
 
 // ── F8: Rate Trend Tracking ───────────────────────────────────────────────
@@ -22266,20 +22255,25 @@ async function openDocumentVault(filterTripOrderNo=null){
       <div class="field"><label>Link to trip order # (optional)</label><input id="addDvTrip" placeholder="e.g. ABC-1234" value="${escapeHtml(filterTripOrderNo||'')}" /></div>
       <div class="field">
         <label>File</label>
+        <button type="button" class="btn" id="addDvScan" style="width:100%;min-height:46px;margin-bottom:8px">📷 Scan Document</button>
         <div id="addDvDropzone" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:var(--text-secondary);font-size:13px">
           📎 Tap to choose file (PDF, image — max 6 MB)
         </div>
         <input type="file" id="addDvFile" accept="image/*,application/pdf" style="display:none" />
+        <input type="file" id="addDvScanFile" accept="image/*" capture="environment" style="display:none" />
         <div id="addDvFilename" class="muted" style="font-size:12px;margin-top:6px"></div>
       </div>
       <div class="btn-row" style="margin-top:14px"><button class="btn primary" id="addDvSave">Save to Vault</button></div>`;
     openModal('Add Document', addBody);
     let chosenFile = null;
+    const chooseDocument = (file) => {
+      chosenFile = file || null;
+      $('#addDvFilename', addBody).textContent = chosenFile ? `Selected: ${chosenFile.name || 'Scanned document'}` : '';
+    };
     $('#addDvDropzone', addBody).addEventListener('click', () => $('#addDvFile', addBody).click());
-    $('#addDvFile', addBody).addEventListener('change', (ev) => {
-      chosenFile = ev.target.files[0] || null;
-      $('#addDvFilename', addBody).textContent = chosenFile ? `Selected: ${chosenFile.name}` : '';
-    });
+    $('#addDvScan', addBody).addEventListener('click', () => $('#addDvScanFile', addBody).click());
+    $('#addDvFile', addBody).addEventListener('change', (ev) => chooseDocument(ev.target.files[0]));
+    $('#addDvScanFile', addBody).addEventListener('change', (ev) => chooseDocument(ev.target.files[0]));
     $('#addDvSave', addBody).addEventListener('click', async () => {
       if (!chosenFile) return toast('Choose a file first', true);
       const type = $('#addDvType', addBody).value;
