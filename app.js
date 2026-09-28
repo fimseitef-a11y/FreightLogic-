@@ -6384,6 +6384,9 @@ async function renderCurrentLoad(){
     try {
       const saved = await upsertTrip({ ...trip, executionStatus:'DELIVERED', deliveryDate: trip.deliveryDate || isoDate() });
       await _postTripSaveLaneHook(saved);
+      _positioningCache = null;
+      invalidateKPICache();
+      if (saved.destination) _triggerPostDeliveryBrief(saved.destination).catch(()=>{});
       toast('Load marked delivered.');
       location.hash = '#trips';
     } catch(e){ toast(e?.message || 'Could not mark delivered.', true); }
