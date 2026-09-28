@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0026 — Issue #417 Slice C: Costs consolidation / one Add Cost chooser / typed-store preservation. | 2026-09-28T13:52:00Z |
+| gpt | — idle — PR #425 open for Issue #417 Slice C; exact-head CI/review boundary. | 2026-09-28T14:00:00Z |
 
 ---
 
