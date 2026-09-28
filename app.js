@@ -6293,7 +6293,9 @@ async function refreshUnpaidBadge(){
   try {
     const badge = $('#navUnpaidBadge');
     if (!badge) return;
-    const unpaid = await listTrips({ unpaidOnly: true, limit: 100 });
+    // Receivables use the same fail-closed authority as Money/AR: only
+    // canonical, explicit unpaid trips that are not held for review count.
+    const unpaid = await listUnpaidTrips(100);
     const n = unpaid.length;
     if (n > 0){
       badge.textContent = n > 99 ? '99+' : String(n);
@@ -7139,7 +7141,7 @@ async function renderSmartTip(state){
     if (!tip) {
       const overdueTrips = trips.filter(t => {
         const refDate = t.deliveryDate || t.pickupDate;
-        return tripIsUnpaid(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
+        return !t.needsReview && tripIsUnpaid(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
       });
       if (overdueTrips.length >= 2) {
         const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
@@ -8207,7 +8209,7 @@ async function listUnpaidTrips(limit=200){
     req.onsuccess = (e)=>{
       const cur = e.target.result;
       if (!cur || out.length >= limit){ resolve(out); return; }
-      if (tripIsUnpaid(cur.value)) out.push(cur.value);
+      if (!cur.value.needsReview && tripIsUnpaid(cur.value)) out.push(cur.value);
       cur.continue();
     };
   });
@@ -16615,7 +16617,10 @@ async function checkOverduePayments(){
     const today = new Date();
     const overdueTrips = [];
     for (const t of trips){
-      if (t.isPaid) continue;
+      // Unknown/review-required imports are not live receivables. Use the
+      // canonical explicit-unpaid predicate rather than treating "not paid" as
+      // proof that money is owed.
+      if (t.needsReview || !tripIsUnpaid(t)) continue;
       const dt = t.pickupDate || t.deliveryDate;
       if (!dt) continue;
       const pickupTs = new Date(dt).getTime();
