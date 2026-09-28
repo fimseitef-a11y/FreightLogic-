@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #425 merged; post-merge main/production verification in progress. | 2026-09-28T14:06:00Z |
+| gpt | — idle — Issue #417 Slice C complete; main/production v24.0.52 verified green. | 2026-09-28T14:10:00Z |
 
 ---
 
