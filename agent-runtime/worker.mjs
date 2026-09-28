@@ -8,6 +8,7 @@ import {
 import { chooseModelTier } from "./router.mjs";
 import { stateScope } from "./state-key.mjs";
 import { fingerprintEnvelope, sameIdempotentEvent } from "./idempotency.mjs";
+import { ModelExecutionError, runExplanationModel } from "./model-adapter.mjs";
 
 function failClosed(code, reason, extra = {}) {
   return {
@@ -133,16 +134,37 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       };
     }
 
-    if (route.tier === "small" || route.tier === "strong") {
-      // Build the minimized projection now so any future model adapter can only
-      // receive an allowlisted payload. Phase A deliberately performs no model call.
-      buildModelProjection(envelope);
-    }
+    let recommendation = "UNKNOWN";
+    let reason = route.reason;
 
-    const recommendation = "UNKNOWN";
-    const reason = route.tier === "no-model"
-      ? route.reason
-      : "MODEL_EXECUTION_NOT_ENABLED_PHASE_A";
+    if (route.tier === "small" || route.tier === "strong") {
+      const projection = buildModelProjection(envelope);
+      try {
+        const result = await runExplanationModel(this.env, route.tier, projection);
+        recommendation = result.recommendation;
+      } catch (error) {
+        if (error instanceof ModelExecutionError) {
+          return failClosed(error.code, error.message, {
+            fact: {
+              eventId: envelope.id,
+              type: envelope.type,
+              privacyClass,
+            },
+            calculation: envelope.canonicalSnapshot,
+            route,
+          });
+        }
+        return failClosed("MODEL_REQUEST_FAILED", "Workers AI request failed", {
+          fact: {
+            eventId: envelope.id,
+            type: envelope.type,
+            privacyClass,
+          },
+          calculation: envelope.canonicalSnapshot,
+          route,
+        });
+      }
+    }
 
     const stored = await state.putIdempotency({
       idempotencyKey: scope.idempotencyKey,
@@ -173,7 +195,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       },
       calculation: envelope.canonicalSnapshot,
       estimate: null,
-      recommendation: "UNKNOWN",
+      recommendation: stored.recommendation,
       route: {
         tier: stored.route_tier,
         reason: stored.reason,
