@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.52">
+  <link rel="manifest" href="manifest.json?v=24.0.53">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -324,6 +324,16 @@
 <div style="border-top:1px solid var(--border-subtle);margin:4px 0 10px"></div>
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
 <div class="settings-section-head" id="settingsVehicle"><span class="settings-section-icon">🚐</span>Vehicle &amp; Capacity</div>
+<div class="card" id="vehicleIdentityCard" style="margin:10px 0;padding:12px">
+  <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>Vehicle identity</b><span class="muted" style="font-size:10px">OPERATOR ENTRY</span></div>
+  <label for="carrierName">Carrier / Operating Company</label><input id="carrierName" type="text" placeholder="e.g. RPP Express" />
+  <div class="grid2" style="gap:10px">
+    <div><label for="vehicleYear">Year</label><input id="vehicleYear" type="text" inputmode="numeric" placeholder="2016" /></div>
+    <div><label for="vehicleMake">Make</label><input id="vehicleMake" type="text" placeholder="Ford" /></div>
+    <div><label for="vehicleModel">Model</label><input id="vehicleModel" type="text" placeholder="Transit T250" /></div>
+    <div><label for="vehicleTrim">Trim / Body</label><input id="vehicleTrim" type="text" placeholder="148 Low Roof" /></div>
+  </div>
+</div>
 <label for="settingsHomeLocation">Home Location</label><input id="settingsHomeLocation" type="text" placeholder="e.g., Indianapolis, IN" /><div class="muted" style="font-size:11px;margin-top:2px">Loads going home allow $1.25 strategic floor</div>
 <label for="vehicleClass">Vehicle Class</label><select id="vehicleClass"><option value="cargo_van">Cargo Van (no CDL/IFTA/ELD)</option><option value="sprinter">Sprinter / Large Van</option><option value="box_truck">Box Truck (no CDL)</option><option value="box_truck_cdl">Box Truck (CDL)</option><option value="semi">Semi / Tractor-Trailer</option></select>
 <label for="vehicleMpg">Vehicle MPG</label><input id="vehicleMpg" type="number" step="0.1" placeholder="profile: 16.7" />
@@ -346,8 +356,14 @@
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
-<div class="settings-section-head"><span class="settings-section-icon">📐</span>Van Profile <span class="muted" style="font-size:10px;font-weight:400">(7D — dimensional/payload pre-check)</span></div>
-<div class="muted" style="font-size:11px;margin-bottom:8px">A load exceeding these blocks scoring with "CAN'T TAKE" before any economics are shown. Cargo length defaults to the operator-confirmed <b>121&quot;</b> usable floor length for this van, not the published brochure figure. Remaining defaults are published 2016 Ford Transit T250 148&quot; figures — verify each against your own van's spec sheet or door sticker before relying on this.</div>
+<div class="card" id="standardVehicleSpecCard" style="margin:10px 0;padding:12px">
+  <div style="font-weight:800">STANDARD SPEC</div>
+  <div class="muted" id="standardVehicleSpecStatus" style="font-size:11px;margin-top:4px">UNKNOWN — no verified provider is authorized in this release.</div>
+  <div class="muted" style="font-size:11px;margin-top:4px">Published specs are evidence only. They never overwrite your operating limits without explicit confirmation.</div>
+</div>
+<div class="card" id="userOperatingLimitsCard" style="margin:10px 0;padding:12px">
+<div class="settings-section-head"><span class="settings-section-icon">📐</span>USER OPERATING LIMIT <span class="muted" style="font-size:10px;font-weight:400">(dimensional/payload pre-check)</span></div>
+<div class="muted" style="font-size:11px;margin-bottom:8px">These are the limits FreightLogic uses to decide whether a load fits your actual working setup. Saving changes confirms them as your operating limits; a standard spec cannot replace them silently.</div>
 <div class="grid2" style="gap:10px">
 <div><label for="vanCargoLengthIn">Cargo length (in)</label><input id="vanCargoLengthIn" type="number" step="0.5" placeholder="121" /></div>
 <div><label for="vanCargoWidthIn">Cargo width (in)</label><input id="vanCargoWidthIn" type="number" step="0.5" placeholder="65" /></div>
@@ -360,6 +376,7 @@
 <div class="grid2" style="gap:10px">
 <div><label for="vanDoorWidthIn">Door opening width (in)</label><input id="vanDoorWidthIn" type="number" step="0.5" placeholder="60" /></div>
 <div><label for="vanDoorHeightIn">Door opening height (in)</label><input id="vanDoorHeightIn" type="number" step="0.5" placeholder="52" /></div>
+</div>
 </div>
 
 <div style="border-top:1px solid var(--border-subtle);margin:12px 0 4px"></div>
@@ -704,7 +721,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.52"></script>
-  <script src="sw-bridge.js?v=24.0.52"></script>
+  <script src="app.js?v=24.0.53"></script>
+  <script src="sw-bridge.js?v=24.0.53"></script>
 </body>
 </html>
