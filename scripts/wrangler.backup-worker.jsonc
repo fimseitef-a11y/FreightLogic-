@@ -70,6 +70,16 @@
     "binding": "AI"
   },
 
+  // AIAG-TASK-0022: private Worker-to-Worker RPC only. The target Agent Worker
+  // has workers_dev=false, preview_urls=false, and no routes, so this binding
+  // is the only production path to its WorkerEntrypoint.
+  "services": [
+    {
+      "binding": "AGENT",
+      "service": "freightlogic-agent-v1"
+    }
+  ],
+
   "kv_namespaces": [
     {
       // `env.BACKUPS` — 27 call sites in cloud-backup-worker.js.
