@@ -6304,13 +6304,23 @@ function _activeLifecycleRows(rows){
     && ['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(lc.execution))
     .sort((a,b) => finiteNum(b.updatedAt, 0) - finiteNum(a.updatedAt, 0));
 }
+function _activeTripRows(rows){
+  return (Array.isArray(rows) ? rows : []).filter(t => t
+    && ['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(t.executionStatus)
+    && !t.fellThrough)
+    .sort((a,b) => finiteNum(b.updatedAt || b.created, 0) - finiteNum(a.updatedAt || a.created, 0));
+}
+function _currentTripStageLabel(status){
+  if (status === 'PICKED_UP') return 'In transit · Picked up';
+  if (status === 'EN_ROUTE_PICKUP') return 'En route to pickup';
+  if (status === 'NOT_STARTED') return 'Booked · Not started';
+  return 'Trip in progress';
+}
 async function resolveTodayPrimaryAction(){
   if (_activeTracking) return { label:'Current Load', hash:'#current', reason:'Trip tracking is active' };
   try {
     const trips = await dumpStore('trips');
-    const activeTrip = (Array.isArray(trips) ? trips : [])
-      .filter(t => t && ['EN_ROUTE_PICKUP','PICKED_UP'].includes(t.executionStatus) && !t.fellThrough)
-      .sort((a,b) => finiteNum(b.updatedAt || b.created, 0) - finiteNum(a.updatedAt || a.created, 0))[0];
+    const activeTrip = _activeTripRows(trips)[0];
     if (activeTrip) return { label:'Current Load', hash:'#current', reason:activeTrip.executionStatus };
     const active = _activeLifecycleRows(await listLifecycle());
     if (active.length) return { label:'Current Load', hash:'#current', reason:lifecycleDisplayStage(active[0]) };
@@ -6338,9 +6348,7 @@ async function renderCurrentLoad(){
   let trips = [], lifecycle = [];
   try { trips = await dumpStore('trips'); } catch(e){ console.warn('[FL] current load trips:', e); }
   try { lifecycle = _activeLifecycleRows(await listLifecycle()); } catch(e){ console.warn('[FL] current load lifecycle:', e); }
-  const trip = (Array.isArray(trips) ? trips : [])
-    .filter(t => t && ['EN_ROUTE_PICKUP','PICKED_UP'].includes(t.executionStatus) && !t.fellThrough)
-    .sort((a,b) => finiteNum(b.updatedAt || b.created, 0) - finiteNum(a.updatedAt || a.created, 0))[0] || null;
+  const trip = _activeTripRows(trips)[0] || null;
   const lc = lifecycle[0] || null;
   if (!trip && !lc && !_activeTracking){
     root.innerHTML = '<div class="card"><h2 style="margin:0 0 8px">Current Load</h2><div class="muted" style="font-size:13px;line-height:1.5">No active load is recorded.</div>'
@@ -6349,7 +6357,7 @@ async function renderCurrentLoad(){
   }
   const orderNo = trip?.orderNo || lc?.orderNo || '';
   const stage = trip
-    ? (trip.executionStatus === 'PICKED_UP' ? 'In transit · Picked up' : 'En route to pickup')
+    ? _currentTripStageLabel(trip.executionStatus)
     : (lc ? lifecycleDisplayStage(lc) : 'Trip in progress');
   const origin = trip?.origin || lc?.origin || '';
   const destination = trip?.destination || lc?.destination || '';
@@ -6361,10 +6369,17 @@ async function renderCurrentLoad(){
     + (route ? '<div style="font-size:18px;font-weight:800;margin-top:16px">' + escapeHtml(route) + '</div>' : '')
     + (broker ? '<div class="muted" style="font-size:13px;margin-top:6px">' + escapeHtml(broker) + '</div>' : '') + tracking
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'
-    + '<button class="btn primary" data-current-action="delivered" id="currentDelivered" style="min-height:48px">Delivered</button>'
+    + (trip?.executionStatus === 'PICKED_UP'
+      ? '<button class="btn primary" data-current-action="delivered" id="currentDelivered" style="min-height:48px">Delivered</button>'
+      : (trip
+        ? '<button class="btn primary" data-current-action="edit" id="currentEditTrip" style="min-height:48px">Update Stage</button>'
+        : '<a class="btn primary" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">Open History</a>'))
     + '<a class="btn" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a></div></div>';
+  root.querySelector('#currentEditTrip')?.addEventListener('click', ()=>{
+    if (trip) openTripWizard(trip);
+  });
   root.querySelector('#currentDelivered')?.addEventListener('click', async ()=>{
-    if (!trip){ toast('Open the trip record to mark delivery.', true); return; }
+    if (!trip || trip.executionStatus !== 'PICKED_UP') return;
     haptic(20);
     try {
       const saved = await upsertTrip({ ...trip, executionStatus:'DELIVERED', deliveryDate: trip.deliveryDate || isoDate() });
