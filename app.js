@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.50 USA ENGINE
+/** FreightLogic v24.0.51 USA ENGINE
+ *  v24.0.51 "Loads Decision Inbox": reviewed intake persists normalized
+ *  evidence before evaluation; compact cards project canonical economics/grade;
+ *  Pursue/Pass are reversible; only explicit Awarded advances opportunity to WON.
  *  v24.0.50 "Driver IA Consolidation": Scan-first workflow, single-home
  *  navigation ownership, advisory deadhead estimation, A3 zero persistence,
  *  two-stage onboarding, and contextual document scanning. Canonical economics,
@@ -585,7 +588,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.50';
+const APP_VERSION = '24.0.51';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -17708,19 +17711,25 @@ function openLoadIntake(opts = {}){
   // Shortcuts evaluate link takes: the load REPLACES the evaluator's load, the
   // canonical evaluator runs, and the result is scrolled into view. An unknown
   // deadhead stays blank, so the evaluator asks for it rather than inheriting one.
-  stage2.querySelector('#liScore').addEventListener('click', ()=>{
+  stage2.querySelector('#liScore').addEventListener('click', async ()=>{
     haptic();
     const f = readDraftFields();
-    closeModal();
-    _deepLinkEvaluate({
-      revenue: f.pay || '', loaded: f.loadedMiles || '', deadhead: knownNum(f.deadheadMiles),
-      origin: f.origin || '', dest: f.destination || '', broker: f.broker || '',
-      weight: f.weight || '',
-      // v24.0.41: dimensions feed the van-fit check, and the pickup date+time
-      // feed the pickup-feasibility check (inert until a planning speed is set).
-      ...parseDimsInches(f.dimensions),
-      pickup: (f.pickupDate && f.pickupTime) ? `${f.pickupDate}T${f.pickupTime}` : '',
-    }).catch(e => console.warn('[FL] intake score failed:', e));
+    try {
+      await persistLoadDecisionEvidence(f, { sourceName:'Load Intake review' });
+      closeModal();
+      await renderLoadsDecisionInbox().catch(()=>{});
+      await _deepLinkEvaluate({
+        revenue: f.pay || '', loaded: f.loadedMiles || '', deadhead: knownNum(f.deadheadMiles),
+        origin: f.origin || '', dest: f.destination || '', broker: f.broker || '',
+        weight: f.weight || '',
+        ...parseDimsInches(f.dimensions),
+        pickup: (f.pickupDate && f.pickupTime) ? `${f.pickupDate}T${f.pickupTime}` : '',
+      });
+      toast('Load saved to Loads and opened in Details.');
+    } catch(e){
+      console.warn('[FL] intake score failed:', e);
+      toast('Could not save this load. Review the fields and try again.', true);
+    }
   });
 
   // Save as trip draft
@@ -24960,12 +24969,227 @@ let _inboxDebounceTimer = null;
 // `home` and the surface never displayed. `#view-loads` is now real markup in
 // index.html and `loads` is a real route, so the driver-facing Loads tab shows
 // the canonical inbox instead of the Today screen.
+
+const LOADS_INBOX_DISPOSITION_KEY = 'loadsInboxDispositionV1';
+
+async function _loadInboxDispositions(){
+  const raw = await getSetting(LOADS_INBOX_DISPOSITION_KEY, {});
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+async function _setLoadInboxDisposition(evidenceId, decision){
+  const id = clampStr(evidenceId || '', 60);
+  if (!id) return null;
+  const allowed = ['PURSUE','PASS','AWARDED'];
+  const map = await _loadInboxDispositions();
+  const next = { ...map };
+  if (allowed.includes(decision)) next[id] = { decision, at: Date.now() };
+  else delete next[id];
+  await setSetting(LOADS_INBOX_DISPOSITION_KEY, next);
+  return next[id] || null;
+}
+
+function _loadInboxInstant(date, time){
+  const d = String(date || '').trim();
+  const t = String(time || '').trim();
+  if (!d) return null;
+  return t && /^\d{2}:\d{2}$/.test(t) ? d + 'T' + t : d;
+}
+
+async function persistLoadDecisionEvidence(fields, { sourceName = 'Loads intake' } = {}){
+  const f = fields || {};
+  return intakeOpportunity({
+    orderNo: clampStr(f.orderNo || '', 60),
+    broker: clampStr(f.broker || f.customer || '', 80),
+    origin: clampStr(f.origin || '', 80),
+    destination: clampStr(f.destination || f.dest || '', 80),
+    pickupAt: f.pickupAt || _loadInboxInstant(f.pickupDate, f.pickupTime),
+    deliveryAt: f.deliveryAt || _loadInboxInstant(f.deliveryDate, f.deliveryTime),
+    amount: knownNum(f.pay ?? f.amount ?? f.revenue),
+    priceSemantic: f.priceSemantic || 'UNKNOWN_PRICE_SEMANTIC',
+    loadedMi: knownNum(f.loadedMiles ?? f.loadedMi),
+    deadMi: knownNum(f.deadheadMiles ?? f.deadMi),
+    mileageSemantic: 'LOADED_MILES',
+    opportunity: 'SEEN',
+    operationalClass: 'FREIGHT',
+    sourceName,
+  }, {
+    sourceType: 'MANUAL',
+    sourceName,
+    authority: 'OPERATOR_ENTERED_UNVERIFIED',
+  });
+}
+
+async function buildLoadDecisionProjection(evidence, lifecycle = null){
+  const ev = evidence || {};
+  const loaded = knownNum(ev.loadedMi);
+  const dead = knownNum(ev.deadMi);
+  const revenue = knownNum(ev.canonicalRevenue);
+  const profile = await resolveCanonicalCostProfile();
+  const economics = deriveUnifiedEconomics({
+    loadedMi: loaded, deadMi: dead, revenue, effectiveRevenue: revenue,
+    mpg: profile.available ? profile.mpg : null,
+    fuelPrice: profile.available ? profile.fuelPrice : null,
+    fuelCPM: profile.available ? profile.fuelCPM : null,
+    nonFuelVariableCPM: profile.available ? profile.nonFuelVariableCPM : null,
+    fixedCPM: profile.available ? profile.fixedCPM : null,
+    costProfileSource: profile.available ? profile.modelVersion : null,
+  });
+  const grade = deriveUnifiedGrade(economics.available ? economics.trueRPM : null).display;
+  let twoBid = null;
+  if (profile.available && loaded !== null && loaded > 0 && dead !== null && dead >= 0){
+    twoBid = await evaluateTwoOutputBid({
+      loadedMi: loaded, deadMi: dead, deadheadCPM: profile.marginalCPM,
+      origin: ev.origin || '', dest: ev.destination || '',
+    });
+  }
+  return Object.freeze({ evidence:ev, lifecycle, economics, grade, twoBid, profile });
+}
+
+async function _setLoadInboxOpportunity(evidenceId, opportunity){
+  if (opportunity !== 'WON') throw new Error('Unsupported load transition.');
+  const ev = await getEvidence(evidenceId);
+  if (!ev || !ev.lifecycleId) throw new Error('This load is not safely linked to a lifecycle record.');
+  const lc = await getLifecycle(ev.lifecycleId);
+  if (!lc) throw new Error('This load lifecycle record is unavailable.');
+  const saved = await upsertLifecycle({ ...lc, opportunity:'WON' }, {
+    expectedRevision: lc.revision,
+    source: 'USER',
+    sourceId: ev.evidenceId,
+    reason: 'operator confirmed award in Loads inbox',
+  });
+  await _setLoadInboxDisposition(ev.evidenceId, 'AWARDED');
+  return saved;
+}
+
+async function openLoadDecisionDetails(evidenceId){
+  const ev = await getEvidence(evidenceId);
+  if (!ev) throw new Error('Load evidence is unavailable.');
+  const observed = knownNum(ev.canonicalRevenue) ?? knownNum(ev.amount);
+  await _deepLinkEvaluate({
+    revenue: observed === null ? '' : observed,
+    loaded: knownNum(ev.loadedMi),
+    deadhead: knownNum(ev.deadMi),
+    origin: ev.origin || '',
+    dest: ev.destination || '',
+    broker: ev.brokerDisplay || ev.broker || '',
+  });
+}
+
+async function renderLoadsDecisionInbox(){
+  const host = $('#loadsDecisionInbox');
+  if (!host) return;
+  const [evidenceRows, lifecycleRows, dispositions] = await Promise.all([
+    listEvidence(), listLifecycle(), _loadInboxDispositions(),
+  ]);
+  const lifecycleById = new Map((lifecycleRows || []).map(lc => [lc.lifecycleId, lc]));
+  const rows = (evidenceRows || [])
+    .filter(ev => ev && ev.operationalClass !== 'DRY_RUN')
+    .filter(ev => ev?.provenance?.sourceType !== 'HISTORY')
+    .map(ev => ({ ev, lc: ev.lifecycleId ? lifecycleById.get(ev.lifecycleId) || null : null }))
+    .filter(x => !x.lc || x.lc.execution === 'NOT_STARTED')
+    .filter(x => !x.lc || ['SEEN','QUOTED','BID','WON'].includes(x.lc.opportunity))
+    .sort((a,b) => finiteNum(b.ev.recordedAt,0) - finiteNum(a.ev.recordedAt,0));
+
+  host.innerHTML = '';
+  if (!rows.length){
+    host.innerHTML = '<div class="card" data-load-inbox-empty style="margin-bottom:12px"><div style="font-weight:800">Decision inbox</div><div class="muted" style="font-size:12px;margin-top:4px">No reviewed loads yet. Scan or paste a load to create a durable decision card.</div></div>';
+    return;
+  }
+
+  const heading = document.createElement('div');
+  heading.className = 'card';
+  heading.style.cssText = 'margin-bottom:8px;padding:12px 14px';
+  heading.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Decision inbox</b><span class="muted" style="font-size:11px">' + rows.length + ' open</span></div><div class="muted" style="font-size:11px;margin-top:3px">Observed facts stay separate from lifecycle outcomes. Pass never becomes Lost.</div>';
+  host.appendChild(heading);
+
+  for (const {ev,lc} of rows){
+    const p = await buildLoadDecisionProjection(ev, lc);
+    const loaded = knownNum(ev.loadedMi);
+    const dead = knownNum(ev.deadMi);
+    const all = loaded !== null && dead !== null ? loaded + dead : null;
+    const amount = knownNum(ev.amount);
+    const decision = dispositions?.[ev.evidenceId]?.decision || '';
+    const stage = lc ? lifecycleDisplayStage(lc) : (ev.linkState === 'UNRESOLVED' ? 'UNRESOLVED' : 'UNLINKED');
+    const grade = p.grade?.grade || '?';
+    const trueRPM = p.economics?.available ? p.economics.trueRPM : null;
+    const warning = dead === null
+      ? 'Deadhead is unknown — enter it in Details before relying on True RPM.'
+      : knownNum(ev.canonicalRevenue) === null
+        ? 'Observed amount is not yet proven carrier payout. Verify the rate in Details.'
+        : !lc
+          ? 'Evidence is durable, but no safe lifecycle link exists yet.'
+          : '';
+    const observedLabel = amount === null
+      ? 'Observed amount Unknown'
+      : (knownNum(ev.canonicalRevenue) !== null ? 'Carrier payout ' : 'Observed amount ') + fmtMoney(amount);
+    const bidLine = p.twoBid?.available
+      ? '<div style="font-size:11px;margin-top:7px;color:var(--text-secondary)">Baseline ' + escapeHtml(fmtMoney(p.twoBid.baseline)) + ' · Recommended ' + escapeHtml(fmtMoney(p.twoBid.recommended)) + (p.twoBid.evidence === 'LIMITED' ? ' · limited market evidence' : '') + '</div>'
+      : '';
+
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.setAttribute('data-load-decision-card','');
+    card.setAttribute('data-evidence-id', ev.evidenceId);
+    card.setAttribute('data-true-rpm', trueRPM === null ? '' : String(trueRPM));
+    card.setAttribute('data-grade', grade);
+    card.style.cssText = 'margin-bottom:10px;padding:14px';
+    card.innerHTML =
+      '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">' +
+        '<div><div style="font-size:15px;font-weight:800">' + escapeHtml(ev.origin || 'Origin Unknown') + ' → ' + escapeHtml(ev.destination || 'Destination Unknown') + '</div>' +
+        '<div class="muted" style="font-size:11px;margin-top:2px">' + escapeHtml(ev.orderNo ? ('#' + ev.orderNo + ' · ') : '') + escapeHtml(ev.brokerDisplay || ev.broker || 'Broker Unknown') + '</div></div>' +
+        '<div style="text-align:right"><span class="pill" style="font-size:10px">' + escapeHtml(stage) + '</span>' +
+        (decision ? '<div style="font-size:10px;font-weight:800;margin-top:5px">' + escapeHtml(decision) + '</div>' : '') + '</div>' +
+      '</div>' +
+      '<div style="font-size:12px;margin-top:10px;color:var(--text-secondary)">Loaded ' + (loaded === null ? 'Unknown' : escapeHtml(String(loaded)) + ' mi') +
+        ' · Deadhead ' + (dead === null ? 'Unknown' : escapeHtml(String(dead)) + ' mi') +
+        ' · All-in ' + (all === null ? 'Unknown' : escapeHtml(String(all)) + ' mi') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-size:12px"><span>' + escapeHtml(observedLabel) + '</span><span style="font-weight:800">True RPM ' +
+        (trueRPM === null ? '—' : '$' + trueRPM.toFixed(2)) + ' · Grade ' + escapeHtml(grade) + '</span></div>' +
+      (ev.pickupAt || ev.deliveryAt ? '<div class="muted" style="font-size:11px;margin-top:5px">Pickup ' + escapeHtml(ev.pickupAt || 'Unknown') + ' · Delivery ' + escapeHtml(ev.deliveryAt || 'Unknown') + '</div>' : '') +
+      (warning ? '<div style="font-size:11px;color:var(--warn);margin-top:7px">⚠ ' + escapeHtml(warning) + '</div>' : '') +
+      bidLine +
+      '<div style="display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:7px;margin-top:12px">' +
+        '<button class="btn primary" data-load-open="' + escapeHtml(ev.evidenceId) + '" style="min-height:44px">Details</button>' +
+        '<button class="btn" data-load-pursue="' + escapeHtml(ev.evidenceId) + '" style="min-height:44px">Pursue</button>' +
+        '<button class="btn" data-load-pass="' + escapeHtml(ev.evidenceId) + '" style="min-height:44px">Pass</button>' +
+        '<button class="btn" data-load-award="' + escapeHtml(ev.evidenceId) + '" style="min-height:44px"' + (!lc || lc.opportunity === 'WON' ? ' disabled' : '') + '>Awarded</button>' +
+      '</div>';
+    host.appendChild(card);
+  }
+
+  host.querySelectorAll('[data-load-open]').forEach(btn => btn.addEventListener('click', async () => {
+    haptic(10);
+    try { await openLoadDecisionDetails(btn.getAttribute('data-load-open')); }
+    catch(e){ toast(e?.message || 'Could not open load details.', true); }
+  }));
+  host.querySelectorAll('[data-load-pursue]').forEach(btn => btn.addEventListener('click', async () => {
+    haptic(8);
+    await _setLoadInboxDisposition(btn.getAttribute('data-load-pursue'), 'PURSUE');
+    await renderLoadsDecisionInbox();
+  }));
+  host.querySelectorAll('[data-load-pass]').forEach(btn => btn.addEventListener('click', async () => {
+    haptic(8);
+    await _setLoadInboxDisposition(btn.getAttribute('data-load-pass'), 'PASS');
+    await renderLoadsDecisionInbox();
+  }));
+  host.querySelectorAll('[data-load-award]').forEach(btn => btn.addEventListener('click', async () => {
+    haptic(12);
+    try {
+      await _setLoadInboxOpportunity(btn.getAttribute('data-load-award'), 'WON');
+      await renderLoadsDecisionInbox();
+      toast('Award recorded. Execution remains not started until you update the load.');
+    } catch(e){ toast(e?.message || 'Could not record award.', true); }
+  }));
+}
+
 async function renderLoadsView() {
   const intake = $('#btnLoadsIntake');
   if (intake && !intake.dataset.bound) {
     intake.dataset.bound = '1';
     addManagedListener(intake, 'click', () => { haptic(15); openLoadIntake(); });
   }
+  await renderLoadsDecisionInbox();
   await renderLoadInbox();
   _refreshInboxRecentBar();
 }
@@ -25144,37 +25368,38 @@ function _renderInboxParsed(parsed, card) {
     if (btn) btn.innerHTML = editing ? '&#9998; Edit' : 'Done';
   });
 
-  // Score load — fill evaluator and trigger
-  resultDiv.querySelector('#f23ScoreLoad')?.addEventListener('click', () => {
+  // Score load — persist reviewed evidence first, then open the canonical evaluator.
+  resultDiv.querySelector('#f23ScoreLoad')?.addEventListener('click', async () => {
     haptic(15);
     const ea = resultDiv.querySelector('#f23EditArea');
     const editing = ea && ea.style.display !== 'none';
     const origin = editing ? (resultDiv.querySelector('#f23eOrigin')?.value || parsed.origin) : parsed.origin;
-    const dest   = editing ? (resultDiv.querySelector('#f23eDest')?.value   || parsed.destination) : parsed.destination;
-    const miles  = editing ? (Number(resultDiv.querySelector('#f23eMiles')?.value) || parsed.loadedMiles) : parsed.loadedMiles;
-    // v24.0.4 item 2: `Number(x) || parsed.emptyMiles` destroyed an explicitly
-    // typed 0 (0 is falsy), so the inbox could never record a verified zero
-    // deadhead. knownNum() distinguishes a typed 0 from an empty field, and the
-    // parsed value is used only when the operator actually left it blank.
+    const dest = editing ? (resultDiv.querySelector('#f23eDest')?.value || parsed.destination) : parsed.destination;
+    const miles = editing ? (knownNum(resultDiv.querySelector('#f23eMiles')?.value) ?? knownNum(parsed.loadedMiles)) : knownNum(parsed.loadedMiles);
     const dhEdited = editing ? knownNum(resultDiv.querySelector('#f23eDH')?.value) : null;
-    const dh     = dhEdited !== null ? dhEdited : knownNum(parsed.emptyMiles);
-    const pay    = editing ? (Number(resultDiv.querySelector('#f23ePay')?.value)   || parsed.pay)         : parsed.pay;
-
-    const revEl  = $('#mwRevenue');   if (revEl)  revEl.value  = pay   || '';
-    const lmEl   = $('#mwLoadedMi');  if (lmEl)   lmEl.value   = miles || '';
-    // Blank ONLY when genuinely unknown — a verified 0 must survive to the evaluator.
-    const dmEl   = $('#mwDeadMi');    if (dmEl)   dmEl.value   = dh === null ? '' : String(dh);
-    const origEl = $('#mwOrigin');    if (origEl) origEl.value = origin || '';
-    const destEl = $('#mwDest');      if (destEl) destEl.value = dest   || '';
-    const brkEl  = $('#mwBroker');    if (brkEl && parsed.customer) brkEl.value = parsed.customer;
-
-    // Trigger live evaluation
-    if (revEl) revEl.dispatchEvent(new Event('input', { bubbles: true }));
-    setTimeout(() => {
-      const out = $('#mwEvalOutput');
-      if (out) out.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 250);
-    toast('Load scored! See the results below.');
+    const dh = dhEdited !== null ? dhEdited : knownNum(parsed.emptyMiles);
+    const payEdited = editing ? knownNum(resultDiv.querySelector('#f23ePay')?.value) : null;
+    const pay = payEdited !== null ? payEdited : knownNum(parsed.pay);
+    try {
+      await persistLoadDecisionEvidence({
+        orderNo: parsed.orderNo || '', broker: parsed.broker || '',
+        origin, destination:dest, loadedMiles:miles, deadheadMiles:dh, pay,
+        pickupDate:parsed.pickupDate || '', pickupTime:parsed.pickupTime || '',
+        deliveryDate:parsed.deliveryDate || '', deliveryTime:parsed.deliveryTime || '',
+      }, { sourceName:'Loads paste review' });
+      await renderLoadsDecisionInbox();
+      await _deepLinkEvaluate({
+        revenue: pay === null || pay === 0 ? '' : pay,
+        loaded:miles, deadhead:dh, origin:origin || '', dest:dest || '',
+        broker:parsed.broker || '', weight:knownNum(parsed.weight),
+        ...parseDimsInches(parsed.dimensions || ''),
+        pickup:(parsed.pickupDate && parsed.pickupTime) ? parsed.pickupDate + 'T' + parsed.pickupTime : '',
+      });
+      toast('Load saved to Loads and scored.');
+    } catch(e){
+      console.warn('[FL] Loads decision intake:', e);
+      toast('Could not save this load. Nothing was marked won or completed.', true);
+    }
   });
 
   // Paste different
@@ -25358,6 +25583,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     // normalizer, so a lookup-based test passes with the defect reinstated.
     usaNormCity, caNormCity,
     parseLoadTextEnhanced, parseLoadTextForInbox,
+    // Issue #417 Slice B — durable Loads decision inbox.
+    persistLoadDecisionEvidence, buildLoadDecisionProjection, renderLoadsDecisionInbox,
+    openLoadDecisionDetails, _setLoadInboxDisposition, _setLoadInboxOpportunity, LOADS_INBOX_DISPOSITION_KEY,
     parseInviteInput, openInviteEntry, parseDimsInches,
     isSettingExportSafe, exportSafeSettings,
     isSettingImportSafe, idbRecordHasOwnKey,   // Issue #219
