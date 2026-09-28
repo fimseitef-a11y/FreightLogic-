@@ -51,6 +51,7 @@ import { runSpec as positionAuthority } from './integration/position-authority.s
 import { runSpec as todayIA } from './integration/today-ia.spec.mjs';
 import { runSpec as productIASliceA } from './integration/product-ia-slice-a.spec.mjs';
 import { runSpec as productIASliceB } from './integration/product-ia-slice-b.spec.mjs';
+import { runSpec as productIASliceC } from './integration/product-ia-slice-c.spec.mjs';
 import { runSpec as uxIAA2Z } from './integration/ux-ia-a2z.spec.mjs';
 import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
 // Issue #219 — untrusted-import credential trust boundary
@@ -167,6 +168,7 @@ const specs = [
   todayIA,
   productIASliceA,
   productIASliceB,
+  productIASliceC,
   uxIAA2Z,
   screenshotIntake,
   shortcutsDeepLinks,
