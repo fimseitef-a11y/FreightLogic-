@@ -6368,6 +6368,7 @@ async function renderCurrentLoad(){
     + escapeHtml(stage) + '</div></div>' + (orderNo ? '<div class="pill">#' + escapeHtml(orderNo) + '</div>' : '') + '</div>'
     + (route ? '<div style="font-size:18px;font-weight:800;margin-top:16px">' + escapeHtml(route) + '</div>' : '')
     + (broker ? '<div class="muted" style="font-size:13px;margin-top:6px">' + escapeHtml(broker) + '</div>' : '') + tracking
+    + (_activeTracking ? '<div id="currentTrackingHost" style="margin-top:12px"></div>' : '')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'
     + (trip?.executionStatus === 'PICKED_UP'
       ? '<button class="btn primary" data-current-action="delivered" id="currentDelivered" style="min-height:48px">Delivered</button>'
@@ -6375,6 +6376,19 @@ async function renderCurrentLoad(){
         ? '<button class="btn primary" data-current-action="edit" id="currentEditTrip" style="min-height:48px">Update Stage</button>'
         : '<a class="btn primary" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">Open History</a>'))
     + '<a class="btn" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a></div></div>';
+  if (_activeTracking){
+    const trackingHost = root.querySelector('#currentTrackingHost');
+    if (trackingHost){
+      let trackDiv = $('#f21TrackArea');
+      if (!trackDiv){
+        trackDiv = document.createElement('div');
+        trackDiv.id = 'f21TrackArea';
+      }
+      trackingHost.appendChild(trackDiv);
+      trackDiv.style.display = '';
+      _renderTrackingActive(trackDiv);
+    }
+  }
   root.querySelector('#currentEditTrip')?.addEventListener('click', ()=>{
     if (trip) openTripWizard(trip);
   });
@@ -23615,10 +23629,14 @@ async function renderTripTrackingUI() {
   if (!trackDiv) {
     trackDiv = document.createElement('div');
     trackDiv.id = 'f21TrackArea';
-    slot.appendChild(trackDiv);
   }
-  if (_activeTracking) { _renderTrackingActive(trackDiv); }
-  else { _renderTrackingIdle(trackDiv); }
+  if (trackDiv.parentNode !== slot) slot.appendChild(trackDiv);
+  if (_activeTracking) {
+    trackDiv.style.display = 'none';
+  } else {
+    trackDiv.style.display = '';
+    _renderTrackingIdle(trackDiv);
+  }
 }
 
 // #205 UX/IA -- the idle state is a standing offer, not news.
