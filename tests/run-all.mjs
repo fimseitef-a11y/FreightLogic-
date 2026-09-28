@@ -49,6 +49,7 @@ import { runSpec as pickupFeasibility } from './integration/pickup-feasibility.s
 import { runSpec as positionAuthority } from './integration/position-authority.spec.mjs';
 // Issue #205 — driver-first UX/IA restructure of Today and More
 import { runSpec as todayIA } from './integration/today-ia.spec.mjs';
+import { runSpec as productIASliceA } from './integration/product-ia-slice-a.spec.mjs';
 import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
 // Issue #219 — untrusted-import credential trust boundary
 import { runSpec as importCredentialTrustBoundary } from './integration/import-credential-trust-boundary.spec.mjs';
@@ -162,6 +163,7 @@ const specs = [
   pickupFeasibility,
   positionAuthority,
   todayIA,
+  productIASliceA,
   screenshotIntake,
   shortcutsDeepLinks,
   nextMoveS1,

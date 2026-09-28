@@ -1,8 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.48 USA ENGINE
- *  v24.0.48 "Field-Test Workflow Repair": repairs real-iPhone findings from
+/** FreightLogic v24.0.49 USA ENGINE
+ *  v24.0.49 "Field-Test Workflow Repair": repairs real-iPhone findings from
  *  2026-09-27: evaluator booking preserves an editable Order #, new trips carry
  *  an explicit operational stage instead of treating appointment dates as
  *  completion, post-trip review/history wait for delivery, imported Unknown
@@ -581,7 +581,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.48';
+const APP_VERSION = '24.0.49';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -6277,13 +6277,178 @@ async function handleShareTarget(){
   }
 }
 
+// Issue #417 Slice A — explicit operational destinations without duplicating economics, trip, report, or lifecycle authority.
+function ensureIssue417SliceAViews(){
+  const main = document.querySelector('main.app');
+  if (!main) return;
+  if (!$('#view-current')){
+    const current = document.createElement('section');
+    current.id = 'view-current'; current.className = 'view'; current.style.display = 'none';
+    current.setAttribute('aria-label', 'Current Load'); current.innerHTML = '<div id="currentLoadBody"></div>'; main.appendChild(current);
+  }
+  if (!$('#view-reports')){
+    const reports = document.createElement('section');
+    reports.id = 'view-reports'; reports.className = 'view'; reports.style.display = 'none';
+    reports.setAttribute('aria-label', 'Reports'); reports.innerHTML = '<div id="reportsBody"></div>'; main.appendChild(reports);
+  }
+  const reportView = $('#view-reports');
+  for (const id of ['taxPeriodTabs','acctPeriodTabs']){
+    const card = $('#' + id)?.closest('.card');
+    if (reportView && card && !reportView.contains(card)) reportView.appendChild(card);
+  }
+}
+ensureIssue417SliceAViews();
+
+function _activeLifecycleRows(rows){
+  return (Array.isArray(rows) ? rows : []).filter(lc => lc && lc.opportunity === 'WON'
+    && ['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(lc.execution))
+    .sort((a,b) => finiteNum(b.updatedAt, 0) - finiteNum(a.updatedAt, 0));
+}
+function _activeTripRows(rows){
+  return (Array.isArray(rows) ? rows : []).filter(t => t
+    && ['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(t.executionStatus)
+    && !t.fellThrough)
+    .sort((a,b) => finiteNum(b.updatedAt || b.created, 0) - finiteNum(a.updatedAt || a.created, 0));
+}
+function _currentTripStageLabel(status){
+  if (status === 'PICKED_UP') return 'In transit · Picked up';
+  if (status === 'EN_ROUTE_PICKUP') return 'En route to pickup';
+  if (status === 'NOT_STARTED') return 'Booked · Not started';
+  return 'Trip in progress';
+}
+async function resolveTodayPrimaryAction(){
+  if (_activeTracking) return { label:'Current Load', hash:'#current', reason:'Trip tracking is active' };
+  try {
+    const trips = await dumpStore('trips');
+    const activeTrip = _activeTripRows(trips)[0];
+    if (activeTrip) return { label:'Current Load', hash:'#current', reason:activeTrip.executionStatus };
+    const active = _activeLifecycleRows(await listLifecycle());
+    if (active.length) return { label:'Current Load', hash:'#current', reason:lifecycleDisplayStage(active[0]) };
+  } catch(e){ console.warn('[FL] Today primary action:', e); }
+  return { label:'Review / Scan Loads', hash:'#loads', reason:'No active load' };
+}
+async function renderTodayPrimaryAction(slot){
+  if (!slot) return;
+  let actionEl = slot.querySelector('[data-today-primary-action]');
+  if (!actionEl){
+    actionEl = document.createElement('a');
+    actionEl.dataset.todayPrimaryAction = 'true';
+    actionEl.className = 'btn primary';
+    actionEl.style.cssText = 'width:100%;min-height:52px;font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;justify-content:center;text-decoration:none';
+    slot.insertBefore(actionEl, slot.firstChild);
+  }
+  const action = await resolveTodayPrimaryAction();
+  actionEl.href = action.hash;
+  actionEl.textContent = action.label;
+  actionEl.setAttribute('aria-label', action.label);
+  actionEl.title = action.reason;
+}
+async function renderCurrentLoad(){
+  const root = $('#currentLoadBody'); if (!root) return;
+  let trips = [], lifecycle = [];
+  try { trips = await dumpStore('trips'); } catch(e){ console.warn('[FL] current load trips:', e); }
+  try { lifecycle = _activeLifecycleRows(await listLifecycle()); } catch(e){ console.warn('[FL] current load lifecycle:', e); }
+  const trip = _activeTripRows(trips)[0] || null;
+  const lc = lifecycle[0] || null;
+  if (!trip && !lc && !_activeTracking){
+    root.innerHTML = '<div class="card"><h2 style="margin:0 0 8px">Current Load</h2><div class="muted" style="font-size:13px;line-height:1.5">No active load is recorded.</div>'
+      + '<a class="btn primary" href="#loads" style="width:100%;min-height:48px;margin-top:14px;display:flex;align-items:center;justify-content:center;text-decoration:none">Review / Scan Loads</a></div>';
+    return;
+  }
+  const orderNo = trip?.orderNo || lc?.orderNo || '';
+  const stage = trip
+    ? _currentTripStageLabel(trip.executionStatus)
+    : (lc ? lifecycleDisplayStage(lc) : 'Trip in progress');
+  const origin = trip?.origin || lc?.origin || '';
+  const destination = trip?.destination || lc?.destination || '';
+  const route = [origin, destination].filter(Boolean).join(' → ');
+  const broker = trip?.broker || trip?.customer || lc?.brokerDisplay || lc?.broker || '';
+  const tracking = _activeTracking ? '<div style="font-size:12px;color:var(--good);font-weight:700;margin-top:8px">● GPS trip tracking active</div>' : '';
+  root.innerHTML = '<div class="card card-hero"><div class="fl-card-hdr"><div><h2 style="margin:0">Current Load</h2><div class="muted" style="font-size:12px;margin-top:4px">'
+    + escapeHtml(stage) + '</div></div>' + (orderNo ? '<div class="pill">#' + escapeHtml(orderNo) + '</div>' : '') + '</div>'
+    + (route ? '<div style="font-size:18px;font-weight:800;margin-top:16px">' + escapeHtml(route) + '</div>' : '')
+    + (broker ? '<div class="muted" style="font-size:13px;margin-top:6px">' + escapeHtml(broker) + '</div>' : '') + tracking
+    + (_activeTracking ? '<div id="currentTrackingHost" style="margin-top:12px"></div>' : '')
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'
+    + (trip?.executionStatus === 'PICKED_UP'
+      ? '<button class="btn primary" data-current-action="delivered" id="currentDelivered" style="min-height:48px">Delivered</button>'
+      : (trip
+        ? '<button class="btn primary" data-current-action="edit" id="currentEditTrip" style="min-height:48px">Update Stage</button>'
+        : '<a class="btn primary" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">Open History</a>'))
+    + '<a class="btn" href="#trips" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a></div></div>';
+  if (_activeTracking){
+    const trackingHost = root.querySelector('#currentTrackingHost');
+    if (trackingHost){
+      let trackDiv = $('#f21TrackArea');
+      if (!trackDiv){
+        trackDiv = document.createElement('div');
+        trackDiv.id = 'f21TrackArea';
+      }
+      trackingHost.appendChild(trackDiv);
+      trackDiv.style.display = '';
+      _renderTrackingActive(trackDiv);
+    }
+  }
+  root.querySelector('#currentEditTrip')?.addEventListener('click', ()=>{
+    if (trip) openTripWizard(trip);
+  });
+  root.querySelector('#currentDelivered')?.addEventListener('click', async ()=>{
+    if (!trip || trip.executionStatus !== 'PICKED_UP') return;
+    haptic(20);
+    try {
+      const saved = await upsertTrip({ ...trip, executionStatus:'DELIVERED', deliveryDate: trip.deliveryDate || isoDate() });
+      await _postTripSaveLaneHook(saved);
+      _positioningCache = null;
+      invalidateKPICache();
+      if (saved.destination) _triggerPostDeliveryBrief(saved.destination).catch(()=>{});
+      toast('Load marked delivered.');
+      location.hash = '#trips';
+    } catch(e){ toast(e?.message || 'Could not mark delivered.', true); }
+  });
+}
+function ensureTripsHistoryNav(){
+  const view = $('#view-trips'); if (!view || $('#tripsHistoryNav')) return;
+  const host = view.querySelector('.card'); if (!host) return;
+  const row = document.createElement('div'); row.id = 'tripsHistoryNav';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px';
+  row.innerHTML = '<a class="btn" href="#current" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Current</a>'
+    + '<a class="btn" href="#history" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a>'
+    + '<a class="btn" href="#reports" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Reports</a>';
+  host.appendChild(row);
+}
+async function renderReports(){
+  const root = $('#reportsBody'); if (!root) return;
+  if (!root.dataset.sliceABuilt){
+    root.dataset.sliceABuilt = 'true';
+    root.innerHTML = '<div id="reportsSummary"></div><div id="reportsLegacyOutputs"></div>';
+    const legacy = $('#reportsLegacyOutputs');
+    const taxCard = $('#taxPeriodTabs')?.closest('.card');
+    const accountantCard = $('#acctPeriodTabs')?.closest('.card');
+    if (taxCard) legacy.appendChild(taxCard);
+    if (accountantCard) legacy.appendChild(accountantCard);
+  }
+  let count = 0; try { count = (await dumpStore('weeklyReports')).length; } catch(e){ console.warn('[FL] reports count:', e); }
+  const summary = $('#reportsSummary');
+  summary.innerHTML = '<div class="card card-hero"><h2 style="margin:0 0 6px">Reports</h2><div class="muted" style="font-size:13px;line-height:1.5">Weekly performance, tax exports and accountant-ready packages in one place.</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px">' + escapeHtml(String(count)) + ' saved weekly report' + (count === 1 ? '' : 's') + '</div></div>'
+    + '<div class="spacer"></div><div class="card"><div style="display:grid;gap:10px"><button class="btn primary" id="reportsWeekly" style="min-height:48px">Weekly Reports</button>'
+    + '<button class="btn" id="reportsWeeklyImage" style="min-height:48px">Generate Weekly Share Report</button>'
+    + '<button class="btn" id="reportsAccountant" style="min-height:48px">Generate Accountant Package</button>'
+    + '<button class="btn" id="reportsCPA" style="min-height:48px">CPA Package</button><button class="btn" id="reportsTax" style="min-height:48px">Tax Season Export</button></div></div>';
+  summary.querySelector('#reportsWeekly')?.addEventListener('click', ()=> openWeeklyReports());
+  summary.querySelector('#reportsWeeklyImage')?.addEventListener('click', ()=> generateWeeklyReport());
+  summary.querySelector('#reportsAccountant')?.addEventListener('click', ()=> generateAccountantPackage(_acctPeriod));
+  summary.querySelector('#reportsCPA')?.addEventListener('click', ()=> openCPAPackage());
+  summary.querySelector('#reportsTax')?.addEventListener('click', ()=> openTaxSeasonExport());
+}
+
 // ---- Router ----
-const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), expenses:$('#view-expenses'),
+const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), current:$('#view-current'), reports:$('#view-reports'), expenses:$('#view-expenses'),
   money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
 
 function setActiveNav(name){
   // Sub-sections accessible from More menu highlight the More tab
-  const navName = ['expenses','fuel','insights'].includes(name) ? 'more' : name;
+  const navName = ['expenses','fuel','insights','reports'].includes(name) ? 'more' : (name === 'current' ? 'trips' : name);
   $$('[data-nav]').forEach(a => {
     const isActive = a.dataset.nav === navName;
     a.classList.toggle('active', isActive);
@@ -6310,7 +6475,10 @@ async function refreshUnpaidBadge(){
 }
 
 async function navigate(){
-  const hash = (location.hash || '#home').slice(1);
+  let hash = (location.hash || '#home').slice(1);
+  // Slice A compatibility: old History links keep landing on canonical Trips history.
+  if (hash === 'history') { location.hash = '#trips'; return; }
+  if (hash === 'reports') hash = 'reports';
 
   // ── Handle share target: process shared files, then redirect to home ──
   if (hash === 'share') {
@@ -6339,7 +6507,9 @@ async function navigate(){
   window.scrollTo({top:0, behavior:'instant'});
   if (name === 'home') await renderHome();
   if (name === 'loads') await renderLoadsView();
-  if (name === 'trips') await renderTrips(true);
+  if (name === 'trips') { ensureTripsHistoryNav(); await renderTrips(true); }
+  if (name === 'current') await renderCurrentLoad();
+  if (name === 'reports') await renderReports();
   if (name === 'expenses') await renderExpenses(true);
   if (name === 'money') await renderAR();
   if (name === 'fuel') await renderFuel(true);
@@ -8443,13 +8613,10 @@ const MORE_GROUPS = [
 const MORE_TILES = [
   { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
   { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
-  { icon:'$', title:'Money / AR', sub:'Unpaid trips and aging', hash:'#money', section:'PRIMARY', group:'money' },
   { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'money' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
   { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view and accountant export', hash:'#insights', section:'PRIMARY', group:'business' },
-  { icon:'📦', title:'CPA Package', sub:'Quarterly report and export', act:'cpaPackage', section:'ADVANCED', group:'business' },
-  { icon:'🗂', title:'Tax Season Export', sub:'Schedule C and mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
+  { icon:'📊', title:'Reports', sub:'Weekly performance, tax and accountant exports', hash:'#reports', section:'PRIMARY', group:'business' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
   { icon:'📥', title:'Import Data', sub:'CSV, Excel, JSON, PDF, TXT', act:'import', section:'ADVANCED', group:'data' },
   { icon:'💿', title:'Storage Health', sub:'Local storage and cleanup', act:'storageHealth', section:'ADVANCED', group:'data' },
@@ -23457,14 +23624,19 @@ async function renderTripTrackingUI() {
     slot.insertBefore(ob, slot.firstChild);
     markOnboardingExposure(ob, 'f21OnboardingSeen');
   }
+  await renderTodayPrimaryAction(slot);
   let trackDiv = $('#f21TrackArea');
   if (!trackDiv) {
     trackDiv = document.createElement('div');
     trackDiv.id = 'f21TrackArea';
-    slot.appendChild(trackDiv);
   }
-  if (_activeTracking) { _renderTrackingActive(trackDiv); }
-  else { _renderTrackingIdle(trackDiv); }
+  if (trackDiv.parentNode !== slot) slot.appendChild(trackDiv);
+  if (_activeTracking) {
+    trackDiv.style.display = 'none';
+  } else {
+    trackDiv.style.display = '';
+    _renderTrackingIdle(trackDiv);
+  }
 }
 
 // #205 UX/IA -- the idle state is a standing offer, not news.
