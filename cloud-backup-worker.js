@@ -802,6 +802,7 @@ export default {
       if (!driverUserId) {
         return json({ ok: false, error: 'Invalid token' }, 403, cors);
       }
+      let canonicalUser = null;
       {
         const userRaw = await env.BACKUPS.get('user:' + driverUserId);
         let userRec = null;
@@ -818,8 +819,58 @@ export default {
           try { await env.BACKUPS.delete('tokh:' + driverTokenHash); } catch (e) {}
           return json({ ok: false, error: 'Token superseded' }, 403, cors);
         }
+        canonicalUser = userRec;
       }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
+
+      // ── AIAG-TASK-0022: authenticated private Agent RPC ───────────────────
+      // The Agent Worker itself has no public route. This is the sole HTTP
+      // ingress and it sits after canonical driver-token authentication.
+      if (request.method === 'POST' && path === '/agent/evaluate') {
+        const clAgent = parseInt(request.headers.get('Content-Length') || '0', 10);
+        if (clAgent > AGENT_RPC_MAX_BYTES) {
+          return json({ ok: false, code: 'AGENT_ENVELOPE_TOO_LARGE', error: 'Agent request too large' }, 413, cors);
+        }
+
+        const envelope = await request.json().catch(() => null);
+        if (!agentRpcPlainObject(envelope)) {
+          return json({ ok: false, code: 'INVALID_ENVELOPE', error: 'Invalid Agent request' }, 400, cors);
+        }
+
+        const guarded = await guardAgentRpcBeforeBinding(env, driverUserId, canonicalUser, envelope);
+        if (!guarded.ok) {
+          const status = guarded.code === 'AGENT_RATE_LIMITED' ? 429
+            : guarded.code === 'AGENT_RATE_LIMIT_UNAVAILABLE' ? 503
+            : 403;
+          return json({ ok: false, code: guarded.code, error: 'Agent request rejected' }, status, cors);
+        }
+
+        if (!env.AGENT || typeof env.AGENT.evaluate !== 'function') {
+          return json({ ok: false, code: 'AGENT_BINDING_UNAVAILABLE', error: 'Agent service unavailable' }, 503, cors);
+        }
+
+        let result;
+        try {
+          result = await env.AGENT.evaluate(envelope);
+        } catch (error) {
+          // Never log the envelope or caller identity here. The binding failure
+          // itself is enough operational evidence.
+          console.error('[FL] Agent RPC failed');
+          return json({ ok: false, code: 'AGENT_RPC_FAILED', error: 'Agent service unavailable' }, 502, cors);
+        }
+
+        if (!agentRpcPlainObject(result)) {
+          return json({ ok: false, code: 'AGENT_INVALID_RESPONSE', error: 'Agent service unavailable' }, 502, cors);
+        }
+
+        if (result.ok === false) {
+          const status = result.code === 'AGENT_DISABLED' ? 503
+            : result.code === 'IDEMPOTENCY_CONFLICT' ? 409
+            : 400;
+          return json(result, status, cors);
+        }
+        return json(result, 200, cors);
+      }
 
       // ── v24: Web Push subscriptions (docs/WEB_PUSH_CONTRACT.md §4–5) ──────
       if (path === '/push/subscribe' && (request.method === 'POST' || request.method === 'DELETE')) {
