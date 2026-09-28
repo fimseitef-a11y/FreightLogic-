@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0029 — CI stability: serialize two observed navigation/storage-sensitive specs; no runtime changes. | 2026-09-28T19:53:00Z |
+| gpt | — idle — PR #428 open for TASK-0029 CI stability; PR #427 Slice E waits on this gate. | 2026-09-28T19:55:00Z |
 
 ---
 
