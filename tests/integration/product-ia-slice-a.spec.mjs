@@ -135,6 +135,8 @@ test('[UXIA-09A] More deduplicates report shortcuts once Reports owns them', () 
   ok(/title:'Reports'[^\n]+hash:'#reports'/.test(block), 'More must keep one canonical Reports destination');
   ok(!/title:'CPA Package'|title:'Tax Season Export'/.test(block),
     'CPA and tax exports must live under Reports instead of duplicate More entries');
+  ok(!/title:'Money \/ AR'/.test(block),
+    'Money is already a primary destination and must not be duplicated in More');
 });
 
 test('[UXIA-10] Reports delegates to existing canonical report engines', () => {
