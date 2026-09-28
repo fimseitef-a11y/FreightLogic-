@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0023 — production Agent model adapter + bounded activation canary only. Owns agent-runtime/ and exact AI Agent cutover workflow/test docs; do not touch PR #418/app.js. | 2026-09-28T07:49:00Z |
+| gpt | AIAG-TASK-0024 — FreightLogic UX/IA A-to-Z sweep: A3 deadhead persistence first, then Scan/Loads/More/Settings/Money/Documents/onboarding consolidation. app.js and related shared UI paths require live lock; no merge/deploy/PC/ELI authority. | 2026-09-28T10:34:00Z |
 
 ---
 
