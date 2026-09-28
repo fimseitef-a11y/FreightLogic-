@@ -1,8 +1,8 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.48 USA ENGINE
- *  v24.0.48 "Field-Test Workflow Repair": repairs real-iPhone findings from
+/** FreightLogic v24.0.49 USA ENGINE
+ *  v24.0.49 "Field-Test Workflow Repair": repairs real-iPhone findings from
  *  2026-09-27: evaluator booking preserves an editable Order #, new trips carry
  *  an explicit operational stage instead of treating appointment dates as
  *  completion, post-trip review/history wait for delivery, imported Unknown
@@ -581,7 +581,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.48';
+const APP_VERSION = '24.0.49';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
