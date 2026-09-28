@@ -13,6 +13,7 @@ import { stopServer, SPEC_CTX } from './lib/harness.mjs';
 import { runSpec as unitPureFunctions } from './unit/pure-functions.spec.mjs';
 import { runSpec as serviceWorkerShell } from './unit/service-worker-shell.spec.mjs';
 import { runSpec as releaseHygiene } from './unit/release-hygiene.spec.mjs';
+import { runSpec as ciSensitiveSerial } from './unit/ci-sensitive-serial.spec.mjs';
 // Issue #224 — suite readiness contract + lifecycle diagnostics
 import { runSpec as harnessReadiness } from './unit/harness-readiness.spec.mjs';
 import { runSpec as cacheGeneration } from './unit/cache-generation.spec.mjs';
@@ -121,6 +122,7 @@ const specs = [
   unitPureFunctions,
   serviceWorkerShell,
   releaseHygiene,
+  ciSensitiveSerial,
   harnessReadiness,
   cacheGeneration,
   deployAssetCoverage,
@@ -248,7 +250,23 @@ const TIMINGS_FILE = path.join(
 let timings = {};
 try { timings = JSON.parse(readFileSync(TIMINGS_FILE, 'utf8')); } catch (_) { timings = {}; }
 
-const queue = specs.map((fn, i) => ({ fn, i, key: fn.name || `spec_${i}` }));
+/* Two specs have now produced rotating, load-sensitive failures only in the
+   parallel full-suite gate while each passes on the next unchanged-head run:
+   backup/restore lost a seeded GPS row after document lifecycle churn, and the
+   Slice-D onboarding test had its input detached during a render. They exercise
+   real browser navigation + IndexedDB lifecycle boundaries. Keep every
+   assertion and timeout intact; simply do not CPU-schedule them beside three
+   other browser-heavy specs. This adds only their own runtime to the tail.
+   Importantly, this is NOT a retry/quarantine: each still executes exactly once
+   and still gates the aggregate exit code. */
+const SERIAL_SPECS = new Set([
+  backupRestoreParity,
+  productIASliceD,
+]);
+
+const allJobs = specs.map((fn, i) => ({ fn, i, key: fn.name || `spec_${i}` }));
+const serialJobs = allJobs.filter(job => SERIAL_SPECS.has(job.fn));
+const queue = allJobs.filter(job => !SERIAL_SPECS.has(job.fn));
 if (CONCURRENCY > 1) {
   // Unknown duration sorts FIRST: a spec nobody has timed might be the long
   // one, and starting it early is the cheap side of that bet.
@@ -278,32 +296,39 @@ const results = new Array(specs.length);
 let cursor = 0;
 let done = 0;
 
+async function runJob(job) {
+  const store = { label: job.key, out: [] };
+  const started = Date.now();
+  let r;
+  try {
+    r = await SPEC_CTX.run(store, () => job.fn());
+  } catch (e) {
+    // A spec that throws outside its own assertions would otherwise vanish
+    // from the totals and the run would exit 0 having tested less than it
+    // reported. Surface it as a failure.
+    r = { file: job.key, pass: 0, fail: 1, failures: [{ name: `runSpec threw: ${String(e && e.message || e)}` }] };
+  }
+  timings[job.key] = Date.now() - started;
+  results[job.i] = r;
+  done++;
+  if (CONCURRENCY > 1) {
+    for (const args of store.out) realLog(...args);
+    realLog(`  [${String(done).padStart(2)}/${specs.length}] ${r.file} — ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+}
+
 async function worker() {
   for (;;) {
     const job = queue[cursor++];
     if (!job) return;
-    const store = { label: job.key, out: [] };
-    const started = Date.now();
-    let r;
-    try {
-      r = await SPEC_CTX.run(store, () => job.fn());
-    } catch (e) {
-      // A spec that throws outside its own assertions would otherwise vanish
-      // from the totals and the run would exit 0 having tested less than it
-      // reported. Surface it as a failure.
-      r = { file: job.key, pass: 0, fail: 1, failures: [{ name: `runSpec threw: ${String(e && e.message || e)}` }] };
-    }
-    timings[job.key] = Date.now() - started;
-    results[job.i] = r;
-    done++;
-    if (CONCURRENCY > 1) {
-      for (const args of store.out) realLog(...args);
-      realLog(`  [${String(done).padStart(2)}/${specs.length}] ${r.file} — ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    }
+    await runJob(job);
   }
 }
 
 await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+// Navigation/storage-sensitive specs run once, after the parallel pool drains.
+// No retries, skips, timeout changes or assertion changes are permitted here.
+for (const job of serialJobs) await runJob(job);
 
 console.log = realLog;
 console.error = realErr;

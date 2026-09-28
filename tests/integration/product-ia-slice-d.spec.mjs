@@ -14,12 +14,11 @@ async function boot(){
 }
 
 test('[UXIA-11] two-step first run captures explicit carrier and Year Make Model Trim identity', async () => {
-  const app=await boot();
+  // This contract is specifically the real first-run path. Do not suppress the
+  // app's queued 800ms first-run check and then manually open a second wizard:
+  // the queued check can re-render the modal while Playwright is filling step 2.
+  const app=await launchApp();
   try{
-    await app.page.evaluate(async () => {
-      await window.__FL_TESTS.setSetting('f26SetupComplete', false);
-      window.__FL_TESTS.openSetupWizard();
-    });
     await app.page.waitForSelector('#wz_home');
     ok(await app.page.locator('#wz_home').count()===1,'step 1 remains Home');
     await app.page.fill('#wz_home','Milwaukee, WI');
