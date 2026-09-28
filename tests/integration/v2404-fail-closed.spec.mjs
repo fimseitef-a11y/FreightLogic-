@@ -97,34 +97,33 @@ test('[V2404-05] the parser reports an unstated deadhead as UNKNOWN, not zero', 
   eq(r.stated, 40, 'a stated deadhead must still parse to its real value');
 });
 
-test('[V2404-06] Quick Evaluate refuses to grade a load whose deadhead was never supplied', async () => {
-  // The recon case: the full evaluator refused this load while Quick Evaluate
-  // returned "A / ACCEPT / True RPM $2.00" off a fabricated zero deadhead.
-  await app.page.evaluate(async () => {
-    await window.__FL_TESTS.setSetting('quickEvalOnboardingSeen', true);
-    location.hash = '#home';
-  });
-  await app.page.waitForTimeout(700);
-  await app.page.click('#homeQuickEvalBtn');
-  await app.page.waitForSelector('#qeText', { timeout: 15000 });
-  await app.page.fill('#qeText', 'Chicago, IL to Detroit, MI\n280 miles\n$560');
-  await app.page.click('#qeSubmitText');
-  await app.page.waitForTimeout(2200);
+test('[V2404-06] Scan evaluator refuses to grade a load whose deadhead was never supplied', async () => {
+  // Quick Evaluate was removed from Today by the driver-first IA sweep. The
+  // canonical Scan evaluator remains the authority and must preserve the same
+  // fail-closed rule that originally caught the fabricated-zero defect.
+  await openEvaluator(app.page);
+  await app.page.fill('#mwOrigin', 'Chicago, IL');
+  await app.page.fill('#mwDest', 'Detroit, MI');
+  await app.page.fill('#mwLoadedMi', '280');
+  await app.page.fill('#mwRevenue', '560');
+  await app.page.fill('#mwDeadMi', '');
+  await app.page.dispatchEvent('#mwRevenue', 'input');
+  await app.page.waitForTimeout(900);
 
   const state = await app.page.evaluate(() => {
-    const prev = document.querySelector('#qeEvalPreview');
-    const t = (prev?.textContent || '');
+    const out=document.getElementById('mwEvalOutput');
+    const t=out?.textContent||'';
     return {
-      deadheadField: document.getElementById('mwDeadMi')?.value ?? '(none)',
-      grade: prev?.querySelector('.fl-eval-grade')?.textContent || null,
-      asks: /Enter deadhead miles/i.test(t),
+      deadheadField:document.getElementById('mwDeadMi')?.value ?? '(none)',
+      grade:out?.querySelector('.fl-eval-grade')?.textContent||null,
+      asks:/Enter deadhead miles/i.test(t),
+      quickEvalPresent:!!document.getElementById('homeQuickEvalBtn'),
     };
   });
-  eq(state.deadheadField, '', 'Quick Evaluate must leave the deadhead field BLANK, not write "0" into it');
-  eq(state.grade, null, 'no grade may be produced from a deadhead the operator never supplied');
-  ok(state.asks, 'the evaluator must ask for the missing deadhead instead of assuming it');
-  await app.page.evaluate(() => { document.querySelector('.modal .x')?.click(); });
-  await app.page.waitForTimeout(400);
+  eq(state.quickEvalPresent,false,'the retired Today Quick Evaluate shortcut must stay absent');
+  eq(state.deadheadField,'','Scan must leave unstated deadhead blank');
+  eq(state.grade,null,'no grade may be produced from an unstated deadhead');
+  ok(state.asks,'the canonical evaluator must ask for deadhead instead of assuming zero');
 });
 
 test('[V2404-07] an explicitly entered 0 deadhead is still a real, graded zero', async () => {

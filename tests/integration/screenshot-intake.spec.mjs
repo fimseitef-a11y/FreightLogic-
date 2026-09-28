@@ -770,7 +770,7 @@ test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade
       return { text: q?.textContent || document.querySelector('#mwEvalOutput')?.textContent || '',
         grade: !!document.querySelector('#mwEvalOutput .grade-badge, #mwEvalOutput [data-grade]') };
     });
-    ok(/No pay posted/.test(r.text), `a quote shows the bid card — got ${JSON.stringify(r.text.slice(0, 160))}`);
+    ok(/Build My Bid/.test(r.text) && /No rate posted/.test(r.text), `a no-rate quote shows the bid-building card — got ${JSON.stringify(r.text.slice(0, 160))}`);
     ok(/355 loaded \+ 40 deadhead = 395 miles/.test(r.text), 'it states the miles the targets are built on');
     // $1.40 x 395 true miles = $553, the canonical minimum (generateBidRange).
     ok(/\$553/.test(r.text), `the minimum bid is the canonical $1.40 x total miles — got ${JSON.stringify(r.text)}`);
@@ -778,7 +778,7 @@ test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade
   } finally { await app.close(); }
 });
 
-test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
+test('[SSI-29] no rate and no deadhead: the message asks for deadhead, not revenue', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
@@ -791,8 +791,9 @@ test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
     await app.page.evaluate(() => document.querySelector('#liScore')?.click());
     await sleep(800);
     const msg = await app.page.evaluate(() => document.querySelector('#mwEvalOutput')?.textContent || '');
-    ok(/the pay \(Revenue\)/.test(msg), `the evaluator names the missing pay — got ${JSON.stringify(msg.slice(0, 160))}`);
-    ok(!/No pay posted/.test(msg), 'no bid card without the deadhead figure');
+    ok(/Enter deadhead miles/i.test(msg), `the bid workflow names the missing deadhead — got ${JSON.stringify(msg.slice(0, 160))}`);
+    ok(/Revenue is optional/i.test(msg), 'a missing posted rate must not be treated as a required input');
+    ok(!/data-eval-quote/.test(msg), 'no bid card is rendered until total miles are known');
   } finally { await app.close(); }
 });
 

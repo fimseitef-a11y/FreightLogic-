@@ -115,8 +115,8 @@ test('[RH-04] Voice Load is absent from every runtime surface (Issue #230)', () 
   ok(!index.includes('mwVoiceStatus'), 'the voice status region #mwVoiceStatus must be gone');
   ok(!/Paste,\s*Voice,\s*or\s*Type/i.test(index),
     'no driver-facing copy may still offer Voice input');
-  ok(/Load Intake — Paste or Type/.test(index),
-    'the load-intake control must still offer the surviving paste/type paths');
+  ok(/Paste screenshot\/text or enter manually/.test(index),
+    'the Scan intake control must still advertise the surviving paste/type/manual paths');
 
   const sw = readFileSync(path.join(REPO_ROOT, 'service-worker.js'), 'utf8');
   ok(!sw.includes('voice-load'),

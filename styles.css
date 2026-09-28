@@ -2314,7 +2314,7 @@ html body .bottom .nav a[data-nav="intel"] .nl {
 }
 
 
-/* v24.0.50 — active-trip Today is an execution launcher, not an idle dashboard. */
+/* Active-trip Today is an execution launcher, not an idle dashboard. */
 #view-home.today-execution-focus #homeQuickEvalCard,
 #view-home.today-execution-focus #homeMoneyCard,
 #view-home.today-execution-focus #homePositioningCard,
