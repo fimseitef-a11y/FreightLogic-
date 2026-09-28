@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | PR #424 repair — register Slice B spec and finish v24.0.51 governed parity markers. | 2026-09-28T13:39:00Z |
+| gpt | — idle — PR #424 merged; post-merge main/production verification in progress. | 2026-09-28T13:45:00Z |
 
 ---
 
