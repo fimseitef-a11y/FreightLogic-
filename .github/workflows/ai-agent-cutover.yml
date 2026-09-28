@@ -29,6 +29,7 @@ on:
         options:
           - CHECK_ONLY
           - DARK_CUTOVER
+          - ACTIVATE_CANARY
 
 permissions:
   contents: read
@@ -235,3 +236,225 @@ jobs:
           NODE
 
           echo 'DARK AGENT CUTOVER VERDICT: PASS — private binding reached; Agent remained disabled; public auth boundary preserved.'
+
+  activate-canary:
+    needs: contract
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'ACTIVATE_CANARY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Require Cloudflare deploy credential
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is unavailable."
+            exit 2
+          fi
+
+      - name: Reconfirm private default-off model target
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('agent-runtime/wrangler.jsonc', 'utf8'));
+          if (cfg.vars?.AGENT_ENABLED !== 'false') throw new Error('committed Agent default must remain off');
+          if (cfg.ai?.binding !== 'AI') throw new Error('Workers AI binding is missing');
+          if (cfg.workers_dev !== false || cfg.preview_urls !== false || 'routes' in cfg || 'route' in cfg) {
+            throw new Error('refusing publicly reachable Agent target');
+          }
+          NODE
+
+      - name: Activate private Agent with bounded Workers AI models
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc \
+            --var "AGENT_ENABLED:true" \
+                  "AGENT_MODEL_SMALL:@cf/meta/llama-3.1-8b-instruct-fp8" \
+                  "AGENT_MODEL_STRONG:@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+      - name: Run bounded production model canary with automatic rollback
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          rollback_needed=1
+          TOKEN="flk_$(openssl rand -hex 16)"
+          USER_ID="u_$(openssl rand -hex 10)"
+          TOKEN_HASH="$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')"
+          echo "::add-mask::$TOKEN"
+
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$KV_NAMESPACE_ID"
+          AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+
+          encode_key() {
+            node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
+          }
+
+          delete_key() {
+            local key="$1" enc
+            enc="$(encode_key "$key")"
+            curl -fsS -X DELETE -H "$AUTH" "$API/values/$enc" >/dev/null 2>&1 || true
+          }
+
+          rollback() {
+            echo "::warning::Activation canary failed; redeploying Agent disabled."
+            npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc \
+              --var "AGENT_ENABLED:false" \
+                    "AGENT_MODEL_SMALL:@cf/meta/llama-3.1-8b-instruct-fp8" \
+                    "AGENT_MODEL_STRONG:@cf/meta/llama-3.3-70b-instruct-fp8-fast" || true
+          }
+
+          finish() {
+            rc=$?
+            set +e
+            delete_key "user:$USER_ID"
+            delete_key "tokh:$TOKEN_HASH"
+            delete_key "rl:agent-rpc:$USER_ID:$(($(date +%s) / 3600))"
+            if [ "$rc" -ne 0 ] && [ "$rollback_needed" = '1' ]; then rollback; fi
+            exit "$rc"
+          }
+          trap finish EXIT
+
+          CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          RECORD="$(node -e '
+            const [userId, createdAt, tokenHash] = process.argv.slice(1);
+            process.stdout.write(JSON.stringify({userId,name:"Agent Activation Canary",tokenHash,createdAt,active:true,backupCount:0}));
+          ' "$USER_ID" "$CREATED_AT" "$TOKEN_HASH")"
+
+          put_value() {
+            local key="$1" value="$2" enc response
+            enc="$(encode_key "$key")"
+            response="$(curl -fsS -X PUT -H "$AUTH" -H 'Content-Type: text/plain' --data-binary "$value" \
+              "$API/values/$enc?expiration_ttl=900")"
+            printf '%s' "$response" | node -e '
+              let s=""; process.stdin.on("data",d=>s+=d); process.stdin.on("end",()=>{
+                const j=JSON.parse(s); if (!j.success) process.exit(1);
+              });'
+          }
+
+          put_value "tokh:$TOKEN_HASH" "$RECORD"
+          put_value "user:$USER_ID" "$RECORD"
+
+          ready=0
+          for attempt in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/agent-ready.json -w '%{http_code}' --max-time 15 \
+              -H "X-Backup-Token: $TOKEN" -H 'X-Device-Id: agent-activate' "$API_ORIGIN/status" || true)"
+            if [ "$code" = '200' ]; then ready=1; break; fi
+            sleep 5
+          done
+          [ "$ready" = '1' ] || {
+            echo "::error::Synthetic driver identity never became visible."
+            exit 2
+          }
+
+          node - "$USER_ID" > /tmp/agent-canary.json <<'NODE'
+          const userId = process.argv[2];
+          process.stdout.write(JSON.stringify({
+            id: "evt-activate-canary-001",
+            type: "load.explain",
+            occurredAt: new Date().toISOString(),
+            source: "freightlogic-worker",
+            actorScope: "driver:" + userId,
+            loadId: "synthetic-activation-load",
+            facts: {
+              originMarket: "Chicago",
+              destinationMarket: "Detroit",
+              loadedMiles: 280,
+              deadheadMiles: 35,
+              weightLb: 900,
+              pieces: 2,
+              equipment: "cargo-van"
+            },
+            provenance: {
+              canonical: "synthetic-activation",
+              observedAt: new Date().toISOString()
+            },
+            canonicalSnapshot: {
+              trueRpm: 1.61,
+              loadedRpm: 1.81,
+              grade: "B",
+              verdict: "ACCEPT",
+              baselineBid: 500,
+              marketBid: 525,
+              authorityVersion: "activation-canary"
+            },
+            privacyClass: "OPERATIONAL_MINIMIZED",
+            correlationId: "corr-activate-canary-001",
+            idempotencyKey: "idem-activate-canary-001",
+            schemaVersion: 1,
+            intent: "explain",
+            confidence: 0.9
+          }));
+          NODE
+
+          call_agent() {
+            local outfile="$1"
+            curl -sS -o "$outfile" -w '%{http_code}' --max-time 90 \
+              -H "Origin: $APP_ORIGIN" \
+              -H "X-Backup-Token: $TOKEN" \
+              -H 'X-Device-Id: agent-activate' \
+              -H 'Content-Type: application/json' \
+              --data-binary @/tmp/agent-canary.json \
+              "$API_ORIGIN/agent/evaluate"
+          }
+
+          code="$(call_agent /tmp/agent-live-1.json)"
+          echo "activation canary first call -> HTTP $code"
+          cat /tmp/agent-live-1.json; echo
+          [ "$code" = '200' ] || exit 1
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/agent-live-1.json', 'utf8'));
+          if (body?.ok !== true || body?.replayed !== false) throw new Error('first Agent canary call did not execute');
+          if (body?.route?.tier !== 'small') throw new Error('high-confidence canary did not use the small route');
+          if (typeof body?.recommendation !== 'string' || !body.recommendation.trim() || body.recommendation === 'UNKNOWN') {
+            throw new Error('model did not return a usable recommendation');
+          }
+          if (body?.calculation?.trueRpm !== 1.61 || body?.calculation?.grade !== 'B' || body?.calculation?.verdict !== 'ACCEPT') {
+            throw new Error('canonical calculation was not preserved');
+          }
+          fs.writeFileSync('/tmp/agent-recommendation.txt', body.recommendation);
+          NODE
+
+          code="$(call_agent /tmp/agent-live-2.json)"
+          echo "activation canary replay -> HTTP $code"
+          [ "$code" = '200' ] || exit 1
+          node - <<'NODE'
+          const fs = require('fs');
+          const first = fs.readFileSync('/tmp/agent-recommendation.txt', 'utf8');
+          const body = JSON.parse(fs.readFileSync('/tmp/agent-live-2.json', 'utf8'));
+          if (body?.ok !== true || body?.replayed !== true) throw new Error('idempotent replay was not served from state');
+          if (body?.recommendation !== first) throw new Error('replay recommendation changed');
+          NODE
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/agent-canary.json', 'utf8'));
+          body.facts.deadheadMiles = 36;
+          fs.writeFileSync('/tmp/agent-conflict.json', JSON.stringify(body));
+          NODE
+          code="$(curl -sS -o /tmp/agent-conflict-response.json -w '%{http_code}' --max-time 30 \
+            -H "Origin: $APP_ORIGIN" -H "X-Backup-Token: $TOKEN" \
+            -H 'X-Device-Id: agent-activate' -H 'Content-Type: application/json' \
+            --data-binary @/tmp/agent-conflict.json "$API_ORIGIN/agent/evaluate")"
+          echo "activation canary idempotency conflict -> HTTP $code"
+          [ "$code" = '409' ] || exit 1
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/agent-conflict-response.json', 'utf8'));
+          if (body?.ok !== false || body?.code !== 'IDEMPOTENCY_CONFLICT') {
+            throw new Error('mutated replay did not fail closed');
+          }
+          NODE
+
+          rollback_needed=0
+          echo 'ACTIVE AGENT CANARY VERDICT: PASS — model executed, canonical authority preserved, replay stable, conflict blocked.'
+

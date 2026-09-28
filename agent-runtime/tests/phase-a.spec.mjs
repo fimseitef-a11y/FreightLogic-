@@ -10,6 +10,13 @@ import {
 import { chooseModelTier } from "../router.mjs";
 import { stateScope } from "../state-key.mjs";
 import { fingerprintEnvelope, sameIdempotentEvent } from "../idempotency.mjs";
+import {
+  DEFAULT_SMALL_MODEL,
+  DEFAULT_STRONG_MODEL,
+  ModelExecutionError,
+  buildModelMessages,
+  runExplanationModel,
+} from "../model-adapter.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -193,6 +200,9 @@ await test("A14 isolated Wrangler config is internet-dark and SQLite-backed", as
   assert.equal("queues" in config, false);
   assert.equal("workflows" in config, false);
   assert.equal(config.vars.AGENT_ENABLED, "false");
+  assert.equal(config.vars.AGENT_MODEL_SMALL, DEFAULT_SMALL_MODEL);
+  assert.equal(config.vars.AGENT_MODEL_STRONG, DEFAULT_STRONG_MODEL);
+  assert.deepEqual(config.ai, { binding: "AI" });
   assert.deepEqual(config.durable_objects.bindings, [
     { name: "AGENT_STATE", class_name: "FreightLogicAgentState" },
   ]);
@@ -202,13 +212,16 @@ await test("A14 isolated Wrangler config is internet-dark and SQLite-backed", as
   });
 });
 
-await test("A15 worker remains Phase-A fail-closed with no model endpoint", async () => {
+await test("A15 worker model path uses private Workers AI and carries no external model secret", async () => {
   const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
+  const adapter = await readFile(new URL("../model-adapter.mjs", import.meta.url), "utf8");
   assert.equal(source.includes("AGENT_ENABLED"), true);
-  assert.equal(source.includes('recommendation: "UNKNOWN"'), true);
-  assert.equal(source.includes("AI_GATEWAY"), false);
+  assert.equal(source.includes("runExplanationModel"), true);
+  assert.equal(adapter.includes("env.AI.run"), true);
+  assert.equal(adapter.includes("AI_GATEWAY"), false);
   for (const secretName of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROK_API_KEY", "XAI_API_KEY"]) {
     assert.equal(source.includes(secretName), false);
+    assert.equal(adapter.includes(secretName), false);
   }
 });
 
@@ -453,6 +466,92 @@ await test("A32 Agent runtime remains dark-by-default after private binding is w
   assert.equal(config.vars.AGENT_ENABLED, "false");
   assert.equal(source.includes("this.env.AGENT_ENABLED === \"true\""), true);
   assert.equal(source.includes('return new Response("Not Found"'), true);
+});
+
+
+await test("A33 small model adapter uses the minimized projection and default small model", async () => {
+  const calls = [];
+  const projection = buildModelProjection(baseEnvelope());
+  const env = {
+    AI: {
+      async run(model, input) {
+        calls.push({ model, input });
+        return { response: "The canonical ACCEPT is supported; recheck deadhead only if the pickup position changes." };
+      },
+    },
+  };
+  const result = await runExplanationModel(env, "small", projection);
+  assert.equal(result.model, DEFAULT_SMALL_MODEL);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, DEFAULT_SMALL_MODEL);
+  assert.equal(calls[0].input.max_tokens, 96);
+  assert.equal(calls[0].input.temperature, 0.1);
+  const serialized = JSON.stringify(calls[0].input.messages);
+  for (const forbidden of ["evt-001", "driver:test", "load-42", "corr-001", "idem-001", "provenance"]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+  assert.match(result.recommendation, /canonical ACCEPT/);
+});
+
+await test("A34 strong model route uses the configured strong model only", async () => {
+  const calls = [];
+  const env = {
+    AGENT_MODEL_STRONG: "@cf/test/strong",
+    AI: {
+      async run(model, input) {
+        calls.push({ model, input });
+        return { response: "The canonical decision stands; verify the uncertain deadhead before committing." };
+      },
+    },
+  };
+  const result = await runExplanationModel(env, "strong", buildModelProjection(baseEnvelope({ confidence: 0.6 })));
+  assert.equal(result.model, "@cf/test/strong");
+  assert.equal(calls[0].model, "@cf/test/strong");
+});
+
+await test("A35 model adapter fails closed when the Workers AI binding is unavailable", async () => {
+  await assert.rejects(
+    runExplanationModel({}, "small", buildModelProjection(baseEnvelope())),
+    (error) => error instanceof ModelExecutionError && error.code === "MODEL_BINDING_UNAVAILABLE"
+  );
+});
+
+await test("A36 model adapter fails closed on provider errors without fabricating a recommendation", async () => {
+  const env = { AI: { async run() { throw new Error("provider down"); } } };
+  await assert.rejects(
+    runExplanationModel(env, "small", buildModelProjection(baseEnvelope())),
+    (error) => error instanceof ModelExecutionError && error.code === "MODEL_REQUEST_FAILED"
+  );
+});
+
+await test("A37 model adapter rejects empty or UNKNOWN provider output", async () => {
+  for (const response of [{ response: "" }, { response: "UNKNOWN" }, {}]) {
+    const env = { AI: { async run() { return response; } } };
+    await assert.rejects(
+      runExplanationModel(env, "small", buildModelProjection(baseEnvelope())),
+      (error) => error instanceof ModelExecutionError && error.code === "MODEL_INVALID_RESPONSE"
+    );
+  }
+});
+
+await test("A38 model prompt binds canonical authority and treats projection values as untrusted data", () => {
+  const messages = buildModelMessages(buildModelProjection(baseEnvelope()));
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /canonicalSnapshot is authoritative/);
+  assert.match(messages[0].content, /untrusted data/);
+  assert.match(messages[0].content, /Do not recalculate/);
+  assert.equal(messages[1].role, "user");
+});
+
+
+await test("A39 activation workflow is explicit and rolls back to disabled on canary failure", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/ai-agent-cutover.yml", import.meta.url), "utf8");
+  assert.equal(workflow.includes("ACTIVATE_CANARY"), true);
+  assert.equal(workflow.includes("AGENT_ENABLED:true"), true);
+  assert.equal(workflow.includes("AGENT_ENABLED:false"), true);
+  assert.equal(workflow.includes("Activation canary failed; redeploying Agent disabled."), true);
+  assert.equal(workflow.includes("ACTIVE AGENT CANARY VERDICT: PASS"), true);
+  assert.equal(workflow.includes("IDEMPOTENCY_CONFLICT"), true);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
