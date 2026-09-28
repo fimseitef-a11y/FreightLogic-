@@ -1,0 +1,6 @@
+owner: gpt
+token: task0025-release-20260928
+started_utc: 2026-09-28T13:10:00Z
+expected_release_utc: 2026-09-28T16:10:00Z
+paths: service-worker.js, manifest.json, app.js
+task: AIAG-TASK-0025 governed release generation
