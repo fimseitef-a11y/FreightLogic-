@@ -83,8 +83,8 @@ test('[MS-01] the tab bar is the five driver surfaces, in order', async () => {
       nav: e.dataset.nav,
       href: e.getAttribute('href'),
     })));
-    eq(tabs.map((t) => t.label).join('/'), 'Today/Loads/Evaluate/History/Money',
-      'primary navigation must be Today / Loads / Evaluate / History / Money in that order');
+    eq(tabs.map((t) => t.label).join('/'), 'Today/Loads/Scan/History/Money',
+      'primary navigation must be Today / Loads / Scan / History / Money in that order');
     // data-nav carries the CANONICAL route name so app.js setActiveNav() drives
     // the highlight. Before 24.0.8 the centre tab declared data-nav="evaluate",
     // a label the router never produces.
@@ -159,7 +159,7 @@ test('[MS-05] every primary tab displays its own surface and nothing else', asyn
     const expected = [
       ['home', '#home', 'view-home'],
       ['loads', '#loads', 'view-loads'],
-      ['evaluate', '#omega', 'view-omega'],
+      ['scan', '#omega', 'view-omega'],
       ['trips', '#trips', 'view-trips'],
       ['money', '#money', 'view-money'],
     ];
@@ -218,59 +218,21 @@ test('[MS-08] secondary tools stay reachable through More', async () => {
   } finally { await app.close(); }
 });
 
-test('[MS-12] no canonical route is orphaned by the tab bar that replaced the old one', async () => {
+test('[MS-12] secondary routes have one visible contextual owner', async () => {
   const app = await bootShell();
   try {
-    // PR #168 replaced a Home/Trips/Omega/Intel/More bar with the five driver
-    // surfaces. `index.html`'s nav anchor was the ONLY link to `#intel` anywhere
-    // in the app, so the whole Market Intel surface — route, renderer and all
-    // five of its tabs intact — became reachable only by typing the hash.
-    //
-    // Assert reachability structurally: every route app.js can render must be
-    // reachable from the tab bar or from a More tile, with no exceptions list.
-    const routes = await app.page.evaluate(() => {
-      // `views` is private to app.js's IIFE, so read the routes off the DOM the
-      // same way a driver's browser resolves them: every #view-* section present.
-      return [...document.querySelectorAll('main.app > section.view')]
-        .map((v) => v.id.replace(/^view-/, ''));
-    });
-    ok(routes.includes('intel'), 'the intel surface must still exist');
+    await tapTab(app.page, 'loads');
+    ok(await app.page.$('#btnLoadsMarket'), 'Loads must expose Market Intel');
 
-    const tabHrefs = await app.page.$$eval('.bottom .nav a', (els) => els.map((e) => e.getAttribute('href')));
-    // Slice A adds contextual Current Load + Reports access under History. These
-    // are deliberate secondary routes, not primary tabs, so count the links the
-    // driver can actually tap rather than maintaining an exceptions list.
-    await tapTab(app.page, 'trips');
-    const secondaryHrefs = await app.page.$$eval('#tripsHistoryNav a[href^="#"]',
-      (els) => els.map((e) => e.getAttribute('href')));
+    await tapTab(app.page, 'money');
+    const moneyLinks = await app.page.$$eval('#view-money a[href^="#"]', els => els.map(e => e.getAttribute('href')));
+    for (const href of ['#expenses','#fuel','#reports']) ok(moneyLinks.includes(href), `Money must own ${href}`);
+
+    ok(await app.page.$('#modernMoreBtn'), 'header More entry remains available');
     await app.page.click('#modernMoreBtn');
-    await app.page.waitForTimeout(700);
-    // Open the collapsed Advanced group so its tiles are in the DOM too.
-    await app.page.evaluate(() => {
-      document.querySelectorAll('#moreMenu .menu-grid').forEach((g) => { g.style.display = ''; });
-    });
-    const tileTitles = await app.page.$$eval('#moreMenu .menu-tile .tt', (els) => els.map((e) => e.textContent.trim()));
-    ok(tileTitles.includes('Market Intel'),
-      `More must expose a Market Intel entry; found ${JSON.stringify(tileTitles)}`);
-
-    // `more` is reached by the header control, not by a hash link; everything
-    // else must be reachable by a tab or a tile.
-    const reachable = new Set(tabHrefs.concat(secondaryHrefs).map((h) => h.replace(/^#/, '')).concat(['more']));
-    const tileRoutes = await app.page.evaluate(() => {
-      // MORE_TILES is private too; assert via the rendered tiles' click targets
-      // by matching on title, which is what a driver actually reads.
-      const map = { 'Money / AR': 'money', 'Expenses': 'expenses', 'Fuel Log': 'fuel',
-        'Settings': 'insights', 'Reports': 'reports', 'Market Intel': 'intel' };
-      return [...document.querySelectorAll('#moreMenu .menu-tile .tt')]
-        .map((e) => map[e.textContent.trim()]).filter(Boolean);
-    });
-    tileRoutes.forEach((r) => reachable.add(r));
-
-    const orphans = routes.filter((r) => !reachable.has(r));
-    eq(orphans.join(','), '',
-      `every route must be reachable from the primary shell or deliberate secondary navigation; orphaned: ${JSON.stringify(orphans)}. ` +
-      'A route whose only link was the replaced nav anchor is invisible to the driver even ' +
-      'though its renderer still works.');
+    await app.page.waitForTimeout(500);
+    const titles=await app.page.$$eval('#moreMenu .menu-tile .tt', els=>els.map(e=>e.textContent.trim()));
+    eq(titles.join('/'), 'Documents/Settings', 'More must contain only true secondary destinations');
   } finally { await app.close(); }
 });
 

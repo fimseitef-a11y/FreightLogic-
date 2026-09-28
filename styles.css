@@ -2312,3 +2312,12 @@ html, body, button, input, select, textarea {
 html body .bottom .nav a[data-nav="intel"] .nl {
   font-size: 0 !important;
 }
+
+
+/* Active-trip Today is an execution launcher, not an idle dashboard. */
+#view-home.today-execution-focus #homeQuickEvalCard,
+#view-home.today-execution-focus #homeMoneyCard,
+#view-home.today-execution-focus #homePositioningCard,
+#view-home.today-execution-focus #homeRecentTripsCard {
+  display: none !important;
+}

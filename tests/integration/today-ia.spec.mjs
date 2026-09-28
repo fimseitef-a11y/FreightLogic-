@@ -370,53 +370,36 @@ test('[ISSUE #205] TIA-08 idle tracking is compact but an active trip stays prom
 });
 
 // ── TIA-09 — More is a labelled directory ──────────────────────────────────
-test('[ISSUE #205] TIA-09 More groups its tools under headings', async () => {
+test('[ISSUE #205] TIA-09 More has only true secondary destinations', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
-    await sleep(2200);
+    await sleep(1200);
     await app.page.click('#modernMoreBtn');
-    await app.page.waitForTimeout(800);
+    await app.page.waitForTimeout(500);
     const r = await app.page.evaluate(() => ({
-      headings: [...document.querySelectorAll('#moreMenu .fl-more-group')].map((e) => e.textContent.trim()),
-      // The unlabelled catch-all this replaced.
-      hasMoreTools: /More Tools/.test(document.querySelector('#moreMenu')?.innerText || ''),
+      headings:[...document.querySelectorAll('#moreMenu .fl-more-group')].map(e=>e.textContent.trim()),
+      rendered:[...document.querySelectorAll('#moreMenu .menu-tile .tt')].map(e=>e.textContent.trim()),
     }));
-    console.log(`    [evidence] headings=${JSON.stringify(r.headings)}`);
-
-    ok(r.headings.length >= 3,
-      `More must present labelled groups, not one flat list; found ${JSON.stringify(r.headings)}`);
-    ok(r.headings.includes('Money') && r.headings.includes('App'),
-      'the groups must be named by what a driver is looking for');
-    ok(!r.hasMoreTools,
-      '"More Tools" is not a category — a driver had no reason to expect the tax export ' +
-      'or Diagnostics behind it, which is how a live surface becomes functionally buried');
+    eq(r.rendered.join('/'),'Documents/Settings','More must be reduced to Documents and Settings');
+    ok(r.headings.includes('Work') && r.headings.includes('App'),'the two remaining destinations stay clearly grouped');
   } finally { await app.close(); }
 });
 
-// ── TIA-10 — the regroup orphaned nothing ──────────────────────────────────
 test('[ISSUE #205] TIA-10 every declared More tile reaches the DOM', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
-    await sleep(2200);
+    await sleep(1200);
     await app.page.click('#modernMoreBtn');
-    await app.page.waitForTimeout(800);
+    await app.page.waitForTimeout(500);
     const r = await app.page.evaluate(() => {
-      const declared = window.__FL_TESTS.MORE_TILES.map((t) => t.title);
-      const rendered = [...document.querySelectorAll('#moreMenu .menu-tile .tt')].map((e) => e.textContent.trim());
-      return { declared, rendered, missing: declared.filter((t) => !rendered.includes(t)) };
+      const declared=window.__FL_TESTS.MORE_TILES.map(t=>t.title);
+      const rendered=[...document.querySelectorAll('#moreMenu .menu-tile .tt')].map(e=>e.textContent.trim());
+      return {declared,rendered,missing:declared.filter(t=>!rendered.includes(t))};
     });
-    console.log(`    [evidence] declared=${r.declared.length} rendered=${r.rendered.length}`);
-
-    eq(r.missing.join(','), '',
-      `every declared tile must render; missing: ${JSON.stringify(r.missing)}. ` +
-      'A regroup that silently dropped a tile is the orphaning this restructure exists to prevent.');
-    // Named explicitly as directory sentinels. Tax/CPA outputs now live under the
-    // single Reports tile by Slice A design, so the directory contract is Reports,
-    // not the removed duplicate Tax Season Export shortcut.
-    ['Market Intel', 'Diagnostics', 'Reports', 'Export & Backup', 'Storage Health']
-      .forEach((t) => ok(r.rendered.includes(t), `${t} must survive the regroup`));
+    eq(r.missing.join(','),'','every declared secondary destination must render');
+    eq(r.rendered.join('/'),'Documents/Settings','no operational destination may leak back into More');
   } finally { await app.close(); }
 });
 

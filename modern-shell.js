@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.49 — modern five-surface navigation adapter
+/* FreightLogic v24.0.50 — modern five-surface navigation adapter
  * Structural navigation; presentation is owned by styles.css.
  * Canonical routing, state, evaluation and data ownership remain in app.js.
  */
@@ -6,9 +6,9 @@
   'use strict';
 
   const PRIMARY_ROUTES = new Set(['home', 'loads', 'omega', 'trips', 'money']);
-  const ROUTE_ALIASES = { today: 'home', evaluate: 'omega' };
+  const ROUTE_ALIASES = { today: 'home', evaluate: 'omega', scan: 'omega' };
   const ROUTE_TITLES = {
-    home: 'Today', loads: 'Loads', omega: 'Evaluate', trips: 'History', money: 'Money', current: 'Current Load', reports: 'Reports',
+    home: 'Today', loads: 'Loads', omega: 'Scan', trips: 'History', money: 'Money', current: 'Current Load', reports: 'Reports',
     expenses: 'Expenses', fuel: 'Fuel', intel: 'Market Intel', insights: 'Settings', more: 'More'
   };
   let installed = false;
@@ -28,8 +28,12 @@
 
   function syncActiveFromHash() {
     const route = canonicalRoute(window.location.hash || 'home');
+    const owner = ['expenses','fuel','reports'].includes(route) ? 'money'
+      : route === 'intel' ? 'loads'
+      : route === 'current' ? 'home'
+      : route;
     document.querySelectorAll('.bottom .nav [data-nav]').forEach((link) => {
-      const active = link.dataset.nav === route;
+      const active = link.dataset.nav === owner;
       link.classList.toggle('active', active);
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
@@ -48,7 +52,7 @@
     nav.innerHTML = `
       <a href="#home" data-nav="home" data-modern-route="home" aria-label="Today"><div class="ni">${icon.today}</div><div class="nl">Today</div></a>
       <a href="#loads" data-nav="loads" data-modern-route="loads" aria-label="Loads"><div class="ni">${icon.loads}</div><div class="nl">Loads</div></a>
-      <a href="#omega" data-nav="omega" data-modern-route="evaluate" aria-label="Evaluate load" class="nav-eval-center"><div class="ni" aria-hidden="true">⚡</div><div class="nl">Evaluate</div></a>
+      <a href="#omega" data-nav="omega" data-modern-route="scan" aria-label="Scan load" class="nav-eval-center"><div class="ni" aria-hidden="true">⚡</div><div class="nl">Scan</div></a>
       <a href="#trips" data-nav="trips" data-modern-route="trips" aria-label="History"><div class="ni" data-badge-slot style="position:relative">${icon.trips}</div><div class="nl">History</div></a>
       <a href="#money" data-nav="money" data-modern-route="money" aria-label="Money"><div class="ni">${icon.money}</div><div class="nl">Money</div></a>`;
     const slot = nav.querySelector('[data-badge-slot]');

@@ -88,13 +88,13 @@ test('[SSI-01] the intake surface offers a screenshot path, and no Voice control
     await openIntake(app.page);
     const surface = await app.page.evaluate(() => ({
       hasShot: !!document.querySelector('#liShot'),
-      hasPick: !!document.querySelector('#liPickImg'),
+      hasSeparateCamera: !!document.querySelector('#liPickImg, #liImgCamera'),
       hasText: !!document.querySelector('#liRawText'),
       text: document.body.innerText,
       voiceNodes: document.querySelectorAll('#liVoice, #mwVoiceBtn, #f23VoiceBtn').length,
     }));
     ok(surface.hasShot, 'a Screenshot control must exist on the intake surface');
-    ok(surface.hasPick, 'a Photos/Files control must exist — the guaranteed iPhone path');
+    eq(surface.hasSeparateCamera, false, 'the screenshot picker must not be duplicated by a forced-camera control');
     ok(surface.hasText, 'typing and pasting text must remain available');
     // #230 removed Voice by operator decision; a new intake surface must not
     // quietly reintroduce it, and .claude/CLAUDE.md names that explicitly.
@@ -568,33 +568,33 @@ test('[SSI-18] compact decision facts consume the Driver/Glance semantic present
   } finally { await app.close(); }
 });
 
-test('[SSI-20] "Choose Screenshot" opens the photo library, not the camera', async () => {
-  // Reported on a real iPhone 2026-09-25: the Screenshot button opened the
-  // camera (capture="environment"), so the posting just screenshotted could
-  // never be picked. Clicking a file input records which one was asked for.
+test('[SSI-20] "Choose Screenshot" uses one flexible image picker', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
     await openIntake(app.page);
     const r = await app.page.evaluate(() => {
-      const clicked = [];
-      for (const id of ['liImgFile', 'liImgCamera']) {
-        const el = document.getElementById(id);
-        el.click = () => clicked.push({ id, capture: el.hasAttribute('capture'), accept: el.accept });
-      }
+      const input=document.getElementById('liImgFile');
+      const clicked=[];
+      input.click=()=>clicked.push({ capture:input.hasAttribute('capture'), accept:input.accept });
       document.getElementById('liShot').click();
-      document.getElementById('liPickImg').click();
-      return { clicked, shotLabel: document.getElementById('liShot').textContent };
+      return {
+        clicked,
+        cameraButton:!!document.getElementById('liPickImg'),
+        cameraInput:!!document.getElementById('liImgCamera'),
+        shotLabel:document.getElementById('liShot').textContent,
+      };
     });
-    eq(r.clicked.length, 2, 'both buttons must open a file input');
-    eq(r.clicked[0].capture, false, 'the screenshot button must open an input WITHOUT capture — capture forces the camera on iPhone');
-    ok(/image\/\*/.test(r.clicked[0].accept), 'and must accept any image type the Photos library hands over');
-    ok(/Screenshot/.test(r.shotLabel), 'the screenshot button is labelled as such');
-    eq(r.clicked[1].capture, true, 'the camera is its own, separate control');
+    eq(r.clicked.length,1,'one screenshot action opens one picker');
+    eq(r.clicked[0].capture,false,'the picker must not force the camera on iPhone');
+    ok(/image\/*/.test(r.clicked[0].accept),'the picker accepts images');
+    eq(r.cameraButton,false,'no redundant camera button');
+    eq(r.cameraInput,false,'no redundant capture-only input');
+    ok(/Screenshot/.test(r.shotLabel),'the action is clearly labelled');
   } finally { await app.close(); }
 });
 
-test('[SSI-21] the Scan Screenshot button stacks its subtitle under the title', async () => {
+test('[SSI-21] the Add Screenshot button stacks its subtitle under the title', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
@@ -770,7 +770,7 @@ test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade
       return { text: q?.textContent || document.querySelector('#mwEvalOutput')?.textContent || '',
         grade: !!document.querySelector('#mwEvalOutput .grade-badge, #mwEvalOutput [data-grade]') };
     });
-    ok(/No pay posted/.test(r.text), `a quote shows the bid card — got ${JSON.stringify(r.text.slice(0, 160))}`);
+    ok(/Build My Bid/.test(r.text) && /No rate posted/.test(r.text), `a no-rate quote shows the bid-building card — got ${JSON.stringify(r.text.slice(0, 160))}`);
     ok(/355 loaded \+ 40 deadhead = 395 miles/.test(r.text), 'it states the miles the targets are built on');
     // $1.40 x 395 true miles = $553, the canonical minimum (generateBidRange).
     ok(/\$553/.test(r.text), `the minimum bid is the canonical $1.40 x total miles — got ${JSON.stringify(r.text)}`);
@@ -778,7 +778,7 @@ test('[SSI-28] a quote with no pay shows the canonical bid targets, and no grade
   } finally { await app.close(); }
 });
 
-test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
+test('[SSI-29] no rate and no deadhead: the message asks for deadhead, not revenue', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
@@ -791,8 +791,9 @@ test('[SSI-29] no pay and no deadhead: the message names the pay', async () => {
     await app.page.evaluate(() => document.querySelector('#liScore')?.click());
     await sleep(800);
     const msg = await app.page.evaluate(() => document.querySelector('#mwEvalOutput')?.textContent || '');
-    ok(/the pay \(Revenue\)/.test(msg), `the evaluator names the missing pay — got ${JSON.stringify(msg.slice(0, 160))}`);
-    ok(!/No pay posted/.test(msg), 'no bid card without the deadhead figure');
+    ok(/Enter deadhead miles/i.test(msg), `the bid workflow names the missing deadhead — got ${JSON.stringify(msg.slice(0, 160))}`);
+    ok(/Revenue is optional/i.test(msg), 'a missing posted rate must not be treated as a required input');
+    ok(!/data-eval-quote/.test(msg), 'no bid card is rendered until total miles are known');
   } finally { await app.close(); }
 });
 
