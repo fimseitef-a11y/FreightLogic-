@@ -108,7 +108,8 @@ import { runSpec as navTodayLabel } from './integration/nav-today-label.spec.mjs
 import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs';
 import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
 import { runSpec as tripDuplicateWarning } from './integration/trip-duplicate-warning.spec.mjs';
-import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-regressions.spec.mjs';\nimport { runSpec as issue417SliceAIA } from './integration/issue-417-slice-a-ia.spec.mjs';
+import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-regressions.spec.mjs';
+import { runSpec as issue417SliceAIA } from './integration/issue-417-slice-a-ia.spec.mjs';
 
 const specs = [
   fullRepairRegressions,
@@ -174,7 +175,8 @@ const specs = [
   loadTextParse,
   invitePaste,
   tripDuplicateWarning,
-  iphoneManualRegressions,\n  issue417SliceAIA,
+  iphoneManualRegressions,
+  issue417SliceAIA,
   importCredentialTrustBoundary,
   tripImportIntegrity,
   ocrSelfHosted,
