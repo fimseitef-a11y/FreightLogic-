@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | PRIMARY TAKEOVER SESSION — AIAG-TASK-0021 / PR #418 only. This session owns Issue #417 Slice A verification/repair/integration. Other GPT/chat sessions: do not commit to PR #418 or its shared-file lane; hand off through Airtable/NOW instead. | 2026-09-28T06:27:00Z |
+| gpt | — idle — PR #418 Slice A verified and ready-for-review; no active lock. Merge/production delivery remains separately gated. | 2026-09-28T07:37:00Z |
 
 ---
 
