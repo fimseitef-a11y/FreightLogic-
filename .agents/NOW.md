@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #426 merged; Slice D post-merge main/production verification in progress. | 2026-09-28T19:30:00Z |
+| gpt | AIAG-TASK-0028 — Issue #417 Slice E account/cloud architecture + certification design only; no runtime migration. | 2026-09-28T19:38:00Z |
 
 ---
 
