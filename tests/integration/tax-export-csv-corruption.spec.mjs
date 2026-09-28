@@ -64,6 +64,13 @@ async function seedTrip(page, overrides) {
 }
 
 async function openTaxExportUI(page, year) {
+  // Repeated year checks reuse this page. Close the prior Tax Season Export
+  // modal through the real UI before re-entering Reports; otherwise the modal
+  // correctly intercepts taps on the page beneath it.
+  if (await page.locator('#modal.open').count()) {
+    await page.click('#modalClose');
+    await page.waitForFunction(() => !document.querySelector('#modal')?.classList.contains('open'));
+  }
   // Slice A removed the duplicate Tax Season Export tile from More. Reach the
   // same canonical export engine through Reports, then keep the original F-3
   // CSV/data-integrity assertions below unchanged.
