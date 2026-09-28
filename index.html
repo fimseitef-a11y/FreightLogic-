@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.51">
+  <link rel="manifest" href="manifest.json?v=24.0.52">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -134,9 +134,9 @@
         <!-- Quick actions -->
         <div class="fl-quick-grid">
           <button class="fl-quick-btn primary" id="btnQuickTrip"><span class="fl-qb-icon">＋</span>Trip</button>
-          <button class="fl-quick-btn" id="btnQuickFuel"><span class="fl-qb-icon">⛽</span>Fuel</button>
-          <button class="fl-quick-btn" id="btnQuickExpense"><span class="fl-qb-icon">💸</span>Expense</button>
+          <button class="fl-quick-btn" id="btnQuickExpense" aria-label="Add cost"><span class="fl-qb-icon">💸</span>Cost</button>
         </div>
+        <button id="btnQuickFuel" style="display:none" aria-hidden="true" tabindex="-1">Fuel compatibility action</button>
       </div>
 
       <!-- UX: Quick Evaluate button (populated by renderHome) -->
@@ -241,11 +241,24 @@
     <section id="view-money" class="view" style="display:none">
       <div class="card fl-money-nav">
         <h2 style="margin:0 0 4px">Money</h2>
-        <div class="muted" style="font-size:12px;margin-bottom:12px">Receivables, expenses and fuel in one place.</div>
+        <div class="muted" style="font-size:12px;margin-bottom:12px">Receivables, costs and reports in one place.</div>
         <div class="fl-money-links">
-          <a href="#expenses">Expenses</a>
-          <a href="#fuel">Fuel</a>
           <a href="#reports">Reports</a>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="card" id="moneyCostsHub">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
+          <div>
+            <h3 style="margin:0 0 4px">Costs</h3>
+            <div class="muted" style="font-size:12px;line-height:1.45">Fuel, service and business expenses keep their own typed histories.</div>
+          </div>
+          <button class="btn primary" id="btnAddCost" style="min-height:44px;padding:8px 14px;white-space:nowrap">＋ Add Cost</button>
+        </div>
+        <div class="fl-money-links" aria-label="Cost history">
+          <a href="#expenses">Expense history</a>
+          <a href="#fuel">Fuel history</a>
+          <button class="btn" id="btnMoneyMaintenance" type="button" style="min-height:44px">Maintenance</button>
         </div>
       </div>
       <div class="spacer"></div>
@@ -691,7 +704,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.51"></script>
-  <script src="sw-bridge.js?v=24.0.51"></script>
+  <script src="app.js?v=24.0.52"></script>
+  <script src="sw-bridge.js?v=24.0.52"></script>
 </body>
 </html>
