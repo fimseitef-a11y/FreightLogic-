@@ -284,10 +284,14 @@ test('[IPR-10] review-required or payment-unknown imports never become live rece
     `review/unknown imports must stay out of Money AR — got ${money.replace(/\\s+/g, ' ').trim()}`);
 
   const source = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
-  const smart = source.match(/\/\/ 4\. Long-outstanding AR[\\s\\S]*?\/\/ 5\. Positive/)?.[0] || '';
-  const overdue = source.match(/async function checkOverduePayments\(\)[\\s\\S]*?\/\/ Show in-app alert banner/)?.[0] || '';
-  ok(/isLiveReceivable\(t\)/.test(smart), 'Today Smart Insight must use canonical live-receivable authority');
-  ok(/isLiveReceivable\(t\)/.test(overdue), 'Today overdue banner/push must use canonical live-receivable authority');
+  const smartStart = source.indexOf('// 4. Long-outstanding AR');
+  const smartEnd = source.indexOf('// 5. Positive', smartStart);
+  const smart = smartStart >= 0 && smartEnd > smartStart ? source.slice(smartStart, smartEnd) : '';
+  const overdueStart = source.indexOf('async function checkOverduePayments()');
+  const overdueEnd = source.indexOf('// Show in-app alert banner', overdueStart);
+  const overdue = overdueStart >= 0 && overdueEnd > overdueStart ? source.slice(overdueStart, overdueEnd) : '';
+  ok(smart.includes('isLiveReceivable(t)'), 'Today Smart Insight must use canonical live-receivable authority');
+  ok(overdue.includes('isLiveReceivable(t)'), 'Today overdue banner/push must use canonical live-receivable authority');
 });
 
 export async function runSpec() {
