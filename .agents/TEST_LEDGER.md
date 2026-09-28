@@ -394,3 +394,21 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Review threads: none. Reviews: none. PR #418 is mergeable and was moved from draft to ready-for-review only.
 - The final stale-fixture repair closes the prior Tax Season Export modal through its real UI before re-entering the canonical Reports route; CSV quoting/reconciliation/year-boundary assertions remain unchanged.
 - No merge, production/live-parity claim, #226 physical-iPhone certification, #380 PushWard/key claim, credential/security action, or shared-PC action is implied by this CI evidence.
+
+
+## 2026-09-28T10:39Z — AIAG-TASK-0024 red-first UX/IA baseline
+- Exact head: `22e25929f8d26865fcfd713e300170933fb74a44` on draft PR #423.
+- GitHub Tests run `36410637091`, playwright-suite job `108889733636`: **925 passed / 10 failed across 92 spec files**.
+- Existing 91-spec baseline remained green; all failures were intentionally introduced by `integration/ux-ia-a2z.spec.mjs` and map one-to-one to the approved target:
+  1. UXA2Z-01 Today/Loads/Scan/History/Money shell
+  2. UXA2Z-02 persistent Scan workspace + remove redundant Camera control
+  3. UXA2Z-03 automatic Evaluate Offer vs Build My Bid mode
+  4. UXA2Z-04 advisory GPS deadhead / explicit-zero preservation
+  5. UXA2Z-05 Loads-owned Market Intel discovery
+  6. UXA2Z-06 More reduced to Documents + Settings
+  7. UXA2Z-07 Money owns Expenses/Fuel/Reports and no Settings shortcut
+  8. UXA2Z-08 History no longer a Current/History/Reports navigation hub
+  9. UXA2Z-09 seven configuration-only Settings groups + two-stage first-run setup
+  10. UXA2Z-10 Scan Document under trip documents
+- Lanes run `36410636967`: PASS. CodeQL run `36410637347`: PASS.
+- This is a controlled red-first result, not a pre-existing product regression. Remediation now proceeds under held app-js lock `5c9b7f22-7a5f-4ad4-a5b3-002420260928`.
