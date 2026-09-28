@@ -22,7 +22,7 @@
        .mjs asserts that. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
   <title>Freight Logic</title>
-  <link rel="manifest" href="manifest.json?v=24.0.50">
+  <link rel="manifest" href="manifest.json?v=24.0.51">
   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
@@ -195,9 +195,14 @@
         </div>
       </div>
 
+      <!-- Issue #417 Slice B: durable decision cards live separately from the
+           parser/intake control. Both are owned by Loads; neither duplicates
+           evaluator economics. -->
+      <div id="loadsDecisionInbox"></div>
+
       <!-- F23: Smart Load Inbox (populated by renderLoadInbox). This is the
-           canonical inbox mount point — there is exactly one, and the Loads
-           route owns it. -->
+           canonical parser/intake mount point. Reviewed offers are persisted
+           into the decision inbox before the canonical evaluator opens. -->
       <div id="loadInboxCard"></div>
     </section>
     <section id="view-trips" class="view" style="display:none" aria-label="History">
@@ -686,7 +691,7 @@
       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
     </div>
   </div>
-  <script src="app.js?v=24.0.50"></script>
-  <script src="sw-bridge.js?v=24.0.50"></script>
+  <script src="app.js?v=24.0.51"></script>
+  <script src="sw-bridge.js?v=24.0.51"></script>
 </body>
 </html>
