@@ -1,7 +1,14 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.47 USA ENGINE
+/** FreightLogic v24.0.48 USA ENGINE
+ *  v24.0.48 "Field-Test Workflow Repair": repairs real-iPhone findings from
+ *  2026-09-27: evaluator booking preserves an editable Order #, new trips carry
+ *  an explicit operational stage instead of treating appointment dates as
+ *  completion, post-trip review/history wait for delivery, imported Unknown
+ *  Destination never becomes a new origin, score chips are outcome-neutral,
+ *  Undo/empty-state UI expires cleanly, sparse lane trend fails closed, and
+ *  Share Bid is explicitly independent of cloud/AI credentials. DB16 / Worker30.
  *  v24.0.47 "Secure Workbook / One Market Label": upgrades the offline vendored
  *  SheetJS parser from 0.18.5 to 0.20.3 (#392), preserving XLS/XLSX import while
  *  leaving both reviewed affected ranges. Also completes #389 so an injected/future
@@ -574,7 +581,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.47';
+const APP_VERSION = '24.0.48';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -1389,9 +1396,12 @@ function showUndoToast(label, doDelete, onUndo){
   btn.setAttribute('aria-label', 'Undo deletion');
   el.appendChild(msg); el.appendChild(btn);
   el.classList.add('show');
+  el.style.display = 'flex';
   haptic(15);
   const commit = async ()=>{
     el.classList.remove('show');
+    el.style.display = 'none';
+    el.innerHTML = '';
     _undoPending = null;
     try{ await doDelete(); }catch(e){ console.warn('[FL] undo-delete commit:', e); }
   };
@@ -1403,6 +1413,8 @@ function showUndoToast(label, doDelete, onUndo){
     clearTimeout(_undoPending?.timer);
     _undoPending = null;
     el.classList.remove('show');
+    el.style.display = 'none';
+    el.innerHTML = '';
     haptic(10);
     try{ await onUndo(); }catch(e){ console.warn('[FL] undo-delete restore:', e); }
   });
@@ -3454,6 +3466,11 @@ function sanitizeTrip(raw){
   // v14.5.0: multi-stop
   t.stops = Array.isArray(raw.stops) ? raw.stops.slice(0, 10).map(sanitizeStop).filter(Boolean) : [];
   t.notes = clampStr(raw.notes, 500);
+  // Appointment dates are not completion evidence. New UI-created trips carry
+  // an explicit execution stage; legacy/imported rows without this field retain
+  // the historical date-based inference in _lifecycleStateFromTrip().
+  if (LIFECYCLE_EXECUTION.includes(raw.executionStatus)) t.executionStatus = raw.executionStatus;
+  else delete t.executionStatus;
   const hasPaidFlag = Object.prototype.hasOwnProperty.call(raw || {}, 'isPaid') && typeof raw.isPaid === 'boolean';
   t.isPaid = hasPaidFlag ? raw.isPaid : false;
   t.paymentStatusKnown = typeof raw.paymentStatusKnown === 'boolean' ? raw.paymentStatusKnown : hasPaidFlag;
@@ -3488,6 +3505,9 @@ function sanitizeTrip(raw){
 function tripPaymentKnown(t){ return !!t && t.paymentStatusKnown === true && typeof t.isPaid === 'boolean'; }
 function tripIsPaid(t){ return tripPaymentKnown(t) && t.isPaid === true; }
 function tripIsUnpaid(t){ return tripPaymentKnown(t) && t.isPaid === false; }
+// Live receivables fail closed: a row still held for import/data review is not
+// collection authority even when an explicit unpaid flag is present.
+function isLiveReceivable(t){ return !!t && !t.needsReview && tripIsUnpaid(t); }
 async function findTripsByOrderNo(orderNo, limit=10){
   const key = normOrderNo(orderNo);
   if (!key) return [];
@@ -5318,6 +5338,10 @@ function computeLaneStats(trips){
   const map = new Map();
   for (const t of trips){
     if (t.needsReview || !tripHasKnownDeadhead(t)) continue;
+    // New UI-created trips expose an explicit execution stage. Do not let a
+    // merely booked/in-transit load become historical lane evidence before it
+    // delivers. Legacy/imported rows without this field retain prior behavior.
+    if (LIFECYCLE_EXECUTION.includes(t.executionStatus) && t.executionStatus !== 'DELIVERED') continue;
     const key = laneKey(t.origin, t.destination);
     if (!key) continue;
     const pay = Number(t.pay||0);
@@ -5379,7 +5403,9 @@ function computeLaneStats(trips){
       minRpm: r.minRpm === Infinity ? 0 : +r.minRpm.toFixed(2),
       maxRpm: +r.maxRpm.toFixed(2),
       trend, // -1, 0, 1
-      trendLabel: trend > 0 ? 'Rising' : trend < 0 ? 'Declining' : 'Stable',
+      // Fewer than four observations cannot support the comparison used above,
+      // so do not turn "no measurable trend yet" into a claim of stability.
+      trendLabel: sorted.length < 4 ? 'Need more history' : (trend > 0 ? 'Rising' : trend < 0 ? 'Declining' : 'Stable'),
       volatility: +volatility.toFixed(3),
       repeatRate: r.trips > 0 ? Math.round((r.repeats / r.trips) * 100) : null,
       lastDate,
@@ -6023,7 +6049,7 @@ function scoreBadgeHTML(score){
   else if (m >= 55){ bg = 'rgba(107,255,149,.08)'; border = 'rgba(107,255,149,.25)'; }
   else if (m >= 35){ bg = 'rgba(255,179,0,.1)'; border = 'rgba(255,179,0,.35)'; }
   else { bg = 'rgba(255,107,107,.1)'; border = 'rgba(255,107,107,.35)'; }
-  return `<span class="tag" style="background:${bg};border-color:${border};color:${score.verdictColor};font-weight:700;cursor:pointer" data-act="score">${score.verdict} ${m}</span>`;
+  return `<span class="tag" style="background:${bg};border-color:${border};color:${score.verdictColor};font-weight:700;cursor:pointer" data-act="score" title="${escapeHtml(score.verdict)} decision score">LOAD SCORE ${m}</span>`;
 }
 
 // ── Score breakdown modal ──
@@ -6270,7 +6296,9 @@ async function refreshUnpaidBadge(){
   try {
     const badge = $('#navUnpaidBadge');
     if (!badge) return;
-    const unpaid = await listTrips({ unpaidOnly: true, limit: 100 });
+    // Receivables use the same fail-closed authority as Money/AR: only
+    // canonical, explicit unpaid trips that are not held for review count.
+    const unpaid = await listUnpaidTrips(100);
     const n = unpaid.length;
     if (n > 0){
       badge.textContent = n > 99 ? '99+' : String(n);
@@ -7116,7 +7144,7 @@ async function renderSmartTip(state){
     if (!tip) {
       const overdueTrips = trips.filter(t => {
         const refDate = t.deliveryDate || t.pickupDate;
-        return tripIsUnpaid(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
+        return isLiveReceivable(t) && refDate && (now - new Date(refDate + 'T12:00:00').getTime()) > 45 * 86400000;
       });
       if (overdueTrips.length >= 2) {
         const totalOwed = overdueTrips.reduce((s, t) => s + Number(t.pay || 0), 0);
@@ -7793,7 +7821,13 @@ async function renderTrips(reset=false){
   tripCursor = res.nextCursor;
   if (reset) list.innerHTML = '';
   if (!res.items.length && reset){
-    const empty = renderEmptyState('<img src="icon192.png" alt="FreightLogic" style="width:64px;height:64px;border-radius:14px" />', 'No trips yet', 'Every load you log builds your profit intelligence — RPM trends, broker grades, and lane analysis all start here.', '＋ Add Trip', ()=> openQuickAddSheet());
+    const filteredEmpty = !!tripSearchTerm.trim()
+      || tripFilterChip !== 'all'
+      || !!tripFilterDateFrom
+      || !!tripFilterDateTo;
+    const empty = filteredEmpty
+      ? renderEmptyState('🔎', 'No matching trips', 'No trips match the current search or filters. Clear or adjust them to see more trips.', '', null)
+      : renderEmptyState('<img src="icon192.png" alt="FreightLogic" style="width:64px;height:64px;border-radius:14px" />', 'No trips yet', 'Every load you log builds your profit intelligence — RPM trends, broker grades, and lane analysis all start here.', '＋ Add Trip', ()=> openQuickAddSheet());
     list.innerHTML = '';
     list.appendChild(empty);
   }
@@ -8115,6 +8149,10 @@ function expenseRow(e){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openExpenseForm(e));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     d.remove();
+    const expenseList = $('#expenseList');
+    if (expenseList && !expenseList.querySelector('.item')){
+      expenseList.appendChild(renderEmptyState('💰', 'No expenses yet', 'Track fuel, tolls, insurance, repairs — everything gets categorized for tax time. Takes 5 seconds.', '＋ Add Expense', ()=> openExpenseForm()));
+    }
     showUndoToast(
       `${escapeHtml(e.category || 'Expense')}`,
       async ()=>{ await deleteExpense(e.id); invalidateKPICache(); await renderExpenses(true); },
@@ -8151,6 +8189,10 @@ function fuelRow(f){
   $('[data-act="edit"]', d).addEventListener('click', ()=> openFuelForm(f));
   $('[data-act="del"]', d).addEventListener('click', async ()=>{
     d.remove();
+    const fuelList = $('#fuelList');
+    if (fuelList && !fuelList.querySelector('.item')){
+      fuelList.appendChild(renderEmptyState('⛽', 'No fuel entries yet', 'Log each fill-up with state and gallons. Fuel tracking powers cost analysis and mileage estimates.', '＋ Add Fuel', ()=> openFuelForm()));
+    }
     showUndoToast(
       `Fuel ${escapeHtml(f.date || '')}`,
       async ()=>{ await deleteFuel(f.id); invalidateKPICache(); await renderFuel(true); },
@@ -8170,7 +8212,7 @@ async function listUnpaidTrips(limit=200){
     req.onsuccess = (e)=>{
       const cur = e.target.result;
       if (!cur || out.length >= limit){ resolve(out); return; }
-      if (tripIsUnpaid(cur.value)) out.push(cur.value);
+      if (isLiveReceivable(cur.value)) out.push(cur.value);
       cur.continue();
     };
   });
@@ -13126,6 +13168,7 @@ function _mwRenderDecision(out, d){
     bookBtn.addEventListener('click', ()=>{
       haptic(15);
       const tripData = {
+        _evalPrefill: true,
         orderNo: '',
         customer: '',
         origin: origin || '',
@@ -14693,6 +14736,7 @@ function openTripWizard(existing=null){
   const isEvalPrefill = existing && existing._evalPrefill;
   const mode = (existing && !isEvalPrefill) ? 'edit' : 'add';
   const trip = existing ? {...newTripTemplate(), ...existing} : newTripTemplate();
+  if (mode === 'add' && !LIFECYCLE_EXECUTION.includes(trip.executionStatus)) trip.executionStatus = 'NOT_STARTED';
   // v24.0.34: a prefill from a Shortcuts link / relay item or from Load Intake
   // names its source instead of claiming it came from the evaluator.
   const prefillLabel = isEvalPrefill && existing._prefillLabel ? String(existing._prefillLabel).slice(0, 40) : '';
@@ -14751,9 +14795,16 @@ function openTripWizard(existing=null){
       <div class="muted" style="font-size:11px;margin-top:4px">Optional intermediate stops (pickup → stop → delivery)</div>
     </div>
     <div class="grid2"><div><label>Delivery date</label><input id="f_delivery" type="date" /></div>
-      <div><label>Status</label><select id="f_paid"><option value="false">Unpaid</option><option value="true">Paid</option></select></div></div>
-    <div class="grid2"><div><label>Invoice date</label><input id="f_invoice" type="date" /></div>
-      <div><label>Due date</label><input id="f_due" type="date" /></div></div>
+      <div><label for="f_paid">Payment status</label><select id="f_paid"><option value="false">Unpaid</option><option value="true">Paid</option></select></div></div>
+    <div class="grid2"><div><label for="f_execution">Trip stage</label><select id="f_execution">
+      <option value="NOT_STARTED">Booked / not started</option>
+      <option value="EN_ROUTE_PICKUP">En route to pickup</option>
+      <option value="PICKED_UP">Picked up / in transit</option>
+      <option value="DELIVERED">Delivered</option>
+      <option value="FELL_THROUGH">Fell through</option>
+    </select></div>
+      <div><label>Invoice date</label><input id="f_invoice" type="date" /></div></div>
+    <div><label>Due date</label><input id="f_due" type="date" /></div>
     <label>Notes</label><textarea id="f_notes" placeholder="Optional"></textarea>
     <div style="margin-top:10px"><label class="chk" style="font-size:14px"><input type="checkbox" id="f_runAgain" /> Would run this lane again</label><div class="muted" style="font-size:11px;margin-top:4px">Feeds your Lane Intelligence — helps identify your best corridors</div></div>
     <label style="margin-top:12px">Receipts</label>
@@ -14777,6 +14828,8 @@ function openTripWizard(existing=null){
     $('#f_dest', body).value = trip.destination || '';
     $('#f_delivery', body).value = trip.deliveryDate || trip.pickupDate || isoDate();
     $('#f_paid', body).value = String(!!trip.isPaid);
+    $('#f_execution', body).value = LIFECYCLE_EXECUTION.includes(trip.executionStatus)
+      ? trip.executionStatus : _lifecycleStateFromTrip(trip).execution;
     $('#f_invoice', body).value = trip.invoiceDate || trip.deliveryDate || trip.pickupDate || isoDate();
     $('#f_due', body).value = trip.dueDate || '';
     $('#f_notes', body).value = trip.notes || '';
@@ -14786,15 +14839,18 @@ function openTripWizard(existing=null){
     $('#f_origin', body).value = trip.origin || '';
     $('#f_dest', body).value = trip.destination || '';
     $('#f_customer', body).value = trip.customer || '';
-    $('#f_delivery', body).value = trip.deliveryDate || isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+    $('#f_delivery', body).value = trip.deliveryDate || isoDate(); $('#f_paid', body).value = 'false'; $('#f_execution', body).value = 'NOT_STARTED'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
   } else {
-    // Pure add mode: auto-fill origin from last trip destination
-    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
+    // Pure add mode: auto-fill origin only from a real prior destination.
+    // "Unknown Destination" is an imported missing-data sentinel, not a city.
+    $('#f_delivery', body).value = isoDate(); $('#f_paid', body).value = 'false'; $('#f_execution', body).value = 'NOT_STARTED'; $('#f_invoice', body).value = isoDate(); $('#f_due', body).value = '';
     listTrips({cursor:null}).then(res => {
       const last = res.items[0];
-      if (last && last.destination){
+      const lastDest = String(last?.destination || '').trim();
+      const unknownPlaceholder = /^unknown(?:\s+(?:origin|destination|area))?$/i.test(lastDest);
+      if (lastDest && !unknownPlaceholder){
         const originEl = $('#f_origin', body);
-        if (originEl && !originEl.value) originEl.value = last.destination;
+        if (originEl && !originEl.value) originEl.value = lastDest;
       }
     }).catch(()=>{});
   }
@@ -14899,6 +14955,8 @@ function openTripWizard(existing=null){
       trip.destination = clampStr($('#f_dest', body).value, 60);
       trip.deliveryDate = $('#f_delivery', body).value || trip.pickupDate;
       trip.isPaid = ($('#f_paid', body).value === 'true');
+      trip.executionStatus = LIFECYCLE_EXECUTION.includes($('#f_execution', body).value)
+        ? $('#f_execution', body).value : 'NOT_STARTED';
       trip.invoiceDate = $('#f_invoice', body).value || trip.deliveryDate || trip.pickupDate;
       trip.dueDate = $('#f_due', body).value || '';
       trip.notes = clampStr($('#f_notes', body).value, 500);
@@ -14950,7 +15008,7 @@ function openTripWizard(existing=null){
     }
     _postTripSaveLaneHook(saved).catch(()=>{}); // F4: Lane Memory
     _positioningCache = null; // F24: clear positioning cache on trip save
-    if (saved.deliveryDate && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
+    if (_lifecycleStateFromTrip(saved).execution === 'DELIVERED' && saved.destination) { _triggerPostDeliveryBrief(saved.destination).catch(()=>{}); } // F24
     if (saved.needsReview) toast('Saved with review flag — excluded from KPIs until corrected', true);
     if (stepNo >= 2){
       const f = $('#f_receipts', body).files;
@@ -16562,7 +16620,10 @@ async function checkOverduePayments(){
     const today = new Date();
     const overdueTrips = [];
     for (const t of trips){
-      if (t.isPaid) continue;
+      // Unknown/review-required imports are not live receivables. Use the
+      // canonical explicit-unpaid predicate rather than treating "not paid" as
+      // proof that money is owed.
+      if (!isLiveReceivable(t)) continue;
       const dt = t.pickupDate || t.deliveryDate;
       if (!dt) continue;
       const pickupTs = new Date(dt).getTime();
@@ -20285,10 +20346,14 @@ async function getBrokerIntel(broker){
 // which stage this load reached.
 function _lifecycleStateFromTrip(trip){
   const t = trip || {};
-  // Execution. A delivery date is the strongest signal we have; a pickup date
-  // without one means it is loaded and moving.
+  // UI-created trips carry an explicit stage because pickup / delivery fields
+  // can be appointments. Legacy/imported rows predate that field and keep the
+  // historical date-based inference.
+  const explicitExecution = LIFECYCLE_EXECUTION.includes(t.executionStatus) ? t.executionStatus : null;
   const execution =
       t.fellThrough === true ? 'FELL_THROUGH'
+    : explicitExecution
+    ? explicitExecution
     : isValidISODate(t.deliveryDate) ? 'DELIVERED'
     : isValidISODate(t.pickupDate) ? 'PICKED_UP'
     : 'NOT_STARTED';
@@ -20311,13 +20376,18 @@ function _lifecycleStateFromTrip(trip){
 }
 
 async function _postTripSaveLaneHook(trip){
-  try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+  const lifecycleState = _lifecycleStateFromTrip(trip);
+  // Lane history is outcome evidence. Booking a load must not train historical
+  // lane analytics before the load actually completes.
+  if (lifecycleState.execution === 'DELIVERED'){
+    try { await recordLaneHistory(trip); } catch(e){ console.warn('[FL] lane history record failed:', e); }
+  }
 
   // v24.2 dual-write. Runs after the trip is already persisted; linkLifecycle()
   // swallows its own errors so this can never cost a saved trip.
   try {
     if (trip?.orderNo){
-      const { execution, settlement } = _lifecycleStateFromTrip(trip);
+      const { execution, settlement } = lifecycleState;
       await linkLifecycle({
         orderNo: trip.orderNo,
         // Blockers 2/3, write side. Fixing only the read side would leave every
@@ -20338,8 +20408,8 @@ async function _postTripSaveLaneHook(trip){
       }, { source: 'TRIP', sourceId: trip.orderNo, reason: `trip save (${execution}/${settlement})` });
     }
   } catch(e){ console.warn('[FL] lifecycle trip link failed (trip is saved):', e); }
-  // F29: Post-trip review prompt when trip has a delivery date
-  if (trip && trip.deliveryDate && trip.origin && trip.destination){
+  // F29: this is completion feedback, never a booking prompt.
+  if (trip && lifecycleState.execution === 'DELIVERED' && trip.origin && trip.destination){
     const reviewKey = 'laneReviewDone_' + (trip.orderNo || '');
     const alreadyDone = await getSetting(reviewKey, false).catch(()=>false);
     if (!alreadyDone) setTimeout(()=> openPostTripReview(trip).catch(()=>{}), 1200);
@@ -23044,7 +23114,8 @@ async function openBrokerNotes(brokerName){
 // v21 T3E: Quick Share to Broker (Web Share API / clipboard)
 // ════════════════════════════════════════════════════════════════
 async function shareBidToClipboard({ origin, dest, miles, bidAmount, rpm, pickupDate }){
-  const driverName = (await getSetting('cloudBackupToken', '')) ? 'Driver' : '';
+  // Real-iPhone field test 2026-09-27: Share Bid is a local device action.
+  // Web Share / clipboard must never depend on cloud-backup or AI credentials.
   const text = [
     `Hi,`,
     `Re: ${origin || '?'} → ${dest || '?'}, ${miles || '?'} mi`,
@@ -23711,6 +23782,7 @@ async function stopTripTracking() {
       loadedMiles: Math.max(1, Math.round(totalMiles)),
       emptyMiles: 0, pay: pay || 0,
       pickupDate: startDate, deliveryDate: endDate,
+      executionStatus: 'DELIVERED',
       customer: broker, needsReview: !(pay > 0),
       autoTracked: true, gpsTrackingId: t.trackingId, created: t.startTime,
     };
@@ -25037,7 +25109,9 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     _historicalRowFingerprint, _orderStableKey,
     computeExportChecksum, computeExportChecksumFull,
     computeLoadScore, generateBidRange, detectUrgency,
-    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, exportTripsCSV, invalidateKPICache,
+    tripAllMiles, summarizeTripMileage, computeQuickKPIs, computeKPIs, computeLaneStats, exportTripsCSV, invalidateKPICache,
+    // IPR-10: direct AR authority surface for deterministic badge/list regression coverage.
+    isLiveReceivable, listUnpaidTrips, refreshUnpaidBadge,
     // OI-15 drives the REAL row renderer, because what was wrong with the
     // unknown-deadhead coercion was what the driver SAW, not what a helper
     // returned. Test-only, behind window.__FL_TESTS_ENABLED like everything here.
@@ -25131,7 +25205,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     purgeLegacyAdminCredential,               // #231 Phase C — delete-only
     // v24.0.34 Shortcuts + Web Push
     parseDeepLinkFragment, validateDeepLinkParams, runDeepLink, renderRelayInbox,
-    pushSupportState, refreshPushShortcutsUI, openTripWizard,
+    pushSupportState, refreshPushShortcutsUI, openTripWizard, closeModal,
   };
 }
 
