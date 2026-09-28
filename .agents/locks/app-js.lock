@@ -1,0 +1,6 @@
+owner: gpt
+token: 5c9b7f22-7a5f-4ad4-a5b3-002420260928
+started_utc: 2026-09-28T10:35:00Z
+expected_release_utc: 2026-09-28T13:35:00Z
+paths: app.js, index.html, modern-shell.js, service-worker.js, manifest.json
+task: AIAG-TASK-0024 FreightLogic UX/IA A-to-Z sweep
