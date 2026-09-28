@@ -28,8 +28,12 @@
 
   function syncActiveFromHash() {
     const route = canonicalRoute(window.location.hash || 'home');
+    const owner = ['expenses','fuel','reports'].includes(route) ? 'money'
+      : route === 'intel' ? 'loads'
+      : route === 'current' ? 'home'
+      : route;
     document.querySelectorAll('.bottom .nav [data-nav]').forEach((link) => {
-      const active = link.dataset.nav === route;
+      const active = link.dataset.nav === owner;
       link.classList.toggle('active', active);
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');

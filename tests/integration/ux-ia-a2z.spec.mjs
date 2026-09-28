@@ -128,7 +128,35 @@ test('[UXA2Z-13] intake review names the inferred decision and GPS stays operato
     'typing an origin must not start an automatic GPS/deadhead estimate');
 });
 
-test('[UXA2Z-14] active execution suppresses idle Today cards', async () => {
+test('[UXA2Z-14] secondary routes keep their workflow owner highlighted', async () => {
+  const app=await boot();
+  try {
+    for (const [hash,label] of [['#intel','Loads'],['#expenses','Money'],['#fuel','Money'],['#reports','Money']]) {
+      await app.page.evaluate(h=>{ location.hash=h; },hash);
+      await app.page.waitForTimeout(350);
+      const active=await app.page.locator('.bottom .nav a.active .nl').textContent();
+      eq((active||'').trim(),label,`${hash} must remain owned by ${label}`);
+    }
+  } finally { await app.close(); }
+});
+
+test('[UXA2Z-15] Advanced & Diagnostics directory entry opens its disclosure', async () => {
+  const app=await boot();
+  try {
+    await app.page.evaluate(()=>{ location.hash='#insights'; });
+    await app.page.waitForTimeout(500);
+    await app.page.click('#settingsDirectory [data-settings-target="settingsAdvanced"]');
+    await app.page.waitForTimeout(150);
+    const r=await app.page.evaluate(()=>({
+      open:document.getElementById('settingsAdvanced')?.open===true,
+      bodyVisible:getComputedStyle(document.getElementById('advSettingsBody')).display!=='none',
+    }));
+    ok(r.bodyVisible,'All Settings must open for an advanced destination');
+    ok(r.open,'Advanced & Diagnostics disclosure must open when its directory entry is tapped');
+  } finally { await app.close(); }
+});
+
+test('[UXA2Z-16] active execution suppresses idle Today cards', async () => {
   const app = await boot();
   try {
     await app.page.evaluate(async () => {

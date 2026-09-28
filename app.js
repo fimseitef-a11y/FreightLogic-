@@ -17077,6 +17077,7 @@ function initCollapsibleSettings(){
       const target = document.getElementById(btn.dataset.settingsTarget || '');
       if (!target) return;
       if (body.contains(target)) setOpen(true);
+      if (target.tagName === 'DETAILS') target.open = true;
       haptic(8);
       setTimeout(()=> target.scrollIntoView({behavior:'smooth', block:'start'}), 30);
     });
