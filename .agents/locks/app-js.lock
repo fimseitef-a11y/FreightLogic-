@@ -1,0 +1,6 @@
+owner: gpt
+token: 41700021-ea37-4bb2-8c1e-ffef89d1867b
+started_utc: 2026-09-28T05:58:00Z
+expected_release_utc: 2026-09-28T08:58:00Z
+paths: app.js
+task: Issue #417 Slice A — stateful Today, Current Load/Active Trip route, History/Reports IA consolidation
