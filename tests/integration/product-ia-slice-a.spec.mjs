@@ -153,6 +153,24 @@ test('[UXIA-06B] a booked not-started trip is still the Current Load without a f
   } finally { await app.close(); }
 });
 
+test('[UXIA-06C] live GPS execution controls move from Today to Current Load', () => {
+  const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
+  const currentStart = src.indexOf('async function renderCurrentLoad()');
+  const currentEnd = src.indexOf('\nfunction ensureTripsHistoryNav()', currentStart);
+  const todayStart = src.indexOf('async function renderTripTrackingUI()');
+  const todayEnd = src.indexOf('\nfunction _renderTrackingIdle', todayStart);
+  ok(currentStart >= 0 && currentEnd > currentStart, 'Current Load renderer must remain inspectable');
+  ok(todayStart >= 0 && todayEnd > todayStart, 'Today tracking renderer must remain inspectable');
+  const current = src.slice(currentStart, currentEnd);
+  const today = src.slice(todayStart, todayEnd);
+  ok(current.includes('currentTrackingHost') && current.includes('_renderTrackingActive'),
+    'Current Load must own the live GPS tracking controls');
+  ok(today.includes("trackDiv.style.display = 'none'"),
+    'Today must hide live execution controls once tracking is active');
+  ok(!today.includes('if (_activeTracking) { _renderTrackingActive(trackDiv); }'),
+    'Today must not render the active tracking control surface');
+});
+
 test('[UXIA-09] Settings is configuration-only and Reports owns operational output', async () => {
   const app = await boot();
   try {
