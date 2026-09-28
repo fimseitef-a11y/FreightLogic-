@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0024 — FreightLogic UX/IA A-to-Z sweep: A3 deadhead persistence first, then Scan/Loads/More/Settings/Money/Documents/onboarding consolidation. app.js and related shared UI paths require live lock; no merge/deploy/PC/ELI authority. | 2026-09-28T10:34:00Z |
+| gpt | — idle — TASK-0024 implementation complete; PR #423 exact head 2140777a ready for review; merge/production and physical iPhone revalidation remain separately gated. | 2026-09-28T11:18:00Z |
 
 ---
 
