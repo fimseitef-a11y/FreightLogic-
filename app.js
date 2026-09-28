@@ -8581,7 +8581,6 @@ const MORE_GROUPS = [
 const MORE_TILES = [
   { icon:'◫', title:'Market Intel', sub:'Lanes, reloads, brokers, market tools', hash:'#intel', section:'PRIMARY', group:'work' },
   { icon:'▤', title:'Documents', sub:'Insurance, authority and business files', act:'documents', section:'PRIMARY', group:'work' },
-  { icon:'$', title:'Money / AR', sub:'Unpaid trips and aging', hash:'#money', section:'PRIMARY', group:'money' },
   { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'money' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
   { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
