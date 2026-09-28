@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #430 open for TASK-0031 exact-head CI and merge gate. | 2026-09-28T23:42:00Z |
+| gpt | — idle — TASK-0031 complete; PR #430 merged and verified. | 2026-09-28T23:55:00Z |
 
 ---
 
