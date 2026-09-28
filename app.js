@@ -6277,13 +6277,100 @@ async function handleShareTarget(){
   }
 }
 
+// Issue #417 Slice A — explicit operational destinations without duplicating economics, trip, report, or lifecycle authority.
+function ensureIssue417SliceAViews(){
+  const main = document.querySelector('main.app');
+  if (!main) return;
+  if (!$('#view-current')){
+    const current = document.createElement('section');
+    current.id = 'view-current'; current.className = 'view'; current.style.display = 'none';
+    current.setAttribute('aria-label', 'Current Load'); current.innerHTML = '<div id="currentLoadBody"></div>'; main.appendChild(current);
+  }
+  if (!$('#view-reports')){
+    const reports = document.createElement('section');
+    reports.id = 'view-reports'; reports.className = 'view'; reports.style.display = 'none';
+    reports.setAttribute('aria-label', 'Reports'); reports.innerHTML = '<div id="reportsBody"></div>'; main.appendChild(reports);
+  }
+}
+ensureIssue417SliceAViews();
+
+function _activeLifecycleRows(rows){
+  return (Array.isArray(rows) ? rows : []).filter(lc => lc && lc.opportunity === 'WON'
+    && ['NOT_STARTED','EN_ROUTE_PICKUP','PICKED_UP'].includes(lc.execution))
+    .sort((a,b) => finiteNum(b.updatedAt, 0) - finiteNum(a.updatedAt, 0));
+}
+async function resolveTodayPrimaryAction(){
+  if (_activeTracking) return { label:'Open Current Load', hash:'#current', reason:'Trip tracking is active' };
+  try {
+    const active = _activeLifecycleRows(await listLifecycle());
+    if (active.length) return { label:'Open Current Load', hash:'#current', reason:lifecycleDisplayStage(active[0]) };
+  } catch(e){ console.warn('[FL] Today primary action:', e); }
+  return { label:'Evaluate Load', hash:'#omega', reason:'No active load' };
+}
+async function renderTodayPrimaryAction(slot){
+  if (!slot) return;
+  let card = $('#todayPrimaryAction');
+  if (!card){ card = document.createElement('div'); card.id = 'todayPrimaryAction'; slot.insertBefore(card, slot.firstChild); }
+  const action = await resolveTodayPrimaryAction();
+  card.innerHTML = '<button class="btn primary" id="todayPrimaryActionBtn" style="width:100%;min-height:52px;font-size:15px;font-weight:800;margin-bottom:10px">'
+    + escapeHtml(action.label) + '</button><div class="sr-only" id="todayPrimaryActionReason">' + escapeHtml(action.reason) + '</div>';
+  card.querySelector('#todayPrimaryActionBtn')?.addEventListener('click', () => { haptic(15); location.hash = action.hash; });
+}
+async function renderCurrentLoad(){
+  const root = $('#currentLoadBody'); if (!root) return;
+  let active = []; try { active = _activeLifecycleRows(await listLifecycle()); } catch(e){ console.warn('[FL] current load lifecycle:', e); }
+  const lc = active[0] || null;
+  if (!lc && !_activeTracking){
+    root.innerHTML = '<div class="card"><h2 style="margin:0 0 8px">Current Load</h2><div class="muted" style="font-size:13px;line-height:1.5">No active load is recorded.</div>'
+      + '<button class="btn primary" id="currentEvaluate" style="width:100%;min-height:48px;margin-top:14px">Evaluate a Load</button></div>'
+      + '<div class="spacer"></div><button class="btn" id="currentHistory" style="width:100%;min-height:48px">History</button>';
+    root.querySelector('#currentEvaluate')?.addEventListener('click', ()=> location.hash = '#omega');
+    root.querySelector('#currentHistory')?.addEventListener('click', ()=> location.hash = '#history'); return;
+  }
+  const stage = lc ? lifecycleDisplayStage(lc) : 'TRIP IN PROGRESS';
+  const route = lc ? [lc.origin, lc.destination].filter(Boolean).join(' → ') : '';
+  const broker = lc ? (lc.brokerDisplay || lc.broker || '') : '';
+  const tracking = _activeTracking ? '<div style="font-size:12px;color:var(--good);font-weight:700;margin-top:8px">● GPS trip tracking active</div>' : '';
+  root.innerHTML = '<div class="card card-hero"><div class="fl-card-hdr"><div><h2 style="margin:0">Current Load</h2><div class="muted" style="font-size:12px;margin-top:4px">'
+    + escapeHtml(stage) + '</div></div>' + (lc && lc.orderNo ? '<div class="pill">#' + escapeHtml(lc.orderNo) + '</div>' : '') + '</div>'
+    + (route ? '<div style="font-size:18px;font-weight:800;margin-top:16px">' + escapeHtml(route) + '</div>' : '')
+    + (broker ? '<div class="muted" style="font-size:13px;margin-top:6px">' + escapeHtml(broker) + '</div>' : '') + tracking
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px">'
+    + (!_activeTracking ? '<button class="btn primary" id="currentStart" style="min-height:48px">Start Trip</button>' : '<button class="btn danger" id="currentStop" style="min-height:48px">Stop &amp; Save</button>')
+    + '<button class="btn" id="currentHistory" style="min-height:48px">History</button></div></div>';
+  root.querySelector('#currentStart')?.addEventListener('click', ()=> { haptic(10); startTripTracking(); });
+  root.querySelector('#currentStop')?.addEventListener('click', ()=> { haptic(20); stopTripTracking(); });
+  root.querySelector('#currentHistory')?.addEventListener('click', ()=> location.hash = '#history');
+}
+function ensureTripsHistoryNav(){
+  const view = $('#view-trips'); if (!view || $('#tripsHistoryNav')) return;
+  const host = view.querySelector('.card'); if (!host) return;
+  const row = document.createElement('div'); row.id = 'tripsHistoryNav';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px';
+  row.innerHTML = '<a class="btn" href="#current" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Current</a>'
+    + '<a class="btn" href="#history" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">History</a>'
+    + '<a class="btn" href="#reports" style="min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none">Reports</a>';
+  host.appendChild(row);
+}
+async function renderReports(){
+  const root = $('#reportsBody'); if (!root) return;
+  let count = 0; try { count = (await dumpStore('weeklyReports')).length; } catch(e){ console.warn('[FL] reports count:', e); }
+  root.innerHTML = '<div class="card card-hero"><h2 style="margin:0 0 6px">Reports</h2><div class="muted" style="font-size:13px;line-height:1.5">Weekly performance, tax exports and accountant-ready packages in one place.</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px">' + escapeHtml(String(count)) + ' saved weekly report' + (count === 1 ? '' : 's') + '</div></div>'
+    + '<div class="spacer"></div><div class="card"><div style="display:grid;gap:10px"><button class="btn primary" id="reportsWeekly" style="min-height:48px">Weekly Reports</button>'
+    + '<button class="btn" id="reportsCPA" style="min-height:48px">CPA Package</button><button class="btn" id="reportsTax" style="min-height:48px">Tax Season Export</button>'
+    + '<a class="btn" href="#insights" style="min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none">Settings</a></div></div>';
+  root.querySelector('#reportsWeekly')?.addEventListener('click', ()=> openWeeklyReports());
+  root.querySelector('#reportsCPA')?.addEventListener('click', ()=> openCPAPackage());
+  root.querySelector('#reportsTax')?.addEventListener('click', ()=> openTaxSeasonExport());
+}
+
 // ---- Router ----
-const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), expenses:$('#view-expenses'),
-  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
+const views = { home:$('#view-home'), loads:$('#view-loads'), trips:$('#view-trips'), current:$('#view-current'), reports:$('#view-reports'), expenses:$('#view-expenses'),\n  money:$('#view-money'), fuel:$('#view-fuel'), insights:$('#view-insights'), intel:$('#view-intel'), omega:$('#view-omega'), more:$('#view-more') };
 
 function setActiveNav(name){
   // Sub-sections accessible from More menu highlight the More tab
-  const navName = ['expenses','fuel','insights'].includes(name) ? 'more' : name;
+  const navName = ['expenses','fuel','insights','reports'].includes(name) ? 'more' : (name === 'current' ? 'trips' : name);
   $$('[data-nav]').forEach(a => {
     const isActive = a.dataset.nav === navName;
     a.classList.toggle('active', isActive);
@@ -6310,7 +6397,7 @@ async function refreshUnpaidBadge(){
 }
 
 async function navigate(){
-  const hash = (location.hash || '#home').slice(1);
+  let hash = (location.hash || '#home').slice(1);\n  // Slice A compatibility: old History links keep landing on canonical Trips history.\n  if (hash === 'history') { location.hash = '#trips'; return; }\n  if (hash === 'reports') hash = 'reports';
 
   // ── Handle share target: process shared files, then redirect to home ──
   if (hash === 'share') {
@@ -6339,7 +6426,7 @@ async function navigate(){
   window.scrollTo({top:0, behavior:'instant'});
   if (name === 'home') await renderHome();
   if (name === 'loads') await renderLoadsView();
-  if (name === 'trips') await renderTrips(true);
+  if (name === 'trips') { ensureTripsHistoryNav(); await renderTrips(true); }\n  if (name === 'current') await renderCurrentLoad();\n  if (name === 'reports') await renderReports();
   if (name === 'expenses') await renderExpenses(true);
   if (name === 'money') await renderAR();
   if (name === 'fuel') await renderFuel(true);
@@ -8447,7 +8534,7 @@ const MORE_TILES = [
   { icon:'$', title:'Expenses', sub:'Business spending and receipts', hash:'#expenses', section:'PRIMARY', group:'money' },
   { icon:'⛽', title:'Fuel Log', sub:'Fill-ups, MPG and fuel cost', hash:'#fuel', section:'PRIMARY', group:'money' },
   { icon:'📅', title:'Monthly Costs', sub:'Recurring costs and history', act:'monthlyCosts', section:'ADVANCED', group:'money' },
-  { icon:'📊', title:'Tax & Reports', sub:'Quick tax view and accountant export', hash:'#insights', section:'PRIMARY', group:'business' },
+  { icon:'📊', title:'Reports', sub:'Weekly performance, tax and accountant exports', hash:'#reports', section:'PRIMARY', group:'business' },
   { icon:'📦', title:'CPA Package', sub:'Quarterly report and export', act:'cpaPackage', section:'ADVANCED', group:'business' },
   { icon:'🗂', title:'Tax Season Export', sub:'Schedule C and mileage log by year', act:'taxExport', section:'ADVANCED', group:'business' },
   { icon:'💾', title:'Export & Backup', sub:'JSON export with checksum', act:'export', section:'PRIMARY', group:'data' },
@@ -23457,7 +23544,7 @@ async function renderTripTrackingUI() {
     slot.insertBefore(ob, slot.firstChild);
     markOnboardingExposure(ob, 'f21OnboardingSeen');
   }
-  let trackDiv = $('#f21TrackArea');
+  await renderTodayPrimaryAction(slot);\n  let trackDiv = $('#f21TrackArea');
   if (!trackDiv) {
     trackDiv = document.createElement('div');
     trackDiv.id = 'f21TrackArea';
