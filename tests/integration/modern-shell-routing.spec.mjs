@@ -236,7 +236,13 @@ test('[MS-12] no canonical route is orphaned by the tab bar that replaced the ol
     });
     ok(routes.includes('intel'), 'the intel surface must still exist');
 
-    const tabHrefs = await app.page.$$eval('.bottom .nav a', (els) => els.map((e) => e.getAttribute('href')));
+    const tabHrefs = await app.page.$eval('.bottom .nav a', (els) => els.map((e) => e.getAttribute('href')));
+    // Slice A adds contextual Current Load + Reports access under History. These
+    // are deliberate secondary routes, not primary tabs, so count the links the
+    // driver can actually tap rather than maintaining an exceptions list.
+    await tapTab(app.page, 'trips');
+    const secondaryHrefs = await app.page.$eval('#tripsHistoryNav a[href^="#"]',
+      (els) => els.map((e) => e.getAttribute('href')));
     await app.page.click('#modernMoreBtn');
     await app.page.waitForTimeout(700);
     // Open the collapsed Advanced group so its tiles are in the DOM too.
@@ -249,12 +255,12 @@ test('[MS-12] no canonical route is orphaned by the tab bar that replaced the ol
 
     // `more` is reached by the header control, not by a hash link; everything
     // else must be reachable by a tab or a tile.
-    const reachable = new Set(tabHrefs.map((h) => h.replace(/^#/, '')).concat(['more']));
+    const reachable = new Set(tabHrefs.concat(secondaryHrefs).map((h) => h.replace(/^#/, '')).concat(['more']));
     const tileRoutes = await app.page.evaluate(() => {
       // MORE_TILES is private too; assert via the rendered tiles' click targets
       // by matching on title, which is what a driver actually reads.
       const map = { 'Money / AR': 'money', 'Expenses': 'expenses', 'Fuel Log': 'fuel',
-        'Settings': 'insights', 'Tax & Reports': 'insights', 'Market Intel': 'intel' };
+        'Settings': 'insights', 'Reports': 'reports', 'Market Intel': 'intel' };
       return [...document.querySelectorAll('#moreMenu .menu-tile .tt')]
         .map((e) => map[e.textContent.trim()]).filter(Boolean);
     });
@@ -262,7 +268,7 @@ test('[MS-12] no canonical route is orphaned by the tab bar that replaced the ol
 
     const orphans = routes.filter((r) => !reachable.has(r));
     eq(orphans.join(','), '',
-      `every route must be reachable from the tab bar or More; orphaned: ${JSON.stringify(orphans)}. ` +
+      `every route must be reachable from the primary shell or deliberate secondary navigation; orphaned: ${JSON.stringify(orphans)}. ` +
       'A route whose only link was the replaced nav anchor is invisible to the driver even ' +
       'though its renderer still works.');
   } finally { await app.close(); }

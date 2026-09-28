@@ -580,6 +580,27 @@
     .toast.hide { animation: toastOut .2s var(--ease-smooth) forwards }
     .toast.err { border-color: var(--bad-border) }
 
+    /* ── Undo Toast ───────────────────────────────────────────────
+       Restored after the stylesheet extraction: this control must sit above the
+       fixed bottom navigation or the visible Undo button is not tappable. */
+    #undoToast {
+      display: none; position: fixed;
+      bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+      left: 50%; transform: translateX(-50%); z-index: 100;
+      background: var(--surface-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 14px;
+      padding: 10px 12px 10px 16px;
+      font-size: 14px; font-weight: 600; white-space: nowrap;
+      box-shadow: var(--shadow-lg);
+      align-items: center; gap: 12px;
+    }
+    #undoToast.show { display: flex }
+    #undoToast .undo-btn {
+      background: var(--accent); color: #07070f;
+      border: 0; border-radius: 10px; padding: 8px 14px;
+      min-height: 44px; font: inherit; font-weight: 800; cursor: pointer;
+    }
+
     /* ── KPI pulse ────────────────────────────────────────────────── */
     @keyframes kpiPop { 0% { transform:scale(1) } 50% { transform:scale(1.05) } 100% { transform:scale(1) } }
     .kpi-pop { animation: kpiPop .28s var(--ease-smooth) }
