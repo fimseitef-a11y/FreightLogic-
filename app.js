@@ -7816,7 +7816,13 @@ async function renderTrips(reset=false){
   tripCursor = res.nextCursor;
   if (reset) list.innerHTML = '';
   if (!res.items.length && reset){
-    const empty = renderEmptyState('<img src="icon192.png" alt="FreightLogic" style="width:64px;height:64px;border-radius:14px" />', 'No trips yet', 'Every load you log builds your profit intelligence — RPM trends, broker grades, and lane analysis all start here.', '＋ Add Trip', ()=> openQuickAddSheet());
+    const filteredEmpty = !!tripSearchTerm.trim()
+      || tripFilterChip !== 'all'
+      || !!tripFilterDateFrom
+      || !!tripFilterDateTo;
+    const empty = filteredEmpty
+      ? renderEmptyState('🔎', 'No matching trips', 'No trips match the current search or filters. Clear or adjust them to see more trips.', '', null)
+      : renderEmptyState('<img src="icon192.png" alt="FreightLogic" style="width:64px;height:64px;border-radius:14px" />', 'No trips yet', 'Every load you log builds your profit intelligence — RPM trends, broker grades, and lane analysis all start here.', '＋ Add Trip', ()=> openQuickAddSheet());
     list.innerHTML = '';
     list.appendChild(empty);
   }
