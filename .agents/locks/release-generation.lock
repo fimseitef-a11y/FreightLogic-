@@ -1,0 +1,6 @@
+owner: gpt
+token: 41700021-6ea3-4c9d-b625-cf018114e7b4
+started_utc: 2026-09-28T06:02:00Z
+expected_release_utc: 2026-09-28T09:02:00Z
+paths: index.html, service-worker.js, manifest.json, sw-bridge.js, modern-shell.js
+task: Issue #417 Slice A — governed navigation/runtime generation and release identity
