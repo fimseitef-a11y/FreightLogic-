@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0027 takeover — continue existing Slice D red-first branch after stale-lock reap; vehicle identity/provenance only, no external spec authority. | 2026-09-28T19:14:30Z |
+| gpt | — idle — PR #426 merged; Slice D post-merge main/production verification in progress. | 2026-09-28T19:30:00Z |
 
 ---
 
