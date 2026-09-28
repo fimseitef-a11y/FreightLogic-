@@ -259,16 +259,25 @@ test('[IPR-10] review-required or payment-unknown imports never become live rece
   eq(seeded.reviewReview, true, 'invalid imported row is held for review');
   eq(seeded.unknownReview, true, 'payment-unknown import is held for review');
 
+  const directAR = await app.page.evaluate(async () => {
+    const T = window.__FL_TESTS;
+    const items = await T.listUnpaidTrips(10);
+    await T.refreshUnpaidBadge();
+    return {
+      orders: items.map(t => t.orderNo),
+      badge: document.getElementById('navUnpaidBadge')?.textContent?.trim() || '',
+    };
+  });
+  eq(directAR.orders.join(','), 'IPR-AR-VALID', 'canonical unpaid list excludes review/unknown imports');
+  eq(directAR.badge, '1', `unpaid badge counts only canonical receivables — got ${directAR.badge || '(blank)'}`);
+
   await app.page.evaluate(() => { location.hash = '#home'; });
   await sleep(1000);
   const home = await app.page.evaluate(() => ({
-    badge: document.getElementById('navUnpaidBadge')?.textContent?.trim() || '',
-    badgeDisplay: getComputedStyle(document.getElementById('navUnpaidBadge')).display,
     overdue: document.getElementById('overdueAlert')?.innerText || '',
     smart: document.getElementById('homeSmartInsight')?.innerText || '',
     actions: document.getElementById('homeActions')?.innerText || '',
   }));
-  eq(home.badge, '1', 'unpaid badge counts only canonical receivables');
   ok(/1 Overdue Payment/i.test(home.overdue), `Today overdue banner should contain only the valid control — got ${home.overdue.replace(/\s+/g, ' ').trim()}`);
   ok(!/1998|1887|999|888|Review Import|Unknown Payment Import/i.test(home.overdue), 'review/unknown imports do not contaminate overdue totals');
   ok(!/invoices.*outstanding|at risk/i.test(home.smart), 'one valid overdue receivable alone must not trigger the two-invoice Smart Insight');
