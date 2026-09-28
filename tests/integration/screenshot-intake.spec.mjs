@@ -88,13 +88,13 @@ test('[SSI-01] the intake surface offers a screenshot path, and no Voice control
     await openIntake(app.page);
     const surface = await app.page.evaluate(() => ({
       hasShot: !!document.querySelector('#liShot'),
-      hasPick: !!document.querySelector('#liPickImg'),
+      hasSeparateCamera: !!document.querySelector('#liPickImg, #liImgCamera'),
       hasText: !!document.querySelector('#liRawText'),
       text: document.body.innerText,
       voiceNodes: document.querySelectorAll('#liVoice, #mwVoiceBtn, #f23VoiceBtn').length,
     }));
     ok(surface.hasShot, 'a Screenshot control must exist on the intake surface');
-    ok(surface.hasPick, 'a Photos/Files control must exist — the guaranteed iPhone path');
+    eq(surface.hasSeparateCamera, false, 'the screenshot picker must not be duplicated by a forced-camera control');
     ok(surface.hasText, 'typing and pasting text must remain available');
     // #230 removed Voice by operator decision; a new intake surface must not
     // quietly reintroduce it, and .claude/CLAUDE.md names that explicitly.
@@ -568,33 +568,33 @@ test('[SSI-18] compact decision facts consume the Driver/Glance semantic present
   } finally { await app.close(); }
 });
 
-test('[SSI-20] "Choose Screenshot" opens the photo library, not the camera', async () => {
-  // Reported on a real iPhone 2026-09-25: the Screenshot button opened the
-  // camera (capture="environment"), so the posting just screenshotted could
-  // never be picked. Clicking a file input records which one was asked for.
+test('[SSI-20] "Choose Screenshot" uses one flexible image picker', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
     await openIntake(app.page);
     const r = await app.page.evaluate(() => {
-      const clicked = [];
-      for (const id of ['liImgFile', 'liImgCamera']) {
-        const el = document.getElementById(id);
-        el.click = () => clicked.push({ id, capture: el.hasAttribute('capture'), accept: el.accept });
-      }
+      const input=document.getElementById('liImgFile');
+      const clicked=[];
+      input.click=()=>clicked.push({ capture:input.hasAttribute('capture'), accept:input.accept });
       document.getElementById('liShot').click();
-      document.getElementById('liPickImg').click();
-      return { clicked, shotLabel: document.getElementById('liShot').textContent };
+      return {
+        clicked,
+        cameraButton:!!document.getElementById('liPickImg'),
+        cameraInput:!!document.getElementById('liImgCamera'),
+        shotLabel:document.getElementById('liShot').textContent,
+      };
     });
-    eq(r.clicked.length, 2, 'both buttons must open a file input');
-    eq(r.clicked[0].capture, false, 'the screenshot button must open an input WITHOUT capture — capture forces the camera on iPhone');
-    ok(/image\/\*/.test(r.clicked[0].accept), 'and must accept any image type the Photos library hands over');
-    ok(/Screenshot/.test(r.shotLabel), 'the screenshot button is labelled as such');
-    eq(r.clicked[1].capture, true, 'the camera is its own, separate control');
+    eq(r.clicked.length,1,'one screenshot action opens one picker');
+    eq(r.clicked[0].capture,false,'the picker must not force the camera on iPhone');
+    ok(/image\/*/.test(r.clicked[0].accept),'the picker accepts images');
+    eq(r.cameraButton,false,'no redundant camera button');
+    eq(r.cameraInput,false,'no redundant capture-only input');
+    ok(/Screenshot/.test(r.shotLabel),'the action is clearly labelled');
   } finally { await app.close(); }
 });
 
-test('[SSI-21] the Scan Screenshot button stacks its subtitle under the title', async () => {
+test('[SSI-21] the Add Screenshot button stacks its subtitle under the title', async () => {
   const app = await launchApp();
   try {
     await skipFirstRunWizard(app.page);
