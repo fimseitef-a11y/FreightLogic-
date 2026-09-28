@@ -6291,6 +6291,11 @@ function ensureIssue417SliceAViews(){
     reports.id = 'view-reports'; reports.className = 'view'; reports.style.display = 'none';
     reports.setAttribute('aria-label', 'Reports'); reports.innerHTML = '<div id="reportsBody"></div>'; main.appendChild(reports);
   }
+  const reportView = $('#view-reports');
+  for (const id of ['taxPeriodTabs','acctPeriodTabs']){
+    const card = $('#' + id)?.closest('.card');
+    if (reportView && card && !reportView.contains(card)) reportView.appendChild(card);
+  }
 }
 ensureIssue417SliceAViews();
 
