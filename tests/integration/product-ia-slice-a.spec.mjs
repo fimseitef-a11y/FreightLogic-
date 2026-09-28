@@ -126,6 +126,17 @@ test('[UXIA-09] Settings is configuration-only and Reports owns operational outp
   } finally { await app.close(); }
 });
 
+test('[UXIA-09A] More deduplicates report shortcuts once Reports owns them', () => {
+  const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
+  const start = src.indexOf('const MORE_TILES = [');
+  const end = src.indexOf('];', start);
+  ok(start >= 0 && end > start, 'MORE_TILES must remain inspectable');
+  const block = src.slice(start, end + 2);
+  ok(/title:'Reports'[^\n]+hash:'#reports'/.test(block), 'More must keep one canonical Reports destination');
+  ok(!/title:'CPA Package'|title:'Tax Season Export'/.test(block),
+    'CPA and tax exports must live under Reports instead of duplicate More entries');
+});
+
 test('[UXIA-10] Reports delegates to existing canonical report engines', () => {
   const src = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
   const start = src.indexOf('async function renderReports()');
