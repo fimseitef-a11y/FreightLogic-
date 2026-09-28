@@ -1,6 +1,6 @@
 // v24.0.8 — the five-surface driver shell, driven as a driver drives it.
 //
-// PR #168 landed Today / Loads / Evaluate / Trips / Money and the full suite was
+// PR #168 landed Today / Loads / Evaluate / History / Money and the full suite was
 // green, because NOTHING in the suite touched the shell. The Loads tab — the
 // central new surface of that pass — was dead on arrival:
 //
@@ -83,8 +83,8 @@ test('[MS-01] the tab bar is the five driver surfaces, in order', async () => {
       nav: e.dataset.nav,
       href: e.getAttribute('href'),
     })));
-    eq(tabs.map((t) => t.label).join('/'), 'Today/Loads/Evaluate/Trips/Money',
-      'primary navigation must be Today / Loads / Evaluate / Trips / Money in that order');
+    eq(tabs.map((t) => t.label).join('/'), 'Today/Loads/Evaluate/History/Money',
+      'primary navigation must be Today / Loads / Evaluate / History / Money in that order');
     // data-nav carries the CANONICAL route name so app.js setActiveNav() drives
     // the highlight. Before 24.0.8 the centre tab declared data-nav="evaluate",
     // a label the router never produces.
@@ -282,7 +282,7 @@ test('[MS-09] the unpaid-trips badge app.js writes to survives the tab-bar rebui
     });
     ok(badge, '#navUnpaidBadge must still exist after the tab bar is rebuilt');
     eq(badge.count, 1, 'exactly one #navUnpaidBadge — a duplicate id means app.js writes to the wrong node');
-    eq(badge.inTab, 'trips', 'the badge must live on the Trips tab');
+    eq(badge.inTab, 'trips', 'the badge must live on the History tab');
   } finally { await app.close(); }
 });
 
