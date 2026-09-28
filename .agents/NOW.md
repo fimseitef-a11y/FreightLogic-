@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | Real-iPhone defect repair: app.js booking/share/trip lifecycle/Undo state under lock/app-js token 2f0a92d6. | 2026-09-27T23:22:00Z |
+| gpt | AIAG-TASK-0016: residual imported/review-row AR pollution repair on PR #413; app.js lock token 72cb4ff7. | 2026-09-28T01:14:00Z |
 
 ---
 
