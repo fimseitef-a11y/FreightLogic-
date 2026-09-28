@@ -236,12 +236,12 @@ test('[MS-12] no canonical route is orphaned by the tab bar that replaced the ol
     });
     ok(routes.includes('intel'), 'the intel surface must still exist');
 
-    const tabHrefs = await app.page.$eval('.bottom .nav a', (els) => els.map((e) => e.getAttribute('href')));
+    const tabHrefs = await app.page.$$eval('.bottom .nav a', (els) => els.map((e) => e.getAttribute('href')));
     // Slice A adds contextual Current Load + Reports access under History. These
     // are deliberate secondary routes, not primary tabs, so count the links the
     // driver can actually tap rather than maintaining an exceptions list.
     await tapTab(app.page, 'trips');
-    const secondaryHrefs = await app.page.$eval('#tripsHistoryNav a[href^="#"]',
+    const secondaryHrefs = await app.page.$$eval('#tripsHistoryNav a[href^="#"]',
       (els) => els.map((e) => e.getAttribute('href')));
     await app.page.click('#modernMoreBtn');
     await app.page.waitForTimeout(700);
