@@ -1,4 +1,7 @@
-// FreightLogic Cloud Backup Worker v32 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// FreightLogic Cloud Backup Worker v33 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v33: ATOMIC INVITE CLAIM BUDGET (AIAG-TASK-0035, 2026-09-29).
+// Production claim exhaustion is reserved in the existing SQLite Durable Object,
+// seeded from legacy KV state so stale KV reads cannot admit a fourth claim.
 // v32: RESTORE BACKUP/DELTA SIZE RESPONSE CONTRACT (AIAG-TASK-0035, 2026-09-29).
 // The bounded reader continues enforcing TRUE UTF-8 byte ceilings, but the API
 // response's historical `size` field remains JavaScript string length for
@@ -910,7 +913,7 @@ export default {
       if (request.method === 'GET' && path === '/health') {
         return json({
           ok: true,
-          version: '32',
+          version: '33',
           ts: new Date().toISOString(),
           rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
           credentialPolicy: 'finite-v1',
@@ -954,7 +957,15 @@ export default {
         catch { return json({ ok: false, error: 'Invite corrupted' }, 500, cors); }
 
         const maxClaims = inv.maxClaims || 3;
-        if ((inv.claims || 0) >= maxClaims) {
+        const exactClaim = await reserveExactInviteClaim(
+          env, codeHash, maxClaims, Number(inv.claims || 0), inv.expiresAt
+        );
+        if (exactClaim && !exactClaim.ok) {
+          // Production binds RATE_LIMITER, so an unhealthy exact counter must
+          // fail closed without spending or deleting a still-valid invite.
+          return json({ ok: false, error: 'Invite service temporarily unavailable. Try again.' }, 503, cors);
+        }
+        if ((exactClaim && exactClaim.limited) || (!exactClaim && (inv.claims || 0) >= maxClaims)) {
           await env.BACKUPS.delete('inv:' + codeHash);
           return json({ ok: false, error: 'This invite has already been used.' }, 410, cors);
         }
@@ -1005,7 +1016,7 @@ export default {
         }
 
         inv.userId = userId;
-        inv.claims = (inv.claims || 0) + 1;
+        inv.claims = exactClaim ? exactClaim.count : (inv.claims || 0) + 1;
 
         // Re-putting the invite record resets KV's TTL, so the ORIGINAL expiry
         // has to be re-derived and re-applied. Without this, every claim would
@@ -2036,6 +2047,40 @@ export class RateLimitCounter {
     let body;
     try { body = await request.json(); } catch { body = null; }
     const limit = Number(body?.limit);
+    if (body?.mode === 'invite-claim') {
+      const seed = Number(body?.seed);
+      const expiresAt = Number(body?.expiresAt);
+      if (!Number.isInteger(limit) || limit < 1 || !Number.isInteger(seed) || seed < 0 ||
+          !Number.isFinite(expiresAt)) {
+        return new Response(JSON.stringify({ ok: false, error: 'Invalid invite-claim request' }), { status: 400 });
+      }
+
+      const now = Date.now();
+      const result = await this.state.storage.transaction(async tx => {
+        let rec = await tx.get('inviteClaim');
+        if (!rec || !Number.isFinite(Number(rec.expiresAt)) || Number(rec.expiresAt) !== expiresAt) {
+          rec = { count: 0, expiresAt };
+        }
+        // Seed from the legacy KV count on rollout, and never let a stale KV
+        // read move the authoritative Durable Object count backward.
+        rec.count = Math.max(Number(rec.count || 0), seed);
+        if (expiresAt <= now || rec.count >= limit) {
+          await tx.put('inviteClaim', rec);
+          return { limited: true, count: rec.count, expiresAt };
+        }
+        rec.count += 1;
+        await tx.put('inviteClaim', rec);
+        return { limited: false, count: rec.count, expiresAt };
+      });
+      if (typeof this.state.storage.setAlarm === 'function' && expiresAt > now) {
+        await this.state.storage.setAlarm(expiresAt);
+      }
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
+
     const windowMs = Number(body?.windowMs);
     if (!Number.isInteger(limit) || limit < 1 || !Number.isFinite(windowMs) || windowMs < 1000) {
       return new Response(JSON.stringify({ ok: false, error: 'Invalid rate-limit request' }), { status: 400 });
@@ -2094,6 +2139,38 @@ async function exactRateLimit(env, objectName, limit, windowMs) {
   } catch {
     console.error('[FL] exact rate limiter unavailable');
     return true;
+  }
+}
+
+async function reserveExactInviteClaim(env, codeHash, limit, seedClaims, expiresAt) {
+  if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return null;
+  const expiresAtMs = Date.parse(String(expiresAt || ''));
+  if (!Number.isFinite(expiresAtMs)) {
+    console.error('[FL] invite claim counter rejected invalid expiry metadata');
+    return { ok: false, limited: true, count: seedClaims };
+  }
+  try {
+    const id = await exactRateObjectId(env, 'invite-claim:' + codeHash);
+    const stub = env.RATE_LIMITER.get(id);
+    const res = await stub.fetch('https://rate.internal/invite-claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'invite-claim',
+        limit,
+        seed: Math.max(0, Math.floor(Number(seedClaims) || 0)),
+        expiresAt: expiresAtMs,
+      }),
+    });
+    if (!res.ok) return { ok: false, limited: true, count: seedClaims };
+    const body = await res.json();
+    if (body?.ok !== true || typeof body?.limited !== 'boolean' || !Number.isFinite(Number(body?.count))) {
+      return { ok: false, limited: true, count: seedClaims };
+    }
+    return { ok: true, limited: body.limited, count: Number(body.count) };
+  } catch {
+    console.error('[FL] exact invite claim counter unavailable');
+    return { ok: false, limited: true, count: seedClaims };
   }
 }
 
