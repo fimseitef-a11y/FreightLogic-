@@ -28,10 +28,10 @@ if [ "$NAME" != "$EXPECTED_NAME" ]; then
 fi
 
 echo "Dry-running dedicated Admin Console Worker: $EXPECTED_NAME"
-npx --yes wrangler@4.144.0 deploy -c "$CONFIG" --dry-run
+npx --yes wrangler@4.143.0 deploy -c "$CONFIG" --dry-run
 
 echo "Deploying dedicated Admin Console Worker: $EXPECTED_NAME"
-npx --yes wrangler@4.144.0 deploy -c "$CONFIG"
+npx --yes wrangler@4.143.0 deploy -c "$CONFIG"
 
 echo "Waiting briefly for Workers.dev propagation..."
 sleep 8
