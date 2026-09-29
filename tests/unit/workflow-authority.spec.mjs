@@ -95,6 +95,15 @@ export function mutableActionRefs(text) {
   return refs;
 }
 
+export function floatingWranglerRefs(text) {
+  const refs = [];
+  for (const m of code(text).matchAll(/\bwrangler@([^\s\\]+)/g)) {
+    const ref = m[1];
+    if (!/^\d+\.\d+\.\d+$/.test(ref)) refs.push(`wrangler@${ref}`);
+  }
+  return refs;
+}
+
 // --- the assertions -------------------------------------------------------
 
 test('[WFA-01] every workflow declares an explicit top-level permissions block', () => {
@@ -149,6 +158,24 @@ test('[WFA-07] every external GitHub Action is pinned to an immutable commit SHA
     'WFA-07 must reject a movable @vN action tag');
 });
 
+test('[WFA-08] deployment CLI invocations pin Wrangler to an exact published-version shape', () => {
+  const files = [
+    ...workflowFiles().map(f => path.join(WF_DIR, f)),
+    path.join(ROOT, 'admin-console', 'deploy.sh'),
+    path.join(ROOT, 'scripts', 'deploy-backup-worker.sh'),
+  ];
+  for (const file of files) {
+    const mutable = floatingWranglerRefs(readFileSync(file, 'utf8'));
+    ok(mutable.length === 0,
+      `${path.relative(ROOT, file)} has floating Wrangler ref(s): ${mutable.join(', ')} — use an exact x.y.z version`);
+  }
+
+  // Negative control: major-only pins are movable and must be rejected.
+  const caught = floatingWranglerRefs('npx --yes wrangler@4 deploy -c wrangler.jsonc');
+  ok(caught.length === 1 && caught[0] === 'wrangler@4',
+    'WFA-08 must reject a floating wrangler@4 reference');
+});
+
 test('[WFA-05] the deploy workflow is still the one exception, and still gated', () => {
   // Deploying the Worker is the only thing CI does that changes the world. It
   // holds no repository write authority: it pushes to Cloudflare, not to git.
@@ -195,6 +222,8 @@ test('[WFA-06] the rules actually reject an offender — negative control, alway
   ok(usesForbiddenTrigger(offender) === 'issue_comment', 'WFA-04 must catch the comment trigger');
   ok(mutableActionRefs('jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v7').length === 1,
     'WFA-07 must catch a movable action tag');
+  ok(floatingWranglerRefs('npx --yes wrangler@4 deploy').length === 1,
+    'WFA-08 must catch a floating Wrangler major');
 
   // And the inverse: a real, compliant workflow must not be flagged, or the
   // guard is just noise that gets disabled.
