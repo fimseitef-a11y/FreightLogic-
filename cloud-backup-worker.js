@@ -215,6 +215,10 @@ const DRIVER_CREDENTIAL_TOUCH_MS = DAY_MS;
 const ADMIN_CREDENTIAL_MAX_MS = 90 * DAY_MS;
 const ADMIN_CREDENTIAL_IDLE_MS = 30 * DAY_MS;
 const ADMIN_AUDIT_TTL_S = 400 * 24 * 60 * 60;
+const USER_RATE_LIMIT_NAMESPACES = Object.freeze([
+  'pushtest', 'sckey', 'rem', 'pushwardtest', 'eval',
+  'extract', 'extract-image', 'backup', 'delta', 'agent-rpc',
+]);
 
 function isoAt(ms) { return new Date(ms).toISOString(); }
 
@@ -437,7 +441,19 @@ export async function eraseUserData(env, userId) {
     if (key.includes(':' + userId + ':')) keys.add(key);
   }
 
-  const remIndex = await readReminderIndex(env).catch(() => []);
+  // Exact limiter state is part of the account's server-side metadata too.
+  // Clear it before deleting the canonical account so any failure leaves the
+  // account recoverable instead of reporting a partial erasure as complete.
+  if (env.RATE_LIMITER) {
+    const clearOps = USER_RATE_LIMIT_NAMESPACES.map(ns =>
+      clearExactRateLimit(env, 'hour:' + ns + ':' + userId));
+    if (shortcutRec?.hash) clearOps.push(clearExactRateLimit(env, 'hour:relay:' + shortcutRec.hash));
+    await Promise.all(clearOps);
+  }
+
+  // A read failure here must abort erasure. Silently substituting [] would
+  // leave the erased user's identifier in the global reminder index.
+  const remIndex = await readReminderIndex(env);
   if (remIndex.includes(userId)) {
     const next = remIndex.filter(id => id !== userId);
     if (next.length) await env.BACKUPS.put('rem:index', JSON.stringify(next));
@@ -1996,6 +2012,10 @@ export class RateLimitCounter {
   }
 
   async fetch(request) {
+    if (request.method === 'DELETE') {
+      await this.state.storage.deleteAll();
+      return new Response(null, { status: 204 });
+    }
     if (request.method !== 'POST') {
       return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), { status: 405 });
     }
@@ -2028,10 +2048,26 @@ export class RateLimitCounter {
   }
 }
 
+async function exactRateObjectId(env, objectName) {
+  // Never embed raw user IDs or IP addresses in Durable Object names. The
+  // one-way name still gives deterministic routing without becoming metadata
+  // that can identify the limiter subject.
+  const digest = await hashToken(String(objectName));
+  return env.RATE_LIMITER.idFromName('v1:' + digest);
+}
+
+async function clearExactRateLimit(env, objectName) {
+  if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return;
+  const id = await exactRateObjectId(env, objectName);
+  const stub = env.RATE_LIMITER.get(id);
+  const res = await stub.fetch('https://rate.internal/check', { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error('Could not clear exact rate limiter state');
+}
+
 async function exactRateLimit(env, objectName, limit, windowMs) {
   if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return null;
   try {
-    const id = env.RATE_LIMITER.idFromName(objectName);
+    const id = await exactRateObjectId(env, objectName);
     const stub = env.RATE_LIMITER.get(id);
     const res = await stub.fetch('https://rate.internal/check', {
       method: 'POST',
