@@ -957,6 +957,32 @@ export default {
         catch { return json({ ok: false, error: 'Invite corrupted' }, 500, cors); }
 
         const maxClaims = inv.maxClaims || 3;
+        // Preserve the legacy max-before-revocation ordering when KV itself
+        // already shows exhaustion. In production the exact counter is also
+        // seeded to that count, so this branch cannot reopen a spent invite.
+        if ((inv.claims || 0) >= maxClaims) {
+          const visibleMax = await reserveExactInviteClaim(
+            env, codeHash, maxClaims, Number(inv.claims || 0), inv.expiresAt
+          );
+          if (visibleMax && !visibleMax.ok) {
+            return json({ ok: false, error: 'Invite service temporarily unavailable. Try again.' }, 503, cors);
+          }
+          await env.BACKUPS.delete('inv:' + codeHash);
+          return json({ ok: false, error: 'This invite has already been used.' }, 410, cors);
+        }
+
+        // Check revocation BEFORE reserving another exact claim slot. Revocation
+        // must kill the outstanding link without silently consuming its finite
+        // re-claim budget merely because someone retries a dead link.
+        let userId = inv.userId, prev = null;
+        if (userId) {
+          const prevRaw = await env.BACKUPS.get('user:' + userId);
+          try { prev = prevRaw ? JSON.parse(prevRaw) : null; } catch { prev = null; }
+          if (prev && prev.active === false) {
+            return json({ ok: false, error: 'This driver has been revoked.' }, 403, cors);
+          }
+        }
+
         const exactClaim = await reserveExactInviteClaim(
           env, codeHash, maxClaims, Number(inv.claims || 0), inv.expiresAt
         );
@@ -965,14 +991,14 @@ export default {
           // fail closed without spending or deleting a still-valid invite.
           return json({ ok: false, error: 'Invite service temporarily unavailable. Try again.' }, 503, cors);
         }
-        if ((exactClaim && exactClaim.limited) || (!exactClaim && (inv.claims || 0) >= maxClaims)) {
+        if (exactClaim && exactClaim.limited) {
           await env.BACKUPS.delete('inv:' + codeHash);
           return json({ ok: false, error: 'This invite has already been used.' }, 410, cors);
         }
 
         const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
         const tokenHash = await hashToken(token);
-        let userId = inv.userId, rec, staleHash = null;
+        let rec, staleHash = null;
 
         if (userId) {
           // RE-CLAIM inside the window. This is not a convenience: on iOS,
@@ -985,14 +1011,6 @@ export default {
           // Same user, same history, fresh token. The previous token is revoked
           // (staleHash) so a re-claim is also a rotation, not an accumulation of
           // live credentials.
-          const prevRaw = await env.BACKUPS.get('user:' + userId);
-          let prev = null;
-          try { prev = prevRaw ? JSON.parse(prevRaw) : null; } catch { prev = null; }
-          // A revoked driver's outstanding invite must be dead too, or revoking
-          // someone would be undone by an invite link they still have.
-          if (prev && prev.active === false) {
-            return json({ ok: false, error: 'This driver has been revoked.' }, 403, cors);
-          }
           staleHash = prev && prev.tokenHash !== tokenHash ? prev.tokenHash : null;
           rec = stampFreshCredential({
             userId,
