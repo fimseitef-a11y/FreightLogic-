@@ -1,0 +1,6 @@
+owner: gpt
+token: 9b4f9c4a-63a7-4c9b-9bb7-d1c2460b3f55
+started_utc: 2026-09-29T20:56:00Z
+expected_release_utc: 2026-09-29T22:56:00Z
+paths: .agents/NOW.md, .agents/STATUS.md
+task: Continue PR #435 exact-head CI repair for AIAG-TASK-0035 atomic invite claim fix
