@@ -64,9 +64,59 @@ function makeKV(seed = {}) {
   return api;
 }
 
+async function loadWorkerModule() {
+  return await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.js')).href);
+}
+
 async function loadWorker() {
-  const mod = await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.js')).href);
-  return mod.default;
+  return (await loadWorkerModule()).default;
+}
+
+function makeLaggyInviteKV(seed = {}) {
+  const kv = makeKV(seed);
+  const staleInvite = new Map();
+  const baseGet = kv.get.bind(kv);
+  const basePut = kv.put.bind(kv);
+  const baseDelete = kv.delete.bind(kv);
+  kv.get = async (k) => {
+    if (k.startsWith('inv:') && staleInvite.has(k)) return staleInvite.get(k);
+    return baseGet(k);
+  };
+  kv.put = async (k, v, opts) => {
+    await basePut(k, v, opts);
+    if (k.startsWith('inv:') && !staleInvite.has(k)) staleInvite.set(k, v);
+  };
+  kv.delete = async (k) => {
+    staleInvite.delete(k);
+    return baseDelete(k);
+  };
+  return kv;
+}
+
+function makeRateLimiterBinding(RateLimitCounter, env) {
+  const objects = new Map();
+  return {
+    idFromName(name) { return name; },
+    get(id) {
+      if (!objects.has(id)) {
+        const map = new Map();
+        let tail = Promise.resolve();
+        const storage = {
+          transaction(fn) {
+            const work = tail.then(() => fn({
+              get: async k => map.get(k),
+              put: async (k, v) => { map.set(k, v); },
+            }));
+            tail = work.then(() => {}, () => {});
+            return work;
+          },
+          async deleteAll() { map.clear(); },
+        };
+        objects.set(id, new RateLimitCounter({ storage }, env));
+      }
+      return objects.get(id);
+    },
+  };
 }
 
 const REQ = (url, opts = {}) => new Request('https://worker.test' + url, opts);
@@ -203,6 +253,24 @@ test('[WIC-08] the 4th claim is 410 and the invite key is deleted', async () => 
   const fourth = await worker.fetch(claimReq(inv.code), env);
   eq(fourth.status, 410, `the 4th claim should be 410, got ${fourth.status}`);
   eq(await kv.get('inv:' + hash), null, 'a spent invite must be deleted, not merely refused');
+});
+
+test('[WIC-18] exact invite claim budget survives stale KV invite reads', async () => {
+  const mod = await loadWorkerModule();
+  const worker = mod.default;
+  const kv = makeLaggyInviteKV();
+  const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  env.RATE_LIMITER = makeRateLimiterBinding(mod.RateLimitCounter, env);
+  const { body: inv } = await mintInvite(worker, env, 'Dana');
+  const hash = await sha256Hex(inv.code);
+
+  for (let i = 0; i < 3; i++) {
+    const r = await worker.fetch(claimReq(inv.code), env);
+    eq(r.status, 200, `claim ${i + 1} should succeed despite stale invite reads, got ${r.status}`);
+  }
+  const fourth = await worker.fetch(claimReq(inv.code), env);
+  eq(fourth.status, 410, `the exact limiter must refuse claim 4 even when KV still exposes claims=0; got ${fourth.status}`);
+  eq(await kv.get('inv:' + hash), null, 'the exhausted invite must still be deleted');
 });
 
 test('[WIC-09] re-putting the invite does NOT extend its original expiry', async () => {
