@@ -313,6 +313,33 @@ test('[LIC-14] one transient transport failure is retried before origin is marke
   eq(result.code, 2, `missing KV still makes this run UNOBSERVED, got ${result.code}`);
 });
 
+test('[LIC-15] /claim transport failures are never auto-retried', async () => {
+  // A lost response can happen after the Worker has already consumed the claim.
+  // Retrying the same POST would spend another unit of the per-IP rate budget
+  // and can advance a finite invite counter twice. Only safe/read-only probes
+  // are eligible for req() retries.
+  let claimRequests = 0;
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') return json(res, 401, { ok: false });
+    if (req.url === '/claim') {
+      claimRequests++;
+      if (claimRequests === 1) {
+        res.socket.destroy();
+        return;
+      }
+      return json(res, 410, { ok: false });
+    }
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    FL_CF_API_TOKEN: '', FL_CF_ACCOUNT_ID: '', FL_KV_NAMESPACE_ID: '',
+  }));
+
+  eq(claimRequests, 2,
+    `the dropped malformed /claim plus the separate unknown-code probe should total 2 requests, got ${claimRequests}; an automatic retry would make this 3`);
+  eq(result.code, 2, `the transport loss must remain UNOBSERVED, got ${result.code}`);
+  ok(/origin unreachable/.test(result.out), 'the dropped claim response must be identified as unobserved');
+});
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 test('[LIC-07] the authenticated gate actually runs this verifier', async () => {
