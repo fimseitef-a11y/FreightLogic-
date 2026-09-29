@@ -34,6 +34,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One in-flight production action against this Worker at a time, across
+  # DARK_CUTOVER and ACTIVATE_CANARY alike. A second dispatch queues instead
+  # of racing the first against the same live target.
+  group: ai-agent-cutover-production
+  cancel-in-progress: false
+
 env:
   CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
   KV_NAMESPACE_ID: a80b7959b0fa401d87e55c0c62e828a8
@@ -51,7 +58,9 @@ jobs:
           node-version: '22'
 
       - name: Run Agent contract and boundary tests
-        run: node agent-runtime/tests/phase-a.spec.mjs
+        run: |
+          node agent-runtime/tests/phase-a.spec.mjs
+          node agent-runtime/tests/output-guard.spec.mjs
 
       - name: Verify Agent target stays private and disabled by default
         run: |
@@ -73,6 +82,10 @@ jobs:
   dark-cutover:
     needs: contract
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'DARK_CUTOVER' && github.ref == 'refs/heads/main' }}
+    # Requires a required-reviewer approval configured on this Environment in
+    # repo Settings > Environments > production-agent-cutover. The workflow
+    # reference alone does not create that reviewer gate.
+    environment: production-agent-cutover
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -240,6 +253,10 @@ jobs:
   activate-canary:
     needs: contract
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'ACTIVATE_CANARY' && github.ref == 'refs/heads/main' }}
+    # Requires a required-reviewer approval configured on this Environment in
+    # repo Settings > Environments > production-agent-cutover. The workflow
+    # reference alone does not create that reviewer gate.
+    environment: production-agent-cutover
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
