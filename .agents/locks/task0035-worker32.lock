@@ -1,0 +1,5 @@
+owner: gpt
+task: AIAG-TASK-0035
+target: cloud-backup-worker.js, scripts/verify-cloudflare-parity.mjs, tests/unit/worker-security-readiness.spec.mjs
+branch: agent/gpt/task0035-worker32-size-contract
+reason: authenticated live backup size metadata regression
