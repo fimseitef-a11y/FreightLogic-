@@ -213,6 +213,7 @@ const DRIVER_CREDENTIAL_IDLE_MS = 90 * DAY_MS;
 const DRIVER_CREDENTIAL_ABSOLUTE_MS = 365 * DAY_MS;
 const DRIVER_CREDENTIAL_TOUCH_MS = DAY_MS;
 const ADMIN_CREDENTIAL_MAX_MS = 90 * DAY_MS;
+const ADMIN_CREDENTIAL_IDLE_MS = 30 * DAY_MS;
 const ADMIN_AUDIT_TTL_S = 400 * 24 * 60 * 60;
 
 function isoAt(ms) { return new Date(ms).toISOString(); }
@@ -252,7 +253,8 @@ async function enforceAdminCredentialLifetime(env, token, now = Date.now()) {
   const expires = Date.parse(rec.expiresAt || '');
   if (!Number.isFinite(expires) || expires <= now) return false;
   const last = Date.parse(rec.lastSeenAt || '');
-  if (!Number.isFinite(last) || now - last >= DRIVER_CREDENTIAL_TOUCH_MS) {
+  if (!Number.isFinite(last) || now - last >= ADMIN_CREDENTIAL_IDLE_MS) return false;
+  if (now - last >= DRIVER_CREDENTIAL_TOUCH_MS) {
     rec.lastSeenAt = isoAt(now);
     await env.BACKUPS.put(key, JSON.stringify(rec), {
       expirationTtl: Math.max(60, Math.ceil((expires - now + 7 * DAY_MS) / 1000)),
@@ -444,8 +446,12 @@ export async function eraseUserData(env, userId) {
 }
 
 export async function enforceDriverCredentialLifetime(env, userRec, tokenHash, now = Date.now()) {
-  const next = { ...userRec };
-  let changed = false;
+  const next = { ...userRec, tokenHash };
+  let changed = next.tokenHash !== userRec.tokenHash;
+  if (Object.prototype.hasOwnProperty.call(next, 'token')) {
+    delete next.token;
+    changed = true;
+  }
   let issued = Date.parse(next.credentialIssuedAt || '');
   if (!Number.isFinite(issued)) {
     issued = now; // migration grace: existing tokens start their window at first v31 use.
@@ -687,8 +693,8 @@ export default {
 
         if (request.method === 'GET' && path === '/admin/audit') {
           const audit = await beginAdminAudit(env, adminAuth, 'audit.read');
-          const entries = await readAdminAudit(env, Number(url.searchParams.get('limit') || 100));
           await finishAdminAudit(env, audit, 'succeeded');
+          const entries = await readAdminAudit(env, Number(url.searchParams.get('limit') || 100));
           return json({ ok: true, entries }, 200, cors);
         }
 
