@@ -28,7 +28,14 @@ if(!target){
   console.error('For CI harness validation use --selfTest.');
   process.exit(2);
 }
-if(target.startsWith(PROD) && process.env.ALLOW_PRODUCTION_LOAD_TEST!=='I_UNDERSTAND'){
+let targetUrl;
+try { targetUrl = new URL(target); }
+catch {
+  console.error('REFUSED: load-test target must be an absolute http(s) URL.');
+  process.exit(2);
+}
+const isProduction = targetUrl.origin === PROD;
+if(isProduction && process.env.ALLOW_PRODUCTION_LOAD_TEST!=='I_UNDERSTAND'){
   console.error('REFUSED: production load testing is disabled by default. Use a staging/local target.');
   process.exit(3);
 }
@@ -56,7 +63,7 @@ const elapsed=(performance.now()-started)/1000;
 latencies.sort((a,b)=>a-b);
 const pct=p=>latencies[Math.min(latencies.length-1,Math.floor((latencies.length-1)*p))]||0;
 const result={
-  target: target.startsWith(PROD)?PROD:'non-production',
+  target: isProduction ? PROD : 'non-production',
   requests,concurrency,elapsedSeconds:Number(elapsed.toFixed(3)),
   rps:Number((requests/elapsed).toFixed(1)),
   errors,errorRate:Number((errors/requests).toFixed(4)),
