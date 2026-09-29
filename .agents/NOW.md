@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #435 open at a4c7b360; exact-head CI in progress for TASK-0035 atomic /claim repair. | 2026-09-29T20:54:00Z |
+| gpt | AIAG-TASK-0036 — highest-level FreightLogic audit/hardening; verifier transient-network false-red + full source/CI/security/production sweep. | 2026-09-29T23:17:00Z |
 
 ---
 
