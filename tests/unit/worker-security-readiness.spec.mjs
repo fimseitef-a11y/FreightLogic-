@@ -208,6 +208,23 @@ test('[SR-11] production config and release gates require exact limiter + finite
   ok(parity.includes("Worker uses exact Durable Object rate limiter"), 'parity gate must assert exact limiter mode');
 });
 
+test('[SR-12] permanent erasure fails closed if a KV namespace scan is truncated', async () => {
+  const { eraseUserData } = await loadMod();
+  let pages=0;
+  const rec={userId:USER,name:'Driver',active:false};
+  const kv={
+    async get(k){ return k==='user:'+USER ? JSON.stringify(rec) : null; },
+    async put(){},
+    async delete(){},
+    async list(){ pages++; return {keys:[],list_complete:false,cursor:'next-'+pages}; },
+  };
+  let threw=false;
+  try { await eraseUserData({BACKUPS:kv}, USER); }
+  catch (e) { threw=/pagination bound/i.test(String(e)); }
+  ok(threw, 'erasure must not report success after an incomplete namespace enumeration');
+  eq(pages, 100, 'the safety bound must be explicit and deterministic');
+});
+
 export async function runSpec(){ return run(); }
 if (import.meta.url === `file://${process.argv[1]}`) {
   const r=await runSpec();
