@@ -1,6 +1,0 @@
-owner: gpt
-token: 975ec228-d8b1-4bb9-9b31-398fe64dc5dd
-started_utc: 2026-09-29T01:05:57Z
-expected_release_utc: 2026-09-29T03:05:57Z
-paths: .agents/NOW.md
-task: AIAG-TASK-0033 output guard + production cutover approval/concurrency hardening
