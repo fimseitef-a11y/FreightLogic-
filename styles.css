@@ -47,7 +47,7 @@
       --shadow:    0 4px 28px rgba(0,0,0,.50);
       --shadow-lg: 0 20px 64px rgba(0,0,0,.65);
 
-      /* v24.0.53 security/readiness: system-first typography is intentional.
+      /* Security/readiness: system-first typography is intentional.
          The previous Syne/DM Mono webfont swap produced a cold-load CLS of
          ~0.28 in Lighthouse while the warm run was ~0.004. Using platform
          fonts keeps the command UI immediate/offline and eliminates the
