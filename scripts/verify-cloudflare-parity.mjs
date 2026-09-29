@@ -32,7 +32,7 @@ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.wo
 const EXPECTED = {
   serviceWorkerVersion: "24.0.53",
   manifestName: "FreightLogic v24.0.53",
-  workerVersion: "30",
+  workerVersion: "31",
   overlayScript: "midwest-stack-authority.js?v=24.0.53"
 };
 
@@ -242,6 +242,10 @@ async function runLiveChecks(checks) {
   const health = await fetchJson(`${workerOrigin}/health`);
   assert(checks, 'Worker /health loads', health.ok, `${health.status}`);
   assert(checks, `Worker reports v${EXPECTED.workerVersion}`, health.json && health.json.ok === true && String(health.json.version) === EXPECTED.workerVersion, JSON.stringify(health.json));
+  assert(checks, 'Worker uses exact Durable Object rate limiter',
+    health.json && health.json.rateLimiter === 'durable-object', JSON.stringify(health.json));
+  assert(checks, 'Worker finite credential policy is active',
+    health.json && health.json.credentialPolicy === 'finite-v1', JSON.stringify(health.json));
 
   // Worker v24: the VAPID key is generated and re-imported by Cloudflare's own
   // WebCrypto, which the unit suite (Node's) cannot stand in for. An empty or
