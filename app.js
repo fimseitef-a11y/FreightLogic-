@@ -1258,7 +1258,10 @@ function showQuarterlyNudge(msg){
   const el = document.createElement('div');
   el.className = 'card';
   el.id = 'quarterlyNudge';
-  el.style.cssText = 'border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);margin-bottom:14px';
+  // This is a time-based reminder, not primary page content. Keep it out of
+  // normal document flow so the 2s deferred reminder cannot push the entire
+  // Home screen after first paint (the exact CLS root cause observed in CI).
+  el.style.cssText = 'position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:54;width:min(500px,calc(100% - 24px));margin:0;border:1px solid rgba(52,211,153,.4);background:var(--surface-1);box-shadow:var(--shadow-lg)';
   el.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
     <div style="font-size:24px;line-height:1">📊</div>
     <div style="flex:1"><div style="font-weight:700;font-size:13px;margin-bottom:2px">CPA Export Reminder</div><div class="muted" style="font-size:12px;line-height:1.4">${escapeHtml(msg)}</div></div>
@@ -1268,7 +1271,7 @@ function showQuarterlyNudge(msg){
   if (home){
     const existing = home.querySelector('#quarterlyNudge');
     if (existing) existing.remove();
-    home.insertBefore(el, home.children[2] || null);
+    home.appendChild(el);
     el.querySelector('#nudgeQuarterlyExport').addEventListener('click', ()=>{
       haptic(20);
       // Navigate to the accountant export section
