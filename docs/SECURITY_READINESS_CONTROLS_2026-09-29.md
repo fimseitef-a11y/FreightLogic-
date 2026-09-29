@@ -7,7 +7,7 @@ Scope: production backup/API Worker, isolated Admin Console, local-first PWA, an
 - Driver bearer credentials have a 365-day absolute lifetime and a 90-day inactivity lifetime.
 - Existing pre-v31 credentials receive migration grace beginning on their first successful v31 request; rollout does not mass-lock existing devices.
 - Rotation and re-invite mint a fresh credential window while preserving the canonical userId and cloud history.
-- The operator ADMIN_TOKEN is never persisted in plaintext by the Worker. A hash-keyed lifecycle record starts on first successful v31 use and expires after 90 days. Rotating the Cloudflare secret creates a new lifecycle identity.
+- The operator ADMIN_TOKEN is never persisted in plaintext by the Worker. A hash-keyed lifecycle record starts on first successful v31 use, expires after 90 days absolute or 30 days of inactivity, and requires the Cloudflare secret to be rotated after expiry. Rotating the secret creates a new lifecycle identity.
 - Ephemeral certification-admin credentials retain their existing 15-minute TTL and narrower permissions.
 
 ## Abuse/resource controls
@@ -15,7 +15,7 @@ Scope: production backup/API Worker, isolated Admin Console, local-first PWA, an
 - JSON/text request ceilings are enforced while streaming the body and therefore do not trust Content-Length.
 - Production rate/provider-spend counters use a SQLite-backed Durable Object. The KV read/increment/write path exists only as a unit/local compatibility fallback.
 - Production /health reports the limiter mode and finite credential policy; deploy/parity gates reject a production generation that does not report the hardened mode.
-- High-volume load tests are staging/local only. scripts/load-test.mjs refuses known FreightLogic production hosts unless an operator deliberately passes --allow-production.
+- High-volume load tests are staging/local only. `scripts/load-test-worker.mjs` refuses the production backup Worker unless the explicit `ALLOW_PRODUCTION_LOAD_TEST=I_UNDERSTAND` override is present.
 
 ## Privileged audit trail
 
@@ -54,8 +54,8 @@ Erasure removes the canonical user record, all device backup/delta/pointer keys,
 
 CI now runs:
 - compressed asset budgets, with a 200 KiB gzip enterprise target for app.js and a 400 KiB regression ceiling while decomposition work remains;
-- three local Lighthouse performance runs with median gates for performance score, LCP, CLS, and TBT;
-- a bounded local 500-request/20-concurrency load smoke producing RPS and p50/p95/p99 latency/error metrics;
+- two local Lighthouse desktop runs with regression gates for performance score, LCP, CLS, TBT, and interactive time; the two-run median intentionally keeps cold-start instability visible rather than allowing two warm runs to hide it;
+- a bounded local 1,000-request/50-concurrency load-harness smoke producing RPS and p50/p95/p99 latency/error metrics;
 - Wrangler dry-run validation of the production backup/API Worker config.
 
 INP is not fabricated from a lab run. The CI gate reports TBT as a lab responsiveness proxy; production INP requires real-user field measurement and a separately approved telemetry/privacy design.
