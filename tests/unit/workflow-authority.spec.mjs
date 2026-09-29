@@ -80,6 +80,21 @@ export function usesForbiddenTrigger(text) {
   return null;
 }
 
+export function mutableActionRefs(text) {
+  const src = code(text);
+  const refs = [];
+  for (const m of src.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)\s*(?:#.*)?$/gm)) {
+    const spec = m[1];
+    // Local actions are part of this repository and do not have an external
+    // ref to pin. Every external action must use an immutable 40-hex commit.
+    if (spec.startsWith('./')) continue;
+    const at = spec.lastIndexOf('@');
+    const ref = at >= 0 ? spec.slice(at + 1) : '';
+    if (!/^[0-9a-f]{40}$/i.test(ref)) refs.push(spec);
+  }
+  return refs;
+}
+
 // --- the assertions -------------------------------------------------------
 
 test('[WFA-01] every workflow declares an explicit top-level permissions block', () => {
@@ -110,6 +125,28 @@ test('[WFA-04] no workflow is fired by a comment or a remote dispatch', () => {
     const trigger = usesForbiddenTrigger(readWorkflow(f));
     ok(!trigger, `${f} triggers on ${trigger} — the comment-triggered repair path was removed on purpose`);
   }
+});
+
+test('[WFA-07] every external GitHub Action is pinned to an immutable commit SHA', () => {
+  for (const f of workflowFiles()) {
+    const mutable = mutableActionRefs(readWorkflow(f));
+    ok(mutable.length === 0,
+      `${f} has mutable action ref(s): ${mutable.join(', ')} — pin each external action to a 40-hex commit SHA`);
+  }
+
+  // Negative control: a movable major tag must be rejected. A guard that only
+  // passes the current workflows but cannot catch @vN drift is not a guard.
+  const offender = [
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  test:',
+    '    steps:',
+    '      - uses: actions/checkout@v7',
+  ].join('\n');
+  const caught = mutableActionRefs(offender);
+  ok(caught.length === 1 && caught[0] === 'actions/checkout@v7',
+    'WFA-07 must reject a movable @vN action tag');
 });
 
 test('[WFA-05] the deploy workflow is still the one exception, and still gated', () => {
@@ -156,6 +193,8 @@ test('[WFA-06] the rules actually reject an offender — negative control, alway
   ok(requestsWriteAuthority(offender) === 'contents: write', 'WFA-02 must catch contents: write');
   ok(performsRepositoryWrite(offender) === 'git push', 'WFA-03 must catch the self-push');
   ok(usesForbiddenTrigger(offender) === 'issue_comment', 'WFA-04 must catch the comment trigger');
+  ok(mutableActionRefs('jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v7').length === 1,
+    'WFA-07 must catch a movable action tag');
 
   // And the inverse: a real, compliant workflow must not be flagged, or the
   // guard is just noise that gets disabled.
