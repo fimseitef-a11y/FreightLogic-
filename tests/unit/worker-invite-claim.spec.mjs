@@ -75,6 +75,7 @@ async function loadWorker() {
 function makeLaggyInviteKV(seed = {}) {
   const kv = makeKV(seed);
   const staleInvite = new Map();
+  const invitePuts = new Map();
   const baseGet = kv.get.bind(kv);
   const basePut = kv.put.bind(kv);
   const baseDelete = kv.delete.bind(kv);
@@ -84,10 +85,19 @@ function makeLaggyInviteKV(seed = {}) {
   };
   kv.put = async (k, v, opts) => {
     await basePut(k, v, opts);
-    if (k.startsWith('inv:') && !staleInvite.has(k)) staleInvite.set(k, v);
+    if (k.startsWith('inv:')) {
+      const writes = (invitePuts.get(k) || 0) + 1;
+      invitePuts.set(k, writes);
+      // Let the first successful claim (write #2 after minting) become visible,
+      // then pin that snapshot. This preserves userId while making claims=1
+      // stale, matching the observed production failure without inventing an
+      // identity split that the live gate did not observe.
+      if (writes === 2) staleInvite.set(k, v);
+    }
   };
   kv.delete = async (k) => {
     staleInvite.delete(k);
+    invitePuts.delete(k);
     return baseDelete(k);
   };
   return kv;
@@ -264,9 +274,13 @@ test('[WIC-18] exact invite claim budget survives stale KV invite reads', async 
   const { body: inv } = await mintInvite(worker, env, 'Dana');
   const hash = await sha256Hex(inv.code);
 
+  let stableUserId = null;
   for (let i = 0; i < 3; i++) {
     const r = await worker.fetch(claimReq(inv.code), env);
+    const body = await r.json();
     eq(r.status, 200, `claim ${i + 1} should succeed despite stale invite reads, got ${r.status}`);
+    if (i === 0) stableUserId = body.userId;
+    else eq(body.userId, stableUserId, 'stale claim counts must not break identity-preserving re-claim');
   }
   const fourth = await worker.fetch(claimReq(inv.code), env);
   eq(fourth.status, 410, `the exact limiter must refuse claim 4 even when KV still exposes claims=0; got ${fourth.status}`);
