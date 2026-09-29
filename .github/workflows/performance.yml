@@ -39,7 +39,7 @@ jobs:
       - name: Run three Lighthouse desktop samples and assert median budgets
         run: |
           set -euo pipefail
-          mkdir -p .lighthouseci
+          mkdir -p lighthouse-reports
           node scripts/perf-static-server.mjs > /tmp/freightlogic-perf-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
