@@ -30,13 +30,13 @@ jobs:
         run: npm install -g @lhci/cli@0.15.x
 
       - name: Lighthouse healthcheck
-        run: lhci healthcheck --fatal --config=.lighthouserc.json
+        run: lhci healthcheck --fatal --config=scripts/lighthouserc.json
 
       - name: Collect Lighthouse desktop runs
-        run: lhci collect --config=.lighthouserc.json
+        run: lhci collect --config=scripts/lighthouserc.json
 
       - name: Assert Lighthouse budgets
-        run: lhci assert --config=.lighthouserc.json
+        run: lhci assert --config=scripts/lighthouserc.json
 
       - name: Preserve Lighthouse reports
         if: always()
