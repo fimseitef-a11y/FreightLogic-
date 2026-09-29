@@ -2036,6 +2036,13 @@ export class RateLimitCounter {
     this.env = env;
   }
 
+  async alarm() {
+    // Invite-claim objects arm this at the invite's original expiry. Rate-limit
+    // objects never arm an alarm, so deleting the object's storage here cannot
+    // disturb an active hourly/daily counter.
+    await this.state.storage.deleteAll();
+  }
+
   async fetch(request) {
     if (request.method === 'DELETE') {
       await this.state.storage.deleteAll();
