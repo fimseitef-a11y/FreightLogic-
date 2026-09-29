@@ -342,6 +342,39 @@ test('[WIC-10] a claim after the driver is revoked is 403', async () => {
   ok(!body.token, 'a refused claim must not return a token');
 });
 
+test('[WIC-19] revoked claim attempts do not consume the exact invite budget', async () => {
+  const mod = await loadWorkerModule();
+  const worker = mod.default;
+  const kv = makeKV();
+  const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  env.RATE_LIMITER = makeRateLimiterBinding(mod.RateLimitCounter, env);
+  const { body: inv } = await mintInvite(worker, env, 'Dana');
+  const firstRes = await worker.fetch(claimReq(inv.code), env);
+  const first = await firstRes.json();
+  eq(firstRes.status, 200, 'first claim must succeed');
+
+  const del = await worker.fetch(REQ('/admin/users/' + first.userId, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Token': ADMIN, 'CF-Connecting-IP': '203.0.113.44' },
+  }), env);
+  eq(del.status, 200, 'revoke must succeed');
+
+  for (let i = 0; i < 2; i++) {
+    const denied = await worker.fetch(claimReq(inv.code, '203.0.113.45'), env);
+    eq(denied.status, 403, `revoked attempt ${i + 1} must be 403`);
+  }
+
+  // Reactivate only inside this fixture to expose whether those refused attempts
+  // burned the invite's exact counter. The next legitimate re-claim is claim #2
+  // and must still be available.
+  const key = 'user:' + first.userId;
+  const rec = JSON.parse(await kv.get(key));
+  rec.active = true;
+  await kv.put(key, JSON.stringify(rec));
+  const next = await worker.fetch(claimReq(inv.code, '203.0.113.46'), env);
+  eq(next.status, 200, `revoked attempts must not consume the finite claim budget; got ${next.status}`);
+});
+
 test('[WIC-11] the 11th claim attempt from one IP within the hour is 429', async () => {
   const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
   const IP = '198.51.100.22';
