@@ -1,4 +1,10 @@
-// FreightLogic Cloud Backup Worker v30 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Health
+// FreightLogic Cloud Backup Worker v31 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v31: SECURITY/READINESS HARDENING (AIAG-TASK-0035, 2026-09-29).
+// Adds bounded streaming request-body reads, durable-object-backed exact rate
+// counters (with the old KV counter retained only as a compatibility fallback),
+// finite driver/admin credential lifetimes, privacy-safe privileged-action audit
+// records, and a separately-confirmed permanent cloud-account erase operation.
+// None of these paths can change canonical freight economics or Agent authority.
 // v30: PUSHWARD LIVE ACTIVITY BRIDGE (operator-approved 2026-09-26). PushWard
 // replaces HookTap for the optional iPhone Lock Screen / Dynamic Island layer.
 // The integration key is read only from PUSHWARD_INTEGRATION_KEY, a Worker
@@ -176,7 +182,9 @@ async function timingSafeEqual(a, b) {
 const CERT_ADMIN_TOKEN_RE = /^flac_[a-f0-9]{64}$/;
 async function resolveAdminAuth(env, adminToken) {
   if (!adminToken) return null;
-  if (env.ADMIN_TOKEN && await timingSafeEqual(adminToken, env.ADMIN_TOKEN)) return 'operator';
+  if (env.ADMIN_TOKEN && await timingSafeEqual(adminToken, env.ADMIN_TOKEN)) {
+    return await enforceAdminCredentialLifetime(env, adminToken) ? 'operator' : null;
+  }
   if (!CERT_ADMIN_TOKEN_RE.test(adminToken)) return null;
   const raw = await env.BACKUPS.get('admcert:' + await hashToken(adminToken));
   if (!raw) return null;
@@ -197,6 +205,336 @@ function isCertificationAdminRoute(method, path) {
 async function hashToken(token) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// v31 — finite credential lifetime + bounded request materialization + admin audit.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DRIVER_CREDENTIAL_IDLE_MS = 90 * DAY_MS;
+const DRIVER_CREDENTIAL_ABSOLUTE_MS = 365 * DAY_MS;
+const DRIVER_CREDENTIAL_TOUCH_MS = DAY_MS;
+const ADMIN_CREDENTIAL_MAX_MS = 90 * DAY_MS;
+const ADMIN_CREDENTIAL_IDLE_MS = 30 * DAY_MS;
+const ADMIN_AUDIT_TTL_S = 400 * 24 * 60 * 60;
+const USER_RATE_LIMIT_NAMESPACES = Object.freeze([
+  'pushtest', 'sckey', 'rem', 'pushwardtest', 'eval',
+  'extract', 'extract-image', 'backup', 'delta', 'agent-rpc',
+]);
+
+function isoAt(ms) { return new Date(ms).toISOString(); }
+
+function stampFreshCredential(rec, now = Date.now()) {
+  const issuedAt = isoAt(now);
+  return {
+    ...rec,
+    credentialIssuedAt: issuedAt,
+    credentialLastSeenAt: issuedAt,
+    credentialExpiresAt: isoAt(now + DRIVER_CREDENTIAL_ABSOLUTE_MS),
+  };
+}
+
+async function enforceAdminCredentialLifetime(env, token, now = Date.now()) {
+  const tokenHash = await hashToken(token);
+  const key = 'admincred:' + tokenHash;
+  let rec = null;
+  try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch { rec = null; }
+
+  // Backward-compatible rollout: the first successful use of the existing
+  // operator secret starts its finite lifetime. Rotating ADMIN_TOKEN produces a
+  // different hash/key and therefore a fresh window without storing the secret.
+  if (!rec) {
+    rec = {
+      version: 1,
+      firstSeenAt: isoAt(now),
+      lastSeenAt: isoAt(now),
+      expiresAt: isoAt(now + ADMIN_CREDENTIAL_MAX_MS),
+    };
+    await env.BACKUPS.put(key, JSON.stringify(rec), {
+      expirationTtl: Math.ceil((ADMIN_CREDENTIAL_MAX_MS + 7 * DAY_MS) / 1000),
+    });
+    return true;
+  }
+
+  const expires = Date.parse(rec.expiresAt || '');
+  if (!Number.isFinite(expires) || expires <= now) return false;
+  const last = Date.parse(rec.lastSeenAt || '');
+  if (!Number.isFinite(last) || now - last >= ADMIN_CREDENTIAL_IDLE_MS) return false;
+  if (now - last >= DRIVER_CREDENTIAL_TOUCH_MS) {
+    rec.lastSeenAt = isoAt(now);
+    await env.BACKUPS.put(key, JSON.stringify(rec), {
+      expirationTtl: Math.max(60, Math.ceil((expires - now + 7 * DAY_MS) / 1000)),
+    });
+  }
+  return true;
+}
+
+/** Read a request body without trusting Content-Length. The stream is cancelled
+ * as soon as the true byte count crosses maxBytes, so a missing/forged header
+ * cannot turn a small JSON route into a 100MB materialization. */
+export async function readBodyTextBounded(request, maxBytes) {
+  const declaredRaw = request.headers.get('Content-Length');
+  if (declaredRaw) {
+    const declared = Number(declaredRaw);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      return { ok: false, status: 413, error: 'Request too large' };
+    }
+  }
+  if (!request.body) return { ok: true, text: '', bytes: 0 };
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunkBytes = value?.byteLength || 0;
+      total += chunkBytes;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        return { ok: false, status: 413, error: 'Request too large' };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return { ok: true, text, bytes: total };
+  } catch {
+    try { await reader.cancel(); } catch {}
+    return { ok: false, status: 400, error: 'Could not read request body' };
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
+export async function readJsonBounded(request, maxBytes) {
+  const body = await readBodyTextBounded(request, maxBytes);
+  if (!body.ok) return body;
+  if (!body.text.trim()) return { ok: true, value: {}, bytes: body.bytes };
+  try {
+    return { ok: true, value: JSON.parse(body.text), bytes: body.bytes };
+  } catch {
+    return { ok: false, status: 400, error: 'Invalid JSON payload' };
+  }
+}
+
+async function listAllKvKeys(env, prefix) {
+  const out = [];
+  let cursor = null;
+  for (let pageNo = 0; pageNo < 100; pageNo++) {
+    const opts = { prefix };
+    if (cursor) opts.cursor = cursor;
+    const page = await env.BACKUPS.list(opts);
+    for (const entry of (page?.keys || [])) if (entry?.name) out.push(entry.name);
+    if (page?.list_complete === false && page?.cursor) {
+      cursor = page.cursor;
+      if (pageNo === 99) {
+        // Permanent-erasure and audit reads must never silently report success
+        // after a truncated namespace scan. Fail closed instead of converting
+        // "not fully enumerated" into "fully deleted".
+        throw new Error('KV listing exceeded safety pagination bound');
+      }
+      continue;
+    }
+    return out;
+  }
+  return out;
+}
+
+async function adminAuditSubject(subject) {
+  if (!subject) return null;
+  return (await hashToken(String(subject))).slice(0, 24);
+}
+
+async function beginAdminAudit(env, actor, action, subject = null) {
+  const now = Date.now();
+  const key = 'audit:admin:' + isoAt(now).replace(/[:.]/g, '-') + ':' + crypto.randomUUID();
+  const rec = {
+    version: 1,
+    ts: isoAt(now),
+    actor: actor === 'certification' ? 'certification' : 'operator',
+    action: String(action || '').slice(0, 64),
+    state: 'started',
+    subject: await adminAuditSubject(subject),
+  };
+  // Fail closed BEFORE a privileged mutation if the audit record cannot be
+  // written. A started record that never reaches succeeded is useful evidence
+  // of an interrupted/failed administrative action.
+  await env.BACKUPS.put(key, JSON.stringify(rec), { expirationTtl: ADMIN_AUDIT_TTL_S });
+  return { key, rec };
+}
+
+async function finishAdminAudit(env, audit, state = 'succeeded', extra = {}) {
+  if (!audit?.key || !audit?.rec) return;
+  const next = {
+    ...audit.rec,
+    state,
+    finishedAt: new Date().toISOString(),
+    ...extra,
+  };
+  // Strict allow-list: no names, IPs, tokens, request bodies, or freight data.
+  const safe = {
+    version: 1,
+    ts: next.ts,
+    actor: next.actor,
+    action: next.action,
+    state: next.state,
+    subject: next.subject || null,
+    finishedAt: next.finishedAt,
+    deletedCount: Number.isFinite(Number(next.deletedCount)) ? Number(next.deletedCount) : undefined,
+  };
+  await env.BACKUPS.put(audit.key, JSON.stringify(safe), { expirationTtl: ADMIN_AUDIT_TTL_S });
+}
+
+async function readAdminAudit(env, limit = 100) {
+  const keys = await listAllKvKeys(env, 'audit:admin:');
+  const chosen = keys.sort().reverse().slice(0, Math.max(1, Math.min(200, limit)));
+  const vals = await Promise.all(chosen.map(k => env.BACKUPS.get(k)));
+  return vals.map(v => {
+    try { return JSON.parse(v); } catch { return null; }
+  }).filter(Boolean);
+}
+
+export async function eraseUserData(env, userId) {
+  if (!/^u_[a-f0-9-]{8,36}$/i.test(String(userId || ''))) {
+    throw new Error('Invalid user ID format');
+  }
+  const userRaw = await env.BACKUPS.get('user:' + userId);
+  if (!userRaw) return { found: false, deleted: 0 };
+  let user;
+  try { user = JSON.parse(userRaw); } catch { throw new Error('Corrupted user record'); }
+
+  const keys = new Set(await listAllKvKeys(env, 'user:' + userId));
+  for (const key of [
+    'push:subs:' + userId,
+    'relay:' + userId,
+    'relayseen:' + userId,
+    'rem:' + userId,
+    'sckuser:' + userId,
+  ]) keys.add(key);
+
+  if (user.tokenHash) keys.add('tokh:' + user.tokenHash);
+  if (user.token) keys.add('token:' + user.token);
+
+  let shortcutRec = null;
+  try { shortcutRec = JSON.parse(await env.BACKUPS.get('sckuser:' + userId) || 'null'); } catch {}
+  if (shortcutRec?.hash) keys.add('sck:' + shortcutRec.hash);
+
+  // Remove every token index naming this account, including stale race residue.
+  for (const prefix of ['tokh:', 'token:']) {
+    for (const key of await listAllKvKeys(env, prefix)) {
+      let rec = null;
+      try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
+      if (rec?.userId === userId) keys.add(key);
+    }
+  }
+
+  // Outstanding re-invite codes must not survive permanent account erasure.
+  for (const key of await listAllKvKeys(env, 'inv:')) {
+    let rec = null;
+    try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
+    if (rec?.userId === userId) keys.add(key);
+  }
+
+  // Per-user abuse counters are ephemeral, but deleting them closes the last
+  // server-side reference to the erased account immediately.
+  for (const key of await listAllKvKeys(env, 'rl:')) {
+    if (key.includes(':' + userId + ':')) keys.add(key);
+  }
+
+  // Exact limiter state is part of the account's server-side metadata too.
+  // Clear it before deleting the canonical account so any failure leaves the
+  // account recoverable instead of reporting a partial erasure as complete.
+  if (env.RATE_LIMITER) {
+    const clearOps = USER_RATE_LIMIT_NAMESPACES.map(ns =>
+      clearExactRateLimit(env, 'hour:' + ns + ':' + userId));
+    if (shortcutRec?.hash) clearOps.push(clearExactRateLimit(env, 'hour:relay:' + shortcutRec.hash));
+    await Promise.all(clearOps);
+  }
+
+  // Normal reminder delivery is allowed to tolerate a malformed index, but
+  // irreversible erasure is not. Read/parse strictly so corruption or storage
+  // failure aborts before the canonical account is deleted.
+  const remIndexRaw = await env.BACKUPS.get('rem:index');
+  let remIndex = [];
+  if (remIndexRaw) {
+    try {
+      remIndex = JSON.parse(remIndexRaw);
+      if (!Array.isArray(remIndex)) throw new Error('not an array');
+    } catch {
+      throw new Error('Corrupted reminder index');
+    }
+  }
+  if (remIndex.includes(userId)) {
+    const next = remIndex.filter(id => id !== userId);
+    if (next.length) await env.BACKUPS.put('rem:index', JSON.stringify(next));
+    else await env.BACKUPS.delete('rem:index');
+  }
+
+  const all = [...keys];
+  for (let i = 0; i < all.length; i += 50) {
+    await Promise.all(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+  }
+  return { found: true, deleted: all.length };
+}
+
+export async function enforceDriverCredentialLifetime(env, userRec, tokenHash, now = Date.now()) {
+  const next = { ...userRec, tokenHash };
+  let changed = next.tokenHash !== userRec.tokenHash;
+  if (Object.prototype.hasOwnProperty.call(next, 'token')) {
+    delete next.token;
+    changed = true;
+  }
+  let issued = Date.parse(next.credentialIssuedAt || '');
+  if (!Number.isFinite(issued)) {
+    issued = now; // migration grace: existing tokens start their window at first v31 use.
+    next.credentialIssuedAt = isoAt(issued);
+    next.credentialLastSeenAt = isoAt(issued);
+    next.credentialExpiresAt = isoAt(issued + DRIVER_CREDENTIAL_ABSOLUTE_MS);
+    changed = true;
+  }
+
+  let absolute = Date.parse(next.credentialExpiresAt || '');
+  if (!Number.isFinite(absolute) || absolute <= issued) {
+    absolute = issued + DRIVER_CREDENTIAL_ABSOLUTE_MS;
+    next.credentialExpiresAt = isoAt(absolute);
+    changed = true;
+  }
+
+  let lastSeen = Date.parse(next.credentialLastSeenAt || '');
+  if (!Number.isFinite(lastSeen)) {
+    lastSeen = issued;
+    next.credentialLastSeenAt = isoAt(lastSeen);
+    changed = true;
+  }
+
+  const idleExpiry = lastSeen + DRIVER_CREDENTIAL_IDLE_MS;
+  if (now >= absolute || now >= idleExpiry) {
+    // Retire only the presented current token index. The user identity stays
+    // active so an operator can re-invite the same account/history.
+    try { await env.BACKUPS.delete('tokh:' + tokenHash); } catch {}
+    return {
+      ok: false,
+      reason: now >= absolute ? 'absolute' : 'idle',
+      credentialExpiresAt: isoAt(absolute),
+      credentialIdleExpiresAt: isoAt(idleExpiry),
+    };
+  }
+
+  if (changed || now - lastSeen >= DRIVER_CREDENTIAL_TOUCH_MS) {
+    next.credentialLastSeenAt = isoAt(now);
+    lastSeen = now;
+    await Promise.all([
+      env.BACKUPS.put('user:' + next.userId, JSON.stringify(next)),
+      env.BACKUPS.put('tokh:' + tokenHash, JSON.stringify(next)),
+    ]);
+  }
+
+  return {
+    ok: true,
+    user: next,
+    credentialExpiresAt: isoAt(absolute),
+    credentialIdleExpiresAt: isoAt(lastSeen + DRIVER_CREDENTIAL_IDLE_MS),
+  };
 }
 
 // v18 — RFC 4648 base32, used only to render invite claim codes.
@@ -285,18 +623,22 @@ export default {
         }
 
         if (request.method === 'POST' && path === '/admin/users') {
-          const body = await request.json().catch(() => ({}));
+          const parsedBody = await readJsonBounded(request, 4096);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          const body = parsedBody.value || {};
           const name = (body.name || 'Driver').slice(0, 50);
           const userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
           const tokenHash = await hashToken(token);
-          // Store token hash rather than plaintext — hash is the KV key; record omits raw token
-          const rec = { userId, name, tokenHash, createdAt: new Date().toISOString(), active: true, backupCount: 0 };
+          const audit = await beginAdminAudit(env, adminAuth, 'user.create', userId);
+          // Store token hash rather than plaintext — hash is the KV key; record omits raw token.
+          const rec = stampFreshCredential({ userId, name, tokenHash, createdAt: new Date().toISOString(), active: true, backupCount: 0 });
           await Promise.all([
             env.BACKUPS.put('tokh:' + tokenHash, JSON.stringify(rec)),
             env.BACKUPS.put('user:' + userId, JSON.stringify(rec))
           ]);
-          return json({ ok: true, userId, name, token }, 201, cors);
+          await finishAdminAudit(env, audit, 'succeeded');
+          return json({ ok: true, userId, name, token, credentialExpiresAt: rec.credentialExpiresAt }, 201, cors);
         }
 
         // POST /admin/invites — v18: mint a single-use CLAIM CODE, not a token.
@@ -317,7 +659,9 @@ export default {
         // This handler sits inside the `/admin/` block deliberately: it inherits
         // the admin-token check and the 20/hr per-IP admin rate limit above.
         if (request.method === 'POST' && path === '/admin/invites') {
-          const body = await request.json().catch(() => ({}));
+          const parsedBody = await readJsonBounded(request, 4096);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          const body = parsedBody.value || {};
           let name = (body.name || 'Driver').slice(0, 50);
 
           // OPTIONAL `userId` — RE-INVITE an EXISTING driver rather than create
@@ -373,11 +717,21 @@ export default {
           };
           // expirationTtl is the backstop: even if nothing ever deletes this
           // record, KV drops it at 72h and the invite becomes unredeemable.
+          const audit = await beginAdminAudit(env, adminAuth, boundUserId ? 'invite.reissue' : 'invite.create', boundUserId);
           await env.BACKUPS.put('inv:' + codeHash, JSON.stringify(rec), { expirationTtl: ttl });
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, name, code, expiresAt: rec.expiresAt, userId: boundUserId, reinvite: !!boundUserId }, 201, cors);
         }
 
+        if (request.method === 'GET' && path === '/admin/audit') {
+          const audit = await beginAdminAudit(env, adminAuth, 'audit.read');
+          await finishAdminAudit(env, audit, 'succeeded');
+          const entries = await readAdminAudit(env, Number(url.searchParams.get('limit') || 100));
+          return json({ ok: true, entries }, 200, cors);
+        }
+
         if (request.method === 'GET' && path === '/admin/users') {
+          const audit = await beginAdminAudit(env, adminAuth, 'users.list');
           const list = await env.BACKUPS.list({ prefix: 'user:' });
           // Filter to top-level user records only (exclude device/backup subkeys)
           const userKeys = list.keys.filter(k => /^user:u_[^:]+$/.test(k.name));
@@ -402,11 +756,20 @@ export default {
                   await Promise.all(cleanupOps);
                   u = clean;
                 }
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
+                // Never expose driver tokens in the admin listing.
+                users.push({
+                  userId: u.userId,
+                  name: u.name,
+                  createdAt: u.createdAt,
+                  active: u.active,
+                  backupCount: u.backupCount || 0,
+                  credentialExpiresAt: u.credentialExpiresAt || null,
+                  credentialLastSeenAt: u.credentialLastSeenAt || null,
+                });
               } catch {}
             }
           }
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, users }, 200, cors);
         }
 
@@ -452,7 +815,7 @@ export default {
           const newTokenHash = await hashToken(newToken);
 
           // Same identity, new credential. `token` is deliberately never stored.
-          const next = {
+          const next = stampFreshCredential({
             userId: rotRec.userId,
             name: rotRec.name,
             tokenHash: newTokenHash,
@@ -460,7 +823,8 @@ export default {
             active: true,
             backupCount: rotRec.backupCount || 0,
             rotatedAt: new Date().toISOString(),
-          };
+          });
+          const audit = await beginAdminAudit(env, adminAuth, 'user.rotate', rotId);
 
           // Write the new credential and the updated record BEFORE removing the
           // old one. If this call dies midway the driver keeps working on the
@@ -477,6 +841,7 @@ export default {
 
           // Same response shape as POST /admin/users, so the client can reuse
           // its existing invite-link flow unchanged.
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({
             ok: true,
             userId: next.userId,
@@ -484,7 +849,32 @@ export default {
             token: newToken,
             rotated: true,
             legacyPlaintextCleared: !!oldPlaintext,
+            credentialExpiresAt: next.credentialExpiresAt,
           }, 200, cors);
+        }
+
+        if (request.method === 'POST' && /^\/admin\/users\/[^/]+\/erase$/.test(path)) {
+          if (adminAuth !== 'operator') return json({ ok: false, error: 'Operator access required' }, 403, cors);
+          const eraseId = path.split('/admin/users/')[1].replace(/\/erase$/, '');
+          if (!eraseId || !/^u_[a-f0-9-]{8,36}$/i.test(eraseId)) {
+            return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+          }
+          const parsedBody = await readJsonBounded(request, 2048);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          if (parsedBody.value?.confirm !== 'ERASE' || parsedBody.value?.userId !== eraseId) {
+            return json({ ok: false, error: 'Explicit erase confirmation required' }, 400, cors);
+          }
+          const raw = await env.BACKUPS.get('user:' + eraseId);
+          if (!raw) return json({ ok: false, error: 'Not found' }, 404, cors);
+          let rec;
+          try { rec = JSON.parse(raw); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
+          if (rec.active !== false) {
+            return json({ ok: false, error: 'Revoke access before permanent erasure' }, 409, cors);
+          }
+          const audit = await beginAdminAudit(env, adminAuth, 'user.erase', eraseId);
+          const erased = await eraseUserData(env, eraseId);
+          await finishAdminAudit(env, audit, 'succeeded', { deletedCount: erased.deleted });
+          return json({ ok: true, erased: eraseId, deletedCount: erased.deleted }, 200, cors);
         }
 
         if (request.method === 'DELETE' && path.startsWith('/admin/users/')) {
@@ -499,11 +889,13 @@ export default {
           parsed.active = false;
           const legacyPlaintext = parsed.token;
           delete parsed.token;
+          const audit = await beginAdminAudit(env, adminAuth, 'user.revoke', delId);
           // Deactivate the user without ever writing a raw credential back to KV.
           const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
           if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
           if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));
           await Promise.all(ops);
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, revoked: delId }, 200, cors);
         }
 
@@ -512,7 +904,13 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '30', ts: new Date().toISOString() }, 200, cors);
+        return json({
+          ok: true,
+          version: '31',
+          ts: new Date().toISOString(),
+          rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
+          credentialPolicy: 'finite-v1',
+        }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -531,7 +929,9 @@ export default {
         if (await checkRateLimit(env, 'ip:' + claimIp, 10, 'claim')) {
           return json({ ok: false, error: 'Too many attempts. Try again later.' }, 429, cors);
         }
-        const body = await request.json().catch(() => ({}));
+        const parsedBody = await readJsonBounded(request, 2048);
+        if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+        const body = parsedBody.value || {};
         const code = String(body.code || '').toUpperCase().trim();
         // Validate the SHAPE before hashing. b32() of 15 bytes is exactly 24
         // base32 characters, so this is exact, not merely defensive.
@@ -579,7 +979,7 @@ export default {
             return json({ ok: false, error: 'This driver has been revoked.' }, 403, cors);
           }
           staleHash = prev && prev.tokenHash !== tokenHash ? prev.tokenHash : null;
-          rec = {
+          rec = stampFreshCredential({
             userId,
             name: inv.name,
             tokenHash,
@@ -587,17 +987,17 @@ export default {
             active: true,
             backupCount: (prev && prev.backupCount) || 0,
             rotatedAt: new Date().toISOString(),
-          };
+          });
         } else {
           userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
-          rec = {
+          rec = stampFreshCredential({
             userId,
             name: inv.name,
             tokenHash,
             createdAt: new Date().toISOString(),
             active: true,
             backupCount: 0,
-          };
+          });
         }
 
         inv.userId = userId;
@@ -619,7 +1019,7 @@ export default {
 
         // The only time this token is ever transmitted, and it goes straight to
         // the device that will use it.
-        return json({ ok: true, userId, name: rec.name, token }, 200, cors);
+        return json({ ok: true, userId, name: rec.name, token, credentialExpiresAt: rec.credentialExpiresAt }, 200, cors);
       }
 
       // GET /push/key — v24: the VAPID public key. Public by design (it is the
@@ -659,12 +1059,10 @@ export default {
         if (await checkRateLimit(env, keyHash, 60, 'relay')) {
           return json({ ok: false, error: 'Too many relay items this hour.' }, 429, cors);
         }
-        const declared = Number(request.headers.get('Content-Length') || 0);
-        if (declared > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
-        const text = await request.text();
-        if (TE.encode(text).length > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
+        const relayBody = await readBodyTextBounded(request, RELAY_MAX_BODY);
+        if (!relayBody.ok) return json({ ok: false, error: 'Relay item too large' }, relayBody.status, cors);
         let item;
-        try { item = JSON.parse(text); } catch { return json({ ok: false, error: 'Body must be JSON' }, 400, cors); }
+        try { item = JSON.parse(relayBody.text); } catch { return json({ ok: false, error: 'Body must be JSON' }, 400, cors); }
         const v = validateRelayItem(item);
         if (!v.ok) return json({ ok: false, error: v.error }, 400, cors);
 
@@ -819,7 +1217,15 @@ export default {
           try { await env.BACKUPS.delete('tokh:' + driverTokenHash); } catch (e) {}
           return json({ ok: false, error: 'Token superseded' }, 403, cors);
         }
-        canonicalUser = userRec;
+        const credential = await enforceDriverCredentialLifetime(env, userRec, driverTokenHash);
+        if (!credential.ok) {
+          return json({
+            ok: false,
+            error: 'Token expired. Re-invite this driver to reconnect.',
+            reason: credential.reason,
+          }, 401, cors);
+        }
+        canonicalUser = credential.user;
       }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
 
@@ -827,12 +1233,13 @@ export default {
       // The Agent Worker itself has no public route. This is the sole HTTP
       // ingress and it sits after canonical driver-token authentication.
       if (request.method === 'POST' && path === '/agent/evaluate') {
-        const clAgent = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clAgent > AGENT_RPC_MAX_BYTES) {
-          return json({ ok: false, code: 'AGENT_ENVELOPE_TOO_LARGE', error: 'Agent request too large' }, 413, cors);
+        const agentBody = await readJsonBounded(request, AGENT_RPC_MAX_BYTES);
+        if (!agentBody.ok) {
+          const code = agentBody.status === 413 ? 'AGENT_ENVELOPE_TOO_LARGE' : 'INVALID_ENVELOPE';
+          return json({ ok: false, code, error: agentBody.status === 413 ? 'Agent request too large' : 'Invalid Agent request' }, agentBody.status, cors);
         }
 
-        const envelope = await request.json().catch(() => null);
+        const envelope = agentBody.value;
         if (!agentRpcPlainObject(envelope)) {
           return json({ ok: false, code: 'INVALID_ENVELOPE', error: 'Invalid Agent request' }, 400, cors);
         }
@@ -874,7 +1281,9 @@ export default {
 
       // ── v24: Web Push subscriptions (docs/WEB_PUSH_CONTRACT.md §4–5) ──────
       if (path === '/push/subscribe' && (request.method === 'POST' || request.method === 'DELETE')) {
-        const body = await request.json().catch(() => ({}));
+        const pushBody = await readJsonBounded(request, 32 * 1024);
+        if (!pushBody.ok) return json({ ok: false, error: pushBody.error }, pushBody.status, cors);
+        const body = pushBody.value || {};
         const subs = await readUserSubs(env, driverUserId);
         if (request.method === 'DELETE') {
           const endpoint = String(body.endpoint || body.subscription?.endpoint || '');
@@ -966,7 +1375,9 @@ export default {
           if (await checkRateLimit(env, driverUserId, 60, 'rem')) {
             return json({ ok: false, error: 'Too many reminder updates this hour.' }, 429, cors);
           }
-          const body = await request.json().catch(() => null);
+          const reminderBody = await readJsonBounded(request, 64 * 1024);
+          if (!reminderBody.ok) return json({ ok: false, error: reminderBody.error }, reminderBody.status, cors);
+          const body = reminderBody.value;
           const raw = body && Array.isArray(body.items) ? body.items : null;
           if (!raw || raw.length > REMINDER_MAX_ITEMS) {
             return json({ ok: false, error: `Send items as a list of at most ${REMINDER_MAX_ITEMS}.` }, 400, cors);
@@ -1018,12 +1429,10 @@ export default {
           return json({ ok: false, error: `AI evaluation limit reached (100/hr). Resets in ~${resetMins} min. Your local score is still accurate.` }, 429, cors);
         }
 
-        const clEval = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clEval > 64 * 1024) {
-          return json({ ok: false, error: 'Request too large' }, 413, cors);
-        }
-        const payload = await request.json().catch(() => null);
-        if (!payload) {
+        const evalBody = await readJsonBounded(request, 64 * 1024);
+        if (!evalBody.ok) return json({ ok: false, error: evalBody.error }, evalBody.status, cors);
+        const payload = evalBody.value;
+        if (!payload || typeof payload !== 'object') {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
         }
         // v13: a canonical decision that says UNAVAILABLE is a VALID canonical
@@ -1136,11 +1545,9 @@ export default {
           return json({ ok: false, error: 'AI extraction not configured on server.' }, 500, cors);
         }
 
-        const clExtract = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clExtract > 64 * 1024) {
-          return json({ ok: false, error: 'Request too large' }, 413, cors);
-        }
-        const payload = await request.json().catch(() => null);
+        const extractBody = await readJsonBounded(request, 64 * 1024);
+        if (!extractBody.ok) return json({ ok: false, error: extractBody.error }, extractBody.status, cors);
+        const payload = extractBody.value;
         if (!payload || !payload.text) {
           return json({ ok: false, error: 'Missing required field: text' }, 400, cors);
         }
@@ -1228,16 +1635,11 @@ export default {
       if (request.method === 'POST' && path === '/backup') {
         const backupRateLimited = await checkRateLimit(env, driverUserId, 60, 'backup');
         if (backupRateLimited) return json({ ok: false, error: 'Backup rate limit exceeded (60/hr). Try again later.' }, 429, cors);
-        const clBackup = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clBackup > 5 * 1024 * 1024) {
-          return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
-        }
-        const payload = await request.text();
-        if (!payload || payload.length < 10) {
+        const backupBody = await readBodyTextBounded(request, 5 * 1024 * 1024);
+        if (!backupBody.ok) return json({ ok: false, error: 'Payload too large (5MB max)' }, backupBody.status, cors);
+        const payload = backupBody.text;
+        if (!payload || backupBody.bytes < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
-        }
-        if (payload.length > 5 * 1024 * 1024) {
-          return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
         }
         const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
@@ -1263,23 +1665,18 @@ export default {
         // Increment per-user backup count in parallel with pointer ops
         await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
-        return json({ ok: true, key, size: payload.length }, 200, cors);
+        return json({ ok: true, key, size: backupBody.bytes }, 200, cors);
       }
 
       // POST /backup/delta — store delta (partial sync payload)
       if (request.method === 'POST' && path === '/backup/delta') {
         const deltaRateLimited = await checkRateLimit(env, driverUserId, 120, 'delta');
         if (deltaRateLimited) return json({ ok: false, error: 'Delta rate limit exceeded (120/hr).' }, 429, cors);
-        const clDelta = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clDelta > 2 * 1024 * 1024) {
-          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
-        }
-        const payload = await request.text();
-        if (!payload || payload.length < 10) {
+        const deltaBody = await readBodyTextBounded(request, 2 * 1024 * 1024);
+        if (!deltaBody.ok) return json({ ok: false, error: 'Delta too large (2MB max)' }, deltaBody.status, cors);
+        const payload = deltaBody.text;
+        if (!payload || deltaBody.bytes < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
-        }
-        if (payload.length > 2 * 1024 * 1024) {
-          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
         }
         const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
@@ -1325,7 +1722,7 @@ export default {
           await savePtr(env, driverUserId, deviceId, 'd', ptr);
         }
 
-        return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
+        return json({ ok: true, key, size: deltaBody.bytes, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest
@@ -1371,7 +1768,14 @@ export default {
       // GET /status — backup presence check (uses pointer key — no list() call)
       if (request.method === 'GET' && path === '/status') {
         const ptr = await getPtr(env, driverUserId, deviceId, 'b');
-        return json({ ok: true, hasBackup: ptr.count > 0, count: ptr.count, user: tokenData.name }, 200, cors);
+        return json({
+          ok: true,
+          hasBackup: ptr.count > 0,
+          count: ptr.count,
+          user: canonicalUser.name || tokenData.name,
+          credentialExpiresAt: canonicalUser.credentialExpiresAt || null,
+          credentialLastSeenAt: canonicalUser.credentialLastSeenAt || null,
+        }, 200, cors);
       }
 
       // DELETE /backup — remove all backups for this user+device
@@ -1505,13 +1909,14 @@ async function incrementUserBackupCount(env, userId) {
   } catch {}
 }
 
-// ─── Rate limiter (sliding hour window via KV) ────────────────────────────────
+// ─── Rate limiter ─────────────────────────────────────────────────────────────
 //
-// Per-hour windows instead of per-minute drastically reduce KV write churn.
-// Note: KV has no atomic compare-and-swap, so this is a soft limit — two truly
-// concurrent requests in the same window can both pass by reading the same count.
-// The burst headroom (100 eval / 50 extract per hour) is generous enough that
-// this race does not meaningfully undermine the abuse-prevention intent.
+// v31 production uses one SQLite-backed Durable Object per subject+namespace.
+// Each object serializes/transactions its counter, so concurrent callers cannot
+// all read the same pre-increment value the way KV did. The old KV path remains
+// only as a compatibility fallback for local/unit environments that do not bind
+// RATE_LIMITER. /health names the active mode and the deploy/parity gates require
+// "durable-object" in production, so production cannot silently certify fallback.
 
 // v25: the /extract-image work, shared by the authenticated route (inside the
 // driver-token gate) and the no-login app route (above it). Everything that
@@ -1531,15 +1936,17 @@ async function extractImageFromRequest(request, env, cors, userName) {
           return json({ ok: false, error: 'Image extraction is not configured on the server. ' + missing }, 501, cors);
         }
 
-        // Bound the body BEFORE reading it. The ceiling has to bind before
-        // materialization, which is the #232 rule applied to the upload path.
-        const clImg = parseInt(request.headers.get('Content-Length') || '0', 10);
+        // Bound the JSON body by its TRUE streamed byte count, not a caller-
+        // supplied Content-Length. Base64 expands the 3MB decoded-image ceiling
+        // by ~4/3, so the JSON envelope receives only that necessary headroom.
         const MAX_IMAGE_REQUEST = 3 * 1024 * 1024;
-        if (clImg > MAX_IMAGE_REQUEST) {
-          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+        const MAX_IMAGE_BODY = Math.ceil(MAX_IMAGE_REQUEST * 4 / 3) + 32 * 1024;
+        const imageBody = await readJsonBounded(request, MAX_IMAGE_BODY);
+        if (!imageBody.ok) {
+          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, imageBody.status, cors);
         }
 
-        const imgPayload = await request.json().catch(() => null);
+        const imgPayload = imageBody.value;
         if (!imgPayload || !imgPayload.image) {
           return json({ ok: false, error: 'Missing required field: image' }, 400, cors);
         }
@@ -1608,8 +2015,91 @@ async function extractImageFromRequest(request, env, cors, userName) {
         }, 200, cors);
 }
 
-// v25: a per-UTC-day counter, the global ceiling on no-login provider spend.
+export class RateLimitCounter {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    if (request.method === 'DELETE') {
+      await this.state.storage.deleteAll();
+      return new Response(null, { status: 204 });
+    }
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), { status: 405 });
+    }
+    let body;
+    try { body = await request.json(); } catch { body = null; }
+    const limit = Number(body?.limit);
+    const windowMs = Number(body?.windowMs);
+    if (!Number.isInteger(limit) || limit < 1 || !Number.isFinite(windowMs) || windowMs < 1000) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid rate-limit request' }), { status: 400 });
+    }
+
+    const now = Date.now();
+    const result = await this.state.storage.transaction(async tx => {
+      let rec = await tx.get('counter');
+      if (!rec || !Number.isFinite(Number(rec.resetAt)) || Number(rec.resetAt) <= now) {
+        rec = { count: 0, resetAt: Math.floor(now / windowMs) * windowMs + windowMs };
+      }
+      if (Number(rec.count || 0) >= limit) {
+        return { limited: true, count: Number(rec.count || 0), resetAt: rec.resetAt };
+      }
+      rec.count = Number(rec.count || 0) + 1;
+      await tx.put('counter', rec);
+      return { limited: false, count: rec.count, resetAt: rec.resetAt };
+    });
+
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+}
+
+async function exactRateObjectId(env, objectName) {
+  // Never embed raw user IDs or IP addresses in Durable Object names. The
+  // one-way name still gives deterministic routing without becoming metadata
+  // that can identify the limiter subject.
+  const digest = await hashToken(String(objectName));
+  return env.RATE_LIMITER.idFromName('v1:' + digest);
+}
+
+async function clearExactRateLimit(env, objectName) {
+  if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return;
+  const id = await exactRateObjectId(env, objectName);
+  const stub = env.RATE_LIMITER.get(id);
+  const res = await stub.fetch('https://rate.internal/check', { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error('Could not clear exact rate limiter state');
+}
+
+async function exactRateLimit(env, objectName, limit, windowMs) {
+  if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return null;
+  try {
+    const id = await exactRateObjectId(env, objectName);
+    const stub = env.RATE_LIMITER.get(id);
+    const res = await stub.fetch('https://rate.internal/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit, windowMs }),
+    });
+    if (!res.ok) return true; // fail closed if the exact limiter is unhealthy.
+    const body = await res.json();
+    return body?.limited === true;
+  } catch {
+    console.error('[FL] exact rate limiter unavailable');
+    return true;
+  }
+}
+
+// v25/v31: per-UTC-day global ceiling on anonymous provider spend.
 async function checkDailyCap(env, ns, limit) {
+  const exact = await exactRateLimit(env, 'day:' + ns, limit, 86400000);
+  if (exact !== null) return exact;
+
+  // Compatibility fallback for tests/local dev only; production health gate
+  // requires RATE_LIMITER and will not certify this eventual-consistency path.
   const day = Math.floor(Date.now() / 86400000);
   const key = 'rlday:' + ns + ':' + day;
   const raw = await env.BACKUPS.get(key);
@@ -1620,12 +2110,14 @@ async function checkDailyCap(env, ns, limit) {
 }
 
 async function checkRateLimit(env, userId, limit, ns = 'eval') {
+  const exact = await exactRateLimit(env, 'hour:' + ns + ':' + userId, limit, 3600000);
+  if (exact !== null) return exact;
+
   const hour = Math.floor(Date.now() / 3600000);
   const key = 'rl:' + ns + ':' + userId + ':' + hour;
   const raw = await env.BACKUPS.get(key);
   const count = raw ? (parseInt(raw, 10) || 0) : 0;
   if (count >= limit) return true;
-  // TTL 7200s (2 hours) — key auto-cleans after two windows
   await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 7200 });
   return false;
 }

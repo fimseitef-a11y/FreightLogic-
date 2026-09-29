@@ -91,8 +91,11 @@ jobs:
             code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 30 \
               -H "Origin: $APP_ORIGIN" "$API_ORIGIN/health" || echo 000)
             echo "attempt $attempt: HTTP $code $(cat body.txt 2>/dev/null)"
-            if [ "$code" = "200" ] && grep -q "\"version\":\"$WANT\"" body.txt; then
-              echo "Worker v$WANT is live (after $attempt attempt(s))."
+            if [ "$code" = "200" ] \
+              && grep -q "\"version\":\"$WANT\"" body.txt \
+              && grep -q '"rateLimiter":"durable-object"' body.txt \
+              && grep -q '"credentialPolicy":"finite-v1"' body.txt; then
+              echo "Worker v$WANT is live with the exact limiter and finite credential policy (after $attempt attempt(s))."
               exit 0
             fi
             sleep 10
@@ -129,7 +132,7 @@ jobs:
         run: |
           WANT=$(grep -m1 -oE 'workerVersion: "[0-9]+"' scripts/verify-cloudflare-parity.mjs | grep -oE '[0-9]+')
           echo
-          echo "Worker v$WANT is deployed and answering the v$WANT contract."
+          echo "Worker v$WANT is deployed with Durable Object rate limiting and finite credential policy."
           cat <<'DONE'
 
           ROTATE THE DRIVER TOKENS. The superseded v7 stored every driver bearer

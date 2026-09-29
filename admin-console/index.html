@@ -40,6 +40,7 @@
         </div>
         <div class="actions compact">
           <button id="refresh" type="button" class="secondary">Refresh</button>
+          <button id="auditRefresh" type="button" class="secondary">Audit log</button>
           <button id="disconnect" type="button" class="secondary">Disconnect</button>
         </div>
       </section>
@@ -64,6 +65,17 @@
           </div>
         </div>
         <div id="driverList" class="driver-list"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head flat">
+          <div>
+            <p class="eyebrow">Privileged activity</p>
+            <h2>Admin audit log</h2>
+            <p class="muted small">Privacy-safe action metadata only — no names, tokens, IP addresses, or freight payloads.</p>
+          </div>
+        </div>
+        <div id="auditList" class="driver-list"></div>
       </section>
     </div>
   </main>

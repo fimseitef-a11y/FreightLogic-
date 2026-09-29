@@ -70,6 +70,27 @@
     "binding": "AI"
   },
 
+  // v31 exact abuse/provider-spend counters. Cloudflare KV is eventually
+  // consistent and cannot provide an atomic increment; this SQLite-backed
+  // Durable Object serializes each subject/window counter instead.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimitCounter"
+      }
+    ]
+  },
+
+  // Wrangler's declarative export config creates/maintains the SQLite-backed
+  // Durable Object class without a hand-maintained migration tag.
+  "exports": {
+    "RateLimitCounter": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+
   // AIAG-TASK-0022: private Worker-to-Worker RPC only. The target Agent Worker
   // has workers_dev=false, preview_urls=false, and no routes, so this binding
   // is the only production path to its WorkerEntrypoint.

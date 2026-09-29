@@ -150,6 +150,35 @@ test('[ADMIN-08] revoke uses only DELETE /admin/users/:id and no freight-data en
   }
 });
 
+test('[ADMIN-08b] permanent erase is a separate POST with exact confirmation and cannot be confused with revoke', async () => {
+  const mod = await loadConsoleModule();
+  const userId = 'u_12345678';
+  const fetchImpl = makeFetch({ [`POST /admin/users/${userId}/erase`]: async call => {
+    const body = JSON.parse(call.body);
+    eq(body.confirm, 'ERASE', 'erase call must carry exact destructive confirmation');
+    eq(body.userId, userId, 'erase confirmation must bind the canonical userId');
+    eq(Object.keys(body).sort().join(','), 'confirm,userId', 'erase request must carry no freight data or extra authority');
+    return response(200, { ok: true, erased: userId, deletedCount: 9 });
+  }});
+  const api = mod.createAdminApi({ apiOrigin: 'https://worker.test', tokenProvider: () => 'admin-session-value', fetchImpl });
+  const result = await api.erase(userId);
+  eq(result.erased, userId, 'erase result must identify the same account');
+  eq(fetchImpl.calls[0].method, 'POST', 'permanent erase must be an explicitly-confirmed POST, separate from revoke DELETE');
+});
+
+test('[ADMIN-08c] privileged audit read is a dedicated metadata-only endpoint', async () => {
+  const mod = await loadConsoleModule();
+  const fetchImpl = makeFetch({ 'GET /admin/audit': async call => {
+    eq(call.headers.get('X-Admin-Token'), 'admin-session-value', 'audit read must use session-only admin auth');
+    return response(200, { ok: true, entries: [{ action:'user.revoke', actor:'operator', state:'succeeded', subject:'abc123' }] });
+  }});
+  const api = mod.createAdminApi({ apiOrigin: 'https://worker.test', tokenProvider: () => 'admin-session-value', fetchImpl });
+  const entries = await api.listAudit(100);
+  eq(entries.length, 1, 'audit API must return sanitized action metadata');
+  eq(entries[0].action, 'user.revoke', 'audit action class must survive');
+  ok(!('name' in entries[0]) && !('token' in entries[0]) && !('ip' in entries[0]), 'audit contract must not require raw identity or secret fields');
+});
+
 test('[ADMIN-09] production Worker CORS remains exact-match and names the dedicated admin origin', async () => {
   const worker = await text('cloud-backup-worker.js');
   ok(worker.includes('requestOrigin === configuredOrigin'), 'Worker must exact-match the configured admin origin');
