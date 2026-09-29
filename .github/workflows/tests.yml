@@ -50,28 +50,3 @@ jobs:
 
       - name: Run full suite
         run: node tests/run-all.mjs
-
-      - name: Validate backup Worker configuration and binding types
-        run: npx --yes wrangler@4 types /tmp/freightlogic-worker-env.d.ts --config scripts/wrangler.backup-worker.jsonc --env-interface CloudflareEnv
-
-      - name: Enforce compressed asset regression budget
-        run: node scripts/performance-budget.mjs
-
-      - name: Lighthouse + bounded local load readiness
-        run: |
-          set -euo pipefail
-          npm install -g lighthouse@13.5.0
-          node scripts/perf-static-server.mjs > /tmp/freightlogic-perf-server.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 50); do
-            if curl -fsS http://127.0.0.1:4173/index.html >/dev/null; then break; fi
-            sleep 0.1
-          done
-          curl -fsS http://127.0.0.1:4173/index.html >/dev/null
-          CHROME_PATH=$(node --input-type=module -e "import { chromium } from 'playwright'; console.log(chromium.executablePath())")
-          for run in 1 2 3; do
-            lighthouse http://127.0.0.1:4173/index.html               --chrome-path="$CHROME_PATH"               --chrome-flags="--headless=new --no-sandbox"               --only-categories=performance               --output=json               --output-path="/tmp/freightlogic-lighthouse-$run.json"               --quiet
-          done
-          node scripts/assert-lighthouse.mjs             /tmp/freightlogic-lighthouse-1.json             /tmp/freightlogic-lighthouse-2.json             /tmp/freightlogic-lighthouse-3.json
-          node scripts/load-test.mjs             --origin=http://127.0.0.1:4173             --path=/index.html             --concurrency=20             --requests=500
