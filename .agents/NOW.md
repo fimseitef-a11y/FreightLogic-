@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
-| gpt | — idle — A14 Shortcuts + Web Push physical certification merged in PR #340 after Tests/Lanes/CodeQL green. | 2026-09-24T00:31Z |
+| gpt | AIAG-TASK-0033 — output guard + production cutover approval/concurrency hardening; bounded foreground implementation from operator-approved handoff. | 2026-09-29T01:07Z |
 
 ---
 
