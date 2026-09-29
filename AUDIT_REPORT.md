@@ -798,13 +798,14 @@ driver can still bank the trip.
   boundaries needed to demonstrate F-1 were exercised; a full combinatorial sweep of
   `dzCheckEligibility`/`dzClassifySubTier` (which depend on the market-coordinate database and
   settings, not just pure numeric input) was not built.
-- **Multi-tab TOCTOU beyond trips.** F-6 demonstrates the lost-update pattern on `trips`. The
-  same `upsertTrip`-style full-overwrite pattern appears in `upsertExpense`/`updateExpense`
-  (`app.js:1007-1042`) and likely other stores; those were not independently exercised with
-  two tabs, though the code shape strongly suggests the same bug class applies. (Phase 4 did
-  end up exercising `addExpense`/`addFuel` directly while building an unrelated offline
-  scenario, and found a different, more severe bug there first — see F-8. The TOCTOU question
-  for expenses specifically is still open.)
+- **Multi-tab TOCTOU beyond trips — CLOSED by the later M2 concurrency repair.** F-6 originally
+  demonstrated the lost-update pattern on `trips` and this audit correctly left expense/fuel
+  stale-write behavior unverified at that time. That historical gap is no longer open:
+  `tests/integration/m2-expense-fuel-concurrency.spec.mjs` now drives the real IndexedDB update
+  functions and proves stale expense and fuel saves are rejected with `FL_CONFLICT`, the first
+  writer survives without silent field reversion, sequential edits still work, and revision
+  stamps advance/persist. Keep the original F-8 history below as evidence of what was found; do
+  not read this old limitation as a current open defect.
 
 ## Test Suite
 
