@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
-| gpt | AIAG-TASK-0033 — output guard + production cutover approval/concurrency hardening; bounded foreground implementation from operator-approved handoff. | 2026-09-29T01:07Z |
+| gpt | — idle — AIAG-TASK-0033 implementation is in PR #431; awaiting CI/review evidence. | 2026-09-29T01:13Z |
 
 ---
 
