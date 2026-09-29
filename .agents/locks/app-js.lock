@@ -1,0 +1,6 @@
+owner: gpt
+token: 3d0d7f1e-2f0b-4b25-9d6f-0035c15a2026
+started_utc: 2026-09-29T05:20:00Z
+expected_release_utc: 2026-09-29T06:00:00Z
+paths: app.js
+task: AIAG-TASK-0035 cold-start CLS repair for PR #432
