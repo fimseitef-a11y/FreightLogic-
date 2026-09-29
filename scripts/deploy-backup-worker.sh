@@ -197,7 +197,7 @@ Nothing has been deployed. This was a preflight only.
 
 To deploy, from an authenticated Cloudflare session:
 
-  npx wrangler deploy -c scripts/wrangler.backup-worker.jsonc --dry-run   # inspect
+  npx --yes wrangler@4.144.0 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run   # inspect
   scripts/deploy-backup-worker.sh --confirm                               # deploy
 
 Then prove the gate:
@@ -215,7 +215,7 @@ if [ "$MODE" = "deploy" ]; then
   echo "   config: scripts/wrangler.backup-worker.jsonc"
   echo "   NOTE: this does not touch the $APP_SERVICE app/assets service."
   echo
-  npx wrangler deploy -c "$CONFIG"
+  npx --yes wrangler@4.144.0 deploy -c "$CONFIG"
   echo
   echo "Deployed. Verifying..."
 fi
