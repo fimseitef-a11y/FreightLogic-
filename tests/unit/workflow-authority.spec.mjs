@@ -143,7 +143,7 @@ test('[WFA-07] every external GitHub Action is pinned to an immutable commit SHA
       `${f} has mutable action ref(s): ${mutable.join(', ')} — pin each external action to a 40-hex commit SHA`);
   }
 
-  // Negative control: a movable major tag must be rejected. A guard that only
+  // Synthetic offender control: a movable major tag must be rejected. A guard that only
   // passes the current workflows but cannot catch @vN drift is not a guard.
   const offender = [
     'permissions:',
@@ -170,7 +170,7 @@ test('[WFA-08] deployment CLI invocations pin Wrangler to an exact published-ver
       `${path.relative(ROOT, file)} has floating Wrangler ref(s): ${mutable.join(', ')} — use an exact x.y.z version`);
   }
 
-  // Negative control: major-only pins are movable and must be rejected.
+  // Synthetic offender control: major-only pins are movable and must be rejected.
   const caught = floatingWranglerRefs('npx --yes wrangler@4 deploy -c wrangler.jsonc');
   ok(caught.length === 1 && caught[0] === 'wrangler@4',
     'WFA-08 must reject a floating wrangler@4 reference');
