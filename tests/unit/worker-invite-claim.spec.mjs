@@ -122,7 +122,13 @@ function makeRateLimiterBinding(RateLimitCounter, env) {
           },
           async deleteAll() { map.clear(); },
         };
-        objects.set(id, new RateLimitCounter({ storage }, env));
+        const object = new RateLimitCounter({ storage }, env);
+        objects.set(id, {
+          fetch(input, init) {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return object.fetch(request);
+          },
+        });
       }
       return objects.get(id);
     },
@@ -283,7 +289,7 @@ test('[WIC-18] exact invite claim budget survives stale KV invite reads', async 
     else eq(body.userId, stableUserId, 'stale claim counts must not break identity-preserving re-claim');
   }
   const fourth = await worker.fetch(claimReq(inv.code), env);
-  eq(fourth.status, 410, `the exact limiter must refuse claim 4 even when KV still exposes claims=0; got ${fourth.status}`);
+  eq(fourth.status, 410, `the exact limiter must refuse claim 4 even when KV still exposes a stale lower claim count; got ${fourth.status}`);
   eq(await kv.get('inv:' + hash), null, 'the exhausted invite must still be deleted');
 });
 
