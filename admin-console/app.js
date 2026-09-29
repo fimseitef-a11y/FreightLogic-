@@ -120,6 +120,17 @@ export function createAdminApi({
     async revoke(userId) {
       return await request('/admin/users/' + encodeURIComponent(requireUserId(userId)), { method: 'DELETE' });
     },
+    async erase(userId) {
+      const id = requireUserId(userId);
+      return await request('/admin/users/' + encodeURIComponent(id) + '/erase', {
+        method: 'POST', body: { confirm: 'ERASE', userId: id }
+      });
+    },
+    async listAudit(limit = 100) {
+      const n = Math.max(1, Math.min(200, Number(limit) || 100));
+      const result = await request('/admin/audit?limit=' + encodeURIComponent(String(n)));
+      return Array.isArray(result.entries) ? result.entries : [];
+    },
   };
 }
 
@@ -238,6 +249,31 @@ function renderInvite({ invite, driverOrigin }) {
   box.hidden = false;
 }
 
+function renderAudit(entries) {
+  const box = byId('auditList');
+  if (!box) return;
+  box.replaceChildren();
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No privileged activity recorded yet.';
+    box.append(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'driver-card';
+    const title = document.createElement('strong');
+    title.textContent = String(entry.action || 'admin action');
+    const meta = document.createElement('div');
+    meta.className = 'muted';
+    const when = entry.ts ? new Date(entry.ts).toLocaleString() : '—';
+    meta.textContent = `${when} · ${String(entry.actor || 'operator')} · ${String(entry.state || 'unknown')}${entry.deletedCount !== undefined ? ' · ' + Number(entry.deletedCount) + ' keys deleted' : ''}`;
+    row.append(title, meta);
+    box.append(row);
+  }
+}
+
 function renderUsers(users, { api, refresh, driverOrigin }) {
   const list = byId('driverList');
   if (!list) return;
@@ -260,7 +296,8 @@ function renderUsers(users, { api, refresh, driverOrigin }) {
     name.textContent = String(user.name || 'Driver');
     const meta = document.createElement('div');
     meta.className = 'muted';
-    meta.textContent = `${user.active === false ? 'Revoked' : 'Active'} · Added ${formatDate(user.createdAt)} · ${Number(user.backupCount || 0)} backup${Number(user.backupCount || 0) === 1 ? '' : 's'}`;
+    const expiry = user.credentialExpiresAt ? ' · Credential expires ' + formatDate(user.credentialExpiresAt) : '';
+    meta.textContent = `${user.active === false ? 'Revoked' : 'Active'} · Added ${formatDate(user.createdAt)} · ${Number(user.backupCount || 0)} backup${Number(user.backupCount || 0) === 1 ? '' : 's'}${expiry}`;
     identity.append(name, meta);
     head.append(identity);
     card.append(head);
@@ -288,6 +325,26 @@ function renderUsers(users, { api, refresh, driverOrigin }) {
           } catch (error) { setStatus(error.message, 'bad'); }
         }, 'danger'),
       );
+      card.append(actions);
+    } else {
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      actions.append(makeButton('Erase cloud data', async () => {
+        const typed = prompt(
+          'PERMANENT cloud erasure cannot be undone.\n\nType this driver ID exactly to continue:\n' + user.userId
+        );
+        if (typed !== user.userId) {
+          setStatus('Permanent erasure cancelled — driver ID did not match.');
+          return;
+        }
+        if (!confirm('Permanently erase this revoked driver\'s cloud backups, account metadata, invites, notifications, and credentials?')) return;
+        try {
+          setStatus('Erasing revoked cloud account…');
+          const result = await api.erase(user.userId);
+          setStatus(`Cloud account erased (${Number(result.deletedCount || 0)} stored keys removed).`, 'good');
+          await refresh();
+        } catch (error) { setStatus(error.message, 'bad'); }
+      }, 'danger'));
       card.append(actions);
     }
     list.append(card);
@@ -355,10 +412,18 @@ async function bootstrapBrowser() {
     setConnected(false);
     byId('driverList')?.replaceChildren();
     byId('inviteResult')?.replaceChildren();
+    byId('auditList')?.replaceChildren();
     setStatus('Admin session cleared.');
   });
 
   byId('refresh')?.addEventListener('click', () => refresh().catch(() => {}));
+  byId('auditRefresh')?.addEventListener('click', async () => {
+    try {
+      setStatus('Loading privileged activity…');
+      renderAudit(await api.listAudit(100));
+      setStatus('Privileged activity refreshed.', 'good');
+    } catch (error) { setStatus(error.message, 'bad'); }
+  });
 
   byId('inviteForm')?.addEventListener('submit', async event => {
     event.preventDefault();
