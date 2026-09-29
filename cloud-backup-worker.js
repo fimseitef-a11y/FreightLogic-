@@ -1195,12 +1195,13 @@ export default {
       // The Agent Worker itself has no public route. This is the sole HTTP
       // ingress and it sits after canonical driver-token authentication.
       if (request.method === 'POST' && path === '/agent/evaluate') {
-        const clAgent = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clAgent > AGENT_RPC_MAX_BYTES) {
-          return json({ ok: false, code: 'AGENT_ENVELOPE_TOO_LARGE', error: 'Agent request too large' }, 413, cors);
+        const agentBody = await readJsonBounded(request, AGENT_RPC_MAX_BYTES);
+        if (!agentBody.ok) {
+          const code = agentBody.status === 413 ? 'AGENT_ENVELOPE_TOO_LARGE' : 'INVALID_ENVELOPE';
+          return json({ ok: false, code, error: agentBody.status === 413 ? 'Agent request too large' : 'Invalid Agent request' }, agentBody.status, cors);
         }
 
-        const envelope = await request.json().catch(() => null);
+        const envelope = agentBody.value;
         if (!agentRpcPlainObject(envelope)) {
           return json({ ok: false, code: 'INVALID_ENVELOPE', error: 'Invalid Agent request' }, 400, cors);
         }
@@ -1242,7 +1243,9 @@ export default {
 
       // ── v24: Web Push subscriptions (docs/WEB_PUSH_CONTRACT.md §4–5) ──────
       if (path === '/push/subscribe' && (request.method === 'POST' || request.method === 'DELETE')) {
-        const body = await request.json().catch(() => ({}));
+        const pushBody = await readJsonBounded(request, 32 * 1024);
+        if (!pushBody.ok) return json({ ok: false, error: pushBody.error }, pushBody.status, cors);
+        const body = pushBody.value || {};
         const subs = await readUserSubs(env, driverUserId);
         if (request.method === 'DELETE') {
           const endpoint = String(body.endpoint || body.subscription?.endpoint || '');
@@ -1334,7 +1337,9 @@ export default {
           if (await checkRateLimit(env, driverUserId, 60, 'rem')) {
             return json({ ok: false, error: 'Too many reminder updates this hour.' }, 429, cors);
           }
-          const body = await request.json().catch(() => null);
+          const reminderBody = await readJsonBounded(request, 64 * 1024);
+          if (!reminderBody.ok) return json({ ok: false, error: reminderBody.error }, reminderBody.status, cors);
+          const body = reminderBody.value;
           const raw = body && Array.isArray(body.items) ? body.items : null;
           if (!raw || raw.length > REMINDER_MAX_ITEMS) {
             return json({ ok: false, error: `Send items as a list of at most ${REMINDER_MAX_ITEMS}.` }, 400, cors);
@@ -1386,12 +1391,10 @@ export default {
           return json({ ok: false, error: `AI evaluation limit reached (100/hr). Resets in ~${resetMins} min. Your local score is still accurate.` }, 429, cors);
         }
 
-        const clEval = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clEval > 64 * 1024) {
-          return json({ ok: false, error: 'Request too large' }, 413, cors);
-        }
-        const payload = await request.json().catch(() => null);
-        if (!payload) {
+        const evalBody = await readJsonBounded(request, 64 * 1024);
+        if (!evalBody.ok) return json({ ok: false, error: evalBody.error }, evalBody.status, cors);
+        const payload = evalBody.value;
+        if (!payload || typeof payload !== 'object') {
           return json({ ok: false, error: 'Invalid JSON payload' }, 400, cors);
         }
         // v13: a canonical decision that says UNAVAILABLE is a VALID canonical
@@ -1504,11 +1507,9 @@ export default {
           return json({ ok: false, error: 'AI extraction not configured on server.' }, 500, cors);
         }
 
-        const clExtract = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clExtract > 64 * 1024) {
-          return json({ ok: false, error: 'Request too large' }, 413, cors);
-        }
-        const payload = await request.json().catch(() => null);
+        const extractBody = await readJsonBounded(request, 64 * 1024);
+        if (!extractBody.ok) return json({ ok: false, error: extractBody.error }, extractBody.status, cors);
+        const payload = extractBody.value;
         if (!payload || !payload.text) {
           return json({ ok: false, error: 'Missing required field: text' }, 400, cors);
         }
@@ -1596,16 +1597,11 @@ export default {
       if (request.method === 'POST' && path === '/backup') {
         const backupRateLimited = await checkRateLimit(env, driverUserId, 60, 'backup');
         if (backupRateLimited) return json({ ok: false, error: 'Backup rate limit exceeded (60/hr). Try again later.' }, 429, cors);
-        const clBackup = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clBackup > 5 * 1024 * 1024) {
-          return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
-        }
-        const payload = await request.text();
-        if (!payload || payload.length < 10) {
+        const backupBody = await readBodyTextBounded(request, 5 * 1024 * 1024);
+        if (!backupBody.ok) return json({ ok: false, error: 'Payload too large (5MB max)' }, backupBody.status, cors);
+        const payload = backupBody.text;
+        if (!payload || backupBody.bytes < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
-        }
-        if (payload.length > 5 * 1024 * 1024) {
-          return json({ ok: false, error: 'Payload too large (5MB max)' }, 413, cors);
         }
         const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':backup:' + ts;
@@ -1631,23 +1627,18 @@ export default {
         // Increment per-user backup count in parallel with pointer ops
         await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
-        return json({ ok: true, key, size: payload.length }, 200, cors);
+        return json({ ok: true, key, size: backupBody.bytes }, 200, cors);
       }
 
       // POST /backup/delta — store delta (partial sync payload)
       if (request.method === 'POST' && path === '/backup/delta') {
         const deltaRateLimited = await checkRateLimit(env, driverUserId, 120, 'delta');
         if (deltaRateLimited) return json({ ok: false, error: 'Delta rate limit exceeded (120/hr).' }, 429, cors);
-        const clDelta = parseInt(request.headers.get('Content-Length') || '0', 10);
-        if (clDelta > 2 * 1024 * 1024) {
-          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
-        }
-        const payload = await request.text();
-        if (!payload || payload.length < 10) {
+        const deltaBody = await readBodyTextBounded(request, 2 * 1024 * 1024);
+        if (!deltaBody.ok) return json({ ok: false, error: 'Delta too large (2MB max)' }, deltaBody.status, cors);
+        const payload = deltaBody.text;
+        if (!payload || deltaBody.bytes < 10) {
           return json({ ok: false, error: 'Empty payload' }, 400, cors);
-        }
-        if (payload.length > 2 * 1024 * 1024) {
-          return json({ ok: false, error: 'Delta too large (2MB max)' }, 413, cors);
         }
         const ts = nextBackupTs();
         const key = 'user:' + driverUserId + ':device:' + deviceId + ':delta:' + ts;
@@ -1693,7 +1684,7 @@ export default {
           await savePtr(env, driverUserId, deviceId, 'd', ptr);
         }
 
-        return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
+        return json({ ok: true, key, size: deltaBody.bytes, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest
@@ -1880,13 +1871,14 @@ async function incrementUserBackupCount(env, userId) {
   } catch {}
 }
 
-// ─── Rate limiter (sliding hour window via KV) ────────────────────────────────
+// ─── Rate limiter ─────────────────────────────────────────────────────────────
 //
-// Per-hour windows instead of per-minute drastically reduce KV write churn.
-// Note: KV has no atomic compare-and-swap, so this is a soft limit — two truly
-// concurrent requests in the same window can both pass by reading the same count.
-// The burst headroom (100 eval / 50 extract per hour) is generous enough that
-// this race does not meaningfully undermine the abuse-prevention intent.
+// v31 production uses one SQLite-backed Durable Object per subject+namespace.
+// Each object serializes/transactions its counter, so concurrent callers cannot
+// all read the same pre-increment value the way KV did. The old KV path remains
+// only as a compatibility fallback for local/unit environments that do not bind
+// RATE_LIMITER. /health names the active mode and the deploy/parity gates require
+// "durable-object" in production, so production cannot silently certify fallback.
 
 // v25: the /extract-image work, shared by the authenticated route (inside the
 // driver-token gate) and the no-login app route (above it). Everything that
@@ -1906,15 +1898,17 @@ async function extractImageFromRequest(request, env, cors, userName) {
           return json({ ok: false, error: 'Image extraction is not configured on the server. ' + missing }, 501, cors);
         }
 
-        // Bound the body BEFORE reading it. The ceiling has to bind before
-        // materialization, which is the #232 rule applied to the upload path.
-        const clImg = parseInt(request.headers.get('Content-Length') || '0', 10);
+        // Bound the JSON body by its TRUE streamed byte count, not a caller-
+        // supplied Content-Length. Base64 expands the 3MB decoded-image ceiling
+        // by ~4/3, so the JSON envelope receives only that necessary headroom.
         const MAX_IMAGE_REQUEST = 3 * 1024 * 1024;
-        if (clImg > MAX_IMAGE_REQUEST) {
-          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, 413, cors);
+        const MAX_IMAGE_BODY = Math.ceil(MAX_IMAGE_REQUEST * 4 / 3) + 32 * 1024;
+        const imageBody = await readJsonBounded(request, MAX_IMAGE_BODY);
+        if (!imageBody.ok) {
+          return json({ ok: false, error: 'Screenshot too large (3MB max after compression).' }, imageBody.status, cors);
         }
 
-        const imgPayload = await request.json().catch(() => null);
+        const imgPayload = imageBody.value;
         if (!imgPayload || !imgPayload.image) {
           return json({ ok: false, error: 'Missing required field: image' }, 400, cors);
         }
@@ -1983,8 +1977,71 @@ async function extractImageFromRequest(request, env, cors, userName) {
         }, 200, cors);
 }
 
-// v25: a per-UTC-day counter, the global ceiling on no-login provider spend.
+export class RateLimitCounter {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), { status: 405 });
+    }
+    let body;
+    try { body = await request.json(); } catch { body = null; }
+    const limit = Number(body?.limit);
+    const windowMs = Number(body?.windowMs);
+    if (!Number.isInteger(limit) || limit < 1 || !Number.isFinite(windowMs) || windowMs < 1000) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid rate-limit request' }), { status: 400 });
+    }
+
+    const now = Date.now();
+    const result = await this.state.storage.transaction(async tx => {
+      let rec = await tx.get('counter');
+      if (!rec || !Number.isFinite(Number(rec.resetAt)) || Number(rec.resetAt) <= now) {
+        rec = { count: 0, resetAt: Math.floor(now / windowMs) * windowMs + windowMs };
+      }
+      if (Number(rec.count || 0) >= limit) {
+        return { limited: true, count: Number(rec.count || 0), resetAt: rec.resetAt };
+      }
+      rec.count = Number(rec.count || 0) + 1;
+      await tx.put('counter', rec);
+      return { limited: false, count: rec.count, resetAt: rec.resetAt };
+    });
+
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+}
+
+async function exactRateLimit(env, objectName, limit, windowMs) {
+  if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.idFromName !== 'function') return null;
+  try {
+    const id = env.RATE_LIMITER.idFromName(objectName);
+    const stub = env.RATE_LIMITER.get(id);
+    const res = await stub.fetch('https://rate.internal/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit, windowMs }),
+    });
+    if (!res.ok) return true; // fail closed if the exact limiter is unhealthy.
+    const body = await res.json();
+    return body?.limited === true;
+  } catch {
+    console.error('[FL] exact rate limiter unavailable');
+    return true;
+  }
+}
+
+// v25/v31: per-UTC-day global ceiling on anonymous provider spend.
 async function checkDailyCap(env, ns, limit) {
+  const exact = await exactRateLimit(env, 'day:' + ns, limit, 86400000);
+  if (exact !== null) return exact;
+
+  // Compatibility fallback for tests/local dev only; production health gate
+  // requires RATE_LIMITER and will not certify this eventual-consistency path.
   const day = Math.floor(Date.now() / 86400000);
   const key = 'rlday:' + ns + ':' + day;
   const raw = await env.BACKUPS.get(key);
@@ -1995,12 +2052,14 @@ async function checkDailyCap(env, ns, limit) {
 }
 
 async function checkRateLimit(env, userId, limit, ns = 'eval') {
+  const exact = await exactRateLimit(env, 'hour:' + ns + ':' + userId, limit, 3600000);
+  if (exact !== null) return exact;
+
   const hour = Math.floor(Date.now() / 3600000);
   const key = 'rl:' + ns + ':' + userId + ':' + hour;
   const raw = await env.BACKUPS.get(key);
   const count = raw ? (parseInt(raw, 10) || 0) : 0;
   if (count >= limit) return true;
-  // TTL 7200s (2 hours) — key auto-cleans after two windows
   await env.BACKUPS.put(key, String(count + 1), { expirationTtl: 7200 });
   return false;
 }
