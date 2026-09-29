@@ -88,6 +88,7 @@
 
     /* ── Reset ──────────────────────────────────────────────────── */
     *,*::before,*::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+    html.fl-booting main.app { display: none }
     html { height: 100%; overscroll-behavior-y: none }
     body {
       margin: 0; height: 100%;
