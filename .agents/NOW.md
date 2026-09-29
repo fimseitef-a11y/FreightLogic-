@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — TASK-0036 audit implementation pushed; opening PR for exact-head full-suite/security verification. | 2026-09-29T23:31:00Z |
+| gpt | — idle — PR #436 open at 70660770; exact-head audit CI in progress for AIAG-TASK-0036. | 2026-09-29T23:35:00Z |
 
 ---
 
