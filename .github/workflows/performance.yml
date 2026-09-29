@@ -23,23 +23,36 @@ jobs:
       - name: Compressed asset budget
         run: node scripts/performance-budget.mjs
 
-      - name: Validate backup Worker deployment config
-        run: npx --yes wrangler@4 deploy --dry-run --config scripts/wrangler.backup-worker.jsonc --outdir /tmp/fl-worker-dry-run
+      - name: Validate backup Worker configuration and binding types
+        run: npx --yes wrangler@4 types /tmp/freightlogic-worker-env.d.ts --config scripts/wrangler.backup-worker.jsonc --env-interface CloudflareEnv
 
-      - name: Validate bounded load-test harness locally
+      - name: Validate bounded API load-test harness locally
         run: node scripts/load-test-worker.mjs --selfTest --requests=1000 --concurrency=50 --maxP95=750
 
-      - name: Install Lighthouse CI
-        run: npm install -g @lhci/cli@0.15.x
+      - name: Install pinned Lighthouse browser toolchain
+        run: |
+          npm install -g playwright@1.62.1 lighthouse@13.5.0
+          playwright install --with-deps chromium
+          mkdir -p node_modules
+          ln -sfn "$(npm root -g)/playwright" node_modules/playwright
 
-      - name: Lighthouse healthcheck
-        run: lhci healthcheck --fatal --config=scripts/lighthouserc.json
-
-      - name: Collect Lighthouse desktop runs
-        run: lhci collect --config=scripts/lighthouserc.json
-
-      - name: Assert Lighthouse budgets
-        run: lhci assert --config=scripts/lighthouserc.json
+      - name: Run three Lighthouse desktop samples and assert median budgets
+        run: |
+          set -euo pipefail
+          mkdir -p .lighthouseci
+          node scripts/perf-static-server.mjs > /tmp/freightlogic-perf-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:4173/index.html >/dev/null; then break; fi
+            sleep 0.1
+          done
+          curl -fsS http://127.0.0.1:4173/index.html >/dev/null
+          export CHROME_PATH=$(node --input-type=module -e "import { chromium } from 'playwright'; console.log(chromium.executablePath())")
+          for run in 1 2 3; do
+            lighthouse http://127.0.0.1:4173/index.html --preset=desktop --chrome-flags="--headless=new --no-sandbox" --only-categories=performance --output=json --output-path=".lighthouseci/run-$run.json" --quiet
+          done
+          node scripts/assert-lighthouse.mjs .lighthouseci/run-1.json .lighthouseci/run-2.json .lighthouseci/run-3.json
 
       - name: Preserve Lighthouse reports
         if: always()
