@@ -247,6 +247,17 @@ test('[SR-13] exact limiter identities are pseudonymous and account erasure clea
   eq(deleteCalls,names.length,'every addressed exact limiter object must receive a delete');
 });
 
+test('[SR-14] permanent erasure refuses a corrupted reminder index before deleting the account', async () => {
+  const { eraseUserData } = await loadMod();
+  const rec={userId:USER,name:'Driver',active:false};
+  const kv=makeKV({['user:'+USER]:JSON.stringify(rec),'rem:index':'{"broken":true}'});
+  let threw=false;
+  try { await eraseUserData({BACKUPS:kv},USER); }
+  catch (e) { threw=/corrupted reminder index/i.test(String(e)); }
+  ok(threw,'malformed reminder index must abort erasure');
+  ok(kv.keys().includes('user:'+USER),'account must remain when erasure cannot prove reference cleanup');
+});
+
 export async function runSpec(){ return run(); }
 if (import.meta.url === `file://${process.argv[1]}`) {
   const r=await runSpec();
