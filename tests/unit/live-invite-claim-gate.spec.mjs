@@ -276,6 +276,43 @@ test('[LIC-13] an origin answering 5xx is UNOBSERVED, never FAILURE', async () =
     'and it must raise no error annotations');
 });
 
+test('[LIC-14] one transient transport failure is retried before origin is marked unreachable', async () => {
+  // Production run #45 exposed this exact shape: the minted-token /status fetch
+  // hit one transport error, while live calls immediately before and after it
+  // succeeded. A single blip must not permanently poison the whole run as
+  // UNOBSERVED. The verifier should retry a bounded number of times and only
+  // mark the origin unreachable if every attempt for that request fails.
+  let noTokenInviteAttempts = 0;
+  let claims = 0;
+  const result = await withOrigin((req, res) => {
+    if (req.url === '/admin/invites') {
+      const hasAdmin = !!req.headers['x-admin-token'];
+      if (!hasAdmin && noTokenInviteAttempts++ === 0) {
+        res.socket.destroy();
+        return;
+      }
+      return json(res, 401, { ok: false });
+    }
+    if (req.url === '/claim') {
+      claims++;
+      return json(res, claims === 1 ? 400 : 410, { ok: false });
+    }
+    return json(res, 404, {});
+  }, (origin) => runVerifier(origin, {
+    FL_CF_API_TOKEN: '', FL_CF_ACCOUNT_ID: '', FL_KV_NAMESPACE_ID: '',
+  }));
+
+  ok(noTokenInviteAttempts >= 2,
+    `the dropped request must be retried, saw ${noTokenInviteAttempts} attempt(s)`);
+  ok(/PASS  POST \/admin\/invites without an admin token is 401/.test(result.out),
+    'the recovered request must be observed as PASS');
+  ok(!/POST \/admin\/invites without an admin token is 401 — origin unreachable/.test(result.out),
+    'one transient failure must not be recorded as an unreachable check');
+  ok(/no KV credential supplied/.test(result.out),
+    'precondition: after recovery the run must advance to the deliberate no-KV UNOBSERVED boundary');
+  eq(result.code, 2, `missing KV still makes this run UNOBSERVED, got ${result.code}`);
+});
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 test('[LIC-07] the authenticated gate actually runs this verifier', async () => {
