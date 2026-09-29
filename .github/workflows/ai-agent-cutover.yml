@@ -74,10 +74,10 @@ jobs:
           NODE
 
       - name: Dry-run Agent deployment bundle
-        run: npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc --dry-run
+        run: npx --yes wrangler@4.144.0 deploy -c agent-runtime/wrangler.jsonc --dry-run
 
       - name: Dry-run authenticated API Worker with private binding
-        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
+        run: npx --yes wrangler@4.144.0 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
 
   dark-cutover:
     needs: contract
@@ -117,12 +117,12 @@ jobs:
       - name: Deploy private Agent target dark
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc
+        run: npx --yes wrangler@4.144.0 deploy -c agent-runtime/wrangler.jsonc
 
       - name: Deploy authenticated API Worker with private Agent binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc
+        run: npx --yes wrangler@4.144.0 deploy -c scripts/wrangler.backup-worker.jsonc
 
       - name: Verify public boundary and dark private RPC with synthetic identity
         env:
@@ -290,7 +290,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc \
+          npx --yes wrangler@4.144.0 deploy -c agent-runtime/wrangler.jsonc \
             --var "AGENT_ENABLED:true" \
                   "AGENT_MODEL_SMALL:@cf/meta/llama-3.1-8b-instruct-fp8" \
                   "AGENT_MODEL_STRONG:@cf/meta/llama-3.3-70b-instruct-fp8-fast"
@@ -322,7 +322,7 @@ jobs:
 
           rollback() {
             echo "::warning::Activation canary failed; redeploying Agent disabled."
-            npx --yes wrangler@4 deploy -c agent-runtime/wrangler.jsonc \
+            npx --yes wrangler@4.144.0 deploy -c agent-runtime/wrangler.jsonc \
               --var "AGENT_ENABLED:false" \
                     "AGENT_MODEL_SMALL:@cf/meta/llama-3.1-8b-instruct-fp8" \
                     "AGENT_MODEL_STRONG:@cf/meta/llama-3.3-70b-instruct-fp8-fast" || true
