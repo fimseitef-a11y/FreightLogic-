@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — TASK-0035 code complete; production backup Worker v31 awaits manual GitHub workflow dispatch. | 2026-09-29T07:05:00Z |
+| gpt | AIAG-TASK-0035 — Worker v32 backup size-contract repair after authenticated live gate. | 2026-09-29T07:10:00Z |
 
 ---
 
