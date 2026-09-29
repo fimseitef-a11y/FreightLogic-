@@ -119,35 +119,63 @@ function b32(bytes) {
   return out;
 }
 
-/** Bounded fetch. A transport error sets `unreachable` rather than counting as
- *  a product failure — the distinction the exit codes above exist for. */
+/** Bounded fetch. Transport errors and 5xx responses are origin-availability
+ *  signals, not product-contract failures.
+ *
+ *  Safe probes get a small bounded retry window because production run #45
+ *  observed one dropped /status fetch surrounded by successful live calls. A
+ *  single transient must not permanently poison the whole run as UNOBSERVED.
+ *
+ *  /claim is deliberately NEVER retried here. A lost response does not prove
+ *  the Worker failed to process the request; retrying could consume another
+ *  unit of the 10/hr per-IP budget or advance a seeded invite's finite claim
+ *  counter twice. Claim retries therefore stay explicit at the call site only
+ *  where semantics make them safe (the 410 KV-visibility poll before any
+ *  successful claim). */
 async function req(path, opts = {}, timeoutMs = 20000) {
-  const c = new AbortController();
-  const t = setTimeout(() => c.abort(), timeoutMs);
-  try {
-    const res = await fetch(workerOrigin + path, { ...opts, signal: c.signal });
-    clearTimeout(t);
-    let json = null;
-    try { json = await res.json(); } catch { /* not every response is JSON */ }
-    // A 5xx is the ORIGIN being unavailable, not the contract being wrong, and
-    // the difference is not academic: a Cloudflare deploy in flight can answer
-    // 5xx for a few seconds, which is exactly when this gate fires (it runs
-    // after a Worker deploy). Scored as a contract failure it would report the
-    // deployed Worker broken every time a release lands. Treated as
-    // unreachable, it reports UNOBSERVED and asks to be re-run.
-    //
-    // The Worker does have one real 5xx of its own — a corrupted invite record
-    // — but this gate always seeds valid JSON, so it cannot be that.
-    if (res.status >= 500) {
+  const maxAttempts = path === '/claim' ? 1 : 3;
+  const perAttemptTimeoutMs = Math.max(1000, Math.floor(timeoutMs / maxAttempts));
+  let last = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), perAttemptTimeoutMs);
+    try {
+      const res = await fetch(workerOrigin + path, { ...opts, signal: c.signal });
+      clearTimeout(t);
+      let json = null;
+      try { json = await res.json(); } catch { /* not every response is JSON */ }
+
+      // A 5xx is the ORIGIN being unavailable, not the contract being wrong,
+      // and the difference is not academic: a Cloudflare deploy in flight can
+      // answer 5xx for a few seconds, which is exactly when this gate fires.
+      //
+      // The Worker does have one real 5xx of its own — a corrupted invite
+      // record — but this gate always seeds valid JSON, so it cannot be that.
+      if (res.status >= 500) {
+        last = { ok: false, status: res.status, json, serverError: true };
+        if (attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 150 * attempt));
+          continue;
+        }
+        unreachable = true;
+        return last;
+      }
+      return { ok: true, status: res.status, json };
+    } catch (e) {
+      clearTimeout(t);
+      last = { ok: false, status: 0, json: null, error: e && e.message };
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, 150 * attempt));
+        continue;
+      }
       unreachable = true;
-      return { ok: false, status: res.status, json, serverError: true };
+      return last;
     }
-    return { ok: true, status: res.status, json };
-  } catch (e) {
-    clearTimeout(t);
-    unreachable = true;
-    return { ok: false, status: 0, json: null, error: e && e.message };
   }
+
+  unreachable = true;
+  return last || { ok: false, status: 0, json: null, error: 'request attempts exhausted' };
 }
 
 async function claim(code) {

@@ -4,10 +4,10 @@
 # file is short:
 #
 #   FreightLogic has NO build system and NO package manifest — no npm, no
-#   bundler, no transpiler, no lockfile. `vendor/xlsx.full.min.js` (SheetJS
-#   v0.18.5) is a committed third-party file, not a resolved dependency, so no
-#   ecosystem can see it; keeping it current is a deliberate, reviewed vendoring
-#   decision recorded in README.txt, not something to automate. Playwright is
+#   bundler, no transpiler, no lockfile. `vendor/xlsx.full.min.js` (SheetJS CE 0.20.3 on the current audited baseline)
+#   is a committed third-party file, not a resolved dependency, so no ecosystem
+#   can see it; keeping it current is a deliberate, reviewed vendoring decision
+#   recorded in docs/VENDOR_DEPENDENCY_REVIEW.md, not something to automate. Playwright is
 #   installed globally in CI and symlinked, deliberately not committed as a
 #   dependency (see tests/README.md).
 #
@@ -37,9 +37,9 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       # The repository enforces a commit-prefix convention per lane
-      # (scripts/lane-guard.mjs, `ci-prefix`). Dependabot's PRs are not agent
-      # commits and are not covered by a lane, but prefixing them keeps the
-      # history readable alongside `[claude]` / `[gpt]` commits.
+      # (scripts/lane-guard.mjs, `ci-prefix`). Dependabot is a managed bot, not an agent. AGENTS.md and lane-guard give its
+      # github-actions branch namespace a deliberately narrow workflow-only lane;
+      # this prefix keeps that governed bot history distinct from `[gpt]` commits.
       prefix: '[deps]'
     labels:
       - dependencies

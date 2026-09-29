@@ -80,38 +80,25 @@ test('[PRE24-05] CI toolchain is reproducible', () => {
   const wf = source('.github/workflows/tests.yml');
   ok(/npm\s+install\s+-g\s+playwright@1\.62\.1(?:\s|$)/.test(wf), 'Playwright install command must be pinned to the validated version');
   ok(!/npm\s+install\s+-g\s+playwright@latest(?:\s|$)/.test(wf), 'CI install command must never float on Playwright latest');
-  // Issue #222. These two used to pin the literal `@v6` while their own messages
-  // stated the requirement as "a Node24-capable action runtime". Those are not the
-  // same assertion, and the difference was not academic: Dependabot's first
-  // grouped Actions update moved both to `@v7` — which IS Node24-capable and DID
-  // execute successfully — and this spec failed it anyway (Tests run 35282000119,
-  // 615/1). A literal pin turns every routine, correct dependency bump into a red
-  // build, which is how a security-update pipeline gets switched off.
-  //
-  // So test the SEMANTIC, bounded by review rather than by floating: a major in
-  // the reviewed set passes, anything older is rejected because it is not
-  // Node24-capable, and anything newer is rejected because nobody has reviewed it
-  // yet. A future v8 is a deliberate one-line decision here, not a silent upgrade.
-  const REVIEWED_MAJORS = [5, 6, 7];
-  for (const action of ['actions/checkout', 'actions/setup-node']) {
+  // Issue #222 + TASK-0036. CI actions now use immutable commit SHAs,
+  // not movable major tags. The exact SHAs below are the revisions observed in
+  // successful Node 24 runs during this audit. A future Dependabot update must
+  // be reviewed and then deliberately added here; an arbitrary 40-hex string is
+  // not enough to establish that the action runtime was actually reviewed.
+  const REVIEWED_REFS = {
+    'actions/checkout': new Set(['3d3c42e5aac5ba805825da76410c181273ba90b1']),
+    'actions/setup-node': new Set(['820762786026740c76f36085b0efc47a31fe5020']),
+  };
+  for (const action of Object.keys(REVIEWED_REFS)) {
     const refs = [...wf.matchAll(new RegExp(`${action}@([^\\s'"]+)`, 'g'))].map(m => m[1]);
     ok(refs.length > 0, `${action} must be used by the tests workflow`);
     for (const ref of refs) {
-      ok(!/^latest$/i.test(ref),
-        `${action} must never float on @latest — CI reproducibility is the point of this test`);
-      const major = /^v(\d+)$/.exec(ref);
-      ok(major,
-        `${action}@${ref} is not a plain major tag; pin a reviewed major (${REVIEWED_MAJORS.map(v => 'v' + v).join(', ')}) ` +
-        'or a full commit SHA reviewed the same way');
-      const n = Number(major[1]);
-      ok(REVIEWED_MAJORS.includes(n),
-        `${action}@${ref} is outside the reviewed set ${REVIEWED_MAJORS.map(v => 'v' + v).join(', ')}. ` +
-        (n < Math.min(...REVIEWED_MAJORS)
-          ? 'Majors below that set are not Node24-capable.'
-          : 'A newer major may be fine, but it has not been reviewed — widen REVIEWED_MAJORS deliberately.'));
+      ok(/^[0-9a-f]{40}$/i.test(ref),
+        `${action}@${ref} must be pinned to an immutable full commit SHA`);
+      ok(REVIEWED_REFS[action].has(ref),
+        `${action}@${ref} is not one of the reviewed Node 24-capable revisions; review the new action revision before widening this allow-list`);
     }
-  }
-});
+  }});
 
 export async function runSpec(){ return await run(); }
 if (import.meta.url === `file://${process.argv[1]}`){

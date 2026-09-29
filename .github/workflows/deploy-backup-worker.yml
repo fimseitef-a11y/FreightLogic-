@@ -40,9 +40,9 @@ jobs:
           echo "::error::Select DEPLOY in the confirmation control to run this. Nothing was deployed."
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
 
@@ -62,12 +62,12 @@ jobs:
       - name: Inspect the bundle
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
+        run: npx --yes wrangler@4.143.0 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
 
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4 deploy -c scripts/wrangler.backup-worker.jsonc
+        run: npx --yes wrangler@4.143.0 deploy -c scripts/wrangler.backup-worker.jsonc
 
       - name: Verify /health reports the expected Worker version
         run: |

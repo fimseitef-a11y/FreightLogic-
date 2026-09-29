@@ -187,7 +187,7 @@ parity.includes(`workerVersion: "${WORKER_VERSION}"`)
 const deployWorkflow = read('.github/workflows/deploy-backup-worker.yml');
 const fixForwardReady = [
   /workflow_dispatch:/,
-  /wrangler@4 deploy -c scripts\/wrangler\.backup-worker\.jsonc/,
+  /wrangler@\d+\.\d+\.\d+ deploy -c scripts\/wrangler\.backup-worker\.jsonc/,
   /Verify \/health reports the expected Worker version/,
   /Verify the auth boundaries still deny/,
 ].every((re) => re.test(deployWorkflow));
