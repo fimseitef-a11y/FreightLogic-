@@ -9,6 +9,7 @@ import { chooseModelTier } from "./router.mjs";
 import { stateScope } from "./state-key.mjs";
 import { fingerprintEnvelope, sameIdempotentEvent } from "./idempotency.mjs";
 import { ModelExecutionError, runExplanationModel } from "./model-adapter.mjs";
+import { OutputGuardError, assertSafeRecommendation } from "./output-guard.mjs";
 
 function failClosed(code, reason, extra = {}) {
   return {
@@ -141,9 +142,10 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       const projection = buildModelProjection(envelope);
       try {
         const result = await runExplanationModel(this.env, route.tier, projection);
+        assertSafeRecommendation(result.recommendation, envelope.canonicalSnapshot);
         recommendation = result.recommendation;
       } catch (error) {
-        if (error instanceof ModelExecutionError) {
+        if (error instanceof ModelExecutionError || error instanceof OutputGuardError) {
           return failClosed(error.code, error.message, {
             fact: {
               eventId: envelope.id,
