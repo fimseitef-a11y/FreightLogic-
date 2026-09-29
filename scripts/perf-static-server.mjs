@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import http from 'node:http';
 import path from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,19 +19,17 @@ const server=http.createServer(async (req,res)=>{
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url||'/','http://127.0.0.1').pathname); }
   catch { res.writeHead(400);res.end('Bad request');return; }
-  if(pathname==='/') pathname='/index.html';
+  if(pathname==='/' || pathname.endsWith('/')) pathname=pathname.replace(/\/$/,'')+'/index.html';
   let file=path.resolve(root,'.'+pathname);
   if(file!==root && !file.startsWith(prefix)){res.writeHead(403);res.end('Forbidden');return;}
   try{
-    let info=await stat(file);
-    if(info.isDirectory()) file=path.join(file,'index.html');
     const body=await readFile(file);
     const headers={
       'Content-Type':mime.get(path.extname(file).toLowerCase())||'application/octet-stream',
       'Content-Length':String(body.length),'Cache-Control':'no-store','Service-Worker-Allowed':'/'
     };
     res.writeHead(200,headers); if(req.method==='HEAD')res.end(); else res.end(body);
-  }catch(e){res.writeHead(e?.code==='ENOENT'?404:500,{'Content-Type':'text/plain'});res.end(e?.code==='ENOENT'?'Not found':'Server error');}
+  }catch(e){res.writeHead(['ENOENT','EISDIR','ENOTDIR'].includes(e?.code)?404:500,{'Content-Type':'text/plain'});res.end(['ENOENT','EISDIR','ENOTDIR'].includes(e?.code)?'Not found':'Server error');}
 });
 server.listen(port,'127.0.0.1',()=>console.log(`FreightLogic performance server: http://127.0.0.1:${port}`));
 for(const sig of ['SIGTERM','SIGINT']) process.on(sig,()=>server.close(()=>process.exit(0)));
