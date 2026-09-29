@@ -17,6 +17,7 @@ import {
   buildModelMessages,
   runExplanationModel,
 } from "../model-adapter.mjs";
+import { OutputGuardError, checkRecommendationAgainstCanonical } from "../output-guard.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -552,6 +553,37 @@ await test("A39 activation workflow is explicit and rolls back to disabled on ca
   assert.equal(workflow.includes("Activation canary failed; redeploying Agent disabled."), true);
   assert.equal(workflow.includes("ACTIVE AGENT CANARY VERDICT: PASS"), true);
   assert.equal(workflow.includes("IDEMPOTENCY_CONFLICT"), true);
+});
+
+await test("A40 output guard rejects non-canonical dollars and contradictory verdicts", () => {
+  const canonical = baseEnvelope().canonicalSnapshot;
+  assert.equal(checkRecommendationAgainstCanonical("ACCEPT at $525 based on the canonical bid.", canonical).ok, true);
+  assert.throws(
+    () => checkRecommendationAgainstCanonical("REJECT and bid $9000 per mile.", canonical),
+    (error) => error instanceof OutputGuardError && error.code === "GUARD_NONCANONICAL_DOLLAR_VALUE"
+  );
+  assert.throws(
+    () => checkRecommendationAgainstCanonical("REJECT this load.", canonical),
+    (error) => error instanceof OutputGuardError && error.code === "GUARD_VERDICT_CONTRADICTION"
+  );
+});
+
+await test("A41 worker checks model output before persistence and fails guard errors closed", async () => {
+  const source = await readFile(new URL("../worker.mjs", import.meta.url), "utf8");
+  const guardAt = source.indexOf("assertSafeRecommendation(result.recommendation, envelope.canonicalSnapshot)");
+  const assignAt = source.indexOf("recommendation = result.recommendation", guardAt);
+  assert.ok(guardAt >= 0);
+  assert.ok(assignAt > guardAt);
+  assert.equal(source.includes('import { OutputGuardError, assertSafeRecommendation } from "./output-guard.mjs";'), true);
+  assert.equal(source.includes("error instanceof ModelExecutionError || error instanceof OutputGuardError"), true);
+});
+
+await test("A42 production cutover workflow serializes activation and references the required approval environment", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/ai-agent-cutover.yml", import.meta.url), "utf8");
+  assert.equal(workflow.includes("group: ai-agent-cutover-production"), true);
+  assert.equal(workflow.includes("cancel-in-progress: false"), true);
+  assert.equal((workflow.match(/environment: production-agent-cutover/g) || []).length, 2);
+  assert.equal(workflow.includes("node agent-runtime/tests/output-guard.spec.mjs"), true);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);
