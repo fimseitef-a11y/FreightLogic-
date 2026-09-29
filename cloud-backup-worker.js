@@ -451,9 +451,19 @@ export async function eraseUserData(env, userId) {
     await Promise.all(clearOps);
   }
 
-  // A read failure here must abort erasure. Silently substituting [] would
-  // leave the erased user's identifier in the global reminder index.
-  const remIndex = await readReminderIndex(env);
+  // Normal reminder delivery is allowed to tolerate a malformed index, but
+  // irreversible erasure is not. Read/parse strictly so corruption or storage
+  // failure aborts before the canonical account is deleted.
+  const remIndexRaw = await env.BACKUPS.get('rem:index');
+  let remIndex = [];
+  if (remIndexRaw) {
+    try {
+      remIndex = JSON.parse(remIndexRaw);
+      if (!Array.isArray(remIndex)) throw new Error('not an array');
+    } catch {
+      throw new Error('Corrupted reminder index');
+    }
+  }
   if (remIndex.includes(userId)) {
     const next = remIndex.filter(id => id !== userId);
     if (next.length) await env.BACKUPS.put('rem:index', JSON.stringify(next));
