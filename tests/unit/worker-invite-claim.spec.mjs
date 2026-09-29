@@ -64,9 +64,75 @@ function makeKV(seed = {}) {
   return api;
 }
 
+async function loadWorkerModule() {
+  return await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.js')).href);
+}
+
 async function loadWorker() {
-  const mod = await import(pathToFileURL(path.join(ROOT, 'cloud-backup-worker.js')).href);
-  return mod.default;
+  return (await loadWorkerModule()).default;
+}
+
+function makeLaggyInviteKV(seed = {}) {
+  const kv = makeKV(seed);
+  const staleInvite = new Map();
+  const invitePuts = new Map();
+  const baseGet = kv.get.bind(kv);
+  const basePut = kv.put.bind(kv);
+  const baseDelete = kv.delete.bind(kv);
+  kv.get = async (k) => {
+    if (k.startsWith('inv:') && staleInvite.has(k)) return staleInvite.get(k);
+    return baseGet(k);
+  };
+  kv.put = async (k, v, opts) => {
+    await basePut(k, v, opts);
+    if (k.startsWith('inv:')) {
+      const writes = (invitePuts.get(k) || 0) + 1;
+      invitePuts.set(k, writes);
+      // Let the first successful claim (write #2 after minting) become visible,
+      // then pin that snapshot. This preserves userId while making claims=1
+      // stale, matching the observed production failure without inventing an
+      // identity split that the live gate did not observe.
+      if (writes === 2) staleInvite.set(k, v);
+    }
+  };
+  kv.delete = async (k) => {
+    staleInvite.delete(k);
+    invitePuts.delete(k);
+    return baseDelete(k);
+  };
+  return kv;
+}
+
+function makeRateLimiterBinding(RateLimitCounter, env) {
+  const objects = new Map();
+  return {
+    idFromName(name) { return name; },
+    get(id) {
+      if (!objects.has(id)) {
+        const map = new Map();
+        let tail = Promise.resolve();
+        const storage = {
+          transaction(fn) {
+            const work = tail.then(() => fn({
+              get: async k => map.get(k),
+              put: async (k, v) => { map.set(k, v); },
+            }));
+            tail = work.then(() => {}, () => {});
+            return work;
+          },
+          async deleteAll() { map.clear(); },
+        };
+        const object = new RateLimitCounter({ storage }, env);
+        objects.set(id, {
+          fetch(input, init) {
+            const request = input instanceof Request ? input : new Request(input, init);
+            return object.fetch(request);
+          },
+        });
+      }
+      return objects.get(id);
+    },
+  };
 }
 
 const REQ = (url, opts = {}) => new Request('https://worker.test' + url, opts);
@@ -205,6 +271,28 @@ test('[WIC-08] the 4th claim is 410 and the invite key is deleted', async () => 
   eq(await kv.get('inv:' + hash), null, 'a spent invite must be deleted, not merely refused');
 });
 
+test('[WIC-18] exact invite claim budget survives stale KV invite reads', async () => {
+  const mod = await loadWorkerModule();
+  const worker = mod.default;
+  const kv = makeLaggyInviteKV();
+  const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  env.RATE_LIMITER = makeRateLimiterBinding(mod.RateLimitCounter, env);
+  const { body: inv } = await mintInvite(worker, env, 'Dana');
+  const hash = await sha256Hex(inv.code);
+
+  let stableUserId = null;
+  for (let i = 0; i < 3; i++) {
+    const r = await worker.fetch(claimReq(inv.code), env);
+    const body = await r.json();
+    eq(r.status, 200, `claim ${i + 1} should succeed despite stale invite reads, got ${r.status}`);
+    if (i === 0) stableUserId = body.userId;
+    else eq(body.userId, stableUserId, 'stale claim counts must not break identity-preserving re-claim');
+  }
+  const fourth = await worker.fetch(claimReq(inv.code), env);
+  eq(fourth.status, 410, `the exact limiter must refuse claim 4 even when KV still exposes a stale lower claim count; got ${fourth.status}`);
+  eq(await kv.get('inv:' + hash), null, 'the exhausted invite must still be deleted');
+});
+
 test('[WIC-09] re-putting the invite does NOT extend its original expiry', async () => {
   const kv = makeKV(); const worker = await loadWorker(); const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
   const { body: inv } = await mintInvite(worker, env, 'Dana');
@@ -258,6 +346,39 @@ test('[WIC-10] a claim after the driver is revoked is 403', async () => {
   eq(res.status, 403, `a claim against a revoked driver should be 403, got ${res.status}`);
   const body = await res.json();
   ok(!body.token, 'a refused claim must not return a token');
+});
+
+test('[WIC-19] revoked claim attempts do not consume the exact invite budget', async () => {
+  const mod = await loadWorkerModule();
+  const worker = mod.default;
+  const kv = makeKV();
+  const env = { BACKUPS: kv, ADMIN_TOKEN: ADMIN };
+  env.RATE_LIMITER = makeRateLimiterBinding(mod.RateLimitCounter, env);
+  const { body: inv } = await mintInvite(worker, env, 'Dana');
+  const firstRes = await worker.fetch(claimReq(inv.code), env);
+  const first = await firstRes.json();
+  eq(firstRes.status, 200, 'first claim must succeed');
+
+  const del = await worker.fetch(REQ('/admin/users/' + first.userId, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Token': ADMIN, 'CF-Connecting-IP': '203.0.113.44' },
+  }), env);
+  eq(del.status, 200, 'revoke must succeed');
+
+  for (let i = 0; i < 2; i++) {
+    const denied = await worker.fetch(claimReq(inv.code, '203.0.113.45'), env);
+    eq(denied.status, 403, `revoked attempt ${i + 1} must be 403`);
+  }
+
+  // Reactivate only inside this fixture to expose whether those refused attempts
+  // burned the invite's exact counter. The next legitimate re-claim is claim #2
+  // and must still be available.
+  const key = 'user:' + first.userId;
+  const rec = JSON.parse(await kv.get(key));
+  rec.active = true;
+  await kv.put(key, JSON.stringify(rec));
+  const next = await worker.fetch(claimReq(inv.code, '203.0.113.46'), env);
+  eq(next.status, 200, `revoked attempts must not consume the finite claim budget; got ${next.status}`);
 });
 
 test('[WIC-11] the 11th claim attempt from one IP within the hour is 429', async () => {
