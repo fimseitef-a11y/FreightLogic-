@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0035 reopened: repair settled Worker v32 fourth-/claim enforcement regression; source/test/CI through PR. | 2026-09-29T20:33:00Z |
+| gpt | — idle — PR #435 open at a4c7b360; exact-head CI in progress for TASK-0035 atomic /claim repair. | 2026-09-29T20:54:00Z |
 
 ---
 
