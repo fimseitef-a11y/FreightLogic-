@@ -127,7 +127,8 @@ test('[WPR-03] writes inside one frozen millisecond still get unique, ordered ke
   const device = 'ptr-race-frozen';
 
   const realNow = Date.now;
-  Date.now = () => 1_800_000_000_000;
+  const frozenNow = realNow();
+  Date.now = () => frozenNow;
   try {
     for (const seq of [1, 2, 3, 4]) {
       const res = await worker.fetch(
