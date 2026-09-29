@@ -1,4 +1,8 @@
-// FreightLogic Cloud Backup Worker v31 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// FreightLogic Cloud Backup Worker v32 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v32: RESTORE BACKUP/DELTA SIZE RESPONSE CONTRACT (AIAG-TASK-0035, 2026-09-29).
+// The bounded reader continues enforcing TRUE UTF-8 byte ceilings, but the API
+// response's historical `size` field remains JavaScript string length for
+// compatibility with live backup verification and existing clients.
 // v31: SECURITY/READINESS HARDENING (AIAG-TASK-0035, 2026-09-29).
 // Adds bounded streaming request-body reads, durable-object-backed exact rate
 // counters (with the old KV counter retained only as a compatibility fallback),
@@ -906,7 +910,7 @@ export default {
       if (request.method === 'GET' && path === '/health') {
         return json({
           ok: true,
-          version: '31',
+          version: '32',
           ts: new Date().toISOString(),
           rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
           credentialPolicy: 'finite-v1',
@@ -1665,7 +1669,7 @@ export default {
         // Increment per-user backup count in parallel with pointer ops
         await Promise.all([...ptrOps, incrementUserBackupCount(env, driverUserId)]);
 
-        return json({ ok: true, key, size: backupBody.bytes }, 200, cors);
+        return json({ ok: true, key, size: payload.length }, 200, cors);
       }
 
       // POST /backup/delta — store delta (partial sync payload)
@@ -1722,7 +1726,7 @@ export default {
           await savePtr(env, driverUserId, deviceId, 'd', ptr);
         }
 
-        return json({ ok: true, key, size: deltaBody.bytes, type: 'delta' }, 200, cors);
+        return json({ ok: true, key, size: payload.length, type: 'delta' }, 200, cors);
       }
 
       // GET /backup — retrieve latest
