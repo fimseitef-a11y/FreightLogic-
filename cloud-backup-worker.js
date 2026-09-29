@@ -323,9 +323,15 @@ async function listAllKvKeys(env, prefix) {
     for (const entry of (page?.keys || [])) if (entry?.name) out.push(entry.name);
     if (page?.list_complete === false && page?.cursor) {
       cursor = page.cursor;
+      if (pageNo === 99) {
+        // Permanent-erasure and audit reads must never silently report success
+        // after a truncated namespace scan. Fail closed instead of converting
+        // "not fully enumerated" into "fully deleted".
+        throw new Error('KV listing exceeded safety pagination bound');
+      }
       continue;
     }
-    break;
+    return out;
   }
   return out;
 }
