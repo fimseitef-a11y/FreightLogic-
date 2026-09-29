@@ -225,6 +225,28 @@ test('[SR-12] permanent erasure fails closed if a KV namespace scan is truncated
   eq(pages, 100, 'the safety bound must be explicit and deterministic');
 });
 
+const USER_RATE_EXPECTED_MIN = 10;
+
+test('[SR-13] exact limiter identities are pseudonymous and account erasure clears their state', async () => {
+  const { eraseUserData } = await loadMod();
+  const rec={userId:USER,name:'Driver',active:false,tokenHash:await sha256Hex(TOKEN)};
+  const kv=makeKV({['user:'+USER]:JSON.stringify(rec)});
+  const names=[]; let deleteCalls=0;
+  const durable={
+    idFromName(name){ names.push(name); return name; },
+    get(){ return { fetch:async (_url,opts={})=>{
+      if(opts.method==='DELETE'){ deleteCalls++; return new Response(null,{status:204}); }
+      return new Response('{"ok":true,"limited":false}',{status:200});
+    }}; },
+  };
+  const result=await eraseUserData({BACKUPS:kv,RATE_LIMITER:durable},USER);
+  eq(result.found,true,'revoked account must be erased');
+  ok(names.length>=USER_RATE_EXPECTED_MIN,'erasure must address all user-scoped limiter namespaces');
+  ok(names.every(name=>/^v1:[a-f0-9]{64}$/.test(name)),'Durable Object names must be one-way pseudonyms');
+  ok(names.every(name=>!name.includes(USER)),'raw userId must never appear in a Durable Object name');
+  eq(deleteCalls,names.length,'every addressed exact limiter object must receive a delete');
+});
+
 export async function runSpec(){ return run(); }
 if (import.meta.url === `file://${process.argv[1]}`) {
   const r=await runSpec();
