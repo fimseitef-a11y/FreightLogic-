@@ -185,10 +185,10 @@ test('[SR-09] privileged audit records contain no raw identity, token, IP, or re
   ok(!text.includes(ip),'IP must not enter audit');
 });
 
-test('[SR-10] health exposes hardened-mode evidence and version 31', async () => {
+test('[SR-10] health exposes hardened-mode evidence and version 32', async () => {
   const worker=(await loadMod()).default;
   const soft=await (await worker.fetch(req('/health'),{BACKUPS:makeKV()})).json();
-  eq(String(soft.version),'31','health generation must be v31');
+  eq(String(soft.version),'32','health generation must be v32');
   eq(soft.rateLimiter,'soft-kv','unit env without binding must identify fallback honestly');
   eq(soft.credentialPolicy,'finite-v1','finite credential policy must be advertised');
   const durable={ idFromName:n=>n, get:id=>({fetch:async()=>new Response('{"ok":true,"limited":false}',{status:200})}) };
@@ -204,7 +204,7 @@ test('[SR-11] production config and release gates require exact limiter + finite
   ok(cfg.includes('"type": "durable-object"') && cfg.includes('"storage": "sqlite"'), 'rate limiter must be SQLite-backed Durable Object storage');
   ok(deploy.includes('"rateLimiter":"durable-object"'), 'deploy must refuse a soft-KV production limiter');
   ok(deploy.includes('"credentialPolicy":"finite-v1"'), 'deploy must prove finite credential policy is live');
-  ok(parity.includes('workerVersion: "31"'), 'parity gate must expect Worker v31');
+  ok(parity.includes('workerVersion: "32"'), 'parity gate must expect Worker v32');
   ok(parity.includes("Worker uses exact Durable Object rate limiter"), 'parity gate must assert exact limiter mode');
 });
 
@@ -256,6 +256,38 @@ test('[SR-14] permanent erasure refuses a corrupted reminder index before deleti
   catch (e) { threw=/corrupted reminder index/i.test(String(e)); }
   ok(threw,'malformed reminder index must abort erasure');
   ok(kv.keys().includes('user:'+USER),'account must remain when erasure cannot prove reference cleanup');
+});
+
+
+test('[SR-15] bounded UTF-8 body enforcement preserves historical backup size metadata contract', async () => {
+  const worker=(await loadMod()).default;
+  const hash=await sha256Hex(TOKEN);
+  const rec={
+    userId:USER, name:'Driver', tokenHash:hash, active:true, backupCount:0,
+    createdAt:new Date().toISOString(),
+  };
+  const kv=makeKV({
+    ['user:'+USER]:JSON.stringify(rec),
+    ['tokh:'+hash]:JSON.stringify(rec),
+  });
+  const payload='{"route":"MKE→CHI","note":"🚚 secure backup"}';
+  ok(new TextEncoder().encode(payload).length > payload.length, 'fixture must distinguish UTF-8 bytes from JS string length');
+  const res=await worker.fetch(req('/backup',{
+    method:'POST',
+    headers:{
+      'X-Backup-Token':TOKEN,
+      'X-Device-Id':'sec-size-contract',
+      'Content-Type':'text/plain',
+    },
+    body:payload,
+  }),{BACKUPS:kv});
+  eq(res.status,200,'backup with multibyte content must be accepted');
+  const body=await res.json();
+  eq(body.size,payload.length,'response size must preserve historical JS string-length contract');
+  const stored=await worker.fetch(req('/backup',{
+    headers:{'X-Backup-Token':TOKEN,'X-Device-Id':'sec-size-contract'},
+  }),{BACKUPS:kv});
+  eq(await stored.text(),payload,'bounded reader must still store and restore the exact multibyte payload');
 });
 
 export async function runSpec(){ return run(); }
