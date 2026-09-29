@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0035 — security/readiness remediation from blueprint audit; Worker auth/rate/body/audit/erasure + performance gates. | 2026-09-29T04:47:00Z |
+| gpt | — idle — TASK-0035 implementation complete on branch; PR/CI review pending. | 2026-09-29T05:10:00Z |
 
 ---
 
