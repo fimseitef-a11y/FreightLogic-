@@ -50,15 +50,15 @@ jobs:
           curl -fsS http://127.0.0.1:4173/index.html >/dev/null
           export CHROME_PATH=$(node --input-type=module -e "import { chromium } from 'playwright'; console.log(chromium.executablePath())")
           for run in 1 2 3; do
-            lighthouse http://127.0.0.1:4173/index.html --preset=desktop --chrome-flags="--headless=new --no-sandbox" --only-categories=performance --output=json --output-path=".lighthouseci/run-$run.json" --quiet
+            lighthouse http://127.0.0.1:4173/index.html --preset=desktop --chrome-flags="--headless=new --no-sandbox" --only-categories=performance --output=json --output-path="lighthouse-reports/run-$run.json" --quiet
           done
-          node scripts/assert-lighthouse.mjs .lighthouseci/run-1.json .lighthouseci/run-2.json .lighthouseci/run-3.json
+          node scripts/assert-lighthouse.mjs lighthouse-reports/run-1.json lighthouse-reports/run-2.json lighthouse-reports/run-3.json
 
       - name: Preserve Lighthouse reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lighthouse-reports
-          path: .lighthouseci/
-          if-no-files-found: ignore
+          path: lighthouse-reports/
+          if-no-files-found: error
           retention-days: 14
