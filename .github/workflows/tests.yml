@@ -51,6 +51,9 @@ jobs:
       - name: Run full suite
         run: node tests/run-all.mjs
 
+      - name: Validate backup Worker configuration and binding types
+        run: npx --yes wrangler@4 types /tmp/freightlogic-worker-env.d.ts --config scripts/wrangler.backup-worker.jsonc --env-interface CloudflareEnv
+
       - name: Enforce compressed asset regression budget
         run: node scripts/performance-budget.mjs
 
