@@ -585,18 +585,22 @@ export default {
         }
 
         if (request.method === 'POST' && path === '/admin/users') {
-          const body = await request.json().catch(() => ({}));
+          const parsedBody = await readJsonBounded(request, 4096);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          const body = parsedBody.value || {};
           const name = (body.name || 'Driver').slice(0, 50);
           const userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
           const token = 'flk_' + crypto.randomUUID().replace(/-/g, '');
           const tokenHash = await hashToken(token);
-          // Store token hash rather than plaintext — hash is the KV key; record omits raw token
-          const rec = { userId, name, tokenHash, createdAt: new Date().toISOString(), active: true, backupCount: 0 };
+          const audit = await beginAdminAudit(env, adminAuth, 'user.create', userId);
+          // Store token hash rather than plaintext — hash is the KV key; record omits raw token.
+          const rec = stampFreshCredential({ userId, name, tokenHash, createdAt: new Date().toISOString(), active: true, backupCount: 0 });
           await Promise.all([
             env.BACKUPS.put('tokh:' + tokenHash, JSON.stringify(rec)),
             env.BACKUPS.put('user:' + userId, JSON.stringify(rec))
           ]);
-          return json({ ok: true, userId, name, token }, 201, cors);
+          await finishAdminAudit(env, audit, 'succeeded');
+          return json({ ok: true, userId, name, token, credentialExpiresAt: rec.credentialExpiresAt }, 201, cors);
         }
 
         // POST /admin/invites — v18: mint a single-use CLAIM CODE, not a token.
@@ -617,7 +621,9 @@ export default {
         // This handler sits inside the `/admin/` block deliberately: it inherits
         // the admin-token check and the 20/hr per-IP admin rate limit above.
         if (request.method === 'POST' && path === '/admin/invites') {
-          const body = await request.json().catch(() => ({}));
+          const parsedBody = await readJsonBounded(request, 4096);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          const body = parsedBody.value || {};
           let name = (body.name || 'Driver').slice(0, 50);
 
           // OPTIONAL `userId` — RE-INVITE an EXISTING driver rather than create
@@ -673,11 +679,21 @@ export default {
           };
           // expirationTtl is the backstop: even if nothing ever deletes this
           // record, KV drops it at 72h and the invite becomes unredeemable.
+          const audit = await beginAdminAudit(env, adminAuth, boundUserId ? 'invite.reissue' : 'invite.create', boundUserId);
           await env.BACKUPS.put('inv:' + codeHash, JSON.stringify(rec), { expirationTtl: ttl });
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, name, code, expiresAt: rec.expiresAt, userId: boundUserId, reinvite: !!boundUserId }, 201, cors);
         }
 
+        if (request.method === 'GET' && path === '/admin/audit') {
+          const audit = await beginAdminAudit(env, adminAuth, 'audit.read');
+          const entries = await readAdminAudit(env, Number(url.searchParams.get('limit') || 100));
+          await finishAdminAudit(env, audit, 'succeeded');
+          return json({ ok: true, entries }, 200, cors);
+        }
+
         if (request.method === 'GET' && path === '/admin/users') {
+          const audit = await beginAdminAudit(env, adminAuth, 'users.list');
           const list = await env.BACKUPS.list({ prefix: 'user:' });
           // Filter to top-level user records only (exclude device/backup subkeys)
           const userKeys = list.keys.filter(k => /^user:u_[^:]+$/.test(k.name));
@@ -702,11 +718,20 @@ export default {
                   await Promise.all(cleanupOps);
                   u = clean;
                 }
-                // Never expose driver tokens in the admin listing
-                users.push({ userId: u.userId, name: u.name, createdAt: u.createdAt, active: u.active, backupCount: u.backupCount || 0 });
+                // Never expose driver tokens in the admin listing.
+                users.push({
+                  userId: u.userId,
+                  name: u.name,
+                  createdAt: u.createdAt,
+                  active: u.active,
+                  backupCount: u.backupCount || 0,
+                  credentialExpiresAt: u.credentialExpiresAt || null,
+                  credentialLastSeenAt: u.credentialLastSeenAt || null,
+                });
               } catch {}
             }
           }
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, users }, 200, cors);
         }
 
@@ -752,7 +777,7 @@ export default {
           const newTokenHash = await hashToken(newToken);
 
           // Same identity, new credential. `token` is deliberately never stored.
-          const next = {
+          const next = stampFreshCredential({
             userId: rotRec.userId,
             name: rotRec.name,
             tokenHash: newTokenHash,
@@ -760,7 +785,8 @@ export default {
             active: true,
             backupCount: rotRec.backupCount || 0,
             rotatedAt: new Date().toISOString(),
-          };
+          });
+          const audit = await beginAdminAudit(env, adminAuth, 'user.rotate', rotId);
 
           // Write the new credential and the updated record BEFORE removing the
           // old one. If this call dies midway the driver keeps working on the
@@ -777,6 +803,7 @@ export default {
 
           // Same response shape as POST /admin/users, so the client can reuse
           // its existing invite-link flow unchanged.
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({
             ok: true,
             userId: next.userId,
@@ -784,7 +811,32 @@ export default {
             token: newToken,
             rotated: true,
             legacyPlaintextCleared: !!oldPlaintext,
+            credentialExpiresAt: next.credentialExpiresAt,
           }, 200, cors);
+        }
+
+        if (request.method === 'POST' && /^\/admin\/users\/[^/]+\/erase$/.test(path)) {
+          if (adminAuth !== 'operator') return json({ ok: false, error: 'Operator access required' }, 403, cors);
+          const eraseId = path.split('/admin/users/')[1].replace(/\/erase$/, '');
+          if (!eraseId || !/^u_[a-f0-9-]{8,36}$/i.test(eraseId)) {
+            return json({ ok: false, error: 'Invalid user ID format' }, 400, cors);
+          }
+          const parsedBody = await readJsonBounded(request, 2048);
+          if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+          if (parsedBody.value?.confirm !== 'ERASE' || parsedBody.value?.userId !== eraseId) {
+            return json({ ok: false, error: 'Explicit erase confirmation required' }, 400, cors);
+          }
+          const raw = await env.BACKUPS.get('user:' + eraseId);
+          if (!raw) return json({ ok: false, error: 'Not found' }, 404, cors);
+          let rec;
+          try { rec = JSON.parse(raw); } catch { return json({ ok: false, error: 'Corrupted record' }, 500, cors); }
+          if (rec.active !== false) {
+            return json({ ok: false, error: 'Revoke access before permanent erasure' }, 409, cors);
+          }
+          const audit = await beginAdminAudit(env, adminAuth, 'user.erase', eraseId);
+          const erased = await eraseUserData(env, eraseId);
+          await finishAdminAudit(env, audit, 'succeeded', { deletedCount: erased.deleted });
+          return json({ ok: true, erased: eraseId, deletedCount: erased.deleted }, 200, cors);
         }
 
         if (request.method === 'DELETE' && path.startsWith('/admin/users/')) {
@@ -799,11 +851,13 @@ export default {
           parsed.active = false;
           const legacyPlaintext = parsed.token;
           delete parsed.token;
+          const audit = await beginAdminAudit(env, adminAuth, 'user.revoke', delId);
           // Deactivate the user without ever writing a raw credential back to KV.
           const ops = [env.BACKUPS.put('user:' + delId, JSON.stringify(parsed))];
           if (parsed.tokenHash) ops.push(env.BACKUPS.delete('tokh:' + parsed.tokenHash));
           if (legacyPlaintext) ops.push(env.BACKUPS.delete('token:' + legacyPlaintext));
           await Promise.all(ops);
+          await finishAdminAudit(env, audit, 'succeeded');
           return json({ ok: true, revoked: delId }, 200, cors);
         }
 
@@ -812,7 +866,13 @@ export default {
 
       // GET /health — unauthenticated liveness check
       if (request.method === 'GET' && path === '/health') {
-        return json({ ok: true, version: '30', ts: new Date().toISOString() }, 200, cors);
+        return json({
+          ok: true,
+          version: '31',
+          ts: new Date().toISOString(),
+          rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
+          credentialPolicy: 'finite-v1',
+        }, 200, cors);
       }
 
       // POST /claim — v18: redeem an invite code for a driver token.
@@ -831,7 +891,9 @@ export default {
         if (await checkRateLimit(env, 'ip:' + claimIp, 10, 'claim')) {
           return json({ ok: false, error: 'Too many attempts. Try again later.' }, 429, cors);
         }
-        const body = await request.json().catch(() => ({}));
+        const parsedBody = await readJsonBounded(request, 2048);
+        if (!parsedBody.ok) return json({ ok: false, error: parsedBody.error }, parsedBody.status, cors);
+        const body = parsedBody.value || {};
         const code = String(body.code || '').toUpperCase().trim();
         // Validate the SHAPE before hashing. b32() of 15 bytes is exactly 24
         // base32 characters, so this is exact, not merely defensive.
@@ -879,7 +941,7 @@ export default {
             return json({ ok: false, error: 'This driver has been revoked.' }, 403, cors);
           }
           staleHash = prev && prev.tokenHash !== tokenHash ? prev.tokenHash : null;
-          rec = {
+          rec = stampFreshCredential({
             userId,
             name: inv.name,
             tokenHash,
@@ -887,17 +949,17 @@ export default {
             active: true,
             backupCount: (prev && prev.backupCount) || 0,
             rotatedAt: new Date().toISOString(),
-          };
+          });
         } else {
           userId = 'u_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
-          rec = {
+          rec = stampFreshCredential({
             userId,
             name: inv.name,
             tokenHash,
             createdAt: new Date().toISOString(),
             active: true,
             backupCount: 0,
-          };
+          });
         }
 
         inv.userId = userId;
@@ -919,7 +981,7 @@ export default {
 
         // The only time this token is ever transmitted, and it goes straight to
         // the device that will use it.
-        return json({ ok: true, userId, name: rec.name, token }, 200, cors);
+        return json({ ok: true, userId, name: rec.name, token, credentialExpiresAt: rec.credentialExpiresAt }, 200, cors);
       }
 
       // GET /push/key — v24: the VAPID public key. Public by design (it is the
@@ -959,12 +1021,10 @@ export default {
         if (await checkRateLimit(env, keyHash, 60, 'relay')) {
           return json({ ok: false, error: 'Too many relay items this hour.' }, 429, cors);
         }
-        const declared = Number(request.headers.get('Content-Length') || 0);
-        if (declared > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
-        const text = await request.text();
-        if (TE.encode(text).length > RELAY_MAX_BODY) return json({ ok: false, error: 'Relay item too large' }, 413, cors);
+        const relayBody = await readBodyTextBounded(request, RELAY_MAX_BODY);
+        if (!relayBody.ok) return json({ ok: false, error: 'Relay item too large' }, relayBody.status, cors);
         let item;
-        try { item = JSON.parse(text); } catch { return json({ ok: false, error: 'Body must be JSON' }, 400, cors); }
+        try { item = JSON.parse(relayBody.text); } catch { return json({ ok: false, error: 'Body must be JSON' }, 400, cors); }
         const v = validateRelayItem(item);
         if (!v.ok) return json({ ok: false, error: v.error }, 400, cors);
 
@@ -1119,7 +1179,15 @@ export default {
           try { await env.BACKUPS.delete('tokh:' + driverTokenHash); } catch (e) {}
           return json({ ok: false, error: 'Token superseded' }, 403, cors);
         }
-        canonicalUser = userRec;
+        const credential = await enforceDriverCredentialLifetime(env, userRec, driverTokenHash);
+        if (!credential.ok) {
+          return json({
+            ok: false,
+            error: 'Token expired. Re-invite this driver to reconnect.',
+            reason: credential.reason,
+          }, 401, cors);
+        }
+        canonicalUser = credential.user;
       }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
 
@@ -1671,7 +1739,14 @@ export default {
       // GET /status — backup presence check (uses pointer key — no list() call)
       if (request.method === 'GET' && path === '/status') {
         const ptr = await getPtr(env, driverUserId, deviceId, 'b');
-        return json({ ok: true, hasBackup: ptr.count > 0, count: ptr.count, user: tokenData.name }, 200, cors);
+        return json({
+          ok: true,
+          hasBackup: ptr.count > 0,
+          count: ptr.count,
+          user: canonicalUser.name || tokenData.name,
+          credentialExpiresAt: canonicalUser.credentialExpiresAt || null,
+          credentialLastSeenAt: canonicalUser.credentialLastSeenAt || null,
+        }, 200, cors);
       }
 
       // DELETE /backup — remove all backups for this user+device
