@@ -591,7 +591,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.54';
+const APP_VERSION = '24.0.55';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -25878,6 +25878,11 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     await resumeTrackingIfActive().catch(()=>{});
 
     await navigate();
+    // Keep first-route layout mutations out of the first visible frame. The
+    // initial home state is resolved from IndexedDB and can insert the Welcome
+    // and Alerts content after HTML parse; revealing main only after navigate()
+    // completes prevents that normal boot work from registering as CLS.
+    document.documentElement.classList.remove('fl-booting');
     _updateOnlineStatus();
 
     // v24.0.34: items a Shortcut sent while the app was closed, and a push
@@ -25946,6 +25951,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
       try{ await fetchEIAGasPrice(); }catch(e){ console.warn("[FL]", e); }
     }, 2000);
   }catch(err){
+    document.documentElement.classList.remove('fl-booting');
     console.error(err);
     console.error('[FL] Startup error:', err); toast('App startup failed. Try refreshing.', true);
   }
