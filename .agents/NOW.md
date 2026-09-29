@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | AIAG-TASK-0035 — PR #432 CI repair/review only; reconcile parallel GPT commits before any new write. | 2026-09-29T05:18:00Z |
+| gpt | AIAG-TASK-0035 post-merge repair — CLS startup stabilization + live parity verification on `agent/gpt/task0035-postmerge-perf`. | 2026-09-29T06:00:00Z |
 
 ---
 
