@@ -33,6 +33,7 @@ import { runSpec as workerTokenRotation } from './unit/worker-token-rotation.spe
 import { runSpec as workerPointerRace } from './unit/worker-pointer-race.spec.mjs';
 // Issue #221 — canonical-user token authority (Worker v20)
 import { runSpec as workerTokenAuthority } from './unit/worker-token-authority.spec.mjs';
+import { runSpec as workerSecurityReadiness } from './unit/worker-security-readiness.spec.mjs';
 import { runSpec as laneGuard } from './unit/lane-guard.spec.mjs';
 import { runSpec as dzGradeCap } from './integration/dz-exit-grade-cap.spec.mjs';
 import { runSpec as taxCsvCorruption } from './integration/tax-export-csv-corruption.spec.mjs';
@@ -140,6 +141,7 @@ const specs = [
   workerTokenRotation,
   workerPointerRace,
   workerTokenAuthority,
+  workerSecurityReadiness,
   workerInviteClaim,
   workerVisionExtract,
   workerWebPush,
