@@ -15,6 +15,51 @@ const values={
   fcp:metric('first-contentful-paint'),
   speedIndex:metric('speed-index'),
 };
+
+function summarizeLayoutShifts(report, index) {
+  const audit = report.audits?.['layout-shifts'];
+  const items = Array.isArray(audit?.details?.items) ? audit.details.items : [];
+  const rows = [];
+  for (const item of items) {
+    const score = Number(item?.score ?? item?.cumulativeLayoutShiftScore ?? item?.value);
+    const nodes = Array.isArray(item?.nodes) ? item.nodes : [];
+    if (nodes.length) {
+      for (const n of nodes.slice(0, 5)) {
+        rows.push({
+          run:index + 1,
+          score:Number.isFinite(score) ? score : null,
+          selector:n?.node?.selector || n?.selector || null,
+          label:n?.node?.nodeLabel || n?.node?.snippet || n?.snippet || null,
+        });
+      }
+    } else {
+      rows.push({
+        run:index + 1,
+        score:Number.isFinite(score) ? score : null,
+        selector:item?.node?.selector || null,
+        label:item?.node?.nodeLabel || item?.node?.snippet || null,
+      });
+    }
+  }
+  const insight = report.audits?.['cls-culprits-insight']?.details?.items || [];
+  for (const item of insight.slice(0, 10)) {
+    rows.push({
+      run:index + 1,
+      score:Number(item?.score ?? item?.value) || null,
+      selector:item?.node?.selector || item?.node?.path || null,
+      label:item?.node?.nodeLabel || item?.node?.snippet || item?.description || null,
+    });
+  }
+  return rows;
+}
+
+const shiftEvidence=reports.flatMap(summarizeLayoutShifts);
+if (shiftEvidence.length) {
+  console.log('Lighthouse layout-shift attribution:');
+  console.log(JSON.stringify(shiftEvidence.slice(0, 40), null, 2));
+} else {
+  console.log('Lighthouse layout-shift attribution: no node-level rows exposed by this Lighthouse build.');
+}
 console.log('Lighthouse median:',JSON.stringify(values,null,2));
 const limits={
   scoreMin:Number(process.env.FL_LH_SCORE_MIN||0.75),
