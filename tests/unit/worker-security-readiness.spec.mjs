@@ -1,5 +1,6 @@
 import { createSuite, ok, eq } from '../lib/harness.mjs';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { test, run } = createSuite('unit/worker-security-readiness.spec.mjs');
@@ -81,6 +82,7 @@ test('[SR-04] legacy driver credential receives migration grace instead of insta
   eq(out.ok, true, 'existing token must not be invalidated on v31 rollout');
   ok(out.user.credentialIssuedAt, 'migration must stamp credential issue time');
   ok(out.user.credentialExpiresAt, 'migration must stamp finite absolute expiry');
+  ok(!Object.prototype.hasOwnProperty.call(out.user, 'token'), 'migration must not retain a legacy plaintext token field');
 });
 
 test('[SR-05] expired driver credential is denied and its presented token index is retired', async () => {
@@ -192,6 +194,18 @@ test('[SR-10] health exposes hardened-mode evidence and version 31', async () =>
   const durable={ idFromName:n=>n, get:id=>({fetch:async()=>new Response('{"ok":true,"limited":false}',{status:200})}) };
   const hard=await (await worker.fetch(req('/health'),{BACKUPS:makeKV(),RATE_LIMITER:durable})).json();
   eq(hard.rateLimiter,'durable-object','bound production-like env must identify exact limiter');
+});
+
+test('[SR-11] production config and release gates require exact limiter + finite credential policy', async () => {
+  const cfg=readFileSync(path.join(ROOT,'scripts/wrangler.backup-worker.jsonc'),'utf8');
+  const deploy=readFileSync(path.join(ROOT,'.github/workflows/deploy-backup-worker.yml'),'utf8');
+  const parity=readFileSync(path.join(ROOT,'scripts/verify-cloudflare-parity.mjs'),'utf8');
+  ok(cfg.includes('"name": "RATE_LIMITER"') && cfg.includes('"class_name": "RateLimitCounter"'), 'production Worker config must bind RATE_LIMITER');
+  ok(cfg.includes('"type": "durable-object"') && cfg.includes('"storage": "sqlite"'), 'rate limiter must be SQLite-backed Durable Object storage');
+  ok(deploy.includes('"rateLimiter":"durable-object"'), 'deploy must refuse a soft-KV production limiter');
+  ok(deploy.includes('"credentialPolicy":"finite-v1"'), 'deploy must prove finite credential policy is live');
+  ok(parity.includes('workerVersion: "31"'), 'parity gate must expect Worker v31');
+  ok(parity.includes("Worker uses exact Durable Object rate limiter"), 'parity gate must assert exact limiter mode');
 });
 
 export async function runSpec(){ return run(); }
