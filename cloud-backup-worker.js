@@ -1,4 +1,10 @@
-// FreightLogic Cloud Backup Worker v30 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Health
+// FreightLogic Cloud Backup Worker v31 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v31: SECURITY/READINESS HARDENING (AIAG-TASK-0035, 2026-09-29).
+// Adds bounded streaming request-body reads, durable-object-backed exact rate
+// counters (with the old KV counter retained only as a compatibility fallback),
+// finite driver/admin credential lifetimes, privacy-safe privileged-action audit
+// records, and a separately-confirmed permanent cloud-account erase operation.
+// None of these paths can change canonical freight economics or Agent authority.
 // v30: PUSHWARD LIVE ACTIVITY BRIDGE (operator-approved 2026-09-26). PushWard
 // replaces HookTap for the optional iPhone Lock Screen / Dynamic Island layer.
 // The integration key is read only from PUSHWARD_INTEGRATION_KEY, a Worker
@@ -176,7 +182,9 @@ async function timingSafeEqual(a, b) {
 const CERT_ADMIN_TOKEN_RE = /^flac_[a-f0-9]{64}$/;
 async function resolveAdminAuth(env, adminToken) {
   if (!adminToken) return null;
-  if (env.ADMIN_TOKEN && await timingSafeEqual(adminToken, env.ADMIN_TOKEN)) return 'operator';
+  if (env.ADMIN_TOKEN && await timingSafeEqual(adminToken, env.ADMIN_TOKEN)) {
+    return await enforceAdminCredentialLifetime(env, adminToken) ? 'operator' : null;
+  }
   if (!CERT_ADMIN_TOKEN_RE.test(adminToken)) return null;
   const raw = await env.BACKUPS.get('admcert:' + await hashToken(adminToken));
   if (!raw) return null;
@@ -197,6 +205,298 @@ function isCertificationAdminRoute(method, path) {
 async function hashToken(token) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// v31 — finite credential lifetime + bounded request materialization + admin audit.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DRIVER_CREDENTIAL_IDLE_MS = 90 * DAY_MS;
+const DRIVER_CREDENTIAL_ABSOLUTE_MS = 365 * DAY_MS;
+const DRIVER_CREDENTIAL_TOUCH_MS = DAY_MS;
+const ADMIN_CREDENTIAL_MAX_MS = 90 * DAY_MS;
+const ADMIN_AUDIT_TTL_S = 400 * 24 * 60 * 60;
+
+function isoAt(ms) { return new Date(ms).toISOString(); }
+
+function stampFreshCredential(rec, now = Date.now()) {
+  const issuedAt = isoAt(now);
+  return {
+    ...rec,
+    credentialIssuedAt: issuedAt,
+    credentialLastSeenAt: issuedAt,
+    credentialExpiresAt: isoAt(now + DRIVER_CREDENTIAL_ABSOLUTE_MS),
+  };
+}
+
+async function enforceAdminCredentialLifetime(env, token, now = Date.now()) {
+  const tokenHash = await hashToken(token);
+  const key = 'admincred:' + tokenHash;
+  let rec = null;
+  try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch { rec = null; }
+
+  // Backward-compatible rollout: the first successful use of the existing
+  // operator secret starts its finite lifetime. Rotating ADMIN_TOKEN produces a
+  // different hash/key and therefore a fresh window without storing the secret.
+  if (!rec) {
+    rec = {
+      version: 1,
+      firstSeenAt: isoAt(now),
+      lastSeenAt: isoAt(now),
+      expiresAt: isoAt(now + ADMIN_CREDENTIAL_MAX_MS),
+    };
+    await env.BACKUPS.put(key, JSON.stringify(rec), {
+      expirationTtl: Math.ceil((ADMIN_CREDENTIAL_MAX_MS + 7 * DAY_MS) / 1000),
+    });
+    return true;
+  }
+
+  const expires = Date.parse(rec.expiresAt || '');
+  if (!Number.isFinite(expires) || expires <= now) return false;
+  const last = Date.parse(rec.lastSeenAt || '');
+  if (!Number.isFinite(last) || now - last >= DRIVER_CREDENTIAL_TOUCH_MS) {
+    rec.lastSeenAt = isoAt(now);
+    await env.BACKUPS.put(key, JSON.stringify(rec), {
+      expirationTtl: Math.max(60, Math.ceil((expires - now + 7 * DAY_MS) / 1000)),
+    });
+  }
+  return true;
+}
+
+/** Read a request body without trusting Content-Length. The stream is cancelled
+ * as soon as the true byte count crosses maxBytes, so a missing/forged header
+ * cannot turn a small JSON route into a 100MB materialization. */
+export async function readBodyTextBounded(request, maxBytes) {
+  const declaredRaw = request.headers.get('Content-Length');
+  if (declaredRaw) {
+    const declared = Number(declaredRaw);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      return { ok: false, status: 413, error: 'Request too large' };
+    }
+  }
+  if (!request.body) return { ok: true, text: '', bytes: 0 };
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunkBytes = value?.byteLength || 0;
+      total += chunkBytes;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        return { ok: false, status: 413, error: 'Request too large' };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return { ok: true, text, bytes: total };
+  } catch {
+    try { await reader.cancel(); } catch {}
+    return { ok: false, status: 400, error: 'Could not read request body' };
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
+export async function readJsonBounded(request, maxBytes) {
+  const body = await readBodyTextBounded(request, maxBytes);
+  if (!body.ok) return body;
+  if (!body.text.trim()) return { ok: true, value: {}, bytes: body.bytes };
+  try {
+    return { ok: true, value: JSON.parse(body.text), bytes: body.bytes };
+  } catch {
+    return { ok: false, status: 400, error: 'Invalid JSON payload' };
+  }
+}
+
+async function listAllKvKeys(env, prefix) {
+  const out = [];
+  let cursor = null;
+  for (let pageNo = 0; pageNo < 100; pageNo++) {
+    const opts = { prefix };
+    if (cursor) opts.cursor = cursor;
+    const page = await env.BACKUPS.list(opts);
+    for (const entry of (page?.keys || [])) if (entry?.name) out.push(entry.name);
+    if (page?.list_complete === false && page?.cursor) {
+      cursor = page.cursor;
+      continue;
+    }
+    break;
+  }
+  return out;
+}
+
+async function adminAuditSubject(subject) {
+  if (!subject) return null;
+  return (await hashToken(String(subject))).slice(0, 24);
+}
+
+async function beginAdminAudit(env, actor, action, subject = null) {
+  const now = Date.now();
+  const key = 'audit:admin:' + isoAt(now).replace(/[:.]/g, '-') + ':' + crypto.randomUUID();
+  const rec = {
+    version: 1,
+    ts: isoAt(now),
+    actor: actor === 'certification' ? 'certification' : 'operator',
+    action: String(action || '').slice(0, 64),
+    state: 'started',
+    subject: await adminAuditSubject(subject),
+  };
+  // Fail closed BEFORE a privileged mutation if the audit record cannot be
+  // written. A started record that never reaches succeeded is useful evidence
+  // of an interrupted/failed administrative action.
+  await env.BACKUPS.put(key, JSON.stringify(rec), { expirationTtl: ADMIN_AUDIT_TTL_S });
+  return { key, rec };
+}
+
+async function finishAdminAudit(env, audit, state = 'succeeded', extra = {}) {
+  if (!audit?.key || !audit?.rec) return;
+  const next = {
+    ...audit.rec,
+    state,
+    finishedAt: new Date().toISOString(),
+    ...extra,
+  };
+  // Strict allow-list: no names, IPs, tokens, request bodies, or freight data.
+  const safe = {
+    version: 1,
+    ts: next.ts,
+    actor: next.actor,
+    action: next.action,
+    state: next.state,
+    subject: next.subject || null,
+    finishedAt: next.finishedAt,
+    deletedCount: Number.isFinite(Number(next.deletedCount)) ? Number(next.deletedCount) : undefined,
+  };
+  await env.BACKUPS.put(audit.key, JSON.stringify(safe), { expirationTtl: ADMIN_AUDIT_TTL_S });
+}
+
+async function readAdminAudit(env, limit = 100) {
+  const keys = await listAllKvKeys(env, 'audit:admin:');
+  const chosen = keys.sort().reverse().slice(0, Math.max(1, Math.min(200, limit)));
+  const vals = await Promise.all(chosen.map(k => env.BACKUPS.get(k)));
+  return vals.map(v => {
+    try { return JSON.parse(v); } catch { return null; }
+  }).filter(Boolean);
+}
+
+export async function eraseUserData(env, userId) {
+  if (!/^u_[a-f0-9-]{8,36}$/i.test(String(userId || ''))) {
+    throw new Error('Invalid user ID format');
+  }
+  const userRaw = await env.BACKUPS.get('user:' + userId);
+  if (!userRaw) return { found: false, deleted: 0 };
+  let user;
+  try { user = JSON.parse(userRaw); } catch { throw new Error('Corrupted user record'); }
+
+  const keys = new Set(await listAllKvKeys(env, 'user:' + userId));
+  for (const key of [
+    'push:subs:' + userId,
+    'relay:' + userId,
+    'relayseen:' + userId,
+    'rem:' + userId,
+    'sckuser:' + userId,
+  ]) keys.add(key);
+
+  if (user.tokenHash) keys.add('tokh:' + user.tokenHash);
+  if (user.token) keys.add('token:' + user.token);
+
+  let shortcutRec = null;
+  try { shortcutRec = JSON.parse(await env.BACKUPS.get('sckuser:' + userId) || 'null'); } catch {}
+  if (shortcutRec?.hash) keys.add('sck:' + shortcutRec.hash);
+
+  // Remove every token index naming this account, including stale race residue.
+  for (const prefix of ['tokh:', 'token:']) {
+    for (const key of await listAllKvKeys(env, prefix)) {
+      let rec = null;
+      try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
+      if (rec?.userId === userId) keys.add(key);
+    }
+  }
+
+  // Outstanding re-invite codes must not survive permanent account erasure.
+  for (const key of await listAllKvKeys(env, 'inv:')) {
+    let rec = null;
+    try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
+    if (rec?.userId === userId) keys.add(key);
+  }
+
+  // Per-user abuse counters are ephemeral, but deleting them closes the last
+  // server-side reference to the erased account immediately.
+  for (const key of await listAllKvKeys(env, 'rl:')) {
+    if (key.includes(':' + userId + ':')) keys.add(key);
+  }
+
+  const remIndex = await readReminderIndex(env).catch(() => []);
+  if (remIndex.includes(userId)) {
+    const next = remIndex.filter(id => id !== userId);
+    if (next.length) await env.BACKUPS.put('rem:index', JSON.stringify(next));
+    else await env.BACKUPS.delete('rem:index');
+  }
+
+  const all = [...keys];
+  for (let i = 0; i < all.length; i += 50) {
+    await Promise.all(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+  }
+  return { found: true, deleted: all.length };
+}
+
+export async function enforceDriverCredentialLifetime(env, userRec, tokenHash, now = Date.now()) {
+  const next = { ...userRec };
+  let changed = false;
+  let issued = Date.parse(next.credentialIssuedAt || '');
+  if (!Number.isFinite(issued)) {
+    issued = now; // migration grace: existing tokens start their window at first v31 use.
+    next.credentialIssuedAt = isoAt(issued);
+    next.credentialLastSeenAt = isoAt(issued);
+    next.credentialExpiresAt = isoAt(issued + DRIVER_CREDENTIAL_ABSOLUTE_MS);
+    changed = true;
+  }
+
+  let absolute = Date.parse(next.credentialExpiresAt || '');
+  if (!Number.isFinite(absolute) || absolute <= issued) {
+    absolute = issued + DRIVER_CREDENTIAL_ABSOLUTE_MS;
+    next.credentialExpiresAt = isoAt(absolute);
+    changed = true;
+  }
+
+  let lastSeen = Date.parse(next.credentialLastSeenAt || '');
+  if (!Number.isFinite(lastSeen)) {
+    lastSeen = issued;
+    next.credentialLastSeenAt = isoAt(lastSeen);
+    changed = true;
+  }
+
+  const idleExpiry = lastSeen + DRIVER_CREDENTIAL_IDLE_MS;
+  if (now >= absolute || now >= idleExpiry) {
+    // Retire only the presented current token index. The user identity stays
+    // active so an operator can re-invite the same account/history.
+    try { await env.BACKUPS.delete('tokh:' + tokenHash); } catch {}
+    return {
+      ok: false,
+      reason: now >= absolute ? 'absolute' : 'idle',
+      credentialExpiresAt: isoAt(absolute),
+      credentialIdleExpiresAt: isoAt(idleExpiry),
+    };
+  }
+
+  if (changed || now - lastSeen >= DRIVER_CREDENTIAL_TOUCH_MS) {
+    next.credentialLastSeenAt = isoAt(now);
+    lastSeen = now;
+    await Promise.all([
+      env.BACKUPS.put('user:' + next.userId, JSON.stringify(next)),
+      env.BACKUPS.put('tokh:' + tokenHash, JSON.stringify(next)),
+    ]);
+  }
+
+  return {
+    ok: true,
+    user: next,
+    credentialExpiresAt: isoAt(absolute),
+    credentialIdleExpiresAt: isoAt(lastSeen + DRIVER_CREDENTIAL_IDLE_MS),
+  };
 }
 
 // v18 — RFC 4648 base32, used only to render invite claim codes.
