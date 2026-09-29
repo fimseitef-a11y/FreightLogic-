@@ -23,6 +23,9 @@ jobs:
       - name: Compressed asset budget
         run: node scripts/performance-budget.mjs
 
+      - name: Validate backup Worker deployment config
+        run: npx --yes wrangler@4 deploy --dry-run --config scripts/wrangler.backup-worker.jsonc --outdir /tmp/fl-worker-dry-run
+
       - name: Validate bounded load-test harness locally
         run: node scripts/load-test-worker.mjs --selfTest --requests=1000 --concurrency=50 --maxP95=750
 
