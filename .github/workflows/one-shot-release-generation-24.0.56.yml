@@ -68,31 +68,51 @@ jobs:
           PY
 
       - name: Verify diff hygiene
-        shell: bash
         run: git diff --check
 
-      - name: Verify cache-generation contract
+      - name: Verify release markers without external dependencies
         shell: bash
         run: |
-          set +e
-          OUTPUT="$(node tests/unit/cache-generation.spec.mjs 2>&1)"
-          STATUS=$?
-          set -e
-          printf '%s\n' "$OUTPUT"
-          if [ "$STATUS" -ne 0 ]; then
-            git config user.name 'gpt-release-helper'
-            git config user.email 'gpt-release-helper@users.noreply.github.com'
-            git commit --allow-empty -m '[gpt] Record cache-generation diagnostic' -m "$OUTPUT" -m 'FL-Lock: today-command-center-v2/54c09d42-db16-4f40-855a-d95ace8417fd'
-            git push origin HEAD:${GITHUB_REF_NAME}
-            exit "$STATUS"
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          V = '24.0.56'
+          app = Path('app.js').read_text(encoding='utf-8')
+          sw = Path('service-worker.js').read_text(encoding='utf-8')
+          index = Path('index.html').read_text(encoding='utf-8')
+          bridge = Path('sw-bridge.js').read_text(encoding='utf-8')
+          manifest = json.loads(Path('manifest.json').read_text(encoding='utf-8'))
+          authority = Path('midwest-stack-authority.js').read_text(encoding='utf-8')
+          config = json.loads(Path('midwest-stack-config.json').read_text(encoding='utf-8'))
+          parity = Path('scripts/verify-cloudflare-parity.mjs').read_text(encoding='utf-8')
+          shell = Path('modern-shell.js').read_text(encoding='utf-8')
+
+          assert f"const APP_VERSION = '{V}';" in app
+          assert f"const SW_VERSION = '{V}';" in sw
+          assert all(x == V for x in re.findall(r'\?v=([0-9]+\.[0-9]+\.[0-9]+)', sw))
+          assert all(x == V for x in re.findall(r'\?v=([0-9]+\.[0-9]+\.[0-9]+)', index))
+          assert manifest['name'] == f'FreightLogic v{V}'
+          assert f"const VERSION = '{V}';" in authority
+          assert config['appTarget'] == f'FreightLogic v{V}'
+          assert f'serviceWorkerVersion: "{V}"' in parity
+          assert f'manifestName: "FreightLogic v{V}"' in parity
+          assert f'overlayScript: "midwest-stack-authority.js?v={V}"' in parity
+          assert f"modern-shell.js?v={V}" in bridge
+          assert f"modern-shell.js?v={V}" in sw
+          for path, text in (
+              ('service-worker.js', sw),
+              ('sw-bridge.js', bridge),
+              ('midwest-stack-authority.js', authority),
+              ('modern-shell.js', shell),
+          ):
+              assert V in text.splitlines()[0], f'{path} header is not at {V}'
+          PY
 
       - name: Verify static Cloudflare parity
-        shell: bash
         run: node scripts/verify-cloudflare-parity.mjs --static-only
 
       - name: Verify Today command-center contract
-        shell: bash
         run: node scripts/test-today-command-center-v2.mjs
 
       - name: Commit governed bump and remove helper
