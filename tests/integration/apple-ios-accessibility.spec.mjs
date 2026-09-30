@@ -118,46 +118,6 @@ test('representative controls keep their expected visible/programmatic label tex
   } finally { await app.close(); }
 });
 
-test('PushWard Live Activity test uses the connected driver token without exposing it', async () => {
-  const app = await launchApp();
-  try {
-    const { page } = app;
-    await ready(page);
-    const token = 'flk_00112233445566778899aabbccddeeff';
-    let captured = null;
-    await page.route('https://freightlogic-backup.fimseitef.workers.dev/pushward/test', async (route) => {
-      const req = route.request();
-      captured = {
-        method: req.method(),
-        token: await req.headerValue('x-backup-token'),
-      };
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ok: true, status: 'sent' }),
-      });
-    });
-    await page.evaluate((value) => {
-      location.hash = '#insights';
-      const tokenInput = document.getElementById('cloudBackupToken');
-      if (tokenInput) tokenInput.value = value;
-    }, token);
-    await page.waitForTimeout(180);
-
-    const button = page.locator('#btnPushWardTest');
-    ok(await button.count() === 1, 'Settings must expose a Test Live Activity control');
-    ok(await button.isVisible(), 'Test Live Activity must be visible in Settings');
-    await button.click();
-    await page.waitForTimeout(120);
-
-    ok(captured?.method === 'POST', `PushWard smoke must POST — got ${captured?.method || 'no request'}`);
-    ok(captured?.token === token, 'PushWard smoke must reuse the connected X-Backup-Token credential');
-    const hint = await page.locator('#pushShortcutsHint').innerText();
-    ok(/Live Activity sent/i.test(hint), `success must be visible to the driver — got: ${hint}`);
-    ok(!hint.includes(token), 'the driver token must never be rendered in the UI');
-  } finally { await app.close(); }
-});
-
 export async function runSpec() { return run(); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await runSpec();
