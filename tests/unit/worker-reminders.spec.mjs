@@ -216,6 +216,29 @@ test('[RM-09] deploy config contains no PushWard or HookTap credential', async (
   ok(!cfg.includes('hooks.hooktap.me'), 'HookTap host removed');
 });
 
+test('[RM-10] the existing /push/test smoke also exercises PushWard and keeps it additive', async () => {
+  const env = newEnv({ PUSHWARD_INTEGRATION_KEY: PUSH_KEY }); const worker = await loadWorker();
+  const d = await seedDriver(worker, env);
+
+  const success = stubFetch(200);
+  try {
+    const res = await worker.fetch(REQ('/push/test', { method: 'POST', headers: hdrs(d.token) }), env);
+    const body = await res.json();
+    eq(res.status, 200, 'existing push-test route remains successful');
+    eq(success.calls.length, 1, 'existing push-test route also calls PushWard once');
+    ok(success.calls[0].url.startsWith('https://api.pushward.app/activities/freightlogic-'), 'same fixed PushWard API origin');
+    eq(success.calls[0].headers.get('Authorization'), 'Bearer ' + PUSH_KEY, 'Worker secret stays server-side on outbound auth');
+    ok(!JSON.stringify(body).includes(PUSH_KEY), 'PushWard key is never returned by /push/test');
+  } finally { success.restore(); }
+
+  const failure = stubFetch(503);
+  try {
+    const res = await worker.fetch(REQ('/push/test', { method: 'POST', headers: hdrs(d.token) }), env);
+    eq(res.status, 200, 'PushWard provider failure never breaks the first-party push-test route');
+    eq(failure.calls.length, 1, 'PushWard was attempted even when the provider failed');
+  } finally { failure.restore(); }
+});
+
 export async function runSpec() {
   return await run();
 }
