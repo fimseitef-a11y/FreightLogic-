@@ -20,7 +20,6 @@
     money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M16 8.5c-.9-.7-2.1-1-3.5-1-2 0-3.5 1-3.5 2.5 0 3.5 7 1.5 7 5 0 1.5-1.5 2.5-3.5 2.5-1.5 0-2.9-.4-4-1.3M12 5v14"/></svg>'
   };
 
-
   function canonicalRoute(route) {
     const raw = String(route || 'home').replace(/^#/, '');
     return ROUTE_ALIASES[raw] || raw;
@@ -39,8 +38,6 @@
       else link.removeAttribute('aria-current');
     });
 
-    // The header behaves like an iPhone screen title, not a permanent marketing
-    // banner. The brand still lives in the install icon/about surface.
     const title = document.querySelector('#mainHeader .brand .title strong');
     if (title) title.textContent = ROUTE_TITLES[route] || 'FreightLogic';
   }
@@ -140,14 +137,323 @@
       if (start) start.setAttribute('aria-label', start.getAttribute('aria-label') || 'Start trip');
       if (info) info.setAttribute('aria-label', info.getAttribute('aria-label') || 'GPS tracking information');
 
-      // Dynamic report/lane rows use pointer affordance for activation. Give any
-      // such visible non-native row keyboard semantics without changing its click contract.
       document.querySelectorAll('[data-weekly-report-action], [data-lane-action], #laneList [onclick]').forEach(makeKeyboardButton);
     };
 
     repair();
     const observer = new MutationObserver(repair);
     observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  const TODAY_PRESENTATION_SPEC = Object.freeze({
+    homeId: 'view-home',
+    homeClass: 'today-command-v2',
+    primaryCardId: 'homeKPICard',
+    positionCardId: 'homePositioningCard',
+    positionDisclosureId: 'homePositioningDisclosure',
+    moneyCardId: 'homeMoneyCard',
+    fuelRoute: 'insights',
+    fuelFieldId: 'fuelPrice',
+    fuelSectionId: 'settingsCosts'
+  });
+  let todayObserver = null;
+  let todaySyncScheduled = false;
+  let fuelRouteBound = false;
+  let headerResizeBound = false;
+
+  function installTodayStyles() {
+    if (document.getElementById('todayCommandCenterV2Styles')) return;
+    const style = document.createElement('style');
+    style.id = 'todayCommandCenterV2Styles';
+    style.textContent = `
+      :root { --fl-header-bottom: 72px; }
+      #mainHeader.modern-header-safe { isolation:isolate; z-index:240; }
+      #mainHeader.modern-header-safe #modernMoreBtn { position:relative; z-index:3; }
+      .toast {
+        top:calc(var(--fl-header-bottom, 72px) + 8px) !important;
+        max-width:min(420px, calc(100vw - 24px));
+      }
+      #view-home.today-command-v2 .today-context-rail { margin-top:8px !important; }
+      #view-home.today-command-v2 .today-context-rail > * {
+        padding:10px 12px !important;
+        border-radius:14px !important;
+        box-shadow:none !important;
+      }
+      #view-home.today-command-v2 #homeTripTrackCard { margin-top:8px !important; }
+      #view-home.today-command-v2 #homeTripTrackCard .card {
+        padding:12px !important;
+        border-radius:16px !important;
+        box-shadow:none !important;
+      }
+      #view-home.today-command-v2 #homeKPICard {
+        margin-top:10px !important;
+        box-shadow:none;
+      }
+      #view-home.today-command-v2 #homeNextMoveBox > * {
+        margin-top:10px !important;
+        padding:11px 13px !important;
+        border-radius:14px !important;
+        box-shadow:none !important;
+      }
+      #view-home.today-command-v2 #homeNextMoveBox {
+        font-size:.92em;
+      }
+      #view-home.today-command-v2 .today-position-disclosure {
+        width:100%; min-height:48px; margin:10px 0 0; padding:0 13px;
+        display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:9px;
+        border:1px solid var(--border); border-radius:14px;
+        background:var(--surface-1); color:var(--text); text-align:left;
+        font:inherit; font-weight:750; cursor:pointer;
+      }
+      #view-home.today-command-v2 .today-position-disclosure[hidden] { display:none !important; }
+      #view-home.today-command-v2 .today-position-disclosure-icon {
+        width:28px; height:28px; display:grid; place-items:center; border-radius:9px;
+        background:var(--surface-2); color:var(--accent); font-size:18px;
+      }
+      #view-home.today-command-v2 .today-position-disclosure-state {
+        color:var(--text-tertiary); font-size:12px; font-weight:650;
+      }
+      #view-home.today-command-v2 .today-position-collapsed { display:none !important; }
+      #view-home.today-command-v2 .today-position-expanded {
+        display:block; margin-top:8px !important;
+      }
+      #view-home.today-command-v2 .today-position-expanded > * {
+        box-shadow:none !important;
+      }
+      #view-home.today-command-v2 .today-secondary-money {
+        opacity:.86; margin-top:10px !important;
+      }
+      #view-home.today-command-v2 .today-secondary-money > * {
+        box-shadow:none !important;
+      }
+      #view-home.today-command-v2 .today-report-snapshot {
+        opacity:.84; margin-top:8px !important;
+      }
+      #view-home.today-command-v2 .today-attention-row { margin-top:10px !important; }
+      #view-home.today-command-v2 #maintAlertBanner,
+      #view-home.today-command-v2 #fuelNudgeCard {
+        min-height:0 !important; padding:10px 12px !important;
+        border-radius:14px !important; box-shadow:none !important;
+      }
+      #view-home.today-command-v2 #maintAlertBanner { border-width:1px !important; }
+      #view-home.today-command-v2 .quarterly-nudge,
+      #view-home.today-command-v2 .today-flow-reminder {
+        position:static !important; inset:auto !important; transform:none !important;
+        width:auto !important; max-width:none !important; margin:10px 0 !important;
+        z-index:auto !important;
+      }
+      #view-home.today-command-v2 #homeRecentTripsCard,
+      #view-home.today-command-v2 #homeRecentTrips { overflow:visible !important; }
+      #view-insights .today-settings-focus {
+        outline:2px solid var(--accent) !important; outline-offset:3px;
+        box-shadow:0 0 0 4px var(--accent-muted) !important;
+      }
+      @media (max-width:640px) {
+        .toast { left:12px !important; right:12px !important; width:auto !important; }
+        #view-home.today-command-v2 .card { border-radius:18px; }
+        #view-home.today-command-v2 #homeKPICard { padding:16px !important; }
+        #view-home.today-command-v2 .today-secondary-money { opacity:.80; }
+      }
+      @media (prefers-reduced-motion:reduce) {
+        #view-insights .today-settings-focus { scroll-behavior:auto; }
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function todayPresentationSpec() {
+    return { ...TODAY_PRESENTATION_SPEC };
+  }
+
+  function syncHeaderSafeArea() {
+    const header = document.getElementById('mainHeader');
+    if (!header) return;
+    header.classList.add('modern-header-safe');
+    const rect = typeof header.getBoundingClientRect === 'function' ? header.getBoundingClientRect() : null;
+    const bottom = rect && Number.isFinite(rect.bottom) ? Math.ceil(rect.bottom) : 0;
+    if (bottom > 0 && document.documentElement?.style) {
+      document.documentElement.style.setProperty('--fl-header-bottom', `${bottom}px`);
+    }
+  }
+
+  function positionCardIsVisible(position) {
+    if (!position || position.hidden) return false;
+    try {
+      return getComputedStyle(position).display !== 'none';
+    } catch (_) {
+      return position.style?.display !== 'none';
+    }
+  }
+
+  function setPositionExpanded(expanded) {
+    const position = document.getElementById(TODAY_PRESENTATION_SPEC.positionCardId);
+    const disclosure = document.getElementById(TODAY_PRESENTATION_SPEC.positionDisclosureId);
+    if (!position || !disclosure) return;
+    position.classList.toggle('today-position-collapsed', !expanded);
+    position.classList.toggle('today-position-expanded', expanded);
+    position.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+    disclosure.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    const state = disclosure.querySelector?.('.today-position-disclosure-state');
+    if (state) state.textContent = expanded ? 'Hide' : 'Why?';
+  }
+
+  function ensurePositionDisclosure(home) {
+    const position = document.getElementById(TODAY_PRESENTATION_SPEC.positionCardId);
+    if (!position || !home) return null;
+    let disclosure = document.getElementById(TODAY_PRESENTATION_SPEC.positionDisclosureId);
+    if (!disclosure) {
+      disclosure = document.createElement('button');
+      disclosure.id = TODAY_PRESENTATION_SPEC.positionDisclosureId;
+      disclosure.type = 'button';
+      disclosure.className = 'today-position-disclosure';
+      disclosure.setAttribute('aria-controls', TODAY_PRESENTATION_SPEC.positionCardId);
+      disclosure.setAttribute('aria-expanded', 'false');
+      disclosure.innerHTML = '<span class="today-position-disclosure-icon" aria-hidden="true">⌖</span><span>Market details</span><span class="today-position-disclosure-state">Why?</span>';
+      disclosure.addEventListener('click', () => {
+        setPositionExpanded(disclosure.getAttribute('aria-expanded') !== 'true');
+      });
+      position.insertAdjacentElement('beforebegin', disclosure);
+      setPositionExpanded(false);
+    }
+
+    const visible = positionCardIsVisible(position);
+    disclosure.hidden = !visible;
+    if (!visible) setPositionExpanded(false);
+    return disclosure;
+  }
+
+  function normalizeQuarterlyNudges(home) {
+    if (!home) return;
+    const recent = document.getElementById('homeRecentTripsCard');
+    document.querySelectorAll('.quarterly-nudge').forEach((nudge) => {
+      nudge.classList.add('today-flow-reminder');
+      // Some app versions insert the CPA nudge inside Recent Trips. Keep it in
+      // the Today flow, immediately before the trips card, so it can never
+      // cover a trip row or its controls.
+      if (recent && recent.contains(nudge) && recent.parentNode === home) {
+        home.insertBefore(nudge, recent);
+      }
+    });
+  }
+
+  function syncTodayCommandCenter() {
+    const home = document.getElementById(TODAY_PRESENTATION_SPEC.homeId);
+    if (!home) return;
+    home.classList.add(TODAY_PRESENTATION_SPEC.homeClass);
+
+    const kpi = document.getElementById(TODAY_PRESENTATION_SPEC.primaryCardId);
+    const position = document.getElementById(TODAY_PRESENTATION_SPEC.positionCardId);
+    const disclosure = ensurePositionDisclosure(home);
+    const maintenance = document.getElementById('homeMaintenanceAlert');
+    const money = document.getElementById(TODAY_PRESENTATION_SPEC.moneyCardId);
+    const recent = document.getElementById('homeRecentTripsCard');
+
+    // Daily money is the stable Today anchor. Market evidence remains available
+    // directly below it as progressive disclosure rather than leading the page.
+    const positionAnchor = disclosure || position;
+    if (kpi && positionAnchor && kpi.parentNode === home && positionAnchor.parentNode === home && kpi.nextElementSibling !== positionAnchor) {
+      home.insertBefore(kpi, positionAnchor);
+    }
+
+    // Maintenance remains visible but belongs to Attention, not the driver's
+    // primary drive/money decision path.
+    if (maintenance && recent && maintenance.parentNode === home && recent.parentNode === home && maintenance.nextElementSibling !== recent) {
+      home.insertBefore(maintenance, recent);
+    }
+
+    document.getElementById('homePositionBanner')?.classList.add('today-context-rail');
+    document.getElementById('homeTripTrackCard')?.classList.add('today-trip-control');
+    position?.classList.add('today-position-details');
+    maintenance?.classList.add('today-attention-row');
+    money?.classList.add('today-secondary-money');
+    document.getElementById('homeWeeklyReport')?.classList.add('today-report-snapshot');
+    document.getElementById('homeFuelNudge')?.classList.add('today-attention-row');
+    recent?.classList.add('today-recent-trips');
+
+    normalizeQuarterlyNudges(home);
+    syncHeaderSafeArea();
+  }
+
+  function scheduleTodaySync() {
+    if (todaySyncScheduled) return;
+    todaySyncScheduled = true;
+    const run = () => {
+      todaySyncScheduled = false;
+      syncTodayCommandCenter();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 0);
+  }
+
+  function focusFuelPriceSetting() {
+    navigate(TODAY_PRESENTATION_SPEC.fuelRoute);
+    let attempts = 0;
+    const reveal = () => {
+      attempts += 1;
+      const field = document.getElementById(TODAY_PRESENTATION_SPEC.fuelFieldId);
+      if (!field) {
+        if (attempts < 8) setTimeout(reveal, 40);
+        return false;
+      }
+
+      const body = document.getElementById('advSettingsBody');
+      const toggle = document.getElementById('advSettingsToggle');
+      let collapsed = false;
+      if (body) {
+        try { collapsed = getComputedStyle(body).display === 'none'; }
+        catch (_) { collapsed = body.style?.display === 'none'; }
+      }
+      if (collapsed && toggle && typeof toggle.click === 'function') toggle.click();
+
+      const section = document.getElementById(TODAY_PRESENTATION_SPEC.fuelSectionId);
+      const settle = () => {
+        section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        field.focus?.({ preventScroll: true });
+        field.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        field.classList?.add('today-settings-focus');
+        setTimeout(() => field.classList?.remove('today-settings-focus'), 1600);
+      };
+      if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(settle);
+      else setTimeout(settle, 0);
+      return true;
+    };
+    setTimeout(reveal, 0);
+    return true;
+  }
+
+  function bindFuelNudgeRoute() {
+    if (fuelRouteBound) return;
+    fuelRouteBound = true;
+    document.addEventListener('click', (event) => {
+      const card = event.target?.closest?.('#fuelNudgeCard');
+      if (!card) return;
+      // Let the app's own card handler finish first, then guarantee a visible,
+      // useful destination for the operator.
+      setTimeout(focusFuelPriceSetting, 0);
+    }, true);
+  }
+
+  function installTodayCommandCenter() {
+    const home = document.getElementById(TODAY_PRESENTATION_SPEC.homeId);
+    if (!home) return false;
+    installTodayStyles();
+    bindFuelNudgeRoute();
+    syncTodayCommandCenter();
+
+    if (!headerResizeBound) {
+      window.addEventListener('resize', syncHeaderSafeArea, { passive: true });
+      headerResizeBound = true;
+    }
+    if (!todayObserver) {
+      todayObserver = new MutationObserver(scheduleTodaySync);
+      todayObserver.observe(home, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'hidden', 'class']
+      });
+    }
+    return true;
   }
 
   function install() {
@@ -157,6 +463,7 @@
     if (home) home.setAttribute('aria-label', 'Today');
     rebuildPrimaryNav();
     addSecondaryMenuAccess();
+    installTodayCommandCenter();
     window.addEventListener('hashchange', () => {
       normalizeAliasHash();
       syncActiveFromHash();
@@ -166,7 +473,14 @@
     installA11yRepairs();
   }
 
-  window.FreightLogicModernShell = { install, navigate, primaryRoutes: () => [...PRIMARY_ROUTES] };
+  window.FreightLogicModernShell = {
+    install,
+    navigate,
+    installTodayCommandCenter,
+    focusFuelPriceSetting,
+    todayPresentationSpec,
+    primaryRoutes: () => [...PRIMARY_ROUTES]
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
   else install();
 })();
