@@ -67,14 +67,21 @@ jobs:
           )
           PY
 
-      - name: Verify focused release and Today contracts
+      - name: Verify diff hygiene
         shell: bash
-        run: |
-          set -euo pipefail
-          git diff --check
-          node tests/unit/cache-generation.spec.mjs
-          node scripts/verify-cloudflare-parity.mjs --static-only
-          node scripts/test-today-command-center-v2.mjs
+        run: git diff --check
+
+      - name: Verify cache-generation contract
+        shell: bash
+        run: node tests/unit/cache-generation.spec.mjs
+
+      - name: Verify static Cloudflare parity
+        shell: bash
+        run: node scripts/verify-cloudflare-parity.mjs --static-only
+
+      - name: Verify Today command-center contract
+        shell: bash
+        run: node scripts/test-today-command-center-v2.mjs
 
       - name: Commit governed bump and remove helper
         shell: bash
