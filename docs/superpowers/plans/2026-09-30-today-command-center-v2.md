@@ -35,17 +35,17 @@ Write a Node contract test that loads `modern-shell.js` in a minimal VM/DOM harn
 
 **Files:**
 - Modify: `modern-shell.js`
-- Modify: `styles.css`
+- Presentation rules: keep scoped to the same shell seam as an injected self-hosted style block under the recorded ledger ruling, avoiding a second runtime asset/precache change while unrelated SHARED paths are locked.
 
 Before touching `modern-shell.js`, claim a verified same-task lock for that path only on `agent-coordination`. Add an idempotent Today presentation adapter that:
 
 1. applies a stable `today-command-v2` class to Today,
 2. protects the More/settings action plane,
-3. routes `#fuelNudgeCard` to `#view-settings` and focuses/scrolls `#currentFuelPrice`,
+3. routes `#fuelNudgeCard` to `#insights` (the Settings route) and focuses/scrolls the canonical `#fuelPrice` field under `#settingsCosts`,
 4. keeps CPA/export reminders in normal flow,
 5. promotes the Today KPI/money card ahead of secondary positioning/maintenance content,
 6. visually compacts position/UNKNOWN/maintenance/secondary alerts without altering their underlying semantics or handlers,
-7. subordinates duplicate `#homeMoneyCard` content while leaving Money as canonical,
+7. removes or subordinates duplicate `#homeMoneyCard` content while leaving Money as canonical,
 8. preserves bottom navigation and existing deep links,
 9. re-applies safely after app-driven DOM updates without duplicate handlers/wrappers.
 
