@@ -38,6 +38,8 @@
       else link.removeAttribute('aria-current');
     });
 
+    // The header behaves like an iPhone screen title, not a permanent marketing
+    // banner. The brand still lives in the install icon/about surface.
     const title = document.querySelector('#mainHeader .brand .title strong');
     if (title) title.textContent = ROUTE_TITLES[route] || 'FreightLogic';
   }
@@ -137,6 +139,8 @@
       if (start) start.setAttribute('aria-label', start.getAttribute('aria-label') || 'Start trip');
       if (info) info.setAttribute('aria-label', info.getAttribute('aria-label') || 'GPS tracking information');
 
+      // Dynamic report/lane rows use pointer affordance for activation. Give any
+      // such visible non-native row keyboard semantics without changing its click contract.
       document.querySelectorAll('[data-weekly-report-action], [data-lane-action], #laneList [onclick]').forEach(makeKeyboardButton);
     };
 
@@ -144,6 +148,7 @@
     const observer = new MutationObserver(repair);
     observer.observe(document.body, { childList: true, subtree: true });
   }
+
 
   const TODAY_PRESENTATION_SPEC = Object.freeze({
     homeId: 'view-home',
@@ -175,9 +180,12 @@
       }
       #view-home.today-command-v2 .today-context-rail { margin-top:8px !important; }
       #view-home.today-command-v2 .today-context-rail > * {
-        padding:10px 12px !important;
+        min-height:44px !important;
+        padding:9px 11px !important;
         border-radius:14px !important;
         box-shadow:none !important;
+        font-size:12px !important;
+        line-height:1.35 !important;
       }
       #view-home.today-command-v2 #homeTripTrackCard { margin-top:8px !important; }
       #view-home.today-command-v2 #homeTripTrackCard .card {
@@ -220,14 +228,14 @@
       #view-home.today-command-v2 .today-position-expanded > * {
         box-shadow:none !important;
       }
-      #view-home.today-command-v2 .today-secondary-money {
-        opacity:.86; margin-top:10px !important;
+      /* Today owns the current-day money snapshot. Detailed money and historical
+         weekly reports stay on their canonical Money/Reports surfaces so the
+         driver does not see two competing financial windows on one screen. */
+      #view-home.today-command-v2 #homeMoneyCard {
+        display:none !important;
       }
-      #view-home.today-command-v2 .today-secondary-money > * {
-        box-shadow:none !important;
-      }
-      #view-home.today-command-v2 .today-report-snapshot {
-        opacity:.84; margin-top:8px !important;
+      #view-home.today-command-v2 #homeWeeklyReport {
+        display:none !important;
       }
       #view-home.today-command-v2 .today-attention-row { margin-top:10px !important; }
       #view-home.today-command-v2 #maintAlertBanner,
@@ -252,7 +260,6 @@
         .toast { left:12px !important; right:12px !important; width:auto !important; }
         #view-home.today-command-v2 .card { border-radius:18px; }
         #view-home.today-command-v2 #homeKPICard { padding:16px !important; }
-        #view-home.today-command-v2 .today-secondary-money { opacity:.80; }
       }
       @media (prefers-reduced-motion:reduce) {
         #view-insights .today-settings-focus { scroll-behavior:auto; }
@@ -278,11 +285,10 @@
 
   function positionCardIsVisible(position) {
     if (!position || position.hidden) return false;
-    try {
-      return getComputedStyle(position).display !== 'none';
-    } catch (_) {
-      return position.style?.display !== 'none';
-    }
+    // app.js owns whether this slot exists via its inline display state. Do not
+    // consult computed display here: our own collapsed class intentionally uses
+    // display:none and would otherwise make the disclosure hide itself.
+    return position.style?.display !== 'none';
   }
 
   function setPositionExpanded(expanded) {
