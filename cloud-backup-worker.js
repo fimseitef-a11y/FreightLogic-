@@ -1343,7 +1343,10 @@ export default {
         const r = await pushToUser(env, driverUserId, {
           title: 'FreightLogic', body: 'Notifications are working on this device.', url: './#home', tag: 'push-test',
         });
-        return json({ ok: true, ...r }, 200, cors);
+        const pushWard = await pushWardSend(env, driverUserId, {
+          title: 'FreightLogic', body: 'PushWard Live Activities are working.', kind: 'test',
+        });
+        return json({ ok: true, ...r, pushWardStatus: pushWard.status }, 200, cors);
       }
 
       // ── v24: Shortcut key (relay-only credential, shown once) ──────────────
