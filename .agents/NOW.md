@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #436 open at 70660770; exact-head audit CI in progress for AIAG-TASK-0036. | 2026-09-29T23:35:00Z |
+| gpt | — idle — TASK-0036 audit code merged; main is 57258ddf after Dependabot #438. Only TASK-0037 / issue #437 remains blocked on repository-admin Settings access; no production Agent cutover. | 2026-09-30T00:52:00Z |
 
 ---
 
