@@ -1,6 +1,0 @@
-owner: gpt
-token: 8a1e2c6d-3e31-49a9-9b75-6a14f3dfb7c2
-started_utc: 2026-09-30T06:15:00Z
-expected_release_utc: 2026-09-30T08:15:00Z
-paths: app.js, index.html, tests/
-task: Add authenticated in-app PushWard Live Activity smoke-test control for issue #380
