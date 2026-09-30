@@ -57,4 +57,35 @@ assert.match(source, /--fl-header-bottom/, 'shell must publish measured header b
 assert.match(source, /quarterly-nudge/, 'shell must normalize CPA reminder flow');
 assert.match(source, /fuelNudgeCard/, 'shell must bind the rendered fuel nudge, not a duplicate control');
 
+let toggleClicks = 0;
+let fieldFocused = 0;
+let fieldScrolled = 0;
+let sectionScrolled = 0;
+const fakeClasses = { add() {}, remove() {} };
+const fuelField = {
+  focus() { fieldFocused += 1; },
+  scrollIntoView() { fieldScrolled += 1; },
+  classList: fakeClasses
+};
+const settingsBody = { style: { display: 'none' } };
+const settingsToggle = { click() { toggleClicks += 1; settingsBody.style.display = 'block'; } };
+const settingsSection = { scrollIntoView() { sectionScrolled += 1; } };
+const priorGetElementById = document.getElementById;
+document.getElementById = (id) => ({
+  fuelPrice: fuelField,
+  advSettingsBody: settingsBody,
+  advSettingsToggle: settingsToggle,
+  settingsCosts: settingsSection
+}[id] || null);
+context.getComputedStyle = (el) => ({ display: el?.style?.display || 'block', visibility: 'visible' });
+window.location.hash = '';
+assert.equal(shell.focusFuelPriceSetting(), true, 'fuel action should acknowledge navigation');
+assert.equal(window.location.hash, 'insights', 'fuel action must route to Settings');
+await new Promise((resolve) => setTimeout(resolve, 25));
+assert.equal(toggleClicks, 1, 'fuel action must expand All Settings when costs are collapsed');
+assert.equal(fieldFocused, 1, 'fuel action must focus the canonical fuel price field');
+assert.equal(fieldScrolled, 1, 'fuel action must reveal the fuel field');
+assert.equal(sectionScrolled, 1, 'fuel action must reveal the Money & Accounting section');
+document.getElementById = priorGetElementById;
+
 console.log('Today command center v2 contract: PASS');
