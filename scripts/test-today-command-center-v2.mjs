@@ -57,6 +57,12 @@ assert.match(source, /--fl-header-bottom/, 'shell must publish measured header b
 assert.match(source, /quarterly-nudge/, 'shell must normalize CPA reminder flow');
 assert.match(source, /fuelNudgeCard/, 'shell must bind the rendered fuel nudge, not a duplicate control');
 
+const positionVisibilitySource = source.match(/function positionCardIsVisible\(position\) \{([\s\S]*?)\n  \}/)?.[1] || '';
+assert.match(positionVisibilitySource, /position\.style\?\.display !== 'none'/, 'position visibility must follow app-owned inline visibility');
+assert.doesNotMatch(positionVisibilitySource, /getComputedStyle/, 'collapsed presentation must not make its own disclosure disappear');
+assert.match(source, /#view-home\.today-command-v2 #homeMoneyCard \{\s*display:none !important;/, 'duplicate Your Money card must leave Today');
+assert.match(source, /#view-home\.today-command-v2 #homeWeeklyReport \{\s*display:none !important;/, 'historical weekly report must not contradict the current Today window');
+
 let toggleClicks = 0;
 let fieldFocused = 0;
 let fieldScrolled = 0;
