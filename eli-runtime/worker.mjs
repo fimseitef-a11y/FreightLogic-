@@ -3,6 +3,7 @@ import { createPrivateApi } from './api.mjs';
 import { consumeDeadLetterBatch } from './queue.mjs';
 import { journalFailure } from './storage.mjs';
 import { RUN_INGESTION_MESSAGE_TYPE, processEvidenceBatch, resolveMarketInDb, triggeredIngestion } from './pipeline.mjs';
+import { LOADONE_CRON, runLoadOneCollection } from './adapters/loadone-live.mjs';
 
 function createD1Repository(db) {
   if (!db || typeof db.prepare !== 'function') return null;
@@ -94,8 +95,8 @@ export default class EliRuntime extends WorkerEntrypoint {
 
   // Queue consumer for the primary queue and its DLQ (wrangler.jsonc).
   // Design amendment 1: nothing is acknowledged unless it is durably handled.
-  //  - Primary: the ingestion pipeline is not wired yet, so every message is
-  //    retried (and reaches the DLQ after max_retries) instead of being lost.
+  //  - Primary: control messages invoke the audited ingestion trigger, while
+  //    evidence messages continue through the idempotent evidence pipeline.
   //  - DLQ: terminal failures are journaled to D1 before ack; while ELI is
   //    dark or has no D1, they are retried rather than dropped.
   async queue(batch) {
@@ -144,12 +145,23 @@ export default class EliRuntime extends WorkerEntrypoint {
     }
   }
 
-  // Ingestion producer (cron in wrangler.jsonc). Inert unless ELI is enabled
-  // with D1, its queue and an operator-supplied read-only AIRTABLE_TOKEN.
+  // Scheduled producers are source-specific. Load One gets its own 20-minute
+  // trigger and remains authorization-gated/fail-closed. Every other cron
+  // (including the temporary Run-Now cron) retains the newer audited
+  // triggeredIngestion() path.
   async scheduled(controller, env, ctx) {
     const runtimeEnv = env ?? this.env;
-    const work = triggeredIngestion(runtimeEnv, `cron:${controller?.cron ?? 'unknown'}`).then((result) => {
-      console.log(JSON.stringify({ eliIngestion: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
+    const scheduledIso = Number.isFinite(controller?.scheduledTime)
+      ? new Date(controller.scheduledTime).toISOString()
+      : new Date().toISOString();
+    const isLoadOneCron = controller?.cron === LOADONE_CRON;
+
+    const work = (isLoadOneCron
+      ? runLoadOneCollection(runtimeEnv, { now: () => scheduledIso })
+      : triggeredIngestion(runtimeEnv, `cron:${controller?.cron ?? 'unknown'}`)
+    ).then((result) => {
+      const key = isLoadOneCron ? 'loadOneCollection' : 'eliIngestion';
+      console.log(JSON.stringify({ [key]: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
       return result;
     });
     if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(work);
