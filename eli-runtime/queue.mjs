@@ -71,6 +71,11 @@ export async function consumePrimaryBatch(batch, deps = {}) {
         evidenceId: body.evidenceId ?? null,
         processedAt: now(),
       });
+
+      if (!(await hasReceipt(body.idempotencyKey))) {
+        throw new Error('idempotency receipt was not durably observable');
+      }
+
       message.ack();
     } catch {
       message.retry();
