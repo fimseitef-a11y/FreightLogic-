@@ -4,7 +4,7 @@ name: Run ELI Ingestion Now
 # its only trigger is its cron. This temporarily switches the Worker's cron to
 # every minute through the Cloudflare schedules API, waits for a run, then
 # restores the exact previous schedule and verifies it. Ingestion is
-# idempotent, so an extra run is harmless. AIAG-TASK-0038; operator-requested
+# idempotent and rate-limited to one real run per 30 minutes. AIAG-TASK-0038; operator-requested
 # 2026-10-01 01:06 ET. Results are read from D1 separately.
 
 on:
@@ -49,6 +49,29 @@ jobs:
             exit 1
           fi
 
+      - name: Preflight - ELI enabled and Airtable token attached
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/settings" \
+            > /tmp/settings.json
+          node -e '
+            const s = JSON.parse(require("fs").readFileSync("/tmp/settings.json","utf8"));
+            if (!s.success) throw new Error("could not read ELI settings");
+            const b = s.result?.bindings ?? [];
+            const show = b.map((x) => x.name + ":" + x.type).sort().join(", ");
+            console.log("ELI bindings (names and types only):", show);
+            const fail = (m) => { console.log("::error::" + m); process.exit(1); };
+            const enabled = b.find((x) => x.name === "ELI_ENABLED");
+            if (!enabled || enabled.text !== "true") fail("ELI is not enabled; run Deploy ELI Runtime -> ENABLE first.");
+            const token = b.find((x) => x.name === "AIRTABLE_TOKEN");
+            if (!token) fail("AIRTABLE_TOKEN is not attached to " + process.env.ELI_WORKER + ". Add it in Cloudflare as type Secret (a Text variable is removed by the next deploy).");
+            if (token.type !== "secret_text") fail("AIRTABLE_TOKEN is attached as " + token.type + ", not as a Secret. Re-add it with type Secret.");
+            console.log("Preflight OK: ELI enabled; AIRTABLE_TOKEN attached as a secret.");
+          '
+
       - name: Save the current schedule
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -73,8 +96,11 @@ jobs:
           curl -fsS -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
             --data '[{"cron":"* * * * *"}]' \
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/schedules" >/dev/null
-          echo "Temporary every-minute schedule set; waiting for a run."
-          sleep 130
+          # Cloudflare documents up to ~15 minutes for a cron change to reach
+          # the network. ELI's producer runs Airtable at most once per 30
+          # minutes, so the extra minute-ticks cost no Airtable calls.
+          echo "Temporary every-minute schedule set; waiting up to 16 minutes for it to take effect."
+          sleep 960
 
       - name: Restore the saved schedule
         if: ${{ always() }}

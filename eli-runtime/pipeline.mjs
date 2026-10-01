@@ -148,13 +148,39 @@ export async function rematerializeLanes(db, laneKeys, { now, modelRunId, govern
   return materialized;
 }
 
+// Airtable plans cap monthly API calls; a run spends ~5. However the cron is
+// configured (including the on-demand every-minute trigger), at most one real
+// run happens per interval.
+export const MIN_RUN_INTERVAL_MS = 30 * 60 * 1000;
+
 export async function runIngestion(env, deps = {}) {
+  const now = (deps.now ?? (() => new Date().toISOString()))();
   const notReady = ingestionReadiness(env);
-  if (notReady) return { status: 'SKIPPED', reason: notReady };
+  if (notReady) {
+    // Record WHY a run did not happen whenever ELI is enabled with D1, so a
+    // missing token or binding is diagnosable without logs. A disabled ELI
+    // writes nothing.
+    if (notReady !== 'ELI_DISABLED' && notReady !== 'ELI_DB_UNAVAILABLE') {
+      try {
+        await env.ELI_DB.prepare(`INSERT INTO ingest_runs (run_id, started_at, finished_at, status, error)
+          VALUES (?, ?, ?, 'SKIPPED', ?)`).bind(`skip:${now}:${crypto.randomUUID()}`, now, now, notReady).run();
+      } catch {
+        // Diagnostics must never turn a skip into a crash.
+      }
+    }
+    return { status: 'SKIPPED', reason: notReady };
+  }
 
   const db = env.ELI_DB;
+  const minIntervalMs = deps.minIntervalMs ?? MIN_RUN_INTERVAL_MS;
+  if (minIntervalMs > 0) {
+    const recent = await db.prepare(`SELECT started_at FROM ingest_runs
+      WHERE status IN ('OK', 'RUNNING') ORDER BY started_at DESC LIMIT 1`).first();
+    const age = recent ? Date.parse(now) - Date.parse(recent.started_at) : Infinity;
+    if (Number.isFinite(age) && age >= 0 && age < minIntervalMs) return { status: 'SKIPPED', reason: 'RECENT_RUN' };
+  }
+
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const now = (deps.now ?? (() => new Date().toISOString()))();
   const runId = deps.runId ?? `run:${now}:${crypto.randomUUID()}`;
   const airtable = { token: env.AIRTABLE_TOKEN, baseId: env.AIRTABLE_BASE_ID, fetchImpl };
 
