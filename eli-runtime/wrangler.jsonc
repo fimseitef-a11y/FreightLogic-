@@ -10,5 +10,27 @@
   },
   "vars": {
     "ELI_ENABLED": "false"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "ELI_QUEUE",
+        "queue": "freightlogic-eli-runtime-v1"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "freightlogic-eli-runtime-v1",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "freightlogic-eli-runtime-v1-dlq"
+      },
+      {
+        "queue": "freightlogic-eli-runtime-v1-dlq",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5
+      }
+    ]
   }
 }
