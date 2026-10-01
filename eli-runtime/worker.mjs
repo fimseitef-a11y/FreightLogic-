@@ -2,7 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createPrivateApi } from './api.mjs';
 import { consumeDeadLetterBatch } from './queue.mjs';
 import { journalFailure } from './storage.mjs';
-import { processEvidenceBatch, resolveMarketInDb, runIngestion } from './pipeline.mjs';
+import { RUN_INGESTION_MESSAGE_TYPE, processEvidenceBatch, resolveMarketInDb, triggeredIngestion } from './pipeline.mjs';
 
 function createD1Repository(db) {
   if (!db || typeof db.prepare !== 'function') return null;
@@ -109,10 +109,23 @@ export default class EliRuntime extends WorkerEntrypoint {
     }
 
     if (!isDeadLetter) {
-      try {
-        await processEvidenceBatch(batch, this.env);
-      } catch {
-        batch.retryAll();
+      const messages = Array.isArray(batch?.messages) ? batch.messages : [];
+      const control = messages.filter((m) => m?.body?.type === RUN_INGESTION_MESSAGE_TYPE);
+      const evidence = messages.filter((m) => m?.body?.type !== RUN_INGESTION_MESSAGE_TYPE);
+      for (const message of control) {
+        try {
+          await triggeredIngestion(this.env, 'queue');
+          message.ack();
+        } catch {
+          message.retry();
+        }
+      }
+      if (evidence.length > 0) {
+        try {
+          await processEvidenceBatch({ ...batch, messages: evidence }, this.env);
+        } catch {
+          for (const message of evidence) message.retry();
+        }
       }
       return;
     }
@@ -135,7 +148,7 @@ export default class EliRuntime extends WorkerEntrypoint {
   // with D1, its queue and an operator-supplied read-only AIRTABLE_TOKEN.
   async scheduled(controller, env, ctx) {
     const runtimeEnv = env ?? this.env;
-    const work = runIngestion(runtimeEnv).then((result) => {
+    const work = triggeredIngestion(runtimeEnv, `cron:${controller?.cron ?? 'unknown'}`).then((result) => {
       console.log(JSON.stringify({ eliIngestion: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
       return result;
     });

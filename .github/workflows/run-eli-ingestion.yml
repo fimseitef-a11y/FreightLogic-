@@ -1,9 +1,9 @@
 name: Run ELI Ingestion Now
 
 # Runs ELI's ingestion once, on demand. ELI has no public route by design, so
-# its only trigger is its cron. This temporarily switches the Worker's cron to
-# every minute through the Cloudflare schedules API, waits for a run, then
-# restores the exact previous schedule and verifies it. Ingestion is
+# this publishes one "eli_run_ingestion" message to ELI's own queue through
+# the Cloudflare Queues HTTP API (seconds, unlike a cron change, which can take
+# up to ~15 minutes to propagate). ELI's schedule is not touched. Ingestion is
 # idempotent and rate-limited to one real run per 30 minutes. AIAG-TASK-0038; operator-requested
 # 2026-10-01 01:06 ET. Results are read from D1 separately.
 
@@ -72,56 +72,24 @@ jobs:
             console.log("Preflight OK: ELI enabled; AIRTABLE_TOKEN attached as a secret.");
           '
 
-      - name: Save the current schedule
+      - name: Send one "run ingestion" message to ELI's queue
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/schedules" \
-            > /tmp/schedules.json
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API?per_page=100" > /tmp/queues.json
+          QUEUE_ID=$(node -e '
+            const q = JSON.parse(require("fs").readFileSync("/tmp/queues.json","utf8"));
+            const hit = (q.result ?? []).find((x) => x.queue_name === process.env.ELI_WORKER);
+            if (!hit) { console.error("ELI queue not found"); process.exit(1); }
+            process.stdout.write(hit.queue_id);
+          ')
+          curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data "{\"body\":{\"type\":\"eli_run_ingestion\",\"requestedBy\":\"run-eli-ingestion\",\"runId\":\"$GITHUB_RUN_ID\"}}" \
+            "$API/$QUEUE_ID/messages" > /tmp/push.json
           node -e '
-            const s = JSON.parse(require("fs").readFileSync("/tmp/schedules.json","utf8"));
-            const crons = (s.result?.schedules ?? []).map((x) => ({ cron: x.cron }));
-            if (!s.success || crons.length === 0) throw new Error("could not read the existing ELI schedule");
-            require("fs").writeFileSync("/tmp/restore.json", JSON.stringify(crons));
-            console.log("saved schedule:", JSON.stringify(crons));
-          '
-
-      - name: Fire once (temporary every-minute schedule)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl -fsS -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
-            --data '[{"cron":"* * * * *"}]' \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/schedules" >/dev/null
-          # Cloudflare documents up to ~15 minutes for a cron change to reach
-          # the network. ELI's producer runs Airtable at most once per 30
-          # minutes, so the extra minute-ticks cost no Airtable calls.
-          echo "Temporary every-minute schedule set; waiting up to 16 minutes for it to take effect."
-          sleep 960
-
-      - name: Restore the saved schedule
-        if: ${{ always() }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          [ -s /tmp/restore.json ] || { echo "Nothing to restore (schedule was never changed)."; exit 0; }
-          curl -fsS -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
-            --data @/tmp/restore.json \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/schedules" >/dev/null
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/schedules" \
-            > /tmp/after.json
-          node -e '
-            const want = JSON.parse(require("fs").readFileSync("/tmp/restore.json","utf8")).map((x) => x.cron).sort();
-            const s = JSON.parse(require("fs").readFileSync("/tmp/after.json","utf8"));
-            const got = (s.result?.schedules ?? []).map((x) => x.cron).sort();
-            if (JSON.stringify(want) !== JSON.stringify(got)) {
-              console.log("::error::ELI schedule NOT restored: expected " + JSON.stringify(want) + " got " + JSON.stringify(got));
-              process.exit(1);
-            }
-            console.log("ELI schedule restored:", JSON.stringify(got));
+            const r = JSON.parse(require("fs").readFileSync("/tmp/push.json","utf8"));
+            if (!r.success) { console.log("::error::queue push failed: " + JSON.stringify(r.errors ?? [])); process.exit(1); }
+            console.log("Run request queued. ELI records TRIGGERED then the run outcome in D1 (ingest_runs).");
           '

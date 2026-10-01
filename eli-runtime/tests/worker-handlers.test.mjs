@@ -98,3 +98,19 @@ test('W06 enabled ELI with D1 journals DLQ failures durably before acknowledging
   assert.ok(writes.some((w) => /failure/i.test(w.sql)), 'DLQ failure was not journaled');
   assert.equal(state.acked, 1);
 });
+
+test('W07 a queue "run ingestion" message triggers ingestion and is acknowledged', async () => {
+  const Worker = await loadWorker();
+  const statements = [];
+  const db = {
+    prepare(sql) {
+      const stmt = { bind: () => stmt, run: async () => { statements.push(sql); return { success: true }; }, first: async () => null, all: async () => ({ results: [] }) };
+      return stmt;
+    },
+  };
+  const { batch, state } = fakeBatch('freightlogic-eli-runtime-v1', [{ type: 'eli_run_ingestion' }]);
+  await new Worker({}, { ELI_ENABLED: 'true', ELI_DB: db }).queue(batch);
+  assert.equal(state.acked, 1);
+  assert.equal(state.retried + state.retryAll, 0);
+  assert.ok(statements.some((sql) => /INSERT INTO ingest_runs/.test(sql)), 'trigger was recorded');
+});
