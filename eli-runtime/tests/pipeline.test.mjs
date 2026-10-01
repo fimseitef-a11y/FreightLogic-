@@ -158,6 +158,21 @@ test('P01 aliases: Verified only, ZIP stripped, exact match only, conflicting Ve
   assert.equal(normalizeMarketText('Lebanon, TN 37087-1234'), 'lebanon, tn');
 });
 
+test('P16 "City ST" without a comma resolves like "City, ST"; anything else is left as written', () => {
+  const map = aliasMapFrom(buildAliasRows([
+    alias('a', 'Milwaukee, WI', 'MKT-MKE'),
+    alias('b', 'Oklahoma City OK', 'MKT-OKC'),
+  ], NOW));
+  assert.equal(resolveMarket('Milwaukee WI', map), 'MKT-MKE');
+  assert.equal(resolveMarket('MILWAUKEE  WI 53201', map), 'MKT-MKE');
+  assert.equal(resolveMarket('Oklahoma City, OK', map), 'MKT-OKC', 'an alias written without the comma matches too');
+  assert.equal(normalizeMarketText('Unknown origin'), 'unknown origin', 'a placeholder is not turned into a place');
+  assert.equal(normalizeMarketText('Bel Air'), 'bel air');
+  assert.equal(normalizeMarketText('Fort Ox'), 'fort ox', 'only real state/province codes get a comma');
+  assert.equal(normalizeMarketText('Toronto ON'), 'toronto, on');
+  assert.equal(resolveMarket('Milwaukee', map), null, 'a city with no state is not guessed');
+});
+
 test('P02 governance keeps only governed stages in the MKT geography', () => {
   const rows = buildGovernanceRows([
     lane('l1', 'MKT-ATL', 'MKT-DTW'),
