@@ -140,8 +140,11 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
     let reason = route.reason;
 
     if (route.tier === "small" || route.tier === "strong") {
-      const eliContext = await readEliLaneContext(this.env, envelope);
-      const projection = augmentModelProjection(buildModelProjection(envelope), eliContext);
+      // Privacy classification/projection first; ELI only ever sees the
+      // projected scalar market identifiers, never the raw envelope.
+      const baseProjection = buildModelProjection(envelope);
+      const eliContext = await readEliLaneContext(this.env, baseProjection);
+      const projection = augmentModelProjection(baseProjection, eliContext);
       try {
         const result = await runExplanationModel(this.env, route.tier, projection);
         assertSafeRecommendation(result.recommendation, envelope.canonicalSnapshot);
