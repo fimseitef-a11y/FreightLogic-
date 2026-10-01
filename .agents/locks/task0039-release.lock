@@ -1,0 +1,6 @@
+owner: gpt
+token: d1d80a2c-5ec8-43a8-a054-6e17e9ecaa09
+started_utc: 2026-10-01T15:42:00Z
+expected_release_utc: 2026-10-01T17:42:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: AIAG-TASK-0039 governed v24.0.57 presentation release integration for PR #455
