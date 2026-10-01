@@ -4,8 +4,12 @@ name: Deploy ELI Runtime
 #
 #   DEPLOY_DARK - deploys with the committed default ELI_ENABLED=false.
 #                 Operator-approved 2026-10-01 00:17 ET.
-#   ENABLE      - deploys with ELI_ENABLED=true and the ELI_DB D1 binding,
-#                 after applying D1 migrations. Operator-approved
+#   ENABLE      - deploys with ELI_ENABLED=true and the ELI_DB D1 binding.
+#                 D1 migrations are applied out of band before ENABLE: the
+#                 repository's CLOUDFLARE_API_TOKEN has no D1 permission
+#                 (run 36817322490 refused at `d1 migrations apply`), and
+#                 eli-runtime/migrations/*.sql were applied 2026-10-01 through
+#                 the operator's Cloudflare connector. Operator-approved
 #                 2026-10-01 00:40 ET. A later DEPLOY_DARK run switches ELI
 #                 back off.
 #
@@ -106,12 +110,6 @@ jobs:
               npx --yes wrangler@4.143.0 queues create "$q"
             fi
           done
-
-      - name: Apply D1 migrations (ENABLE only; idempotent)
-        if: ${{ github.event.inputs.confirm == 'ENABLE' }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4.143.0 d1 migrations apply ELI_DB --remote -c eli-runtime/wrangler.jsonc
 
       - name: Deploy ELI
         env:
