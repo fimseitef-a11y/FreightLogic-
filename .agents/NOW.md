@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — TASK-0036 audit code merged; main is 57258ddf after Dependabot #438. Only TASK-0037 / issue #437 remains blocked on repository-admin Settings access; no production Agent cutover. | 2026-09-30T00:52:00Z |
+| gpt | AIAG-TASK-0039 — FreightLogic Precision aesthetic/UI polish. CSS presentation first; no new functionality, economics, ELI, Agent activation, credentials, or PC work. | 2026-10-01T15:29:26Z |
 
 ---
 
