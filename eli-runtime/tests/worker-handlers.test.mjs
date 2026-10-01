@@ -17,7 +17,7 @@ async function loadWorker() {
   const source = await readFile(new URL('worker.mjs', base), 'utf8');
   const rewritten = source
     .replace(/from\s+['"]cloudflare:workers['"]/g, `from ${JSON.stringify(STUB)}`)
-    .replace(/from\s+['"]\.\/([\w.-]+\.mjs)['"]/g, (_, file) => `from ${JSON.stringify(new URL(file, base).href)}`);
+    .replace(/from\s+['"]\.\/([\w./-]+\.mjs)['"]/g, (_, file) => `from ${JSON.stringify(new URL(file, base).href)}`);
   return (await import('data:text/javascript;base64,' + Buffer.from(rewritten).toString('base64'))).default;
 }
 
@@ -97,4 +97,26 @@ test('W06 enabled ELI with D1 journals DLQ failures durably before acknowledging
   await new Worker({}, { ELI_ENABLED: 'true', ELI_DB: db }).queue(batch);
   assert.ok(writes.some((w) => /failure/i.test(w.sql)), 'DLQ failure was not journaled');
   assert.equal(state.acked, 1);
+});
+
+test('W07 Load One 20-minute cron dispatches to the authorization-gated source lane', async () => {
+  const Worker = await loadWorker();
+  const worker = new Worker({}, { ELI_ENABLED: 'true', LOADONE_COLLECTION_AUTHORIZED: 'false' });
+  const result = await worker.scheduled(
+    { cron: '*/20 * * * *', scheduledTime: Date.parse('2026-10-01T11:40:00Z') },
+    worker.env,
+    {},
+  );
+  assert.deepEqual(result, { status: 'SKIPPED', reason: 'LOADONE_UNAUTHORIZED' });
+});
+
+test('W08 temporary Run-Now cron still routes to ordinary Airtable ingestion', async () => {
+  const Worker = await loadWorker();
+  const worker = new Worker({}, { ELI_ENABLED: 'false' });
+  const result = await worker.scheduled(
+    { cron: '* * * * *', scheduledTime: Date.parse('2026-10-01T11:40:00Z') },
+    worker.env,
+    {},
+  );
+  assert.deepEqual(result, { status: 'SKIPPED', reason: 'ELI_DISABLED' });
 });
