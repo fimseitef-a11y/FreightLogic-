@@ -97,7 +97,8 @@ export async function recordReceipt(db, receipt) {
     message_type,
     evidence_id,
     processed_at
-  ) VALUES (?, ?, ?, ?)`);
+  ) VALUES (?, ?, ?, ?)
+  ON CONFLICT(idempotency_key) DO NOTHING`);
 
   return statement.bind(
     receipt.idempotencyKey,
