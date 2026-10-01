@@ -9,7 +9,6 @@ import {
   projectLaneReadModel,
   reconcilePromotion,
 } from '../api.mjs';
-import { handlePrivateRequest } from '../worker.mjs';
 
 test('lane read-model projection exposes deterministic intelligence but no economics/raw evidence', () => {
   const projected = projectLaneReadModel({
@@ -30,6 +29,7 @@ test('lane read-model projection exposes deterministic intelligence but no econo
     governance_fingerprint: 'gov-1',
     updated_at: '2026-09-30T20:01:00Z',
     rate: 850,
+    brokerContact: 'private@example.com',
     raw_evidence_json: '{"private":true}',
   });
 
@@ -50,34 +50,29 @@ test('lane read-model projection exposes deterministic intelligence but no econo
     governanceFingerprint: 'gov-1',
     updatedAt: '2026-09-30T20:01:00Z',
   });
-  assert.equal(JSON.stringify(projected).includes('850'), false);
-  assert.equal(JSON.stringify(projected).includes('private'), false);
+  assert.equal(Object.hasOwn(projected, 'rate'), false);
+  assert.equal(Object.hasOwn(projected, 'brokerContact'), false);
+  assert.equal(Object.hasOwn(projected, 'rawEvidence'), false);
 });
 
-test('promotion reconciliation fails closed on fingerprint mismatch or absent approval', () => {
+test('promotion reconciliation fails closed on shadow mode, mismatch, or absent approval', () => {
   assert.deepEqual(
-    reconcilePromotion({
-      runtimeGovernanceFingerprint: 'runtime-gov',
-      governance: { fingerprint: 'airtable-gov', approved: true, stage: 'Production' },
-    }),
+    reconcilePromotion({ runMode: 'SHADOW', runtimeGovernanceFingerprint: 'gov-1', governance: { fingerprint: 'gov-1', approved: true, stage: 'Production' } }),
+    { eligible: false, reason: 'SHADOW_RUN' },
+  );
+  assert.deepEqual(
+    reconcilePromotion({ runMode: 'ACTIVE', runtimeGovernanceFingerprint: 'runtime-gov', governance: { fingerprint: 'airtable-gov', approved: true, stage: 'Production' } }),
     { eligible: false, reason: 'GOVERNANCE_FINGERPRINT_MISMATCH' },
   );
-
   assert.deepEqual(
-    reconcilePromotion({
-      runtimeGovernanceFingerprint: 'gov-1',
-      governance: { fingerprint: 'gov-1', approved: false, stage: 'Production' },
-    }),
+    reconcilePromotion({ runMode: 'ACTIVE', runtimeGovernanceFingerprint: 'gov-1', governance: { fingerprint: 'gov-1', approved: false, stage: 'Production' } }),
     { eligible: false, reason: 'GOVERNANCE_NOT_APPROVED' },
   );
 });
 
 test('promotion eligibility requires exact approved Airtable governance match and performs no promotion itself', () => {
   assert.deepEqual(
-    reconcilePromotion({
-      runtimeGovernanceFingerprint: 'gov-1',
-      governance: { fingerprint: 'gov-1', approved: true, stage: 'Production' },
-    }),
+    reconcilePromotion({ runMode: 'ACTIVE', runtimeGovernanceFingerprint: 'gov-1', governance: { fingerprint: 'gov-1', approved: true, stage: 'Production' } }),
     { eligible: true, reason: null, approvedStage: 'Production' },
   );
 });
@@ -102,17 +97,26 @@ test('private API returns UNKNOWN for an unmaterialized lane and safe projection
           model_run_id: 'run-1',
           governance_fingerprint: 'gov-1',
           updated_at: '2026-09-30T20:01:00Z',
+          rate: 850,
         };
       }
       return null;
     },
     async getMarketRows() { return []; },
-    async getHealthSnapshot() { return { schemaVersion: '1', serviceVersion: 'eli-v1', sourceHealthCounts: { healthy: 3 } }; },
+    async getHealthSnapshot() {
+      return {
+        schemaVersion: '1',
+        serviceVersion: 'eli-v1',
+        sourceHealthCounts: { healthy: 3 },
+        credential: 'must-not-leak',
+      };
+    },
   });
 
   const known = await api.getLaneIntelligence({ originMarket: 'Detroit / Toledo', destinationMarket: 'Atlanta' });
   assert.equal(known.status, 'KNOWN');
   assert.equal(known.intelligence.structuralScore, 0.62);
+  assert.equal(Object.hasOwn(known.intelligence, 'rate'), false);
 
   const missing = await api.getLaneIntelligence({ originMarket: 'Detroit / Toledo', destinationMarket: 'Nowhere' });
   assert.deepEqual(missing, {
@@ -129,33 +133,19 @@ test('private API returns UNKNOWN for an unmaterialized lane and safe projection
   });
 });
 
-test('private request handler rejects unsupported paths and serves service-binding lane requests', async () => {
-  const api = {
-    async getLaneIntelligence(input) { return { status: 'KNOWN', input }; },
-    async getMarketIntelligence(input) { return { status: 'KNOWN', input }; },
-    async health() { return { status: 'ok' }; },
-  };
-
-  const unknown = await handlePrivateRequest(new Request('https://eli.invalid/public'), {}, api);
-  assert.equal(unknown.status, 404);
-
-  const lane = await handlePrivateRequest(new Request('https://eli.invalid/internal/lane', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ originMarket: 'Detroit / Toledo', destinationMarket: 'Atlanta' }),
-  }), {}, api);
-  assert.equal(lane.status, 200);
-  assert.deepEqual(await lane.json(), {
-    status: 'KNOWN',
-    input: { originMarket: 'Detroit / Toledo', destinationMarket: 'Atlanta' },
-  });
-});
-
-test('Wrangler config is dark/private with no public route', async () => {
+test('private Worker exposes typed RPC methods only; config has no public route and remains disabled', async () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const config = await readFile(resolve(here, '../wrangler.jsonc'), 'utf8');
+  const worker = await readFile(resolve(here, '../worker.mjs'), 'utf8');
+  const config = JSON.parse(await readFile(resolve(here, '../wrangler.jsonc'), 'utf8'));
 
-  assert.match(config, /"workers_dev"\s*:\s*false/);
-  assert.match(config, /"preview_urls"\s*:\s*false/);
-  assert.doesNotMatch(config, /"routes?"\s*:/);
+  assert.match(worker, /extends\s+WorkerEntrypoint/);
+  assert.doesNotMatch(worker, /\bfetch\s*\(/);
+  assert.match(worker, /getLaneIntelligence\s*\(/);
+  assert.match(worker, /getMarketIntelligence\s*\(/);
+  assert.match(worker, /health\s*\(/);
+  assert.equal(config.workers_dev, false);
+  assert.equal(config.preview_urls, false);
+  assert.equal(config.vars.ELI_ENABLED, 'false');
+  assert.equal(Object.hasOwn(config, 'routes'), false);
+  assert.equal(Object.hasOwn(config, 'route'), false);
 });
