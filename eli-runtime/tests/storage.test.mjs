@@ -96,6 +96,11 @@ test('recordReceipt inserts an idempotency receipt instead of mutating evidence'
   assert.equal(db.calls.length, 1);
   assert.match(db.calls[0].sql, /^INSERT\s+INTO\s+ingest_receipts/i);
   assert.doesNotMatch(db.calls[0].sql, /\bUPDATE\b/i);
+  assert.match(
+    db.calls[0].sql,
+    /ON\s+CONFLICT\s*\(\s*idempotency_key\s*\)\s+DO\s+NOTHING/i,
+    'duplicate delivery must replay safely instead of failing the unique key',
+  );
 });
 
 test('initial migration creates runtime tables and blocks raw evidence update/delete', async () => {
