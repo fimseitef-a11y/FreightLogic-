@@ -426,6 +426,35 @@ export async function runEliIntegrationTests() {
     assert.match(system.content, /not KNOWN/);
   });
 
+  await test("E19 Airtable's Validated Pilot stage survives the Agent's stage allowlist", async () => {
+    const value = knownEli().intelligenceValue();
+    value.stage = "Validated Pilot";
+    const env = { ELI: { async getLaneIntelligence() { return { status: "KNOWN", intelligence: value }; } } };
+    const result = await readEliLaneContext(env, { facts: { originMarket: "Chicago", destinationMarket: "Detroit" } });
+    assert.equal(result.intelligence.stage, "Validated Pilot");
+  });
+
+  await test("E20 a declared city-to-market translation is accepted; an answer for any other lane is refused", async () => {
+    const value = knownEli().intelligenceValue();
+    value.originMarket = "MKT-ATL";
+    value.destinationMarket = "MKT-DTW";
+    const ask = { facts: { originMarket: "Atlanta, GA", destinationMarket: "Detroit, MI" } };
+    const reply = (resolved, intelligence) => ({ ELI: { async getLaneIntelligence() { return { status: "KNOWN", resolved, intelligence }; } } });
+
+    const ok = await readEliLaneContext(reply({ originMarket: "MKT-ATL", destinationMarket: "MKT-DTW" }, value), ask);
+    assert.equal(ok.status, "KNOWN");
+    assert.equal(ok.intelligence.originMarket, "MKT-ATL");
+
+    const wrong = await readEliLaneContext(reply({ originMarket: "MKT-ATL", destinationMarket: "MKT-BNA" }, value), ask);
+    assert.equal(wrong.reason, "ELI_LANE_MISMATCH");
+
+    const undeclared = await readEliLaneContext(reply(undefined, value), ask);
+    assert.equal(undeclared.reason, "ELI_LANE_MISMATCH", "a translation ELI did not declare is not trusted");
+
+    const malformed = await readEliLaneContext(reply({ originMarket: { x: 1 } }, value), ask);
+    assert.equal(malformed.reason, "ELI_INVALID_RESPONSE");
+  });
+
   console.log(`\nELI INTEGRATION TOTAL: ${passed} passed, ${failed} failed`);
   if (failed > 0) throw new Error(`${failed} Agent/ELI integration test(s) failed`);
 }

@@ -31,7 +31,7 @@ const FRESHNESS_STATES = new Set(["FRESH", "AGING", "STALE", "UNAVAILABLE"]);
 // Governed lane stages. Airtable remains the stage/promotion authority
 // (design amendment 7); anything outside this vocabulary is dropped rather
 // than passed to the model as free text.
-const LANE_STAGES = new Set(["Structural Candidate", "Pilot Candidate", "Stable Candidate", "Production"]);
+const LANE_STAGES = new Set(["Structural Candidate", "Pilot Candidate", "Validated Pilot", "Stable Candidate", "Production"]);
 
 function canonicalMarket(value) {
   if (typeof value !== "string") return null;
@@ -150,7 +150,17 @@ export async function readEliLaneContext(env, projection) {
 
   const intelligence = projectLaneIntelligence(result.intelligence);
   if (!intelligence) return unavailable("UNAVAILABLE", "ELI_INVALID_RESPONSE");
-  if (intelligence.originMarket !== originMarket || intelligence.destinationMarket !== destinationMarket) {
+  // ELI may translate a FreightLogic city name into its own market id and
+  // must then declare that translation; the lane it answers for has to match
+  // exactly what it declared (or, with no translation, what was asked).
+  let expectedOrigin = originMarket;
+  let expectedDestination = destinationMarket;
+  if (result.resolved !== undefined) {
+    expectedOrigin = canonicalMarket(result.resolved?.originMarket);
+    expectedDestination = canonicalMarket(result.resolved?.destinationMarket);
+    if (!expectedOrigin || !expectedDestination) return unavailable("UNAVAILABLE", "ELI_INVALID_RESPONSE");
+  }
+  if (intelligence.originMarket !== expectedOrigin || intelligence.destinationMarket !== expectedDestination) {
     return unavailable("UNAVAILABLE", "ELI_LANE_MISMATCH");
   }
 
