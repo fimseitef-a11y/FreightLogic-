@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 
-import { runIngestion, processEvidenceBatch, resolveMarketInDb, ingestionReadiness } from '../pipeline.mjs';
+import { runIngestion, processEvidenceBatch, resolveMarketInDb, ingestionReadiness, triggeredIngestion } from '../pipeline.mjs';
 import { buildAliasRows, buildGovernanceRows, resolveMarket, aliasMapFrom, normalizeMarketText } from '../ingest.mjs';
 import { fetchAirtableRecords } from '../airtable.mjs';
 import { createPrivateApi } from '../api.mjs';
@@ -360,4 +360,30 @@ test('P12 a message the consumer cannot store is retried, never acknowledged', a
   await processEvidenceBatch(batch, e.value, { now: () => NOW });
   assert.equal(state.acked, 0);
   assert.equal(state.retried, 1);
+});
+
+test('P14 every trigger leaves a TRIGGERED row first, then the run outcome', async () => {
+  const e = await env();
+  const result = await triggeredIngestion({ ...e.value, AIRTABLE_TOKEN: '' }, 'queue', { now: () => NOW });
+  assert.deepEqual(result, { status: 'SKIPPED', reason: 'AIRTABLE_TOKEN_MISSING' });
+  const rows = await e.db.prepare('SELECT status, error FROM ingest_runs ORDER BY status').all();
+  assert.deepEqual(rows.results.map((r) => ({ ...r })), [
+    { status: 'SKIPPED', error: 'AIRTABLE_TOKEN_MISSING' },
+    { status: 'TRIGGERED', error: 'queue' },
+  ]);
+});
+
+test('P15 an unexpected exception is recorded as CRASHED; a dark ELI writes nothing', async () => {
+  const e = await env();
+  const crashed = await triggeredIngestion(e.value, 'cron:* * * * *', {
+    now: () => NOW,
+    run: async () => { throw new Error('boom'); },
+  });
+  assert.equal(crashed.status, 'CRASHED');
+  const rows = await e.db.prepare(`SELECT status, error FROM ingest_runs WHERE status = 'CRASHED'`).all();
+  assert.deepEqual(rows.results.map((r) => ({ ...r })), [{ status: 'CRASHED', error: 'cron:* * * * *: boom' }]);
+
+  const dark = await env();
+  await triggeredIngestion({ ...dark.value, ELI_ENABLED: 'false' }, 'queue', { now: () => NOW });
+  assert.equal((await dark.db.prepare('SELECT COUNT(*) AS n FROM ingest_runs').first()).n, 0);
 });
