@@ -2531,3 +2531,11 @@ body .bottom .nav a.nav-eval-center .nl { color: var(--accent-text); font-size: 
   body .bottom .nav a.active:not(.nav-eval-center) .ni { background: Canvas; color: Highlight; outline: 2px solid Highlight; outline-offset: -2px; }
 }
 
+
+/* Precision depth must win over the runtime Today command-center no-shadow rule. */
+body #view-home.today-command-v2 #homeKPICard {
+  box-shadow: 0 8px 26px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.025) !important;
+}
+html[data-theme="light"] body #view-home.today-command-v2 #homeKPICard {
+  box-shadow: 0 8px 24px rgba(31,43,50,.085) !important;
+}
