@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle on runtime — v24.0.34 / Worker v24 merged (PR #333 `8f4585e`) and OBSERVED live; only the invite/claim confirming re-run (00:03Z) and the observation docs PR remain. `app-js` lock released. | 2026-09-23T23:20Z |
-| gpt | — idle — AIAG-TASK-0033 implementation is in PR #431; awaiting CI/review evidence. | 2026-09-29T01:13Z |
+| gpt | Load One public-history/source registration + authorization-gated 20-minute ELI refresh lane (`gpt/loadone-eli-source`). | 2026-10-01 |
 
 ---
 
