@@ -1,0 +1,6 @@
+owner: gpt
+token: 7f4c7b2a-65b0-4d0a-90f7-7bd2c6ad8711
+started_utc: 2026-10-01T02:23:09Z
+expected_release_utc: 2026-10-01T04:30:00Z
+paths: .agents/LANES.md
+task: AIAG-TASK-0038 add authorized GPT ownership row for eli-runtime subtree
