@@ -1,0 +1,113 @@
+name: Deploy ELI Runtime (dark)
+
+# Deploys the private ELI Worker (freightlogic-eli-runtime-v1) with
+# ELI_ENABLED=false so the Agent's ELI service binding has a target.
+# AIAG-TASK-0038. Operator-approved 2026-10-01 00:17 ET.
+#
+# Must run BEFORE the Agent DARK_CUTOVER: agent-runtime/wrangler.jsonc binds
+# ELI -> freightlogic-eli-runtime-v1 and a real Agent deploy cannot resolve
+# that binding until this Worker exists.
+#
+# Never enables ELI, never adds a route, never creates or binds D1. Enabling
+# ELI (D1 provisioning + ELI_ENABLED=true) is a separate operator gate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Select DEPLOY_DARK to deploy the private ELI Worker disabled'
+        required: true
+        type: choice
+        default: CANCEL
+        options:
+          - CANCEL
+          - DEPLOY_DARK
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eli-runtime-production
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
+  ELI_WORKER: freightlogic-eli-runtime-v1
+
+jobs:
+  deploy-dark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless explicitly confirmed on main
+        if: ${{ github.event.inputs.confirm != 'DEPLOY_DARK' || github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Select DEPLOY_DARK and run from main. Nothing was deployed."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Fail early if the token is missing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set."
+            exit 1
+          fi
+
+      - name: ELI runtime tests
+        run: node --test eli-runtime/tests/*.test.mjs
+
+      - name: Refuse anything but a private, disabled target
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('eli-runtime/wrangler.jsonc', 'utf8'));
+          const fail = (m) => { throw new Error('refusing ELI deploy: ' + m); };
+          if (cfg.name !== process.env.ELI_WORKER) fail('unexpected Worker name ' + cfg.name);
+          if (cfg.vars?.ELI_ENABLED !== 'false') fail('ELI_ENABLED must be "false"');
+          if (cfg.workers_dev !== false || cfg.preview_urls !== false) fail('public dev/preview endpoints must stay disabled');
+          if ('routes' in cfg || 'route' in cfg) fail('no public route allowed');
+          if (Array.isArray(cfg.d1_databases) && cfg.d1_databases.length) fail('D1 binding belongs to the separate enablement gate');
+          console.log('ELI target is private and disabled.');
+          NODE
+
+      - name: Dry-run bundle
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc --dry-run
+
+      - name: Ensure declared queues exist (create only if missing)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          for q in freightlogic-eli-runtime-v1 freightlogic-eli-runtime-v1-dlq; do
+            if npx --yes wrangler@4.143.0 queues info "$q" >/dev/null 2>&1; then
+              echo "queue $q already exists"
+            else
+              npx --yes wrangler@4.143.0 queues create "$q"
+            fi
+          done
+
+      - name: Deploy ELI dark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc
+
+      - name: Verify deployment is registered
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.143.0 deployments list --name "$ELI_WORKER" --json > /tmp/eli-deployments.json
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("/tmp/eli-deployments.json","utf8"));
+            if (!Array.isArray(d) || d.length === 0) throw new Error("no ELI deployment registered");
+            console.log("ELI deployments:", d.length, "latest:", d[d.length - 1]?.id ?? d[0]?.id);
+          '
+          echo 'ELI DARK DEPLOY VERDICT: PASS - private Worker deployed with ELI_ENABLED=false, no route, no D1.'
