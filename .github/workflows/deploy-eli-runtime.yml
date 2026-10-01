@@ -97,7 +97,18 @@ jobs:
       - name: Deploy ELI dark
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc
+        run: |
+          set -uo pipefail
+          npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc 2>&1 | tee /tmp/eli-deploy.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            # Surface wrangler's real error as annotations, readable through
+            # the check-run API without downloading the log.
+            grep -iE 'error|✘|\[code: [0-9]+\]' /tmp/eli-deploy.log | head -8 | while IFS= read -r line; do
+              echo "::error title=ELI deploy::${line//$'\r'/}"
+            done
+            exit "$rc"
+          fi
 
       - name: Verify deployment is registered
         env:
