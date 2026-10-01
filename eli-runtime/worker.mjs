@@ -3,6 +3,7 @@ import { createPrivateApi } from './api.mjs';
 import { consumeDeadLetterBatch } from './queue.mjs';
 import { journalFailure } from './storage.mjs';
 import { processEvidenceBatch, resolveMarketInDb, runIngestion } from './pipeline.mjs';
+import { LOADONE_CRON, runLoadOneCollection } from './adapters/loadone-live.mjs';
 
 function createD1Repository(db) {
   if (!db || typeof db.prepare !== 'function') return null;
@@ -131,12 +132,24 @@ export default class EliRuntime extends WorkerEntrypoint {
     }
   }
 
-  // Ingestion producer (cron in wrangler.jsonc). Inert unless ELI is enabled
-  // with D1, its queue and an operator-supplied read-only AIRTABLE_TOKEN.
+  // Scheduled producers are source-specific. Existing Airtable ingestion keeps
+  // its independent cadence; Load One receives its own 20-minute trigger and
+  // remains authorization-gated/fail-closed in adapters/loadone-live.mjs.
+  // Any other cron value (including the temporary Run-Now `* * * * *`) retains
+  // the existing Airtable ingestion behavior.
   async scheduled(controller, env, ctx) {
     const runtimeEnv = env ?? this.env;
-    const work = runIngestion(runtimeEnv).then((result) => {
-      console.log(JSON.stringify({ eliIngestion: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
+    const scheduledIso = Number.isFinite(controller?.scheduledTime)
+      ? new Date(controller.scheduledTime).toISOString()
+      : new Date().toISOString();
+    const isLoadOneCron = controller?.cron === LOADONE_CRON;
+
+    const work = (isLoadOneCron
+      ? runLoadOneCollection(runtimeEnv, { now: () => scheduledIso })
+      : runIngestion(runtimeEnv)
+    ).then((result) => {
+      const key = isLoadOneCron ? 'loadOneCollection' : 'eliIngestion';
+      console.log(JSON.stringify({ [key]: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
       return result;
     });
     if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(work);
