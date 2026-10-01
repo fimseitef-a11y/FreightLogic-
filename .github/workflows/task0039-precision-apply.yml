@@ -18,246 +18,34 @@ jobs:
 
       - name: Apply Precision layer and governed release generation
         shell: bash
+        env:
+          PRECISION_CSS_B64: Ci8qIEZSRUlHSFRMT0dJQyBQUkVDSVNJT04g4oCUIDIwMjYtMTAtMDEKICAgRmluYWwgcHJlc2VudGF0aW9uIG5vcm1hbGl6YXRpb24gb25seS4gRnJlaWdodC9lY29ub21pYyBsb2dpYywgcm91dGluZywKICAgcGVyc2lzdGVuY2UgYW5kIGRhdGEgYXV0aG9yaXR5IHJlbWFpbiB1bmNoYW5nZWQuICovCmh0bWw6cm9vdCB7CiAgLS1iZzogIzA5MGMwZTsKICAtLXN1cmZhY2UtMDogIzBkMTExNDsKICAtLXN1cmZhY2UtMTogIzEyMTcxYjsKICAtLXN1cmZhY2UtMjogIzE4MjAyNzsKICAtLXN1cmZhY2UtMzogIzIwMmEzMjsKICAtLWJvcmRlcjogcmdiYSgyMjMsMjMyLDIzOCwuMTApOwogIC0tYm9yZGVyLXN1YnRsZTogcmdiYSgyMjMsMjMyLDIzOCwuMDY1KTsKICAtLWJvcmRlci1mb2N1czogcmdiYSgyNDIsMTczLDU5LC42OCk7CiAgLS10ZXh0OiAjZjNmNWY2OwogIC0tdGV4dC1zZWNvbmRhcnk6ICNhZWI4YmY7CiAgLS10ZXh0LXRlcnRpYXJ5OiAjODk5NjlmOwogIC0tYWNjZW50OiAjZjJhZDNiOwogIC0tYWNjZW50LWRhcms6ICNkODk0MjQ7CiAgLS1hY2NlbnQtdGV4dDogI2Y3YmM2MDsKICAtLWFjY2VudC1tdXRlZDogcmdiYSgyNDIsMTczLDU5LC4xMik7CiAgLS1hY2NlbnQtYm9yZGVyOiByZ2JhKDI0MiwxNzMsNTksLjM0KTsKICAtLWdvb2Q6ICM0M2NmODI7CiAgLS1iYWQ6ICNmZjZiNjU7CiAgLS13YXJuOiAjZjViZDU4OwogIC0tcjogMTZweDsKICAtLXItc206IDEycHg7CiAgLS1zaGFkb3c6IDAgN3B4IDIycHggcmdiYSgwLDAsMCwuMTgpOwogIC0tc2hhZG93LWxnOiAwIDE0cHggMzhweCByZ2JhKDAsMCwwLC4yNCk7CiAgY29sb3Itc2NoZW1lOiBkYXJrOwp9Cmh0bWxbZGF0YS10aGVtZT0ibGlnaHQiXSB7CiAgLS1iZzogI2YzZjVmNjsKICAtLXN1cmZhY2UtMDogI2Y3ZjlmYTsKICAtLXN1cmZhY2UtMTogI2ZmZmZmZjsKICAtLXN1cmZhY2UtMjogI2YxZjRmNTsKICAtLXN1cmZhY2UtMzogI2U4ZWRlZjsKICAtLWJvcmRlcjogcmdiYSgzNCw0OSw1OSwuMTQpOwogIC0tYm9yZGVyLXN1YnRsZTogcmdiYSgzNCw0OSw1OSwuMDg1KTsKICAtLWJvcmRlci1mb2N1czogcmdiYSgyMDEsMTM0LDI1LC41OCk7CiAgLS10ZXh0OiAjMTgyMjI5OwogIC0tdGV4dC1zZWNvbmRhcnk6ICM1MjYxNmI7CiAgLS10ZXh0LXRlcnRpYXJ5OiAjNzE4MDhhOwogIC0tYWNjZW50OiAjZDk5NjI4OwogIC0tYWNjZW50LWRhcms6ICNjOTg2MTk7CiAgLS1hY2NlbnQtdGV4dDogIzhhNTcwODsKICAtLWFjY2VudC1tdXRlZDogcmdiYSgyMDEsMTM0LDI1LC4xMSk7CiAgLS1hY2NlbnQtYm9yZGVyOiByZ2JhKDIwMSwxMzQsMjUsLjMwKTsKICAtLWdvb2Q6ICMxNjdhNGQ7CiAgLS1iYWQ6ICNiYzNmM2I7CiAgLS13YXJuOiAjOWE2ODE1OwogIC0tc2hhZG93OiAwIDdweCAyMHB4IHJnYmEoMzEsNDMsNTAsLjA3KTsKICAtLXNoYWRvdy1sZzogMCAxNHB4IDM0cHggcmdiYSgzMSw0Myw1MCwuMTEpOwogIGNvbG9yLXNjaGVtZTogbGlnaHQ7Cn0KaHRtbCBib2R5IHsKICBiYWNrZ3JvdW5kOiB2YXIoLS1iZyk7CiAgY29sb3I6IHZhcigtLXRleHQpOwogIGZvbnQtc2l6ZTogMTVweDsKICBsaW5lLWhlaWdodDogMS40ODsKfQpib2R5IC5hcHAgeyBtYXgtd2lkdGg6IDU2MHB4OyBwYWRkaW5nLWlubGluZTogMTRweDsgfQpib2R5IGhlYWRlciNtYWluSGVhZGVyIHsKICBiYWNrZ3JvdW5kOiByZ2JhKDEzLDE3LDIwLC45Nik7CiAgYm9yZGVyLWJvdHRvbTogMXB4IHNvbGlkIHZhcigtLWJvcmRlci1zdWJ0bGUpOwogIGJveC1zaGFkb3c6IDAgMXB4IDAgcmdiYSgyNTUsMjU1LDI1NSwuMDE1KTsKICBiYWNrZHJvcC1maWx0ZXI6IHNhdHVyYXRlKDEzMCUpIGJsdXIoMTRweCk7CiAgLXdlYmtpdC1iYWNrZHJvcC1maWx0ZXI6IHNhdHVyYXRlKDEzMCUpIGJsdXIoMTRweCk7Cn0KaHRtbFtkYXRhLXRoZW1lPSJsaWdodCJdIGJvZHkgaGVhZGVyI21haW5IZWFkZXIgeyBiYWNrZ3JvdW5kOiByZ2JhKDI1NSwyNTUsMjU1LC45NSk7IH0KYm9keSAjbWFpbkhlYWRlciAudGl0bGUgc3Ryb25nIHsgY29sb3I6IHZhcigtLXRleHQpOyBmb250LXNpemU6IDE4cHg7IGZvbnQtd2VpZ2h0OiA3NjA7IGxldHRlci1zcGFjaW5nOiAtLjAyZW07IH0KYm9keSAjbWFpbkhlYWRlciAudGl0bGUgc3BhbiB7IGNvbG9yOiB2YXIoLS10ZXh0LXRlcnRpYXJ5KTsgfQpib2R5IDppcyguY2FyZCwuaXRlbSwuaW50ZWwtcm93KSB7CiAgYm9yZGVyOiAxcHggc29saWQgdmFyKC0tYm9yZGVyLXN1YnRsZSk7CiAgYmFja2dyb3VuZDogdmFyKC0tc3VyZmFjZS0xKTsKICBib3gtc2hhZG93OiB2YXIoLS1zaGFkb3cpOwp9CmJvZHkgLmNhcmQgeyBib3JkZXItcmFkaXVzOiAxNnB4OyB9CmJvZHkgLml0ZW0sIGJvZHkgLmludGVsLXJvdyB7IGJvcmRlci1yYWRpdXM6IDE0cHg7IH0KYm9keSAjaG9tZUtQSUNhcmQsCmJvZHkgI3ZpZXctbW9uZXkgPiAuY2FyZDpmaXJzdC1jaGlsZCB7CiAgYmFja2dyb3VuZDogdmFyKC0tc3VyZmFjZS0xKTsKICBib3JkZXItY29sb3I6IHZhcigtLWFjY2VudC1ib3JkZXIpOwogIGJveC1zaGFkb3c6IDAgOHB4IDI2cHggcmdiYSgwLDAsMCwuMjIpLCBpbnNldCAwIDFweCAwIHJnYmEoMjU1LDI1NSwyNTUsLjAyNSk7Cn0KaHRtbFtkYXRhLXRoZW1lPSJsaWdodCJdIGJvZHkgI2hvbWVLUElDYXJkLApodG1sW2RhdGEtdGhlbWU9ImxpZ2h0Il0gYm9keSAjdmlldy1tb25leSA+IC5jYXJkOmZpcnN0LWNoaWxkIHsgYm94LXNoYWRvdzogMCA4cHggMjRweCByZ2JhKDMxLDQzLDUwLC4wODUpOyB9CmJvZHkgLmNhcmQgaDMgeyBjb2xvcjogdmFyKC0tdGV4dC1zZWNvbmRhcnkpOyBmb250LXNpemU6IDEycHg7IGZvbnQtd2VpZ2h0OiA3MjA7IGxldHRlci1zcGFjaW5nOiAuMDFlbTsgdGV4dC10cmFuc2Zvcm06IG5vbmU7IH0KYm9keSA6aXMoLmtwaS1oZXJvLWxhYmVsLC5rcGktY2VsbC1sYWJlbCwuaXRlbSAuaywuZmwtbm0tbGFiZWwpIHsKICBjb2xvcjogdmFyKC0tdGV4dC10ZXJ0aWFyeSk7CiAgZm9udC1zaXplOiAxMHB4OwogIGxldHRlci1zcGFjaW5nOiAuMDE1ZW07CiAgdGV4dC10cmFuc2Zvcm06IG5vbmU7Cn0KYm9keSAua3BpLXByb2dyZXNzLWJhciB7CiAgYmFja2dyb3VuZDogdmFyKC0tYWNjZW50KTsKICBib3gtc2hhZG93OiBub25lOwogIGFuaW1hdGlvbjogbm9uZSAhaW1wb3J0YW50Owp9CmJvZHkgOmlzKC50YWcsLmZsLWdyYWRlLWNoaXAsLmZsLWdvYWwtYmFkZ2UpIHsKICBtaW4taGVpZ2h0OiAyMnB4OwogIHBhZGRpbmc6IDRweCA4cHg7CiAgYm9yZGVyOiAxcHggc29saWQgdmFyKC0tYm9yZGVyLXN1YnRsZSk7CiAgYm9yZGVyLXJhZGl1czogOTk5cHg7CiAgZm9udC1zaXplOiAxMHB4OwogIGZvbnQtd2VpZ2h0OiA3MjA7CiAgbGluZS1oZWlnaHQ6IDEuMjsKICBsZXR0ZXItc3BhY2luZzogLjAxZW07CiAgYm94LXNoYWRvdzogbm9uZTsKfQpib2R5IDppcyguY2hpcCwuZmwtaW50ZWwtdGFiLC5zZXR0aW5ncy1jb2xsYXBzZS1idG4pIHsKICBib3JkZXItY29sb3I6IHZhcigtLWJvcmRlci1zdWJ0bGUpOwogIGJhY2tncm91bmQ6IHZhcigtLXN1cmZhY2UtMik7CiAgYm94LXNoYWRvdzogbm9uZTsKfQpib2R5IDppcyguY2hpcC5hY3RpdmUsLmZsLWludGVsLXRhYi5hY3RpdmUsW2FyaWEtc2VsZWN0ZWQ9InRydWUiXSkgewogIGJvcmRlci1jb2xvcjogdmFyKC0tYWNjZW50LWJvcmRlcik7CiAgYmFja2dyb3VuZDogdmFyKC0tYWNjZW50LW11dGVkKTsKICBjb2xvcjogdmFyKC0tYWNjZW50LXRleHQpOwogIGJveC1zaGFkb3c6IGluc2V0IDAgMCAwIDFweCByZ2JhKDI0MiwxNzMsNTksLjA2KTsKfQpib2R5IDppcyguYnRuLC5mbC1xdWljay1idG4pIHsKICBib3JkZXItY29sb3I6IHZhcigtLWJvcmRlci1zdWJ0bGUpOwogIGJhY2tncm91bmQ6IHZhcigtLXN1cmZhY2UtMik7CiAgYm94LXNoYWRvdzogMCAycHggN3B4IHJnYmEoMCwwLDAsLjEwKTsKfQpib2R5IDppcyguYnRuLnByaW1hcnksLmZsLXF1aWNrLWJ0bi5wcmltYXJ5KSwKYm9keSA6aXMoLmJ0bi5wcmltYXJ5LC5mbC1xdWljay1idG4ucHJpbWFyeSk6aG92ZXIgewogIGJvcmRlci1jb2xvcjogdmFyKC0tYWNjZW50KTsKICBiYWNrZ3JvdW5kOiB2YXIoLS1hY2NlbnQpOwogIGNvbG9yOiAjMjQxODA2OwogIGJveC1zaGFkb3c6IDAgNXB4IDE0cHggcmdiYSgwLDAsMCwuMTYpOwp9CmJvZHkgOmlzKGlucHV0LHNlbGVjdCx0ZXh0YXJlYSkgewogIGJvcmRlci1jb2xvcjogdmFyKC0tYm9yZGVyKTsKICBiYWNrZ3JvdW5kOiB2YXIoLS1zdXJmYWNlLTIpOwogIGNvbG9yOiB2YXIoLS10ZXh0KTsKICBib3gtc2hhZG93OiBpbnNldCAwIDFweCAwIHJnYmEoMjU1LDI1NSwyNTUsLjAxNSk7Cn0KYm9keSA6aXMoaW5wdXQsc2VsZWN0LHRleHRhcmVhKTpmb2N1cyB7CiAgYm9yZGVyLWNvbG9yOiB2YXIoLS1ib3JkZXItZm9jdXMpOwogIGJveC1zaGFkb3c6IDAgMCAwIDNweCB2YXIoLS1hY2NlbnQtbXV0ZWQpOwp9CmJvZHkgLmVtcHR5LXN0YXRlIHsKICBib3JkZXItY29sb3I6IHZhcigtLWJvcmRlcik7CiAgYmFja2dyb3VuZDogcmdiYSgyNTUsMjU1LDI1NSwuMDEyKTsKICBib3gtc2hhZG93OiBub25lOwp9Cmh0bWxbZGF0YS10aGVtZT0ibGlnaHQiXSBib2R5IC5lbXB0eS1zdGF0ZSB7IGJhY2tncm91bmQ6IHJnYmEoMjQsMzQsNDEsLjAxOCk7IH0KYm9keSAubW9kYWwgewogIGJvcmRlci1jb2xvcjogdmFyKC0tYm9yZGVyKTsKICBib3JkZXItcmFkaXVzOiAyMHB4IDIwcHggMCAwOwogIGJhY2tncm91bmQ6IHZhcigtLXN1cmZhY2UtMSk7CiAgYm94LXNoYWRvdzogdmFyKC0tc2hhZG93LWxnKTsKfQpib2R5IC5ib3R0b20gewogIGJhY2tncm91bmQ6IHJnYmEoMTMsMTcsMjAsLjk3KTsKICBib3JkZXItdG9wOiAxcHggc29saWQgdmFyKC0tYm9yZGVyLXN1YnRsZSk7CiAgYm94LXNoYWRvdzogMCAtN3B4IDI0cHggcmdiYSgwLDAsMCwuMTQpOwogIGJhY2tkcm9wLWZpbHRlcjogc2F0dXJhdGUoMTMwJSkgYmx1cigxNnB4KTsKICAtd2Via2l0LWJhY2tkcm9wLWZpbHRlcjogc2F0dXJhdGUoMTMwJSkgYmx1cigxNnB4KTsKfQpodG1sW2RhdGEtdGhlbWU9ImxpZ2h0Il0gYm9keSAuYm90dG9tIHsgYmFja2dyb3VuZDogcmdiYSgyNTUsMjU1LDI1NSwuOTYpOyBib3gtc2hhZG93OiAwIC03cHggMjJweCByZ2JhKDMxLDQzLDUwLC4wNyk7IH0KYm9keSAuYm90dG9tIC5uYXYgeyBoZWlnaHQ6IDY0cHg7IH0KYm9keSAuYm90dG9tIC5uYXYgYSB7IGNvbG9yOiB2YXIoLS10ZXh0LXRlcnRpYXJ5KTsgZ2FwOiAzcHg7IH0KYm9keSAuYm90dG9tIC5uYXYgYSAubmkgewogIHdpZHRoOiAzOHB4OwogIGhlaWdodDogMzBweDsKICBib3JkZXI6IDFweCBzb2xpZCB0cmFuc3BhcmVudDsKICBib3JkZXItcmFkaXVzOiAxMXB4OwogIHRyYW5zaXRpb246IGJhY2tncm91bmQtY29sb3IgLjE0cyBlYXNlLCBib3JkZXItY29sb3IgLjE0cyBlYXNlLCBjb2xvciAuMTRzIGVhc2U7Cn0KYm9keSAuYm90dG9tIC5uYXYgYSAubmwgeyBmb250LXNpemU6IDEwcHg7IGZvbnQtd2VpZ2h0OiA2ODA7IGxldHRlci1zcGFjaW5nOiAwOyB9CmJvZHkgLmJvdHRvbSAubmF2IGEuYWN0aXZlIHsgY29sb3I6IHZhcigtLWFjY2VudC10ZXh0KTsgfQpib2R5IC5ib3R0b20gLm5hdiBhLmFjdGl2ZTpub3QoLm5hdi1ldmFsLWNlbnRlcikgLm5pIHsKICBib3JkZXItY29sb3I6IHZhcigtLWFjY2VudC1ib3JkZXIpOwogIGJhY2tncm91bmQ6IHZhcigtLWFjY2VudC1tdXRlZCk7CiAgY29sb3I6IHZhcigtLWFjY2VudC10ZXh0KTsKICBib3gtc2hhZG93OiBpbnNldCAwIDAgMCAxcHggcmdiYSgyNDIsMTczLDU5LC4wNCk7Cn0KYm9keSAuYm90dG9tIC5uYXYgYS5uYXYtZXZhbC1jZW50ZXIgeyBtYXJnaW4tdG9wOiAtN3B4OyB9CmJvZHkgLmJvdHRvbSAubmF2IGEubmF2LWV2YWwtY2VudGVyIC5uaSB7CiAgd2lkdGg6IDUycHg7CiAgaGVpZ2h0OiA1MnB4OwogIGJvcmRlcjogMDsKICBib3JkZXItcmFkaXVzOiAxNnB4OwogIGJhY2tncm91bmQ6IHZhcigtLWFjY2VudCk7CiAgY29sb3I6ICMyNDE4MDY7CiAgYm94LXNoYWRvdzogMCA3cHggMThweCByZ2JhKDAsMCwwLC4yMCksIDAgMCAwIDRweCB2YXIoLS1zdXJmYWNlLTApOwp9CmJvZHkgLmJvdHRvbSAubmF2IGEubmF2LWV2YWwtY2VudGVyIC5ubCB7IGNvbG9yOiB2YXIoLS1hY2NlbnQtdGV4dCk7IGZvbnQtc2l6ZTogMTBweDsgfQpAbWVkaWEgKG1heC13aWR0aDogNDgwcHgpIHsKICBib2R5IC5hcHAgeyBwYWRkaW5nLWlubGluZTogMTJweDsgfQogIGJvZHkgOmlzKGlucHV0LHNlbGVjdCx0ZXh0YXJlYSkgeyBmb250LXNpemU6IDE2cHggIWltcG9ydGFudDsgfQp9CkBtZWRpYSAocHJlZmVycy1yZWR1Y2VkLW1vdGlvbjogcmVkdWNlKSB7CiAgYm9keSAua3BpLXByb2dyZXNzLWJhciwKICBib2R5IC5ib3R0b20gLm5hdiBhIC5uaSwKICBib2R5IC5mYWIsCiAgYm9keSAuc2tlbCB7IGFuaW1hdGlvbjogbm9uZSAhaW1wb3J0YW50OyB0cmFuc2l0aW9uOiBub25lICFpbXBvcnRhbnQ7IH0KfQpAbWVkaWEgKGZvcmNlZC1jb2xvcnM6IGFjdGl2ZSkgewogIGJvZHkgOmlzKC5jYXJkLC5pdGVtLC5idG4sLmNoaXAsLmZsLXF1aWNrLWJ0biwuYm90dG9tLC5tb2RhbCkgeyBib3JkZXI6IDFweCBzb2xpZCBDYW52YXNUZXh0OyBib3gtc2hhZG93OiBub25lOyB9CiAgYm9keSAuYm90dG9tIC5uYXYgYS5hY3RpdmU6bm90KC5uYXYtZXZhbC1jZW50ZXIpIC5uaSB7IGJhY2tncm91bmQ6IENhbnZhczsgY29sb3I6IEhpZ2hsaWdodDsgb3V0bGluZTogMnB4IHNvbGlkIEhpZ2hsaWdodDsgb3V0bGluZS1vZmZzZXQ6IC0ycHg7IH0KfQo= 
         run: |
           python - <<'PY'
+          import base64, os
           from pathlib import Path
 
-          css = Path('styles.css')
           marker = '/* FREIGHTLOGIC PRECISION — 2026-10-01 */'
-          text = css.read_text()
-          if marker in text:
+          css = Path('styles.css')
+          current = css.read_text()
+          if marker not in current:
+              layer = base64.b64decode(os.environ['PRECISION_CSS_B64']).decode('utf-8')
+              css.write_text(current.rstrip() + '\n' + layer.lstrip() + '\n')
+              old, new = '24.0.56', '24.0.57'
+              release_files = ['app.js','index.html','service-worker.js','sw-bridge.js','modern-shell.js','manifest.json']
+              counts = {}
+              for name in release_files:
+                  p = Path(name)
+                  data = p.read_text()
+                  count = data.count(old)
+                  if count < 1:
+                      raise SystemExit(f'{name}: expected at least one {old} marker')
+                  p.write_text(data.replace(old, new))
+                  counts[name] = count
+              print('release replacements', counts)
+          else:
               print('Precision layer already present; idempotent no-op')
-              raise SystemExit(0)
-
-          precision = r'''
-
-/* FREIGHTLOGIC PRECISION — 2026-10-01
-   Final presentation normalization only. Freight/economic logic, routing,
-   persistence and data authority remain unchanged. */
-html:root {
-  --bg: #090c0e;
-  --surface-0: #0d1114;
-  --surface-1: #12171b;
-  --surface-2: #182027;
-  --surface-3: #202a32;
-  --border: rgba(223,232,238,.10);
-  --border-subtle: rgba(223,232,238,.065);
-  --border-focus: rgba(242,173,59,.68);
-  --text: #f3f5f6;
-  --text-secondary: #aeb8bf;
-  --text-tertiary: #89969f;
-  --accent: #f2ad3b;
-  --accent-dark: #d89424;
-  --accent-text: #f7bc60;
-  --accent-muted: rgba(242,173,59,.12);
-  --accent-border: rgba(242,173,59,.34);
-  --good: #43cf82;
-  --bad: #ff6b65;
-  --warn: #f5bd58;
-  --r: 16px;
-  --r-sm: 12px;
-  --shadow: 0 7px 22px rgba(0,0,0,.18);
-  --shadow-lg: 0 14px 38px rgba(0,0,0,.24);
-  color-scheme: dark;
-}
-html[data-theme="light"] {
-  --bg: #f3f5f6;
-  --surface-0: #f7f9fa;
-  --surface-1: #ffffff;
-  --surface-2: #f1f4f5;
-  --surface-3: #e8edef;
-  --border: rgba(34,49,59,.14);
-  --border-subtle: rgba(34,49,59,.085);
-  --border-focus: rgba(201,134,25,.58);
-  --text: #182229;
-  --text-secondary: #52616b;
-  --text-tertiary: #71808a;
-  --accent: #d99628;
-  --accent-dark: #c98619;
-  --accent-text: #8a5708;
-  --accent-muted: rgba(201,134,25,.11);
-  --accent-border: rgba(201,134,25,.30);
-  --good: #167a4d;
-  --bad: #bc3f3b;
-  --warn: #9a6815;
-  --shadow: 0 7px 20px rgba(31,43,50,.07);
-  --shadow-lg: 0 14px 34px rgba(31,43,50,.11);
-  color-scheme: light;
-}
-html body {
-  background: var(--bg);
-  color: var(--text);
-  font-size: 15px;
-  line-height: 1.48;
-}
-body .app { max-width: 560px; padding-inline: 14px; }
-body header#mainHeader {
-  background: rgba(13,17,20,.96);
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 1px 0 rgba(255,255,255,.015);
-  backdrop-filter: saturate(130%) blur(14px);
-  -webkit-backdrop-filter: saturate(130%) blur(14px);
-}
-html[data-theme="light"] body header#mainHeader { background: rgba(255,255,255,.95); }
-body #mainHeader .title strong { color: var(--text); font-size: 18px; font-weight: 760; letter-spacing: -.02em; }
-body #mainHeader .title span { color: var(--text-tertiary); }
-body :is(.card,.item,.intel-row) {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-1);
-  box-shadow: var(--shadow);
-}
-body .card { border-radius: 16px; }
-body .item, body .intel-row { border-radius: 14px; }
-body #homeKPICard,
-body #view-money > .card:first-child {
-  background: var(--surface-1);
-  border-color: var(--accent-border);
-  box-shadow: 0 8px 26px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.025);
-}
-html[data-theme="light"] body #homeKPICard,
-html[data-theme="light"] body #view-money > .card:first-child { box-shadow: 0 8px 24px rgba(31,43,50,.085); }
-body .card h3 { color: var(--text-secondary); font-size: 12px; font-weight: 720; letter-spacing: .01em; text-transform: none; }
-body :is(.kpi-hero-label,.kpi-cell-label,.item .k,.fl-nm-label) {
-  color: var(--text-tertiary);
-  font-size: 10px;
-  letter-spacing: .015em;
-  text-transform: none;
-}
-body .kpi-progress-bar {
-  background: var(--accent);
-  box-shadow: none;
-  animation: none !important;
-}
-body :is(.tag,.fl-grade-chip,.fl-goal-badge) {
-  min-height: 22px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 720;
-  line-height: 1.2;
-  letter-spacing: .01em;
-  box-shadow: none;
-}
-body :is(.chip,.fl-intel-tab,.settings-collapse-btn) {
-  border-color: var(--border-subtle);
-  background: var(--surface-2);
-  box-shadow: none;
-}
-body :is(.chip.active,.fl-intel-tab.active,[aria-selected="true"]) {
-  border-color: var(--accent-border);
-  background: var(--accent-muted);
-  color: var(--accent-text);
-  box-shadow: inset 0 0 0 1px rgba(242,173,59,.06);
-}
-body :is(.btn,.fl-quick-btn) {
-  border-color: var(--border-subtle);
-  background: var(--surface-2);
-  box-shadow: 0 2px 7px rgba(0,0,0,.10);
-}
-body :is(.btn.primary,.fl-quick-btn.primary),
-body :is(.btn.primary,.fl-quick-btn.primary):hover {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #241806;
-  box-shadow: 0 5px 14px rgba(0,0,0,.16);
-}
-body :is(input,select,textarea) {
-  border-color: var(--border);
-  background: var(--surface-2);
-  color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.015);
-}
-body :is(input,select,textarea):focus {
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px var(--accent-muted);
-}
-body .empty-state {
-  border-color: var(--border);
-  background: rgba(255,255,255,.012);
-  box-shadow: none;
-}
-html[data-theme="light"] body .empty-state { background: rgba(24,34,41,.018); }
-body .modal {
-  border-color: var(--border);
-  border-radius: 20px 20px 0 0;
-  background: var(--surface-1);
-  box-shadow: var(--shadow-lg);
-}
-body .bottom {
-  background: rgba(13,17,20,.97);
-  border-top: 1px solid var(--border-subtle);
-  box-shadow: 0 -7px 24px rgba(0,0,0,.14);
-  backdrop-filter: saturate(130%) blur(16px);
-  -webkit-backdrop-filter: saturate(130%) blur(16px);
-}
-html[data-theme="light"] body .bottom { background: rgba(255,255,255,.96); box-shadow: 0 -7px 22px rgba(31,43,50,.07); }
-body .bottom .nav { height: 64px; }
-body .bottom .nav a { color: var(--text-tertiary); gap: 3px; }
-body .bottom .nav a .ni {
-  width: 38px;
-  height: 30px;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  transition: background-color .14s ease, border-color .14s ease, color .14s ease;
-}
-body .bottom .nav a .nl { font-size: 10px; font-weight: 680; letter-spacing: 0; }
-body .bottom .nav a.active { color: var(--accent-text); }
-body .bottom .nav a.active:not(.nav-eval-center) .ni {
-  border-color: var(--accent-border);
-  background: var(--accent-muted);
-  color: var(--accent-text);
-  box-shadow: inset 0 0 0 1px rgba(242,173,59,.04);
-}
-body .bottom .nav a.nav-eval-center { margin-top: -7px; }
-body .bottom .nav a.nav-eval-center .ni {
-  width: 52px;
-  height: 52px;
-  border: 0;
-  border-radius: 16px;
-  background: var(--accent);
-  color: #241806;
-  box-shadow: 0 7px 18px rgba(0,0,0,.20), 0 0 0 4px var(--surface-0);
-}
-body .bottom .nav a.nav-eval-center .nl { color: var(--accent-text); font-size: 10px; }
-@media (max-width: 480px) {
-  body .app { padding-inline: 12px; }
-  body :is(input,select,textarea) { font-size: 16px !important; }
-}
-@media (prefers-reduced-motion: reduce) {
-  body .kpi-progress-bar,
-  body .bottom .nav a .ni,
-  body .fab,
-  body .skel { animation: none !important; transition: none !important; }
-}
-@media (forced-colors: active) {
-  body :is(.card,.item,.btn,.chip,.fl-quick-btn,.bottom,.modal) { border: 1px solid CanvasText; box-shadow: none; }
-  body .bottom .nav a.active:not(.nav-eval-center) .ni { background: Canvas; color: Highlight; outline: 2px solid Highlight; outline-offset: -2px; }
-}
-'''
-          css.write_text(text.rstrip() + precision + '\n')
-
-          old = '24.0.56'
-          new = '24.0.57'
-          release_files = ['app.js', 'index.html', 'service-worker.js', 'sw-bridge.js', 'modern-shell.js', 'manifest.json']
-          counts = {}
-          for name in release_files:
-              path = Path(name)
-              data = path.read_text()
-              count = data.count(old)
-              if count < 1:
-                  raise SystemExit(f'{name}: expected at least one {old} release marker')
-              path.write_text(data.replace(old, new))
-              counts[name] = count
-
-          if "const APP_VERSION = '24.0.57';" not in Path('app.js').read_text()[:12000]:
-              raise SystemExit('app.js APP_VERSION did not advance to 24.0.57')
-          sw = Path('service-worker.js').read_text()
-          if "SW_VERSION = '24.0.57'" not in sw or "freightlogic-24.0.57" not in sw:
-              raise SystemExit('service-worker.js generation markers are not aligned')
-          print('Release marker replacements:', counts)
           PY
-
           node scripts/verify-release-generation.mjs
 
       - name: Commit governed visual release
