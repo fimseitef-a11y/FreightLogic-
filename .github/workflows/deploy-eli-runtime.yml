@@ -1,27 +1,32 @@
-name: Deploy ELI Runtime (dark)
+name: Deploy ELI Runtime
 
-# Deploys the private ELI Worker (freightlogic-eli-runtime-v1) with
-# ELI_ENABLED=false so the Agent's ELI service binding has a target.
-# AIAG-TASK-0038. Operator-approved 2026-10-01 00:17 ET.
+# Deploys the private ELI Worker (freightlogic-eli-runtime-v1). AIAG-TASK-0038.
 #
-# Must run BEFORE the Agent DARK_CUTOVER: agent-runtime/wrangler.jsonc binds
-# ELI -> freightlogic-eli-runtime-v1 and a real Agent deploy cannot resolve
-# that binding until this Worker exists.
+#   DEPLOY_DARK - deploys with the committed default ELI_ENABLED=false.
+#                 Operator-approved 2026-10-01 00:17 ET.
+#   ENABLE      - deploys with ELI_ENABLED=true and the ELI_DB D1 binding,
+#                 after applying D1 migrations. Operator-approved
+#                 2026-10-01 00:40 ET. A later DEPLOY_DARK run switches ELI
+#                 back off.
 #
-# Never enables ELI, never adds a route, never creates or binds D1. Enabling
-# ELI (D1 provisioning + ELI_ENABLED=true) is a separate operator gate.
+# Must exist BEFORE the Agent DARK_CUTOVER: agent-runtime/wrangler.jsonc binds
+# ELI -> freightlogic-eli-runtime-v1.
+#
+# Never adds a route or a public dev/preview URL. ELI stays reachable only
+# through the Agent's private Service Binding.
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Select DEPLOY_DARK to deploy the private ELI Worker disabled'
+        description: 'DEPLOY_DARK deploys ELI disabled; ENABLE deploys ELI enabled with its D1 store'
         required: true
         type: choice
         default: CANCEL
         options:
           - CANCEL
           - DEPLOY_DARK
+          - ENABLE
 
 permissions:
   contents: read
@@ -33,15 +38,16 @@ concurrency:
 env:
   CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
   ELI_WORKER: freightlogic-eli-runtime-v1
+  ELI_D1_NAME: freightlogic-eli-runtime-v1
 
 jobs:
-  deploy-dark:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Refuse unless explicitly confirmed on main
-        if: ${{ github.event.inputs.confirm != 'DEPLOY_DARK' || github.ref != 'refs/heads/main' }}
+        if: ${{ (github.event.inputs.confirm != 'DEPLOY_DARK' && github.event.inputs.confirm != 'ENABLE') || github.ref != 'refs/heads/main' }}
         run: |
-          echo "::error::Select DEPLOY_DARK and run from main. Nothing was deployed."
+          echo "::error::Select DEPLOY_DARK or ENABLE and run from main. Nothing was deployed."
           exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,19 +68,26 @@ jobs:
       - name: ELI runtime tests
         run: node --test eli-runtime/tests/*.test.mjs
 
-      - name: Refuse anything but a private, disabled target
+      - name: Refuse anything but a private target with a safe default
         run: |
           node - <<'NODE'
           const fs = require('fs');
           const cfg = JSON.parse(fs.readFileSync('eli-runtime/wrangler.jsonc', 'utf8'));
           const fail = (m) => { throw new Error('refusing ELI deploy: ' + m); };
           if (cfg.name !== process.env.ELI_WORKER) fail('unexpected Worker name ' + cfg.name);
-          if (cfg.vars?.ELI_ENABLED !== 'false') fail('ELI_ENABLED must be "false"');
+          if (cfg.vars?.ELI_ENABLED !== 'false') fail('committed ELI_ENABLED must stay "false"; ENABLE overrides it at deploy time only');
           if (cfg.workers_dev !== false || cfg.preview_urls !== false) fail('public dev/preview endpoints must stay disabled');
           if ('routes' in cfg || 'route' in cfg) fail('no public route allowed');
-          if (Array.isArray(cfg.d1_databases) && cfg.d1_databases.length) fail('D1 binding belongs to the separate enablement gate');
-          console.log('ELI target is private and disabled.');
+          const d1 = Array.isArray(cfg.d1_databases) ? cfg.d1_databases : [];
+          if (d1.length > 1) fail('only the ELI_DB D1 binding is allowed');
+          if (d1.length === 1 && (d1[0].binding !== 'ELI_DB' || d1[0].database_name !== process.env.ELI_D1_NAME)) {
+            fail('D1 binding must be ELI_DB -> ' + process.env.ELI_D1_NAME);
+          }
+          if (process.env.MODE === 'ENABLE' && d1.length !== 1) fail('ENABLE requires the ELI_DB D1 binding');
+          console.log('ELI target is private; committed default is disabled; mode', process.env.MODE);
           NODE
+        env:
+          MODE: ${{ github.event.inputs.confirm }}
 
       - name: Dry-run bundle
         env:
@@ -94,12 +107,23 @@ jobs:
             fi
           done
 
-      - name: Deploy ELI dark
+      - name: Apply D1 migrations (ENABLE only; idempotent)
+        if: ${{ github.event.inputs.confirm == 'ENABLE' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.143.0 d1 migrations apply ELI_DB --remote -c eli-runtime/wrangler.jsonc
+
+      - name: Deploy ELI
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MODE: ${{ github.event.inputs.confirm }}
         run: |
           set -uo pipefail
-          npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc 2>&1 | tee /tmp/eli-deploy.log
+          if [ "$MODE" = "ENABLE" ]; then
+            npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc --var "ELI_ENABLED:true" 2>&1 | tee /tmp/eli-deploy.log
+          else
+            npx --yes wrangler@4.143.0 deploy -c eli-runtime/wrangler.jsonc 2>&1 | tee /tmp/eli-deploy.log
+          fi
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
             # Surface wrangler's real error as annotations, readable through
@@ -110,15 +134,23 @@ jobs:
             exit "$rc"
           fi
 
-      - name: Verify deployment is registered
+      - name: Verify deployed bindings match the mode
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MODE: ${{ github.event.inputs.confirm }}
         run: |
           set -euo pipefail
-          npx --yes wrangler@4.143.0 deployments list --name "$ELI_WORKER" --json > /tmp/eli-deployments.json
-          node -e '
-            const d = JSON.parse(require("fs").readFileSync("/tmp/eli-deployments.json","utf8"));
-            if (!Array.isArray(d) || d.length === 0) throw new Error("no ELI deployment registered");
-            console.log("ELI deployments:", d.length, "latest:", d[d.length - 1]?.id ?? d[0]?.id);
-          '
-          echo 'ELI DARK DEPLOY VERDICT: PASS - private Worker deployed with ELI_ENABLED=false, no route, no D1.'
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$ELI_WORKER/settings" \
+            > /tmp/eli-settings.json
+          node - <<'NODE'
+          const s = JSON.parse(require('fs').readFileSync('/tmp/eli-settings.json', 'utf8'));
+          if (!s.success) throw new Error('could not read ELI settings');
+          const b = s.result?.bindings ?? [];
+          const enabled = b.find((x) => x.name === 'ELI_ENABLED');
+          const d1 = b.find((x) => x.name === 'ELI_DB');
+          const want = process.env.MODE === 'ENABLE' ? 'true' : 'false';
+          if (!enabled || enabled.text !== want) throw new Error(`ELI_ENABLED is ${enabled?.text}, expected ${want}`);
+          if (process.env.MODE === 'ENABLE' && (!d1 || d1.type !== 'd1')) throw new Error('ELI_DB D1 binding missing after ENABLE');
+          console.log(`ELI ${process.env.MODE} VERDICT: PASS - ELI_ENABLED=${enabled.text}, ELI_DB=${d1 ? 'bound' : 'absent'}, private (no route).`);
+          NODE
