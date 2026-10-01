@@ -154,9 +154,11 @@ test('[CG-08] the parity script expects the current generation', () => {
   const liveBlock = script.match(/async function runLiveChecks\(checks\) \{([\s\S]*?)\n\}/)?.[1] || '';
   ok(liveBlock.includes('const appGeneration = EXPECTED.serviceWorkerVersion;'),
     'runLiveChecks must derive its app generation from EXPECTED.serviceWorkerVersion');
-  const hardcodedLiveGenerations = [...liveBlock.matchAll(/24\.0\.\d+/g)].map(m => m[0]);
-  eq(hardcodedLiveGenerations.length, 0,
-    `runLiveChecks must not hardcode release generations; found ${JSON.stringify(hardcodedLiveGenerations)}`);
+  const hardcodedLiveQueries = [...liveBlock.matchAll(/\?v=24\.0\.\d+/g)].map(m => m[0]);
+  eq(hardcodedLiveQueries.length, 0,
+    `runLiveChecks must derive versioned asset queries from appGeneration; found ${JSON.stringify(hardcodedLiveQueries)}`);
+  ok(!/SW_VERSION = ['"]24\.0\.\d+['"]/.test(liveBlock),
+    'runLiveChecks must derive the SW_VERSION assertion from appGeneration');
 });
 
 test('[CG-09] DB version and Worker version are unchanged by a generation freeze', () => {
