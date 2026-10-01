@@ -232,6 +232,51 @@ test('More and Settings stay usable with Extra Large text plus Glance Mode', asy
   }
 });
 
+test('FreightLogic Precision keeps key chrome legible and gives primary surfaces restrained depth', async () => {
+  const app = await launchApp();
+  try {
+    const { page } = app;
+    await skipFirstRunWizard(page);
+    await page.waitForTimeout(900);
+    await waitForShell(page);
+    await page.setViewportSize({ width: 390, height: HEIGHT });
+    await openRoute(page, 'home');
+
+    const presentation = await page.evaluate(() => {
+      const navLinks = [...document.querySelectorAll('.bottom .nav [data-modern-route]')];
+      const nonCenterActive = navLinks.find((el) => el.classList.contains('active') && !el.classList.contains('nav-eval-center'));
+      const navLabels = navLinks.map((el) => parseFloat(getComputedStyle(el.querySelector('.nl')).fontSize) || 0);
+      const card = document.querySelector('#homeKPICard');
+      const tag = document.querySelector('.tag');
+      const progress = document.querySelector('.kpi-progress-bar');
+      const activeIcon = nonCenterActive?.querySelector('.ni');
+      return {
+        minNavLabel: Math.min(...navLabels),
+        activeIconBackground: activeIcon ? getComputedStyle(activeIcon).backgroundColor : '',
+        cardShadow: card ? getComputedStyle(card).boxShadow : '',
+        cardRadius: card ? parseFloat(getComputedStyle(card).borderRadius) || 0 : 0,
+        tagFont: tag ? parseFloat(getComputedStyle(tag).fontSize) || 0 : 10,
+        progressAnimation: progress ? getComputedStyle(progress).animationName : '',
+      };
+    });
+
+    ok(presentation.minNavLabel >= 10,
+      `Precision nav labels must remain >=10px at 390px; got ${presentation.minNavLabel}px`);
+    ok(presentation.activeIconBackground && presentation.activeIconBackground !== 'rgba(0, 0, 0, 0)',
+      `Precision selected nav icon needs a visible selected-state surface; got ${presentation.activeIconBackground || 'none'}`);
+    ok(presentation.cardShadow && presentation.cardShadow !== 'none',
+      `Precision primary cards need restrained depth; got ${presentation.cardShadow || 'none'}`);
+    ok(presentation.cardRadius >= 12 && presentation.cardRadius <= 18,
+      `Precision card radius should stay compact 12-18px; got ${presentation.cardRadius}px`);
+    ok(presentation.tagFont >= 10,
+      `Precision status tags must remain readable at >=10px; got ${presentation.tagFont}px`);
+    ok(!presentation.progressAnimation || presentation.progressAnimation === 'none',
+      `Precision KPI progress must not shimmer indefinitely; got ${presentation.progressAnimation}`);
+  } finally {
+    await app.close();
+  }
+});
+
 export async function runSpec() { return run(); }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const result = await runSpec();
