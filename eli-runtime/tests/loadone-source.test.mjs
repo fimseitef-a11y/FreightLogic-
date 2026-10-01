@@ -34,10 +34,24 @@ test('L03 active window remains 06:00 Eastern after DST ends', () => {
   assert.equal(isLoadOneActiveWindow('2027-01-16T03:00:00Z'), false); // 22:00 EST
 });
 
-test('L04 unauthorized Load One collection fails closed without any provider request', async () => {
+test('L04 disabled ELI never collects Load One data', async () => {
   let fetchCalls = 0;
   const result = await runLoadOneCollection(
-    { LOADONE_COLLECTION_AUTHORIZED: 'false' },
+    { ELI_ENABLED: 'false', LOADONE_COLLECTION_AUTHORIZED: 'true' },
+    {
+      now: () => '2026-10-01T11:45:00Z',
+      fetchImpl: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
+    },
+  );
+
+  assert.deepEqual(result, { status: 'SKIPPED', reason: 'ELI_DISABLED' });
+  assert.equal(fetchCalls, 0);
+});
+
+test('L05 unauthorized Load One collection fails closed without any provider request', async () => {
+  let fetchCalls = 0;
+  const result = await runLoadOneCollection(
+    { ELI_ENABLED: 'true', LOADONE_COLLECTION_AUTHORIZED: 'false' },
     {
       now: () => '2026-10-01T11:45:00Z',
       fetchImpl: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
@@ -48,10 +62,10 @@ test('L04 unauthorized Load One collection fails closed without any provider req
   assert.equal(fetchCalls, 0);
 });
 
-test('L05 overnight cron fails closed before authorization/config checks and never requests provider data', async () => {
+test('L06 overnight cron fails closed before provider authorization/config checks and never requests provider data', async () => {
   let fetchCalls = 0;
   const result = await runLoadOneCollection(
-    { LOADONE_COLLECTION_AUTHORIZED: 'true' },
+    { ELI_ENABLED: 'true', LOADONE_COLLECTION_AUTHORIZED: 'true' },
     {
       now: () => '2026-10-01T08:00:00Z', // 04:00 EDT
       fetchImpl: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
@@ -62,10 +76,10 @@ test('L05 overnight cron fails closed before authorization/config checks and nev
   assert.equal(fetchCalls, 0);
 });
 
-test('L06 even authorized collection stays fail-closed until a documented adapter is configured', async () => {
+test('L07 even authorized collection stays fail-closed until a documented adapter is configured', async () => {
   let fetchCalls = 0;
   const result = await runLoadOneCollection(
-    { LOADONE_COLLECTION_AUTHORIZED: 'true' },
+    { ELI_ENABLED: 'true', LOADONE_COLLECTION_AUTHORIZED: 'true' },
     {
       now: () => '2026-10-01T12:00:00Z',
       fetchImpl: async () => { fetchCalls += 1; throw new Error('must not fetch'); },
@@ -76,7 +90,7 @@ test('L06 even authorized collection stays fail-closed until a documented adapte
   assert.equal(fetchCalls, 0);
 });
 
-test('L07 Wrangler retains normal ELI ingestion cron and adds the Load One 20-minute trigger', async () => {
+test('L08 Wrangler retains normal ELI ingestion cron and adds the Load One 20-minute trigger', async () => {
   const config = JSON.parse(await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
   const crons = config.triggers?.crons ?? [];
   assert.ok(crons.includes('23 */6 * * *'));
