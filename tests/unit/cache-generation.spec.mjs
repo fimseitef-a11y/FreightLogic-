@@ -150,6 +150,13 @@ test('[CG-08] the parity script expects the current generation', () => {
     `verify-cloudflare-parity.mjs EXPECTED.manifestName must be "FreightLogic v${v}"`);
   ok(script.includes(`overlayScript: "midwest-stack-authority.js?v=${v}"`),
     `verify-cloudflare-parity.mjs EXPECTED.overlayScript must target ?v=${v}`);
+
+  const liveBlock = script.match(/async function runLiveChecks\(checks\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  ok(liveBlock.includes('const appGeneration = EXPECTED.serviceWorkerVersion;'),
+    'runLiveChecks must derive its app generation from EXPECTED.serviceWorkerVersion');
+  const hardcodedLiveGenerations = [...liveBlock.matchAll(/24\.0\.\d+/g)].map(m => m[0]);
+  eq(hardcodedLiveGenerations.length, 0,
+    `runLiveChecks must not hardcode release generations; found ${JSON.stringify(hardcodedLiveGenerations)}`);
 });
 
 test('[CG-09] DB version and Worker version are unchanged by a generation freeze', () => {
