@@ -200,6 +200,7 @@ test('P03 end-to-end: governed lanes materialize with per-status counts, governa
     evidenceAlreadyStored: 0,
     evidenceOnGovernedLanes: 4,
     evidenceMarketUnresolved: 1,
+    evidenceReresolved: 0,
     lanesMaterialized: 2,
   });
 
@@ -252,6 +253,36 @@ test('P05 an edited row becomes a new version that supersedes the old; raw evide
   assert.equal(counts.OPERATOR_BOARD_LISTING, undefined, 'superseded version no longer counted');
   assert.equal(counts.OPERATOR_AWARDED_ACCEPTED, 1);
   assert.throws(() => e.db.raw.prepare('UPDATE raw_evidence SET source_id = ?').run('x'), /append-only/);
+});
+
+test('P17 a new Verified alias reaches rows stored before it existed, without new evidence', async () => {
+  const e = await env();
+  await ingestAndConsume(e);
+  const before = JSON.parse((await laneRow(e.db, 'MKT-DTW', 'MKT-ATL')).evidence_counts_json);
+  const r5Before = await e.db.prepare(`SELECT lane_key FROM evidence_index WHERE source_record_id = 'r5'`).first();
+  assert.equal(r5Before.lane_key, null, 'Nashville is only a Candidate alias at first');
+
+  // Airtable verifies Nashville and adds a governed BNA -> ATL lane.
+  e.tables[ALIAS_TABLE][4] = alias('a5', 'Nashville, TN', 'MKT-BNA');
+  e.tables[LANE_TABLE].push(lane('l3', 'MKT-BNA', 'MKT-ATL'));
+  const { result } = await ingestAndConsume(e);
+  assert.equal(result.status, 'OK', result.error);
+  assert.equal(result.counts.evidenceQueued, 0, 'no new evidence is created');
+  assert.equal(result.counts.evidenceReresolved, 1);
+  const r5 = await e.db.prepare(`SELECT lane_key, origin_market, superseded FROM evidence_index WHERE source_record_id = 'r5'`).all();
+  assert.equal(r5.results.length, 1);
+  assert.equal(r5.results[0].lane_key, 'MKT-BNA|MKT-ATL');
+  assert.equal(r5.results[0].origin_market, 'MKT-BNA');
+  assert.equal(JSON.parse((await laneRow(e.db, 'MKT-BNA', 'MKT-ATL')).evidence_counts_json).OPERATOR_BOARD_LISTING, 1);
+  assert.deepEqual(JSON.parse((await laneRow(e.db, 'MKT-DTW', 'MKT-ATL')).evidence_counts_json), before, 'other lanes unchanged');
+  assert.equal((await e.db.prepare('SELECT COUNT(*) AS n FROM raw_evidence').first()).n, 6, 'raw evidence untouched');
+
+  // An alias withdrawn in Airtable stops matching too, and a repeat run writes nothing.
+  e.tables[ALIAS_TABLE][4] = alias('a5', 'Nashville, TN', 'MKT-BNA', 'Candidate');
+  assert.equal((await ingestAndConsume(e)).result.counts.evidenceReresolved, 1);
+  assert.equal((await e.db.prepare(`SELECT lane_key FROM evidence_index WHERE source_record_id = 'r5'`).first()).lane_key, null);
+  assert.equal(JSON.parse((await laneRow(e.db, 'MKT-BNA', 'MKT-ATL')).evidence_counts_json).OPERATOR_BOARD_LISTING, undefined);
+  assert.equal((await ingestAndConsume(e)).result.counts.evidenceReresolved, 0);
 });
 
 test('P06 no rate is ever read or stored, and unknown miles stay unknown', async () => {
