@@ -70,7 +70,8 @@ export async function journalFailure(db, failure) {
     last_failed_at,
     payload_hash,
     payload_ref
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(failure_id) DO NOTHING`);
 
   return statement.bind(
     failure.failureId,
