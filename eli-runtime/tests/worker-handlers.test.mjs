@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 // Executes eli-runtime/worker.mjs with only the `cloudflare:workers` base
 // class stubbed, so the deployable entrypoint's handlers are proven by
 // execution. Cloudflare rejects an upload whose default export registers no
-// event handler, and a queue consumer needs a queue() handler.
+// event handler, and a queue consumer needs a queue() handler. ELI stays
+// RPC-only: no fetch().
 
 const STUB = 'data:text/javascript,' + encodeURIComponent(
   'export class WorkerEntrypoint { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }\n',
@@ -41,17 +42,14 @@ function fakeBatch(queue, bodies) {
 
 const MSG = { idempotencyKey: 'k1', type: 'evidence', snapshotFingerprint: 's1' };
 
-test('W01 ELI entrypoint registers fetch and queue handlers for upload', async () => {
+test('W01 ELI entrypoint registers a queue handler so the upload is accepted', async () => {
   const Worker = await loadWorker();
-  assert.equal(typeof Worker.prototype.fetch, 'function');
   assert.equal(typeof Worker.prototype.queue, 'function');
 });
 
-test('W02 fetch is not a public surface: 404 no-store', async () => {
+test('W02 ELI keeps no HTTP handler (RPC-only private surface)', async () => {
   const Worker = await loadWorker();
-  const res = await new Worker({}, { ELI_ENABLED: 'false' }).fetch(new Request('https://eli.invalid/'));
-  assert.equal(res.status, 404);
-  assert.equal(res.headers.get('Cache-Control'), 'no-store');
+  assert.equal(Object.hasOwn(Worker.prototype, 'fetch'), false);
 });
 
 test('W03 dark ELI never acknowledges (loses) primary queue messages', async () => {
