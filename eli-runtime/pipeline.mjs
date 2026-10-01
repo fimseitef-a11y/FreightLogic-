@@ -235,6 +235,8 @@ export async function runIngestion(env, deps = {}) {
       })));
     }
 
+    const reresolved = await reresolveStoredEvidence(db, built.filter((item) => already.has(item.evidence.evidenceId)));
+
     const materialized = await rematerializeLanes(db, governanceRows.map((row) => row.laneKey), {
       now, modelRunId: runId, governanceFingerprint,
     });
@@ -247,6 +249,7 @@ export async function runIngestion(env, deps = {}) {
       evidenceAlreadyStored: built.length - fresh.length,
       evidenceOnGovernedLanes: built.filter((item) => governanceRows.some((g) => g.laneKey === item.index.laneKey)).length,
       evidenceMarketUnresolved: built.filter((item) => !item.index.laneKey).length,
+      evidenceReresolved: reresolved,
       lanesMaterialized: materialized,
     };
     await db.prepare(`UPDATE ingest_runs SET finished_at = ?, status = 'OK', counts_json = ? WHERE run_id = ?`)
@@ -258,6 +261,29 @@ export async function runIngestion(env, deps = {}) {
       .bind((deps.now ?? (() => new Date().toISOString()))(), message, runId).run();
     return { status: 'FAILED', runId, error: message };
   }
+}
+
+// A row's market match is derived from the Verified aliases, not part of the
+// evidence. When the aliases (or the name normalizer) change, a row stored
+// earlier gets the match the current aliases give it. Only the current version
+// of each row is touched; raw evidence is never rewritten, and a row that
+// already matches costs no write.
+export async function reresolveStoredEvidence(db, items) {
+  let changed = 0;
+  for (let i = 0; i < items.length; i += SEND_BATCH) {
+    const statements = items.slice(i, i + SEND_BATCH).map(({ index }) => {
+      const laneKey = index.laneKey ?? null;
+      const origin = index.originMarket ?? null;
+      const destination = index.destinationMarket ?? null;
+      return db.prepare(`UPDATE evidence_index SET lane_key = ?, origin_market = ?, destination_market = ?
+        WHERE evidence_id = ? AND superseded = 0
+          AND (lane_key IS NOT ? OR origin_market IS NOT ? OR destination_market IS NOT ?)`)
+        .bind(laneKey, origin, destination, index.evidenceId, laneKey, origin, destination);
+    });
+    if (statements.length === 0) continue;
+    for (const result of (await db.batch(statements)) ?? []) changed += Number(result?.meta?.changes ?? 0);
+  }
+  return changed;
 }
 
 // Store one evidence version: append-only raw row, superseding the previous
