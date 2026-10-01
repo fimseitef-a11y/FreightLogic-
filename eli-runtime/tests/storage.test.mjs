@@ -83,6 +83,31 @@ test('journalFailure durably inserts terminal failure metadata', async () => {
   assert.equal(db.calls[0].values[5], 5);
 });
 
+test('journalFailure is replay-safe for duplicate DLQ delivery', async () => {
+  const db = makeDb();
+
+  await journalFailure(db, {
+    failureId: 'dlq:INGEST_OBSERVATION:ev-004',
+    messageIdentity: 'INGEST_OBSERVATION:ev-004',
+    sourceId: 'dispatchland',
+    snapshotId: null,
+    adapterVersion: 'v1',
+    attemptCount: 5,
+    failureClass: 'queue_terminal_failure',
+    sanitizedError: 'queue retry limit exhausted',
+    firstFailedAt: '2026-10-01T03:33:00Z',
+    lastFailedAt: '2026-10-01T03:33:00Z',
+    payloadHash: null,
+    payloadRef: null,
+  });
+
+  assert.match(
+    db.calls[0].sql,
+    /ON\s+CONFLICT\s*\(\s*failure_id\s*\)\s+DO\s+NOTHING/i,
+    'a replayed DLQ delivery must not fail on the deterministic failure id',
+  );
+});
+
 test('recordReceipt inserts an idempotency receipt instead of mutating evidence', async () => {
   const db = makeDb();
 
