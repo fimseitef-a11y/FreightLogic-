@@ -64,7 +64,7 @@ test('primary consumer skips replayed receipts and acks without running side eff
   assert.deepEqual(message.calls, ['ack']);
 });
 
-test('primary consumer records receipt before ack and retries failed work', async () => {
+test('primary consumer records and verifies a durable receipt before ack; failed work retries', async () => {
   const ok = makeMessage({
     type: 'NORMALIZE_EVIDENCE',
     idempotencyKey: 'NORMALIZE_EVIDENCE:ev-002',
@@ -76,14 +76,18 @@ test('primary consumer records receipt before ack and retries failed work', asyn
     evidenceId: 'ev-003',
   }, { id: 'bad' });
   const order = [];
+  const receipts = new Set();
 
   await consumePrimaryBatch({ messages: [ok, bad] }, {
-    hasReceipt: async () => false,
+    hasReceipt: async (key) => receipts.has(key),
     processMessage: async (body) => {
       order.push(`process:${body.evidenceId}`);
       if (body.evidenceId === 'ev-003') throw new Error('boom');
     },
-    recordReceipt: async (receipt) => { order.push(`receipt:${receipt.evidenceId}`); },
+    recordReceipt: async (receipt) => {
+      order.push(`receipt:${receipt.evidenceId}`);
+      receipts.add(receipt.idempotencyKey);
+    },
     now: () => '2026-10-01T03:31:00Z',
   });
 
@@ -94,6 +98,27 @@ test('primary consumer records receipt before ack and retries failed work', asyn
   ]);
   assert.deepEqual(ok.calls, ['ack']);
   assert.deepEqual(bad.calls, ['retry']);
+});
+
+test('primary consumer retries instead of acking when the receipt is not durably observable', async () => {
+  const message = makeMessage({
+    type: 'NORMALIZE_EVIDENCE',
+    idempotencyKey: 'NORMALIZE_EVIDENCE:ev-005',
+    evidenceId: 'ev-005',
+  });
+  let processed = 0;
+  let recorded = 0;
+
+  await consumePrimaryBatch({ messages: [message] }, {
+    hasReceipt: async () => false,
+    processMessage: async () => { processed += 1; },
+    recordReceipt: async () => { recorded += 1; },
+    now: () => '2026-10-01T03:34:00Z',
+  });
+
+  assert.equal(processed, 1);
+  assert.equal(recorded, 1);
+  assert.deepEqual(message.calls, ['retry']);
 });
 
 test('DLQ consumer journals terminal failure before ack', async () => {
