@@ -62,15 +62,21 @@ async function getAppLockSetting(page, key) {
 }
 
 async function attemptPin(page, guess) {
+  // tryUnlock() drops a click while the previous attempt is still in flight
+  // (unlockInFlight), and it writes #unlockHint only as its LAST step. So clear
+  // the hint, click, and wait for it to be written again: that is the exact
+  // completion signal. A fixed 300ms sleep raced PBKDF2 + two settings writes
+  // on a loaded full-suite run (6th attempt dropped, 2026-10-01). Bounded, so
+  // an attempt that never completes still fails.
+  await page.evaluate(() => { const h = document.getElementById('unlockHint'); if (h) h.textContent = ''; });
   await page.fill('#unlockPin', guess);
   await page.click('#unlockNow');
-  // Each click's async chain (verifyPin's real PBKDF2 work ~100-150ms, then
-  // setSetting's IDB round-trip) must fully finish before the next click —
-  // otherwise rapid machine-speed clicks race tryUnlock() invocations and
-  // both read the same pre-increment failCount, silently undercounting.
-  // 300ms comfortably clears that; a real one-handed driver's tap cadence
-  // is far slower than this anyway.
-  await page.waitForTimeout(300);
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const hint = await page.evaluate(() => document.getElementById('unlockHint')?.textContent || '');
+    if (hint) break;
+    await page.waitForTimeout(50);
+  }
   return page.evaluate(() => ({
     hint: document.getElementById('unlockHint')?.textContent || '',
     pinDisabled: !!document.getElementById('unlockPin')?.disabled,
