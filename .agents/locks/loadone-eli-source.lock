@@ -1,4 +1,4 @@
 owner: gpt
-branch: gpt/loadone-eli-source
+branch: agent/gpt/loadone-eli-source
 scope: eli-runtime/adapters/loadone-live.mjs; eli-runtime/worker.mjs; eli-runtime/wrangler.jsonc; eli-runtime/tests/loadone-source.test.mjs; eli-runtime/tests/worker-handlers.test.mjs; Load One ELI source provenance
 started: 2026-10-01
