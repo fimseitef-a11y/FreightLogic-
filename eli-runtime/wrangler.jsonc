@@ -11,6 +11,14 @@
   "vars": {
     "ELI_ENABLED": "false"
   },
+  "d1_databases": [
+    {
+      "binding": "ELI_DB",
+      "database_name": "freightlogic-eli-runtime-v1",
+      "database_id": "d3c97784-3c15-4150-b9ad-ca44e3f83f6e",
+      "migrations_dir": "migrations"
+    }
+  ],
   "queues": {
     "producers": [
       {
