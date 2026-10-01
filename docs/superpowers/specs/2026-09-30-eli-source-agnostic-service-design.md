@@ -1,7 +1,7 @@
 # ELI Source-Agnostic Service Design
 
 Date: 2026-09-30
-Status: design for operator review
+Status: revised design for operator review — PR #441 audit amendments incorporated
 Task: AIAG-TASK-0038 / ELI-SOURCE-AGNOSTIC-SERVICE-20260930
 Base: FreightLogic main `26835914ff0991fd5b89d6f91e73100e1ab75300`
 
@@ -345,3 +345,24 @@ If interrupted, resume from the newest completed checkpoint and exact repository
 - deleting historical T31 evidence
 - treating stale, suppressed, missing or unknown data as zero
 - making the shared/family PC a production dependency
+
+## 20. PR #441 audit amendments
+
+These amendments are controlling over earlier wording in this design and must be resolved before implementation:
+
+1. **Durable DLQ audit:** queue retention is not durable evidence. A DLQ consumer must journal terminal failures into D1 before acknowledgement. Queue messages are batched per snapshot/change set rather than one message per source row.
+2. **Identity and dedupe:** evidence identity may not rely on a posting number alone. For operator/DispatchLand-style observations use source/platform plus posting id, origin, destination, and pickup window/date. Quote/auction lineage and awarded/order lineage remain separate unless explicit lineage proves identity.
+3. **Lifecycle completeness:** preserve SHOWN, BID, WON, LOST, EXPIRED, REJECTED, DRY_RUN, DEACTIVATED, IN_PROGRESS, COMPLETED, and PAID as distinct states. No state promotion from inference.
+4. **First operator-private adapter:** begin with a read-only Airtable Load History adapter because that is the current durable operator evidence source. recordOutcome excludes all pricing/economic fields and is not dependent on the Agent being enabled.
+5. **FAF6 crosswalk:** FAF6 zones are not market clusters. Resolve FAF6 Zone ID through Lane Research - Geography into Market Cluster while preserving geography version and Boundary Sensitivity Status; boundary-sensitive or ambiguous mappings remain explicit/UNKNOWN.
+6. **Non-vacuous T36:** use synthetic optional-provider fixtures even when no licensed live provider exists. Also remove FAF6, CFS/PUMS, and QCEW one at a time and verify the service stays queryable while unsupported components degrade to lower confidence/UNKNOWN.
+7. **Two authorities:** Airtable is authoritative for source registry/eligibility, model specs, acceptance tests, lane stage/promotion, and geography governance. D1 is authoritative for runtime evidence, receipts, derived rows, freshness, failures, and query serving. A D1 candidate cannot promote a lane/model without a matching approved Airtable record/version.
+8. **Repository invariants and sequencing:** this work does not edit app.js, index.html, styles.css, service-worker.js, sw-bridge.js, modern-shell.js, or manifest.json, so it does not trigger the PWA release/version bump by itself. Build D1 storage + deterministic derive + private read API first; add queues/cron only after an authorized adapter needs them; integrate the Agent after the ELI contract is stable.
+
+### Expected six-pilot result
+
+Because the replacement public sources are structural/periodic rather than licensed live-board feeds, the expected completed revalidation outcome for ATL/BNA/DTW is that some or all six lanes remain Pilot Candidate with equipment relevance and/or exposure denominator UNKNOWN. That is a valid successful revalidation, not a reason to manufacture confidence.
+
+### Ownership boundary
+
+Current Airtable registry still names AIAG-GROK-INTELLIGENCE as primary ELI research/methodology owner and ChatGPT as the independent audit/adoption lane. PR #441 does not silently change that assignment. This design edit is a bounded ChatGPT documentation action under AIAG-TASK-0038. Product-code implementation requires an explicit operator assignment/handoff for the bounded eli-runtime implementation lane before code begins.
