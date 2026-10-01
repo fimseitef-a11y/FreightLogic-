@@ -68,16 +68,30 @@ export function cellsOf(record) {
   return {};
 }
 
-// "Lebanon, TN 37087" -> "lebanon, tn". Exact match only; no fuzzy matching.
+// US state and Canadian province codes. Used only to recognise "City ST"
+// written without the comma; it never guesses a state that is not written.
+const REGION_CODES = new Set((
+  'al ak az ar ca co ct de dc fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm '
+  + 'ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy '
+  + 'ab bc mb nb nl ns nt nu on pe qc sk yt'
+).split(' '));
+
+// "Lebanon, TN 37087" -> "lebanon, tn"; "Milwaukee WI" -> "milwaukee, wi".
+// Exact match only; no fuzzy matching. The comma is added only when the last
+// word is a real state/province code, so "Unknown origin" stays as written.
 export function normalizeMarketText(value) {
   const s = text(value);
   if (!s) return null;
-  const n = s
+  let n = s
     .toLowerCase()
     .replace(/\s+\d{5}(?:-\d{4})?\s*$/, '')
     .replace(/\s*,\s*/g, ', ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (!n.includes(',')) {
+    const m = /^(.+) ([a-z]{2})$/.exec(n);
+    if (m && REGION_CODES.has(m[2])) n = `${m[1]}, ${m[2]}`;
+  }
   return n || null;
 }
 
