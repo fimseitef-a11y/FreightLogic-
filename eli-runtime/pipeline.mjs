@@ -333,3 +333,32 @@ export async function resolveMarketInDb(db, value) {
   const row = await db.prepare('SELECT market_cluster FROM market_aliases WHERE alias_norm = ?').bind(norm).first();
   return row?.market_cluster ?? null;
 }
+
+// On-demand trigger: a queue message of this type asks ELI to run ingestion.
+// Queue delivery takes seconds, unlike a cron change (up to ~15 minutes).
+export const RUN_INGESTION_MESSAGE_TYPE = 'eli_run_ingestion';
+
+async function recordRunEvent(db, status, detail, now) {
+  if (!db || typeof db.prepare !== 'function') return;
+  try {
+    await db.prepare(`INSERT INTO ingest_runs (run_id, started_at, finished_at, status, error)
+      VALUES (?, ?, ?, ?, ?)`).bind(`${status.toLowerCase()}:${now}:${crypto.randomUUID()}`, now, now, status, String(detail).slice(0, 200)).run();
+  } catch {
+    // Diagnostics must never break the trigger.
+  }
+}
+
+// Every trigger (cron or queue) leaves a TRIGGERED row before anything else,
+// and an unexpected exception leaves a CRASHED row, so "nothing happened" is
+// never ambiguous. Only when ELI is enabled with D1: a dark ELI writes nothing.
+export async function triggeredIngestion(env, source, deps = {}) {
+  const now = (deps.now ?? (() => new Date().toISOString()))();
+  const db = env?.ELI_ENABLED === 'true' ? env?.ELI_DB : null;
+  await recordRunEvent(db, 'TRIGGERED', source, now);
+  try {
+    return await (deps.run ?? runIngestion)(env, deps);
+  } catch (error) {
+    await recordRunEvent(db, 'CRASHED', `${source}: ${String(error?.message ?? error)}`, now);
+    return { status: 'CRASHED', error: String(error?.message ?? error).slice(0, 200) };
+  }
+}
