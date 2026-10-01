@@ -1,0 +1,22 @@
+name: ELI Runtime
+
+on:
+  pull_request:
+    paths:
+      - 'eli-runtime/**'
+      - '.github/workflows/eli-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run ELI runtime tests
+        run: node --test eli-runtime/tests/*.test.mjs
