@@ -10,6 +10,7 @@ import { stateScope } from "./state-key.mjs";
 import { fingerprintEnvelope, sameIdempotentEvent } from "./idempotency.mjs";
 import { ModelExecutionError, runExplanationModel } from "./model-adapter.mjs";
 import { OutputGuardError, assertSafeRecommendation } from "./output-guard.mjs";
+import { augmentModelProjection, readEliLaneContext } from "./eli-client.mjs";
 
 function failClosed(code, reason, extra = {}) {
   return {
@@ -139,7 +140,8 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
     let reason = route.reason;
 
     if (route.tier === "small" || route.tier === "strong") {
-      const projection = buildModelProjection(envelope);
+      const eliContext = await readEliLaneContext(this.env, envelope);
+      const projection = augmentModelProjection(buildModelProjection(envelope), eliContext);
       try {
         const result = await runExplanationModel(this.env, route.tier, projection);
         assertSafeRecommendation(result.recommendation, envelope.canonicalSnapshot);

@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import { checkRecommendationAgainstCanonical, assertSafeRecommendation, OutputGuardError } from "../output-guard.mjs";
+import { runEliIntegrationTests } from "./eli-integration.spec.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -110,6 +111,13 @@ test("G11 missing canonical verdict field does not crash the guard (fails safe, 
   const result = checkRecommendationAgainstCanonical(text, partial);
   assert.equal(result.ok, true);
 });
+
+try {
+  await runEliIntegrationTests();
+} catch (error) {
+  console.log(`FAIL ELI integration contract - ${error.message}`);
+  failed++;
+}
 
 console.log(`\nTOTAL: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
