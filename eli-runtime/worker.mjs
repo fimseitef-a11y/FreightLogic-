@@ -2,7 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createPrivateApi } from './api.mjs';
 import { consumeDeadLetterBatch } from './queue.mjs';
 import { journalFailure } from './storage.mjs';
-import { processEvidenceBatch, resolveMarketInDb, runIngestion } from './pipeline.mjs';
+import { RUN_INGESTION_MESSAGE_TYPE, processEvidenceBatch, resolveMarketInDb, triggeredIngestion } from './pipeline.mjs';
 import { LOADONE_CRON, runLoadOneCollection } from './adapters/loadone-live.mjs';
 
 function createD1Repository(db) {
@@ -95,8 +95,8 @@ export default class EliRuntime extends WorkerEntrypoint {
 
   // Queue consumer for the primary queue and its DLQ (wrangler.jsonc).
   // Design amendment 1: nothing is acknowledged unless it is durably handled.
-  //  - Primary: the ingestion pipeline is not wired yet, so every message is
-  //    retried (and reaches the DLQ after max_retries) instead of being lost.
+  //  - Primary: control messages invoke the audited ingestion trigger, while
+  //    evidence messages continue through the idempotent evidence pipeline.
   //  - DLQ: terminal failures are journaled to D1 before ack; while ELI is
   //    dark or has no D1, they are retried rather than dropped.
   async queue(batch) {
@@ -110,10 +110,23 @@ export default class EliRuntime extends WorkerEntrypoint {
     }
 
     if (!isDeadLetter) {
-      try {
-        await processEvidenceBatch(batch, this.env);
-      } catch {
-        batch.retryAll();
+      const messages = Array.isArray(batch?.messages) ? batch.messages : [];
+      const control = messages.filter((m) => m?.body?.type === RUN_INGESTION_MESSAGE_TYPE);
+      const evidence = messages.filter((m) => m?.body?.type !== RUN_INGESTION_MESSAGE_TYPE);
+      for (const message of control) {
+        try {
+          await triggeredIngestion(this.env, 'queue');
+          message.ack();
+        } catch {
+          message.retry();
+        }
+      }
+      if (evidence.length > 0) {
+        try {
+          await processEvidenceBatch({ ...batch, messages: evidence }, this.env);
+        } catch {
+          for (const message of evidence) message.retry();
+        }
       }
       return;
     }
@@ -132,11 +145,10 @@ export default class EliRuntime extends WorkerEntrypoint {
     }
   }
 
-  // Scheduled producers are source-specific. Existing Airtable ingestion keeps
-  // its independent cadence; Load One receives its own 20-minute trigger and
-  // remains authorization-gated/fail-closed in adapters/loadone-live.mjs.
-  // Any other cron value (including the temporary Run-Now `* * * * *`) retains
-  // the existing Airtable ingestion behavior.
+  // Scheduled producers are source-specific. Load One gets its own 20-minute
+  // trigger and remains authorization-gated/fail-closed. Every other cron
+  // (including the temporary Run-Now cron) retains the newer audited
+  // triggeredIngestion() path.
   async scheduled(controller, env, ctx) {
     const runtimeEnv = env ?? this.env;
     const scheduledIso = Number.isFinite(controller?.scheduledTime)
@@ -146,7 +158,7 @@ export default class EliRuntime extends WorkerEntrypoint {
 
     const work = (isLoadOneCron
       ? runLoadOneCollection(runtimeEnv, { now: () => scheduledIso })
-      : runIngestion(runtimeEnv)
+      : triggeredIngestion(runtimeEnv, `cron:${controller?.cron ?? 'unknown'}`)
     ).then((result) => {
       const key = isLoadOneCron ? 'loadOneCollection' : 'eliIngestion';
       console.log(JSON.stringify({ [key]: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
