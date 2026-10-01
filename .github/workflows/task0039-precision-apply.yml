@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   apply-precision:
-    if: contains(github.event.head_commit.message, 'Bootstrap Precision CSS apply')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -27,7 +26,8 @@ jobs:
           marker = '/* FREIGHTLOGIC PRECISION — 2026-10-01 */'
           text = css.read_text()
           if marker in text:
-              raise SystemExit('Precision marker already present; refusing duplicate append')
+              print('Precision layer already present; idempotent no-op')
+              raise SystemExit(0)
 
           precision = r'''
 
@@ -263,6 +263,10 @@ body .bottom .nav a.nav-eval-center .nl { color: var(--accent-text); font-size: 
       - name: Commit governed visual release
         shell: bash
         run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add styles.css app.js index.html service-worker.js sw-bridge.js modern-shell.js manifest.json
