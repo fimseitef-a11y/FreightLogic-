@@ -1,0 +1,1 @@
+This temporary test note exists only to force a reviewable RED phase for the Load One adapter. The tests intentionally reference a not-yet-created `adapters/loadone-live.mjs`; remove this note after GREEN implementation if desired.
