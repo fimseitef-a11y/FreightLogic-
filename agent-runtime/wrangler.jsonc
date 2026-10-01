@@ -16,12 +16,6 @@
   "ai": {
     "binding": "AI"
   },
-  "services": [
-    {
-      "binding": "ELI",
-      "service": "freightlogic-eli-runtime-v1"
-    }
-  ],
   "durable_objects": {
     "bindings": [
       {
