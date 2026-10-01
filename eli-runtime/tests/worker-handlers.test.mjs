@@ -68,13 +68,13 @@ test('W04 dark ELI never acknowledges DLQ messages it cannot journal', async () 
   assert.equal(state.retryAll, 1);
 });
 
-test('W05 enabled ELI without an ingestion pipeline still retries primary messages', async () => {
+test('W05 enabled ELI never acknowledges a primary message it cannot store', async () => {
   const Worker = await loadWorker();
   const { batch, state } = fakeBatch('freightlogic-eli-runtime-v1', [MSG]);
-  const db = { prepare() { throw new Error('must not touch D1'); } };
+  const db = { prepare() { throw new Error('D1 unavailable'); } };
   await new Worker({}, { ELI_ENABLED: 'true', ELI_DB: db }).queue(batch);
   assert.equal(state.acked + state.ackAll, 0);
-  assert.equal(state.retryAll, 1);
+  assert.ok(state.retried + state.retryAll >= 1);
 });
 
 test('W06 enabled ELI with D1 journals DLQ failures durably before acknowledging', async () => {

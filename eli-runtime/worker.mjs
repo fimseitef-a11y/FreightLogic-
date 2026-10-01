@@ -2,11 +2,16 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { createPrivateApi } from './api.mjs';
 import { consumeDeadLetterBatch } from './queue.mjs';
 import { journalFailure } from './storage.mjs';
+import { processEvidenceBatch, resolveMarketInDb, runIngestion } from './pipeline.mjs';
 
 function createD1Repository(db) {
   if (!db || typeof db.prepare !== 'function') return null;
 
   return {
+    async resolveMarket(value) {
+      return resolveMarketInDb(db, value);
+    },
+
     async getLaneRow(originMarket, destinationMarket) {
       return db.prepare(`SELECT * FROM lane_read_model
         WHERE origin_market = ? AND destination_market = ?
@@ -39,13 +44,32 @@ function createD1Repository(db) {
       } catch {
         // Health remains fail-closed and minimal before migrations/provisioning exist.
       }
+      let lastIngest = null;
+      let dlqJournaled = null;
+      try {
+        lastIngest = await db.prepare(`SELECT status, started_at, finished_at, counts_json, error
+          FROM ingest_runs ORDER BY started_at DESC LIMIT 1`).first();
+        const failures = await db.prepare('SELECT COUNT(*) AS n FROM ingest_failures').first();
+        dlqJournaled = Number.isFinite(failures?.n) ? failures.n : null;
+      } catch {
+        // Ingestion tables absent until migration 0002 is applied.
+      }
+      let counts = {};
+      try { counts = JSON.parse(lastIngest?.counts_json ?? '{}'); } catch { counts = {}; }
       return {
         schemaVersion: '1',
         serviceVersion: 'eli-v1',
         modelVersions,
-        queue: { state: 'NOT_CONFIGURED' },
-        dlq: { state: 'NOT_CONFIGURED' },
-        sourceHealthCounts: { unavailable: 0 },
+        queue: lastIngest
+          ? { state: 'CONFIGURED', lastRunStatus: lastIngest.status, lastRunAt: lastIngest.finished_at ?? lastIngest.started_at, lastRunError: lastIngest.error ?? null }
+          : { state: 'NO_RUN_YET' },
+        dlq: { state: dlqJournaled === null ? 'UNKNOWN' : 'CONFIGURED', journaledFailures: dlqJournaled },
+        sourceHealthCounts: {
+          aliasesVerified: counts.aliasesVerified ?? null,
+          governedLanes: counts.governedLanes ?? null,
+          loadHistoryRecords: counts.loadHistoryRecords ?? null,
+          evidenceMarketUnresolved: counts.evidenceMarketUnresolved ?? null,
+        },
         newestSuccessfulRunAt,
       };
     },
@@ -78,8 +102,18 @@ export default class EliRuntime extends WorkerEntrypoint {
     const isDeadLetter = typeof batch?.queue === 'string' && batch.queue.endsWith('-dlq');
     const db = this.#db();
 
-    if (!isDeadLetter || !db) {
+    // Dark or D1-less: nothing is acknowledged (design amendment 1).
+    if (!db) {
       batch.retryAll();
+      return;
+    }
+
+    if (!isDeadLetter) {
+      try {
+        await processEvidenceBatch(batch, this.env);
+      } catch {
+        batch.retryAll();
+      }
       return;
     }
 
@@ -95,6 +129,19 @@ export default class EliRuntime extends WorkerEntrypoint {
     } catch {
       batch.retryAll();
     }
+  }
+
+  // Ingestion producer (cron in wrangler.jsonc). Inert unless ELI is enabled
+  // with D1, its queue and an operator-supplied read-only AIRTABLE_TOKEN.
+  async scheduled(controller, env, ctx) {
+    const runtimeEnv = env ?? this.env;
+    const work = runIngestion(runtimeEnv).then((result) => {
+      console.log(JSON.stringify({ eliIngestion: { status: result.status, reason: result.reason ?? null, runId: result.runId ?? null, counts: result.counts ?? null, error: result.error ?? null } }));
+      return result;
+    });
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(work);
+    else if (this.ctx && typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(work);
+    return work;
   }
 
   async getLaneIntelligence(input) {

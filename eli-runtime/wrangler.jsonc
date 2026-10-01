@@ -9,7 +9,8 @@
     "enabled": false
   },
   "vars": {
-    "ELI_ENABLED": "false"
+    "ELI_ENABLED": "false",
+    "AIRTABLE_BASE_ID": "app8nbbqxfyP0uswo"
   },
   "d1_databases": [
     {
@@ -39,6 +40,11 @@
         "max_batch_size": 10,
         "max_batch_timeout": 5
       }
+    ]
+  },
+  "triggers": {
+    "crons": [
+      "23 */6 * * *"
     ]
   }
 }

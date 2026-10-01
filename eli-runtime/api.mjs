@@ -56,11 +56,27 @@ export function createPrivateApi(repository) {
       if (!originMarket || !destinationMarket) {
         return { status: 'UNKNOWN', reason: 'CANONICAL_MARKETS_REQUIRED', originMarket: originMarket ?? null, destinationMarket: destinationMarket ?? null };
       }
-      const row = await repository.getLaneRow(originMarket, destinationMarket);
+      // Callers (the Agent) speak FreightLogic city names; ELI stores market
+      // clusters. A repository resolver translates through Verified aliases
+      // only; an unresolved market is UNKNOWN, never guessed.
+      let originKey = originMarket;
+      let destinationKey = destinationMarket;
+      if (typeof repository.resolveMarket === 'function') {
+        originKey = await repository.resolveMarket(originMarket);
+        destinationKey = await repository.resolveMarket(destinationMarket);
+        if (!originKey || !destinationKey) {
+          return { status: 'UNKNOWN', reason: 'MARKET_UNRESOLVED', originMarket, destinationMarket };
+        }
+      }
+      const row = await repository.getLaneRow(originKey, destinationKey);
       if (!row) {
         return { status: 'UNKNOWN', reason: 'LANE_NOT_MATERIALIZED', originMarket, destinationMarket };
       }
-      return { status: 'KNOWN', intelligence: projectLaneReadModel(row) };
+      return {
+        status: 'KNOWN',
+        resolved: { originMarket: originKey, destinationMarket: destinationKey },
+        intelligence: projectLaneReadModel(row),
+      };
     },
 
     async getMarketIntelligence({ market } = {}) {
