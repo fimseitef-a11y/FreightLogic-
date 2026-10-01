@@ -130,7 +130,7 @@ async function env(tables = baseTables(), extra = {}) {
 }
 
 async function ingestAndConsume(e) {
-  const result = await runIngestion(e.value, { fetchImpl: airtable(e.tables, { calls: e.calls }), now: () => NOW });
+  const result = await runIngestion(e.value, { fetchImpl: airtable(e.tables, { calls: e.calls }), now: () => NOW, minIntervalMs: 0 });
   const sent = e.queue.sent.splice(0);
   const { batch, state } = batchOf(sent);
   await processEvidenceBatch(batch, e.value, { now: () => NOW });
@@ -268,6 +268,7 @@ test('P08 an Airtable failure fails the run without leaking the token or touchin
   const result = await runIngestion(e.value, {
     fetchImpl: async () => new Response('nope', { status: 401 }),
     now: () => NOW,
+    minIntervalMs: 0,
   });
   assert.equal(result.status, 'FAILED');
   assert.doesNotMatch(JSON.stringify(result), /patSECRET/);
@@ -277,7 +278,7 @@ test('P08 an Airtable failure fails the run without leaking the token or touchin
   assert.deepEqual(await laneRow(e.db, 'MKT-ATL', 'MKT-DTW'), before);
 });
 
-test('P09 the producer is inert unless ELI is enabled with D1, queue, token and base', async () => {
+test('P09 the producer is inert unless ELI is enabled with D1, queue, token and base, and records why when it can', async () => {
   const e = await env();
   let fetched = 0;
   for (const [patch, reason] of [
@@ -292,6 +293,24 @@ test('P09 the producer is inert unless ELI is enabled with D1, queue, token and 
   }
   assert.equal(fetched, 0);
   assert.equal(ingestionReadiness(e.value), null);
+  const skips = await e.db.prepare(`SELECT error FROM ingest_runs WHERE status = 'SKIPPED' ORDER BY error`).all();
+  assert.deepEqual(skips.results.map((r) => r.error), [
+    'AIRTABLE_BASE_ID_MISSING', 'AIRTABLE_TOKEN_MISSING', 'ELI_QUEUE_UNAVAILABLE',
+  ], 'a disabled ELI writes nothing; an enabled one records why it skipped');
+});
+
+test('P13 at most one real run per interval, whatever the cron cadence', async () => {
+  const e = await env();
+  let calls = 0;
+  const fetchImpl = async (url, init) => { calls += 1; return airtable(e.tables)(url, init); };
+  const first = await runIngestion(e.value, { fetchImpl, now: () => NOW });
+  assert.equal(first.status, 'OK', first.error);
+  const callsAfterFirst = calls;
+  const second = await runIngestion(e.value, { fetchImpl, now: () => '2026-10-01T05:20:00.000Z' });
+  assert.deepEqual(second, { status: 'SKIPPED', reason: 'RECENT_RUN' });
+  assert.equal(calls, callsAfterFirst, 'a skipped run spends no Airtable calls');
+  const third = await runIngestion(e.value, { fetchImpl, now: () => '2026-10-01T05:31:00.000Z' });
+  assert.equal(third.status, 'OK');
 });
 
 test('P10 RPC translates city names through Verified aliases only', async () => {
