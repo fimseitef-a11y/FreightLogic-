@@ -235,7 +235,7 @@ async function runLiveChecks(checks) {
   const shell = await fetchText(`${appOrigin}/modern-shell.js?v=${appGeneration}`);
   assert(checks, 'Modern shell adapter loads', shell.ok, `${shell.status}`);
   assert(checks, 'Modern shell exposes FreightLogicModernShell', shell.text.includes('window.FreightLogicModernShell'));
-  assert(checks, `Service worker precaches modern-shell.js v${appGeneration}`, sw.text.includes('modern-shell.js?v=${appGeneration}'));
+  assert(checks, `Service worker precaches modern-shell.js v${appGeneration}`, sw.text.includes(`modern-shell.js?v=${appGeneration}`));
 
   const manifest = await fetchJson(`${appOrigin}/${versioned('manifest.json')}`);
   assert(checks, 'Manifest loads', manifest.ok, `${manifest.status}`);
