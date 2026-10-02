@@ -74,6 +74,11 @@ test('[INV-03] a bad paste says why and opens nothing', async () => {
 });
 
 test('[INV-04] a login refusal from the server offers the invite entry', async () => {
+  // INV-03 intentionally leaves its malformed-invite entry visible so the
+  // driver can correct it. This separate server-refusal scenario must start
+  // from a clean app rather than depending on the previous modal's state.
+  await app.close();
+  app = await launchApp();
   // v24.0.41: with no login the screenshot is read anyway (Worker v25). Only a
   // server refusal (401/403, e.g. a revoked login) is fixable by connecting.
   await app.page.route('**/extract-image', (route) => route.fulfill({
