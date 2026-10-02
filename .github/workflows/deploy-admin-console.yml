@@ -15,12 +15,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: admin-console-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    environment: production-admin-console
     runs-on: ubuntu-latest
     steps:
       - name: Refuse unless explicitly confirmed
-        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' || github.ref != 'refs/heads/main' }}
         run: |
           echo "::error::Select DEPLOY to run this. Nothing was deployed."
           exit 1

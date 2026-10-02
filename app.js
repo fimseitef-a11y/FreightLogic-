@@ -591,7 +591,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.58';
+const APP_VERSION = '24.0.59';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -3287,21 +3287,15 @@ curReq.onsuccess = (ev) => {
         }
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => {
-      // iOS/Safari IndexedDB can occasionally corrupt; attempt a one-time self-heal.
-      try{
-        const key = 'fl_idb_recover_v1';
-        if (!sessionStorage.getItem(key)){
-          sessionStorage.setItem(key,'1');
-          try{ indexedDB.deleteDatabase(DB_NAME); }catch(e){ console.warn("[FL]", e); }
-          toast('Database issue detected. Recovering…', true);
-          setTimeout(()=> location.reload(), 600);
-          return;
-        }
-      }catch(e){ console.warn("[FL]", e); }
-      reject(req.error);
+    req.onsuccess = () => {
+      const connection = req.result;
+      connection.onversionchange = () => {
+        connection.close();
+        toast('Storage changed in another FreightLogic tab. Reload this tab before saving.', true);
+      };
+      resolve(connection);
     };
+    req.onerror = () => reject(req.error || new Error('Could not open FreightLogic storage. Existing data was preserved.'));
     req.onblocked = () => toast('Close other Freight Logic tabs to finish upgrade', true);
   });
 }

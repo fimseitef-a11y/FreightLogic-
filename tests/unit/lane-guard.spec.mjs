@@ -88,7 +88,7 @@ test('a lock that declares no paths covers nothing, so SHARED stays blocked', ()
 });
 
 test('a held lock of ours covering the path passes', () => {
-  eq(checkLocks(rows, 'claude', ['app.js'], [lock()], T0).length, 0, 'own held lock must pass');
+  eq(checkLocks(rows, 'claude', ['app.js'], [lock()], T0, 'tok-1').length, 0, 'own held lock must pass');
 });
 
 test('a trailing slash covers a subtree; without one the match is exact', () => {
@@ -123,7 +123,7 @@ test('a stale lock grants nothing to its own holder and is never auto-stolen', (
 
 test('one lock can cover several declared paths', () => {
   const multi = lock({ paths: ['AGENTS.md', '.agents/LANES.md'] });
-  eq(checkLocks(rows, 'claude', ['AGENTS.md', '.agents/LANES.md'], [multi], T0).length, 0, 'multi-path lock');
+  eq(checkLocks(rows, 'claude', ['AGENTS.md', '.agents/LANES.md'], [multi], T0, 'tok-1').length, 0, 'multi-path lock');
 });
 
 test('a claude-owned path needs no lock at all', () => {

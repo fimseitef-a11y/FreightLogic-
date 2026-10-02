@@ -58,8 +58,10 @@ const str = v => (v===undefined||v===null) ? '' : String(v).trim();
 // date-only source value stays date-only; nothing is widened either.
 const iso = v => {
   const s = str(v);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(s) && Number.isFinite(Date.parse(s))) return s.replace(' ', 'T');
+  const day = s.slice(0,10), d = new Date(day+'T00:00:00Z');
+  const realDay = /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === day;
+  if (realDay && s === day) return s;
+  if (realDay && /^\d{4}-\d{2}-\d{2}[T ]/.test(s) && Number.isFinite(Date.parse(s))) return s.replace(' ', 'T');
   return null;
 };
 const city = (c,s) => [str(c),str(s)].filter(Boolean).join(', ');
@@ -67,7 +69,8 @@ const tsOf = d => { const t=Date.parse(str(d)); return Number.isFinite(t)?t:null
 
 /* ---- reconciled completed-ORDER ledger ---- */
 const orders = new Map();
-const report = { files:{}, statuses:{}, missingDeadhead:0, withheldFromTrueRpm:0, sourceRpmPreserved:0, reconciled:0, reusedIdKeptSeparate:0, withheld:{ live_quote:0, partial:0, chat_captured:0 }, dryRuns:0, unknownStatus:0 };
+const pendingOrders = [];
+const report = { files:{}, statuses:{}, missingDeadhead:0, withheldFromTrueRpm:0, sourceRpmPreserved:0, reconciled:0, reusedIdKeptSeparate:0, ambiguousIdentity:0, insufficientIdentity:0, withheld:{ live_quote:0, partial:0, chat_captured:0 }, dryRuns:0, unknownStatus:0 };
 
 // B4: docs/EVIDENCE_PROVENANCE.md's precedence order, as data. Index IS the
 // rank — lower outranks higher. The previous rule was "first source wins, later
@@ -153,6 +156,16 @@ function candidateKey(cand){
 }
 
 function upsertOrder(_orderNoIgnored, cand, sourceName, authority){
+  pendingOrders.push({cand, sourceName, authority});
+}
+function reconcileOrders(){
+  const specificity = c => ['broker','origin','destination','pickupAt','deliveryAt'].filter(k => present(c[k])).length;
+  const stable = p => JSON.stringify([candidateKey(p.cand),p.cand.broker,p.cand.origin,p.cand.destination,p.cand.pickupAt,p.cand.deliveryAt,p.sourceName,p.cand.rawEvidenceRef]);
+  // Resolve the most informative observations first so sparse input order cannot choose a load.
+  pendingOrders.sort((a,b) => specificity(b.cand)-specificity(a.cand) || stable(a).localeCompare(stable(b)));
+  for (const p of pendingOrders) mergeOrder(p.cand,p.sourceName,p.authority);
+}
+function mergeOrder(cand, sourceName, authority){
   const candidates = candidateKey(cand);
   // No order number at all: nothing to reconcile against, so it is its own row.
   const bucket = candidates ? (orders.get(candidates) || []) : [];
@@ -160,10 +173,25 @@ function upsertOrder(_orderNoIgnored, cand, sourceName, authority){
     orders.set('anon:' + orders.size, [{ ...cand, _sources:[sourceName], _fieldProvenance: seedProvenance(cand, sourceName, authority) }]);
     return;
   }
-  const cur = bucket.find(existing => compatible(existing, cand));
+  const matches = bucket.filter(existing => !existing.identityResolution && compatible(existing, cand));
+  const anchors = ['broker','origin','destination','pickupAt','deliveryAt'].filter(k => present(cand[k])).length;
+  const supported = existing => {
+    const provider = present(cand.broker) && present(existing.broker) && !partyConflict(cand.broker,existing.broker);
+    const eventTime = ['pickupAt','deliveryAt'].some(k => present(cand[k]) && present(existing[k]) && !timeConflict(cand[k],existing[k]));
+    return provider && eventTime;
+  };
+  // Reused external IDs and similar routes are not shipment identity. A merge
+  // additionally needs shared provider and event-time evidence.
+  const cur = matches.length === 1 && supported(matches[0]) ? matches[0] : null;
   const auth = AUTHORITY_ORDER.includes(authority) ? authority : 'AI_SECONDARY';
   if (!cur){
     const rec = { ...cand, _sources: [sourceName], _fieldProvenance: seedProvenance(cand, sourceName, auth) };
+    if (matches.length > 0 || anchors < 2){
+      rec.identityResolution = matches.length > 1 ? 'AMBIGUOUS' : 'INSUFFICIENT_IDENTITY';
+      rec.identityCandidateCount = matches.length;
+      rec.needsReview = true;
+      if (matches.length > 1) report.ambiguousIdentity++; else report.insufficientIdentity++;
+    }
     bucket.push(rec);
     orders.set(candidates, bucket);
     if (bucket.length > 1) report.reusedIdKeptSeparate++;
@@ -360,11 +388,17 @@ const observations = [];
 }
 
 /* ---- assemble + True-RPM defensibility check ---- */
-const orderRecords = [...orders.values()].flat();
+reconcileOrders();
+const reconciled = [...orders.values()].flat();
+for (const rec of reconciled.filter(r => r.identityResolution)){
+  withheld.push({ ...rec, fieldProvenance:rec._fieldProvenance, contributingSources:rec._sources,
+    reason:'Unresolved reused load identity; operator reconciliation required' });
+}
+const orderRecords = reconciled.filter(r => !r.identityResolution);
 for (const rec of orderRecords){
   const loadedKnown = rec.loadedMi!==null && rec.loadedMi!==undefined;
   const deadKnown = rec.deadMi!==null && rec.deadMi!==undefined;
-  rec.trueRpmDefensible = loadedKnown && deadKnown; // both required
+  rec.trueRpmDefensible = loadedKnown && deadKnown && Number.isFinite(rec.loadedMi) && rec.loadedMi >= 0 && Number.isFinite(rec.deadMi) && rec.deadMi >= 0 && rec.loadedMi + rec.deadMi > 0 && Number.isFinite(rec.amount) && rec.amount >= 0;
   if (!deadKnown) report.missingDeadhead++;
   if (!rec.trueRpmDefensible) report.withheldFromTrueRpm++;
   if (rec.sourceDisplayedRpm!==null && rec.sourceDisplayedRpm!==undefined) report.sourceRpmPreserved++;
@@ -387,6 +421,8 @@ report.totals = {
   importRecords: importRecords.length,
   multiSourceRecords: orderRecords.filter(r => (r.contributingSources || []).length > 1).length,
   reusedIdKeptSeparate: report.reusedIdKeptSeparate,
+  ambiguousIdentity: report.ambiguousIdentity,
+  insufficientIdentity: report.insufficientIdentity,
 };
 
 writeFileSync(path.join(OUT,'records-for-import.json'), JSON.stringify(importRecords,null,2));

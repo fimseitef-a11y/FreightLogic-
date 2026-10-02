@@ -7,18 +7,14 @@ name: AI Agent Cutover
 # target is deployed first with AGENT_ENABLED=false; only then is the existing
 # authenticated API Worker deployed with its private Service Binding.
 #
-# This workflow intentionally has NO activation mode. Enabling model execution
-# remains a later explicit gate after dark production evidence is green and a
-# production model provider/credential has been configured.
+# ACTIVATE_CANARY is an explicit manual production gate after dark-cutover
+# evidence and provider configuration. PR/push checks never activate services.
 
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'agent-runtime/**'
-      - 'cloud-backup-worker.js'
-      - 'scripts/wrangler.backup-worker.jsonc'
-      - '.github/workflows/ai-agent-cutover.yml'
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       confirm:

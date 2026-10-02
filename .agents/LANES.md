@@ -1,5 +1,9 @@
 # FreightLogic Path Ownership
 
+## 2026-10-02 existing-component audit remediation
+
+The operator's instruction to fix the comprehensive audit authorizes GPT to remediate the reported defects in existing owned components and add meaningful regression coverage. SHARED paths remain locked and app.js remains serialized. Native product expansion, service activation, deployments, credentials, live data reconciliation and physical-device certification are separate gates. Historical bounded-task prose below is retained for provenance; it does not narrow this explicitly authorized remediation or change the authoritative Owner column.
+
 ## 2026-09-27 ChatGPT-primary ownership transfer
 
 The operator retired Claude as an active dependency and placed ChatGPT/GPT in charge. The **Owner column in the current table below is authoritative**: active rows formerly owned by `claude` are now owned by `gpt`. Historical prose below the table may still mention Claude to preserve provenance; those historical references do not restore current ownership. A future Claude write lane requires explicit operator reauthorization and a new bounded task. SHARED paths remain serialized and still require locks.
@@ -56,7 +60,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `cloud-backup-worker.js` | gpt | **TEMPORARY AIAG-TASK-0009 ONLY:** existing-Worker caller authentication/authorization/rate limiting/privacy classification before future Agent RPC. No binding/deploy/feature/model/PWA/economics scope. Remains GPT-owned after #0009 is merged or abandoned; only the task-specific scope note retires. |
+| `cloud-backup-worker.js` | gpt | Existing Backup/API Worker source and operator-authorized audit remediation. Production cutover, service activation and live migration remain separate gates. |
 | `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `voice-load.js` | gpt | Voice input module; carries a governed header version marker. |
@@ -68,7 +72,7 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `admin-console/` | gpt | Issue #231 additive separate-origin Admin Console subtree only; no Worker, driver-app, or deployment authority. |
 | `agent-runtime/` | gpt | AI Agents Phase A isolated internal Agent Worker/SQLite DO/privacy/router subtree only; production-dark, no existing Worker/PWA/economics/deployment authority. |
 | `eli-runtime/` | gpt | AIAG-TASK-0038 isolated ELI ingestion/scoring runtime and tests only; deterministic/provenance-bearing, no PWA/economics/release-file or production-deploy authority. |
-| `native-ios/` | gpt | FROZEN 2026-09-22 (operator): preserve, no new Swift scope. #204/#205 thin Apple-native scaffold and typed bridge contracts only; no web-core/economics authority, credentials, or physical-device certification claims. |
+| `native-ios/` | gpt | Native product scope remains frozen. Operator-authorized audit remediation may fix existing bridge validation defects and tests; no new host/product capability, credentials, or physical-device certification claims. |
 | `.github/workflows/native-ios.yml` | gpt | Exact bounded workflow for native-ios SwiftPM/static validation only; no other `.github/` ownership transfer. |
 | `tests/integration/admin-console.spec.mjs` | gpt | Exact regression exception for the isolated #231 Admin Console contract only; no other `tests/` ownership transfer. |
 | `field-certification.html` | gpt | Operator-approved same-origin physical-device certification companion; no app.js or decision-engine authority. |

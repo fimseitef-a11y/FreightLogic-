@@ -116,7 +116,16 @@ import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
 import { runSpec as tripDuplicateWarning } from './integration/trip-duplicate-warning.spec.mjs';
 import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-regressions.spec.mjs';
 
+import { runSpec as auditM6Identity } from './unit/audit-m6-identity.spec.mjs';
+import { runSpec as auditStorageRecovery } from './unit/audit-storage-recovery.spec.mjs';
+import { runSpec as auditLockSession } from './unit/audit-lock-session.spec.mjs';
+import { runSpec as auditCiIntegrity } from './unit/audit-ci-integrity.spec.mjs';
+
 const specs = [
+  auditM6Identity,
+  auditStorageRecovery,
+  auditLockSession,
+  auditCiIntegrity,
   fullRepairRegressions,
   omegaEconomics,
   releaseGenerationDiscipline,

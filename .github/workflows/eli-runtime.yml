@@ -2,9 +2,9 @@ name: ELI Runtime
 
 on:
   pull_request:
-    paths:
-      - 'eli-runtime/**'
-      - '.github/workflows/eli-runtime.yml'
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

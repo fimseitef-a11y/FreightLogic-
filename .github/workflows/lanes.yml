@@ -8,8 +8,8 @@ name: Lanes
 # Playwright assertion are different failures and should be separately
 # required (or separately waived) in branch protection.
 #
-# path-ownership and commit-prefix are enforcing. lock-trailer is warn-only for
-# its first round — see scripts/lane-guard.mjs.
+# path-ownership and commit-prefix are enforcing. lock-trailer validates historical session coverage;
+# after release by selecting coordination state at the application commit time.
 
 on:
   pull_request:
@@ -72,10 +72,11 @@ jobs:
       # completes, so CI cannot re-read a live lock. The FL-Lock commit trailer
       # is what keeps coverage auditable after release.
       - name: Fetch coordination ref
-        run: git fetch origin agent-coordination --depth=200 || true
+        run: git fetch origin agent-coordination
 
-      - name: Audit lock trailers (warn-only)
+      - name: Verify historical session lock trailers
         run: |
           node scripts/lane-guard.mjs ci-trailer \
+            --branch "${{ github.head_ref }}" \
             --base "${{ github.event.pull_request.base.sha }}" \
             --head "${{ github.event.pull_request.head.sha }}"

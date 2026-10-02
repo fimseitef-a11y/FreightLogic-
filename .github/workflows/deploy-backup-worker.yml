@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ai-agent-cutover-production
+  cancel-in-progress: false
+
 env:
   CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
   API_ORIGIN: https://freightlogic-backup.fimseitef.workers.dev
@@ -32,10 +36,11 @@ env:
 
 jobs:
   deploy:
+    environment: production-agent-cutover
     runs-on: ubuntu-latest
     steps:
       - name: Refuse unless explicitly confirmed
-        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' || github.ref != 'refs/heads/main' }}
         run: |
           echo "::error::Select DEPLOY in the confirmation control to run this. Nothing was deployed."
           exit 1
