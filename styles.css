@@ -2539,3 +2539,188 @@ body #view-home.today-command-v2 #homeKPICard {
 html[data-theme="light"] body #view-home.today-command-v2 #homeKPICard {
   box-shadow: 0 8px 24px rgba(31,43,50,.085) !important;
 }
+
+
+/* FINAL PRE-DEVICE VISUAL CONTRACT — 2026-10-02
+   Presentation-only finish for the approved five-surface driver shell.
+   No freight economics, lifecycle, storage, routing or evidence authority lives here. */
+html:root {
+  --bg: #050607;
+  --surface-0: #0b0f11;
+  --surface-1: #11171a;
+  --surface-2: #151c1f;
+  --surface-3: #1c2428;
+  --border: #2a3134;
+  --border-subtle: #20272a;
+  --border-focus: #5a4a2b;
+  --text: #f5f4ef;
+  --text-secondary: #9ca5a8;
+  --text-tertiary: #7f898d;
+  --accent: #f3b43f;
+  --accent-dark: #d69a2d;
+  --accent-text: #f3b43f;
+  --accent-muted: rgba(243,180,63,.11);
+  --accent-border: rgba(243,180,63,.30);
+  --accent-glow: rgba(243,180,63,.12);
+  --good: #52c77a;
+  --good-muted: rgba(82,199,122,.10);
+  --good-border: rgba(82,199,122,.24);
+  --bad: #ff625c;
+  --bad-muted: rgba(255,98,92,.10);
+  --bad-border: rgba(255,98,92,.24);
+  --warn: #f3b43f;
+  --warn-muted: rgba(243,180,63,.10);
+  --warn-border: rgba(243,180,63,.24);
+  --r: 15px;
+  --r-sm: 12px;
+  --shadow: 0 3px 12px rgba(0,0,0,.14);
+  --shadow-lg: 0 12px 30px rgba(0,0,0,.26);
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f5f2;
+  --surface-0: #eef0ed;
+  --surface-1: #ffffff;
+  --surface-2: #f0f2ef;
+  --surface-3: #e5e8e4;
+  --border: #cbd0cc;
+  --border-subtle: #dde1dd;
+  --border-focus: #9a722a;
+  --text: #171a18;
+  --text-secondary: #59635f;
+  --text-tertiary: #717c77;
+  --accent: #c88916;
+  --accent-dark: #a9700b;
+  --accent-text: #805608;
+  --accent-muted: rgba(200,137,22,.10);
+  --accent-border: rgba(200,137,22,.28);
+  --good: #277d4b;
+  --good-muted: rgba(39,125,75,.09);
+  --good-border: rgba(39,125,75,.22);
+  --bad: #b93f3b;
+  --bad-muted: rgba(185,63,59,.09);
+  --bad-border: rgba(185,63,59,.22);
+  --warn: #8c6515;
+  --shadow: 0 3px 12px rgba(30,40,35,.07);
+  --shadow-lg: 0 12px 28px rgba(30,40,35,.12);
+  color-scheme: light;
+}
+
+html body {
+  background: var(--bg);
+  background-image: none !important;
+}
+body :is(.card,.item,.intel-row) {
+  border-color: var(--border-subtle);
+  background: var(--surface-1);
+  box-shadow: var(--shadow);
+}
+body .card { border-radius: 15px; }
+body :is(.item,.intel-row) { border-radius: 13px; }
+body :is(
+  .card-hero,
+  #homeKPICard,
+  #view-money > .card:first-child,
+  .fl-next-move,
+  .btn.primary,
+  .fl-quick-btn.primary,
+  .fab,
+  .bottom .nav a.nav-eval-center .ni,
+  .bottom .nav a.nav-eval-center.active .ni
+) { background-image: none !important; }
+body :is(#homeKPICard,#view-money > .card:first-child) {
+  background: var(--surface-1);
+  border-color: var(--accent-border);
+}
+body .fl-next-move {
+  background: var(--accent-muted);
+  border-color: var(--accent-border);
+  box-shadow: none;
+}
+body :is(.btn.primary,.fl-quick-btn.primary),
+body :is(.btn.primary,.fl-quick-btn.primary):hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1c160a;
+  box-shadow: none;
+}
+body .kpi-hero-value {
+  color: var(--text);
+  background: none !important;
+  background-image: none !important;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+body .kpi-progress-bar {
+  background: var(--accent);
+  background-image: none !important;
+  animation: none !important;
+  box-shadow: none;
+}
+body .skel {
+  background: var(--surface-2);
+  background-image: none !important;
+  animation: none !important;
+}
+body .fab {
+  background: var(--accent);
+  color: #1c160a;
+  box-shadow: var(--shadow);
+}
+body .bottom {
+  background: var(--surface-0);
+  border-top: 1px solid var(--border);
+  box-shadow: none;
+}
+body .bottom .nav a { min-height: 48px; }
+body .bottom .nav a.nav-eval-center {
+  min-width: 64px;
+  min-height: 58px;
+}
+body .bottom .nav a.nav-eval-center .ni,
+body .bottom .nav a.nav-eval-center.active .ni {
+  width: 52px;
+  height: 52px;
+  background: var(--accent);
+  color: #1c160a;
+  box-shadow: 0 0 0 4px var(--surface-0);
+}
+body :is(#view-loads,#view-trips,#view-money,#view-omega) .card h3,
+body #view-omega > .card:first-of-type h2 { color: var(--text); }
+body :is(.fl-eval-bid.primary,.fl-eval-verdict,.fl-grade-chip,.tag,.pill) { box-shadow: none; }
+body :is(.settings-directory,.settings-action-list,.settings-subdetails,.eval-secondary-details) {
+  border-color: var(--border);
+  background: var(--surface-1);
+  box-shadow: none;
+}
+@media (max-width: 480px) {
+  body :is(input,select,textarea) { font-size: 16px !important; }
+  body :is(.btn,.fl-quick-btn,.settings-collapse-btn,.theme-btn) { min-height: 48px; }
+}
+@media (pointer: coarse) {
+  body :is(.btn,.chip,.fl-intel-tab,.settings-collapse-btn,.theme-btn,.nav a) { min-height: 44px; }
+  body .bottom .nav a { min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body *, body *::before, body *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  html body :is(.card,.item,.btn,.chip,.fl-quick-btn,.bottom,.modal,.intel-row) {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+  html body .bottom .nav a.active { color: Highlight; }
+  html body .bottom .nav a.nav-eval-center .ni {
+    outline: 2px solid Highlight;
+    background: Canvas;
+    color: Highlight;
+  }
+}
