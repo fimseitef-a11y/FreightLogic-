@@ -33,7 +33,7 @@ test('AUD-ELI-05 stale operator evidence is excluded from active counts when a f
     governanceFingerprint: 'gov:audit',
   });
 
-  assert.equal(lane.freshness.OPERATOR_PRIVATE.state, 'FRESH');
+  assert.equal(lane.freshness.OPERATOR_PRIVATE, 'FRESH');
   assert.equal(lane.evidenceCounts.OPERATOR_COMPLETED, 1);
   assert.equal(lane.evidenceCounts.OPERATOR_AWARDED_ACCEPTED, undefined);
   assert.equal(lane.evidenceCounts.OPERATOR_STALE_EXCLUDED, 1);
