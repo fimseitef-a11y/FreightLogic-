@@ -7,7 +7,7 @@ application 24.0.58, database schema 16, backup Worker 33).
 This is a bounded first remediation batch. It does **not** close the full audit.
 No deployment, merge, agent activation, credential rotation or live-data change
 is part of this batch. Application/cache generation 24.0.59 is a source candidate;
-database schema 16 and Worker 33 remain unchanged.
+database schema 16 remains unchanged; Worker 34 is a source candidate.
 
 ## Implemented changes
 
@@ -15,6 +15,7 @@ database schema 16 and Worker 33 remain unchanged.
 | --- | --- | --- |
 | ST01 | IndexedDB open failures reject with the original error without deleting the database. Successful connections close and announce reload on version change. | `audit-storage-recovery.spec.mjs`: VersionError, quota error, unknown error and version-change behavior. |
 | ST05 (M6 importer portion) | Sparse or ambiguous reused-ID evidence is withheld with provenance; unique merges require shared provider and event-time evidence. More informative evidence is processed first. Invalid calendar dates are rejected. Unknown deadhead/amount cannot create defensible True RPM. | `audit-m6-identity.spec.mjs`: production reconciliation and full CLI fixtures. The separate application identity paths remain open. |
+| WSEC07 and WSEC08 (extraction portion) | Text and vision output share strict object, whole-number, real-date, confidence and allowlist validation. Invalid supplied values remain nullable and uncertain. Explicit zero survives; truncated text replies fail closed and missing years are not inferred by the text prompt. | Seven real Worker-handler regressions with a stubbed model; real provider behavior remains an external gate. |
 | COOR01 | Local shared-file checks require the current session token. CI validates lock trailers against coordination history at commit time and fails invalid claims. Amend/squash hooks no longer silently bypass trailer generation. | `audit-lock-session.spec.mjs`, existing lane tests and PR Lanes job. |
 | PUI04 | Manifest shortcuts use implemented `#do=trip` and `#omega` routes. | Manifest assertions and existing deep-link/browser tests. |
 | PUI05 | Push JSON null, primitives and arrays use the fallback notification instead of crashing. | Expanded `sw-push.spec.mjs` payload cases. |
@@ -48,7 +49,7 @@ unmodified code.
 
 - Freight/storage: ST02-ST04, ST05 application portion, ST06-ST16.
 - Money: FIN01-FIN08.
-- Backup/API/security: WSEC01-WSEC12.
+- Backup/API/security: WSEC01-WSEC06, WSEC09-WSEC12, and remaining WSEC08 provenance/provider-verification concerns.
 - ELI: ELI01-ELI12.
 - AI agents: AGN01-AGN05.
 - Native/companion: NAT01, ANCS01.
