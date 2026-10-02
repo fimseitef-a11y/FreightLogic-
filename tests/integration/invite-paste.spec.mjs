@@ -56,12 +56,16 @@ test('[INV-02] Settings offers invite entry, and pasting a link opens the claim 
 });
 
 test('[INV-03] a bad paste says why and opens nothing', async () => {
-  const r = await app.page.evaluate(async () => {
-    window.__FL_TESTS.openInviteEntry();
-    await new Promise(res => setTimeout(res, 300));
-    document.getElementById('inviteLinkInput').value = 'not an invite';
-    document.getElementById('inviteLinkGo').click();
-    await new Promise(res => setTimeout(res, 300));
+  // INV-02 removes a full-screen setup wizard by hand. That is not a product
+  // navigation path; its pending async tasks must not control this independent
+  // malformed-input case. Start from the canonical harness-ready app instead.
+  await app.close();
+  app = await launchApp();
+  await app.page.evaluate(() => window.__FL_TESTS.openInviteEntry());
+  await app.page.locator('#inviteLinkInput').fill('not an invite');
+  await app.page.locator('#inviteLinkGo').click();
+  await app.page.locator('#inviteLinkError').waitFor({ state: 'visible' });
+  const r = await app.page.evaluate(() => {
     const err = document.getElementById('inviteLinkError');
     return { err: err && err.style.display !== 'none' ? err.textContent : '', wizard: !!document.getElementById('claimWizard') };
   });

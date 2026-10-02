@@ -1626,7 +1626,7 @@ export default {
           return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
         }
         const choice = aiJson?.choices?.[0];
-        if (choice?.finish_reason && choice.finish_reason !== 'stop') {
+        if (choice?.finish_reason !== 'stop') {
           return json({ ok: false, error: 'AI response was incomplete. Review or enter the load manually.' }, 502, cors);
         }
         const norm = normalizeVisionExtraction(choice?.message?.content);
@@ -2792,10 +2792,8 @@ function bytesToBase64(bytes) {
   return btoa(s);
 }
 
-// A tri-state integer. `intPositive` above cannot express this: it maps an
-// explicit 0 to null, which is exactly the distinction the whole app is built
-// around — a stated "0 deadhead" is a VERIFIED ZERO and an unstated one is
-// UNKNOWN, and collapsing them is the v24.0.1 blank-deadhead defect.
+// Preserve a stated numeric zero separately from unknown. Reject malformed
+// whole values before any numeric conversion; a prefix is not an observation.
 function visionNumberOrNull(v, max, { integer = false, currency = false } = {}) {
   let n;
   if (typeof v === 'number') n = v;

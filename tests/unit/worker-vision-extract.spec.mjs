@@ -88,13 +88,13 @@ function isOpenAIUrl(u) {
  *  `VISION_PROVIDER: 'openai'` plus a stubbed global fetch is deliberate: it
  *  exercises a REAL adapter in the shipped table rather than a test-only
  *  provider branch that production never takes. */
-function visionEnv(kv, raw, { fail = false, finishReason = 'stop' } = {}) {
+function visionEnv(kv, raw, { fail = false, finishReason = 'stop', omitFinishReason = false } = {}) {
   const realFetch = globalThis.fetch;
   const restore = () => { globalThis.fetch = realFetch; };
   globalThis.fetch = async (url) => {
     if (isOpenAIUrl(url)) {
       if (fail) return new Response('upstream boom', { status: 500 });
-      return new Response(JSON.stringify({ choices: [{ finish_reason: finishReason, message: { content: raw } }] }),
+      return new Response(JSON.stringify({ choices: [{ ...(omitFinishReason ? {} : { finish_reason: finishReason }), message: { content: raw } }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return realFetch(url);
@@ -602,8 +602,10 @@ test('[VEX-AUDIT-05] text extraction rejects malformed successful provider bodie
   }
 });
 test('[VEX-AUDIT-06] a truncated provider reply is rejected even when its fragment parses', async () => {
-  const {res,body}=await extractText('{"origin":"Chicago, IL","pay":500}',{finishReason:'length'});
-  eq(res.status,502);eq(body.ok,false);ok(!body.fields);ok(body.error.includes('incomplete'));
+  for (const opts of [{finishReason:'length'},{finishReason:'content_filter'},{finishReason:null},{finishReason:''},{omitFinishReason:true}]) {
+    const {res,body}=await extractText('{"origin":"Chicago, IL","pay":500}',opts);
+    eq(res.status,502);eq(body.ok,false);ok(!body.fields);ok(body.error.includes('incomplete'));
+  }
 });
 test('[VEX-AUDIT-07] complete formatted money and real leap dates survive strict validation', async () => {
   const {body}=await extract(JSON.stringify({

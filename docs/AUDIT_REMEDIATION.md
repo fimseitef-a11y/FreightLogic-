@@ -15,7 +15,7 @@ database schema 16 remains unchanged; Worker 34 is a source candidate.
 | --- | --- | --- |
 | ST01 | IndexedDB open failures reject with the original error without deleting the database. Successful connections close and announce reload on version change. | `audit-storage-recovery.spec.mjs`: VersionError, quota error, unknown error and version-change behavior. |
 | ST05 (M6 importer portion) | Sparse or ambiguous reused-ID evidence is withheld with provenance; unique merges require shared provider and event-time evidence. More informative evidence is processed first. Invalid calendar dates are rejected. Unknown deadhead/amount cannot create defensible True RPM. | `audit-m6-identity.spec.mjs`: production reconciliation and full CLI fixtures. The separate application identity paths remain open. |
-| WSEC07 and WSEC08 (extraction portion) | Text and vision output share strict object, whole-number, real-date, confidence and allowlist validation. Invalid supplied values remain nullable and uncertain. Explicit zero survives; truncated text replies fail closed and missing years are not inferred by the text prompt. | Seven real Worker-handler regressions with a stubbed model; real provider behavior remains an external gate. |
+| WSEC07 and WSEC08 (extraction portion) | Text and vision output share strict object, whole-number, real-date, confidence and allowlist validation. Invalid supplied values remain nullable and uncertain. Explicit zero survives; text replies without explicit successful completion metadata fail closed and missing years are not inferred by the text prompt. | Seven real Worker-handler regressions with a stubbed model; real provider behavior remains an external gate. |
 | COOR01 | Local shared-file checks require the current session token. CI validates lock trailers against coordination history at commit time and fails invalid claims. Amend/squash hooks no longer silently bypass trailer generation. | `audit-lock-session.spec.mjs`, existing lane tests and PR Lanes job. |
 | PUI04 | Manifest shortcuts use implemented `#do=trip` and `#omega` routes. | Manifest assertions and existing deep-link/browser tests. |
 | PUI05 | Push JSON null, primitives and arrays use the fallback notification instead of crashing. | Expanded `sw-push.spec.mjs` payload cases. |
@@ -35,6 +35,12 @@ provide targeted evidence only; they do not substitute for Node, browser,
 Swift, Worker, ELI or full CI execution. An attempted service-worker V8 probe
 could not run because that sandbox has no URL global; this is an environment
 limitation, not a passing test or a product failure.
+
+The first integrated suite exposed a missed manifest URL; its assertion stayed
+active and the source was corrected. Worker generation tests now expect the
+source candidate 34. The invalid-invite test starts in an independent app and
+uses visible UI readiness instead of fixed sleeps after a manually removed
+setup wizard; all error/no-wizard assertions remain active.
 
 Current candidate CI results are recorded in the PR and in
 `.agents/TEST_LEDGER.md` on `agent-coordination`. Historical green main results
