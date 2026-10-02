@@ -1,6 +1,0 @@
-owner: gpt
-token: 6a22c4bc-b47a-48d3-8b89-fdba0c05917f
-started_utc: 2026-10-02T22:22:30Z
-expected_release_utc: 2026-10-03T01:22:30Z
-paths: modern-shell.js
-task: Operator-authorized resumed audit; fix modern-shell observer quiescence on independent shared path. Preserve other session's app.js lock and commits. No merge/deploy/activation/live-data changes.
