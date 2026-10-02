@@ -21,7 +21,7 @@ database schema 16 and Worker 33 remain unchanged.
 | PUI06 | Notification clicks target a controlled app entry client; companion clients cannot consume the app handoff. | Two new production service-worker handler tests. |
 | PUI12 | About copy acknowledges optional external processing. | Source review; consent and real-provider behavior remain external gates. |
 | CFG01 (repository portion) | ELI, Agent and native checks cover all main PR/push changes, including upstream contracts outside former path filters. | `audit-ci-integrity.spec.mjs`; current-head workflow execution. Required-check repository settings remain unverified. |
-| CFG02 (repository portion) | Backup/API deploy workflows share a concurrency group. Backup/Admin require main, explicit DEPLOY and named production environments. | Workflow assertions. Environment reviewer configuration and live rollout remain external gates. |
+| CFG02 (repository portion) | Backup/API deployment jobs share a concurrency group; contract checks use an independent per-ref group so production approval does not block PR CI. Backup/Admin require main, explicit DEPLOY and named production environments. | Workflow assertions. Environment reviewer configuration and live rollout remain external gates. |
 | CFG03 | ELI runtime source is withheld by the actual deploy asset matcher. Private-source probes use the correct broker schema filename and include ELI/Agent paths. | Recursive asset-matcher tests and withholding-probe assertions. No live upload was performed. |
 | DOC01 (partial) | Lane ownership, frozen native scope and session-token instructions agree with current authority. | Source review and lane/parser tests. Other documentation drift remains open. |
 

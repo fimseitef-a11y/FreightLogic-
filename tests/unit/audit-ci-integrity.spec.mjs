@@ -14,9 +14,15 @@ test('[CI-AUDIT-01] ELI, Agent and native checks cover main PR/push without path
 });
 test('[CI-AUDIT-02] both API deployment paths serialize the same resource',()=>{
  const group=s=>s.match(/\n\s+group:\s*(\S+)/)?.[1];
- const a=group(wf('ai-agent-cutover')),b=group(wf('deploy-backup-worker'));
- ok(a);eq(a,b);
- ok(/cancel-in-progress:\s*false/.test(wf('deploy-backup-worker')));
+ const agent=wf('ai-agent-cutover'),backup=wf('deploy-backup-worker');
+ const job=name=>agent.split('\n  '+name+':\n')[1]?.split(/\n  [a-z][a-z-]*:\n/)[0]||'';
+ for(const name of ['dark-cutover','activate-canary']){
+   const block=job(name);ok(block,name+' exists');
+   eq(group(block),group(backup),name+' serializes the API deployment resource');
+   ok(/cancel-in-progress:\s*false/.test(block),name+' cannot cancel a live deployment');
+ }
+ ok(/cancel-in-progress:\s*false/.test(backup));
+ ok(!job('contract').includes('group: '+group(backup)),'contract checks cannot hold production approval lock');
 });
 test('[CI-AUDIT-03] privileged backup/admin deployment requires main and an environment',()=>{
  for(const name of ['deploy-backup-worker','deploy-admin-console']){

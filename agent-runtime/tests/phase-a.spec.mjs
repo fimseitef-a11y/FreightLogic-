@@ -580,8 +580,13 @@ await test("A41 worker checks model output before persistence and fails guard er
 
 await test("A42 production cutover workflow serializes activation and references the required approval environment", async () => {
   const workflow = await readFile(new URL("../../.github/workflows/ai-agent-cutover.yml", import.meta.url), "utf8");
-  assert.equal(workflow.includes("group: ai-agent-cutover-production"), true);
-  assert.equal(workflow.includes("cancel-in-progress: false"), true);
+  const job = name => workflow.split("\n  " + name + ":\n")[1]?.split(/\n  [a-z][a-z-]*:\n/)[0] || "";
+  for (const name of ["dark-cutover", "activate-canary"]) {
+    const block = job(name);
+    assert.equal(block.includes("group: ai-agent-cutover-production"), true, name + " production resource group");
+    assert.equal(block.includes("cancel-in-progress: false"), true, name + " live deployment cannot be cancelled");
+  }
+  assert.equal(job("contract").includes("group: ai-agent-cutover-production"), false, "PR checks must not wait for production approval");
   assert.equal((workflow.match(/environment: production-agent-cutover/g) || []).length, 2);
   assert.equal(workflow.includes("node agent-runtime/tests/output-guard.spec.mjs"), true);
 });
