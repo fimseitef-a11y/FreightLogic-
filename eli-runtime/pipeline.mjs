@@ -403,8 +403,6 @@ export async function storeEvidenceVersion(db, { evidence, index }) {
 export async function processEvidenceBatch(batch, env, deps = {}) {
   const db = env.ELI_DB;
   const now = deps.now ?? (() => new Date().toISOString());
-  const affected = new Set();
-
   await consumePrimaryBatch(batch, {
     claimReceipt: (receipt) => claimReceipt(db, receipt),
     completeReceipt: (receipt) => completeReceipt(db, receipt),
@@ -414,20 +412,26 @@ export async function processEvidenceBatch(batch, env, deps = {}) {
         throw new Error(`unsupported ELI message: ${String(body.type)}`);
       }
       const stored = await storeEvidenceVersion(db, body);
-      for (const key of body.affectedKeys ?? []) affected.add(key);
-      for (const key of stored.affectedLaneKeys ?? []) affected.add(key);
+      const affected = new Set([...(body.affectedKeys ?? []), ...(stored.affectedLaneKeys ?? [])]);
+      // On an exact-evidence retry the current index no longer names the
+      // previous lane. Superseded index rows preserve those repair targets.
+      const historical = await db.prepare(`SELECT DISTINCT lane_key FROM evidence_index
+        WHERE source_record_id = ? AND lane_key IS NOT NULL`)
+        .bind(body.index.sourceRecordId).all();
+      for (const row of historical?.results ?? []) affected.add(row.lane_key);
+      const keys = [...affected].filter(Boolean);
+      if (keys.length > 0) {
+        const run = await latestModelRun(db);
+        if (!run) throw new Error('model run is required before evidence completion');
+        // No receipt or ack until derived state is durably written. A failed
+        // upsert is retried through the idempotent evidence path.
+        await rematerializeLanes(db, keys, {
+          now: now(), modelRunId: run.model_run_id, governanceFingerprint: run.governance_fingerprint,
+        });
+      }
     },
     now,
   });
-
-  if (affected.size > 0) {
-    const run = await latestModelRun(db);
-    if (run) {
-      await rematerializeLanes(db, [...affected], {
-        now: now(), modelRunId: run.model_run_id, governanceFingerprint: run.governance_fingerprint,
-      });
-    }
-  }
 }
 
 export async function resolveMarketInDb(db, value) {

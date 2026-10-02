@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 
 import { augmentModelProjection, readEliLaneContext } from "../eli-client.mjs";
 import { buildModelMessages } from "../model-adapter.mjs";
@@ -12,6 +13,7 @@ const CLOUDFLARE_STUB = "data:text/javascript," + encodeURIComponent(
 );
 
 let workerClassPromise;
+let stateClass;
 function loadWorkerClass() {
   if (!workerClassPromise) {
     const base = new URL("../", import.meta.url);
@@ -20,35 +22,22 @@ function loadWorkerClass() {
         .replace(/from\s+["']cloudflare:workers["']/g, `from ${JSON.stringify(CLOUDFLARE_STUB)}`)
         .replace(/from\s+["']\.\/([\w.-]+\.mjs)["']/g, (_, file) => `from ${JSON.stringify(new URL(file, base).href)}`);
       return import("data:text/javascript;base64," + Buffer.from(rewritten).toString("base64"));
-    }).then((mod) => mod.default);
+    }).then((mod) => { stateClass = mod.FreightLogicAgentState; return mod.default; });
   }
   return workerClassPromise;
 }
 
+// Exercise production state SQL rather than bypassing execution claims.
 function memoryAgentState() {
-  const rows = new Map();
+  const states = new Map();
   return {
-    getByName() {
-      return {
-        async getIdempotency(key) { return rows.get(key) || null; },
-        async putIdempotency(record) {
-          if (!rows.has(record.idempotencyKey)) {
-            rows.set(record.idempotencyKey, {
-              idempotency_key: record.idempotencyKey,
-              event_id: record.eventId,
-              correlation_id: record.correlationId,
-              payload_fingerprint: record.payloadFingerprint,
-              authority_version: record.authorityVersion,
-              route_tier: record.routeTier,
-              recommendation: record.recommendation,
-              confidence: record.confidence,
-              reason: record.reason,
-              created_at: record.createdAt,
-            });
-          }
-          return rows.get(record.idempotencyKey);
-        },
-      };
+    getByName(name) {
+      if (!states.has(name)) {
+        const db = new DatabaseSync(":memory:");
+        const sql = { exec(query, ...bindings) { return db.prepare(query).all(...bindings); } };
+        states.set(name, new stateClass({ storage: { sql } }, {}));
+      }
+      return states.get(name);
     },
   };
 }

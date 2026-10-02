@@ -122,13 +122,20 @@ export class FreightLogicAgentState extends DurableObject {
   }
 
   async putIdempotency(record) {
-    this.cleanup();
+    const now = new Date().toISOString();
+    if (!record.claimToken) return { ok: false, code: "AGENT_CLAIM_LOST" };
+    this.cleanup(now);
     this.sql.exec(
       `INSERT OR IGNORE INTO idempotency_results
         (idempotency_key, event_id, correlation_id, payload_fingerprint, authority_version,
          route_tier, recommendation, confidence, reason, model_id, projection_fingerprint,
          retention_until, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM idempotency_claims WHERE idempotency_key = ?
+           AND claim_token = ? AND event_id = ? AND payload_fingerprint = ?
+           AND expires_at > ?
+       )`,
       record.idempotencyKey,
       record.eventId,
       record.correlationId,
@@ -142,7 +149,16 @@ export class FreightLogicAgentState extends DurableObject {
       record.projectionFingerprint || null,
       record.retentionUntil,
       record.createdAt,
+      record.idempotencyKey,
+      record.claimToken,
+      record.eventId,
+      record.payloadFingerprint,
+      now,
     );
+    // Synchronous SQL inspection: another claimant cannot interleave between
+    // the fenced INSERT and this ownership result.
+    const inserted = [...this.sql.exec("SELECT changes() AS count")][0]?.count;
+    if (inserted !== 1) return { ok: false, code: "AGENT_CLAIM_LOST" };
     return this.getIdempotency(record.idempotencyKey);
   }
 }
@@ -191,9 +207,11 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       };
     }
 
-    const supportsClaims = typeof state.claimIdempotency === "function" && typeof state.releaseIdempotencyClaim === "function";
+    if (typeof state.claimIdempotency !== "function" || typeof state.releaseIdempotencyClaim !== "function") {
+      return failClosed("AGENT_STATE_UNAVAILABLE", "Durable execution claims are required");
+    }
     const claimToken = crypto.randomUUID();
-    if (supportsClaims) {
+    {
       const claim = await state.claimIdempotency({
         idempotencyKey: scope.idempotencyKey,
         eventId: envelope.id,
@@ -243,6 +261,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       }
 
       const stored = await state.putIdempotency({
+        claimToken,
         idempotencyKey: scope.idempotencyKey,
         eventId: envelope.id,
         correlationId: envelope.correlationId,
@@ -258,6 +277,9 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
         createdAt: new Date().toISOString(),
       });
 
+      if (stored?.code === "AGENT_CLAIM_LOST") {
+        return failClosed("AGENT_CLAIM_LOST", "Execution no longer owns a valid completion claim");
+      }
       if (!sameIdempotentEvent(stored, envelope, payloadFingerprint)) {
         return failClosed("IDEMPOTENCY_CONFLICT", "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT");
       }
@@ -273,7 +295,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
         confidence: stored.confidence,
       };
     } finally {
-      if (supportsClaims) await state.releaseIdempotencyClaim(scope.idempotencyKey, claimToken);
+      await state.releaseIdempotencyClaim(scope.idempotencyKey, claimToken);
     }
   }
 }

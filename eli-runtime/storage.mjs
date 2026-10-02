@@ -180,26 +180,54 @@ export async function claimReceipt(db, claim) {
 export async function completeReceipt(db, completion) {
   requireDb(db);
   requireObject(completion, 'completion');
-  const receipt = await recordReceipt(db, {
-    idempotencyKey: completion.idempotencyKey,
-    messageType: completion.messageType,
-    evidenceId: completion.evidenceId ?? null,
-    processedAt: completion.processedAt,
-  });
-  if (receipt?.success === false) throw new Error('receipt completion write was not confirmed');
-
+  if (typeof db.batch !== 'function') throw new TypeError('transactional D1 batch is required for completion');
+  if (!completion.idempotencyKey || !completion.messageType || !completion.leaseToken || !completion.processedAt) {
+    throw new Error('receipt completion requires key, type, token and timestamp');
+  }
   await ensureMessageState(db);
-  const state = await db.prepare(`UPDATE ingest_message_state SET
-      state = 'COMPLETE', lease_token = NULL, lease_expires_at = NULL,
-      last_error = NULL, updated_at = ?
-    WHERE idempotency_key = ? AND (lease_token = ? OR state = 'COMPLETE')`)
-    .bind(completion.processedAt, completion.idempotencyKey, completion.leaseToken).run();
-  if (state?.success === false) throw new Error('receipt completion state was not confirmed');
+  const matchingComplete = async () => {
+    const row = await db.prepare(`SELECT s.attempt_count FROM ingest_message_state s
+      JOIN ingest_receipts r ON r.idempotency_key = s.idempotency_key
+      WHERE s.idempotency_key = ? AND s.state = 'COMPLETE' AND s.lease_token = ?
+        AND r.message_type = ? AND r.evidence_id IS ?`)
+      .bind(completion.idempotencyKey, completion.leaseToken, completion.messageType, completion.evidenceId ?? null).first();
+    return row ? { status: 'COMPLETE', attemptCount: row.attempt_count } : null;
+  };
+  const replay = await matchingComplete();
+  if (replay) return replay;
 
-  const durable = await db.prepare('SELECT 1 AS present FROM ingest_receipts WHERE idempotency_key = ?')
-    .bind(completion.idempotencyKey).first();
+  // State and receipt commit atomically. The UPDATE itself checks ownership;
+  // retaining the completion token permits a same-owner replay without giving
+  // an expired/replaced claimant authority over a successor's receipt.
+  const results = await db.batch([
+    db.prepare(`UPDATE ingest_message_state SET
+        state = 'COMPLETE', lease_expires_at = NULL, last_error = NULL, updated_at = ?
+      WHERE idempotency_key = ? AND state = 'PENDING' AND lease_token = ?
+        AND lease_expires_at > ? AND message_type = ? AND evidence_id IS ?
+        AND NOT EXISTS (SELECT 1 FROM ingest_receipts WHERE idempotency_key = ?)`)
+      .bind(completion.processedAt, completion.idempotencyKey, completion.leaseToken,
+        completion.processedAt, completion.messageType, completion.evidenceId ?? null, completion.idempotencyKey),
+    db.prepare(`INSERT INTO ingest_receipts (idempotency_key, message_type, evidence_id, processed_at)
+      SELECT ?, ?, ?, ? WHERE EXISTS (
+        SELECT 1 FROM ingest_message_state WHERE idempotency_key = ?
+          AND state = 'COMPLETE' AND lease_token = ? AND updated_at = ?
+          AND message_type = ? AND evidence_id IS ?
+      ) ON CONFLICT(idempotency_key) DO NOTHING`)
+      .bind(completion.idempotencyKey, completion.messageType, completion.evidenceId ?? null, completion.processedAt,
+        completion.idempotencyKey, completion.leaseToken, completion.processedAt,
+        completion.messageType, completion.evidenceId ?? null),
+  ]);
+  if (!Array.isArray(results) || results.length !== 2 || results.some(r => r?.success === false)) {
+    throw new Error('receipt completion transaction was not confirmed');
+  }
+  if (changed(results[0]) !== 1 || changed(results[1]) !== 1) {
+    const sameOwnerReplay = await matchingComplete();
+    if (sameOwnerReplay) return sameOwnerReplay;
+    throw new Error('receipt completion lost or expired its lease');
+  }
+  const durable = await matchingComplete();
   if (!durable) throw new Error('completed receipt was not durably observable');
-  return { status: 'COMPLETE', attemptCount: completion.attemptCount };
+  return durable;
 }
 
 export async function abandonReceipt(db, failure) {

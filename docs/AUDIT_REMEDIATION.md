@@ -4,7 +4,7 @@ The operator authorized remediation after the repository-wide read-only audit.
 This branch starts at `e6903330386fe43187c8021eda8e9c0e2e5c9fa3` (main,
 application 24.0.58, database schema 16, backup Worker 33).
 
-This is a bounded first remediation batch. It does **not** close the full audit.
+This is a series of bounded remediation batches. It does **not** close the full audit.
 No deployment, merge, agent activation, credential rotation or live-data change
 is part of this batch. Application/cache generation 24.0.59 is a source candidate;
 database schema 16 remains unchanged; Worker 34 is a source candidate.
@@ -30,6 +30,39 @@ database schema 16 remains unchanged; Worker 34 is a source candidate.
 | CFG02 (repository portion) | Backup/API deployment jobs share a concurrency group; contract checks use an independent per-ref group so production approval does not block PR CI. Backup/Admin require main, explicit DEPLOY and named production environments. | Workflow assertions. Environment reviewer configuration and live rollout remain external gates. |
 | CFG03 | ELI runtime source is withheld by the actual deploy asset matcher. Private-source probes use the correct broker schema filename and include ELI/Agent paths. | Recursive asset-matcher tests and withholding-probe assertions. No live upload was performed. |
 | DOC01 (partial) | Lane ownership, frozen native scope and session-token instructions agree with current authority. | Source review and lane/parser tests. Other documentation drift remains open. |
+
+## Resumed remediation scope (2026-10-02)
+
+The last fully green checkpoint was `3da02d21cbfff0439581fc62ffb42fb0d85fb664`:
+application 1030 passing assertions across 102 specifications; ELI 85 passing,
+zero failed/skipped; Swift 33 passing; Agent phase 42 passing, output guard
+11 passing and ELI integration 20 passing. Seven PR workflows succeeded.
+These results certify that checkpoint only. The browser harness did not report
+an explicit skipped count.
+
+Twenty-three subsequent contributor commits were preserved. At
+`e1f163c08d07580d1aa8821c85419a3eb76b469d`, six workflows succeeded but the
+application gate failed: 1039 passed, one failed across 102 specifications.
+Its registry check found three recovered but unregistered specifications, and
+the failure reporter then crashed on a legacy result without a failures array.
+This resumed batch registers those specifications and tests the production
+result normalizer; missing/invalid counts and zero assertions fail the gate.
+
+| Finding | Bounded correction | Required evidence / remaining scope |
+| --- | --- | --- |
+| WSEC04-WSEC05 (recovered contribution) | Account erasure delimits the selected namespace, scans exact-owner Shortcut aliases, waits for child batches and deletes the revoked canonical account last. | Four real-handler recovery and isolation cases are now registered. Distributed erasure isolation and eventually consistent KV enumeration remain open. |
+| FIN03 (recovered scoring/wizard portion) | Missing/invalid pay and deadhead withhold precise economics; explicit zero survives. Wizard inputs are read after asynchronous history so edits made while waiting are scored. | Three production preview boundary cases and three browser wizard cases are now registered. Other Money aggregation, sanitization and recognition issues remain open. |
+| PUI03 | Modern-shell synchronization writes classes/attributes/text/styles only when values change, allowing its observer to settle. | Three Chromium cases exercise shipped adapter quiescence, disclosure and navigation. Physical-device performance/accessibility remain gates. |
+| ELI freshness (partial) | Impossible/future evidence times remain UNAVAILABLE; lane and market reads age OPERATOR_PRIVATE freshness without another ingest and preserve stored evidence/provenance. Rule version is operator-freshness-v0.2. Projection rejects confidence outside [0,1]. | Node regressions cover time boundaries, lane/market read-time aging, invalid time, immutable evidence and confidence bounds. Other ELI provenance/identity/public-source policies remain open. |
+| AGN01 (additional guard boundaries) | Currency and per-mile units are captured together, unsupported units/malformed monetary values fail closed, cent rounding replaces percentage tolerance, and model verdicts require a canonical verdict. | Existing negation/domain/deadline/provenance tests stay active; new dollar-unit, malformed-value and rounding cases must pass Agent CI. This guard does not certify arbitrary natural-language factual assertions. |
+| AGN03 (completion fencing portion) | Result INSERT requires a current unexpired token and matching event fingerprint. Missing claim-capable state fails closed. Stale execution cannot persist or release its successor. | Four actual Worker/state SQLite cases; existing Agent/ELI integration now uses production state SQL. Provider cancellation and other Agent authority concerns remain open. |
+| ELI queue completion/recovery (partial) | Receipt/state completion uses one atomic, token-checked batch; materialization precedes completion/ack, and retries recover historical lane repair targets. | Four real SQLite cases cover stale owner, expiry, rollback and interrupted route correction. Per-message materialization adds reads/upserts; global evidence-writer fencing, historical receipts and production migration remain open. |
+| VER result reporting | Valid legacy result counts are preserved with safe failure details; malformed counts and empty specifications fail visibly. | Four production helper cases; registry completeness remains mandatory. |
+
+The current source batch requires all seven current-head PR workflows. V8
+production-function probes are targeted evidence only. Lease/receipt changes
+and any additional concurrency corrections must be reconciled with real
+production-path tests before claiming their bounded behavior verified.
 
 ## Verification discipline
 
@@ -59,12 +92,12 @@ evidence explicitly close them. The bounded changes above are not evidence for
 unmodified code.
 
 - Freight/storage: ST02-ST04, ST05 application portion, ST06-ST16.
-- Money: FIN01-FIN08.
+- Money: FIN01-FIN02, remaining FIN03 aggregation/recognition paths, FIN04-FIN08.
 - Backup/API/security: remaining WSEC01 concurrency/write-authority paths, WSEC02-WSEC06, WSEC09-WSEC12, and remaining WSEC08 provenance/provider-verification concerns.
 - ELI: ELI01-ELI09, remaining ELI10 identity/contracts, ELI11-ELI12.
 - AI agents: AGN01-AGN05.
 - Native/companion: remaining NAT01 platform and ANCS01 ESP-IDF/hardware, relay provenance and end-to-end gates.
-- Product/PWA/accessibility: PUI01-PUI03, PUI07-PUI11.
+- Product/PWA/accessibility: PUI01-PUI02, PUI03 pending current-head Chromium verification, PUI07-PUI11.
 - Verification/performance/legacy: VER01-VER02, PERF01, LEG01.
 - Configuration and documentation: external CFG01-CFG02 gates and remaining
   DOC01 drift.

@@ -16,7 +16,7 @@ import { deriveLaneIntelligence } from './derive.mjs';
 export const ADAPTER_VERSION = 'airtable-load-history-v1';
 export const SOURCE_ID = 'airtable:load-history';
 export const AUTHORIZATION_CLASS = 'OPERATOR_PRIVATE';
-export const FRESHNESS_VERSION = 'operator-freshness-v0.1';
+export const FRESHNESS_VERSION = 'operator-freshness-v0.2';
 export const DERIVE_VERSION = 'derive-v1';
 
 export const OPERATOR_FRESH_MS = 14 * 86400000;

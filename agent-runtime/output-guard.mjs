@@ -2,17 +2,26 @@
 // Deterministically verifies model prose against canonical FreightLogic facts.
 
 const VERDICT_WORDS = ["ACCEPT", "REJECT", "COUNTER", "HOLD"];
-const MONEY_PATTERN = /\$\s?[\d,]+(?:\.\d+)?|\b[\d,]+(?:\.\d+)?\s*(?:dollars?|\/\s?mi(?:le)?|per\s+mile)\b/gi;
-const PER_MILE_PATTERN = /(?:\/\s?mi(?:le)?|per\s+mile)\b/i;
-const RELATIVE_TOLERANCE = 0.01;
+// Keep currency and its unit in one claim; "$500/mi" is not "$500" total.
+const MONEY_PATTERN = /[+-]?\$\s*[+-]?[\d,.]+(?:e[+-]?\d+)?(?:\s*(?:\/\s*[a-z]+|per\s+[a-z]+))?|(?<![\w.,$+-])[+-]?[\d,.]+(?:e[+-]?\d+)?\s*(?:dollars?(?:\s*(?:\/\s*[a-z]+|per\s+[a-z]+))?|\/\s*[a-z]+|per\s+[a-z]+)\b/gi;
+const PER_MILE_PATTERN = /(?:\/\s*(?:mi|mile|miles)|per\s+mile)\s*$/i;
+// Permit cent rounding rather than a percentage-sized change in a bid.
+const ROUNDING_TOLERANCE = 0.005000001;
 
 function extractMoneyClaims(text) {
-  const matches = text.match(MONEY_PATTERN) || [];
-  return matches.map((raw) => ({
-    raw,
-    value: Number(raw.replace(/[^0-9.]/g, "")),
-    dimension: PER_MILE_PATTERN.test(raw) ? "per_mile" : "total",
-  })).filter((claim) => Number.isFinite(claim.value));
+  return (text.match(MONEY_PATTERN) || []).map((raw) => {
+    const unitMatch = /(?:\/\s*[a-z]+|per\s+[a-z]+)\s*$/i.exec(raw);
+    const dimension = unitMatch
+      ? (PER_MILE_PATTERN.test(unitMatch[0]) ? "per_mile"
+        : /(?:\/\s*load|per\s+load)\s*$/i.test(unitMatch[0]) ? "total" : "unsupported_unit")
+      : "total";
+    const numberText = raw.replace(/^\+?\$\s*/, "")
+      .replace(/(?:\s*dollars?)?(?:\s*(?:\/\s*[a-z]+|per\s+[a-z]+))?\s*$/i, "")
+      .replace(/[.,]$/, ""); // Sentence punctuation; embedded extra decimals still fail.
+    const valid = /^\+?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(numberText);
+    const value = valid ? Number(numberText.replaceAll(",", "")) : NaN;
+    return { raw, value, dimension };
+  });
 }
 
 function extractVerdictClaims(text) {
@@ -22,16 +31,17 @@ function extractVerdictClaims(text) {
 
 function canonicalMoneyValues(calculation, dimension) {
   if (!calculation || typeof calculation !== "object") return [];
+  if (dimension === "unsupported_unit") return [];
   const fields = dimension === "per_mile"
     ? ["trueRpm", "loadedRpm", "costPerMile"]
     : ["baselineBid", "marketBid", "fuelCost", "deadheadCost"];
   return fields.map((field) => calculation[field])
-    .filter((value) => typeof value === "number" && Number.isFinite(value));
+    .filter((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
 }
 
 function numberIsCanonical(value, canonicalValues) {
   return canonicalValues.some((canonical) => (
-    Math.abs(value - canonical) <= Math.max(0.01, Math.abs(canonical) * RELATIVE_TOLERANCE)
+    Math.abs(value - canonical) <= ROUNDING_TOLERANCE
   ));
 }
 
@@ -71,6 +81,10 @@ export function checkRecommendationAgainstCanonical(recommendation, calculation)
     ? calculation.verdict.toUpperCase()
     : null;
   const claimedVerdicts = extractVerdictClaims(recommendation);
+  if (claimedVerdicts.length > 0 && !VERDICT_WORDS.includes(canonicalVerdict)) {
+    throw new OutputGuardError("GUARD_CANONICAL_VERDICT_UNAVAILABLE",
+      "Recommendation asserts a verdict without a valid canonical verdict");
+  }
   const contradicting = canonicalVerdict
     ? claimedVerdicts.filter((verdict) => verdict !== canonicalVerdict)
     : [];

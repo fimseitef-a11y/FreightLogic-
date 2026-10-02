@@ -11,6 +11,7 @@ import { checkRecommendationAgainstCanonical, assertSafeRecommendation, OutputGu
 import { ContractError, validateEnvelope, buildModelProjection } from "../contracts.mjs";
 import { ModelExecutionError, runExplanationModel } from "../model-adapter.mjs";
 import { runEliIntegrationTests } from "./eli-integration.spec.mjs";
+import { runAgentLeaseTests } from "./audit-lease.spec.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -103,8 +104,9 @@ test("G10 assertSafeRecommendation throws OutputGuardError, not a generic Error"
   assert.throws(() => assertSafeRecommendation("REJECT and demand $9000.", calc), (err) => err instanceof OutputGuardError);
 });
 
-test("G11 missing canonical verdict field does not crash the guard (fails safe, no verdict check)", () => {
-  assert.equal(checkRecommendationAgainstCanonical("Accept: fair rate at $500.", { baselineBid: 500 }).ok, true);
+test("G11 a model verdict without a canonical verdict fails closed", () => {
+  assert.throws(() => checkRecommendationAgainstCanonical("Accept: fair rate at $500.", { baselineBid: 500 }),
+    (err) => err instanceof OutputGuardError && err.code === "GUARD_CANONICAL_VERDICT_UNAVAILABLE");
 });
 
 test("AGN-01a per-mile units cannot borrow a canonical total-dollar value", () => {
@@ -113,6 +115,30 @@ test("AGN-01a per-mile units cannot borrow a canonical total-dollar value", () =
 
 test("AGN-01b negated canonical verdict is not accepted as supporting evidence", () => {
   assert.throws(() => checkRecommendationAgainstCanonical("Do not ACCEPT this load.", calc), (err) => err instanceof OutputGuardError);
+});
+
+test("AUD-GUARD-01 currency-adjacent per-mile units cannot borrow canonical totals", () => {
+  for (const text of ["ACCEPT at $500/mi.", "ACCEPT at $500 per mile.", "ACCEPT at 500 dollars per mile."]) {
+    assert.throws(() => checkRecommendationAgainstCanonical(text, calc),
+      (err) => err instanceof OutputGuardError && err.code === "GUARD_NONCANONICAL_DOLLAR_VALUE");
+  }
+  assert.equal(checkRecommendationAgainstCanonical("ACCEPT at $1.61/mi.", calc).ok, true);
+  assert.equal(checkRecommendationAgainstCanonical("ACCEPT at $500 per load.", calc).ok, true);
+  assert.equal(checkRecommendationAgainstCanonical("ACCEPT at $500, given the evidence.", calc).ok, true);
+});
+test("AUD-GUARD-02 malformed, negative, scientific and unsupported-unit money claims fail closed", () => {
+  for (const text of ["ACCEPT at $5,00.", "ACCEPT at $500.0.1.", "ACCEPT at $-500.", "ACCEPT at -$500.",
+    "ACCEPT at $5e2.", "ACCEPT at $1.61/km.", "ACCEPT at $1.61 per kilometer.", "ACCEPT at -1.61/mi."]) {
+    assert.throws(() => checkRecommendationAgainstCanonical(text, calc),
+      (err) => err instanceof OutputGuardError);
+  }
+});
+test("AUD-GUARD-03 cent rounding cannot authorize a percentage-sized bid drift", () => {
+  assert.equal(checkRecommendationAgainstCanonical("ACCEPT at $500.", { ...calc, baselineBid: 500.004 }).ok, true);
+  assert.throws(() => checkRecommendationAgainstCanonical("ACCEPT at $504.", calc),
+    (err) => err instanceof OutputGuardError);
+  assert.throws(() => checkRecommendationAgainstCanonical("ACCEPT at $1.62/mi.", calc),
+    (err) => err instanceof OutputGuardError);
 });
 
 test("AGN-02 envelope rejects invalid operational and canonical value domains", () => {
@@ -156,6 +182,7 @@ try {
 
 try {
   await runEliIntegrationTests();
+  await runAgentLeaseTests();
 } catch (error) {
   console.log(`FAIL ELI integration contract - ${error.message}`);
   failed++;
