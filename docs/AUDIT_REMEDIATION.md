@@ -15,6 +15,11 @@ database schema 16 remains unchanged; Worker 34 is a source candidate.
 | --- | --- | --- |
 | ST01 | IndexedDB open failures reject with the original error without deleting the database. Successful connections close and announce reload on version change. | `audit-storage-recovery.spec.mjs`: VersionError, quota error, unknown error and version-change behavior. |
 | ST05 (M6 importer portion) | Sparse or ambiguous reused-ID evidence is withheld with provenance; unique merges require shared provider and event-time evidence. More informative evidence is processed first. Invalid calendar dates are rejected. Unknown deadhead/amount cannot create defensible True RPM. | `audit-m6-identity.spec.mjs`: production reconciliation and full CLI fixtures. The separate application identity paths remain open. |
+| WSEC01 (legacy migration portion) | Plaintext index migration cannot overwrite the canonical user before credential authority is checked. Retired, revoked and orphan credentials fail closed; valid legacy migration preserves current metadata. Other stale whole-account write/concurrency paths remain open. | Five real Worker-handler token-authority regressions; targeted authorization probes. |
+| ELI evidence-ordering (partial concurrent contribution) | A concurrent writer added source-time revision ordering, A-to-B-to-A reactivation and repair after raw append/index interruption. Those commits are preserved; this does not establish concurrent writer fencing, equal-time tie correctness or receipt/materialization recovery. | Three SQLite production-path regressions in `audit-evidence-ordering.test.mjs`; current integrated ELI CI. |
+| ELI10 (confidence domain portion) | Confidence requires a finite numeric value in [0,1] and a known fresh/aging state; unsupported freshness or confidence remains UNKNOWN. Explicit zero survives. Identity and broader contract issues remain open. | Three ELI contract cases covering valid bounds, invalid types/ranges and unknown freshness. |
+| NAT01 (input guard portion) | Original WebKit JSON envelopes are bounded before additional serialization/decoding; unknown fields, deep/large bodies and nonfinite values are rejected. | Native bridge regressions; Swift CI. Physical WebKit/iPhone behavior remains an external gate. |
+| ANCS01 (prototype transport portion) | The forwarding prototype requires HTTPS and a scoped relay key, uses the current intake relay envelope, clears credentials on failed reconfiguration and disables redirects. | Exact C initializer compiled/executed on the CI host, plus source protocol assertions. These do not verify ESP-IDF, BLE, TLS or hardware behavior. |
 | WSEC07 and WSEC08 (extraction portion) | Text and vision output share strict object, whole-number, real-date, confidence and allowlist validation. Invalid supplied values remain nullable and uncertain. Explicit zero survives; text replies without explicit successful completion metadata fail closed and missing years are not inferred by the text prompt. | Seven real Worker-handler regressions with a stubbed model; real provider behavior remains an external gate. |
 | COOR01 | Local shared-file checks require the current session token. CI validates lock trailers against coordination history at commit time and fails invalid claims. Amend/squash hooks no longer silently bypass trailer generation. | `audit-lock-session.spec.mjs`, existing lane tests and PR Lanes job. |
 | PUI04 | Manifest shortcuts use implemented `#do=trip` and `#omega` routes. | Manifest assertions and existing deep-link/browser tests. |
@@ -38,7 +43,7 @@ limitation, not a passing test or a product failure.
 
 The first integrated suite exposed a missed manifest URL; its assertion stayed
 active and the source was corrected. Worker generation tests now expect the
-source candidate 34. The invalid-invite test starts in an independent app and
+source candidate 34. The login-refusal fixture supplies CORS/preflight responses and awaits the actual 403 response and visible UI. The invalid-invite test starts in an independent app and
 uses visible UI readiness instead of fixed sleeps after a manually removed
 setup wizard; all error/no-wizard assertions remain active.
 
@@ -55,10 +60,10 @@ unmodified code.
 
 - Freight/storage: ST02-ST04, ST05 application portion, ST06-ST16.
 - Money: FIN01-FIN08.
-- Backup/API/security: WSEC01-WSEC06, WSEC09-WSEC12, and remaining WSEC08 provenance/provider-verification concerns.
-- ELI: ELI01-ELI12.
+- Backup/API/security: remaining WSEC01 concurrency/write-authority paths, WSEC02-WSEC06, WSEC09-WSEC12, and remaining WSEC08 provenance/provider-verification concerns.
+- ELI: ELI01-ELI09, remaining ELI10 identity/contracts, ELI11-ELI12.
 - AI agents: AGN01-AGN05.
-- Native/companion: NAT01, ANCS01.
+- Native/companion: remaining NAT01 platform and ANCS01 ESP-IDF/hardware, relay provenance and end-to-end gates.
 - Product/PWA/accessibility: PUI01-PUI03, PUI07-PUI11.
 - Verification/performance/legacy: VER01-VER02, PERF01, LEG01.
 - Configuration and documentation: external CFG01-CFG02 gates and remaining

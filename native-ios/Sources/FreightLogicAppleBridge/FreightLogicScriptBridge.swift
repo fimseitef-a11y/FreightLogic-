@@ -51,6 +51,13 @@ public final class FreightLogicScriptBridge: NSObject, WKScriptMessageHandlerWit
             return
         }
 
+        if let validationError = BridgeRequest.validateIncomingJSONObject(message.body) {
+            replyHandler(Self.replyObject(BridgeResponse(
+                requestID: "", ok: false, errorCode: .invalidPayload,
+                errorMessage: validationError.rawValue
+            )), nil)
+            return
+        }
         guard JSONSerialization.isValidJSONObject(message.body),
               let data = try? JSONSerialization.data(withJSONObject: message.body),
               let request = try? decoder.decode(BridgeRequest.self, from: data) else {
@@ -65,7 +72,8 @@ public final class FreightLogicScriptBridge: NSObject, WKScriptMessageHandlerWit
                 code = .unsupportedVersion
             case .forbiddenCredentialKey:
                 code = .forbiddenCredential
-            case .invalidRequestID, .payloadTooLarge, .payloadTooDeep:
+            case .invalidRequestID, .payloadTooLarge, .payloadTooDeep,
+                 .unknownEnvelopeField, .invalidJSONValue:
                 code = .invalidPayload
             }
             replyHandler(Self.replyObject(BridgeResponse(requestID: request.requestID, ok: false, errorCode: code, errorMessage: validationError.rawValue)), nil)

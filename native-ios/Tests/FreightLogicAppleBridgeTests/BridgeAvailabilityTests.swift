@@ -2,9 +2,10 @@ import XCTest
 @testable import FreightLogicAppleBridge
 
 final class BridgeAvailabilityTests: XCTestCase {
-    func testPackageBuildsOnNonWebKitHosts() {
+    func testPackageBuildsOnNonWebKitHosts() async {
         #if canImport(WebKit)
-        XCTAssertTrue(true)
+        let name = await MainActor.run { FreightLogicScriptBridge.handlerName }
+        XCTAssertEqual(name, "freightLogicNative")
         #else
         XCTAssertFalse(FreightLogicScriptBridgeAvailability.isWebKitAvailable)
         #endif

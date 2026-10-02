@@ -1191,7 +1191,8 @@ export default {
               env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
               env.BACKUPS.delete('token:' + driverToken),
             ];
-            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
+            // Migration repairs the token index only. Never overwrite canonical
+            // account authority from a stale plaintext index before validation.
             await Promise.all(migOps);
             tokenRaw = JSON.stringify(migRec);
           }

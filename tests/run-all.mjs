@@ -119,9 +119,11 @@ import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-
 import { runSpec as auditM6Identity } from './unit/audit-m6-identity.spec.mjs';
 import { runSpec as auditStorageRecovery } from './unit/audit-storage-recovery.spec.mjs';
 import { runSpec as auditLockSession } from './unit/audit-lock-session.spec.mjs';
+import { runSpec as auditAncsForwarder } from './unit/audit-ancs-forwarder.spec.mjs';
 import { runSpec as auditCiIntegrity } from './unit/audit-ci-integrity.spec.mjs';
 
 const specs = [
+  auditAncsForwarder,
   auditM6Identity,
   auditStorageRecovery,
   auditLockSession,

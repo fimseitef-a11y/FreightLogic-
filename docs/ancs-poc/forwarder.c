@@ -10,13 +10,13 @@
 #include "esp_log.h"
 
 #define FL_URL_MAX 256
-#define FL_TOKEN_MAX 96
+#define FL_RELAY_KEY_MAX 96
 #define FL_APP_ID_MAX 192
 #define FL_RAW_MAX 4096
 
 static const char *TAG = "FL_ANCS_FORWARD";
 static char s_worker_base_url[FL_URL_MAX];
-static char s_driver_token[FL_TOKEN_MAX];
+static char s_relay_key[FL_RELAY_KEY_MAX];
 static char s_dispatchland_app_id[FL_APP_ID_MAX];
 static bool s_ready = false;
 
@@ -28,17 +28,37 @@ static void copy_bounded(char *dst, size_t dst_size, const char *src)
 }
 
 esp_err_t fl_forwarder_init(const char *worker_base_url,
-                            const char *driver_token,
+                            const char *relay_key,
                             const char *dispatchland_app_id)
 {
+    s_ready = false;
+    memset(s_relay_key, 0, sizeof(s_relay_key));
     if (!worker_base_url || !worker_base_url[0] ||
-        !driver_token || !driver_token[0] ||
+        !relay_key || !relay_key[0] ||
         !dispatchland_app_id || !dispatchland_app_id[0]) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* Scoped relay only; reject full backup credentials and cleartext URLs. */
+    if (strncmp(worker_base_url, "https://", 8) != 0 ||
+        strlen(relay_key) != 52 || strncmp(relay_key, "fls_", 4) != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    for (const char *p = relay_key + 4; *p; ++p) {
+        if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f'))) return ESP_ERR_INVALID_ARG;
+    }
+    const char *host = worker_base_url + 8;
+    if (!((*host >= 'a' && *host <= 'z') || (*host >= 'A' && *host <= 'Z') ||
+          (*host >= '0' && *host <= '9'))) return ESP_ERR_INVALID_ARG;
+    bool trailing_slashes = false;
+    for (const char *p = host; *p; ++p) {
+        if (*p == '/') { trailing_slashes = true; continue; }
+        if (trailing_slashes || !((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '.' || *p == '-' || *p == ':')) return ESP_ERR_INVALID_ARG;
+    }
+
     size_t url_len = strlen(worker_base_url);
-    if (url_len >= FL_URL_MAX || strlen(driver_token) >= FL_TOKEN_MAX ||
+    if (url_len >= FL_URL_MAX || strlen(relay_key) >= FL_RELAY_KEY_MAX ||
         strlen(dispatchland_app_id) >= FL_APP_ID_MAX) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -47,7 +67,7 @@ esp_err_t fl_forwarder_init(const char *worker_base_url,
     while (url_len > 0 && s_worker_base_url[url_len - 1] == '/') {
         s_worker_base_url[--url_len] = '\0';
     }
-    copy_bounded(s_driver_token, sizeof(s_driver_token), driver_token);
+    copy_bounded(s_relay_key, sizeof(s_relay_key), relay_key);
     copy_bounded(s_dispatchland_app_id, sizeof(s_dispatchland_app_id), dispatchland_app_id);
     s_ready = true;
 
@@ -76,7 +96,9 @@ esp_err_t fl_forward_notification(const char *app_id,
 
     cJSON *root = cJSON_CreateObject();
     if (!root) return ESP_ERR_NO_MEM;
-    if (!cJSON_AddStringToObject(root, "text", raw_text)) {
+    cJSON *params = cJSON_AddObjectToObject(root, "params");
+    if (!params || !cJSON_AddStringToObject(root, "do", "intake") ||
+        !cJSON_AddStringToObject(params, "text", raw_text)) {
         cJSON_Delete(root);
         return ESP_ERR_NO_MEM;
     }
@@ -86,7 +108,7 @@ esp_err_t fl_forward_notification(const char *app_id,
     if (!json) return ESP_ERR_NO_MEM;
 
     char url[FL_URL_MAX + 16];
-    int url_n = snprintf(url, sizeof(url), "%s/extract", s_worker_base_url);
+    int url_n = snprintf(url, sizeof(url), "%s/relay", s_worker_base_url);
     if (url_n < 0 || (size_t)url_n >= sizeof(url)) {
         free(json);
         return ESP_ERR_INVALID_SIZE;
@@ -96,6 +118,7 @@ esp_err_t fl_forward_notification(const char *app_id,
         .url = url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 10000,
+        .disable_auto_redirect = true,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
@@ -106,14 +129,14 @@ esp_err_t fl_forward_notification(const char *app_id,
     }
 
     esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_header(client, "X-Backup-Token", s_driver_token);
+    esp_http_client_set_header(client, "X-Shortcut-Key", s_relay_key);
     esp_http_client_set_header(client, "X-Device-Id", "ancs-bridge");
     esp_http_client_set_post_field(client, json, strlen(json));
 
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
         int status = esp_http_client_get_status_code(client);
-        ESP_LOGI(TAG, "FreightLogic /extract HTTP %d", status);
+        ESP_LOGI(TAG, "FreightLogic /relay HTTP %d", status);
         if (status < 200 || status >= 300) err = ESP_FAIL;
     } else {
         ESP_LOGW(TAG, "FreightLogic forward failed: %s", esp_err_to_name(err));

@@ -329,4 +329,52 @@ test('[WTA-14] /health reports the Worker generation this candidate ships', asyn
     'the reported version and the header must name the same generation');
 });
 
+
+test('[WTA-AUDIT-01] stale plaintext fallback cannot resurrect a rotated credential', async () => {
+  const {kv,staleHash}=await seedRacedRekey();
+  await kv.delete('tokh:'+staleHash);
+  await kv.put('token:'+STALE_TOKEN,JSON.stringify({userId:USER_ID,token:STALE_TOKEN,name:'Old index',active:true,backupCount:999}));
+  const before=await kv.get('user:'+USER_ID),worker=await loadWorker();
+  const stale=await worker.fetch(driverReq('/list',STALE_TOKEN),env(kv));
+  eq(stale.status,403);eq(await kv.get('user:'+USER_ID),before,'canonical account cannot be rewritten by stale index');
+  const live=await worker.fetch(driverReq('/list',LIVE_TOKEN),env(kv));
+  eq(live.status,200,'current credential still works');
+  const held=JSON.parse(await kv.get('user:'+USER_ID));
+  eq(held.name,'Dana');eq(held.backupCount,3);
+});
+test('[WTA-AUDIT-02] stale active plaintext fallback cannot reactivate a revoked account', async () => {
+  const {kv,staleHash}=await seedRacedRekey({userActive:false});
+  await kv.delete('tokh:'+staleHash);
+  await kv.put('token:'+STALE_TOKEN,JSON.stringify({userId:USER_ID,token:STALE_TOKEN,name:'Old index',active:true}));
+  const before=await kv.get('user:'+USER_ID),worker=await loadWorker();
+  eq((await worker.fetch(driverReq('/list',STALE_TOKEN),env(kv))).status,403);
+  eq(await kv.get('user:'+USER_ID),before);
+  eq(JSON.parse(await kv.get('user:'+USER_ID)).active,false);
+});
+test('[WTA-AUDIT-03] plaintext index without an account never creates canonical authority', async () => {
+  const kv=makeKV({['token:'+LIVE_TOKEN]:JSON.stringify({userId:USER_ID,token:LIVE_TOKEN,name:'Orphan',active:true})});
+  const worker=await loadWorker();
+  eq((await worker.fetch(driverReq('/list',LIVE_TOKEN),env(kv))).status,403);
+  eq(await kv.get('user:'+USER_ID),null);
+});
+test('[WTA-AUDIT-04] legitimate plaintext canonical account preserves newer metadata during migration', async () => {
+  const canonical={userId:USER_ID,token:LIVE_TOKEN,name:'Current operator',active:true,backupCount:7};
+  const oldIndex={...canonical,name:'Old index',backupCount:999};
+  const kv=makeKV({['user:'+USER_ID]:JSON.stringify(canonical),['token:'+LIVE_TOKEN]:JSON.stringify(oldIndex)});
+  const worker=await loadWorker();
+  eq((await worker.fetch(driverReq('/list',LIVE_TOKEN),env(kv))).status,200);
+  const held=JSON.parse(await kv.get('user:'+USER_ID));
+  eq(held.name,'Current operator');eq(held.backupCount,7);
+  eq(held.tokenHash,await sha256Hex(LIVE_TOKEN));ok(!('token' in held),'plaintext scrub remains supported');
+});
+test('[WTA-AUDIT-05] matching hashed account accepts plaintext fallback without stale metadata overwrite', async () => {
+  const {kv,liveHash}=await seedRacedRekey();
+  await kv.delete('tokh:'+liveHash);
+  await kv.put('token:'+LIVE_TOKEN,JSON.stringify({userId:USER_ID,token:LIVE_TOKEN,name:'Old index',active:true,backupCount:999}));
+  const worker=await loadWorker();
+  eq((await worker.fetch(driverReq('/list',LIVE_TOKEN),env(kv))).status,200);
+  const held=JSON.parse(await kv.get('user:'+USER_ID));
+  eq(held.name,'Dana');eq(held.backupCount,3);eq(held.tokenHash,liveHash);ok(!('token' in held));
+});
+
 export async function runSpec() { return run(); }

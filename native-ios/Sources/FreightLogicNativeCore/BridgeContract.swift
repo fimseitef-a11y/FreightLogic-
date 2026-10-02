@@ -64,6 +64,8 @@ public enum BridgeValidationError: String, Error, Equatable, Sendable {
     case payloadTooLarge
     case payloadTooDeep
     case forbiddenCredentialKey
+    case unknownEnvelopeField
+    case invalidJSONValue
 }
 
 public struct BridgeRequest: Codable, Equatable, Sendable {
@@ -86,6 +88,57 @@ public struct BridgeRequest: Codable, Equatable, Sendable {
         self.requestID = requestID
         self.action = action
         self.payload = payload
+    }
+
+    /// Inspect the original body before serialization or Codable field removal.
+    public static func validateIncomingJSONObject(_ body: Any) -> BridgeValidationError? {
+        guard let envelope = body as? [String: Any],
+              Set(envelope.keys) == Set(["version", "requestID", "action", "payload"]) else {
+            return .unknownEnvelopeField
+        }
+        var nodes = 0
+        var estimatedBytes = 0
+        func add(_ bytes: Int) -> Bool {
+            guard bytes <= maximumEncodedBytes - estimatedBytes else { return false }
+            estimatedBytes += bytes
+            return true
+        }
+        func stringBytes(_ text: String) -> Int {
+            var bytes = 2
+            for byte in text.utf8 {
+                bytes += byte < 32 ? 6 : (byte == 34 || byte == 92 || byte == 47 ? 2 : 1)
+                if bytes > maximumEncodedBytes { break }
+            }
+            return bytes
+        }
+        func inspect(_ value: Any, depth: Int) -> BridgeValidationError? {
+            nodes += 1
+            guard nodes <= 4096 else { return .payloadTooLarge }
+            guard depth <= maximumPayloadDepth + 1 else { return .payloadTooDeep }
+            if let dictionary = value as? [String: Any] {
+                guard add(2 + dictionary.count) else { return .payloadTooLarge }
+                for (key, nested) in dictionary {
+                    guard add(stringBytes(key) + 1) else { return .payloadTooLarge }
+                    if let error = inspect(nested, depth: depth + 1) { return error }
+                }
+            } else if let array = value as? [Any] {
+                guard add(2 + array.count) else { return .payloadTooLarge }
+                for nested in array {
+                    if let error = inspect(nested, depth: depth + 1) { return error }
+                }
+            } else if let text = value as? String {
+                guard add(stringBytes(text)) else { return .payloadTooLarge }
+            } else if value is NSNull {
+                guard add(4) else { return .payloadTooLarge }
+            } else if let number = value as? NSNumber {
+                guard number.doubleValue.isFinite else { return .invalidJSONValue }
+                guard add(64) else { return .payloadTooLarge }
+            } else {
+                return .invalidJSONValue
+            }
+            return nil
+        }
+        return inspect(envelope, depth: 1)
     }
 
     public func validate(using encoder: JSONEncoder = JSONEncoder()) -> BridgeValidationError? {

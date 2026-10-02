@@ -10,15 +10,17 @@ extern "C" {
  * Configure the FreightLogic ANCS proof-of-concept forwarder.
  *
  * worker_base_url: e.g. https://<worker-host> (no trailing slash)
- * driver_token: current FreightLogic X-Backup-Token for smoke testing only
+ * relay_key: revocable relay-only fls_ credential; full driver tokens rejected
  * dispatchland_app_id: actual App Identifier observed from ANCS; never guess it
  */
 esp_err_t fl_forwarder_init(const char *worker_base_url,
-                            const char *driver_token,
+                            const char *relay_key,
                             const char *dispatchland_app_id);
 
 /**
- * Forward a fully assembled ANCS notification to FreightLogic /extract.
+ * Forward assembled notification text through HTTPS /relay intake.
+ * Redirects are disabled. Relay acceptance is pending intake; the operator
+ * must review it in the PWA before saving.
  * Returns ESP_ERR_NOT_FOUND when app_id does not match the configured
  * DispatchLand App Identifier.
  */
