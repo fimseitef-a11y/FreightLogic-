@@ -413,7 +413,8 @@ export async function eraseUserData(env, userId) {
   let user;
   try { user = JSON.parse(userRaw); } catch { throw new Error('Corrupted user record'); }
 
-  const keys = new Set(await listAllKvKeys(env, 'user:' + userId));
+  // A shorter supported legacy ID must not select a longer account ID.
+  const keys = new Set(await listAllKvKeys(env, 'user:' + userId + ':'));
   for (const key of [
     'push:subs:' + userId,
     'relay:' + userId,
@@ -429,8 +430,9 @@ export async function eraseUserData(env, userId) {
   try { shortcutRec = JSON.parse(await env.BACKUPS.get('sckuser:' + userId) || 'null'); } catch {}
   if (shortcutRec?.hash) keys.add('sck:' + shortcutRec.hash);
 
-  // Remove every token index naming this account, including stale race residue.
-  for (const prefix of ['tokh:', 'token:']) {
+  // Exact owner selection recovers Shortcut aliases even if an earlier
+  // partial erasure already deleted their sckuser metadata.
+  for (const prefix of ['tokh:', 'token:', 'sck:']) {
     for (const key of await listAllKvKeys(env, prefix)) {
       let rec = null;
       try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
@@ -480,11 +482,17 @@ export async function eraseUserData(env, userId) {
     else await env.BACKUPS.delete('rem:index');
   }
 
-  const all = [...keys];
+  // Keep revoked canonical identity until all children are removed so a
+  // failed operation can be enumerated and retried by the same admin route.
+  const accountKey = 'user:' + userId;
+  const all = [...keys].filter(key => key !== accountKey);
   for (let i = 0; i < all.length; i += 50) {
-    await Promise.all(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+    const results = await Promise.allSettled(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
-  return { found: true, deleted: all.length };
+  await env.BACKUPS.delete(accountKey);
+  return { found: true, deleted: all.length + 1 };
 }
 
 export async function enforceDriverCredentialLifetime(env, userRec, tokenHash, now = Date.now()) {

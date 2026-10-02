@@ -5710,15 +5710,15 @@ function _getScoreBaselines(allTrips, allExps){
 }
 
 function computeLoadScore(trip, allTrips, allExps, fuelConfig=null){
-  if (tripAllMiles(trip) === null || tripAllMiles(trip) <= 0){
+  if (knownNum(trip?.pay) === null || knownNum(trip?.pay) < 0 || tripAllMiles(trip) === null || tripAllMiles(trip) <= 0){
     return { available:false, verdict:'UNAVAILABLE', verdictColor:'var(--warn)',
       marginScore:null, riskScore:null, rpm:null, loadedRpm:null, deadheadPct:null,
       counterOffer:null, counterRpm:null, fuelCost:null, netAfterFuel:null,
-      tierName:'Unknown mileage', margin:{total:null,factors:[]}, risk:{total:null,factors:[]} };
+      tierName:knownNum(trip?.pay) < 0 ? 'Invalid pay' : 'Unknown pay or mileage', margin:{total:null,factors:[]}, risk:{total:null,factors:[]} };
   }
-  const pay = Number(trip.pay || 0);
-  const loaded = Number(trip.loadedMiles || 0);
-  const empty = Number(trip.emptyMiles || 0);
+  const pay = knownNum(trip.pay);
+  const loaded = knownNum(trip.loadedMiles);
+  const empty = knownNum(trip.emptyMiles);
   const allMi = loaded + empty;
   const trueRpm = allMi > 0 ? pay / allMi : 0;
   const loadedRpm = loaded > 0 ? pay / loaded : 0;
@@ -6049,7 +6049,7 @@ const DEFAULT_SCORE_WEIGHTS = Object.freeze({
 // ── Score badge for trip rows ──
 function scoreBadgeHTML(score){
   if (!score) return '';
-  if (score.available === false) return '<span class="tag" data-act="score">Mileage unknown</span>';
+  if (score.available === false) return '<span class="tag" data-act="score">Score unavailable</span>';
   const m = score.marginScore;
   let bg, border;
   if (m >= 80){ bg = 'rgba(107,255,149,.12)'; border = 'rgba(107,255,149,.4)'; }
@@ -6061,7 +6061,7 @@ function scoreBadgeHTML(score){
 
 // ── Score breakdown modal ──
 function openScoreBreakdown(trip, score){
-  if (score.available === false){ toast('Complete loaded and deadhead miles to score this load.'); return; }
+  if (score.available === false){ toast('Pay, mileage or cost inputs need review before scoring.'); return; }
   const body = document.createElement('div');
   body.style.cssText = 'padding:0';
 
@@ -6169,7 +6169,7 @@ function openScoreBreakdown(trip, score){
 
 // ── Score flash after trip save ──
 function showScoreFlash(trip, score){
-  if (score.available === false){ toast('Load saved — mileage needed before scoring.'); return; }
+  if (score.available === false){ toast('Load saved — pay, mileage or cost inputs need review before scoring.'); return; }
   haptic(30);
   const body = document.createElement('div');
   body.style.cssText = 'text-align:center;padding:8px 0';
@@ -6207,14 +6207,18 @@ function showScoreFlash(trip, score){
 // ── Live score preview in trip wizard ──
 function renderLiveScore(container, tripData, allTrips, allExps){
   if (!container) return;
-  const pay = Number(tripData.pay || 0);
-  const loaded = Number(tripData.loadedMiles || 0);
-  const empty = Number(tripData.emptyMiles || 0);
+  const pay = knownNum(tripData?.pay);
+  const loaded = knownNum(tripData?.loadedMiles);
+  const empty = knownNum(tripData?.emptyMiles);
+  if (pay === null || loaded === null || empty === null){
+    container.textContent = 'Pay, loaded miles and deadhead must be known to calculate economics.';
+    return;
+  }
   const allMi = loaded + empty;
   if (pay <= 0 || allMi <= 0){ container.innerHTML = ''; return; }
 
   const score = computeLoadScore(tripData, allTrips, allExps);
-  if (score.available === false){ container.textContent = 'Complete mileage to see a score.'; return; }
+  if (score.available === false){ container.textContent = 'Pay, mileage or cost inputs need review before scoring.'; return; }
   container.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;flex-wrap:wrap">
     <span style="font-weight:800;font-size:14px;color:${score.verdictColor}">${score.verdict}</span>
     <span class="pill" style="padding:4px 8px"><span class="muted">M</span> <b>${score.marginScore}</b></span>
@@ -15310,15 +15314,19 @@ function openTripWizard(existing=null){
   step1.querySelector('.card').appendChild(liveScoreEl);
   let _lsTimer = null;
   async function updateLiveScore(){
-    const pay = Number($('#f_pay', body).value || 0);
-    const loaded = Number($('#f_loaded', body).value || 0);
-    const empty = Number($('#f_empty', body).value || 0);
-    if (pay <= 0 || (loaded + empty) <= 0){ liveScoreEl.innerHTML = ''; return; }
-    const preview = { ...trip, pay, loadedMiles: loaded, emptyMiles: empty,
-      customer: mode==='edit' ? trip.customer : ($('#f_customer', body)?.value || ''),
-      orderNo: normOrderNo($('#f_orderNo', body).value) || 'preview' };
     try{
       const { trips: allT, exps: allE } = await _getTripsAndExps();
+      // Read current inputs after awaiting history; a cleared field remains unknown.
+      const pay = knownNum($('#f_pay', body).value);
+      const loaded = knownNum($('#f_loaded', body).value);
+      const empty = knownNum($('#f_empty', body).value);
+      if (pay === null || loaded === null || empty === null){
+        liveScoreEl.textContent = 'Pay, loaded miles and deadhead must be known to calculate economics.';
+        return;
+      }
+      const preview = { ...trip, pay, loadedMiles: loaded, emptyMiles: empty,
+        customer: mode==='edit' ? trip.customer : ($('#f_customer', body)?.value || ''),
+        orderNo: normOrderNo($('#f_orderNo', body).value) || 'preview' };
       renderLiveScore(liveScoreEl, preview, allT, allE);
     }catch{ liveScoreEl.innerHTML = ''; }
   }
