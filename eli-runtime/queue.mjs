@@ -16,6 +16,12 @@ function messageBody(message) {
   return body;
 }
 
+function leaseExpiry(startedAt, leaseMs = 30000) {
+  const ms = Date.parse(startedAt);
+  if (!Number.isFinite(ms)) throw new Error('queue lease clock must be an ISO timestamp');
+  return new Date(ms + leaseMs).toISOString();
+}
+
 export function buildChangeSets(messages = []) {
   if (!Array.isArray(messages)) throw new TypeError('messages must be an array');
   const groups = new Map();
@@ -47,7 +53,73 @@ export function buildChangeSets(messages = []) {
     }));
 }
 
-export async function consumePrimaryBatch(batch, deps = {}) {
+async function consumeLeasedPrimaryBatch(batch, deps) {
+  const claimReceipt = requiredFunction(deps.claimReceipt, 'claimReceipt');
+  const processMessage = requiredFunction(deps.processMessage, 'processMessage');
+  const completeReceipt = requiredFunction(deps.completeReceipt, 'completeReceipt');
+  const abandonReceipt = requiredFunction(deps.abandonReceipt, 'abandonReceipt');
+  const now = requiredFunction(deps.now, 'now');
+  const leaseMs = Number.isFinite(deps.leaseMs) ? Math.max(1000, deps.leaseMs) : 30000;
+
+  for (const message of messageList(batch)) {
+    let body;
+    let lease = null;
+    try {
+      body = messageBody(message);
+      if (!body.idempotencyKey) throw new Error('idempotencyKey is required');
+      if (!body.type) throw new Error('message type is required');
+      const claimedAt = now();
+      const leaseToken = crypto.randomUUID();
+      lease = await claimReceipt({
+        idempotencyKey: body.idempotencyKey,
+        messageType: body.type,
+        evidenceId: body.evidenceId ?? null,
+        claimedAt,
+        leaseToken,
+        leaseExpiresAt: leaseExpiry(claimedAt, leaseMs),
+        attemptHint: Number.isFinite(message.attempts) ? message.attempts : 1,
+      });
+
+      if (lease?.status === 'COMPLETE') {
+        message.ack();
+        continue;
+      }
+      if (lease?.status !== 'ACQUIRED') {
+        message.retry();
+        continue;
+      }
+
+      await processMessage(body);
+      const processedAt = now();
+      await completeReceipt({
+        idempotencyKey: body.idempotencyKey,
+        messageType: body.type,
+        evidenceId: body.evidenceId ?? null,
+        processedAt,
+        leaseToken: lease.leaseToken ?? leaseToken,
+        attemptCount: lease.attemptCount ?? 1,
+      });
+      message.ack();
+    } catch (error) {
+      if (body?.idempotencyKey && lease?.status === 'ACQUIRED') {
+        try {
+          await abandonReceipt({
+            idempotencyKey: body.idempotencyKey,
+            leaseToken: lease.leaseToken,
+            failedAt: now(),
+            attemptCount: lease.attemptCount ?? 1,
+            error: String(error?.message ?? error),
+          });
+        } catch {
+          // Queue retry remains authoritative if the failure journal itself fails.
+        }
+      }
+      message.retry();
+    }
+  }
+}
+
+async function consumeLegacyPrimaryBatch(batch, deps) {
   const hasReceipt = requiredFunction(deps.hasReceipt, 'hasReceipt');
   const processMessage = requiredFunction(deps.processMessage, 'processMessage');
   const recordReceipt = requiredFunction(deps.recordReceipt, 'recordReceipt');
@@ -81,6 +153,15 @@ export async function consumePrimaryBatch(batch, deps = {}) {
       message.retry();
     }
   }
+}
+
+export async function consumePrimaryBatch(batch, deps = {}) {
+  const leased = typeof deps.claimReceipt === 'function'
+    || typeof deps.completeReceipt === 'function'
+    || typeof deps.abandonReceipt === 'function';
+  return leased
+    ? consumeLeasedPrimaryBatch(batch, deps)
+    : consumeLegacyPrimaryBatch(batch, deps);
 }
 
 export async function consumeDeadLetterBatch(batch, deps = {}) {
