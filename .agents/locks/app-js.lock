@@ -1,6 +1,0 @@
-owner: gpt
-token: 5be9a184-24a1-4a08-966b-6b1bf826f142
-started_utc: 2026-10-02T19:36:51Z
-expected_release_utc: 2026-10-02T23:36:51Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json, .assetsignore, .agents/LANES.md, AGENTS.md
-task: Continue operator-authorized audit remediation; serialize app.js changes and run integrated full suite. No merge, deployment, runtime activation or live-data changes.
