@@ -358,7 +358,7 @@ function indexUpsert(db, { evidence, index, superseded }) {
 
 // Store one evidence occurrence. Raw evidence remains content-addressed and
 // append-only, while the mutable index records which source revision is current.
-// Source retrieval time orders revisions; queue delivery time never does.
+// Source retrieval time orders revisions; exact-time ties use observed source order.
 export async function storeEvidenceVersion(db, { evidence, index }) {
   const incomingTime = revisionTime(evidence?.retrievedAt);
   if (incomingTime === null) throw new Error('evidence retrievedAt must be a valid timestamp');
@@ -379,7 +379,7 @@ export async function storeEvidenceVersion(db, { evidence, index }) {
   }
 
   const currentTime = currentRevisionTime(current);
-  const becomesCurrent = !current || currentTime === null || incomingTime > currentTime;
+  const becomesCurrent = !current || currentTime === null || incomingTime >= currentTime;
 
   if (!exists) {
     await appendRawEvidence(db, {
