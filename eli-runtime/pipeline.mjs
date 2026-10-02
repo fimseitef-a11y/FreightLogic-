@@ -1,16 +1,12 @@
 // pipeline.mjs — ELI ingestion pipeline (D1 + queue). AIAG-TASK-0038.
-//
-//   scheduled() -> runIngestion(): mirror Verified market aliases and governed
-//     lanes from Airtable, read Load History, enqueue each not-yet-stored
-//     evidence version, and materialize every governed lane.
-//   queue()     -> processEvidenceBatch(): store each evidence version
-//     (append-only, superseding the previous version of the same Airtable
-//     row), record a receipt, then re-materialize the affected lanes.
-//
-// Airtable is the authority for aliases, lane existence and stage (design
-// amendment 7). A lane Airtable does not govern is never materialized.
+// Airtable remains authority for aliases and lane governance; raw evidence is append-only.
 
-import { appendRawEvidence, recordReceipt } from './storage.mjs';
+import {
+  appendRawEvidence,
+  claimReceipt,
+  completeReceipt,
+  abandonReceipt,
+} from './storage.mjs';
 import { consumePrimaryBatch } from './queue.mjs';
 import { fetchAirtableRecords } from './airtable.mjs';
 import { LOAD_HISTORY_TABLE_ID, getLoadHistoryReadFieldIds } from './adapters/airtable-load-history.mjs';
@@ -33,9 +29,19 @@ import {
 } from './ingest.mjs';
 
 const SEND_BATCH = 100;
-const IN_CHUNK = 90; // stays under D1's bound-parameter limit
-
+const IN_CHUNK = 90;
 export const EVIDENCE_MESSAGE_TYPE = 'operator_load_history_evidence';
+
+export function requireWriteSuccess(result, label = 'D1 write') {
+  if (result?.success === false) throw new Error(`${label} was not confirmed`);
+  return result;
+}
+
+function requireBatchSuccess(results, label) {
+  if (!Array.isArray(results)) throw new Error(`${label} returned no D1 batch result`);
+  for (const result of results) requireWriteSuccess(result, label);
+  return results;
+}
 
 export function ingestionReadiness(env) {
   if (env?.ELI_ENABLED !== 'true') return 'ELI_DISABLED';
@@ -55,7 +61,7 @@ async function replaceAliases(db, rows) {
       row.aliasNorm, row.aliasText, row.marketCluster, row.geographyVersion ?? null, row.airtableRecordId, row.syncedAt,
     ));
   }
-  await db.batch(statements);
+  requireBatchSuccess(await db.batch(statements), 'replace aliases');
 }
 
 async function replaceGovernance(db, rows) {
@@ -68,9 +74,8 @@ async function replaceGovernance(db, rows) {
       JSON.stringify(row.unknownFlags), row.airtableRecordId, row.syncedAt,
     ));
   }
-  // A lane Airtable no longer governs stops being served.
   statements.push(db.prepare('DELETE FROM lane_read_model WHERE lane_key NOT IN (SELECT lane_key FROM lane_governance)'));
-  await db.batch(statements);
+  requireBatchSuccess(await db.batch(statements), 'replace lane governance');
 }
 
 async function existingReceipts(db, keys) {
@@ -133,7 +138,7 @@ export async function rematerializeLanes(db, laneKeys, { now, modelRunId, govern
       })),
       { now, modelRunId, governanceFingerprint },
     );
-    await db.prepare(`INSERT INTO lane_read_model (
+    const result = await db.prepare(`INSERT INTO lane_read_model (
         lane_key, origin_market, destination_market, structural_score, expedite_relevance,
         structural_confidence, expedite_confidence, freshness_json, unknown_flags_json,
         conflict_flags_json, evidence_counts_json, latest_evidence_at, stage, model_run_id,
@@ -158,29 +163,24 @@ export async function rematerializeLanes(db, laneKeys, { now, modelRunId, govern
       JSON.stringify(lane.unknownFlags), JSON.stringify(lane.conflictFlags), JSON.stringify(lane.evidenceCounts),
       lane.latestEvidenceAt, lane.stage, lane.modelRunId, lane.governanceFingerprint, lane.updatedAt,
     ).run();
+    requireWriteSuccess(result, `materialize ${laneKey}`);
     materialized += 1;
   }
   return materialized;
 }
 
-// Airtable plans cap monthly API calls; a run spends ~5. However the cron is
-// configured (including the on-demand every-minute trigger), at most one real
-// run happens per interval.
 export const MIN_RUN_INTERVAL_MS = 30 * 60 * 1000;
 
 export async function runIngestion(env, deps = {}) {
   const now = (deps.now ?? (() => new Date().toISOString()))();
   const notReady = ingestionReadiness(env);
   if (notReady) {
-    // Record WHY a run did not happen whenever ELI is enabled with D1, so a
-    // missing token or binding is diagnosable without logs. A disabled ELI
-    // writes nothing.
     if (notReady !== 'ELI_DISABLED' && notReady !== 'ELI_DB_UNAVAILABLE') {
       try {
         await env.ELI_DB.prepare(`INSERT INTO ingest_runs (run_id, started_at, finished_at, status, error)
           VALUES (?, ?, ?, 'SKIPPED', ?)`).bind(`skip:${now}:${crypto.randomUUID()}`, now, now, notReady).run();
       } catch {
-        // Diagnostics must never turn a skip into a crash.
+        // Diagnostic writes cannot turn a skip into a runtime crash.
       }
     }
     return { status: 'SKIPPED', reason: notReady };
@@ -199,7 +199,10 @@ export async function runIngestion(env, deps = {}) {
   const runId = deps.runId ?? `run:${now}:${crypto.randomUUID()}`;
   const airtable = { token: env.AIRTABLE_TOKEN, baseId: env.AIRTABLE_BASE_ID, fetchImpl };
 
-  await db.prepare(`INSERT INTO ingest_runs (run_id, started_at, status) VALUES (?, ?, 'RUNNING')`).bind(runId, now).run();
+  requireWriteSuccess(
+    await db.prepare(`INSERT INTO ingest_runs (run_id, started_at, status) VALUES (?, ?, 'RUNNING')`).bind(runId, now).run(),
+    'start ingest run',
+  );
   try {
     const aliasRecords = await fetchAirtableRecords({
       ...airtable, tableId: MARKET_ALIAS_TABLE_ID, fieldIds: Object.values(MARKET_ALIAS_FIELD_IDS),
@@ -221,13 +224,13 @@ export async function runIngestion(env, deps = {}) {
     const governanceFingerprint = `gov:${(await sha256Hex(JSON.stringify(
       governanceRows.map(({ syncedAt, ...row }) => row).sort((a, b) => a.laneKey.localeCompare(b.laneKey)),
     ))).slice(0, 32)}`;
-    await db.prepare(`INSERT INTO model_runs (
+    requireWriteSuccess(await db.prepare(`INSERT INTO model_runs (
         model_run_id, mode, source_snapshot_fingerprint, observation_as_of, structural_version,
         expedite_version, confidence_version, config_hash, governance_fingerprint, promoted)
       VALUES (?, 'OPERATOR_INGEST', ?, ?, ?, ?, ?, ?, ?, 0)`).bind(
       runId, runId, now, DERIVE_VERSION, DERIVE_VERSION, FRESHNESS_VERSION, `${DERIVE_VERSION}|${FRESHNESS_VERSION}`,
       governanceFingerprint,
-    ).run();
+    ).run(), 'record model run');
 
     const aliasMap = aliasMapFrom(aliasRows);
     const built = [];
@@ -237,8 +240,6 @@ export async function runIngestion(env, deps = {}) {
     }
     const already = await existingReceipts(db, built.map((item) => item.evidence.evidenceId));
     const currentBySource = await currentEvidenceBySource(db, built.map((item) => item.index.sourceRecordId));
-    // A content hash can legitimately recur after a different revision (A -> B -> A).
-    // In that case its old receipt proves storage, not that the content is current.
     const fresh = built.filter((item) => !already.has(item.evidence.evidenceId)
       || currentBySource.get(item.index.sourceRecordId) !== item.evidence.evidenceId);
     for (let i = 0; i < fresh.length; i += SEND_BATCH) {
@@ -246,9 +247,7 @@ export async function runIngestion(env, deps = {}) {
         const reactivation = already.has(item.evidence.evidenceId);
         return {
           body: {
-            idempotencyKey: reactivation
-              ? `${item.evidence.evidenceId}:activate:${runId}`
-              : item.evidence.evidenceId,
+            idempotencyKey: reactivation ? `${item.evidence.evidenceId}:activate:${runId}` : item.evidence.evidenceId,
             evidenceId: item.evidence.evidenceId,
             type: EVIDENCE_MESSAGE_TYPE,
             snapshotFingerprint: runId,
@@ -261,7 +260,6 @@ export async function runIngestion(env, deps = {}) {
     }
 
     const reresolved = await reresolveStoredEvidence(db, built.filter((item) => already.has(item.evidence.evidenceId)));
-
     const materialized = await rematerializeLanes(db, governanceRows.map((row) => row.laneKey), {
       now, modelRunId: runId, governanceFingerprint,
     });
@@ -277,22 +275,21 @@ export async function runIngestion(env, deps = {}) {
       evidenceReresolved: reresolved,
       lanesMaterialized: materialized,
     };
-    await db.prepare(`UPDATE ingest_runs SET finished_at = ?, status = 'OK', counts_json = ? WHERE run_id = ?`)
-      .bind((deps.now ?? (() => new Date().toISOString()))(), JSON.stringify(counts), runId).run();
+    requireWriteSuccess(await db.prepare(`UPDATE ingest_runs SET finished_at = ?, status = 'OK', counts_json = ? WHERE run_id = ?`)
+      .bind((deps.now ?? (() => new Date().toISOString()))(), JSON.stringify(counts), runId).run(), 'finish ingest run');
     return { status: 'OK', runId, counts };
   } catch (error) {
     const message = String(error?.message ?? error).slice(0, 200);
-    await db.prepare(`UPDATE ingest_runs SET finished_at = ?, status = 'FAILED', error = ? WHERE run_id = ?`)
-      .bind((deps.now ?? (() => new Date().toISOString()))(), message, runId).run();
+    try {
+      requireWriteSuccess(await db.prepare(`UPDATE ingest_runs SET finished_at = ?, status = 'FAILED', error = ? WHERE run_id = ?`)
+        .bind((deps.now ?? (() => new Date().toISOString()))(), message, runId).run(), 'record failed ingest run');
+    } catch {
+      return { status: 'FAILED', runId, error: `${message}; failure status could not be persisted` };
+    }
     return { status: 'FAILED', runId, error: message };
   }
 }
 
-// A row's market match is derived from the Verified aliases, not part of the
-// evidence. When the aliases (or the name normalizer) change, a row stored
-// earlier gets the match the current aliases give it. Only the current version
-// of each row is touched; raw evidence is never rewritten, and a row that
-// already matches costs no write.
 export async function reresolveStoredEvidence(db, items) {
   let changed = 0;
   for (let i = 0; i < items.length; i += SEND_BATCH) {
@@ -306,7 +303,8 @@ export async function reresolveStoredEvidence(db, items) {
         .bind(laneKey, origin, destination, index.evidenceId, laneKey, origin, destination);
     });
     if (statements.length === 0) continue;
-    for (const result of (await db.batch(statements)) ?? []) changed += Number(result?.meta?.changes ?? 0);
+    const results = requireBatchSuccess(await db.batch(statements), 're-resolve evidence');
+    for (const result of results) changed += Number(result?.meta?.changes ?? 0);
   }
   return changed;
 }
@@ -318,10 +316,6 @@ function revisionTime(value) {
 
 function currentRevisionTime(row) {
   if (!row) return null;
-  // New code writes the source retrieval timestamp into created_at when a
-  // version becomes current. Older rows used SQLite CURRENT_TIMESTAMP; for
-  // those, raw retrieved_at is the source-order clock and avoids treating queue
-  // delay as source chronology.
   const activation = typeof row.created_at === 'string' && row.created_at.includes('T')
     ? revisionTime(row.created_at)
     : null;
@@ -356,9 +350,6 @@ function indexUpsert(db, { evidence, index, superseded }) {
   );
 }
 
-// Store one evidence occurrence. Raw evidence remains content-addressed and
-// append-only, while the mutable index records which source revision is current.
-// Source retrieval time orders revisions; exact-time ties use observed source order.
 export async function storeEvidenceVersion(db, { evidence, index }) {
   const incomingTime = revisionTime(evidence?.retrievedAt);
   if (incomingTime === null) throw new Error('evidence retrievedAt must be a valid timestamp');
@@ -369,11 +360,9 @@ export async function storeEvidenceVersion(db, { evidence, index }) {
   ]);
 
   if (current?.evidence_id === evidence.evidenceId) {
-    // Same content is already current. Refresh its derived index fields without
-    // allowing an older duplicate delivery to move the source clock backward.
     const currentTime = currentRevisionTime(current);
     if (currentTime === null || incomingTime >= currentTime) {
-      await db.batch([indexUpsert(db, { evidence, index, superseded: false })]);
+      requireBatchSuccess(await db.batch([indexUpsert(db, { evidence, index, superseded: false })]), 'refresh current evidence');
     }
     return { stored: false, current: true, affectedLaneKeys: [current.lane_key, index.laneKey].filter(Boolean) };
   }
@@ -382,16 +371,14 @@ export async function storeEvidenceVersion(db, { evidence, index }) {
   const becomesCurrent = !current || currentTime === null || incomingTime >= currentTime;
 
   if (!exists) {
-    await appendRawEvidence(db, {
+    requireWriteSuccess(await appendRawEvidence(db, {
       ...evidence,
       supersedesEvidenceId: becomesCurrent ? current?.evidence_id ?? null : null,
-    });
+    }), 'append raw evidence');
   }
 
   if (!becomesCurrent) {
-    // Preserve delayed historical evidence, but never let queue arrival order
-    // regress the current source revision.
-    await db.batch([indexUpsert(db, { evidence, index, superseded: true })]);
+    requireBatchSuccess(await db.batch([indexUpsert(db, { evidence, index, superseded: true })]), 'index historical evidence');
     return {
       stored: !exists,
       current: false,
@@ -400,11 +387,11 @@ export async function storeEvidenceVersion(db, { evidence, index }) {
     };
   }
 
-  await db.batch([
+  requireBatchSuccess(await db.batch([
     db.prepare('UPDATE evidence_index SET superseded = 1 WHERE source_record_id = ? AND superseded = 0')
       .bind(index.sourceRecordId),
     indexUpsert(db, { evidence, index, superseded: false }),
-  ]);
+  ]), 'activate current evidence');
   return {
     stored: !exists,
     current: true,
@@ -419,9 +406,9 @@ export async function processEvidenceBatch(batch, env, deps = {}) {
   const affected = new Set();
 
   await consumePrimaryBatch(batch, {
-    hasReceipt: async (key) => Boolean(
-      await db.prepare('SELECT 1 AS present FROM ingest_receipts WHERE idempotency_key = ?').bind(key).first(),
-    ),
+    claimReceipt: (receipt) => claimReceipt(db, receipt),
+    completeReceipt: (receipt) => completeReceipt(db, receipt),
+    abandonReceipt: (receipt) => abandonReceipt(db, receipt),
     processMessage: async (body) => {
       if (body.type !== EVIDENCE_MESSAGE_TYPE || !body.evidence || !body.index) {
         throw new Error(`unsupported ELI message: ${String(body.type)}`);
@@ -430,7 +417,6 @@ export async function processEvidenceBatch(batch, env, deps = {}) {
       for (const key of body.affectedKeys ?? []) affected.add(key);
       for (const key of stored.affectedLaneKeys ?? []) affected.add(key);
     },
-    recordReceipt: (receipt) => recordReceipt(db, receipt),
     now,
   });
 
@@ -444,8 +430,6 @@ export async function processEvidenceBatch(batch, env, deps = {}) {
   }
 }
 
-// RPC-side market translation: a cluster id passes through only if it is
-// known to ELI; a city name resolves only through a Verified alias.
 export async function resolveMarketInDb(db, value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const s = value.trim();
@@ -460,8 +444,6 @@ export async function resolveMarketInDb(db, value) {
   return row?.market_cluster ?? null;
 }
 
-// On-demand trigger: a queue message of this type asks ELI to run ingestion.
-// Queue delivery takes seconds, unlike a cron change (up to ~15 minutes).
 export const RUN_INGESTION_MESSAGE_TYPE = 'eli_run_ingestion';
 
 async function recordRunEvent(db, status, detail, now) {
@@ -474,9 +456,6 @@ async function recordRunEvent(db, status, detail, now) {
   }
 }
 
-// Every trigger (cron or queue) leaves a TRIGGERED row before anything else,
-// and an unexpected exception leaves a CRASHED row, so "nothing happened" is
-// never ambiguous. Only when ELI is enabled with D1: a dark ELI writes nothing.
 export async function triggeredIngestion(env, source, deps = {}) {
   const now = (deps.now ?? (() => new Date().toISOString()))();
   const db = env?.ELI_ENABLED === 'true' ? env?.ELI_DB : null;
