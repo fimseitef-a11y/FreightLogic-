@@ -160,7 +160,8 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       return failClosed("INVALID_ENVELOPE", "Envelope validation failed");
     }
 
-    if (this.env.AGENT_ENABLED !== "true") {
+    const enabled = this.env.AGENT_ENABLED === "true";
+    if (!enabled) {
       return failClosed("AGENT_DISABLED", "FEATURE_DISABLED", {
         fact: { eventId: envelope.id, type: envelope.type },
         calculation: envelope.canonicalSnapshot,
