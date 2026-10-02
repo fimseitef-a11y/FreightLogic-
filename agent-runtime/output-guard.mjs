@@ -1,27 +1,18 @@
 // output-guard.mjs
-// Verifies an Agent recommendation against the canonical snapshot before it
-// is allowed to reach a driver. This is a deterministic, non-model check.
-//
-// Why this exists: Phase A audit (2026-09-28) found that model text could
-// contain a dollar figure or verdict that contradicts the canonical
-// calculation (e.g. model says "REJECT, bid $9000/mi" while calculation.verdict
-// is ACCEPT and baselineBid is 500), and the worker returned it as ok:true
-// with no check. This module closes that gap. It does not change routing,
-// idempotency, or privacy logic — it is inserted as one call right before the
-// worker returns a model-derived recommendation to the caller.
+// Deterministically verifies model prose against canonical FreightLogic facts.
 
 const VERDICT_WORDS = ["ACCEPT", "REJECT", "COUNTER", "HOLD"];
-
-// Matches $1234, $1,234.56, $1234.5, "1234 dollars", "1234 per mile", "9000/mi"
 const MONEY_PATTERN = /\$\s?[\d,]+(?:\.\d+)?|\b[\d,]+(?:\.\d+)?\s*(?:dollars?|\/\s?mi(?:le)?|per\s+mile)\b/gi;
+const PER_MILE_PATTERN = /(?:\/\s?mi(?:le)?|per\s+mile)\b/i;
+const RELATIVE_TOLERANCE = 0.01;
 
-function extractNumbers(text) {
+function extractMoneyClaims(text) {
   const matches = text.match(MONEY_PATTERN) || [];
-  return matches
-    .map((m) => m.replace(/[^0-9.]/g, ""))
-    .filter((m) => m.length > 0)
-    .map(Number)
-    .filter((n) => Number.isFinite(n));
+  return matches.map((raw) => ({
+    raw,
+    value: Number(raw.replace(/[^0-9.]/g, "")),
+    dimension: PER_MILE_PATTERN.test(raw) ? "per_mile" : "total",
+  })).filter((claim) => Number.isFinite(claim.value));
 }
 
 function extractVerdictClaims(text) {
@@ -29,24 +20,25 @@ function extractVerdictClaims(text) {
   return VERDICT_WORDS.filter((word) => new RegExp(`\\b${word}\\b`).test(upper));
 }
 
-// Canonical dollar figures this recommendation is allowed to reference,
-// pulled only from the allowlisted canonical fields already validated by
-// contracts.mjs (SAFE_CANONICAL_FIELDS / MODEL_CANONICAL_FIELDS).
-function canonicalDollarValues(calculation) {
+function canonicalMoneyValues(calculation, dimension) {
   if (!calculation || typeof calculation !== "object") return [];
-  const fields = ["baselineBid", "marketBid", "costPerMile", "fuelCost", "deadheadCost"];
-  return fields
-    .map((f) => calculation[f])
-    .filter((v) => typeof v === "number" && Number.isFinite(v));
+  const fields = dimension === "per_mile"
+    ? ["trueRpm", "loadedRpm", "costPerMile"]
+    : ["baselineBid", "marketBid", "fuelCost", "deadheadCost"];
+  return fields.map((field) => calculation[field])
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
 }
 
-// A small relative tolerance absorbs rounding in the model's prose
-// ("about $500" for 500.00) without opening the door to a fabricated
-// nearby number.
-const RELATIVE_TOLERANCE = 0.01; // 1%
+function numberIsCanonical(value, canonicalValues) {
+  return canonicalValues.some((canonical) => (
+    Math.abs(value - canonical) <= Math.max(0.01, Math.abs(canonical) * RELATIVE_TOLERANCE)
+  ));
+}
 
-function numberIsCanonical(n, canonicalValues) {
-  return canonicalValues.some((c) => Math.abs(n - c) <= Math.max(1, c * RELATIVE_TOLERANCE));
+function hasNegatedVerdict(text, verdict) {
+  if (!verdict) return false;
+  const escaped = verdict.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:do\\s+not|don't|dont|never|not)\\s+${escaped}\\b`, "i").test(text);
 }
 
 export class OutputGuardError extends Error {
@@ -58,41 +50,38 @@ export class OutputGuardError extends Error {
   }
 }
 
-/**
- * Throws OutputGuardError if the recommendation text contradicts the
- * canonical snapshot. Returns { ok: true } if the text is safe to return.
- *
- * @param {string} recommendation - model output text
- * @param {object} calculation - envelope.canonicalSnapshot (already validated
- *   upstream by contracts.mjs)
- */
 export function checkRecommendationAgainstCanonical(recommendation, calculation) {
   if (typeof recommendation !== "string" || !recommendation.trim()) {
     throw new OutputGuardError("GUARD_EMPTY_RECOMMENDATION", "Recommendation is empty");
   }
 
-  const canonicalValues = canonicalDollarValues(calculation);
-  const mentionedNumbers = extractNumbers(recommendation);
-  const foreignNumbers = mentionedNumbers.filter((n) => !numberIsCanonical(n, canonicalValues));
-
-  if (foreignNumbers.length > 0) {
+  const claims = extractMoneyClaims(recommendation);
+  const foreignClaims = claims.filter((claim) => (
+    !numberIsCanonical(claim.value, canonicalMoneyValues(calculation, claim.dimension))
+  ));
+  if (foreignClaims.length > 0) {
     throw new OutputGuardError(
       "GUARD_NONCANONICAL_DOLLAR_VALUE",
-      "Recommendation references a dollar figure not present in the canonical calculation",
-      { foreignNumbers, canonicalValues },
+      "Recommendation references a monetary value outside the matching canonical dimension",
+      { foreignClaims },
     );
   }
 
-  const canonicalVerdict = typeof calculation?.verdict === "string" ? calculation.verdict.toUpperCase() : null;
+  const canonicalVerdict = typeof calculation?.verdict === "string"
+    ? calculation.verdict.toUpperCase()
+    : null;
   const claimedVerdicts = extractVerdictClaims(recommendation);
   const contradicting = canonicalVerdict
-    ? claimedVerdicts.filter((v) => v !== canonicalVerdict)
+    ? claimedVerdicts.filter((verdict) => verdict !== canonicalVerdict)
     : [];
+  if (canonicalVerdict && hasNegatedVerdict(recommendation, canonicalVerdict)) {
+    contradicting.push(`NOT_${canonicalVerdict}`);
+  }
 
   if (contradicting.length > 0) {
     throw new OutputGuardError(
       "GUARD_VERDICT_CONTRADICTION",
-      "Recommendation states a verdict that contradicts the canonical verdict",
+      "Recommendation states or negates a verdict contrary to the canonical verdict",
       { canonicalVerdict, contradicting },
     );
   }
@@ -100,11 +89,6 @@ export function checkRecommendationAgainstCanonical(recommendation, calculation)
   return { ok: true };
 }
 
-/**
- * Convenience wrapper matching the shape worker.mjs already uses for
- * ModelExecutionError, so the integration is a single try/catch addition.
- * See the worker integration call site.
- */
 export function assertSafeRecommendation(recommendation, calculation) {
   try {
     checkRecommendationAgainstCanonical(recommendation, calculation);
