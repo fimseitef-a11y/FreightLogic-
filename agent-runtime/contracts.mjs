@@ -105,8 +105,10 @@ function projectAllowedScalars(value, allowlist) {
 }
 
 function validateFactDomains(facts) {
-  for (const field of ["originMarket", "destinationMarket", "equipment"]) optionalString(facts[field], `facts.${field}`);
-  for (const field of ["pickupWindow", "deliveryWindow", "marketSignals"]) optionalStructured(facts[field], `facts.${field}`);
+  for (const field of ["originMarket", "destinationMarket", "pickupWindow", "deliveryWindow", "marketSignals"]) {
+    optionalStructured(facts[field], `facts.${field}`);
+  }
+  optionalString(facts.equipment, "facts.equipment");
   for (const field of ["loadedMiles", "deadheadMiles", "weightLb"]) optionalNumber(facts[field], `facts.${field}`, { nonNegative: true });
   optionalNumber(facts.pieces, "facts.pieces", { integer: true, nonNegative: true });
 }
