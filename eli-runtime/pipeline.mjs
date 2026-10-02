@@ -77,12 +77,27 @@ async function existingReceipts(db, keys) {
   const found = new Set();
   for (let i = 0; i < keys.length; i += IN_CHUNK) {
     const chunk = keys.slice(i, i + IN_CHUNK);
+    if (chunk.length === 0) continue;
     const placeholders = chunk.map(() => '?').join(',');
     const result = await db.prepare(`SELECT idempotency_key FROM ingest_receipts WHERE idempotency_key IN (${placeholders})`)
       .bind(...chunk).all();
     for (const row of result?.results ?? []) found.add(row.idempotency_key);
   }
   return found;
+}
+
+async function currentEvidenceBySource(db, sourceRecordIds) {
+  const current = new Map();
+  const ids = [...new Set(sourceRecordIds.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    if (chunk.length === 0) continue;
+    const placeholders = chunk.map(() => '?').join(',');
+    const result = await db.prepare(`SELECT source_record_id, evidence_id FROM evidence_index
+      WHERE superseded = 0 AND source_record_id IN (${placeholders})`).bind(...chunk).all();
+    for (const row of result?.results ?? []) current.set(row.source_record_id, row.evidence_id);
+  }
+  return current;
 }
 
 async function latestModelRun(db) {
@@ -221,18 +236,28 @@ export async function runIngestion(env, deps = {}) {
       if (item) built.push(item);
     }
     const already = await existingReceipts(db, built.map((item) => item.evidence.evidenceId));
-    const fresh = built.filter((item) => !already.has(item.evidence.evidenceId));
+    const currentBySource = await currentEvidenceBySource(db, built.map((item) => item.index.sourceRecordId));
+    // A content hash can legitimately recur after a different revision (A -> B -> A).
+    // In that case its old receipt proves storage, not that the content is current.
+    const fresh = built.filter((item) => !already.has(item.evidence.evidenceId)
+      || currentBySource.get(item.index.sourceRecordId) !== item.evidence.evidenceId);
     for (let i = 0; i < fresh.length; i += SEND_BATCH) {
-      await env.ELI_QUEUE.sendBatch(fresh.slice(i, i + SEND_BATCH).map((item) => ({
-        body: {
-          idempotencyKey: item.evidence.evidenceId,
-          type: EVIDENCE_MESSAGE_TYPE,
-          snapshotFingerprint: runId,
-          affectedKeys: item.index.laneKey ? [item.index.laneKey] : [],
-          evidence: item.evidence,
-          index: item.index,
-        },
-      })));
+      await env.ELI_QUEUE.sendBatch(fresh.slice(i, i + SEND_BATCH).map((item) => {
+        const reactivation = already.has(item.evidence.evidenceId);
+        return {
+          body: {
+            idempotencyKey: reactivation
+              ? `${item.evidence.evidenceId}:activate:${runId}`
+              : item.evidence.evidenceId,
+            evidenceId: item.evidence.evidenceId,
+            type: EVIDENCE_MESSAGE_TYPE,
+            snapshotFingerprint: runId,
+            affectedKeys: item.index.laneKey ? [item.index.laneKey] : [],
+            evidence: item.evidence,
+            index: item.index,
+          },
+        };
+      }));
     }
 
     const reresolved = await reresolveStoredEvidence(db, built.filter((item) => already.has(item.evidence.evidenceId)));
@@ -286,32 +311,106 @@ export async function reresolveStoredEvidence(db, items) {
   return changed;
 }
 
-// Store one evidence version: append-only raw row, superseding the previous
-// version of the same Airtable record, plus its mutable index row.
+function revisionTime(value) {
+  const ms = Date.parse(value ?? '');
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function currentRevisionTime(row) {
+  if (!row) return null;
+  // New code writes the source retrieval timestamp into created_at when a
+  // version becomes current. Older rows used SQLite CURRENT_TIMESTAMP; for
+  // those, raw retrieved_at is the source-order clock and avoids treating queue
+  // delay as source chronology.
+  const activation = typeof row.created_at === 'string' && row.created_at.includes('T')
+    ? revisionTime(row.created_at)
+    : null;
+  return activation ?? revisionTime(row.retrieved_at);
+}
+
+async function currentSourceVersion(db, sourceRecordId) {
+  return db.prepare(`SELECT i.evidence_id, i.lane_key, i.created_at, r.retrieved_at
+    FROM evidence_index i JOIN raw_evidence r ON r.evidence_id = i.evidence_id
+    WHERE i.source_record_id = ? AND i.superseded = 0
+    ORDER BY i.created_at DESC, i.evidence_id DESC LIMIT 1`).bind(sourceRecordId).first();
+}
+
+function indexUpsert(db, { evidence, index, superseded }) {
+  return db.prepare(`INSERT INTO evidence_index
+      (evidence_id, source_record_id, lane_key, origin_market, destination_market, status_key,
+       duplicate_class, observed_at, superseded, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(evidence_id) DO UPDATE SET
+      source_record_id = excluded.source_record_id,
+      lane_key = excluded.lane_key,
+      origin_market = excluded.origin_market,
+      destination_market = excluded.destination_market,
+      status_key = excluded.status_key,
+      duplicate_class = excluded.duplicate_class,
+      observed_at = excluded.observed_at,
+      superseded = excluded.superseded,
+      created_at = excluded.created_at`).bind(
+    index.evidenceId, index.sourceRecordId, index.laneKey ?? null, index.originMarket ?? null,
+    index.destinationMarket ?? null, index.statusKey, index.duplicateClass, index.observedAt ?? null,
+    superseded ? 1 : 0, evidence.retrievedAt,
+  );
+}
+
+// Store one evidence occurrence. Raw evidence remains content-addressed and
+// append-only, while the mutable index records which source revision is current.
+// Source retrieval time orders revisions; queue delivery time never does.
 export async function storeEvidenceVersion(db, { evidence, index }) {
-  const exists = await db.prepare('SELECT 1 AS present FROM raw_evidence WHERE evidence_id = ?').bind(evidence.evidenceId).first();
-  if (exists) {
-    await db.prepare(`INSERT OR IGNORE INTO evidence_index
-      (evidence_id, source_record_id, lane_key, origin_market, destination_market, status_key, duplicate_class, observed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-      index.evidenceId, index.sourceRecordId, index.laneKey ?? null, index.originMarket ?? null,
-      index.destinationMarket ?? null, index.statusKey, index.duplicateClass, index.observedAt ?? null,
-    ).run();
-    return { stored: false };
-  }
-  const previous = await db.prepare(`SELECT evidence_id FROM evidence_index
-    WHERE source_record_id = ? AND superseded = 0 ORDER BY created_at DESC LIMIT 1`).bind(index.sourceRecordId).first();
-  await appendRawEvidence(db, { ...evidence, supersedesEvidenceId: previous?.evidence_id ?? null });
-  await db.batch([
-    db.prepare('UPDATE evidence_index SET superseded = 1 WHERE source_record_id = ? AND superseded = 0').bind(index.sourceRecordId),
-    db.prepare(`INSERT INTO evidence_index
-      (evidence_id, source_record_id, lane_key, origin_market, destination_market, status_key, duplicate_class, observed_at, superseded)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`).bind(
-      index.evidenceId, index.sourceRecordId, index.laneKey ?? null, index.originMarket ?? null,
-      index.destinationMarket ?? null, index.statusKey, index.duplicateClass, index.observedAt ?? null,
-    ),
+  const incomingTime = revisionTime(evidence?.retrievedAt);
+  if (incomingTime === null) throw new Error('evidence retrievedAt must be a valid timestamp');
+
+  const [exists, current] = await Promise.all([
+    db.prepare('SELECT 1 AS present FROM raw_evidence WHERE evidence_id = ?').bind(evidence.evidenceId).first(),
+    currentSourceVersion(db, index.sourceRecordId),
   ]);
-  return { stored: true, supersededEvidenceId: previous?.evidence_id ?? null };
+
+  if (current?.evidence_id === evidence.evidenceId) {
+    // Same content is already current. Refresh its derived index fields without
+    // allowing an older duplicate delivery to move the source clock backward.
+    const currentTime = currentRevisionTime(current);
+    if (currentTime === null || incomingTime >= currentTime) {
+      await db.batch([indexUpsert(db, { evidence, index, superseded: false })]);
+    }
+    return { stored: false, current: true, affectedLaneKeys: [current.lane_key, index.laneKey].filter(Boolean) };
+  }
+
+  const currentTime = currentRevisionTime(current);
+  const becomesCurrent = !current || currentTime === null || incomingTime > currentTime;
+
+  if (!exists) {
+    await appendRawEvidence(db, {
+      ...evidence,
+      supersedesEvidenceId: becomesCurrent ? current?.evidence_id ?? null : null,
+    });
+  }
+
+  if (!becomesCurrent) {
+    // Preserve delayed historical evidence, but never let queue arrival order
+    // regress the current source revision.
+    await db.batch([indexUpsert(db, { evidence, index, superseded: true })]);
+    return {
+      stored: !exists,
+      current: false,
+      supersededEvidenceId: null,
+      affectedLaneKeys: [index.laneKey].filter(Boolean),
+    };
+  }
+
+  await db.batch([
+    db.prepare('UPDATE evidence_index SET superseded = 1 WHERE source_record_id = ? AND superseded = 0')
+      .bind(index.sourceRecordId),
+    indexUpsert(db, { evidence, index, superseded: false }),
+  ]);
+  return {
+    stored: !exists,
+    current: true,
+    supersededEvidenceId: current?.evidence_id ?? null,
+    affectedLaneKeys: [current?.lane_key, index.laneKey].filter(Boolean),
+  };
 }
 
 export async function processEvidenceBatch(batch, env, deps = {}) {
@@ -327,8 +426,9 @@ export async function processEvidenceBatch(batch, env, deps = {}) {
       if (body.type !== EVIDENCE_MESSAGE_TYPE || !body.evidence || !body.index) {
         throw new Error(`unsupported ELI message: ${String(body.type)}`);
       }
-      await storeEvidenceVersion(db, body);
+      const stored = await storeEvidenceVersion(db, body);
       for (const key of body.affectedKeys ?? []) affected.add(key);
+      for (const key of stored.affectedLaneKeys ?? []) affected.add(key);
     },
     recordReceipt: (receipt) => recordReceipt(db, receipt),
     now,
