@@ -742,3 +742,34 @@ Prepared unreferenced recovery blobs (source checkpoint, not branch commits): [{
 Operator said Proceed. Main last read remains e6903330386fe43187c8021eda8e9c0e2e5c9fa3. DraftPR459 advanced23commits during pause to e1f163c08d07580d1aa8821c85419a3eb76b469d; concurrent recovered scoring/erasure and additional Agent/ELI changes are preserved. Another session holds app-js token4b4ad86d-68aa-4d21-a4f7-9fb75fd5b2db; this session will not copy its token or edit app.js. Independently claimed/verified audit-pwa token6a22c4bc-b47a-48d3-8b89-fdba0c05917f for modern-shell.js only.
 
 Current e1f CI:6workflows success, Tests failure run37069124274/job111044112061:1039pass/1fail across102specs; RH01 identifies3new specs not registered, then aggregate failure-report mapping throws on missing failures array. No full application PASS claimed. Work: register all recovered regressions, make malformed suite results fail visibly, repair observer quiescence, strict freshness/read-time aging and residual money/verdict parser false positives. Independent review of new Agent/ELI lease fences is ongoing; green component tests do not prove stale-claim safety. No merge/deploy/activation/live mutations.
+
+
+### 2026-10-02T23:07:39Z — GPT resumed audit: verified source checkpoint
+
+- Source `agent/gpt/audit-remediation-20261002` at `421e496f377ba6f876837994213a79c0fc124fa1`; main unchanged
+  `e6903330386fe43187c8021eda8e9c0e2e5c9fa3`; PR459 open, auto-merge absent.
+- All7PR workflows succeeded: browser1047/0/107specs; ELI96/0,skipped0;
+  Agent42phase+20guard+20integration+4lease,zero failures; Swift33/0;
+  CodeQL/Lanes/Performance and pinned Wrangler dry-run checks succeeded.
+- New verified scope: registered erasure/wizard regressions execute once;
+  malformed/empty suite results fail visibly; modern-shell observer settles;
+  strict/read-time ELI freshness; Agent dollar-unit/verdict boundaries;
+  actualSQL token-fenced Agent completion; atomicELI receipts and
+  materialization-before-ack with interrupted old/new-lane repair.
+- Initial resumed failures recorded in TEST_LEDGER: ELI94/2 FK fixtures and
+  browser1055/2 duplicated concurrent wizard execution; constraints and all
+  assertions retained. Corrected current-head suites pass.
+- App gzip409114 passes409600 ceiling but misses204800 target; local Worker
+  self-testp95100.5ms is not live capacity. Physical device/provider/hardware/
+  rollout gates remain.
+- Full source backlog remains OPEN; not only external gates. Next bounded P0:
+  ST12restore transaction failures must reject and count only committed rows,
+  with realIDB abort/retry test. app.js other-session lock token4b4ad86d remains;
+  root did not use it. Other freight/Money/auth-KV/ELI-Agent/global-write/
+  migration/mobile findings remain documented in docs/AUDIT_REMEDIATION.md.
+- Root audit-pwa lock6a22c4bc will be released after this checkpoint; no pending
+  uncommitted source fixes in this resumed batch. Source app/cache24.0.59,
+  Worker34; mainDB16 unchanged; ELImigration0003 source-only.
+- PR description and exact-command TEST_LEDGER reconciled to this sourceHEAD.
+  Airtable engineering coordination updated; live freight/governance tables
+  untouched. No merge/deploy/activation/rotation/live-data mutation.
