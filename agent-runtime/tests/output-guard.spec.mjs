@@ -133,7 +133,7 @@ test("AGN-03 worker reserves an idempotency key before model execution and relea
   assert.match(agentWorkerSource, /claimIdempotency/);
   assert.match(agentWorkerSource, /IDEMPOTENCY_IN_FLIGHT/);
   assert.match(agentWorkerSource, /releaseIdempotencyClaim/);
-  assert.ok(agentWorkerSource.indexOf("claimIdempotency") < agentWorkerSource.indexOf("runExplanationModel"));
+  assert.ok(agentWorkerSource.indexOf("claimIdempotency") < agentWorkerSource.indexOf("const result = await runExplanationModel"));
 });
 
 test("AGN-05 persisted result records model/projection provenance and retention metadata", () => {
