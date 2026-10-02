@@ -120,7 +120,7 @@ test("AGN-02 envelope rejects invalid operational and canonical value domains", 
     envelope({ facts: { ...envelope().facts, loadedMiles: "280" } }),
     envelope({ facts: { ...envelope().facts, deadheadMiles: -1 } }),
     envelope({ facts: { ...envelope().facts, pieces: 1.5 } }),
-    envelope({ facts: { ...envelope().facts, originMarket: { city: "Chicago" } } }),
+    envelope({ facts: { ...envelope().facts, equipment: { type: "van" } } }),
     envelope({ canonicalSnapshot: { ...calc, trueRpm: "1.61" } }),
     envelope({ canonicalSnapshot: { ...calc, verdict: "MAYBE" } }),
   ];
