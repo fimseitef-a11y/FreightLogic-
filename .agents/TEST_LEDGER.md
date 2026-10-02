@@ -426,3 +426,111 @@ All entries below are reviews of existing GitHub Actions logs, not new local exe
 - Post-merge `Verify Live Parity` run `36507240417`: **PASS**.
 - Post-merge `Verify Production Service Worker` run `36507240390`: **PASS**.
 - No production Agent dispatch/activation performed. GitHub Environment required-reviewer configuration remains a separate repository-admin evidence gate.
+
+
+## 2026-10-02T23:07:39Z — GPT resumed audit-remediation verified checkpoint
+
+Repository: fimseitef-a11y/FreightLogic-. Source branch: `agent/gpt/audit-remediation-20261002`.
+Verified source HEAD: `421e496f377ba6f876837994213a79c0fc124fa1`. Main remains
+`e6903330386fe43187c8021eda8e9c0e2e5c9fa3`. PR459 remains open;
+its pre-existing ready/draft state was preserved, with auto-merge absent.
+Source candidate app/cache24.0.59, main DB schema16 unchanged, Worker34.
+ELI migration0003 was checked in in-memory SQL only, not applied live.
+
+| Exact command/check | Passed | Failed | Skipped | Result / limits |
+| --- | ---: | ---: | --- | --- |
+| `node tests/run-all.mjs` | 1047 | 0 | Not reported by harness | 107 specs; Chromium full integrated suite |
+| `node --test eli-runtime/tests/*.test.mjs` | 96 | 0 | 0 | Real SQLite/D1-shaped adapter; 676.28ms reported |
+| `node agent-runtime/tests/phase-a.spec.mjs` | 42 | 0 | Not reported | Agent contract/routing tests |
+| `node agent-runtime/tests/output-guard.spec.mjs` | 20 | 0 | Not reported | Guard/domain/deadline/provenance tests; invokes following suites |
+| Agent/ELI production-worker integration invoked by guard script | 20 | 0 | Not reported | State harness now uses production SQL instead of unfenced memory persistence |
+| `runAgentLeaseTests` invoked by guard script | 4 | 0 | Not reported | Real state SQL + late-model/missing-claim regressions |
+| `swift test --package-path native-ios` | 33 | 0 | Not reported | XCTest package on CI; not physical WebKit/device |
+| `node scripts/lane-guard.mjs ci-prefix` with CI SHA/branch arguments | N/A | 0 | N/A | Commit prefix OK |
+| `node scripts/lane-guard.mjs ci-paths` with CI SHA/branch arguments | N/A | 0 | N/A | GPT ownership OK; 70 changed paths |
+| `node scripts/lane-guard.mjs ci-trailer` with coordination history arguments | N/A | 0 | N/A | Lock trailer audit OK |
+| CodeQL JavaScript workflow | N/A | 0 | N/A | Analyze job succeeded; does not certify all security boundaries |
+| `npx --yes wrangler@4.143.0 deploy -c agent-runtime/wrangler.jsonc --dry-run` | N/A | 0 | N/A | 38.54KiB upload / 9.92KiB gzip bundle, no deployment |
+| `npx --yes wrangler@4.143.0 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run` | N/A | 0 | N/A | 126.22KiB / 31.45KiB gzip bundle, no deployment |
+| `node scripts/performance-budget.mjs` | N/A | 0 | N/A | app.js gzip409114 <= ceiling409600, above target204800 |
+| `npx --yes wrangler@4.143.0 types /tmp/freightlogic-worker-env.d.ts --config scripts/wrangler.backup-worker.jsonc --env-interface CloudflareEnv` | N/A | 0 | N/A | CI Worker binding types generated |
+| `node scripts/load-test-worker.mjs --selfTest --requests=1000 --concurrency=50 --maxP95=750` | N/A | 0 | N/A | p95100.5ms; local self-test, not production capacity |
+| CI Lighthouse multi-run median regression gate | N/A | 0 | N/A | Passed; not physical-device certification |
+
+Runtime execution was CI Node22 / headless Chromium / Swift package CI.
+No local shell was available. Pure V8 probes were supporting evidence only.
+SQLite emitted its experimental-feature warning. The 204314-byte gap above
+the app gzip target remains a performance issue despite a passing regression
+ceiling. Deployment jobs dark-cutover/activate-canary were intentionally
+skipped on this PR; no functional regression was disabled or its assertion
+suppressed. Browser harness does not provide a reliable explicit skipped
+count or proof that conditional capability branches ran.
+
+All seven current-head PR workflows succeeded:
+Tests37075320050, ELI37075320040, Agent37075320043, Native37075320006,
+CodeQL37075320011, Performance37075320039, Lanes37075319986.
+Job logs: browser111063802546, ELI111063802541, Agent111063802672,
+native111063802590, performance111063802424.
+
+Bounded newly verified behavior:
+- Recovered erasure tests execute once: exact namespace isolation and resumable
+  child/final-account deletion.
+- Recovered scoring/live-wizard tests preserve unknown pay/mileage and explicit
+  zero, including edits during asynchronous history reads.
+- Three shipped modern-shell Chromium cases prove observer quiescence,
+  idempotent unchanged synchronization, disclosure and navigation.
+- Four production result-normalizer cases reject malformed/empty results and
+  preserve valid legacy failure counts without crashing.
+- ELI strict timestamps/read-time aging and confidence boundaries remain
+  explicit, immutable projections; rule version operator-freshness-v0.2.
+- Agent result INSERT requires matching unexpired token/event fingerprint;
+  stale completion/release cannot mutate its successor. Four actual SQL/Worker
+  cases include a model resolving after lease replacement.
+- ELI receipt/state completion is atomic and token-fenced. Materialization
+  precedes ack; historical lane keys repair both old/new lanes on retry.
+  Four actual SQL cases verify stale owner, expiry, rollback and route recovery.
+- Agent guard keeps monetary units with amounts, limits matching to cent
+  rounding and requires a canonical verdict. Arbitrary prose remains untrusted.
+
+Failure reconciliation:
+At6aea1f2 ELI94/2 omitted real FK target evidence in two new test fixtures;
+fixtures now seed through appendRawEvidence, retaining the FK and assertions.
+Browser1055/2 exposed the same wizard module executing concurrently through
+an explicit runner entry and nested CI-integrity aggregate. Nested duplicate
+runs were removed; registrations/assertions retained and diagnostics improved.
+At421e496 both suites passed. These were corrections justified by failures,
+not reruns of unchanged passing expensive checks.
+
+Whole ecosystem remediation remains OPEN. Known source defects and genuine
+external gates are separate. ST12 mergeRestoreData/cloudPullBackup can still
+report success after transaction failure; next bounded fix should reject
+waitTxn on error/abort, count only committed writes, surface interruption and
+test native IDB abort plus successful retry. app.js remains locked by another
+session, token4b4ad86d-68aa-4d21-a4f7-9fb75fd5b2db, expected release00:14UTC;
+this token was not used by root. Other open freight/Money/auth-KV/ELI-Agent
+authority/global-write/migration/PWA/a11y findings remain in
+docs/AUDIT_REMEDIATION.md. Per-message lane materialization adds reads/upserts
+and does not establish global evidence-write fencing or repair already
+completed historical receipts. A model deadline does not prove provider
+cancellation or stopped billing.
+
+P0 dependencies: nullable facts/provenance and provider identity before
+financial/deduplication changes; restore failure visibility and upgrade
+recovery before rollout; serialized canonical account authority before
+distributed erasure/write-authority closure.
+P1: global ELI writer/recomputation fences and historical receipt recovery,
+remaining Agent semantic/provenance validation and provider cancellation,
+notification reliability.
+P2: mobile accessibility/scale/observability and app bundle target.
+P3: remaining documentation and dormant compatibility cleanup.
+
+MANUAL/EXTERNAL GATES: physical iPhone/PWA/WebKit, actual Push foreground/
+background/click delivery, authenticated DispatchLand/Safe Capital/LoadMaster/
+MacroPoint and provider Airtable binding, ESP-IDF/BLE/ANCS/TLS hardware,
+live migration/production rollout and GitHub environment protections.
+Engineering Airtable coordination was accessible; no production freight table
+or governance/activation control was modified.
+
+Source changed under the user's later remediation authorization. No merge,
+deploy, runtime activation, credential rotation or live freight/payment write.
+This ledger records a verified source checkpoint, not whole-audit closure.
