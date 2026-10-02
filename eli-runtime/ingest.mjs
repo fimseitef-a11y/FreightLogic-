@@ -1,4 +1,4 @@
-// ingest.mjs — pure ingestion logic (no D1, no network). AIAG-TASK-0038.
+// ingest.mjs — ELI ingestion pipeline (D1 + queue). AIAG-TASK-0038.
 //
 // Operator data rules applied here (Claude memory: freight-data-rules):
 //  - never invent a missing value: unknown stays null, never 0;
@@ -237,19 +237,35 @@ export async function buildEvidence(record, { aliasMap, runId, retrievedAt }) {
   };
 }
 
+function rowFreshness(row, now) {
+  const sourceAsOf = row?.observedAt && /^\d{4}-\d{2}-\d{2}/.test(row.observedAt)
+    ? `${row.observedAt.slice(0, 10)}T00:00:00Z`
+    : null;
+  return classifyFreshness({
+    sourceAsOf,
+    now,
+    freshForMs: OPERATOR_FRESH_MS,
+    staleAfterMs: OPERATOR_STALE_AFTER_MS,
+  });
+}
+
 // Pure lane materialization from governance + current (non-superseded)
-// evidence index rows for that lane.
+// evidence index rows for that lane. Stale observations remain auditable but do
+// not inflate active operator counts/overlays when fresher evidence exists.
 export function materializeLane(governance, evidenceRows = [], { now, modelRunId, governanceFingerprint }) {
-  const counted = evidenceRows.filter((row) => row.duplicateClass !== 'EXACT_DUPLICATE');
+  const deduped = evidenceRows.filter((row) => row.duplicateClass !== 'EXACT_DUPLICATE');
+  const staleExcluded = deduped.filter((row) => rowFreshness(row, now).state === 'STALE');
+  const counted = deduped.filter((row) => rowFreshness(row, now).state !== 'STALE');
   const evidenceCounts = {};
   for (const row of counted) {
     const key = `OPERATOR_${row.statusKey}`.slice(0, 48);
     evidenceCounts[key] = (evidenceCounts[key] ?? 0) + 1;
   }
-  const exactDuplicates = evidenceRows.length - counted.length;
+  const exactDuplicates = evidenceRows.length - deduped.length;
   if (exactDuplicates > 0) evidenceCounts.OPERATOR_EXACT_DUPLICATES = exactDuplicates;
+  if (staleExcluded.length > 0) evidenceCounts.OPERATOR_STALE_EXCLUDED = staleExcluded.length;
 
-  const dates = counted.map((row) => row.observedAt).filter(Boolean).sort();
+  const dates = deduped.map((row) => row.observedAt).filter(Boolean).sort();
   const latestEvidenceAt = dates.length ? `${dates[dates.length - 1].slice(0, 10)}T00:00:00Z` : null;
   const operatorFreshness = classifyFreshness({
     sourceAsOf: latestEvidenceAt,
@@ -264,6 +280,7 @@ export function materializeLane(governance, evidenceRows = [], { now, modelRunId
 
   const unknownFlags = [...new Set([...governance.unknownFlags, ...derived.unknownFlags])];
   if (counted.length === 0) unknownFlags.push('OPERATOR_EVIDENCE_NONE');
+  if (staleExcluded.length > 0) unknownFlags.push('OPERATOR_STALE_EVIDENCE_EXCLUDED');
   if (counted.some((row) => row.duplicateClass === 'POSSIBLE_REPOST')) unknownFlags.push('POSSIBLE_REPOSTS_PRESENT');
 
   return {
