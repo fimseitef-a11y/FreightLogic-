@@ -1,6 +1,0 @@
-owner: gpt
-token: 5f884728-1a9f-45bf-9ee1-c99275590840
-started_utc: 2026-10-02T05:22:00Z
-expected_release_utc: 2026-10-02T08:08:00Z
-paths: app.js
-task: Release-generation-only APP_VERSION bump for PR #458 final pre-device visual completion. No evaluator, storage, schema, economics, or lifecycle behavior edits.
