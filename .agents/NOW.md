@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — AIAG-TASK-0039 complete; PR #455/#457 merged and release lock retired. | 2026-10-02T02:00:00Z |
+| gpt | PR #459 resumed audit remediation — recovering paused core/Money/storage/Agent batch; foreground operator-authorized. | 2026-10-02T21:13:00Z |
 
 ---
 
