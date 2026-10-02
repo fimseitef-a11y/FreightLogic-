@@ -33,9 +33,7 @@ function isPlainObject(value) {
 }
 
 function requireNonEmptyString(value, field) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new ContractError("MISSING_FIELD", `${field} is required`);
-  }
+  if (typeof value !== "string" || !value.trim()) throw new ContractError("MISSING_FIELD", `${field} is required`);
 }
 
 function optionalString(value, field) {
@@ -44,17 +42,18 @@ function optionalString(value, field) {
   }
 }
 
+function optionalStructured(value, field) {
+  if (value === undefined || value === null || typeof value === "string" || isPlainObject(value) || Array.isArray(value)) return;
+  throw new ContractError("INVALID_FIELD_VALUE", `${field} must be structured data, a string, or null`);
+}
+
 function optionalNumber(value, field, { integer = false, nonNegative = false } = {}) {
   if (value === undefined || value === null) return;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new ContractError("INVALID_FIELD_VALUE", `${field} must be a finite number or null`);
   }
-  if (integer && !Number.isInteger(value)) {
-    throw new ContractError("INVALID_FIELD_VALUE", `${field} must be an integer or null`);
-  }
-  if (nonNegative && value < 0) {
-    throw new ContractError("INVALID_FIELD_VALUE", `${field} cannot be negative`);
-  }
+  if (integer && !Number.isInteger(value)) throw new ContractError("INVALID_FIELD_VALUE", `${field} must be an integer or null`);
+  if (nonNegative && value < 0) throw new ContractError("INVALID_FIELD_VALUE", `${field} cannot be negative`);
 }
 
 const MAX_PRIVACY_NODES = 128;
@@ -80,9 +79,7 @@ function inspectPrivacyShape(value) {
     if (visited > MAX_PRIVACY_NODES) return "UNKNOWN";
     const node = current.value;
     if (!node || typeof node !== "object") continue;
-    const entries = Array.isArray(node)
-      ? node.map((child, index) => [String(index), child])
-      : Object.entries(node);
+    const entries = Array.isArray(node) ? node.map((child, index) => [String(index), child]) : Object.entries(node);
     for (const [key, child] of entries) {
       if (!Array.isArray(node) && RESTRICTED_KEY.test(key)) return "RESTRICTED";
       if (!child || typeof child !== "object") continue;
@@ -108,26 +105,18 @@ function projectAllowedScalars(value, allowlist) {
 }
 
 function validateFactDomains(facts) {
-  for (const field of ["originMarket", "destinationMarket", "equipment", "pickupWindow", "deliveryWindow"]) {
-    optionalString(facts[field], `facts.${field}`);
-  }
-  for (const field of ["loadedMiles", "deadheadMiles", "weightLb"]) {
-    optionalNumber(facts[field], `facts.${field}`, { nonNegative: true });
-  }
+  for (const field of ["originMarket", "destinationMarket", "equipment"]) optionalString(facts[field], `facts.${field}`);
+  for (const field of ["pickupWindow", "deliveryWindow", "marketSignals"]) optionalStructured(facts[field], `facts.${field}`);
+  for (const field of ["loadedMiles", "deadheadMiles", "weightLb"]) optionalNumber(facts[field], `facts.${field}`, { nonNegative: true });
   optionalNumber(facts.pieces, "facts.pieces", { integer: true, nonNegative: true });
-  if (facts.marketSignals !== undefined && facts.marketSignals !== null
-      && !isPlainObject(facts.marketSignals) && !Array.isArray(facts.marketSignals)) {
-    throw new ContractError("INVALID_FIELD_VALUE", "facts.marketSignals must be structured data or null");
-  }
 }
 
 function validateCanonicalDomains(snapshot) {
   for (const field of ["trueRpm", "loadedRpm", "baselineBid", "marketBid", "costPerMile", "fuelCost", "deadheadCost"]) {
     optionalNumber(snapshot[field], `canonicalSnapshot.${field}`, { nonNegative: true });
   }
-  for (const field of ["grade", "positionClass", "marketContext", "calculatedAt", "authorityVersion"]) {
-    optionalString(snapshot[field], `canonicalSnapshot.${field}`);
-  }
+  for (const field of ["grade", "positionClass", "calculatedAt", "authorityVersion"]) optionalString(snapshot[field], `canonicalSnapshot.${field}`);
+  optionalStructured(snapshot.marketContext, "canonicalSnapshot.marketContext");
   if (snapshot.verdict !== undefined && snapshot.verdict !== null) {
     if (typeof snapshot.verdict !== "string" || !VERDICTS.has(snapshot.verdict.toUpperCase())) {
       throw new ContractError("INVALID_FIELD_VALUE", "canonicalSnapshot.verdict is invalid");
@@ -140,19 +129,16 @@ export function validateEnvelope(envelope) {
   for (const key of Object.keys(envelope)) {
     if (!TOP_LEVEL_FIELDS.has(key)) throw new ContractError("UNKNOWN_FIELD", `Unknown envelope field: ${key}`);
   }
-
   let serialized;
   try { serialized = JSON.stringify(envelope); }
   catch { throw new ContractError("INVALID_ENVELOPE", "Envelope must be JSON-serializable"); }
   if (new TextEncoder().encode(serialized).byteLength > MAX_ENVELOPE_BYTES) {
     throw new ContractError("ENVELOPE_TOO_LARGE", "Envelope exceeds Phase A size limit");
   }
-
   for (const field of ["id", "type", "occurredAt", "source", "actorScope", "correlationId", "idempotencyKey", "intent"]) {
     requireNonEmptyString(envelope[field], field);
   }
   optionalString(envelope.loadId, "loadId");
-
   if (envelope.schemaVersion !== 1) throw new ContractError("UNSUPPORTED_SCHEMA", "schemaVersion must be 1");
   if (!PRIVACY_CLASSES.has(envelope.privacyClass)) throw new ContractError("INVALID_PRIVACY_CLASS", "privacyClass is invalid");
   if (!isPlainObject(envelope.facts)) throw new ContractError("INVALID_FACTS", "facts must be an object");
@@ -160,17 +146,13 @@ export function validateEnvelope(envelope) {
   if (!isPlainObject(envelope.canonicalSnapshot)) throw new ContractError("INVALID_CANONICAL_SNAPSHOT", "canonicalSnapshot must be an object");
   if (hasUnknownKeys(envelope.facts, SAFE_FACT_FIELDS)) throw new ContractError("UNKNOWN_FACT_FIELD", "facts contains unsupported fields");
   if (hasUnknownKeys(envelope.canonicalSnapshot, SAFE_CANONICAL_FIELDS)) throw new ContractError("UNKNOWN_CANONICAL_FIELD", "canonicalSnapshot contains unsupported fields");
-
   validateFactDomains(envelope.facts);
   validateCanonicalDomains(envelope.canonicalSnapshot);
-
   if (typeof envelope.confidence !== "number" || !Number.isFinite(envelope.confidence)
       || envelope.confidence < 0 || envelope.confidence > 1) {
     throw new ContractError("INVALID_CONFIDENCE", "confidence must be between 0 and 1");
   }
-  if (Number.isNaN(Date.parse(envelope.occurredAt))) {
-    throw new ContractError("INVALID_OCCURRED_AT", "occurredAt must be an ISO timestamp");
-  }
+  if (Number.isNaN(Date.parse(envelope.occurredAt))) throw new ContractError("INVALID_OCCURRED_AT", "occurredAt must be an ISO timestamp");
   return { ok: true };
 }
 
