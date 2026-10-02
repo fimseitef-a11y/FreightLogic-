@@ -1,9 +1,6 @@
 import { readFileSync,readdirSync } from 'node:fs';
 import { createSuite,ok,eq } from '../lib/harness.mjs';
 import { assetsIgnoreMatcher } from '../../scripts/lib/deploy-assets.mjs';
-import { runSpec as workerErasureRecovery } from './worker-erasure-recovery.spec.mjs';
-import { runSpec as wizardPreviewBoundary } from './wizard-preview-boundary.spec.mjs';
-import { runSpec as wizardUnknownEconomics } from '../integration/wizard-unknown-economics.spec.mjs';
 const {test,run}=createSuite('unit/audit-ci-integrity.spec.mjs');
 const read=p=>readFileSync(new URL('../../'+p,import.meta.url),'utf8');
 const wf=n=>read('.github/workflows/'+n+'.yml');
@@ -59,22 +56,5 @@ test('[CI-AUDIT-06] manifest shortcuts use implemented entry actions',()=>{
  eq(shortcuts[0].url,'./#do=trip');eq(shortcuts[1].url,'./#omega');
 });
 
-function mergeResults(results){
- return results.reduce((total,result)=>({
-   pass:total.pass+(result?.pass||0),
-   fail:total.fail+(result?.fail||0),
-   skip:total.skip+(result?.skip||0),
- }),{pass:0,fail:0,skip:0});
-}
-
-// The aggregate runner enumerates specs explicitly. Keep the resumed audit
-// regressions mechanically attached to an already-registered audit entry so a
-// missing registration cannot produce a false-green PR.
-export async function runSpec(){
- return mergeResults([
-   await run(),
-   await workerErasureRecovery(),
-   await wizardPreviewBoundary(),
-   await wizardUnknownEconomics(),
- ]);
-}
+// Every regression has its own aggregate-runner entry; execute each once.
+export async function runSpec() { return run(); }

@@ -22,8 +22,8 @@ test('[FIN-AUDIT-WIZARD] unknown mileage does not become zero in the live previe
   await app.page.locator('#f_empty').fill('0');
   await app.page.waitForFunction(()=>document.querySelector('#liveScore')?.textContent.includes('True RPM'));
   const zero=await app.page.evaluate(()=>window.__FL_TESTS.computeLoadScore({pay:600,loadedMiles:100,emptyMiles:0},[],[]));
-  ok(zero.available!==false,'known cost prerequisites permit actual-zero branch');eq(zero.rpm,6);
-  ok((await app.page.locator('#liveScore').innerText()).includes('$6'));
+  ok(zero.available!==false,'known cost prerequisites permit actual-zero branch: '+JSON.stringify(zero));eq(zero.rpm,6,'actual-zero deadhead produces canonical RPM6');
+  ok((await app.page.locator('#liveScore').innerText()).includes('$6'),'actual-zero live preview renders RPM6');
   await app.page.locator('#f_empty').fill('20');
   await app.page.waitForFunction(()=>{const text=document.querySelector('#liveScore')?.textContent||'';return text.includes('True RPM')&&text.includes('$5');});
   eq(await app.page.evaluate(()=>window.__FL_TESTS.computeLoadScore({pay:600,loadedMiles:100,emptyMiles:20},[],[]).rpm),5);
@@ -60,7 +60,7 @@ test('[FIN-AUDIT-SCORE-02] actual zero and known amounts retain distinct economi
       invalid:[score({pay:600,loadedMiles:300001,emptyMiles:0}),score({pay:600,loadedMiles:100,emptyMiles:null}),score({pay:600,loadedMiles:100,emptyMiles:-1}),score({pay:-1,loadedMiles:100,emptyMiles:0}),score({pay:'-1',loadedMiles:100,emptyMiles:0})]
     };
   });
-  for(const score of [result.zero,result.zeroString]){ok(score.available!==false);eq(score.rpm,0);eq(score.trueProfit,-35);}
+  for(const score of [result.zero,result.zeroString]){ok(score.available!==false,'explicit zero amount remains available: '+JSON.stringify(score));eq(score.rpm,0);eq(score.trueProfit,-35);}
   eq(result.known.rpm,6);eq(result.known.trueProfit,565);ok(result.maximum.available!==false);eq(result.maximum.rpm,2);
   for(const score of result.invalid){eq(score.available,false);eq(score.rpm,null);}
 });

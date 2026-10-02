@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { claimReceipt, completeReceipt } from '../storage.mjs';
+import { appendRawEvidence, claimReceipt, completeReceipt } from '../storage.mjs';
 import { runIngestion, processEvidenceBatch, EVIDENCE_MESSAGE_TYPE } from '../pipeline.mjs';
 
 async function d1() {
@@ -69,6 +69,12 @@ function version(id, retrievedAt, statusKey = 'BOARD_LISTING') {
 }
 
 const NOW = '2026-10-02T12:00:00.000Z';
+async function receiptDb() {
+  const db = await d1();
+  // Completion receipts reference immutable evidence through the real FK.
+  await appendRawEvidence(db, version('ev:audit', NOW).evidence);
+  return db;
+}
 function claim(token, time = NOW) {
   return { idempotencyKey: 'receipt:audit', messageType: EVIDENCE_MESSAGE_TYPE,
     evidenceId: 'ev:audit', leaseToken: token, claimedAt: time,
@@ -80,7 +86,7 @@ function completion(token, time = NOW) {
 }
 
 test('audit: stale receipt owner cannot complete or mutate its successor; legitimate completion replays', async () => {
-  const db = await d1();
+  const db = await receiptDb();
   try {
     assert.equal((await claimReceipt(db, claim('A'))).status, 'ACQUIRED');
     const later = '2026-10-02T12:01:00.000Z';
@@ -98,7 +104,7 @@ test('audit: stale receipt owner cannot complete or mutate its successor; legiti
 });
 
 test('audit: expired receipt lease alone rejects completion without creating an orphan receipt', async () => {
-  const db = await d1();
+  const db = await receiptDb();
   try {
     await claimReceipt(db, claim('A'));
     await assert.rejects(completeReceipt(db, completion('A', '2026-10-02T12:01:00.000Z')), /lost or expired/);
@@ -108,7 +114,7 @@ test('audit: expired receipt lease alone rejects completion without creating an 
 });
 
 test('audit: a failed receipt transaction rolls back state and can be retried by its owner', async () => {
-  const db = await d1();
+  const db = await receiptDb();
   try {
     await claimReceipt(db, claim('A'));
     db.setBeforeRun(sql => { if (/^INSERT INTO ingest_receipts/.test(sql)) throw new Error('injected receipt insert failure'); });

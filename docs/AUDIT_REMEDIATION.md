@@ -64,6 +64,30 @@ production-function probes are targeted evidence only. Lease/receipt changes
 and any additional concurrency corrections must be reconciled with real
 production-path tests before claiming their bounded behavior verified.
 
+## Integrated failure investigation
+
+At resumed source checkpoint `6aea1f2f2407ca2ff8e39a2555d465429965bd67`,
+Agent phase 42/0, guard 20/0, integration 20/0 and lease 4/0 passed; Swift
+33/0, CodeQL, lock checks and performance gates passed. The application gate
+reported 1055/2 across 107 specifications. The three shell-quiescence tests and
+four result-normalizer tests passed. Recovered regression specifications also
+ran inside the CI-integrity aggregate, duplicating their explicit runner
+entries; simultaneous wizard executions shared a mutable fixture. The nested
+calls are removed while all independent registrations/assertions remain active,
+and wizard assertions now carry useful failure messages.
+
+ELI reported 94/2, skipped zero. Both failed receipt fixtures lacked immutable
+evidence referenced by the real receipt foreign key. The fixtures now seed that
+evidence through production `appendRawEvidence`; neither the constraint nor
+any stale-owner, rollback or retry assertion was relaxed. The actual
+route-correction/materialization recovery case already passed. Current-head
+verification is required after these fixture/execution corrections.
+
+Performance evidence at that source checkpoint: app.js gzip 409114 bytes
+passes the 409600-byte regression ceiling but exceeds the 204800-byte target
+by 204314 bytes. The local Worker self-test p95 was 70.5ms for 1000 requests
+at concurrency 50; this is not evidence of live production capacity.
+
 ## Verification discipline
 
 The new specifications are registered in `node tests/run-all.mjs`; existing
