@@ -17,7 +17,7 @@ Claiming costs one line. Not claiming costs an hour.
 | Lane | Working on | Since |
 |---|---|---|
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
-| gpt | — idle — PR #455 carries AIAG-TASK-0039 Precision UI implementation. | 2026-10-01T15:37:15Z |
+| gpt | — idle — AIAG-TASK-0039 complete; PR #455/#457 merged and release lock retired. | 2026-10-02T02:00:00Z |
 
 ---
 
