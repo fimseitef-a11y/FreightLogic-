@@ -191,21 +191,24 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
       };
     }
 
+    const supportsClaims = typeof state.claimIdempotency === "function" && typeof state.releaseIdempotencyClaim === "function";
     const claimToken = crypto.randomUUID();
-    const claim = await state.claimIdempotency({
-      idempotencyKey: scope.idempotencyKey,
-      eventId: envelope.id,
-      payloadFingerprint,
-      claimToken,
-      expiresAt: futureIso(CLAIM_LEASE_MS),
-    });
-    if (!claim.acquired) {
-      const sameClaim = claim.claim?.event_id === envelope.id
-        && claim.claim?.payload_fingerprint === payloadFingerprint;
-      return failClosed(
-        sameClaim ? "IDEMPOTENCY_IN_FLIGHT" : "IDEMPOTENCY_CONFLICT",
-        sameClaim ? "EQUIVALENT_REQUEST_ALREADY_IN_FLIGHT" : "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT",
-      );
+    if (supportsClaims) {
+      const claim = await state.claimIdempotency({
+        idempotencyKey: scope.idempotencyKey,
+        eventId: envelope.id,
+        payloadFingerprint,
+        claimToken,
+        expiresAt: futureIso(CLAIM_LEASE_MS),
+      });
+      if (!claim.acquired) {
+        const sameClaim = claim.claim?.event_id === envelope.id
+          && claim.claim?.payload_fingerprint === payloadFingerprint;
+        return failClosed(
+          sameClaim ? "IDEMPOTENCY_IN_FLIGHT" : "IDEMPOTENCY_CONFLICT",
+          sameClaim ? "EQUIVALENT_REQUEST_ALREADY_IN_FLIGHT" : "IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_EVENT",
+        );
+      }
     }
 
     try {
@@ -270,7 +273,7 @@ export default class FreightLogicAgentService extends WorkerEntrypoint {
         confidence: stored.confidence,
       };
     } finally {
-      await state.releaseIdempotencyClaim(scope.idempotencyKey, claimToken);
+      if (supportsClaims) await state.releaseIdempotencyClaim(scope.idempotencyKey, claimToken);
     }
   }
 }
