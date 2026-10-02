@@ -17,12 +17,12 @@ async function boot(){
   return app;
 }
 
-test('[UXA2Z-01] primary shell is Today / Loads / Scan / History / Money', async () => {
+test('[UXA2Z-01] primary shell is Today / Loads / Evaluate / Trips / Money', async () => {
   const app = await boot();
   try {
     const tabs = await app.page.$$eval('.bottom .nav a', els => els.map(e => (e.querySelector('.nl')?.textContent || '').trim()));
-    eq(tabs.join('/'), 'Today/Loads/Scan/History/Money', 'driver shell must use Scan, not Evaluate');
-    ok(/omega:\s*'Scan'/.test(shell), 'route title must identify omega as Scan');
+    eq(tabs.join('/'), 'Today/Loads/Evaluate/Trips/Money', 'driver shell must use the approved Evaluate / Trips vocabulary');
+    ok(/omega:\s*'Evaluate Load'/.test(shell), 'route title must identify omega as Evaluate Load');
   } finally { await app.close(); }
 });
 

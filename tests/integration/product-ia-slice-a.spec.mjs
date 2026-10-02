@@ -22,24 +22,24 @@ async function primaryNav(page) {
   })));
 }
 
-test('[UXIA-01] idle primary shell is five workflow destinations and History preserves #trips', async () => {
+test('[UXIA-01] idle primary shell is five workflow destinations and Trips preserves #trips', async () => {
   const app = await boot();
   try {
     const tabs = await primaryNav(app.page);
     eq(tabs.length, 5, 'primary navigation must expose no more than five destinations');
-    eq(tabs.map(t => t.label).join('/'), 'Today/Loads/Scan/History/Money',
-      'idle shell must read Today / Loads / Scan / History / Money');
-    const history = tabs.find(t => t.label === 'History');
-    ok(history, 'History is a visible primary destination');
-    eq(history?.href, '#trips', 'History must preserve the supported #trips deep link');
+    eq(tabs.map(t => t.label).join('/'), 'Today/Loads/Evaluate/Trips/Money',
+      'idle shell must read Today / Loads / Evaluate / Trips / Money');
+    const trips = tabs.find(t => t.label === 'Trips');
+    ok(trips, 'Trips is a visible primary destination');
+    eq(trips?.href, '#trips', 'Trips must preserve the supported #trips deep link');
     await app.page.evaluate(() => { location.hash='#trips'; });
     await sleep(350);
     const historyView = await app.page.evaluate(() => {
       const view=document.getElementById('view-trips');
       return { aria:view?.getAttribute('aria-label')||'', heading:(view?.querySelector('h3')?.textContent||'').trim() };
     });
-    eq(historyView.aria, 'History', 'the preserved #trips route must announce itself as History');
-    eq(historyView.heading, 'History', 'the visible #trips screen heading must be History');
+    eq(historyView.aria, 'History', 'the preserved #trips route must announce its record-history content');
+    eq(historyView.heading, 'History', 'the visible #trips content heading remains History');
   } finally { await app.close(); }
 });
 
