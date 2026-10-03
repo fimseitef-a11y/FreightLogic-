@@ -1,0 +1,6 @@
+owner: gpt
+token: 9c1fd4af-4b94-4e5c-84b1-6f59f0e027cc
+started_utc: 2026-10-03T21:22:00Z
+expected_release_utc: 2026-10-03T23:30:00Z
+paths: app.js
+task: ST12 restore transaction abort/error rejection and committed-row accounting with red-green regression.
