@@ -20,7 +20,7 @@ test('[HD-01] backup Worker binds FREIGHTLOGIC_DB to the existing Hyperdrive res
 
 test('[HD-02] binding change preserves existing production bindings', () => {
   const src = configText();
-  for (const marker of ['"binding": "AI"', '"binding": "RATE_LIMITER"', '"binding": "AGENT"', '"binding": "BACKUPS"']) {
+  for (const marker of ['"binding": "AI"', '"name": "RATE_LIMITER"', '"binding": "AGENT"', '"binding": "BACKUPS"']) {
     ok(src.includes(marker), `existing binding missing after Hyperdrive integration: ${marker}`);
   }
 });
