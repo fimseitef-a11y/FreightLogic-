@@ -1,6 +1,0 @@
-owner: claude
-token: eb69a967-479b-4924-8b2e-35087f6b55fa
-started_utc: 2026-10-03T06:43:13Z
-expected_release_utc: 2026-10-03T09:43:13Z
-paths: .agents/LANES.md, .assetsignore
-task: Operator-reauthorized (2026-10-03 chat: "I authorize you to fix whatever needs to be fixed on freight logic" / "Do whatever you recommend") bounded Claude task: add production-dark cloud-db-runtime/ Hyperdrive health seam; register its LANES row and withhold it from the asset origin.
