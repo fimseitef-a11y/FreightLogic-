@@ -1,0 +1,6 @@
+owner: gpt
+token: 562f322d-4848-4c42-9126-0ddb75ec2a08
+started_utc: 2026-10-03T01:21:00Z
+expected_release_utc: 2026-10-03T05:21:00Z
+paths: .agents/NOW.md, .agents/STATUS.md, .agents/TEST_LEDGER.md
+task: AIAG-TASK-0040 one-sweep parent coordination; preserve other-session app.js ownership and record exact evidence.
