@@ -6,7 +6,7 @@
 // connected and Load Intake answered every screenshot with "Cloud backup is not
 // connected". The app now takes a pasted invite link (or code) and opens the
 // same claim wizard the link would have.
-import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
+import { launchApp, createSuite, skipFirstRunWizard, ok, eq } from '../lib/harness.mjs';
 
 const { test, run } = createSuite('integration/invite-paste.spec.mjs');
 let app;
@@ -56,12 +56,17 @@ test('[INV-02] Settings offers invite entry, and pasting a link opens the claim 
 });
 
 test('[INV-03] a bad paste says why and opens nothing', async () => {
-  const r = await app.page.evaluate(async () => {
-    window.__FL_TESTS.openInviteEntry();
-    await new Promise(res => setTimeout(res, 300));
-    document.getElementById('inviteLinkInput').value = 'not an invite';
-    document.getElementById('inviteLinkGo').click();
-    await new Promise(res => setTimeout(res, 300));
+  // INV-02 removes a full-screen setup wizard by hand. That is not a product
+  // navigation path; its pending async tasks must not control this independent
+  // malformed-input case. Start from the canonical harness-ready app instead.
+  await app.close();
+  app = await launchApp();
+  await skipFirstRunWizard(app.page);
+  await app.page.evaluate(() => window.__FL_TESTS.openInviteEntry());
+  await app.page.locator('#inviteLinkInput').fill('not an invite');
+  await app.page.locator('#inviteLinkGo').click();
+  await app.page.locator('#inviteLinkError').waitFor({ state: 'visible' });
+  const r = await app.page.evaluate(() => {
     const err = document.getElementById('inviteLinkError');
     return { err: err && err.style.display !== 'none' ? err.textContent : '', wizard: !!document.getElementById('claimWizard') };
   });
@@ -70,33 +75,38 @@ test('[INV-03] a bad paste says why and opens nothing', async () => {
 });
 
 test('[INV-04] a login refusal from the server offers the invite entry', async () => {
-  // v24.0.41: with no login the screenshot is read anyway (Worker v25). Only a
-  // server refusal (401/403, e.g. a revoked login) is fixable by connecting.
-  await app.page.route('**/extract-image', (route) => route.fulfill({
-    status: 403, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Invalid token' }) }));
-  await app.page.evaluate(async () => {
-    window.__FL_TESTS.openLoadIntake();
-    await new Promise(res => setTimeout(res, 250));
+  // Preserve the concurrent writer's independent modal-state isolation.
+  await app.close();
+  app = await launchApp();
+  await skipFirstRunWizard(app.page);
+  await app.page.route('**/extract-image', (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Backup-Token, X-Device-Id' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    return route.fulfill({ status: 403, headers: cors, contentType: 'application/json',
+      body: JSON.stringify({ ok: false, error: 'Invalid token' }) });
   });
-  await app.page.setInputFiles('#liImgFile', {
-    name: 's.png', mimeType: 'image/png',
-    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
-  });
-  await new Promise(res => setTimeout(res, 1200));
-  const s = await app.page.evaluate(async () => {
-    const btn = document.getElementById('liConnectInvite');
-    const vis = !!(btn && btn.offsetParent);
-    if (btn) btn.click();
-    await new Promise(res => setTimeout(res, 500));
-    return { vis, entry: !!document.getElementById('inviteLinkInput') };
-  });
-  await app.page.unroute('**/extract-image');
-  ok(s.vis, 'a login refusal carries a visible "connect" button');
-  ok(s.entry, 'tapping it opens the invite paste field');
+  try {
+    await app.page.evaluate(() => window.__FL_TESTS.openLoadIntake());
+    const refusal = app.page.waitForResponse(response =>
+      response.url().endsWith('/extract-image') && response.status() === 403);
+    await app.page.setInputFiles('#liImgFile', {
+      name: 's.png', mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
+    });
+    await refusal;
+    const connect=app.page.locator('#liConnectInvite');
+    await connect.waitFor({state:'visible'});
+    ok(await connect.isVisible(),'a login refusal carries a visible "connect" button');
+    await connect.click();
+    await app.page.locator('#inviteLinkInput').waitFor({state:'visible'});
+    ok(await app.page.locator('#inviteLinkInput').isVisible(),'tapping it opens the invite paste field');
+  } finally { await app.page.unroute('**/extract-image'); }
 });
 
 export async function runSpec() {
   app = await launchApp();
+  await skipFirstRunWizard(app.page);
   try { return await run(); }
   finally { await app.close(); }
 }

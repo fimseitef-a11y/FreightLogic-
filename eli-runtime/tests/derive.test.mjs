@@ -118,3 +118,19 @@ test('stale confidence routes to UNKNOWN without inventing a numeric penalty', (
     { value: null, status: 'UNKNOWN', freshnessState: 'STALE' },
   );
 });
+
+test('audit: future or impossible timestamps cannot be classified as fresh evidence', () => {
+  const policy = { freshForMs: 3600000, staleAfterMs: 86400000 };
+  const now = '2026-10-02T12:00:00Z';
+  for (const sourceAsOf of [
+    '2026-10-03T12:00:00Z', '2026-02-30T12:00:00Z',
+    '2026-10-02T24:00:00Z', '2026-10-02T12:60:00Z',
+    '2026-10-02T12:00:60Z', '2026-10-02T12:00:00+14:30',
+    '', false, 0, 'not a date',
+  ]) {
+    assert.equal(classifyFreshness({ sourceAsOf, now, ...policy }), 'UNAVAILABLE', String(sourceAsOf));
+  }
+  assert.equal(classifyFreshness({ sourceAsOf: '2024-02-29T12:00:00Z', now: '2024-02-29T12:00:00Z', ...policy }), 'FRESH');
+  assert.equal(classifyFreshness({ sourceAsOf: '2026-10-02T08:00:00-04:00', now, ...policy }), 'FRESH');
+  assert.equal(classifyFreshness({ sourceAsOf: now, now: '2026-02-30T12:00:00Z', ...policy }), 'UNAVAILABLE');
+});

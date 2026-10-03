@@ -159,7 +159,7 @@ export function lockCovers(rec, file){
 
 // Only SHARED paths need a lock. Claude-owned and gpt-owned paths are settled
 // by checkOwnership alone.
-export function checkLocks(rows, agent, files, locks, nowMs){
+export function checkLocks(rows, agent, files, locks, nowMs, expectedToken){
   const out = [];
   const undeclared = locks.filter(l => l.paths.length === 0);
   for (const file of files){
@@ -176,7 +176,13 @@ export function checkLocks(rows, agent, files, locks, nowMs){
       continue;
     }
 
-    if (covering.some(l => l.owner === agent && !lockIsStale(l, nowMs))) continue; // covered
+    const own = covering.filter(l => l.owner === agent && !lockIsStale(l, nowMs));
+    if (own.length){
+      if (expectedToken && own.some(l => l.token === expectedToken)) continue;
+      out.push({file,kind:expectedToken ? 'other-session' : 'missing-lock-token',
+        message: expectedToken ? `${file} is held by another ${agent} session. Claim your own lock; do not copy its token.` : `${file} requires FL_LOCK_TOKEN or git config freightlogic.lockToken for this session.`});
+      continue;
+    }
 
     const other = covering.find(l => l.owner !== agent && !lockIsStale(l, nowMs));
     if (other){
@@ -190,6 +196,17 @@ export function checkLocks(rows, agent, files, locks, nowMs){
       message: `${file} is covered only by a STALE lock: ${LOCK_DIR}/${s.name} (owner ${s.owner}, token ${s.token}, expected release ${s.expected_release_utc}). Locks are never auto-stolen. Reap it deliberately per AGENTS.md — delete the file, commit, push, log the token and reason in STATUS.md — then claim your own.` });
   }
   return out;
+}
+
+export function checkHistoricalLock(rec, agent, files, committedAt, expectedToken){
+  if (!rec || !expectedToken || rec.owner !== agent || rec.token !== expectedToken) return false;
+  const started = Date.parse(rec.started_utc);
+  return Number.isFinite(committedAt) && Number.isFinite(started) && started <= committedAt
+    && !lockIsStale(rec,committedAt) && files.every(file=>lockCovers(rec,file));
+}
+function sessionToken(){
+  if (process.env.FL_LOCK_TOKEN) return process.env.FL_LOCK_TOKEN.trim();
+  try {return git(['config','freightlogic.lockToken']).trim();} catch {return '';}
 }
 
 /* --------------------------------------------------------- branch / prefix */
@@ -288,7 +305,7 @@ function main(){
     if (shared.length){
       const { ok, locks, error } = loadLocks();
       if (!ok){ console.error(`\nlane-guard: lock check FAILED\n\n  [no-coordination-ref] ${error}\n`); rc = 1; }
-      else rc = report('lock coverage', checkLocks(rows, agent, files, locks, Date.now())) || rc;
+      else rc = report('lock coverage', checkLocks(rows, agent, files, locks, Date.now(), sessionToken())) || rc;
     }
     return rc;
   }
@@ -325,54 +342,48 @@ function main(){
   }
 
   if (cmd === 'trailer'){
-    // Emitted by .githooks/prepare-commit-msg. Prints nothing (and never fails
-    // the commit) unless a SHARED path is staged and a lock of ours covers it.
     let agent = '';
-    try { agent = git(['config', 'freightlogic.agent']).trim(); } catch { return 0; }
-    if (!AGENTS.includes(agent)) return 0;
-    const files = git(['diff', '--cached', '--name-only']).split('\n').map(s => s.trim()).filter(Boolean);
-    const rows = loadLanes();
-    const shared = files.filter(f => ownerForPath(rows, f) === 'shared');
-    if (!shared.length) return 0;
-    const { ok, locks } = loadLocks();
-    if (!ok) return 0;
-    const now = Date.now();
-    const used = new Set();
-    for (const f of shared){
-      const l = locks.find(l => l.owner === agent && !lockIsStale(l, now) && lockCovers(l, f));
-      if (l) used.add(`${l.name.replace(/\.lock$/, '')}/${l.token}`);
+    try {agent=git(['config','freightlogic.agent']).trim();} catch {}
+    const files=git(['diff','--cached','--name-only']).split('\n').map(s=>s.trim()).filter(Boolean);
+    const rows=loadLanes(),shared=files.filter(f=>ownerForPath(rows,f)==='shared');
+    if(!shared.length) return 0;
+    if(!AGENTS.includes(agent)) return report('lock identity',[{kind:'identity',message:'Set git config freightlogic.agent gpt for this session.'}]);
+    const state=loadLocks();
+    if(!state.ok) return report('lock coverage',[{kind:'coordination',message:state.error}]);
+    const token=sessionToken(),now=Date.now();
+    const violations=checkLocks(rows,agent,shared,state.locks,now,token);
+    if(violations.length) return report('lock coverage',violations);
+    const used=new Set();
+    for(const file of shared){
+      const lock=state.locks.find(l=>l.owner===agent && l.token===token && !lockIsStale(l,now) && lockCovers(l,file));
+      used.add(lock.name.replace(/\.lock$/,'')+'/'+lock.token);
     }
-    for (const u of used) console.log(`\nFL-Lock: ${u}`);
+    for(const record of used) console.log('\nFL-Lock: '+record);
     return 0;
   }
 
-  if (cmd === 'ci-trailer'){
-    // WARN-ONLY for its first round (see .github/workflows/lanes.yml): always
-    // exits 0. It reports commits that changed a SHARED path without naming the
-    // lock that authorised them, and trailers whose token is absent from
-    // agent-coordination history.
-    const rows = loadLanes();
-    let flagged = 0;
-    for (const c of commitsInRange(arg('--base'), arg('--head'))){
-      if (c.parents > 1) continue;
-      const files = git(['show', '--name-only', '--format=', c.sha]).split('\n').map(s => s.trim()).filter(Boolean);
-      if (!files.some(f => ownerForPath(rows, f) === 'shared')) continue;
-      const body = git(['log', '-1', '--format=%B', c.sha]);
-      const m = body.match(/^FL-Lock:\s*(\S+)\/(\S+)\s*$/m);
-      if (!m){
-        console.log(`  WARN ${c.sha.slice(0,8)} changed a SHARED path with no FL-Lock trailer — "${c.subject}"`);
-        flagged++;
-        continue;
+  if(cmd==='ci-trailer'){
+    const rows=loadLanes(),agent=namespaceAgent(arg('--branch'));
+    const violations=[];
+    for(const c of commitsInRange(arg('--base'),arg('--head'))){
+      if(c.parents>1) continue;
+      const files=git(['show','--name-only','--format=',c.sha]).split('\n').map(s=>s.trim()).filter(f=>f && ownerForPath(rows,f)==='shared');
+      if(!files.length) continue;
+      const body=git(['log','-1','--format=%B',c.sha]);
+      const trailers=[...body.matchAll(/^FL-Lock:\s*([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)\s*$/mg)];
+      const committedAt=Number(git(['show','-s','--format=%ct',c.sha]).trim())*1000;
+      let snapshot='';
+      try {snapshot=git(['rev-list','-1','--before='+new Date(committedAt).toISOString(),COORD_REF]).trim();} catch {}
+      const records=[];
+      for(const t of trailers){
+        try {records.push({record:parseLock(git(['show',snapshot+':'+LOCK_DIR+'/'+t[1]+'.lock']),t[1]+'.lock'),token:t[2]});} catch {}
       }
-      let seen = '';
-      try { seen = git(['log', '--format=%H', `-S${m[2]}`, COORD_REF, '--', `${LOCK_DIR}/${m[1]}.lock`]).trim(); } catch { /* ref missing */ }
-      if (!seen){
-        console.log(`  WARN ${c.sha.slice(0,8)} names lock ${m[1]} token ${m[2]}, not found in ${COORD_REF} history`);
-        flagged++;
+      for(const file of files){
+        if(!agent || !snapshot || !records.some(r=>checkHistoricalLock(r.record,agent,[file],committedAt,r.token)))
+          violations.push({kind:'invalid-lock-trailer',message:c.sha.slice(0,8)+' '+file+' has no valid session claim in coordination state at commit time.'});
       }
     }
-    console.log(flagged ? `lane-guard: lock trailer audit — ${flagged} warning(s) (warn-only)` : 'lane-guard: lock trailer audit OK');
-    return 0;
+    return report('lock trailer audit',violations);
   }
 
   console.error('usage: lane-guard.mjs <precommit|trailer|ci-paths|ci-prefix|ci-trailer|status> [--branch B --base A --head B]');

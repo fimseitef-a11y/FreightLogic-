@@ -149,3 +149,47 @@ test('private Worker exposes typed RPC methods only; config has no public route 
   assert.equal(Object.hasOwn(config, 'routes'), false);
   assert.equal(Object.hasOwn(config, 'route'), false);
 });
+
+test('audit: lane and market reads age operator freshness without a new ingest or rewriting provenance', async () => {
+  const row = {
+    origin_market: 'MKT-ATL', destination_market: 'MKT-DTW',
+    freshness_json: '{"OPERATOR_PRIVATE":"FRESH","structural":"UNAVAILABLE"}',
+    evidence_counts_json: '{"OPERATOR_COMPLETED":3}', unknown_flags_json: '[]',
+    latest_evidence_at: '2026-10-01T12:00:00Z', model_run_id: 'run:audit',
+    governance_fingerprint: 'gov:audit', stage: 'Pilot Candidate',
+  };
+  const before = JSON.stringify(row);
+  let current = '2026-10-02T12:00:00Z';
+  const api = createPrivateApi({
+    async getLaneRow() { return row; }, async getMarketRows() { return [row]; },
+  }, { now: () => current });
+  for (const [timestamp, state] of [
+    ['2026-10-02T12:00:00Z', 'FRESH'], ['2026-10-20T12:00:00Z', 'AGING'],
+    ['2026-11-20T12:00:00Z', 'STALE'], ['2026-09-30T12:00:00Z', 'UNAVAILABLE'],
+  ]) {
+    current = timestamp;
+    const lane = (await api.getLaneIntelligence({ originMarket: 'MKT-ATL', destinationMarket: 'MKT-DTW' })).intelligence;
+    const market = await api.getMarketIntelligence({ market: 'MKT-ATL' });
+    assert.equal(lane.freshness.OPERATOR_PRIVATE, state);
+    assert.equal(market.lanes[0].freshness.OPERATOR_PRIVATE, state);
+    assert.deepEqual(lane.evidenceCounts, { OPERATOR_COMPLETED: 3 });
+    assert.equal(lane.modelRunId, 'run:audit');
+    assert.equal(lane.governanceFingerprint, 'gov:audit');
+  }
+  assert.equal(JSON.stringify(row), before, 'read projection cannot rewrite historical evidence');
+});
+
+test('audit: operator freshness fails closed without a valid evidence time; confidence obeys its domain', () => {
+  for (const latest_evidence_at of [null, '', '2026-02-30', '2026-11-01']) {
+    assert.equal(projectLaneReadModel({
+      freshness_json: '{"OPERATOR_PRIVATE":"FRESH"}', latest_evidence_at,
+    }, { now: '2026-10-02T12:00:00Z' }).freshness.OPERATOR_PRIVATE, 'UNAVAILABLE');
+  }
+  for (const value of [-0.1, 1.1, '0.8', Infinity, null]) {
+    const row = projectLaneReadModel({ structural_confidence: value, expedite_confidence: value });
+    assert.equal(row.structuralConfidence, null);
+    assert.equal(row.expediteConfidence, null);
+  }
+  assert.equal(projectLaneReadModel({ structural_confidence: 0 }).structuralConfidence, 0);
+  assert.equal(projectLaneReadModel({ expedite_confidence: 1 }).expediteConfidence, 1);
+});

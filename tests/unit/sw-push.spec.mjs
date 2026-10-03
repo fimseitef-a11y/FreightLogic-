@@ -86,7 +86,7 @@ test('[SWP-02] a notification can only ever open this app; text is clamped and c
 });
 
 test('[SWP-03] an empty or malformed push still shows a notification (iOS revokes silent push)', async () => {
-  for (const payload of [undefined, 'not json {', { unexpected: true }]) {
+  for (const payload of [undefined, null, [], 123, true, '"primitive"', 'not json {', { unexpected: true }]) {
     const sw = loadSW();
     const { event, waits } = pushEvent(payload);
     sw.handlers.push(event); await Promise.all(waits);
@@ -127,6 +127,21 @@ test('[SWP-06] the push handlers stay a delivery layer: no storage, credentials 
   for (const banned of ['indexedDB', 'caches.', 'fetch(', 'cloudBackupToken', 'X-Backup-Token', 'localStorage', 'importScripts']) {
     ok(!section.includes(banned), `push handlers must not use ${banned}`);
   }
+});
+
+test('[SWP-07] a field companion cannot consume an app notification click',async()=>{
+  let appFocused=false;
+  const companion={url:SCOPE+'field-certification.html',focus:async()=>{throw new Error('Wrong client focused');},postMessage(){throw new Error('Wrong client messaged');}};
+  const app={url:SCOPE+'index.html#home',focus:async()=>{appFocused=true;},postMessage(){}};
+  const sw=loadSW({windows:[companion,app]});
+  const c=clickEvent(SCOPE+'#omega');sw.handlers.notificationclick(c.event);await Promise.all(c.waits);
+  ok(appFocused);eq(sw.opened.length,0);
+});
+test('[SWP-08] companion-only click opens a real app window',async()=>{
+  const companion={url:SCOPE+'field-certification.html',focus:async()=>{throw new Error('Wrong client focused');},postMessage(){throw new Error('Wrong client messaged');}};
+  const sw=loadSW({windows:[companion]});
+  const c=clickEvent(SCOPE+'#omega');sw.handlers.notificationclick(c.event);await Promise.all(c.waits);
+  eq(JSON.stringify(sw.opened),JSON.stringify([SCOPE+'#omega']));
 });
 
 export async function runSpec() {

@@ -1,3 +1,6 @@
+import { classifyFreshness } from './freshness.mjs';
+import { OPERATOR_FRESH_MS, OPERATOR_STALE_AFTER_MS } from './ingest.mjs';
+
 function parseJson(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value !== 'string') return value;
@@ -16,16 +19,29 @@ function pickDefined(source, keys) {
   return result;
 }
 
-export function projectLaneReadModel(row) {
+function confidenceOrUnknown(value) {
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+
+export function projectLaneReadModel(row, { now = new Date().toISOString() } = {}) {
   if (!row || typeof row !== 'object') return null;
+  const storedFreshness = parseJson(row.freshness_json, {});
+  const freshness = storedFreshness && typeof storedFreshness === 'object' && !Array.isArray(storedFreshness)
+    ? { ...storedFreshness } : {};
+  if (Object.hasOwn(freshness, 'OPERATOR_PRIVATE')) {
+    freshness.OPERATOR_PRIVATE = classifyFreshness({
+      sourceAsOf: row.latest_evidence_at, now,
+      freshForMs: OPERATOR_FRESH_MS, staleAfterMs: OPERATOR_STALE_AFTER_MS,
+    });
+  }
   return {
     originMarket: row.origin_market ?? null,
     destinationMarket: row.destination_market ?? null,
     structuralScore: Number.isFinite(row.structural_score) ? row.structural_score : null,
     expediteRelevance: Number.isFinite(row.expedite_relevance) ? row.expedite_relevance : null,
-    structuralConfidence: Number.isFinite(row.structural_confidence) ? row.structural_confidence : null,
-    expediteConfidence: Number.isFinite(row.expedite_confidence) ? row.expedite_confidence : null,
-    freshness: parseJson(row.freshness_json, {}),
+    structuralConfidence: confidenceOrUnknown(row.structural_confidence),
+    expediteConfidence: confidenceOrUnknown(row.expedite_confidence),
+    freshness,
     unknownFlags: parseJson(row.unknown_flags_json, []),
     conflictFlags: parseJson(row.conflict_flags_json, []),
     evidenceCounts: parseJson(row.evidence_counts_json, {}),
@@ -46,7 +62,7 @@ export function reconcilePromotion({ runMode, runtimeGovernanceFingerprint, gove
   return { eligible: true, reason: null, approvedStage: governance.stage ?? null };
 }
 
-export function createPrivateApi(repository) {
+export function createPrivateApi(repository, { now = () => new Date().toISOString() } = {}) {
   if (!repository || typeof repository !== 'object') {
     throw new TypeError('repository is required');
   }
@@ -75,7 +91,7 @@ export function createPrivateApi(repository) {
       return {
         status: 'KNOWN',
         resolved: { originMarket: originKey, destinationMarket: destinationKey },
-        intelligence: projectLaneReadModel(row),
+        intelligence: projectLaneReadModel(row, { now: now() }),
       };
     },
 
@@ -88,7 +104,7 @@ export function createPrivateApi(repository) {
       return {
         status: 'KNOWN',
         market,
-        lanes: rows.map(projectLaneReadModel).filter(Boolean),
+        lanes: rows.map(row => projectLaneReadModel(row, { now: now() })).filter(Boolean),
       };
     },
 

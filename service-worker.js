@@ -1,24 +1,24 @@
-/* FreightLogic v24.0.58 — Browser Hardened Service Worker */
-const SW_VERSION = '24.0.58';
+/* FreightLogic v24.0.59 — Browser Hardened Service Worker */
+const SW_VERSION = '24.0.59';
 const CACHE_NAME = `freightlogic-${SW_VERSION}`;
 const RECEIPT_CACHE = 'freightlogic-receipts-v2';
 const SHARE_CACHE = 'freightlogic-share-v2';
 const APP_SHELL = './index.html';
-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.58"></script>';
+const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.59"></script>';
 const CORE = [
   './', APP_SHELL,
-  './app.js?v=24.0.58',
+  './app.js?v=24.0.59',
   './styles.css',
-  './midwest-stack-authority.js?v=24.0.58',
-  './manifest.json?v=24.0.58',
+  './midwest-stack-authority.js?v=24.0.59',
+  './manifest.json?v=24.0.59',
   './midwest-stack-config.json',
   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
   // import works fully offline from the very first install.
   './vendor/xlsx.full.min.js',
   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
-  './sw-bridge.js?v=24.0.58',
-  './modern-shell.js?v=24.0.58'
+  './sw-bridge.js?v=24.0.59',
+  './modern-shell.js?v=24.0.59'
 ];
 
 // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
@@ -27,7 +27,7 @@ const CORE = [
 // generation is handled separately (a known asset may fall back to a
 // query-insensitive cache hit; an unknown path may not).
 function normalizeAssetPath(pathname) {
-  // './app.js?v=24.0.58' and '/app.js' must resolve to the same identity.
+  // './app.js?v=24.0.59' and '/app.js' must resolve to the same identity.
   return new URL(pathname, self.location.href).pathname;
 }
 const KNOWN_ASSET_PATHS = new Set(
@@ -66,7 +66,7 @@ self.addEventListener('install', (event) => {
     // shell before the TRUE_RPM decision layer was actually cached, with no
     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
     // for the same "must work on the very first offline install" reason.
-    const critical = ['./', APP_SHELL, './app.js?v=24.0.58', './styles.css', './sw-bridge.js?v=24.0.58', './modern-shell.js?v=24.0.58', './manifest.json?v=24.0.58', './midwest-stack-authority.js?v=24.0.58', './vendor/xlsx.full.min.js'];
+    const critical = ['./', APP_SHELL, './app.js?v=24.0.59', './styles.css', './sw-bridge.js?v=24.0.59', './modern-shell.js?v=24.0.59', './manifest.json?v=24.0.59', './midwest-stack-authority.js?v=24.0.59', './vendor/xlsx.full.min.js'];
     await cache.addAll(critical);
     // Optional assets — failure does not abort install
     const optional = CORE.filter(u => !critical.includes(u));
@@ -254,6 +254,7 @@ function pushText(v, max) {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
   const title = pushText(data.title, 60) || 'FreightLogic';
   const body = pushText(data.body, 180);
   const tag = pushText(data.tag, 64);
@@ -272,10 +273,13 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = pushTargetUrl(event.notification.data && event.notification.data.url);
   event.waitUntil((async () => {
-    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: false });
     for (const c of wins) {
       let same = false;
-      try { same = new URL(c.url).origin === new URL(url).origin; } catch (_) {}
+      try {
+        const clientUrl = new URL(c.url), target = new URL(url), scope = new URL(self.registration.scope);
+        same = clientUrl.origin === target.origin && (clientUrl.pathname === scope.pathname || clientUrl.pathname === scope.pathname + 'index.html');
+      } catch (_) {}
       if (!same) continue;
       try { await c.focus(); } catch (_) {}
       c.postMessage({ type: 'FL_OPEN_URL', url });

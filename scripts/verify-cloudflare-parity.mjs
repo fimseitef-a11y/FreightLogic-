@@ -30,10 +30,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.58",
-  manifestName: "FreightLogic v24.0.58",
-  workerVersion: "33",
-  overlayScript: "midwest-stack-authority.js?v=24.0.58"
+  serviceWorkerVersion: "24.0.59",
+  manifestName: "FreightLogic v24.0.59",
+  workerVersion: "34",
+  overlayScript: "midwest-stack-authority.js?v=24.0.59"
 };
 
 // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
@@ -341,6 +341,10 @@ async function runAssetCoverageChecks(checks) {
  *  redirect that resolves to a body) is reported rather than assumed benign,
  *  because "not obviously served" is not the same fact as "withheld". */
 const MUST_NOT_BE_PUBLIC = [
+  'eli-runtime/wrangler.jsonc',
+  'eli-runtime/worker.mjs',
+  'eli-runtime/migrations/0001_init.sql',
+  'agent-runtime/worker.mjs',
   'AGENTS.md',
   'AUDIT_REPORT.md',
   'CLAUDE.md',
@@ -360,7 +364,7 @@ const MUST_NOT_BE_PUBLIC = [
   '.claude/CLAUDE.md',
   '.github/workflows/deploy-backup-worker.yml',
   'docs/BACKUP_CONTRACT.md',
-  'schemas/broker-memory.schema.json',
+  'schemas/broker-memory-schema.json',
   'scripts/verify-cloudflare-parity.mjs',
   'scripts/lib/deploy-assets.mjs',
   'tests/run-all.mjs',

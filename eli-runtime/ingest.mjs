@@ -1,4 +1,4 @@
-// ingest.mjs — pure ingestion logic (no D1, no network). AIAG-TASK-0038.
+// ingest.mjs — ELI ingestion pipeline (D1 + queue). AIAG-TASK-0038.
 //
 // Operator data rules applied here (Claude memory: freight-data-rules):
 //  - never invent a missing value: unknown stays null, never 0;
@@ -16,10 +16,9 @@ import { deriveLaneIntelligence } from './derive.mjs';
 export const ADAPTER_VERSION = 'airtable-load-history-v1';
 export const SOURCE_ID = 'airtable:load-history';
 export const AUTHORIZATION_CLASS = 'OPERATOR_PRIVATE';
-export const FRESHNESS_VERSION = 'operator-freshness-v0.1';
+export const FRESHNESS_VERSION = 'operator-freshness-v0.2';
 export const DERIVE_VERSION = 'derive-v1';
 
-// Operator evidence freshness (provisional, versioned above).
 export const OPERATOR_FRESH_MS = 14 * 86400000;
 export const OPERATOR_STALE_AFTER_MS = 45 * 86400000;
 
@@ -39,10 +38,6 @@ export const DIRECTIONAL_LANE_FIELD_IDS = Object.freeze({
   unknownStates: 'fld7OvKE2mOb7aW4M',
 });
 export const DIRECTIONAL_LANE_TABLE_ID = 'tblKD555nilZey3IQ';
-
-// Only lanes Airtable has moved past bulk structural candidacy are governed
-// for serving; the 7,250 national Structural Candidate rows use a different
-// geography (OPMKT-CFS22) that no operator alias resolves to.
 export const GOVERNED_STAGES = Object.freeze(['Pilot Candidate', 'Validated Pilot', 'Production']);
 
 const MARKET_ID_PATTERN = /^[A-Z][A-Z0-9-]{1,40}$/;
@@ -68,17 +63,12 @@ export function cellsOf(record) {
   return {};
 }
 
-// US state and Canadian province codes. Used only to recognise "City ST"
-// written without the comma; it never guesses a state that is not written.
 const REGION_CODES = new Set((
   'al ak az ar ca co ct de dc fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm '
   + 'ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy '
   + 'ab bc mb nb nl ns nt nu on pe qc sk yt'
 ).split(' '));
 
-// "Lebanon, TN 37087" -> "lebanon, tn"; "Milwaukee WI" -> "milwaukee, wi".
-// Exact match only; no fuzzy matching. The comma is added only when the last
-// word is a real state/province code, so "Unknown origin" stays as written.
 export function normalizeMarketText(value) {
   const s = text(value);
   if (!s) return null;
@@ -111,7 +101,6 @@ export function buildAliasRows(records = [], syncedAt) {
     if (!aliasNorm || !isMarketId(marketCluster)) continue;
     const prior = seen.get(aliasNorm);
     if (prior && prior.marketCluster !== marketCluster) {
-      // Two Verified aliases disagree: preserve ambiguity, resolve to nothing.
       prior.conflict = true;
       continue;
     }
@@ -196,7 +185,6 @@ export async function sha256Hex(input) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// One Airtable Load History record -> one evidence version + its index row.
 export async function buildEvidence(record, { aliasMap, runId, retrievedAt }) {
   const projected = projectLoadHistoryRecord({ id: record.id, cellValuesByFieldId: cellsOf(record) });
   if (!projected.airtableRecordId) return null;
@@ -237,19 +225,34 @@ export async function buildEvidence(record, { aliasMap, runId, retrievedAt }) {
   };
 }
 
-// Pure lane materialization from governance + current (non-superseded)
-// evidence index rows for that lane.
+function rowFreshness(row, now) {
+  const sourceAsOf = row?.observedAt && /^\d{4}-\d{2}-\d{2}/.test(row.observedAt)
+    ? `${row.observedAt.slice(0, 10)}T00:00:00Z`
+    : null;
+  return {
+    state: classifyFreshness({
+      sourceAsOf,
+      now,
+      freshForMs: OPERATOR_FRESH_MS,
+      staleAfterMs: OPERATOR_STALE_AFTER_MS,
+    }),
+  };
+}
+
 export function materializeLane(governance, evidenceRows = [], { now, modelRunId, governanceFingerprint }) {
-  const counted = evidenceRows.filter((row) => row.duplicateClass !== 'EXACT_DUPLICATE');
+  const deduped = evidenceRows.filter((row) => row.duplicateClass !== 'EXACT_DUPLICATE');
+  const staleExcluded = deduped.filter((row) => rowFreshness(row, now).state === 'STALE');
+  const counted = deduped.filter((row) => rowFreshness(row, now).state !== 'STALE');
   const evidenceCounts = {};
   for (const row of counted) {
     const key = `OPERATOR_${row.statusKey}`.slice(0, 48);
     evidenceCounts[key] = (evidenceCounts[key] ?? 0) + 1;
   }
-  const exactDuplicates = evidenceRows.length - counted.length;
+  const exactDuplicates = evidenceRows.length - deduped.length;
   if (exactDuplicates > 0) evidenceCounts.OPERATOR_EXACT_DUPLICATES = exactDuplicates;
+  if (staleExcluded.length > 0) evidenceCounts.OPERATOR_STALE_EXCLUDED = staleExcluded.length;
 
-  const dates = counted.map((row) => row.observedAt).filter(Boolean).sort();
+  const dates = deduped.map((row) => row.observedAt).filter(Boolean).sort();
   const latestEvidenceAt = dates.length ? `${dates[dates.length - 1].slice(0, 10)}T00:00:00Z` : null;
   const operatorFreshness = classifyFreshness({
     sourceAsOf: latestEvidenceAt,
@@ -264,6 +267,7 @@ export function materializeLane(governance, evidenceRows = [], { now, modelRunId
 
   const unknownFlags = [...new Set([...governance.unknownFlags, ...derived.unknownFlags])];
   if (counted.length === 0) unknownFlags.push('OPERATOR_EVIDENCE_NONE');
+  if (staleExcluded.length > 0) unknownFlags.push('OPERATOR_STALE_EVIDENCE_EXCLUDED');
   if (counted.some((row) => row.duplicateClass === 'POSSIBLE_REPOST')) unknownFlags.push('POSSIBLE_REPOSTS_PRESENT');
 
   return {

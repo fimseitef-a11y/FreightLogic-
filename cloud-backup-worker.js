@@ -1,4 +1,7 @@
-// FreightLogic Cloud Backup Worker v33 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// FreightLogic Cloud Backup Worker v34 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v34: STRICT EXTRACTION CONTRACT. Text and image extraction share whole-value
+// numeric, object-shape, calendar-date and confidence validation; unknown stays
+// nullable, explicit zero survives, and truncated text replies fail closed.
 // v33: ATOMIC INVITE CLAIM BUDGET (AIAG-TASK-0035, 2026-09-29).
 // Production claim exhaustion is reserved in the existing SQLite Durable Object,
 // seeded from legacy KV state so stale KV reads cannot admit a fourth claim.
@@ -410,7 +413,8 @@ export async function eraseUserData(env, userId) {
   let user;
   try { user = JSON.parse(userRaw); } catch { throw new Error('Corrupted user record'); }
 
-  const keys = new Set(await listAllKvKeys(env, 'user:' + userId));
+  // A shorter supported legacy ID must not select a longer account ID.
+  const keys = new Set(await listAllKvKeys(env, 'user:' + userId + ':'));
   for (const key of [
     'push:subs:' + userId,
     'relay:' + userId,
@@ -426,8 +430,9 @@ export async function eraseUserData(env, userId) {
   try { shortcutRec = JSON.parse(await env.BACKUPS.get('sckuser:' + userId) || 'null'); } catch {}
   if (shortcutRec?.hash) keys.add('sck:' + shortcutRec.hash);
 
-  // Remove every token index naming this account, including stale race residue.
-  for (const prefix of ['tokh:', 'token:']) {
+  // Exact owner selection recovers Shortcut aliases even if an earlier
+  // partial erasure already deleted their sckuser metadata.
+  for (const prefix of ['tokh:', 'token:', 'sck:']) {
     for (const key of await listAllKvKeys(env, prefix)) {
       let rec = null;
       try { rec = JSON.parse(await env.BACKUPS.get(key) || 'null'); } catch {}
@@ -477,11 +482,17 @@ export async function eraseUserData(env, userId) {
     else await env.BACKUPS.delete('rem:index');
   }
 
-  const all = [...keys];
+  // Keep revoked canonical identity until all children are removed so a
+  // failed operation can be enumerated and retried by the same admin route.
+  const accountKey = 'user:' + userId;
+  const all = [...keys].filter(key => key !== accountKey);
   for (let i = 0; i < all.length; i += 50) {
-    await Promise.all(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+    const results = await Promise.allSettled(all.slice(i, i + 50).map(key => env.BACKUPS.delete(key)));
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
-  return { found: true, deleted: all.length };
+  await env.BACKUPS.delete(accountKey);
+  return { found: true, deleted: all.length + 1 };
 }
 
 export async function enforceDriverCredentialLifetime(env, userRec, tokenHash, now = Date.now()) {
@@ -913,7 +924,7 @@ export default {
       if (request.method === 'GET' && path === '/health') {
         return json({
           ok: true,
-          version: '33',
+          version: '34',
           ts: new Date().toISOString(),
           rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
           credentialPolicy: 'finite-v1',
@@ -1188,7 +1199,8 @@ export default {
               env.BACKUPS.put('tokh:' + driverTokenHash, JSON.stringify(migRec)),
               env.BACKUPS.delete('token:' + driverToken),
             ];
-            if (migRec.userId) migOps.push(env.BACKUPS.put('user:' + migRec.userId, JSON.stringify(migRec)));
+            // Migration repairs the token index only. Never overwrite canonical
+            // account authority from a stale plaintext index before validation.
             await Promise.all(migOps);
             tokenRaw = JSON.stringify(migRec);
           }
@@ -1618,31 +1630,22 @@ export default {
           return json({ ok: false, error: 'AI service error.' }, 502, cors);
         }
 
-        const aiJson = await aiRes.json();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(aiJson.choices[0].message.content);
-        } catch {
+        let aiJson;
+        try { aiJson = await aiRes.json(); } catch {
           return json({ ok: false, error: 'AI response parse error.' }, 502, cors);
         }
-
+        const choice = aiJson?.choices?.[0];
+        if (choice?.finish_reason !== 'stop') {
+          return json({ ok: false, error: 'AI response was incomplete. Review or enter the load manually.' }, 502, cors);
+        }
+        const norm = normalizeVisionExtraction(choice?.message?.content);
+        if (!norm.ok) return json({ ok: false, error: norm.error }, 422, cors);
         return json({
           ok: true,
-          fields: {
-            orderNo:       String(parsed.orderNo      || '').slice(0, 40),
-            customer:      String(parsed.customer     || '').slice(0, 80),
-            broker:        String(parsed.broker       || '').slice(0, 80),
-            origin:        String(parsed.origin       || '').slice(0, 100),
-            destination:   String(parsed.destination  || '').slice(0, 100),
-            pay:           finitePositive(parsed.pay),
-            loadedMiles:   intPositive(parsed.loadedMiles),
-            deadheadMiles: intPositive(parsed.deadheadMiles),
-            pickupDate:    safeDate(parsed.pickupDate),
-            deliveryDate:  safeDate(parsed.deliveryDate),
-            weight:        intPositive(parsed.weight),
-            commodity:     String(parsed.commodity    || '').slice(0, 80),
-            notes:         String(parsed.notes        || '').slice(0, 300),
-          },
+          fields: norm.fields,
+          fieldMeta: norm.fieldMeta,
+          observedCount: norm.observedCount,
+          provider: 'openai',
           model,
           user: tokenData.name
         }, 200, cors);
@@ -2798,57 +2801,52 @@ function bytesToBase64(bytes) {
   return btoa(s);
 }
 
-// A tri-state integer. `intPositive` above cannot express this: it maps an
-// explicit 0 to null, which is exactly the distinction the whole app is built
-// around — a stated "0 deadhead" is a VERIFIED ZERO and an unstated one is
-// UNKNOWN, and collapsing them is the v24.0.1 blank-deadhead defect.
+// Preserve a stated numeric zero separately from unknown. Reject malformed
+// whole values before any numeric conversion; a prefix is not an observation.
+function visionNumberOrNull(v, max, { integer = false, currency = false } = {}) {
+  let n;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string') {
+    let s = v.trim();
+    if (currency) s = s.replace(/^\$\s*/, '');
+    if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(s)) return null;
+    n = Number(s.replace(/,/g, ''));
+  } else return null;
+  if (!Number.isFinite(n) || n < 0 || n > max) return null;
+  if (integer && !Number.isSafeInteger(n)) return null;
+  return integer ? n : Math.round(n * 100) / 100;
+}
 function visionIntOrNull(v, max) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : parseInt(String(v).replace(/[, ]/g, ''), 10);
-  return (Number.isFinite(n) && n >= 0 && n <= max) ? Math.round(n) : null;
+  return visionNumberOrNull(v, max, { integer: true });
 }
-
 function visionMoneyOrNull(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$, ]/g, ''));
-  return (Number.isFinite(n) && n >= 0 && n <= 1000000) ? Math.round(n * 100) / 100 : null;
+  return visionNumberOrNull(v, 1000000, { currency: true });
 }
-
 function visionStrOrNull(v, max) {
-  if (v === null || v === undefined) return null;
-  const s = String(v).replace(/[<>]/g, '').trim().slice(0, max);
-  if (!s) return null;
-  // A model asked for a value it cannot see sometimes answers with the word for
-  // absence instead of null. Those are absences, not values.
-  if (/^(n\/?a|none|null|unknown|not (shown|listed|specified|visible)|--?)$/i.test(s)) return null;
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/[<>]/g, '').trim().slice(0, max);
+  if (!s || /^(n\/?a|none|null|unknown|not (shown|listed|specified|visible)|--?)$/i.test(s)) return null;
   return s;
 }
-
 function visionDateOrNull(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const d = new Date(s + 'T00:00:00Z');
-  if (isNaN(d.getTime())) return null;
-  const y = d.getUTCFullYear();
-  return (y >= 2020 && y <= 2035) ? s : null;
-}
-
-function visionTimeOrNull(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (typeof v !== 'string') return null;
+  const s = v.trim(), m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return null;
-  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
-  if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
-  return String(h).padStart(2, '0') + ':' + m[2];
+  const y = Number(m[1]), mo = Number(m[2]), day = Number(m[3]);
+  if (y < 2020 || y > 2035) return null;
+  const d = new Date(Date.UTC(y, mo - 1, day));
+  return d.getUTCFullYear() === y && d.getUTCMonth() === mo - 1 && d.getUTCDate() === day ? s : null;
 }
-
+function visionTimeOrNull(v) {
+  if (typeof v !== 'string') return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  return h <= 23 && mi <= 59 ? String(h).padStart(2, '0') + ':' + m[2] : null;
+}
 function visionConfidence(raw, key) {
-  const c = raw && typeof raw === 'object' ? raw[key] : undefined;
-  const n = typeof c === 'number' ? c : parseFloat(c);
-  if (!Number.isFinite(n)) return null;
-  return Math.max(0, Math.min(1, n));
+  const n = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw[key] : undefined;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
 }
 
 /**
@@ -2877,11 +2875,14 @@ function normalizeVisionExtraction(rawText) {
     const a = src.indexOf('{'), b = src.lastIndexOf('}');
     if (a >= 0 && b > a) { try { parsed = JSON.parse(src.slice(a, b + 1)); } catch { parsed = null; } }
   }
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { ok: false, error: 'Vision output was not valid JSON.' };
   }
 
-  const inFields = (parsed.fields && typeof parsed.fields === 'object') ? parsed.fields : parsed;
+  if (Object.prototype.hasOwnProperty.call(parsed, 'fields') && (!parsed.fields || typeof parsed.fields !== 'object' || Array.isArray(parsed.fields))) {
+    return { ok: false, error: 'Vision fields must be a JSON object.' };
+  }
+  const inFields = Object.prototype.hasOwnProperty.call(parsed, 'fields') ? parsed.fields : parsed;
   const inConf = parsed.confidence;
 
   const fields = {};
@@ -2900,7 +2901,8 @@ function normalizeVisionExtraction(rawText) {
 
     const conf = visionConfidence(inConf, key);
     if (val === null) {
-      fieldMeta[key] = { state: 'ABSENT', confidence: null };
+      const supplied = raw !== null && raw !== undefined && raw !== '';
+      fieldMeta[key] = supplied ? { state: 'UNCERTAIN', confidence: null, reason: 'INVALID_OR_UNKNOWN_VALUE' } : { state: 'ABSENT', confidence: null };
     } else {
       // No confidence reported is not the same as high confidence. A provider
       // that omits the block gets UNCERTAIN, so the review step still asks.
@@ -2940,31 +2942,9 @@ Return ONLY a JSON object with these fields (omit or use null for missing fields
 Rules:
 - Be precise. Do not invent data. If ambiguous or missing, omit the field.
 - For pay: if multiple rates shown (e.g. linehaul + fuel surcharge), sum them.
-- For dates: the current year is 2026 unless stated otherwise.
+- For dates: retain only an explicitly evidenced full date. If the year is missing, return null; never assume the current year.
+- A stated numeric zero is 0. Missing pay, mileage or deadhead is null. Never estimate unknown values.
 - For origin/destination: if multiple stops, use first pickup as origin and final delivery as destination.`;
-
-// ─── Extract output sanitizers ────────────────────────────────────────────────
-
-function finitePositive(v) {
-  const n = parseFloat(v);
-  return (Number.isFinite(n) && n > 0) ? Math.round(n * 100) / 100 : null;
-}
-
-function intPositive(v) {
-  const n = parseInt(v, 10);
-  return (Number.isFinite(n) && n > 0) ? n : null;
-}
-
-function safeDate(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  // Accept YYYY-MM-DD only
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d.getTime()) && d.getFullYear() >= 2020 && d.getFullYear() <= 2035) return s;
-  }
-  return null;
-}
 
 // ─── v24: Web Push + Shortcuts relay ─────────────────────────────────────────
 //

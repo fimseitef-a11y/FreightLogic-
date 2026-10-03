@@ -46,3 +46,5 @@ native-ios/
 agent-runtime/
 README.md
 CONTRIBUTING.md
+# Private ELI runtime, migrations and tests are repository-only.
+eli-runtime/

@@ -88,13 +88,13 @@ function isOpenAIUrl(u) {
  *  `VISION_PROVIDER: 'openai'` plus a stubbed global fetch is deliberate: it
  *  exercises a REAL adapter in the shipped table rather than a test-only
  *  provider branch that production never takes. */
-function visionEnv(kv, raw, { fail = false } = {}) {
+function visionEnv(kv, raw, { fail = false, finishReason = 'stop', omitFinishReason = false } = {}) {
   const realFetch = globalThis.fetch;
   const restore = () => { globalThis.fetch = realFetch; };
   globalThis.fetch = async (url) => {
     if (isOpenAIUrl(url)) {
       if (fail) return new Response('upstream boom', { status: 500 });
-      return new Response(JSON.stringify({ choices: [{ message: { content: raw } }] }),
+      return new Response(JSON.stringify({ choices: [{ ...(omitFinishReason ? {} : { finish_reason: finishReason }), message: { content: raw } }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return realFetch(url);
@@ -542,6 +542,78 @@ test('[VEX-15] /health names the generation this endpoint shipped in', async () 
   ok(headerVersion, 'could not read the Worker generation from its own header');
   eq(String(health.version), headerVersion, `/health must match the header, got ${health.version} vs ${headerVersion}`);
   ok(/\/extract-image/.test(src), 'the vision route must exist in the shipped Worker');
+});
+
+
+/** Text extraction must use the same production schema, behind real auth. */
+async function extractText(raw, opts = {}) {
+  const kv = makeKV(), worker = await loadWorker();
+  const token = await seedDriver(worker, { BACKUPS: kv, ADMIN_TOKEN: ADMIN });
+  const { env, restore } = visionEnv(kv, raw, opts);
+  try {
+    const res = await worker.fetch(REQ('/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Backup-Token': token },
+      body: JSON.stringify({ text: 'Synthetic load evidence; provider output is intentionally stubbed.' }),
+    }), env);
+    return { res, body: await res.json() };
+  } finally { restore(); }
+}
+
+test('[VEX-AUDIT-01] malformed field types, numeric suffixes and impossible dates cannot become observations', async () => {
+  const { res, body } = await extract(JSON.stringify({
+    fields: { origin: 'Chicago, IL', broker: { name: 'Fake' }, customer: ['Fake'],
+      pay: '500junk', loadedMiles: '100/200', deadheadMiles: '0oops', pickupDate: '2026-02-30' },
+    confidence: { origin: 999, pay: 0.99, loadedMiles: 0.99, deadheadMiles: 0.99, pickupDate: 0.99 },
+  }));
+  eq(res.status, 200, 'valid origin remains available for review');
+  for (const key of ['broker', 'customer', 'pay', 'loadedMiles', 'deadheadMiles', 'pickupDate']) {
+    eq(body.fields[key], null, key + ' must not be fabricated');
+    eq(body.fieldMeta[key].state, 'UNCERTAIN', key + ' invalid supplied value is visible');
+  }
+  eq(body.fieldMeta.origin.state, 'UNCERTAIN', 'out-of-range confidence is not clamped into certainty');
+  eq(body.fieldMeta.origin.confidence, null);
+});
+test('[VEX-AUDIT-02] valid JSON arrays and invalid fields containers fail closed', async () => {
+  for (const raw of ['[]', '[{"origin":"Chicago, IL"}]', '{"fields":[]}', '{"fields":false}']) {
+    const { res, body } = await extract(raw);
+    eq(res.status, 422, raw);eq(body.ok, false, raw);
+    ok(!body.fields, 'a rejected model output does not carry an empty successful load');
+  }
+});
+test('[VEX-AUDIT-03] numeric strings with invalid grouping, fractions and booleans remain unknown', async () => {
+  for (const bad of ['1,2', '10 miles', true, [], {}, -1, 1.5]) {
+    const { body } = await extract(JSON.stringify({fields:{origin:'Chicago, IL',deadheadMiles:bad}}));
+    eq(body.fields.deadheadMiles, null, JSON.stringify(bad));
+  }
+});
+test('[VEX-AUDIT-04] text extraction preserves observed zero separately from unknown', async () => {
+  const { res, body } = await extractText(JSON.stringify({origin:'Chicago, IL',pay:0,loadedMiles:0,deadheadMiles:0}));
+  eq(res.status,200);eq(body.fields.pay,0);eq(body.fields.loadedMiles,0);eq(body.fields.deadheadMiles,0);
+  eq(body.fieldMeta.deadheadMiles.state,'UNCERTAIN','model output has no independent confidence');
+  const missing=await extractText(JSON.stringify({origin:'Chicago, IL'}));
+  eq(missing.res.status,200);eq(missing.body.fields.pay,null);eq(missing.body.fields.deadheadMiles,null);
+  eq(missing.body.fieldMeta.deadheadMiles.state,'ABSENT');
+});
+test('[VEX-AUDIT-05] text extraction rejects malformed successful provider bodies', async () => {
+  for (const raw of ['[]','null','true','{"pay":[500]}','{"origin":{}}']) {
+    const {res,body}=await extractText(raw);
+    eq(res.status,422,raw);eq(body.ok,false);ok(!body.fields);
+  }
+});
+test('[VEX-AUDIT-06] a truncated provider reply is rejected even when its fragment parses', async () => {
+  for (const opts of [{finishReason:'length'},{finishReason:'content_filter'},{finishReason:null},{finishReason:''},{omitFinishReason:true}]) {
+    const {res,body}=await extractText('{"origin":"Chicago, IL","pay":500}',opts);
+    eq(res.status,502);eq(body.ok,false);ok(!body.fields);ok(body.error.includes('incomplete'));
+  }
+});
+test('[VEX-AUDIT-07] complete formatted money and real leap dates survive strict validation', async () => {
+  const {body}=await extract(JSON.stringify({
+    fields:{origin:'Chicago, IL',pay:'$1,234.56',loadedMiles:'1,234',deadheadMiles:'0',pickupDate:'2028-02-29'},
+    confidence:{pay:0.9,deadheadMiles:0.9,pickupDate:0.9},
+  }));
+  eq(body.fields.pay,1234.56);eq(body.fields.loadedMiles,1234);eq(body.fields.deadheadMiles,0);
+  eq(body.fieldMeta.deadheadMiles.state,'OBSERVED');eq(body.fields.pickupDate,'2028-02-29');
 });
 
 export async function runSpec() { return run(); }

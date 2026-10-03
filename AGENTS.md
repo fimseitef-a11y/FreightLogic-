@@ -2,10 +2,15 @@
 
 This file is the durable coordination contract for FreightLogic engineering. As of 2026-09-27, ChatGPT/GPT is the primary coordinator and implementation lane. Claude is not a required dependency and has no active ownership unless the operator explicitly reauthorizes a bounded Claude task. Protocol state on `main` is authoritative. Live coordination state is stored only on the long-lived `agent-coordination` branch and that branch is never merged to `main`.
 
+
+## 2026-10-02 audit remediation authorization
+
+The operator instructed GPT to fix the comprehensive audit findings. This authorizes bounded source, regression-test, configuration and documentation fixes to existing components, including existing native bridge/ANCS security defects. It does not expand the frozen native product scope, activate experimental services, authorize deployment or merge, rotate credentials, or mutate live freight/control-plane records. Source remediation and automated verification must remain distinct from external/provider/physical-device certification.
+
 ## Current architecture and safety boundary
 
 - FreightLogic is a vanilla-JavaScript, offline-first PWA with no build step.
-- `app.js` is still monolithic (~950 KB on the coordination-setup baseline) and is **SHARED / serialized** until a behavior-preserving extraction creates real physical file seams.
+- `app.js` is still monolithic (~1.4 MB at the audit baseline) and is **SHARED / serialized** until a behavior-preserving extraction creates real physical file seams.
 - `tests/` contains the Playwright/Chromium regression suite. The aggregate entry point is `node tests/run-all.mjs`.
 - No `TEST_MAP.md` while `app.js` is monolithic. Filename-based selective testing is false precision at this size.
 - **Any `app.js` change requires the full suite. No exceptions and no judgment calls.**
@@ -102,7 +107,7 @@ Enforcement section of `/.agents/LANES.md` for the operator steps.
   `SHARED` edit with no held lock covering that path. Fast feedback only:
   `--no-verify` bypasses it and hooks are not distributed by clone.
 - `.github/workflows/lanes.yml` — the actual boundary. `path-ownership` and
-  `commit-prefix` are enforcing; `lock-trailer` is warn-only for its first round.
+  `commit-prefix` are enforcing; `lock-trailer` verifies historical claim owner, token, path coverage and validity at commit time.
 
 Two rules the tooling encodes, both fail-closed:
 
@@ -117,6 +122,10 @@ Because a lock is correctly released when work finishes, CI cannot re-read a
 live lock at PR time. Commits touching a `SHARED` path therefore carry an
 `FL-Lock: <slug>/<token>` trailer, written by `.githooks/prepare-commit-msg`, so
 coverage stays auditable after release.
+
+## Amendment 3 — session identity is separate from lane ownership
+
+A SHARED-path writer must supply its current lock token through `FL_LOCK_TOKEN` or `git config freightlogic.lockToken <token>`. Local lock checks and commit-trailer generation require the exact owner and token; another GPT session's covering lock grants no authority. Historical CI validates the recorded claim and covered paths at commit time rather than requiring a lock to remain held after work finishes. Never copy another session's token to satisfy a check.
 
 ## STATUS discipline
 

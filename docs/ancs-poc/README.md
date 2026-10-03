@@ -1,6 +1,6 @@
 # FreightLogic iPhone ANCS → DispatchLand Proof of Concept
 
-Status: implementation-ready proof-of-concept specification, 2026-08-28.
+Status: source prototype; hardware, ESP-IDF and live relay gates remain open.
 
 ## Goal
 
@@ -19,26 +19,26 @@ Official sources:
 - Apple ANCS specification: https://developer.apple.com/library/archive/documentation/CoreBluetooth/Reference/AppleNotificationCenterServiceSpecification/Specification/Specification.html
 - Espressif ANCS example: https://github.com/espressif/esp-idf/tree/master/examples/bluetooth/bluedroid/ble/ble_ancs
 
-## Existing FreightLogic server capability we can reuse
+## Existing FreightLogic transport
 
-`cloud-backup-worker.js` already exposes authenticated `POST /extract` for AI field extraction from raw load text. It accepts:
+The forwarder uses the existing scoped relay contract, with a revocable relay
+key created by the operator. It rejects full driver backup credentials.
 
 ```http
-POST /extract
-X-Backup-Token: <driver token>
-X-Device-Id: ancs-bridge
+POST /relay
+X-Shortcut-Key: <scoped fls_ relay key>
 Content-Type: application/json
 
-{"text":"<raw load/notification text>"}
+{"do":"intake","params":{"text":"<title>\n<subtitle>\n<message>"}}
 ```
 
-and returns normalized fields such as order number, customer, broker, origin, destination, pay, loaded miles, deadhead, pickup/delivery dates, weight, commodity, and notes.
+HTTPS certificate verification remains enabled and redirects are disabled.
+A successful response means raw text was accepted into pending intake. It does
+not establish a quote, award, completion, invoice, payment or certified provider
+identity. The operator reviews the text in the PWA before saving.
 
-For the first hardware smoke test, the ANCS bridge can POST to `/extract` and print the JSON response to serial. This proves the entire chain:
-
-`DispatchLand push → iPhone ANCS → ESP32 → HTTPS → FreightLogic parser`.
-
-It does **not** yet persist the notification as an opportunity in the iPhone PWA. That requires the core change described under "Core handoff" below.
+ESP-IDF compilation, the physical iPhone/ESP32/BLE chain, TLS behavior and live
+relay delivery remain MANUAL/EXTERNAL GATE. No hardware verification was run.
 
 ## Hardware
 
@@ -106,25 +106,12 @@ Canonical bridge payload:
 
 Do not invent missing fields. Preserve the raw text exactly before parsing.
 
-### Initial `/extract` smoke test
+### Initial HTTPS relay smoke test
 
-Until the dedicated inbox endpoint exists, send only this subset to the existing worker:
-
-```json
-{
-  "text": "<title>\n<subtitle>\n<message>"
-}
-```
-
-Headers:
-
-```http
-Content-Type: application/json
-X-Backup-Token: <existing FreightLogic driver token>
-X-Device-Id: ancs-bridge
-```
-
-For production, do **not** permanently embed the full backup token in removable hardware. The core implementation should mint a dedicated, revocable, ingest-only bridge credential.
+Use the scoped `POST /relay` request above against the operator's approved
+Worker origin. Never embed a full backup credential in removable hardware.
+Exercise invalid TLS, redirects, rejected/expired relay keys and PWA pending
+intake before treating the hardware path as verified.
 
 ## ESP32 forwarding adapter
 
@@ -134,13 +121,15 @@ The adapter:
 
 - filters by an observed DispatchLand app identifier supplied at build/config time;
 - creates a raw text body without inventing missing data;
-- sends HTTPS JSON to FreightLogic `/extract` for the smoke test;
+- sends HTTPS JSON to FreightLogic `/relay` intake;
 - avoids logging the authorization token;
 - leaves retry/persistent queueing for the production bridge.
 
 ## Core handoff required for automatic FreightLogic opportunities
 
-The hardware proof can run against `/extract`, but true zero-touch intake needs a core-owned inbox contract.
+The current relay requires operator review. The dedicated provenance/inbox
+contract below is a future proposal; these endpoints are not implemented by
+this prototype and automatic opportunity persistence is not enabled.
 
 Recommended minimal server/client change:
 
@@ -204,7 +193,7 @@ If DispatchLand includes lane/rate/weight/miles/details in the notification body
 3. Non-DispatchLand notification is ignored after the bundle-ID filter is enabled.
 4. DispatchLand notification produces exact title/subtitle/message in serial capture.
 5. Long body fragmented across BLE MTU is reassembled correctly by the ANCS example.
-6. HTTPS success to `/extract` returns structured fields.
+6. HTTPS success to `/relay` accepts pending intake text.
 7. Missing Wi-Fi does not block ANCS callback processing; forwarding failure is bounded and logged without secrets.
 8. Duplicate notification modifications do not create uncontrolled duplicate opportunity records in the eventual inbox implementation.
 9. No use of ANCS NotificationUID as a durable cross-session identifier.
@@ -215,7 +204,7 @@ The hardware proof is successful when a real DispatchLand notification arrives o
 
 - the observed DispatchLand app identifier;
 - exact notification title/body;
-- an HTTP 200 from FreightLogic `/extract`;
-- normalized extraction response corresponding only to information present in that notification.
+- an HTTP 200 from FreightLogic `/relay`;
+- pending intake text corresponding only to information present in that notification.
 
 At that point the only remaining engineering work for true zero-touch entry is the core notification inbox/persistence path.

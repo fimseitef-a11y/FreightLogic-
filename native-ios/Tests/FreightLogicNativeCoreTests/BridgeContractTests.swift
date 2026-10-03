@@ -96,4 +96,31 @@ final class BridgeContractTests: XCTestCase {
         XCTAssertTrue(policy.allows(same))
         XCTAssertFalse(policy.allows(other))
     }
+    func testIncomingUnknownFieldsCannotBypassTransportBound() {
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": [:], "ignoredBlob": String(repeating: "x", count: 70_000)]
+        XCTAssertEqual(BridgeRequest.validateIncomingJSONObject(body), .unknownEnvelopeField)
+    }
+    func testIncomingBodyIsBoundedBeforeDecode() {
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": ["blob": String(repeating: "x", count: 70_000)]]
+        XCTAssertEqual(BridgeRequest.validateIncomingJSONObject(body), .payloadTooLarge)
+    }
+    func testIncomingDepthIsBoundedBeforeDecode() {
+        var value: Any = "leaf"
+        for _ in 0..<12 { value = [value] }
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": ["value": value]]
+        XCTAssertEqual(BridgeRequest.validateIncomingJSONObject(body), .payloadTooDeep)
+    }
+    func testIncomingValidEnvelopePreservesUnknownDeadhead() {
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": ["deadheadMiles": NSNull()]]
+        XCTAssertNil(BridgeRequest.validateIncomingJSONObject(body))
+    }
+    func testIncomingNonFiniteValuesAreRejected() {
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": ["miles": Double.nan]]
+        XCTAssertEqual(BridgeRequest.validateIncomingJSONObject(body), .invalidJSONValue)
+    }
+    func testIncomingNodeCountIsBoundedBeforeDecode() {
+        let body: [String: Any] = ["version": 1, "requestID": "req", "action": "evaluateLoad", "payload": ["values": Array(repeating: NSNull(), count: 5000)]]
+        XCTAssertEqual(BridgeRequest.validateIncomingJSONObject(body), .payloadTooLarge)
+    }
+
 }

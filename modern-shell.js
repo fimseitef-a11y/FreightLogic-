@@ -1,4 +1,4 @@
-/* FreightLogic v24.0.58 — modern five-surface navigation adapter
+/* FreightLogic v24.0.59 — modern five-surface navigation adapter
  * Structural navigation; presentation is owned by styles.css.
  * Canonical routing, state, evaluation and data ownership remain in app.js.
  */
@@ -136,8 +136,8 @@
       if (start && info && start.contains(info)) start.insertAdjacentElement('afterend', info);
       makeKeyboardButton(start);
       makeKeyboardButton(info);
-      if (start) start.setAttribute('aria-label', start.getAttribute('aria-label') || 'Start trip');
-      if (info) info.setAttribute('aria-label', info.getAttribute('aria-label') || 'GPS tracking information');
+      if (start) setAttributeIfChanged(start, 'aria-label', start.getAttribute('aria-label') || 'Start trip');
+      if (info) setAttributeIfChanged(info, 'aria-label', info.getAttribute('aria-label') || 'GPS tracking information');
 
       // Dynamic report/lane rows use pointer affordance for activation. Give any
       // such visible non-native row keyboard semantics without changing its click contract.
@@ -272,14 +272,25 @@
     return { ...TODAY_PRESENTATION_SPEC };
   }
 
+  function addClassIfMissing(el, name) {
+    if (el && !el.classList.contains(name)) el.classList.add(name);
+  }
+
+  function setAttributeIfChanged(el, name, value) {
+    if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+
   function syncHeaderSafeArea() {
     const header = document.getElementById('mainHeader');
     if (!header) return;
-    header.classList.add('modern-header-safe');
+    addClassIfMissing(header, 'modern-header-safe');
     const rect = typeof header.getBoundingClientRect === 'function' ? header.getBoundingClientRect() : null;
     const bottom = rect && Number.isFinite(rect.bottom) ? Math.ceil(rect.bottom) : 0;
     if (bottom > 0 && document.documentElement?.style) {
-      document.documentElement.style.setProperty('--fl-header-bottom', `${bottom}px`);
+      const next = `${bottom}px`;
+      if (document.documentElement.style.getPropertyValue('--fl-header-bottom') !== next) {
+        document.documentElement.style.setProperty('--fl-header-bottom', next);
+      }
     }
   }
 
@@ -295,12 +306,17 @@
     const position = document.getElementById(TODAY_PRESENTATION_SPEC.positionCardId);
     const disclosure = document.getElementById(TODAY_PRESENTATION_SPEC.positionDisclosureId);
     if (!position || !disclosure) return;
-    position.classList.toggle('today-position-collapsed', !expanded);
-    position.classList.toggle('today-position-expanded', expanded);
-    position.setAttribute('aria-hidden', expanded ? 'false' : 'true');
-    disclosure.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (position.classList.contains('today-position-collapsed') !== !expanded) {
+      position.classList.toggle('today-position-collapsed', !expanded);
+    }
+    if (position.classList.contains('today-position-expanded') !== !!expanded) {
+      position.classList.toggle('today-position-expanded', !!expanded);
+    }
+    setAttributeIfChanged(position, 'aria-hidden', expanded ? 'false' : 'true');
+    setAttributeIfChanged(disclosure, 'aria-expanded', expanded ? 'true' : 'false');
     const state = disclosure.querySelector?.('.today-position-disclosure-state');
-    if (state) state.textContent = expanded ? 'Hide' : 'Why?';
+    const nextState = expanded ? 'Hide' : 'Why?';
+    if (state && state.textContent !== nextState) state.textContent = nextState;
   }
 
   function ensurePositionDisclosure(home) {
@@ -323,7 +339,7 @@
     }
 
     const visible = positionCardIsVisible(position);
-    disclosure.hidden = !visible;
+    if (disclosure.hidden !== !visible) disclosure.hidden = !visible;
     if (!visible) setPositionExpanded(false);
     return disclosure;
   }
@@ -332,7 +348,7 @@
     if (!home) return;
     const recent = document.getElementById('homeRecentTripsCard');
     document.querySelectorAll('.quarterly-nudge').forEach((nudge) => {
-      nudge.classList.add('today-flow-reminder');
+      addClassIfMissing(nudge, 'today-flow-reminder');
       // Some app versions insert the CPA nudge inside Recent Trips. Keep it in
       // the Today flow, immediately before the trips card, so it can never
       // cover a trip row or its controls.
@@ -345,7 +361,7 @@
   function syncTodayCommandCenter() {
     const home = document.getElementById(TODAY_PRESENTATION_SPEC.homeId);
     if (!home) return;
-    home.classList.add(TODAY_PRESENTATION_SPEC.homeClass);
+    addClassIfMissing(home, TODAY_PRESENTATION_SPEC.homeClass);
 
     const kpi = document.getElementById(TODAY_PRESENTATION_SPEC.primaryCardId);
     const position = document.getElementById(TODAY_PRESENTATION_SPEC.positionCardId);
@@ -367,14 +383,14 @@
       home.insertBefore(maintenance, recent);
     }
 
-    document.getElementById('homePositionBanner')?.classList.add('today-context-rail');
-    document.getElementById('homeTripTrackCard')?.classList.add('today-trip-control');
-    position?.classList.add('today-position-details');
-    maintenance?.classList.add('today-attention-row');
-    money?.classList.add('today-secondary-money');
-    document.getElementById('homeWeeklyReport')?.classList.add('today-report-snapshot');
-    document.getElementById('homeFuelNudge')?.classList.add('today-attention-row');
-    recent?.classList.add('today-recent-trips');
+    addClassIfMissing(document.getElementById('homePositionBanner'), 'today-context-rail');
+    addClassIfMissing(document.getElementById('homeTripTrackCard'), 'today-trip-control');
+    addClassIfMissing(position, 'today-position-details');
+    addClassIfMissing(maintenance, 'today-attention-row');
+    addClassIfMissing(money, 'today-secondary-money');
+    addClassIfMissing(document.getElementById('homeWeeklyReport'), 'today-report-snapshot');
+    addClassIfMissing(document.getElementById('homeFuelNudge'), 'today-attention-row');
+    addClassIfMissing(recent, 'today-recent-trips');
 
     normalizeQuarterlyNudges(home);
     syncHeaderSafeArea();
@@ -466,7 +482,7 @@
     if (installed) return;
     installed = true;
     const home = document.getElementById('view-home');
-    if (home) home.setAttribute('aria-label', 'Today');
+    if (home) setAttributeIfChanged(home, 'aria-label', 'Today');
     rebuildPrimaryNav();
     addSecondaryMenuAccess();
     installTodayCommandCenter();

@@ -16,10 +16,8 @@ const SAFE_CANONICAL_FIELDS = new Set([
   "marketContext", "calculatedAt", "authorityVersion",
 ]);
 
-const PRIVACY_CLASSES = new Set([
-  "PUBLIC", "OPERATIONAL_MINIMIZED", "RESTRICTED", "UNKNOWN",
-]);
-
+const PRIVACY_CLASSES = new Set(["PUBLIC", "OPERATIONAL_MINIMIZED", "RESTRICTED", "UNKNOWN"]);
+const VERDICTS = new Set(["ACCEPT", "REJECT", "COUNTER", "HOLD", "UNKNOWN"]);
 const RESTRICTED_KEY = /(email|phone|address|payment|bank|ssn|ein|token|secret|password|credential|authorization|cookie|backup|rawtext|chat|message|account)/i;
 
 export class ContractError extends Error {
@@ -35,9 +33,27 @@ function isPlainObject(value) {
 }
 
 function requireNonEmptyString(value, field) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new ContractError("MISSING_FIELD", `${field} is required`);
+  if (typeof value !== "string" || !value.trim()) throw new ContractError("MISSING_FIELD", `${field} is required`);
+}
+
+function optionalString(value, field) {
+  if (value !== undefined && value !== null && typeof value !== "string") {
+    throw new ContractError("INVALID_FIELD_VALUE", `${field} must be a string or null`);
   }
+}
+
+function optionalStructured(value, field) {
+  if (value === undefined || value === null || typeof value === "string" || isPlainObject(value) || Array.isArray(value)) return;
+  throw new ContractError("INVALID_FIELD_VALUE", `${field} must be structured data, a string, or null`);
+}
+
+function optionalNumber(value, field, { integer = false, nonNegative = false } = {}) {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ContractError("INVALID_FIELD_VALUE", `${field} must be a finite number or null`);
+  }
+  if (integer && !Number.isInteger(value)) throw new ContractError("INVALID_FIELD_VALUE", `${field} must be an integer or null`);
+  if (nonNegative && value < 0) throw new ContractError("INVALID_FIELD_VALUE", `${field} cannot be negative`);
 }
 
 const MAX_PRIVACY_NODES = 128;
@@ -57,19 +73,13 @@ const MODEL_CANONICAL_FIELDS = new Set([
 function inspectPrivacyShape(value) {
   const stack = [{ value, depth: 0 }];
   let visited = 0;
-
   while (stack.length) {
     const current = stack.pop();
     visited += 1;
     if (visited > MAX_PRIVACY_NODES) return "UNKNOWN";
-
     const node = current.value;
     if (!node || typeof node !== "object") continue;
-
-    const entries = Array.isArray(node)
-      ? node.map((child, index) => [String(index), child])
-      : Object.entries(node);
-
+    const entries = Array.isArray(node) ? node.map((child, index) => [String(index), child]) : Object.entries(node);
     for (const [key, child] of entries) {
       if (!Array.isArray(node) && RESTRICTED_KEY.test(key)) return "RESTRICTED";
       if (!child || typeof child !== "object") continue;
@@ -77,7 +87,6 @@ function inspectPrivacyShape(value) {
       stack.push({ value: child, depth: current.depth + 1 });
     }
   }
-
   return "CLEAR";
 }
 
@@ -90,70 +99,62 @@ function projectAllowedScalars(value, allowlist) {
   const out = {};
   for (const [key, item] of Object.entries(value || {})) {
     if (!allowlist.has(key)) continue;
-    if (item === null || ["string", "number", "boolean"].includes(typeof item)) {
-      out[key] = item;
-    }
+    if (item === null || ["string", "number", "boolean"].includes(typeof item)) out[key] = item;
   }
   return out;
 }
 
-export function validateEnvelope(envelope) {
-  if (!isPlainObject(envelope)) {
-    throw new ContractError("INVALID_ENVELOPE", "Envelope must be an object");
+function validateFactDomains(facts) {
+  for (const field of ["originMarket", "destinationMarket", "pickupWindow", "deliveryWindow", "marketSignals"]) {
+    optionalStructured(facts[field], `facts.${field}`);
   }
+  optionalString(facts.equipment, "facts.equipment");
+  for (const field of ["loadedMiles", "deadheadMiles", "weightLb"]) optionalNumber(facts[field], `facts.${field}`, { nonNegative: true });
+  optionalNumber(facts.pieces, "facts.pieces", { integer: true, nonNegative: true });
+}
 
-  for (const key of Object.keys(envelope)) {
-    if (!TOP_LEVEL_FIELDS.has(key)) {
-      throw new ContractError("UNKNOWN_FIELD", `Unknown envelope field: ${key}`);
+function validateCanonicalDomains(snapshot) {
+  for (const field of ["trueRpm", "loadedRpm", "baselineBid", "marketBid", "costPerMile", "fuelCost", "deadheadCost"]) {
+    optionalNumber(snapshot[field], `canonicalSnapshot.${field}`, { nonNegative: true });
+  }
+  for (const field of ["grade", "positionClass", "calculatedAt", "authorityVersion"]) optionalString(snapshot[field], `canonicalSnapshot.${field}`);
+  optionalStructured(snapshot.marketContext, "canonicalSnapshot.marketContext");
+  if (snapshot.verdict !== undefined && snapshot.verdict !== null) {
+    if (typeof snapshot.verdict !== "string" || !VERDICTS.has(snapshot.verdict.toUpperCase())) {
+      throw new ContractError("INVALID_FIELD_VALUE", "canonicalSnapshot.verdict is invalid");
     }
   }
+}
 
-  let serialized;
-  try {
-    serialized = JSON.stringify(envelope);
-  } catch {
-    throw new ContractError("INVALID_ENVELOPE", "Envelope must be JSON-serializable");
+export function validateEnvelope(envelope) {
+  if (!isPlainObject(envelope)) throw new ContractError("INVALID_ENVELOPE", "Envelope must be an object");
+  for (const key of Object.keys(envelope)) {
+    if (!TOP_LEVEL_FIELDS.has(key)) throw new ContractError("UNKNOWN_FIELD", `Unknown envelope field: ${key}`);
   }
+  let serialized;
+  try { serialized = JSON.stringify(envelope); }
+  catch { throw new ContractError("INVALID_ENVELOPE", "Envelope must be JSON-serializable"); }
   if (new TextEncoder().encode(serialized).byteLength > MAX_ENVELOPE_BYTES) {
     throw new ContractError("ENVELOPE_TOO_LARGE", "Envelope exceeds Phase A size limit");
   }
-
-  for (const field of [
-    "id", "type", "occurredAt", "source", "actorScope",
-    "correlationId", "idempotencyKey", "intent",
-  ]) {
+  for (const field of ["id", "type", "occurredAt", "source", "actorScope", "correlationId", "idempotencyKey", "intent"]) {
     requireNonEmptyString(envelope[field], field);
   }
-
-  if (envelope.schemaVersion !== 1) {
-    throw new ContractError("UNSUPPORTED_SCHEMA", "schemaVersion must be 1");
-  }
-
-  if (!PRIVACY_CLASSES.has(envelope.privacyClass)) {
-    throw new ContractError("INVALID_PRIVACY_CLASS", "privacyClass is invalid");
-  }
-
-  if (!isPlainObject(envelope.facts)) {
-    throw new ContractError("INVALID_FACTS", "facts must be an object");
-  }
-
-  if (!isPlainObject(envelope.provenance)) {
-    throw new ContractError("INVALID_PROVENANCE", "provenance must be an object");
-  }
-
-  if (!isPlainObject(envelope.canonicalSnapshot)) {
-    throw new ContractError("INVALID_CANONICAL_SNAPSHOT", "canonicalSnapshot must be an object");
-  }
-
+  optionalString(envelope.loadId, "loadId");
+  if (envelope.schemaVersion !== 1) throw new ContractError("UNSUPPORTED_SCHEMA", "schemaVersion must be 1");
+  if (!PRIVACY_CLASSES.has(envelope.privacyClass)) throw new ContractError("INVALID_PRIVACY_CLASS", "privacyClass is invalid");
+  if (!isPlainObject(envelope.facts)) throw new ContractError("INVALID_FACTS", "facts must be an object");
+  if (!isPlainObject(envelope.provenance)) throw new ContractError("INVALID_PROVENANCE", "provenance must be an object");
+  if (!isPlainObject(envelope.canonicalSnapshot)) throw new ContractError("INVALID_CANONICAL_SNAPSHOT", "canonicalSnapshot must be an object");
+  if (hasUnknownKeys(envelope.facts, SAFE_FACT_FIELDS)) throw new ContractError("UNKNOWN_FACT_FIELD", "facts contains unsupported fields");
+  if (hasUnknownKeys(envelope.canonicalSnapshot, SAFE_CANONICAL_FIELDS)) throw new ContractError("UNKNOWN_CANONICAL_FIELD", "canonicalSnapshot contains unsupported fields");
+  validateFactDomains(envelope.facts);
+  validateCanonicalDomains(envelope.canonicalSnapshot);
   if (typeof envelope.confidence !== "number" || !Number.isFinite(envelope.confidence)
       || envelope.confidence < 0 || envelope.confidence > 1) {
     throw new ContractError("INVALID_CONFIDENCE", "confidence must be between 0 and 1");
   }
-
-  if (Number.isNaN(Date.parse(envelope.occurredAt))) {
-    throw new ContractError("INVALID_OCCURRED_AT", "occurredAt must be an ISO timestamp");
-  }
-
+  if (Number.isNaN(Date.parse(envelope.occurredAt))) throw new ContractError("INVALID_OCCURRED_AT", "occurredAt must be an ISO timestamp");
   return { ok: true };
 }
 
@@ -166,9 +167,7 @@ export function classifyPrivacy(envelope) {
   if (shape === "UNKNOWN") return "UNKNOWN";
   if (hasUnknownKeys(envelope.facts, SAFE_FACT_FIELDS)) return "UNKNOWN";
   if (hasUnknownKeys(envelope.canonicalSnapshot, SAFE_CANONICAL_FIELDS)) return "UNKNOWN";
-  return PRIVACY_CLASSES.has(envelope.privacyClass)
-    ? envelope.privacyClass
-    : "UNKNOWN";
+  return PRIVACY_CLASSES.has(envelope.privacyClass) ? envelope.privacyClass : "UNKNOWN";
 }
 
 export function buildModelProjection(envelope) {
@@ -177,7 +176,6 @@ export function buildModelProjection(envelope) {
   if (privacy !== "PUBLIC" && privacy !== "OPERATIONAL_MINIMIZED") {
     throw new ContractError("PRIVACY_BLOCKED", `Model projection blocked for ${privacy}`);
   }
-
   return {
     intent: envelope.intent,
     facts: projectAllowedScalars(envelope.facts, MODEL_FACT_FIELDS),

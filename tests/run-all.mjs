@@ -116,7 +116,29 @@ import { runSpec as invitePaste } from './integration/invite-paste.spec.mjs';
 import { runSpec as tripDuplicateWarning } from './integration/trip-duplicate-warning.spec.mjs';
 import { runSpec as iphoneManualRegressions } from './integration/iphone-manual-regressions.spec.mjs';
 
+import { runSpec as auditM6Identity } from './unit/audit-m6-identity.spec.mjs';
+import { runSpec as auditStorageRecovery } from './unit/audit-storage-recovery.spec.mjs';
+import { runSpec as auditLockSession } from './unit/audit-lock-session.spec.mjs';
+import { runSpec as auditAncsForwarder } from './unit/audit-ancs-forwarder.spec.mjs';
+import { runSpec as auditCiIntegrity } from './unit/audit-ci-integrity.spec.mjs';
+
+import { runSpec as wizardPreviewBoundary } from './unit/wizard-preview-boundary.spec.mjs';
+import { runSpec as workerErasureRecovery } from './unit/worker-erasure-recovery.spec.mjs';
+import { runSpec as wizardUnknownEconomics } from './integration/wizard-unknown-economics.spec.mjs';
+import { runSpec as auditShellQuiescence } from './integration/audit-shell-quiescence.spec.mjs';
+import { runSpec as auditSuiteResult } from './unit/audit-suite-result.spec.mjs';
+
 const specs = [
+  wizardPreviewBoundary,
+  workerErasureRecovery,
+  wizardUnknownEconomics,
+  auditShellQuiescence,
+  auditSuiteResult,
+  auditAncsForwarder,
+  auditM6Identity,
+  auditStorageRecovery,
+  auditLockSession,
+  auditCiIntegrity,
   fullRepairRegressions,
   omegaEconomics,
   releaseGenerationDiscipline,
@@ -298,6 +320,23 @@ const results = new Array(specs.length);
 let cursor = 0;
 let done = 0;
 
+function normalizeSpecResult(result, label) {
+  const file = typeof result?.file === 'string' && result.file ? result.file : label;
+  const validCounts = Number.isSafeInteger(result?.pass) && result.pass >= 0
+    && Number.isSafeInteger(result?.fail) && result.fail >= 0;
+  if (!validCounts || result.pass + result.fail === 0) {
+    return { file, pass: 0, fail: 1, failures: [{
+      name: validCounts ? 'runSpec executed no assertions' : 'runSpec returned invalid assertion counts',
+    }] };
+  }
+  const failures = Array.isArray(result.failures) ? result.failures.filter(f =>
+    f && typeof f.name === 'string' && f.name.trim()) : [];
+  if (result.fail > 0 && failures.length === 0) {
+    failures.push({ name: `runSpec reported ${result.fail} failed assertion(s) without failure details` });
+  }
+  return { ...result, file, failures };
+}
+
 async function runJob(job) {
   const store = { label: job.key, out: [] };
   const started = Date.now();
@@ -310,6 +349,7 @@ async function runJob(job) {
     // reported. Surface it as a failure.
     r = { file: job.key, pass: 0, fail: 1, failures: [{ name: `runSpec threw: ${String(e && e.message || e)}` }] };
   }
+  r = normalizeSpecResult(r, job.key);
   timings[job.key] = Date.now() - started;
   results[job.i] = r;
   done++;

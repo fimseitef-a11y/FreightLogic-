@@ -7,18 +7,14 @@ name: AI Agent Cutover
 # target is deployed first with AGENT_ENABLED=false; only then is the existing
 # authenticated API Worker deployed with its private Service Binding.
 #
-# This workflow intentionally has NO activation mode. Enabling model execution
-# remains a later explicit gate after dark production evidence is green and a
-# production model provider/credential has been configured.
+# ACTIVATE_CANARY is an explicit manual production gate after dark-cutover
+# evidence and provider configuration. PR/push checks never activate services.
 
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'agent-runtime/**'
-      - 'cloud-backup-worker.js'
-      - 'scripts/wrangler.backup-worker.jsonc'
-      - '.github/workflows/ai-agent-cutover.yml'
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       confirm:
@@ -34,13 +30,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  # One in-flight production action against this Worker at a time, across
-  # DARK_CUTOVER and ACTIVATE_CANARY alike. A second dispatch queues instead
-  # of racing the first against the same live target.
-  group: ai-agent-cutover-production
-  cancel-in-progress: false
-
 env:
   CLOUDFLARE_ACCOUNT_ID: 1902a1759e441be91057aefda6762cb8
   KV_NAMESPACE_ID: a80b7959b0fa401d87e55c0c62e828a8
@@ -49,6 +38,9 @@ env:
 
 jobs:
   contract:
+    concurrency:
+      group: ai-agent-cutover-checks-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -80,6 +72,9 @@ jobs:
         run: npx --yes wrangler@4.143.0 deploy -c scripts/wrangler.backup-worker.jsonc --dry-run
 
   dark-cutover:
+    concurrency:
+      group: ai-agent-cutover-production
+      cancel-in-progress: false
     needs: contract
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'DARK_CUTOVER' && github.ref == 'refs/heads/main' }}
     # Requires a required-reviewer approval configured on this Environment in
@@ -251,6 +246,9 @@ jobs:
           echo 'DARK AGENT CUTOVER VERDICT: PASS — private binding reached; Agent remained disabled; public auth boundary preserved.'
 
   activate-canary:
+    concurrency:
+      group: ai-agent-cutover-production
+      cancel-in-progress: false
     needs: contract
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'ACTIVATE_CANARY' && github.ref == 'refs/heads/main' }}
     # Requires a required-reviewer approval configured on this Environment in
