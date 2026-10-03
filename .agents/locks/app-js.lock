@@ -1,0 +1,6 @@
+owner: gpt
+token: 5f1b13e1-2aa8-4d8f-9b03-9f4d6463a6f0
+started_utc: 2026-10-03T21:19:00Z
+expected_release_utc: 2026-10-03T23:30:00Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: Deliver the operator-requested launch intro as a reachable PWA generation after red-green verification.
