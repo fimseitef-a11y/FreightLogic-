@@ -16,6 +16,7 @@ Claiming costs one line. Not claiming costs an hour.
 
 | Lane | Working on | Since |
 |---|---|---|
+| gpt / AIAG-TASK-0040 | One-sweep parent: independent audit work; app.js blocked by preserved other-session lock until released or stale. | 2026-10-03T01:34:00Z |
 | claude | — idle — operator-requested pause; no active lock. | 2026-09-27T05:15:00Z |
 | gpt | PR #459 resumed audit remediation — recovering paused core/Money/storage/Agent batch; foreground operator-authorized. | 2026-10-02T21:13:00Z |
 
