@@ -1,6 +1,7 @@
 import { runSpec as launchIntro } from './unit/launch-intro.gate.mjs';
+import { runSpec as hyperdriveBinding } from './unit/hyperdrive-binding.gate.mjs';
 
-const specs = [launchIntro];
+const specs = [launchIntro, hyperdriveBinding];
 const results = [];
 
 for (const runSpec of specs) {

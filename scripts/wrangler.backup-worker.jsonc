@@ -111,6 +111,17 @@
     }
   ],
 
+  // Slice E: bind the already-provisioned Hyperdrive resource. This is
+  // configuration-only: the Worker does not query it until a separately tested,
+  // fail-closed database adapter is added. The database credential remains in
+  // Cloudflare Hyperdrive and is never stored in this repository.
+  "hyperdrive": [
+    {
+      "binding": "FREIGHTLOGIC_DB",
+      "id": "e6926e014c0a4bb6b4e59bb9fea51674"
+    }
+  ],
+
   "vars": {
     // Worker v14's production-origin/CORS contract. Deployed v7 computes
     // `env.ALLOWED_ORIGIN || '*'`, and the 2026-09-12 live probe observed
