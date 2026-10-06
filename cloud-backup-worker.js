@@ -1,4 +1,9 @@
-// FreightLogic Cloud Backup Worker v34 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// FreightLogic Cloud Backup Worker v35 - Multi-User + AI Evaluate + AI Extract + Vision Extract + Document Extract + Delta Sync + Web Push + Shortcuts Relay + Reminders + Security Readiness
+// v35: REVIEW-IMPORT DOCUMENT EXTRACTION. Authenticated PDF documents are
+// converted to plain text through the existing Workers AI binding, images use
+// an explicit OCR prompt, and text files are decoded locally. The Worker stores
+// nothing and never classifies Business/Personal/category or writes freight/
+// expense data; those decisions remain behind explicit Review Import approval.
 // v34: STRICT EXTRACTION CONTRACT. Text and image extraction share whole-value
 // numeric, object-shape, calendar-date and confidence validation; unknown stays
 // nullable, explicit zero survives, and truncated text replies fail closed.
@@ -227,7 +232,7 @@ const ADMIN_CREDENTIAL_IDLE_MS = 30 * DAY_MS;
 const ADMIN_AUDIT_TTL_S = 400 * 24 * 60 * 60;
 const USER_RATE_LIMIT_NAMESPACES = Object.freeze([
   'pushtest', 'sckey', 'rem', 'pushwardtest', 'eval',
-  'extract', 'extract-image', 'backup', 'delta', 'agent-rpc',
+  'extract', 'extract-image', 'document-extract', 'backup', 'delta', 'agent-rpc',
 ]);
 
 function isoAt(ms) { return new Date(ms).toISOString(); }
@@ -580,6 +585,19 @@ const PRODUCTION_APP_ORIGIN = 'https://freightlogic-v2.fimseitef.workers.dev';
 // v25: bounds on the no-login /extract-image route (see that route).
 const ANON_IMAGE_PER_IP_HOUR = 20;
 const ANON_IMAGE_PER_DAY = 300;
+
+// v35 document intake stays behind canonical driver authentication. A statement,
+// receipt, rate confirmation, or insurance document can contain much more
+// sensitive material than a load-board screenshot, so there is deliberately no
+// anonymous-document exception.
+const DOCUMENT_MAX_BYTES = 4 * 1024 * 1024;
+const DOCUMENT_MAX_TEXT_CHARS = 120000;
+const DOCUMENT_OCR_MODEL = '@cf/moondream/moondream3.1-9B-A2B';
+const DOCUMENT_ALLOWED_MIME = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/webp',
+  'text/plain',
+]);
 // Issue #221 — the legacy `freightlogic.pages.dev` / `www.freightlogic.pages.dev`
 // entries are removed. That Pages origin is not the live app and has not been
 // for the whole v24.0.x line; "accepted during migration" outlived the migration.
@@ -924,7 +942,7 @@ export default {
       if (request.method === 'GET' && path === '/health') {
         return json({
           ok: true,
-          version: '34',
+          version: '35',
           ts: new Date().toISOString(),
           rateLimiter: env.RATE_LIMITER ? 'durable-object' : 'soft-kv',
           credentialPolicy: 'finite-v1',
@@ -1273,6 +1291,14 @@ export default {
         canonicalUser = credential.user;
       }
       const deviceId = (request.headers.get('X-Device-Id') || 'default').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'default';
+
+      // ── v35: authenticated document extraction for Review Import ─────────
+      if (request.method === 'POST' && path === '/document/extract') {
+        if (await checkRateLimit(env, driverUserId, 30, 'document-extract')) {
+          return json({ ok:false, error:'Too many document extractions. Try again later.' }, 429, cors);
+        }
+        return extractDocumentFromRequest(request, env, cors);
+      }
 
       // ── AIAG-TASK-0022: authenticated private Agent RPC ───────────────────
       // The Agent Worker itself has no public route. This is the sole HTTP
@@ -1956,6 +1982,151 @@ async function incrementUserBackupCount(env, userId) {
 // only as a compatibility fallback for local/unit environments that do not bind
 // RATE_LIMITER. /health names the active mode and the deploy/parity gates require
 // "durable-object" in production, so production cannot silently certify fallback.
+
+// v35: authenticated document extraction for Review Import.
+//
+// Authority boundary:
+// - extraction returns text/provenance only;
+// - no raw document is persisted by this Worker;
+// - no Business/Personal/category decision is made here;
+// - no canonical trip/expense/fuel write happens here.
+// The app's dedicated Review Import screen owns those later decisions.
+function documentSafeName(raw, mime) {
+  const fallback = mime === 'application/pdf' ? 'document.pdf'
+    : mime === 'text/plain' ? 'document.txt'
+    : mime === 'image/png' ? 'document.png'
+    : mime === 'image/webp' ? 'document.webp'
+    : 'document.jpg';
+  const clean = String(raw || '').replace(/[\\/\0<>:"|?*]/g, '_').trim().slice(0, 96);
+  return clean || fallback;
+}
+
+function documentDecodeBase64(raw) {
+  let text = String(raw || '').trim();
+  const m = /^data:([a-z0-9.+/-]+);base64,(.*)$/is.exec(text);
+  if (m) text = m[2];
+  const bin = atob(text.replace(/\s/g, ''));
+  if (bin.length > DOCUMENT_MAX_BYTES) return { tooLarge: true, bytes: null };
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { tooLarge: false, bytes };
+}
+
+function documentMagicMatches(bytes, mime) {
+  if (mime === 'application/pdf') {
+    return bytes.length >= 5
+      && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44
+      && bytes[3] === 0x46 && bytes[4] === 0x2d; // %PDF-
+  }
+  if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mime === 'image/png') return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  if (mime === 'image/webp') return bytes.length >= 12
+    && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+    && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+  return true;
+}
+
+function documentTextResponse(text, meta, cors) {
+  const clean = String(text || '').replace(/\u0000/g, '').trim();
+  if (!clean) {
+    return json({
+      ok: false,
+      error: meta.mime === 'application/pdf'
+        ? 'No embedded text was found in this PDF. OCR fallback is required.'
+        : 'No readable text was found in this document.',
+      needsOcrFallback: meta.mime === 'application/pdf',
+    }, 422, cors);
+  }
+  const truncated = clean.length > DOCUMENT_MAX_TEXT_CHARS;
+  return json({
+    ok: true,
+    text: clean.slice(0, DOCUMENT_MAX_TEXT_CHARS),
+    truncated,
+    method: meta.method,
+    mime: meta.mime,
+    name: meta.name,
+    tokens: Number.isFinite(Number(meta.tokens)) ? Number(meta.tokens) : undefined,
+  }, 200, cors);
+}
+
+async function extractDocumentFromRequest(request, env, cors) {
+  // JSON/base64 keeps this endpoint compatible with the existing fetch/CSP
+  // boundary. The streamed body limit is enforced before JSON materialization,
+  // and the decoded-byte limit is checked separately after base64 expansion.
+  const maxBody = Math.ceil(DOCUMENT_MAX_BYTES * 4 / 3) + 64 * 1024;
+  const parsed = await readJsonBounded(request, maxBody);
+  if (!parsed.ok) return json({ ok:false, error:'Document too large (4MB max).' }, parsed.status, cors);
+
+  const body = parsed.value || {};
+  const mime = String(body.mime || '').toLowerCase().trim();
+  if (!DOCUMENT_ALLOWED_MIME.has(mime)) {
+    return json({ ok:false, error:'Unsupported document type.' }, 415, cors);
+  }
+  if (!body.file) return json({ ok:false, error:'Missing document data.' }, 400, cors);
+
+  let decoded;
+  try { decoded = documentDecodeBase64(body.file); }
+  catch { return json({ ok:false, error:'Document could not be decoded.' }, 400, cors); }
+  if (decoded.tooLarge) return json({ ok:false, error:'Document too large (4MB max).' }, 413, cors);
+  const bytes = decoded.bytes;
+  if (!bytes || !bytes.length) return json({ ok:false, error:'Document is empty.' }, 400, cors);
+  if (!documentMagicMatches(bytes, mime)) {
+    return json({ ok:false, error:'Document bytes do not match the declared file type.' }, 400, cors);
+  }
+
+  const name = documentSafeName(body.name, mime);
+
+  // Plain text has no reason to spend an AI call.
+  if (mime === 'text/plain') {
+    return documentTextResponse(new TextDecoder().decode(bytes),
+      { mime, name, method:'plain-text' }, cors);
+  }
+
+  // Images are the OCR fallback path. Moondream's query task explicitly
+  // supports OCR; the prompt asks for transcription only, not classification.
+  if (mime.startsWith('image/')) {
+    if (!env.AI || typeof env.AI.run !== 'function') {
+      return json({ ok:false, error:'Document OCR is not configured on the server.' }, 501, cors);
+    }
+    const dataUrl = 'data:' + mime + ';base64,' + String(body.file).replace(/^data:[^,]+,/i, '').replace(/\s/g, '');
+    let out;
+    try {
+      out = await env.AI.run(DOCUMENT_OCR_MODEL, {
+        task:'query',
+        image:dataUrl,
+        question:'Transcribe all visible text exactly. Preserve line breaks. Do not summarize, infer categories, or add commentary.',
+        max_tokens:4096,
+        reasoning:false,
+      });
+    } catch {
+      return json({ ok:false, error:'Document OCR failed.' }, 502, cors);
+    }
+    return documentTextResponse(out?.answer || '',
+      { mime, name, method:'image-ocr' }, cors);
+  }
+
+  // PDFs: Cloudflare Markdown Conversion extracts the document text. Request
+  // plain text and suppress PDF metadata so transaction parsing never mistakes
+  // file metadata for statement rows.
+  if (!env.AI || typeof env.AI.toMarkdown !== 'function') {
+    return json({ ok:false, error:'PDF extraction is not configured on the server.' }, 501, cors);
+  }
+  let result;
+  try {
+    result = await env.AI.toMarkdown(
+      { name, blob:new Blob([bytes], { type:mime }) },
+      { conversionOptions:{ output:{ format:'text' }, pdf:{ metadata:false } } },
+    );
+  } catch {
+    return json({ ok:false, error:'PDF extraction failed.' }, 502, cors);
+  }
+  if (Array.isArray(result)) result = result[0];
+  if (!result || result.format === 'error') {
+    return json({ ok:false, error:'PDF extraction could not read this document.' }, 422, cors);
+  }
+  return documentTextResponse(result.data || '',
+    { mime, name, method:'embedded-pdf-text', tokens:result.tokens }, cors);
+}
 
 // v25: the /extract-image work, shared by the authenticated route (inside the
 // driver-token gate) and the no-login app route (above it). Everything that
