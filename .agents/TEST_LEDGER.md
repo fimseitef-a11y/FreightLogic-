@@ -534,3 +534,5 @@ or governance/activation control was modified.
 Source changed under the user's later remediation authorization. No merge,
 deploy, runtime activation, credential rotation or live freight/payment write.
 This ledger records a verified source checkpoint, not whole-audit closure.
+
+- 2026-10-06T20:56:48Z — PR #466 exact head `1eafdd13279a090ee3f4339146b7e3c4391a67ef`: GitHub Tests PASS — `node tests/run-all.mjs` 1047 passed / 0 failed across 107 specs; completion gates 10 passed / 0 failed across 3 specs. ST12-01 and ST12-02 PASS. Companion exact-head workflows Lanes, CodeQL, Performance, Native iOS Contract, AI Agent Cutover, and ELI Runtime all PASS. Merged as `50f1b14159fec816eb1b3f9bf858053eadad32f0`.
