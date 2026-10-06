@@ -1,7 +1,8 @@
 import { runSpec as launchIntro } from './unit/launch-intro.gate.mjs';
 import { runSpec as hyperdriveBinding } from './unit/hyperdrive-binding.gate.mjs';
+import { runSpec as st12RestoreTransaction } from './integration/st12-restore-transaction.gate.mjs';
 
-const specs = [launchIntro, hyperdriveBinding];
+const specs = [launchIntro, hyperdriveBinding, st12RestoreTransaction];
 const results = [];
 
 for (const runSpec of specs) {
