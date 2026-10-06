@@ -797,3 +797,5 @@ Current e1f CI:6workflows success, Tests failure run37069124274/job111044112061:
 - 2026-10-03T21:18:00Z — gpt / AIAG-TASK-0040: reaped stale app-js lock token 4b4ad86d-68aa-4d21-a4f7-9fb75fd5b2db. Its expected release was 2026-10-03T00:14:00Z and the +2h stale threshold passed long before takeover; PR #459 is already merged as d5253bb and no newer application writer exists. Reaping only coordination state; no application source changed.
 
 - 2026-10-06T20:42:00Z — gpt / ST12 completion: reaped stale app-js lock token 9c1fd4af-4b94-4e5c-84b1-6f59f0e027cc. Its expected release was 2026-10-03T23:30:00Z; the required +2h grace expired long ago. Reaping only stale coordination state before a fresh claim; no application source changed in this coordination commit.
+
+- 2026-10-06T20:43:00Z — gpt / ST12 completion: claimed app-js with token 6d421d67-bf14-4a1c-8d44-260610064641, covering only app.js. Objective: rebuild the ST12 restore-abort repair on current main with fail-closed transaction semantics, committed-only counts, exact-head full-suite/completion-gate evidence, then merge and release.
