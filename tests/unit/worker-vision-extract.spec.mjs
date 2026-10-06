@@ -649,6 +649,11 @@ function documentAiEnv(kv, data = '10/05/2026 FUEL STOP 74.22', { format = 'text
             ? { id:'doc-1', name:file.name, format:'error', mimetype:file.blob.type, error:'conversion failed' }
             : { id:'doc-1', name:file.name, format, mimetype:file.blob.type, tokens:12, data };
         },
+        async run(model, payload) {
+          seen.push({ model, payload });
+          if (error) throw error;
+          return { answer: data, finish_reason:'stop' };
+        },
       },
     },
   };
