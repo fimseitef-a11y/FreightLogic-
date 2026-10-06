@@ -20,6 +20,10 @@ The event envelope is strict and allowlisted. Model projection removes internal 
 
 AI Gateway is not used for this activation path. If it is added later, operational requests must set `cf-aig-collect-log-payload: false` so prompts and responses are not persisted in Gateway logs.
 
+## Document Review Import roles
+
+The pre-iPhone document pipeline defines four bounded responsibilities in `document-roles.mjs`: Extraction, Reconciliation, Classification, and QA/Audit. They are advisory roles only. None may write canonical trips, expenses, fuel, payment state, or freight decisions. Every candidate terminates in the app's Review Import surface, and only an explicit operator-approved Business row may proceed to an existing typed writer. Possible duplicates require a second explicit confirmation; unknown amounts remain unknown rather than becoming zero.
+
 ## Tests
 
 Run the pure contract suite:
