@@ -593,6 +593,7 @@ const ANON_IMAGE_PER_DAY = 300;
 const DOCUMENT_MAX_BYTES = 4 * 1024 * 1024;
 const DOCUMENT_MAX_TEXT_CHARS = 120000;
 const DOCUMENT_OCR_MODEL = '@cf/moondream/moondream3.1-9B-A2B';
+const GOOGLE_DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const DOCUMENT_ALLOWED_MIME = new Set([
   'application/pdf',
   'image/jpeg', 'image/png', 'image/webp',
@@ -1298,6 +1299,20 @@ export default {
           return json({ ok:false, error:'Too many document extractions. Try again later.' }, 429, cors);
         }
         return extractDocumentFromRequest(request, env, cors);
+      }
+
+      // ── v35: Google Drive backup readiness ───────────────────────────────
+      // The client ID is public OAuth configuration, not a secret. Access and
+      // refresh tokens are never accepted or persisted by this Worker.
+      if (request.method === 'GET' && path === '/drive/config') {
+        const clientId = String(env.GOOGLE_DRIVE_CLIENT_ID || '').trim();
+        return json({
+          ok:true,
+          configured:!!clientId,
+          clientId:clientId || null,
+          scope:GOOGLE_DRIVE_APPDATA_SCOPE,
+          tokenStorage:'session-memory-only',
+        }, 200, cors);
       }
 
       // ── AIAG-TASK-0022: authenticated private Agent RPC ───────────────────
