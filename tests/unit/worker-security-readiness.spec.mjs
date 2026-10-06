@@ -185,10 +185,10 @@ test('[SR-09] privileged audit records contain no raw identity, token, IP, or re
   ok(!text.includes(ip),'IP must not enter audit');
 });
 
-test('[SR-10] health exposes hardened-mode evidence and version 34', async () => {
+test('[SR-10] health exposes hardened-mode evidence and version 35', async () => {
   const worker=(await loadMod()).default;
   const soft=await (await worker.fetch(req('/health'),{BACKUPS:makeKV()})).json();
-  eq(String(soft.version),'34','health generation must be v34');
+  eq(String(soft.version),'34','health generation must be v35');
   eq(soft.rateLimiter,'soft-kv','unit env without binding must identify fallback honestly');
   eq(soft.credentialPolicy,'finite-v1','finite credential policy must be advertised');
   const durable={ idFromName:n=>n, get:id=>({fetch:async()=>new Response('{"ok":true,"limited":false}',{status:200})}) };
@@ -204,7 +204,7 @@ test('[SR-11] production config and release gates require exact limiter + finite
   ok(cfg.includes('"type": "durable-object"') && cfg.includes('"storage": "sqlite"'), 'rate limiter must be SQLite-backed Durable Object storage');
   ok(deploy.includes('"rateLimiter":"durable-object"'), 'deploy must refuse a soft-KV production limiter');
   ok(deploy.includes('"credentialPolicy":"finite-v1"'), 'deploy must prove finite credential policy is live');
-  ok(parity.includes('workerVersion: "34"'), 'parity gate must expect Worker v34');
+  ok(parity.includes('workerVersion: "34"'), 'parity gate must expect Worker v35');
   ok(parity.includes("Worker uses exact Durable Object rate limiter"), 'parity gate must assert exact limiter mode');
 });
 
