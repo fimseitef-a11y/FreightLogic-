@@ -50,3 +50,6 @@ jobs:
 
       - name: Run full suite
         run: node tests/run-all.mjs
+
+      - name: Run completion gates
+        run: node tests/run-completion-gates.mjs
