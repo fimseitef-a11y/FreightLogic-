@@ -18,6 +18,11 @@ import {
   runExplanationModel,
 } from "../model-adapter.mjs";
 import { OutputGuardError, checkRecommendationAgainstCanonical } from "../output-guard.mjs";
+import {
+  DOCUMENT_AGENT_ROLES,
+  documentRoleMayWriteCanonical,
+  reviewImportWriteAuthority,
+} from "../document-roles.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -589,6 +594,48 @@ await test("A42 production cutover workflow serializes activation and references
   assert.equal(job("contract").includes("group: ai-agent-cutover-production"), false, "PR checks must not wait for production approval");
   assert.equal((workflow.match(/environment: production-agent-cutover/g) || []).length, 2);
   assert.equal(workflow.includes("node agent-runtime/tests/output-guard.spec.mjs"), true);
+});
+
+
+await test("A43 document-agent roles are advisory and can never write canonical records", () => {
+  assert.deepEqual(Object.keys(DOCUMENT_AGENT_ROLES).sort(), ["CLASSIFICATION","EXTRACTION","QA_AUDIT","RECONCILIATION"]);
+  for (const role of Object.keys(DOCUMENT_AGENT_ROLES)) {
+    assert.equal(documentRoleMayWriteCanonical(role), false, role + " cannot write canonical state");
+    assert.equal(DOCUMENT_AGENT_ROLES[role].requiresReview, true, role + " must terminate in Review Import");
+  }
+});
+
+await test("A44 extraction and reconciliation responsibilities stay distinct from classification", () => {
+  assert.equal(DOCUMENT_AGENT_ROLES.EXTRACTION.maySuggest.includes("classification"), false);
+  assert.equal(DOCUMENT_AGENT_ROLES.EXTRACTION.maySuggest.includes("category"), false);
+  assert.equal(DOCUMENT_AGENT_ROLES.RECONCILIATION.maySuggest.includes("duplicateOf"), true);
+  assert.equal(DOCUMENT_AGENT_ROLES.RECONCILIATION.maySuggest.includes("classification"), false);
+  assert.equal(DOCUMENT_AGENT_ROLES.CLASSIFICATION.maySuggest.includes("classification"), true);
+});
+
+await test("A45 Review Import requires an explicit Business approval before a typed write", () => {
+  const base = { date:"2026-10-05", amount:42.25, classification:"BUSINESS" };
+  assert.equal(reviewImportWriteAuthority(base).canWrite, false);
+  assert.deepEqual(reviewImportWriteAuthority({ ...base, approved:true }), {
+    canWrite:true, reason:"EXPLICIT_REVIEW_APPROVAL"
+  });
+  assert.equal(reviewImportWriteAuthority({ ...base, approved:true, classification:"PERSONAL" }).canWrite, false);
+  assert.equal(reviewImportWriteAuthority({ ...base, approved:true, classification:"IGNORE" }).canWrite, false);
+});
+
+await test("A46 duplicates require a second explicit confirmation and unknown facts never become zero", () => {
+  const duplicate = { approved:true, classification:"BUSINESS", date:"2026-10-05", amount:12.50, duplicate:true };
+  assert.equal(reviewImportWriteAuthority(duplicate).reason, "DUPLICATE_REQUIRES_CONFIRMATION");
+  assert.equal(reviewImportWriteAuthority({ ...duplicate, duplicateConfirmed:true }).canWrite, true);
+  assert.equal(reviewImportWriteAuthority({ ...duplicate, amount:null }).reason, "INVALID_AMOUNT");
+  assert.equal(reviewImportWriteAuthority({ ...duplicate, amount:0 }).reason, "INVALID_AMOUNT");
+});
+
+await test("A47 Review Import authority validates real calendar dates rather than accepting placeholders", () => {
+  const base = { approved:true, classification:"BUSINESS", amount:9.75 };
+  assert.equal(reviewImportWriteAuthority({ ...base, date:"2026-02-30" }).reason, "INVALID_DATE");
+  assert.equal(reviewImportWriteAuthority({ ...base, date:"" }).reason, "INVALID_DATE");
+  assert.equal(reviewImportWriteAuthority({ ...base, date:"2028-02-29" }).canWrite, true);
 });
 
 console.log(`TOTAL: ${passed} passed, ${failed} failed`);

@@ -32,7 +32,7 @@ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.wo
 const EXPECTED = {
   serviceWorkerVersion: "24.0.61",
   manifestName: "FreightLogic v24.0.61",
-  workerVersion: "34",
+  workerVersion: "35",
   overlayScript: "midwest-stack-authority.js?v=24.0.61"
 };
 

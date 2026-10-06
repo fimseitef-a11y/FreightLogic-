@@ -616,6 +616,184 @@ test('[VEX-AUDIT-07] complete formatted money and real leap dates survive strict
   eq(body.fieldMeta.deadheadMiles.state,'OBSERVED');eq(body.fields.pickupDate,'2028-02-29');
 });
 
+
+// ── Pre-iPhone document intake boundary ──────────────────────────────────────
+// Documents can contain financial/personal material, so unlike screenshot load
+// extraction this route is NEVER anonymous. Extraction returns text/provenance
+// only; classification and typed writes belong to Review Import in the app.
+const DOC_PDF_B64 = 'JVBERi0xLjQKJUVPRgo='; // "%PDF-1.4\n%EOF\n"
+const DOC_IMAGE_B64 = TINY_JPEG_B64;
+function documentReq(token, body, extraHeaders = {}) {
+  return REQ('/document/extract', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-Backup-Token': token } : {}),
+      ...extraHeaders,
+    },
+    body: JSON.stringify(body),
+  });
+}
+function documentAiEnv(kv, data = '10/05/2026 FUEL STOP 74.22', { format = 'text', error = null } = {}) {
+  const seen = [];
+  return {
+    seen,
+    env: {
+      BACKUPS: kv,
+      ADMIN_TOKEN: ADMIN,
+      AI: {
+        async toMarkdown(file, options) {
+          seen.push({ file, options });
+          if (error) throw error;
+          return format === 'error'
+            ? { id:'doc-1', name:file.name, format:'error', mimetype:file.blob.type, error:'conversion failed' }
+            : { id:'doc-1', name:file.name, format, mimetype:file.blob.type, tokens:12, data };
+        },
+        async run(model, payload) {
+          seen.push({ model, payload });
+          if (error) throw error;
+          return { answer: data, finish_reason:'stop' };
+        },
+      },
+    },
+  };
+}
+
+test('[DOC-01] an authenticated PDF is converted to plain text and returns observation-only provenance', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv);
+  const token = await seedDriver(worker, d.env);
+  const res = await worker.fetch(documentReq(token, {
+    name:'statement.pdf', mime:'application/pdf', file:DOC_PDF_B64,
+  }), d.env);
+  const body = await res.json();
+  eq(res.status, 200, JSON.stringify(body));
+  eq(body.ok, true);
+  eq(body.text, '10/05/2026 FUEL STOP 74.22');
+  eq(body.method, 'embedded-pdf-text');
+  eq(body.mime, 'application/pdf');
+  eq(d.seen.length, 1, 'one conversion call');
+  eq(d.seen[0].options?.conversionOptions?.output?.format, 'text', 'request plain text rather than markdown');
+  eq(d.seen[0].options?.conversionOptions?.pdf?.metadata, false, 'metadata is not mixed into transaction text');
+  for (const forbidden of ['category','business','personal','expense','trip','verdict','decision']) {
+    ok(!Object.prototype.hasOwnProperty.call(body, forbidden), 'worker must not classify/write: ' + forbidden);
+  }
+});
+
+test('[DOC-02] document extraction never inherits the anonymous screenshot exception', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv);
+  const res = await worker.fetch(documentReq(null, {
+    name:'statement.pdf', mime:'application/pdf', file:DOC_PDF_B64,
+  }, { Origin: APP_ORIGIN, 'CF-Connecting-IP':'198.51.100.77' }), d.env);
+  ok(res.status === 401 || res.status === 403, 'sensitive document extraction requires a driver credential');
+  eq(d.seen.length, 0, 'unauthorized content never reaches AI');
+});
+
+test('[DOC-03] image documents use the OCR/image extraction path but still return only text', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv, 'Receipt\nTOTAL 18.40');
+  const token = await seedDriver(worker, d.env);
+  const res = await worker.fetch(documentReq(token, {
+    name:'receipt.jpg', mime:'image/jpeg', file:DOC_IMAGE_B64,
+  }), d.env);
+  const body = await res.json();
+  eq(res.status, 200, JSON.stringify(body));
+  eq(body.method, 'image-ocr');
+  eq(body.text, 'Receipt\nTOTAL 18.40');
+});
+
+test('[DOC-04] unsupported document types fail before conversion', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv);
+  const token = await seedDriver(worker, d.env);
+  const res = await worker.fetch(documentReq(token, {
+    name:'archive.zip', mime:'application/zip', file:'UEsDBA==',
+  }), d.env);
+  eq(res.status, 415);
+  eq(d.seen.length, 0, 'unsupported bytes never reach conversion');
+});
+
+test('[DOC-05] plain text is extracted locally without spending Workers AI', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv);
+  const token = await seedDriver(worker, d.env);
+  const raw = '2026-10-05|Toll|12.50';
+  const file = Buffer.from(raw, 'utf8').toString('base64');
+  const res = await worker.fetch(documentReq(token, {
+    name:'statement.txt', mime:'text/plain', file,
+  }), d.env);
+  const body = await res.json();
+  eq(res.status, 200, JSON.stringify(body));
+  eq(body.method, 'plain-text');
+  eq(body.text, raw);
+  eq(d.seen.length, 0, 'plain text needs no model');
+});
+
+test('[DOC-06] conversion errors and empty scanned PDFs fail closed for Review Import', async () => {
+  {
+    const kv = makeKV(); const worker = await loadWorker();
+    const d = documentAiEnv(kv, '', { format:'error' });
+    const token = await seedDriver(worker, d.env);
+    const res = await worker.fetch(documentReq(token, {
+      name:'broken.pdf', mime:'application/pdf', file:DOC_PDF_B64,
+    }), d.env);
+    const body = await res.json();
+    eq(res.status, 422); eq(body.ok, false); ok(!body.text);
+  }
+  {
+    const kv = makeKV(); const worker = await loadWorker();
+    const d = documentAiEnv(kv, '   ');
+    const token = await seedDriver(worker, d.env);
+    const res = await worker.fetch(documentReq(token, {
+      name:'scan.pdf', mime:'application/pdf', file:DOC_PDF_B64,
+    }), d.env);
+    const body = await res.json();
+    eq(res.status, 422); eq(body.ok, false);
+    eq(body.needsOcrFallback, true, 'a text-empty PDF is named as needing OCR fallback, never treated as an empty success');
+  }
+});
+
+test('[DOC-07] a malformed PDF payload is rejected before Workers AI', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const d = documentAiEnv(kv);
+  const token = await seedDriver(worker, d.env);
+  const res = await worker.fetch(documentReq(token, {
+    name:'fake.pdf', mime:'application/pdf', file:Buffer.from('not a pdf').toString('base64'),
+  }), d.env);
+  eq(res.status, 400);
+  eq(d.seen.length, 0);
+});
+
+
+test('[DOC-08] Drive readiness exposes only the public appData OAuth contract after driver auth', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const baseEnv = { BACKUPS:kv, ADMIN_TOKEN:ADMIN, GOOGLE_DRIVE_CLIENT_ID:'123-example.apps.googleusercontent.com' };
+  const token = await seedDriver(worker, baseEnv);
+  const anon = await worker.fetch(REQ('/drive/config'), baseEnv);
+  ok(anon.status === 401 || anon.status === 403, 'Drive config remains behind driver auth');
+  const res = await worker.fetch(REQ('/drive/config', {
+    headers:{ 'X-Backup-Token':token },
+  }), baseEnv);
+  const body = await res.json();
+  eq(res.status, 200); eq(body.ok, true); eq(body.configured, true);
+  eq(body.clientId, '123-example.apps.googleusercontent.com');
+  eq(body.scope, 'https://www.googleapis.com/auth/drive.appdata');
+  eq(body.tokenStorage, 'session-memory-only');
+  const serialized = JSON.stringify(body).toLowerCase();
+  ok(!serialized.includes('client_secret') && !serialized.includes('refresh_token'), 'no confidential OAuth material is exposed');
+});
+
+test('[DOC-09] absent Google OAuth registration is reported as unconfigured, never as connected', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
+  const token = await seedDriver(worker, env);
+  const res = await worker.fetch(REQ('/drive/config', { headers:{ 'X-Backup-Token':token } }), env);
+  const body = await res.json();
+  eq(res.status, 200); eq(body.configured, false); eq(body.clientId, null);
+  eq(body.scope, 'https://www.googleapis.com/auth/drive.appdata');
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
