@@ -19058,6 +19058,14 @@ async function cloudPushBackup(silent = true){
 async function mergeRestoreData(parsed){
   const arr = (x) => Array.isArray(x) ? x : [];
   const stats = { trips:{added:0,updated:0,skipped:0}, expenses:{added:0,updated:0,skipped:0}, fuel:{added:0,updated:0,skipped:0} };
+  // A restore must never report success before IndexedDB has committed. Keep
+  // this boundary local to the restore path so abort/error semantics remain
+  // explicit and regression-gated even if generic transaction helpers change.
+  const waitRestoreTxn = (txn) => new Promise((resolve, reject) => {
+    txn.oncomplete = () => resolve(true);
+    txn.onerror = () => reject(txn.error || new Error('Restore transaction failed'));
+    txn.onabort = () => reject(txn.error || new Error('Restore transaction aborted'));
+  });
 
   // Trips — keyed by orderNo.
   //
@@ -19077,11 +19085,12 @@ async function mergeRestoreData(parsed){
     try {
       const {t:wt, stores:ws} = tx('trips','readwrite');
       const existing = await idbReq(ws.trips.get(incoming.id));
-      if (!existing){ ws.trips.put(incoming); stats.trips.added++; }
-      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); stats.trips.updated++; }
-      else { stats.trips.skipped++; }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }catch(e){ console.warn('[FL] merge trip', e); }
+      let outcome = 'skipped';
+      if (!existing){ ws.trips.put(incoming); outcome = 'added'; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.trips.put(incoming); outcome = 'updated'; }
+      await waitRestoreTxn(wt);
+      stats.trips[outcome]++;
+    }catch(e){ console.warn('[FL] merge trip', e); throw e; }
   }
 
   // Expenses
@@ -19090,11 +19099,12 @@ async function mergeRestoreData(parsed){
     try {
       const {t:wt, stores:ws} = tx('expenses','readwrite');
       const existing = incoming.id ? await idbReq(ws.expenses.get(Number(incoming.id))) : null;
-      if (!existing){ ws.expenses.put(incoming); stats.expenses.added++; }
-      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.expenses.put(incoming); stats.expenses.updated++; }
-      else { stats.expenses.skipped++; }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }catch(e){ console.warn('[FL] merge expense', e); }
+      let outcome = 'skipped';
+      if (!existing){ ws.expenses.put(incoming); outcome = 'added'; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.expenses.put(incoming); outcome = 'updated'; }
+      await waitRestoreTxn(wt);
+      stats.expenses[outcome]++;
+    }catch(e){ console.warn('[FL] merge expense', e); throw e; }
   }
 
   // Fuel
@@ -19103,11 +19113,12 @@ async function mergeRestoreData(parsed){
     try {
       const {t:wt, stores:ws} = tx('fuel','readwrite');
       const existing = incoming.id ? await idbReq(ws.fuel.get(Number(incoming.id))) : null;
-      if (!existing){ ws.fuel.put(incoming); stats.fuel.added++; }
-      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.fuel.put(incoming); stats.fuel.updated++; }
-      else { stats.fuel.skipped++; }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    }catch(e){ console.warn('[FL] merge fuel', e); }
+      let outcome = 'skipped';
+      if (!existing){ ws.fuel.put(incoming); outcome = 'added'; }
+      else if ((existing.updatedAt || existing.updated || existing.created || 0) < (incoming.updatedAt || incoming.updated || incoming.created || 0)){ ws.fuel.put(incoming); outcome = 'updated'; }
+      await waitRestoreTxn(wt);
+      stats.fuel[outcome]++;
+    }catch(e){ console.warn('[FL] merge fuel', e); throw e; }
   }
 
   // Other stores: per-record timestamp merge (laneHistory, weeklyReports, reloadOutcomes, bidHistory, documents)
@@ -19125,10 +19136,10 @@ async function mergeRestoreData(parsed){
         const existing = await idbReq(ws.loadLifecycle.get(String(incoming.lifecycleId)));
         const merged = reconcileLifecycleRecord(existing, incoming);
         ws.loadLifecycle.put(merged);
-        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        await waitRestoreTxn(wt);
         stats.loadLifecycle = stats.loadLifecycle || { added: 0, updated: 0 };
         if (existing) stats.loadLifecycle.updated++; else stats.loadLifecycle.added++;
-      }catch(e){ console.warn('[FL] merge loadLifecycle', e); }
+      }catch(e){ console.warn('[FL] merge loadLifecycle', e); throw e; }
     }
   }
 
@@ -19145,10 +19156,10 @@ async function mergeRestoreData(parsed){
         const existing = await idbReq(ws[EVIDENCE_STORE].get(String(incoming.evidenceId)));
         const merged = reconcileEvidenceRecord(existing, incoming);
         ws[EVIDENCE_STORE].put(merged);
-        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+        await waitRestoreTxn(wt);
         stats[EVIDENCE_STORE] = stats[EVIDENCE_STORE] || { added: 0, updated: 0 };
         if (existing) stats[EVIDENCE_STORE].updated++; else stats[EVIDENCE_STORE].added++;
-      }catch(e){ console.warn('[FL] merge normalizedEvidence', e); }
+      }catch(e){ console.warn('[FL] merge normalizedEvidence', e); throw e; }
     }
   }
 
@@ -19163,7 +19174,7 @@ async function mergeRestoreData(parsed){
         if (!key){
           const {t:wt, stores:ws} = tx(storeName,'readwrite');
           ws[storeName].put(incoming);
-          await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+          await waitRestoreTxn(wt);
           continue;
         }
         const {t:wt, stores:ws} = tx(storeName,'readwrite');
@@ -19171,8 +19182,8 @@ async function mergeRestoreData(parsed){
         const inTs = incoming.updatedAt || incoming.generatedAt || incoming.updated || incoming.created || incoming.createdAt || incoming.timestamp || 0;
         const exTs = existing ? (existing.updatedAt || existing.generatedAt || existing.updated || existing.created || existing.createdAt || existing.timestamp || 0) : 0;
         if (!existing || inTs > exTs){ ws[storeName].put(incoming); }
-        await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-      } catch(e){ console.warn('[FL] merge ' + storeName, e); }
+        await waitRestoreTxn(wt);
+      } catch(e){ console.warn('[FL] merge ' + storeName, e); throw e; }
     }
   }
 
@@ -19209,7 +19220,7 @@ async function mergeRestoreData(parsed){
     // and must be re-entered on a new device regardless.
     const toAdd = inSettings.filter(s => s && typeof s.key === 'string' && !existingKeys.has(s.key) && isSettingImportSafe(s.key));
     for (const s of toAdd) ws.settings.put(s);
-    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    await waitRestoreTxn(wt);
     stats.settings.added = toAdd.length;
     stats.settings.skipped = inSettings.length - toAdd.length;
   }
@@ -19229,19 +19240,21 @@ async function mergeRestoreData(parsed){
     try {
       const {t:wt, stores:ws} = tx('receipts','readwrite');
       const existing = await idbReq(ws.receipts.get(incoming.tripOrderNo));
+      let outcome = null;
       if (!existing){
         ws.receipts.put(incoming);
-        stats.receipts.added++;
+        outcome = 'added';
       } else {
         const existingIds = new Set((existing.files || []).map(f => f.id));
         const newFiles = (incoming.files || []).filter(f => f && !existingIds.has(f.id));
         if (newFiles.length){
           ws.receipts.put({ tripOrderNo: incoming.tripOrderNo, files: [...(existing.files || []), ...newFiles] });
-          stats.receipts.merged++;
+          outcome = 'merged';
         }
       }
-      await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
-    } catch(e){ console.warn('[FL] merge receipts', e); }
+      await waitRestoreTxn(wt);
+      if (outcome) stats.receipts[outcome]++;
+    } catch(e){ console.warn('[FL] merge receipts', e); throw e; }
   }
 
   // X-07: gpsLogs (keyPath 'id', autoIncrement) — the incoming numeric id is
@@ -19261,7 +19274,7 @@ async function mergeRestoreData(parsed){
     const existingKeySet = new Set(existingAll.map(g => g.tripTrackingId + '|' + g.timestamp));
     const toAdd = inGpsLogs.filter(g => g && g.tripTrackingId && g.timestamp && !existingKeySet.has(g.tripTrackingId + '|' + g.timestamp));
     for (const g of toAdd){ const { id, ...rest } = g; ws.gpsLogs.add(rest); }
-    await new Promise(r => { wt.oncomplete = r; wt.onerror = r; });
+    await waitRestoreTxn(wt);
     stats.gpsLogs.added = toAdd.length;
     stats.gpsLogs.skipped = inGpsLogs.length - toAdd.length;
   }
