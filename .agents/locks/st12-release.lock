@@ -1,6 +1,0 @@
-owner: gpt
-token: 8c1ec4c7-65c3-4f3d-8b4a-7e02d4b66061
-started_utc: 2026-10-06T20:50:00Z
-expected_release_utc: 2026-10-07T00:50:00Z
-paths: index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js
-task: Advance the governed PWA release generation for the ST12 restore fix and preserve cache/manifest parity.
