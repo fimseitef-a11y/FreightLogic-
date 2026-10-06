@@ -1,4 +1,4 @@
-import { runSpec as launchIntro } from './unit/launch-intro.spec.mjs';
+import { runSpec as launchIntro } from './unit/launch-intro.gate.mjs';
 
 const specs = [launchIntro];
 const results = [];
