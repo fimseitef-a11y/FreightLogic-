@@ -2,5 +2,5 @@ owner: gpt
 token: 6d421d67-bf14-4a1c-8d44-260610064641
 started_utc: 2026-10-06T20:42:00Z
 expected_release_utc: 2026-10-07T00:42:00Z
-paths: app.js
-task: Finish ST12 restore transaction abort/error rejection and committed-row accounting on current main with exact-head regression and merge.
+paths: app.js, index.html, manifest.json, modern-shell.js, service-worker.js, sw-bridge.js
+task: Finish ST12 restore transaction abort/error rejection and committed-row accounting on current main as release v24.0.61 with exact-head regression, merge, and production parity.
