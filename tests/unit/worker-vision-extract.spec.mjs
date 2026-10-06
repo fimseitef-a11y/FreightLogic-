@@ -765,6 +765,35 @@ test('[DOC-07] a malformed PDF payload is rejected before Workers AI', async () 
   eq(d.seen.length, 0);
 });
 
+
+test('[DOC-08] Drive readiness exposes only the public appData OAuth contract after driver auth', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const baseEnv = { BACKUPS:kv, ADMIN_TOKEN:ADMIN, GOOGLE_DRIVE_CLIENT_ID:'123-example.apps.googleusercontent.com' };
+  const token = await seedDriver(worker, baseEnv);
+  const anon = await worker.fetch(REQ('/drive/config'), baseEnv);
+  ok(anon.status === 401 || anon.status === 403, 'Drive config remains behind driver auth');
+  const res = await worker.fetch(REQ('/drive/config', {
+    headers:{ 'X-Backup-Token':token },
+  }), baseEnv);
+  const body = await res.json();
+  eq(res.status, 200); eq(body.ok, true); eq(body.configured, true);
+  eq(body.clientId, '123-example.apps.googleusercontent.com');
+  eq(body.scope, 'https://www.googleapis.com/auth/drive.appdata');
+  eq(body.tokenStorage, 'session-memory-only');
+  const serialized = JSON.stringify(body).toLowerCase();
+  ok(!serialized.includes('client_secret') && !serialized.includes('refresh_token'), 'no confidential OAuth material is exposed');
+});
+
+test('[DOC-09] absent Google OAuth registration is reported as unconfigured, never as connected', async () => {
+  const kv = makeKV(); const worker = await loadWorker();
+  const env = { BACKUPS:kv, ADMIN_TOKEN:ADMIN };
+  const token = await seedDriver(worker, env);
+  const res = await worker.fetch(REQ('/drive/config', { headers:{ 'X-Backup-Token':token } }), env);
+  const body = await res.json();
+  eq(res.status, 200); eq(body.configured, false); eq(body.clientId, null);
+  eq(body.scope, 'https://www.googleapis.com/auth/drive.appdata');
+});
+
 export async function runSpec() { return run(); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
