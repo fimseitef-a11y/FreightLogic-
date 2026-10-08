@@ -61,8 +61,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | Top-level path | Owner | Notes |
 |---|---|---|
 | `cloud-backup-worker.js` | gpt | Existing Backup/API Worker source and operator-authorized audit remediation. Production cutover, service activation and live migration remain separate gates. |
-| `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
-| `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
+| `midwest-stack-config.json` | claude | TEMPORARY 2026-10-08 operator-reauthorized v24.5 Loads-lists slice (Airtable AUTOCTRL-20261008-CLAUDE-V245-ELI-01): release-marker bump to 24.0.62 only; returns to gpt when that PR merges. |
+| `midwest-stack-authority.js` | claude | TEMPORARY 2026-10-08 operator-reauthorized v24.5 Loads-lists slice (Airtable AUTOCTRL-20261008-CLAUDE-V245-ELI-01): release-marker bump to 24.0.62 only; returns to gpt when that PR merges. |
 | `voice-load.js` | gpt | Voice input module; carries a governed header version marker. |
 | `CLAUDE.md` | gpt | v24.0.32 long-haul source-candidate record landed in PR #317; historically restored to the former Claude lane; current owner is GPT. |
 | `FIELD_TEST_CHECKLIST.md` | gpt | v24.0.29 observed-production documentation reconciliation completed by PR #309; A1-A13 acceptance/results remain unchanged. |
@@ -72,8 +72,6 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `admin-console/` | gpt | Issue #231 additive separate-origin Admin Console subtree only; no Worker, driver-app, or deployment authority. |
 | `agent-runtime/` | gpt | AI Agents Phase A isolated internal Agent Worker/SQLite DO/privacy/router subtree only; production-dark, no existing Worker/PWA/economics/deployment authority. |
 | `eli-runtime/` | gpt | AIAG-TASK-0038 isolated ELI ingestion/scoring runtime and tests only; deterministic/provenance-bearing, no PWA/economics/release-file or production-deploy authority. |
-| `eli-runtime/airtable.mjs` | claude | TEMPORARY 2026-10-08 operator-reauthorized bounded task (Airtable AUTOCTRL-20261008-CLAUDE-V245-ELI-01): transient-failure retry for ELI ingestion only. Retires when the PR merges; falls back to the gpt `eli-runtime/` parent. |
-| `eli-runtime/tests/airtable-retry.test.mjs` | claude | TEMPORARY 2026-10-08: regression for the retry fix above; retires with it. |
 | `native-ios/` | gpt | Native product scope remains frozen. Operator-authorized audit remediation may fix existing bridge validation defects and tests; no new host/product capability, credentials, or physical-device certification claims. |
 | `.github/workflows/native-ios.yml` | gpt | Exact bounded workflow for native-ios SwiftPM/static validation only; no other `.github/` ownership transfer. |
 | `tests/integration/admin-console.spec.mjs` | gpt | Exact regression exception for the isolated #231 Admin Console contract only; no other `tests/` ownership transfer. |
@@ -114,6 +112,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `manifest.json` | SHARED | PWA/release + visual metadata; lock before editing. |
 | `modern-shell.js` | SHARED | Driver-facing structural navigation seam. Reuses canonical app renderers/state; lock before editing and run the full suite for behavior changes. |
 | `schemas/` | gpt | Data/contracts. |
+| `scripts/verify-cloudflare-parity.mjs` | claude | TEMPORARY 2026-10-08 operator-reauthorized v24.5 Loads-lists slice (Airtable AUTOCTRL-20261008-CLAUDE-V245-ELI-01): release-marker bump to 24.0.62 only; returns to gpt when that PR merges. |
+| `tests/integration/product-ia-slice-b.spec.mjs` | claude | TEMPORARY 2026-10-08: Loads-lists regression (UXIA-05 tab step, UXIA-06); returns to the gpt `tests/` parent when that PR merges. Assertions are added, never weakened. |
 | `scripts/` | gpt | Release/certification tooling and deploy-asset inventory. |
 | `service-worker.js` | SHARED | Offline shell/release-critical. Lock before editing; full suite required. |
 | `styles.css` | gpt | Operator-directed 2026-09-14 presentation takeover for the approved reference UI redesign. It carries **no version string** by design — `tests/unit/cache-generation.spec.mjs` CG-11 asserts the absence. |

@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.52 USA ENGINE
+/** FreightLogic v24.0.62 USA ENGINE
+ *  v24.0.62 "Loads Lists": the Loads decision inbox is organized as
+ *  New / Saved / Won / Passed / Market — filters over the existing PURSUE /
+ *  PASS dispositions and explicit lifecycle WON; Market opens Market Intel.
+ *  No new status authority; Pass still never becomes Lost.
  *  v24.0.52 "Unified Costs": Money owns one Costs hub and Add Cost chooser
  *  while Fuel, Maintenance, and Expense continue through their existing typed
  *  storage, edit/history, accounting, and deep-link contracts.
@@ -591,7 +595,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.61';
+const APP_VERSION = '24.0.62';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -20318,77 +20322,6 @@ window.addEventListener('offline', _updateOnlineStatus);
 // v18 FEATURE BLOCK — Features 2-5
 // ════════════════════════════════════════════════════════════════════════
 
-// ── F2: Quick Eval Flow ──────────────────────────────────────────────────
-function openQuickEvalFlow(){
-  const body = document.createElement('div');
-  body.innerHTML = `
-    <div style="text-align:center;padding:12px 0 4px">
-      <div style="font-size:40px;margin-bottom:8px">📸</div>
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Snap a load board screenshot</div>
-      <div class="muted" style="font-size:13px;line-height:1.5">Take a photo or pick from gallery — the app will scan for load details and score it instantly.</div>
-    </div>
-    <div class="btn-row" style="margin-top:20px;flex-direction:column;gap:10px">
-      <button class="btn primary" id="qeCamera" style="width:100%;font-size:15px;min-height:54px">📷 Take Photo</button>
-      <button class="btn" id="qeGallery" style="width:100%;font-size:15px;min-height:54px">🖼️ Choose from Gallery</button>
-    </div>
-    <input type="file" id="qeCameraInput" accept="image/*" capture="environment" style="display:none">
-    <input type="file" id="qeGalleryInput" accept="image/*" style="display:none">
-    <div id="qeStatus" style="display:none;margin-top:16px;text-align:center;padding:16px;background:var(--surface-0);border-radius:var(--r-sm)">
-      <div style="font-size:28px;margin-bottom:8px">⏳</div>
-      <div style="font-size:14px;font-weight:600" id="qeStatusMsg">Scanning load…</div>
-      <div class="muted" style="font-size:12px;margin-top:4px" id="qeStatusSub">Running OCR engine</div>
-    </div>`;
-  openModal('⚡ Quick Eval', body);
-
-  const setStatus = (icon, msg, sub='') => {
-    $('#qeStatus', body).style.display = '';
-    $('#qeStatus', body).querySelector('div').textContent = icon;
-    $('#qeStatusMsg', body).textContent = msg;
-    $('#qeStatusSub', body).textContent = sub;
-  };
-
-  async function processQuickEval(file){
-    if (!file || !file.type.startsWith('image/')){ toast('Please select an image', true); return; }
-    setStatus('⏳','Scanning load…','Loading OCR engine — first run may take a moment');
-    try {
-      const worker = await loadTesseract();
-      // Issue #220: this path never tested the result, so an absent engine
-      // surfaced as a TypeError on `worker.recognize` instead of an explanation.
-      if (!worker){ setStatus('❌','OCR not installed','Paste or dictate the load instead — see README.txt for the offline OCR engine'); return; }
-      setStatus('🔍','Scanning load…','Reading text from image');
-      const { data } = await worker.recognize(file);
-      const text = data.text || '';
-      if (!text.trim()){ setStatus('❌','No text found','Try a clearer photo with good lighting'); return; }
-      const parsed = parseLoadTextEnhanced(text);
-      const hasData = parsed.origin || parsed.destination || parsed.pay || parsed.loadedMiles;
-      closeModal();
-      // Navigate to evaluator and fill fields
-      location.hash = '#omega';
-      setTimeout(() => {
-        if (parsed.origin) { const el = $('#mwOrigin'); if (el) el.value = parsed.origin; }
-        if (parsed.destination) { const el = $('#mwDest'); if (el) el.value = parsed.destination; }
-        if (parsed.loadedMiles) { const el = $('#mwLoadedMi'); if (el) el.value = parsed.loadedMiles; }
-        if (parsed.deadheadMiles) { const el = $('#mwDeadMi'); if (el) el.value = parsed.deadheadMiles; }
-        if (parsed.pay) { const el = $('#mwRevenue'); if (el) el.value = parsed.pay; }
-        if (parsed.customer) { const el = $('#mwBroker'); if (el) el.value = parsed.customer; }
-        if (hasData){
-          try { mwEvaluateLoad(); } catch(e){ console.warn('[FL] auto-evaluate after scan failed:', e); }
-          toast('✓ Load scanned — verify fields and hit Evaluate');
-        } else {
-          toast('Scan complete — fill in any missing fields', false);
-        }
-      }, 80);
-    } catch(err){
-      setStatus('❌','Scan failed', String(err.message||err).slice(0,80));
-    }
-  }
-
-  $('#qeCamera', body).addEventListener('click', ()=>{ haptic(); $('#qeCameraInput', body).click(); });
-  $('#qeGallery', body).addEventListener('click', ()=>{ haptic(); $('#qeGalleryInput', body).click(); });
-  $('#qeCameraInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
-  $('#qeGalleryInput', body).addEventListener('change', e=>{ if (e.target.files[0]) processQuickEval(e.target.files[0]); });
-}
-
 // ── F3: Broker Intelligence Alerts ──────────────────────────────────────
 // NOTE: renamed from getBrokerIntel() — a second, unrelated top-level
 // getBrokerIntel() (the v24.0.0 bidHistory aggregator) was declared later in this
@@ -25263,6 +25196,24 @@ async function openLoadDecisionDetails(evidenceId){
   });
 }
 
+// v24.5 Loads organization: New / Saved / Won / Passed / Market. These are
+// filters over existing state only — no new status authority. Won is an
+// explicit lifecycle WON; Passed is an explicit PASS disposition (never Lost);
+// Saved is PURSUE; New is everything else still open. Market opens the
+// existing Market Intel route.
+const LOADS_INBOX_TABS = Object.freeze([
+  { id:'NEW', label:'New' }, { id:'SAVED', label:'Saved' }, { id:'WON', label:'Won' },
+  { id:'PASSED', label:'Passed' }, { id:'MARKET', label:'Market' },
+]);
+let _loadsInboxTab = 'NEW';
+
+function loadInboxBucket(lc, decision){
+  if (lc && lc.opportunity === 'WON') return 'WON';
+  if (decision === 'PASS') return 'PASSED';
+  if (decision === 'PURSUE') return 'SAVED';
+  return 'NEW';
+}
+
 async function renderLoadsDecisionInbox(){
   const host = $('#loadsDecisionInbox');
   if (!host) return;
@@ -25270,27 +25221,57 @@ async function renderLoadsDecisionInbox(){
     listEvidence(), listLifecycle(), _loadInboxDispositions(),
   ]);
   const lifecycleById = new Map((lifecycleRows || []).map(lc => [lc.lifecycleId, lc]));
-  const rows = (evidenceRows || [])
+  const allRows = (evidenceRows || [])
     .filter(ev => ev && ev.operationalClass !== 'DRY_RUN')
     .filter(ev => ev?.provenance?.sourceType !== 'HISTORY')
     .map(ev => ({ ev, lc: ev.lifecycleId ? lifecycleById.get(ev.lifecycleId) || null : null }))
     .filter(x => !x.lc || x.lc.execution === 'NOT_STARTED')
     .filter(x => !x.lc || ['SEEN','QUOTED','BID','WON'].includes(x.lc.opportunity))
+    .map(x => ({ ...x, bucket: loadInboxBucket(x.lc, dispositions?.[x.ev.evidenceId]?.decision || '') }))
     .sort((a,b) => finiteNum(b.ev.recordedAt,0) - finiteNum(a.ev.recordedAt,0));
 
   host.innerHTML = '';
-  if (!rows.length){
+  if (!allRows.length){
     host.innerHTML = '<div class="card" data-load-inbox-empty style="margin-bottom:12px"><div style="font-weight:800">Decision inbox</div><div class="muted" style="font-size:12px;margin-top:4px">No reviewed loads yet. Scan or paste a load to create a durable decision card.</div></div>';
     return;
   }
 
+  if (!LOADS_INBOX_TABS.some(t => t.id === _loadsInboxTab) || _loadsInboxTab === 'MARKET') _loadsInboxTab = 'NEW';
+  const counts = { NEW:0, SAVED:0, WON:0, PASSED:0 };
+  for (const x of allRows) counts[x.bucket] += 1;
+  const rows = allRows.filter(x => x.bucket === _loadsInboxTab);
+
   const heading = document.createElement('div');
   heading.className = 'card';
   heading.style.cssText = 'margin-bottom:8px;padding:12px 14px';
-  heading.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Decision inbox</b><span class="muted" style="font-size:11px">' + rows.length + ' open</span></div><div class="muted" style="font-size:11px;margin-top:3px">Observed facts stay separate from lifecycle outcomes. Pass never becomes Lost.</div>';
+  const tabs = LOADS_INBOX_TABS.map(t => {
+    const sel = t.id === _loadsInboxTab;
+    const n = t.id === 'MARKET' ? '' : ' <span style="opacity:.75">' + counts[t.id] + '</span>';
+    return '<button type="button" role="tab" class="btn' + (sel ? ' primary' : '') + '" data-load-tab="' + t.id + '" aria-selected="' + (sel ? 'true' : 'false') + '" style="min-height:44px;padding:0 10px;font-size:12px;white-space:nowrap">' + escapeHtml(t.label) + n + '</button>';
+  }).join('');
+  heading.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>Decision inbox</b><span class="muted" style="font-size:11px">' + allRows.length + ' open</span></div>' +
+    '<div role="tablist" aria-label="Load lists" data-load-tabs style="display:flex;gap:6px;overflow-x:auto;margin-top:8px;-webkit-overflow-scrolling:touch">' + tabs + '</div>' +
+    '<div class="muted" style="font-size:11px;margin-top:6px">Observed facts stay separate from lifecycle outcomes. Pass never becomes Lost.</div>';
   host.appendChild(heading);
+  heading.querySelectorAll('[data-load-tab]').forEach(btn => btn.addEventListener('click', async () => {
+    haptic(6);
+    const id = btn.getAttribute('data-load-tab');
+    if (id === 'MARKET') { location.hash = '#intel'; return; }
+    _loadsInboxTab = id;
+    await renderLoadsDecisionInbox();
+  }));
 
-  for (const {ev,lc} of rows){
+  if (!rows.length){
+    const label = (LOADS_INBOX_TABS.find(t => t.id === _loadsInboxTab) || {}).label || '';
+    const empty = document.createElement('div');
+    empty.className = 'card';
+    empty.setAttribute('data-load-tab-empty', _loadsInboxTab);
+    empty.style.cssText = 'margin-bottom:10px;padding:14px';
+    empty.innerHTML = '<div class="muted" style="font-size:12px">No ' + escapeHtml(label.toLowerCase()) + ' loads.</div>';
+    host.appendChild(empty);
+  }
+
+  for (const {ev,lc,bucket} of rows){
     const p = await buildLoadDecisionProjection(ev, lc);
     const loaded = knownNum(ev.loadedMi);
     const dead = knownNum(ev.deadMi);
@@ -25317,6 +25298,7 @@ async function renderLoadsDecisionInbox(){
     const card = document.createElement('article');
     card.className = 'card';
     card.setAttribute('data-load-decision-card','');
+    card.setAttribute('data-load-bucket', bucket);
     card.setAttribute('data-evidence-id', ev.evidenceId);
     card.setAttribute('data-true-rpm', trueRPM === null ? '' : String(trueRPM));
     card.setAttribute('data-grade', grade);
