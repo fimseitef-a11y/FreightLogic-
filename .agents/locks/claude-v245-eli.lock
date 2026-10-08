@@ -1,6 +1,0 @@
-owner: claude
-token: 1a0de2ea-6430-4f39-b001-40752621f4ae
-started_utc: 2026-10-08T12:01:00Z
-expected_release_utc: 2026-10-08T20:20:00Z
-paths: .agents/LANES.md, app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js
-task: Operator-reauthorized (AUTOCTRL-20261008-CLAUDE-V245-ELI-01): bounded LANES grant for ELI airtable retry fix + v24.5 redesign Loads New/Saved/Won/Passed/Market slice.
