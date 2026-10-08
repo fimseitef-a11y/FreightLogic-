@@ -1,6 +1,0 @@
-owner: gpt
-token: c0b8e377-686a-4c86-a45c-d3174d61f3bb
-started_utc: 2026-10-06T21:04:00Z
-expected_release_utc: 2026-10-07T03:04:00Z
-paths: app.js, index.html, manifest.json, service-worker.js, sw-bridge.js, modern-shell.js
-task: Finish the pre-iPhone Drive backup, document Review Import, bounded document-agent roles, and governed v24.0.62 integration.
