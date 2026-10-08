@@ -72,6 +72,8 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 | `admin-console/` | gpt | Issue #231 additive separate-origin Admin Console subtree only; no Worker, driver-app, or deployment authority. |
 | `agent-runtime/` | gpt | AI Agents Phase A isolated internal Agent Worker/SQLite DO/privacy/router subtree only; production-dark, no existing Worker/PWA/economics/deployment authority. |
 | `eli-runtime/` | gpt | AIAG-TASK-0038 isolated ELI ingestion/scoring runtime and tests only; deterministic/provenance-bearing, no PWA/economics/release-file or production-deploy authority. |
+| `eli-runtime/airtable.mjs` | claude | TEMPORARY 2026-10-08 operator-reauthorized bounded task (Airtable AUTOCTRL-20261008-CLAUDE-V245-ELI-01): transient-failure retry for ELI ingestion only. Retires when the PR merges; falls back to the gpt `eli-runtime/` parent. |
+| `eli-runtime/tests/airtable-retry.test.mjs` | claude | TEMPORARY 2026-10-08: regression for the retry fix above; retires with it. |
 | `native-ios/` | gpt | Native product scope remains frozen. Operator-authorized audit remediation may fix existing bridge validation defects and tests; no new host/product capability, credentials, or physical-device certification claims. |
 | `.github/workflows/native-ios.yml` | gpt | Exact bounded workflow for native-ios SwiftPM/static validation only; no other `.github/` ownership transfer. |
 | `tests/integration/admin-console.spec.mjs` | gpt | Exact regression exception for the isolated #231 Admin Console contract only; no other `tests/` ownership transfer. |
