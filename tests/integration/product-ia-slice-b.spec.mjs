@@ -115,6 +115,9 @@ test('[UXIA-05] Pursue/Pass are reversible inbox dispositions and do not manufac
     const id=res.evidence.evidenceId;
     await app.page.click(`[data-load-pursue="${id}"]`);
     await sleep(250);
+    // v24.0.62: a pursued load moves to the Saved list.
+    await app.page.click('[data-load-tab="SAVED"]');
+    await sleep(250);
     await app.page.click(`[data-load-pass="${id}"]`);
     await sleep(350);
     const state=await app.page.evaluate(async ({id,lcid}) => {
@@ -176,6 +179,45 @@ test('[UXIA-04] Open Details delegates to the existing canonical evaluator surfa
     eq(s.origin,'Chicago, IL','route facts must survive into canonical details');
     ok(/True RPM|Grade|PREMIUM|ACCEPT|CONDITIONAL|NEGOTIATE|STRATEGIC|REJECT/i.test(s.out),
       'Load Details must render through the existing canonical evaluator output');
+  } finally { await app.close(); }
+});
+
+test('[UXIA-06] Loads lists New/Saved/Won/Passed filter existing state and Market opens Market Intel', async () => {
+  const app=await boot();
+  try{
+    const mk = (n, extra={}) => seed(app.page, {
+      orderNo:'UXIA-06-'+n, broker:'Fixture Broker', origin:'Chicago, IL', destination:'Detroit, MI',
+      loadedMi:280, deadMi:20, mileageSemantic:'LOADED_MILES', amount:600, priceSemantic:'CARRIER_PAYOUT', ...extra,
+    });
+    const a=(await mk('A')).evidence.evidenceId, b=(await mk('B')).evidence.evidenceId;
+    const c=(await mk('C')).evidence.evidenceId, d=(await mk('D')).evidence.evidenceId;
+    await app.page.evaluate(() => { location.hash='#loads'; });
+    await sleep(850);
+    const tabsOf = () => app.page.evaluate(() => [...document.querySelectorAll('[data-load-tab]')]
+      .map(b => ({ id:b.getAttribute('data-load-tab'), sel:b.getAttribute('aria-selected'), text:b.innerText.replace(/\s+/g,' ').trim(), h:b.getBoundingClientRect().height })));
+    let tabs=await tabsOf();
+    eq(tabs.map(t=>t.id).join(','),'NEW,SAVED,WON,PASSED,MARKET','Loads lists must be New / Saved / Won / Passed / Market in that order');
+    eq(tabs.find(t=>t.sel==='true')?.id,'NEW','New is the default list');
+    ok(tabs.every(t=>t.h>=44),'every list tab must be a 44px touch target');
+    const visible = () => app.page.evaluate(() => [...document.querySelectorAll('[data-load-decision-card]')].map(c => c.getAttribute('data-evidence-id')));
+    let v=await visible();
+    ok([a,b,c,d].every(id => v.includes(id)),'undecided loads are New');
+    await app.page.click(`[data-load-pursue="${a}"]`); await sleep(300);
+    await app.page.click(`[data-load-pass="${b}"]`); await sleep(300);
+    await app.page.click(`[data-load-award="${c}"]`); await sleep(500);
+    v=await visible();
+    eq(v.join(','), d, 'only the undecided load stays in New');
+    tabs=await tabsOf();
+    ok(/New 1/.test(tabs[0].text) && /Saved 1/.test(tabs[1].text) && /Won 1/.test(tabs[2].text) && /Passed 1/.test(tabs[3].text),'each list shows its count: '+tabs.map(t=>t.text).join('|'));
+    for (const [tab,id] of [['SAVED',a],['PASSED',b],['WON',c]]){
+      await app.page.click(`[data-load-tab="${tab}"]`); await sleep(300);
+      eq((await visible()).join(','), id, tab+' must show exactly its load');
+    }
+    const passLc=await app.page.evaluate(async id => { const T=window.__FL_TESTS; const ev=await T.getEvidence(id); return (await T.getLifecycle(ev.lifecycleId)).opportunity; }, b);
+    eq(passLc,'SEEN','the Passed list is a disposition filter; it must never record Lost');
+    await app.page.click('[data-load-tab="MARKET"]');
+    await app.page.waitForFunction(() => location.hash==='#intel', null, {timeout:5000});
+    ok(true,'Market opens the existing Market Intel route');
   } finally { await app.close(); }
 });
 
