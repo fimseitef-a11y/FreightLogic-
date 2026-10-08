@@ -1,0 +1,6 @@
+owner: claude
+token: a0a01247-a0b7-40b8-bb67-dab1bd96d388
+started_utc: 2026-10-08T13:21:00Z
+expected_release_utc: 2026-10-08T16:21:00Z
+paths: app.js
+task: Operator-directed takeover of PR #470 (v24.0.62 Loads lists): remove dead openQuickEvalFlow so app.js gzip is under the 409,600-byte ceiling (owner chose option 1); full suite; push to claude/v245-loads-tabs.
