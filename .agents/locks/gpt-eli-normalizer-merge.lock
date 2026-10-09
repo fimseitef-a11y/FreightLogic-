@@ -1,6 +1,0 @@
-owner: gpt
-token: 0f0ea976-a8c5-46ad-a808-ecc45bff7ea4
-started_utc: 2026-10-09T04:05:04.855Z
-expected_release_utc: 2026-10-09T05:05:04.855Z
-paths: .agents/STATUS.md, .agents/TEST_LEDGER.md, .agents/inbox/gpt-eli-normalizer-pr472-takeover-2026-10-09.md
-task: Explicitly approved merge of PR #473 and exact-main verification; ELI deploy/rebuild held.
