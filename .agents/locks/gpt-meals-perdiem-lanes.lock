@@ -1,0 +1,6 @@
+owner: gpt
+token: gpt-20261009154342939
+started_utc: 2026-10-09T15:43:42.939Z
+expected_release_utc: 2026-10-09T16:28:42.939Z
+paths: .agents/LANES.md
+task: Correct PR 477 ownership lane grant with compliant session lock
