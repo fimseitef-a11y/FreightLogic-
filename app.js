@@ -1,7 +1,9 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.64 USA ENGINE
+/** FreightLogic v24.0.65 USA ENGINE
+ *  v24.0.65 "Load Detail": Loads Details opens a read-only sheet over the
+ *  card's own projection (warnings first; Pass / Evaluate); no new math.
  *  v24.0.64 "Meals Once": per diem replaces logged meals (no double count);
  *  without per diem, meals deduct at Sec 274(n) %. Setup wizard no longer
  *  replaces an open screen (DXI flake root cause). Dead code removed.
@@ -599,7 +601,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.64';
+const APP_VERSION = '24.0.65';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -24928,7 +24930,66 @@ async function _setLoadInboxOpportunity(evidenceId, opportunity){
   return saved;
 }
 
+// v24.5 Load Detail (UI_BRIEF §6.3). A read-only sheet over the SAME projection
+// the Loads card uses: it computes no economics, keeps Unknown as Unknown, and
+// puts warnings first. Evaluate hands off to the canonical evaluator; Pass is a
+// disposition and never a lifecycle loss. No map tiles: Maps is a handoff.
 async function openLoadDecisionDetails(evidenceId){
+  const ev = await getEvidence(evidenceId);
+  if (!ev) throw new Error('Load evidence is unavailable.');
+  const lc = ev.lifecycleId ? await getLifecycle(ev.lifecycleId) : null;
+  const p = await buildLoadDecisionProjection(ev, lc);
+  const passed = ((await _loadInboxDispositions())?.[ev.evidenceId]?.decision || '') === 'PASS';
+  const h = escapeHtml, U = 'Unknown';
+  const loaded = knownNum(ev.loadedMi), dead = knownNum(ev.deadMi);
+  const all = loaded !== null && dead !== null ? loaded + dead : null;
+  const amount = knownNum(ev.amount), payout = knownNum(ev.canonicalRevenue) !== null;
+  const rpm = p.economics?.available ? p.economics.trueRPM : null;
+  const g = p.grade || {};
+  const warns = [];
+  if (loaded === null) warns.push('Loaded miles are unknown.');
+  if (dead === null) warns.push('Deadhead is unknown, so True RPM and grade are not calculated.');
+  if (amount === null) warns.push('No rate was observed.');
+  else if (!payout) warns.push('The observed amount is not proven carrier payout.');
+  if (!lc) warns.push('No safe lifecycle link exists yet for this load.');
+  const tier = (c) => {
+    const k = String(c || '').trim() ? classifyPositionMarket(c) : { known:false };
+    return !k.known ? 'not a recognised market' : k.tier === 'TIER1' ? 'Tier 1 market' : k.tier === 'TIER2' ? 'Tier 2 market' : k.tier === 'TRAP' ? 'trap market' : 'outside Tier 1/2';
+  };
+  const facts = [];
+  if (g.known) facts.push('Grade ' + g.grade + ': ' + g.gradeLabel);
+  if (all) facts.push('Deadhead is ' + Math.round(dead / all * 100) + '% of all miles');
+  facts.push('Origin: ' + tier(ev.origin) + '. Destination: ' + tier(ev.destination) + ' (static classification)');
+  if (p.twoBid?.available) facts.push('Baseline bid ' + fmtMoney(p.twoBid.baseline) + ', recommended ' + fmtMoney(p.twoBid.recommended) + (p.twoBid.evidence === 'LIMITED' ? ' (limited market evidence)' : ''));
+  const mi = (label, v) => '<div><b style="font-size:18px;font-family:var(--font-mono)">' + (v === null ? U : h(String(v)) + ' mi') + '</b><div class="muted" style="font-size:11px">' + label + '</div></div>';
+  const box = 'border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px';
+  const body = document.createElement('div');
+  body.setAttribute('data-load-detail', ev.evidenceId);
+  body.innerHTML =
+    (warns.length ? '<div data-ld-warn role="alert" style="' + box + ';border-color:var(--warn);color:var(--warn);font-size:12px">' + warns.map(w => '<div>⚠ ' + h(w) + '</div>').join('') + '</div>' : '') +
+    '<div data-ld-status style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;margin-bottom:8px"><span class="pill">' + h(lc ? lifecycleDisplayStage(lc) : (ev.linkState === 'UNRESOLVED' ? 'UNRESOLVED' : 'UNLINKED')) + (passed ? ' · PASSED' : '') + '</span><span class="muted">' + h(ev.provenance?.sourceName || ev.provenance?.sourceType || 'Source unknown') + ' · recorded ' + h(_timeAgoShort(finiteNum(ev.recordedAt, Date.now()))) + '</span></div>' +
+    '<div data-ld-lane style="' + box + '"><div style="font-size:20px;font-weight:800;line-height:1.25">' + h(ev.origin || 'Origin ' + U) + '<br>→ ' + h(ev.destination || 'Destination ' + U) + '</div><div class="muted" style="font-size:11px;margin-top:4px">' + h(ev.orderNo ? '#' + ev.orderNo + ' · ' : '') + h(ev.brokerDisplay || ev.broker || 'Broker ' + U) + '</div>' +
+      '<div data-ld-miles data-loaded="' + (loaded ?? '') + '" data-dead="' + (dead ?? '') + '" data-all="' + (all ?? '') + '" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">' + mi('loaded', loaded) + mi('deadhead', dead) + mi('all miles', all) + '</div>' +
+      '<div data-ld-rate data-true-rpm="' + (rpm ?? '') + '" data-grade="' + h(g.grade || '?') + '" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px"><div><div style="font-size:30px;font-weight:800;font-family:var(--font-mono)">' + (amount === null ? U : h(fmtMoney(amount))) + '</div><div class="muted" style="font-size:11px">' + (amount === null ? 'No rate observed' : payout ? 'Carrier payout' : 'Observed amount, not proven payout') + '</div><div style="font-size:13px;font-weight:700;margin-top:4px">' + (rpm === null ? 'True RPM unavailable' : '$' + rpm.toFixed(2) + ' / all mi') + '</div></div><div aria-label="Grade ' + h(g.grade || U) + '" style="font-size:34px;font-weight:800;color:' + (g.gradeColor || 'var(--text-tertiary)') + '">' + h(g.grade || '?') + '</div></div></div>' +
+    '<div data-ld-timing style="' + box + ';font-size:13px"><div>Pickup <b>' + h((ev.pickupAt || U).replace('T', ' ')) + '</b></div><div style="margin-top:4px">Delivery <b>' + h((ev.deliveryAt || U).replace('T', ' ')) + '</b></div>' + (ev.destination ? '<button type="button" class="btn" data-ld-nav style="min-height:44px;margin-top:10px;width:100%">Open route in Maps</button>' : '') + '</div>' +
+    '<div data-ld-facts style="' + box + ';font-size:12px"><b>What the numbers say</b><ul style="margin:8px 0 0;padding-left:18px">' + facts.map(f => '<li style="margin-top:3px">' + h(f) + '</li>').join('') + '</ul></div>' +
+    '<div data-ld-actions style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px"><button type="button" class="btn" data-ld-pass style="min-height:48px"' + (passed ? ' disabled' : '') + '>Pass</button><button type="button" class="btn primary" data-ld-eval style="min-height:48px">Evaluate</button></div>';
+  $('[data-ld-nav]', body)?.addEventListener('click', () => openTripNavigation({ origin: ev.origin, destination: ev.destination }));
+  $('[data-ld-pass]', body).addEventListener('click', async () => {
+    haptic(8);
+    await _setLoadInboxDisposition(ev.evidenceId, 'PASS');
+    closeModal();
+    await renderLoadsDecisionInbox();
+    toast('Passed. Not recorded as lost.');
+  });
+  $('[data-ld-eval]', body).addEventListener('click', async () => {
+    haptic(8); closeModal();
+    try { await evaluateLoadFromEvidence(ev.evidenceId); } catch (err) { toast(err?.message || 'Could not open the evaluator.', true); }
+  });
+  openModal('Load Detail', body);
+}
+
+async function evaluateLoadFromEvidence(evidenceId){
   const ev = await getEvidence(evidenceId);
   if (!ev) throw new Error('Load evidence is unavailable.');
   const observed = knownNum(ev.canonicalRevenue) ?? knownNum(ev.amount);

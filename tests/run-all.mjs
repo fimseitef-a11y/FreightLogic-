@@ -56,6 +56,7 @@ import { runSpec as productIASliceB } from './integration/product-ia-slice-b.spe
 import { runSpec as productIASliceC } from './integration/product-ia-slice-c.spec.mjs';
 import { runSpec as productIASliceD } from './integration/product-ia-slice-d.spec.mjs';
 import { runSpec as addExpenseForm } from './integration/add-expense-form.spec.mjs';
+import { runSpec as loadDetail } from './integration/load-detail.spec.mjs';
 import { runSpec as mealsPerDiem } from './integration/meals-per-diem.spec.mjs';
 import { runSpec as uxIAA2Z } from './integration/ux-ia-a2z.spec.mjs';
 import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
@@ -201,6 +202,7 @@ const specs = [
   productIASliceD,
   addExpenseForm,
   mealsPerDiem,
+  loadDetail,
   uxIAA2Z,
   screenshotIntake,
   shortcutsDeepLinks,
