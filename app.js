@@ -1,7 +1,11 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.62 USA ENGINE
+/** FreightLogic v24.0.63 USA ENGINE
+ *  v24.0.63 "Add Expense": the v24.5 form-pattern benchmark — large amount
+ *  first, one-tap category tiles (existing #catList values, so tax bucketing
+ *  is unchanged), date, notes, one full-width Save. Fuel in Add mode hands
+ *  off to the typed fuel form. All element IDs are unchanged.
  *  v24.0.62 "Loads Lists": the Loads decision inbox is organized as
  *  New / Saved / Won / Passed / Market — filters over the existing PURSUE /
  *  PASS dispositions and explicit lifecycle WON; Market opens Market Intel.
@@ -595,7 +599,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.62';
+const APP_VERSION = '24.0.63';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -15531,6 +15535,18 @@ function openAddCostChooser(){
   openModal('Add Cost',body);
 }
 
+// v24.5 §6.9 Add Expense tiles. Each value is an existing #catList entry.
+const EXPENSE_FORM_TILES = Object.freeze([
+  { cat:'Fuel', label:'Fuel', icon:'⛽' },
+  { cat:'Tolls', label:'Tolls', icon:'🛣️' },
+  { cat:'Repairs & Maintenance', label:'Repairs', icon:'🔧' },
+  { cat:'Parking', label:'Parking', icon:'🅿️' },
+  { cat:'Supplies', label:'Supplies', icon:'📦' },
+  { cat:'Tires', label:'Tires', icon:'🛞' },
+  { cat:'Oil Change', label:'Oil Change', icon:'🛢️' },
+  { cat:'Other', label:'Other', icon:'•••' },
+]);
+
 // P1-6: expense form with category autocomplete
 function openExpenseForm(existing=null, prefill=null){
   const mode = existing ? 'edit' : 'add';
@@ -15538,18 +15554,47 @@ function openExpenseForm(existing=null, prefill=null){
   // is never an edit, so it can never show Delete or overwrite a record.
   const e = existing ? {...existing} : { date:isoDate(), amount:0, category:'', notes:'', type:'expense', ...(prefill || {}) };
   const body = document.createElement('div');
-  body.innerHTML = `<div class="card" style="border:0;box-shadow:none;background:transparent;padding:0">
-    <label>Date</label><input id="f_date" type="date" />
-    <label>Amount $</label><input id="f_amt" type="number" step="0.01" placeholder="0.00" />
-    <label>Category</label><input id="f_cat" list="catList" placeholder="e.g., Fuel, Tolls..." />
-    <label>Notes</label><input id="f_notes" placeholder="Optional" />
-    <div class="btn-row" style="margin-top:12px"><button class="btn primary" id="f_save">Save</button>
-      ${mode==='edit'?'<button class="btn danger" id="f_del">Delete</button>':''}</div>
-    <div class="muted" id="f_hint" style="font-size:12px;margin-top:10px"></div></div>`;
+  // v24.5 §6.9: the form-pattern benchmark — amount first, one-tap categories,
+  // date, notes, one prominent Save. IDs are unchanged. Tile values are the
+  // existing #catList texts, so the X-03 tax bucketing below is unaffected.
+  body.innerHTML = `<div class="xf">
+    <label class="xf-amount"><span class="xf-currency" aria-hidden="true">$</span>
+      <input id="f_amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" aria-label="Amount in dollars" /></label>
+    <div class="xf-cats" role="group" aria-label="Category">
+      ${EXPENSE_FORM_TILES.map(t => `<button type="button" class="xf-cat" data-xf-cat="${escapeHtml(t.cat)}" aria-pressed="false"><span class="xf-cat-icon" aria-hidden="true">${t.icon}</span><span>${escapeHtml(t.label)}</span></button>`).join('')}
+    </div>
+    <label class="xf-label" for="f_cat">Category</label><input id="f_cat" list="catList" placeholder="Pick above or type, e.g. Cargo Insurance" />
+    <label class="xf-label" for="f_date">Date</label><input id="f_date" type="date" />
+    <label class="xf-label" for="f_notes">Notes</label><input id="f_notes" placeholder="Optional — e.g. Pilot, Detroit MI" />
+    <div class="muted xf-hint" id="f_hint"></div>
+    <button class="btn primary xf-save" id="f_save">Save Expense</button>
+    ${mode==='edit'?'<button class="btn danger xf-del" id="f_del">Delete</button>':''}</div>`;
   $('#f_date', body).value = e.date || isoDate();
   $('#f_amt', body).value = e.amount || '';
   $('#f_cat', body).value = e.category || '';
   $('#f_notes', body).value = e.notes || '';
+  const catInput = $('#f_cat', body);
+  const syncTiles = () => {
+    const cur = catInput.value.trim().toLowerCase();
+    body.querySelectorAll('[data-xf-cat]').forEach(btn => {
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-xf-cat').toLowerCase() === cur));
+    });
+  };
+  catInput.addEventListener('input', syncTiles);
+  body.querySelectorAll('[data-xf-cat]').forEach(btn => btn.addEventListener('click', ()=>{
+    const cat = btn.getAttribute('data-xf-cat');
+    haptic(8);
+    // Slice C: a new fuel purchase belongs in the typed fuel store. Editing an
+    // existing expense only re-labels it, never moves it.
+    if (cat === 'Fuel' && mode === 'add'){
+      const amt = Number($('#f_amt', body).value || 0);
+      closeModal();
+      setTimeout(()=> openFuelForm(null, amt > 0 ? { amount: amt } : null), 80);
+      return;
+    }
+    catInput.value = cat; syncTiles();
+  }));
+  syncTiles();
 
   function validate(){ const hint = $('#f_hint', body); const amt = Number($('#f_amt', body).value||0);
     if (!(amt > 0)){ hint.textContent = 'Amount must be > 0.'; return false; } hint.textContent = ''; return true; }
