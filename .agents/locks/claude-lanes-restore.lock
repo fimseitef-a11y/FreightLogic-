@@ -1,6 +1,0 @@
-owner: claude
-token: 718536f2-0054-41f4-9f23-dc3749bf2496
-started_utc: 2026-10-08T13:35:00Z
-expected_release_utc: 2026-10-08T15:35:00Z
-paths: .agents/LANES.md
-task: Return the PR #470 temporary claude LANES rows (midwest-stack-config.json, midwest-stack-authority.js, scripts/verify-cloudflare-parity.mjs, tests/integration/product-ia-slice-b.spec.mjs) to gpt now that #470 merged (49099b3).
