@@ -1,6 +1,0 @@
-owner: claude
-token: aa7ad4da-31d0-4add-81d2-606592ef22d8
-started_utc: 2026-10-09T14:57:26Z
-expected_release_utc: 2026-10-09T17:57:26Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Owner-directed 2026-10-09 ("fix it"): F30/tax meals vs per-diem double count across all five tax surfaces + 24.0.64 release markers. PR only; merge/deploy are owner gates.
