@@ -15596,8 +15596,13 @@ function openExpenseForm(existing=null, prefill=null){
   }));
   syncTiles();
 
+  const AMOUNT_ERR = 'Amount must be > 0.';
   function validate(){ const hint = $('#f_hint', body); const amt = Number($('#f_amt', body).value||0);
-    if (!(amt > 0)){ hint.textContent = 'Amount must be > 0.'; return false; } hint.textContent = ''; return true; }
+    if (!(amt > 0)){ hint.textContent = AMOUNT_ERR; return false; }
+    if (hint.textContent === AMOUNT_ERR) hint.textContent = '';
+    return true; }
+  // v24.5: no error before the driver has typed; re-check as they type.
+  $('#f_amt', body).addEventListener('input', validate);
 
   $('#f_save', body).addEventListener('click', async ()=>{
     if (!validate()){ toast('Fix required fields', true); return; }
@@ -15641,7 +15646,7 @@ function openExpenseForm(existing=null, prefill=null){
       );
     });
   }
-  openModal(mode==='add' ? 'Add Expense' : 'Edit Expense', body); validate();
+  openModal(mode==='add' ? 'Add Expense' : 'Edit Expense', body);
   // v21 T1B: Smart category suggestion — wire after modal opens
   if (mode === 'add'){
     buildCategorySuggestionMap().then(suggMap => {
@@ -15658,7 +15663,7 @@ function openExpenseForm(existing=null, prefill=null){
           if ((key.startsWith(k) || k.startsWith(key)) && k.length > bestLen){ best = v; bestLen = k.length; }
         }
         if (best && !catEl.value){
-          catEl.value = best.category;
+          catEl.value = best.category; syncTiles();
           if (hint) hint.innerHTML = `<span style="color:var(--good)">Auto: ${escapeHtml(best.category)}</span> — based on your history`;
         }
       });
@@ -15670,7 +15675,7 @@ function openExpenseForm(existing=null, prefill=null){
       if (cnt === 0){
         const tip = document.createElement('div');
         tip.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);margin-bottom:12px;font-size:12px';
-        tip.innerHTML = '💡 <b>Tip:</b> Pick a category from the dropdown (Fuel, Tolls, Insurance, etc.) — your tax export groups them automatically.';
+        tip.innerHTML = '💡 <b>Tip:</b> Tap a category below, or type one (e.g. Cargo Insurance) — your tax export groups them automatically.';
         body.insertBefore(tip, body.firstChild);
       }
     }).catch(()=>{});

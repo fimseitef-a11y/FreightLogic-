@@ -137,6 +137,25 @@ test('[AE-05] Edit keeps the same layout, preselects the saved category, and the
   } finally { await app.close(); }
 });
 
+test('[AE-06] no error on open; the amount error appears only for a bad amount and clears when fixed; Save still refuses it', async () => {
+  const app = await boot();
+  try {
+    const before = await expenseCount(app.page);
+    await openAddExpense(app.page);
+    const hint = () => app.page.evaluate(() => document.getElementById('f_hint').textContent.trim());
+    eq(await hint(), '', 'a fresh form shows no error');
+    await app.page.fill('#f_amt', '0');
+    eq(await hint(), 'Amount must be > 0.');
+    await app.page.fill('#f_amt', '9.99');
+    eq(await hint(), '', 'a valid amount clears the error');
+    await app.page.fill('#f_amt', '');
+    await app.page.click('#f_save');
+    await sleep(300);
+    ok(await app.page.evaluate(() => !!document.getElementById('f_amt')), 'Save with no amount keeps the form open');
+    eq(await expenseCount(app.page), before, 'nothing is written without an amount');
+  } finally { await app.close(); }
+});
+
 export async function runSpec(){
   const r = await run();
   return r;
