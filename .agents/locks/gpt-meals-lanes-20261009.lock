@@ -1,0 +1,6 @@
+owner: gpt
+token: gpt20261009155742050
+started_utc: 2026-10-09T15:57:42.050Z
+expected_release_utc: 2026-10-09T16:47:42.050Z
+paths: .agents/LANES.md
+task: grant five temporary Claude paths after PR474 merge
