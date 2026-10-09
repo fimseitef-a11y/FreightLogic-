@@ -1,0 +1,6 @@
+owner: claude
+token: 9dc5b109-ebe7-4af3-b4e6-f322741786ec
+started_utc: 2026-10-09T04:55:56Z
+expected_release_utc: 2026-10-09T07:55:56Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: PR #474 (v24.5 Add Expense) CI fix: app.js gzip over the performance-budget ceiling; compact the new code and remove provably dead renderQuickEvalCard. PR only.
