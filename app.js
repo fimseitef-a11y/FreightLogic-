@@ -2,10 +2,7 @@
 'use strict';
 
 /** FreightLogic v24.0.63 USA ENGINE
- *  v24.0.63 "Add Expense": the v24.5 form-pattern benchmark — large amount
- *  first, one-tap category tiles (existing #catList values, so tax bucketing
- *  is unchanged), date, notes, one full-width Save. Fuel in Add mode hands
- *  off to the typed fuel form. All element IDs are unchanged.
+ *  v24.0.63 "Add Expense": v24.5 form benchmark (amount, tiles, Save).
  *  v24.0.62 "Loads Lists": the Loads decision inbox is organized as
  *  New / Saved / Won / Passed / Market — filters over the existing PURSUE /
  *  PASS dispositions and explicit lifecycle WON; Market opens Market Intel.
@@ -6819,17 +6816,6 @@ async function renderPositionContextBanner(){
   } catch(e){ slot.style.display = 'none'; }
 }
 
-// ---- Home: Quick Evaluate button ----
-async function renderQuickEvalCard(){
-  const slot = $('#homeQuickEvalCard');
-  if (!slot) return;
-  slot.innerHTML = `<button id="homeQuickEvalBtn" style="width:100%;min-height:52px;border-radius:var(--r);background:linear-gradient(135deg,rgba(240,168,0,0.15),rgba(240,168,0,0.08));border:1.5px solid var(--accent-border);color:var(--accent-text);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:.2px" aria-label="Evaluate a load">
-    <span style="font-size:22px">⚡</span> Evaluate Load
-  </button>`;
-  slot.style.display = '';
-  const btn = $('#homeQuickEvalBtn');
-  if (btn) btn.addEventListener('click', ()=>{ haptic(15); openQuickEvalModal(); });
-}
 
 function openQuickEvalModal(){
   const body = document.createElement('div');
@@ -15535,17 +15521,8 @@ function openAddCostChooser(){
   openModal('Add Cost',body);
 }
 
-// v24.5 §6.9 Add Expense tiles. Each value is an existing #catList entry.
-const EXPENSE_FORM_TILES = Object.freeze([
-  { cat:'Fuel', label:'Fuel', icon:'⛽' },
-  { cat:'Tolls', label:'Tolls', icon:'🛣️' },
-  { cat:'Repairs & Maintenance', label:'Repairs', icon:'🔧' },
-  { cat:'Parking', label:'Parking', icon:'🅿️' },
-  { cat:'Supplies', label:'Supplies', icon:'📦' },
-  { cat:'Tires', label:'Tires', icon:'🛞' },
-  { cat:'Oil Change', label:'Oil Change', icon:'🛢️' },
-  { cat:'Other', label:'Other', icon:'•••' },
-]);
+// v24.5 §6.9 tiles: existing #catList values.
+const EXPENSE_FORM_TILES = [['Fuel','⛽'],['Tolls','🛣️'],['Repairs & Maintenance','🔧'],['Parking','🅿️'],['Supplies','📦'],['Tires','🛞'],['Oil Change','🛢️'],['Other','•••']];
 
 // P1-6: expense form with category autocomplete
 function openExpenseForm(existing=null, prefill=null){
@@ -15554,46 +15531,19 @@ function openExpenseForm(existing=null, prefill=null){
   // is never an edit, so it can never show Delete or overwrite a record.
   const e = existing ? {...existing} : { date:isoDate(), amount:0, category:'', notes:'', type:'expense', ...(prefill || {}) };
   const body = document.createElement('div');
-  // v24.5 §6.9: the form-pattern benchmark — amount first, one-tap categories,
-  // date, notes, one prominent Save. IDs are unchanged. Tile values are the
-  // existing #catList texts, so the X-03 tax bucketing below is unaffected.
-  body.innerHTML = `<div class="xf">
-    <label class="xf-amount"><span class="xf-currency" aria-hidden="true">$</span>
-      <input id="f_amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" aria-label="Amount in dollars" /></label>
-    <div class="xf-cats" role="group" aria-label="Category">
-      ${EXPENSE_FORM_TILES.map(t => `<button type="button" class="xf-cat" data-xf-cat="${escapeHtml(t.cat)}" aria-pressed="false"><span class="xf-cat-icon" aria-hidden="true">${t.icon}</span><span>${escapeHtml(t.label)}</span></button>`).join('')}
-    </div>
-    <label class="xf-label" for="f_cat">Category</label><input id="f_cat" list="catList" placeholder="Pick above or type, e.g. Cargo Insurance" />
-    <label class="xf-label" for="f_date">Date</label><input id="f_date" type="date" />
-    <label class="xf-label" for="f_notes">Notes</label><input id="f_notes" placeholder="Optional — e.g. Pilot, Detroit MI" />
-    <div class="muted xf-hint" id="f_hint"></div>
-    <button class="btn primary xf-save" id="f_save">Save Expense</button>
-    ${mode==='edit'?'<button class="btn danger xf-del" id="f_del">Delete</button>':''}</div>`;
+  body.innerHTML = `<div class="xf"><label class="xf-amount"><span class="xf-currency" aria-hidden="true">$</span><input id="f_amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" aria-label="Amount" /></label><div class="xf-cats" role="group" aria-label="Category">${EXPENSE_FORM_TILES.map(([c,i]) => `<button type="button" class="xf-cat" data-xf-cat="${escapeHtml(c)}" aria-pressed="false"><span class="xf-cat-icon" aria-hidden="true">${i}</span>${escapeHtml(c.split(' &')[0])}</button>`).join('')}</div><label class="xf-label" for="f_cat">Category</label><input id="f_cat" list="catList" placeholder="Or type one" /><label class="xf-label" for="f_date">Date</label><input id="f_date" type="date" /><label class="xf-label" for="f_notes">Notes</label><input id="f_notes" placeholder="Optional" /><div class="muted xf-hint" id="f_hint"></div><button class="btn primary xf-save" id="f_save">Save Expense</button>${mode==='edit'?'<button class="btn danger xf-del" id="f_del">Delete</button>':''}</div>`;
   $('#f_date', body).value = e.date || isoDate();
   $('#f_amt', body).value = e.amount || '';
   $('#f_cat', body).value = e.category || '';
   $('#f_notes', body).value = e.notes || '';
-  const catInput = $('#f_cat', body);
-  const syncTiles = () => {
-    const cur = catInput.value.trim().toLowerCase();
-    body.querySelectorAll('[data-xf-cat]').forEach(btn => {
-      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-xf-cat').toLowerCase() === cur));
-    });
-  };
+  const catInput = $('#f_cat', body), amtInput = $('#f_amt', body), tiles = body.querySelectorAll('[data-xf-cat]');
+  const syncTiles = () => { const cur = catInput.value.trim().toLowerCase();
+    tiles.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.xfCat.toLowerCase() === cur))); };
   catInput.addEventListener('input', syncTiles);
-  body.querySelectorAll('[data-xf-cat]').forEach(btn => btn.addEventListener('click', ()=>{
-    const cat = btn.getAttribute('data-xf-cat');
-    haptic(8);
-    // Slice C: a new fuel purchase belongs in the typed fuel store. Editing an
-    // existing expense only re-labels it, never moves it.
-    if (cat === 'Fuel' && mode === 'add'){
-      const amt = Number($('#f_amt', body).value || 0);
-      closeModal();
-      setTimeout(()=> openFuelForm(null, amt > 0 ? { amount: amt } : null), 80);
-      return;
-    }
-    catInput.value = cat; syncTiles();
-  }));
+  // Slice C: new fuel goes to the fuel store; Edit only relabels.
+  tiles.forEach(b => b.addEventListener('click', ()=>{ haptic(8); const cat = b.dataset.xfCat, amt = Number(amtInput.value || 0);
+    if (cat === 'Fuel' && mode === 'add'){ closeModal(); setTimeout(()=> openFuelForm(null, amt > 0 ? { amount: amt } : null), 80); return; }
+    catInput.value = cat; syncTiles(); }));
   syncTiles();
 
   const AMOUNT_ERR = 'Amount must be > 0.';
@@ -15601,8 +15551,7 @@ function openExpenseForm(existing=null, prefill=null){
     if (!(amt > 0)){ hint.textContent = AMOUNT_ERR; return false; }
     if (hint.textContent === AMOUNT_ERR) hint.textContent = '';
     return true; }
-  // v24.5: no error before the driver has typed; re-check as they type.
-  $('#f_amt', body).addEventListener('input', validate);
+  amtInput.addEventListener('input', validate);
 
   $('#f_save', body).addEventListener('click', async ()=>{
     if (!validate()){ toast('Fix required fields', true); return; }
@@ -15675,7 +15624,7 @@ function openExpenseForm(existing=null, prefill=null){
       if (cnt === 0){
         const tip = document.createElement('div');
         tip.style.cssText = 'padding:8px 12px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);margin-bottom:12px;font-size:12px';
-        tip.innerHTML = '💡 <b>Tip:</b> Tap a category below, or type one (e.g. Cargo Insurance) — your tax export groups them automatically.';
+        tip.innerHTML = '💡 <b>Tip:</b> Tap a category below — your tax export groups them automatically.';
         body.insertBefore(tip, body.firstChild);
       }
     }).catch(()=>{});
