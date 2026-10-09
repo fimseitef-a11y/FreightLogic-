@@ -1,6 +1,0 @@
-owner: gpt
-token: ee1b8b7d-8c7f-4ad2-b3fe-ca7efd92ad64
-started_utc: 2026-10-09T03:52:10.325Z
-expected_release_utc: 2026-10-09T05:52:10.325Z
-paths: .agents/STATUS.md, .agents/TEST_LEDGER.md, .agents/inbox/gpt-eli-normalizer-pr472-takeover-2026-10-09.md
-task: User-directed pickup reclGqE68rjGY3o1u; source-identical GPT successor to PR #472; merge/deploy held.
