@@ -152,7 +152,7 @@ test('[UXIA-05] Awarded is operator-explicit and advances only the opportunity a
   } finally { await app.close(); }
 });
 
-test('[UXIA-04] Open Details delegates to the existing canonical evaluator surface', async () => {
+test('[UXIA-04] Details then Evaluate delegates to the existing canonical evaluator surface', async () => {
   const app=await boot();
   try{
     const res=await seed(app.page, {
@@ -163,7 +163,11 @@ test('[UXIA-04] Open Details delegates to the existing canonical evaluator surfa
     });
     await app.page.evaluate(() => { location.hash='#loads'; });
     await sleep(850);
+    // v24.5 Load Detail: Details opens the detail sheet first; its Evaluate action
+    // is what hands the load to the canonical evaluator (LD-06 covers the sheet).
     await app.page.click(`[data-load-open="${res.evidence.evidenceId}"]`);
+    await app.page.waitForSelector('[data-ld-eval]', {timeout:5000});
+    await app.page.click('[data-ld-eval]');
     await app.page.waitForFunction(() => location.hash==='#omega', null, {timeout:5000});
     await sleep(650);
     const s=await app.page.evaluate(() => ({
