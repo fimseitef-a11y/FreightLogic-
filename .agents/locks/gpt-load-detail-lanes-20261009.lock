@@ -1,0 +1,6 @@
+owner: gpt
+token: 94d13c86-ee97-433c-9009-9b8833162885
+started_utc: 2026-10-09T20:18:55Z
+expected_release_utc: 2026-10-09T21:18:55Z
+paths: .agents/LANES.md
+task: retire expired PR #479 grants and add six Load Detail 24.0.65 TEMP Claude exact-file lanes
