@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.63 USA ENGINE
+/** FreightLogic v24.0.64 USA ENGINE
+ *  v24.0.64 "Meals Once": per diem replaces logged meals (no double count);
+ *  without per diem, meals deduct at Sec 274(n) %. Setup wizard no longer
+ *  replaces an open screen (DXI flake root cause). Dead code removed.
  *  v24.0.63 "Add Expense": v24.5 form benchmark (amount, tiles, Save).
  *  v24.0.62 "Loads Lists": the Loads decision inbox is organized as
  *  New / Saved / Won / Passed / Market — filters over the existing PURSUE /
@@ -596,7 +599,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.63';
+const APP_VERSION = '24.0.64';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -817,6 +820,21 @@ function classifyExpenseTaxBucket(category, insuranceBucket){
   }
   for (const kw of EXPENSE_TAX_BUCKET_MAP.A){ if (c.includes(kw)) return 'A'; }
   return 'B';
+}
+
+/** Meals vs per diem (owner decision 2026-10-09). The per diem standard meal
+ *  allowance REPLACES actual meal costs; deducting both counts one meal twice.
+ *  So when a period claims per diem, logged Meals/Food expenses deduct nothing.
+ *  With no per diem, actual meals deduct at the same Sec 274(n) percentage the
+ *  per diem uses (50% non-DOT, 80% DOT), never at 100%. One rule, every surface. */
+const isMealExpense = cat => /\b(meals?|food|dining|restaurant)\b/i.test(String(cat || ''));
+function mealsTaxTreatment(exps, perDiemDeduction, pct){
+  let logged = 0;
+  for (const e of exps || []) if (isMealExpense(e && e.category)) logged += posNum(e.amount);
+  logged = roundCents(logged);
+  const covered = posNum(perDiemDeduction) > 0;
+  const deductible = covered ? 0 : roundCents(logged * posNum(pct));
+  return { logged, deductible, excluded: roundCents(logged - deductible), covered };
 }
 
 /** X-02/X-03: per-vehicle tax-method election. Kept in the existing `settings`
@@ -3527,7 +3545,6 @@ async function findTripsByOrderNo(orderNo, limit=10){
   if (!stores.trips.indexNames.contains('orderNo')) return [];
   return (await idbReq(stores.trips.index('orderNo').getAll(IDBKeyRange.only(key), limit))) || [];
 }
-async function tripExists(orderNo){ return (await findTripsByOrderNo(orderNo, 1)).length > 0; }
 async function upsertTrip(trip){
   // F-6 fix: optimistic concurrency. `trip.updatedAt` (on the RAW argument,
   // before sanitizeTrip builds a fresh object) is whatever this caller's
@@ -5248,17 +5265,16 @@ async function computeTaxView(trips, exps){
     const ts = new Date(dt || Date.now()).getTime();
     if (ts >= minTs){ gross += Number(t.pay||0); days.add(dt); }
   }
-  for (const e of exps){
-    const ts = new Date(e.date || Date.now()).getTime();
-    if (ts >= minTs) exp += Number(e.amount||0);
-  }
-  const net = roundCents(gross - exp);
+  const pExps = exps.filter(e => new Date(e.date || Date.now()).getTime() >= minTs);
+  for (const e of pExps) exp += Number(e.amount||0);
   const perDiemRate = Number(await getSetting('perDiemRate', IRS.PER_DIEM_CONUS) || IRS.PER_DIEM_CONUS);
   const perDiemFull = perDiemRate > 0 ? (perDiemRate * days.size) : 0;
   // IRS Sec 274(n): DOT-regulated drivers (CDL/HOS) get 80%; non-DOT (cargo van <10,001 GVWR) get 50%
   const vehicleClass = await getSetting('vehicleClass', 'cargo_van');
   const perDiemPct = (vehicleClass === 'semi' || vehicleClass === 'box_truck_cdl') ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
   const perDiem = roundCents(perDiemFull * perDiemPct);
+  exp = roundCents(exp - mealsTaxTreatment(pExps, perDiem, perDiemPct).excluded);
+  const net = roundCents(gross - exp);
   const se = roundCents(Math.max(0, (net - perDiem) * IRS.SE_NET_FACTOR * IRS.SE_RATE));
   const profit = roundCents(net - perDiem - se);
 
@@ -6817,152 +6833,6 @@ async function renderPositionContextBanner(){
 }
 
 
-function openQuickEvalModal(){
-  const body = document.createElement('div');
-  body.innerHTML = `<div style="padding:0">
-    <div id="qeResultSlot"></div>
-    <div id="qeInputSlot">
-      <p style="font-size:13px;color:var(--text-secondary);margin:0 0 14px;line-height:1.5">Paste a load offer or snap a photo of a rate confirmation to get an instant grade.</p>
-      <div style="display:flex;gap:10px;margin-bottom:14px">
-        <button id="qeModeText" class="btn primary" style="flex:1;min-height:48px;font-size:14px">📋 Paste Text</button>
-        <button id="qeModePhoto" class="btn" style="flex:1;min-height:48px;font-size:14px">📷 Take Photo</button>
-      </div>
-      <div id="qeTextSection" style="display:none">
-        <textarea id="qeText" rows="5" placeholder="Paste load details here — rate, miles, origin, destination..." style="width:100%;resize:vertical;font-size:13px;padding:12px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);color:var(--text)"></textarea>
-        <div class="btn-row" style="margin-top:10px">
-          <button class="btn primary" id="qeSubmitText" style="flex:1;min-height:48px">Score Load ⚡</button>
-        </div>
-      </div>
-      <div id="qePhotoSection" style="display:none">
-        <input id="qePhoto" type="file" accept="image/*" capture="environment" style="width:100%;margin-bottom:10px" />
-        <div class="btn-row" style="margin-top:10px">
-          <button class="btn primary" id="qeSubmitPhoto" style="flex:1;min-height:48px">Score Load ⚡</button>
-        </div>
-      </div>
-    </div>
-  </div>`;
-
-  const textSec = $('#qeTextSection', body);
-  const photoSec = $('#qePhotoSection', body);
-  const resultSlot = $('#qeResultSlot', body);
-  const inputSlot = $('#qeInputSlot', body);
-
-  $('#qeModeText', body).addEventListener('click', ()=>{
-    haptic(10);
-    textSec.style.display = ''; photoSec.style.display = 'none';
-    $('#qeModeText', body).classList.add('primary'); $('#qeModePhoto', body).classList.remove('primary');
-    setTimeout(()=> $('#qeText', body)?.focus(), 80);
-  });
-  $('#qeModePhoto', body).addEventListener('click', ()=>{
-    haptic(10);
-    photoSec.style.display = ''; textSec.style.display = 'none';
-    $('#qeModePhoto', body).classList.add('primary'); $('#qeModeText', body).classList.remove('primary');
-  });
-
-  async function _runQuickEval(rawText){
-    if (!rawText || !rawText.trim()){ toast('Enter some load details first', true); return; }
-    resultSlot.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">⚡ Scoring…</div>`;
-    inputSlot.style.display = 'none';
-    try {
-      const parsed = parseLoadTextEnhanced(rawText);
-      const rev = Number(parsed.pay) || 0;
-      const lm = Number(parsed.loadedMiles) || 0;
-      // v24.0.4 item 2: a deadhead the parser never found is UNKNOWN, not zero.
-      // `Number(x) || 0` collapsed both into a confident 0, which was then written
-      // into #mwDeadMi as the string "0" — satisfying mwEvaluateLoad()'s M1
-      // blank-deadhead guard with a value the operator never supplied. The load
-      // then scored a full grade/verdict/bid off an inflated True RPM
-      // (560/(280+0) = $2.00 -> "A / ACCEPT" on a load whose real deadhead was
-      // simply never stated). knownNum() keeps the distinction; an explicitly
-      // parsed 0 is still a real, verified zero.
-      const dm = knownNum(parsed.deadheadMiles);
-      const origin = parsed.origin || '';
-      const dest = parsed.destination || '';
-      const broker = parsed.customer || '';
-      if (!rev || !lm){
-        resultSlot.innerHTML = '';
-        inputSlot.style.display = '';
-        toast('Could not find rate or miles in that text — try pasting more detail', true);
-        return;
-      }
-      // Fill evaluator DOM fields so mwEvaluateLoad works
-      ['mwRevenue','mwLoadedMi','mwDeadMi','mwOrigin','mwDest','mwBroker'].forEach(id => {
-        const el = $('#'+id); if (!el) return;
-        if (id==='mwRevenue') el.value = String(rev);
-        else if (id==='mwLoadedMi') el.value = String(lm);
-        // Unknown deadhead leaves the field BLANK so the evaluator's guard fires
-        // and asks for it, exactly as it does for manual entry.
-        else if (id==='mwDeadMi') el.value = dm === null ? '' : String(dm);
-        else if (id==='mwOrigin') el.value = origin;
-        else if (id==='mwDest') el.value = dest;
-        else if (id==='mwBroker' && broker) el.value = broker;
-      });
-      await mwEvaluateLoad();
-      // Show simplified result in modal
-      const evalOut = $('#mwEvalOutput');
-      const gradeEl = evalOut?.querySelector('[data-qe-grade]');
-      // Build the inline result: grade + sentence + bid range
-      // `trueRPM` here is a rough preview only — the evaluator above owns the real
-      // number. With deadhead UNKNOWN there is no honest denominator, so this stays
-      // null rather than silently reverting to the loaded-only rate.
-      const trueRPM = dm === null ? null : (rev / (lm + dm || 1));
-      const actualGradeEl = evalOut?.querySelector('[style*="font-size:48px"]');
-      const gradeHTML = actualGradeEl?.outerHTML || '';
-      const evalClone = evalOut ? evalOut.cloneNode(true) : null;
-      resultSlot.innerHTML = `<div style="margin-bottom:12px">
-        <div style="font-size:11px;color:var(--good);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">✓ Scored: ${escapeHtml(origin||'?')} → ${escapeHtml(dest||'?')} • ${fmtMoney(rev)} • ${lm}mi loaded</div>
-        <div id="qeEvalPreview" style="max-height:60vh;overflow-y:auto"></div>
-        <div class="btn-row" style="margin-top:14px">
-          <button class="btn primary" id="qeBookBtn" style="flex:1;min-height:48px">Book This Load →</button>
-          <button class="btn" id="qeFullBtn" style="flex:1;min-height:48px">Full Analysis</button>
-        </div>
-      </div>`;
-      if (evalClone) resultSlot.querySelector('#qeEvalPreview').appendChild(evalClone);
-      $('#qeBookBtn', body)?.addEventListener('click', ()=>{
-        closeModal();
-        // An unknown deadhead must not be prefilled as a verified 0 on the trip either.
-        openTripWizard({ _evalPrefill: true, pay: rev, loadedMiles: lm,
-          ...(dm === null ? {} : { emptyMiles: dm }), origin, destination: dest });
-      });
-      $('#qeFullBtn', body)?.addEventListener('click', ()=>{
-        closeModal();
-        location.hash = '#omega';
-      });
-    } catch(e){
-      console.warn('[FL] quick eval:', e);
-      resultSlot.innerHTML = '';
-      inputSlot.style.display = '';
-      toast('Scoring failed — try again', true);
-    }
-  }
-
-  $('#qeSubmitText', body).addEventListener('click', ()=>{
-    haptic(15);
-    const txt = $('#qeText', body)?.value || '';
-    _runQuickEval(txt);
-  });
-  $('#qeSubmitPhoto', body).addEventListener('click', async ()=>{
-    haptic(15);
-    const file = $('#qePhoto', body)?.files?.[0];
-    if (!file){ toast('Select an image first', true); return; }
-    resultSlot.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">🔍 Reading image…</div>`;
-    inputSlot.style.display = 'none';
-    try {
-      const text = await runOCR(file);
-      if (!text){ resultSlot.innerHTML = ''; inputSlot.style.display = ''; toast('Could not read text from image', true); return; }
-      _runQuickEval(text);
-    } catch(e){
-      resultSlot.innerHTML = ''; inputSlot.style.display = '';
-      toast('OCR failed — try pasting text instead', true);
-    }
-  });
-
-  // Show text section by default
-  textSec.style.display = '';
-  $('#qeModeText', body).classList.add('primary');
-  openModal('⚡ Evaluate Load', body);
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // F26 — First-Time Setup Wizard (v23.4.0)
 // Shows once on first boot. Multi-step modal collecting personalization data.
@@ -6979,12 +6849,16 @@ async function checkFirstRunSetup(){
   //
   // Deferred, not cancelled, and deliberately not marked complete: if the driver
   // abandons the claim, the next boot offers setup normally.
-  if (document.getElementById('claimWizard')) return;
+  // Same for any modal the driver already opened (one shared #modal: the wizard
+  // would replace it). Re-checked after the awaits, where the race also lands.
+  const busy = () => document.getElementById('claimWizard') || document.getElementById('modal')?.style.display === 'block';
+  if (busy()) return;
   const done = await getSetting('f26SetupComplete', false);
   if (done) return;
   // Don't interrupt if user already has trips (migrated from old install)
   const state = await getOnboardState();
   if (!state.isEmpty) { await setSetting('f26SetupComplete', true); return; }
+  if (busy()) return;
   await openSetupWizard();
 }
 
@@ -10520,123 +10394,6 @@ function getActiveCVSAEvent(today = new Date()) {
   return null;
 }
 
-function getBlitzAdjustedFloor(baseFloor) {
-  const ev = getActiveCVSAEvent();
-  if (!ev) return baseFloor;
-  if (ev.status === 'active') return Math.round((baseFloor * ev.cargoVanPremiumMult) * 100) / 100;
-  if (ev.status === 'pre')    return Math.round((baseFloor * 1.05) * 100) / 100;
-  return baseFloor;
-}
-
-// ════════════════════════════════════════════════════
-// OPPORTUNITY COST — DZ commitments during blitz prep
-// or weekly peak windows forfeit premium revenue.
-// ════════════════════════════════════════════════════
-function computeOpportunityCost(loadMiles, daysCommitted, today = new Date()) {
-  const NORMAL_DAILY_REV = 600;
-  const ev = getActiveCVSAEvent(today);
-  const blitzMult = ev?.status === 'active' ? 1.4 : ev?.status === 'pre' ? 1.15 : 1.0;
-  const expectedNormalRev = NORMAL_DAILY_REV * daysCommitted * blitzMult;
-  return Math.round(expectedNormalRev);
-}
-
-function evaluateLoadWithOpportunityCost(grossPay, loadMiles, daysCommitted) {
-  const opCost = computeOpportunityCost(loadMiles, daysCommitted);
-  const netAfterOpCost = grossPay - opCost;
-  const realRate = loadMiles > 0 ? netAfterOpCost / loadMiles : 0;
-  return { grossPay, opportunityCost: opCost, netAfterOpCost, realRate };
-}
-
-// ════════════════════════════════════════════════════
-// AUCTION APP STRATEGY — Sylectus / 123LoadBoard /
-// Truckstop Auction. Race-to-bottom dynamics differ
-// from DAT broker-direct.
-// ════════════════════════════════════════════════════
-const AUCTION_RULES = {
-  postedTargetIsCeiling: true,
-  winningBidTypicalDiscount: 0.92,
-  walkAfterMinutes: 30,
-  multiPostDumpThreshold: 3,
-};
-
-function suggestAuctionBid(postedTarget, marketRate, urgency = 'normal') {
-  if (!Number.isFinite(postedTarget)) return null;
-  const undercut = urgency === 'high' ? 0.96 : urgency === 'low' ? 0.90 : AUCTION_RULES.winningBidTypicalDiscount;
-  const suggested = Math.round(postedTarget * undercut);
-  const minFloor = Math.round(postedTarget * 0.85);
-  return {
-    ceiling: postedTarget,
-    suggested,
-    minFloor,
-    rationale: `Auction posts: bid ~${Math.round((1 - undercut) * 100)}% below target ($${suggested}). Posting target ($${postedTarget}) usually loses.`,
-  };
-}
-
-function detectDesperationDump(broker, destination, recentPosts) {
-  const matches = recentPosts.filter(p =>
-    (p.broker || '').toLowerCase() === (broker || '').toLowerCase() &&
-    (p.destination || '').toLowerCase().includes((destination || '').toLowerCase())
-  );
-  return matches.length >= AUCTION_RULES.multiPostDumpThreshold;
-}
-
-// ════════════════════════════════════════════════════
-// EMPTY-DAY DECISION TREE — After N hours of zero
-// accepts, gives clear stay / go-home / take-DZ
-// guidance accounting for fuel, hotel, and blitz prep.
-// ════════════════════════════════════════════════════
-function emptyDayDecision({
-  hoursHunting,
-  bidsAttempted,
-  bidsAccepted,
-  currentCity,
-  homeBaseDistMi,
-  fuelCostHome,
-  hotelCostEstimate = 75,
-  hourOfDay,
-  daysToBlitzPeak,
-}) {
-  const window = getCurrentTimeWindow();
-  const isInDesperationWindow = window.key === 'DESPERATION' || window.key === 'AFTERNOON';
-
-  if (isInDesperationWindow && hoursHunting < 7 && hourOfDay < 19) {
-    return {
-      verdict: 'HOLD',
-      reason: 'Still in desperation window. Premium can fire at any moment.',
-      action: 'Maintain position. Filter aggressively. Do not bid below $1.40.',
-    };
-  }
-
-  const hotelSaves = fuelCostHome - hotelCostEstimate;
-  if (hourOfDay >= 19 || hoursHunting >= 6) {
-    if (hotelSaves > 0 && daysToBlitzPeak !== null && daysToBlitzPeak > 1) {
-      return {
-        verdict: 'STAY_OVERNIGHT',
-        reason: `Hotel ($${hotelCostEstimate}) beats fuel home ($${fuelCostHome}). Save $${hotelSaves}.`,
-        action: `Find lodging in ${currentCity} area. Reset 5 AM tomorrow in this hub.`,
-      };
-    }
-    if (homeBaseDistMi < 200) {
-      return {
-        verdict: 'GO_HOME',
-        reason: 'Close to home base. DH cheaper than hotel. Reset properly.',
-        action: 'Run home empty. Sleep in own bed. Fresh hunt tomorrow.',
-      };
-    }
-    return {
-      verdict: 'STAY_OVERNIGHT',
-      reason: 'Far from home + late in day. Hotel preserves blitz week positioning.',
-      action: `Find lodging in ${currentCity}. Resume hunt 5 AM.`,
-    };
-  }
-
-  return {
-    verdict: 'CONTINUE',
-    reason: 'Window still has time. Hunt continues.',
-    action: 'Refresh board every 5 min. Filter to ≥$1.40/mi within 500mi of base.',
-  };
-}
-
 function getMWWeekTarget(){
   const userGoal = Number(getCachedSetting('weeklyGoal', 0) || 0);
   const high = userGoal > 0 ? Math.max(2500, Math.round(userGoal)) : MW.weekTarget.high;
@@ -10651,10 +10408,6 @@ function mwClassifyRPM(rpm){
     if (rpm >= MW.rpmTiers[i].min) return MW.rpmTiers[i];
   }
   return MW.rpmTiers[0];
-}
-
-function mwNormCity(s){
-  return (s || '').trim().toLowerCase().replace(/[^a-z\s.]/g,'');
 }
 
 function mwGeoCheck(origin, dest){
@@ -16508,8 +16261,9 @@ async function generateAccountantPackage(period='ytd'){
     const acctPerDiemPct = (acctVehicleClass === 'semi' || acctVehicleClass === 'box_truck_cdl') ? IRS.PER_DIEM_PCT_DOT : IRS.PER_DIEM_PCT_NON_DOT;
     const perDiemTotal = roundCents(perDiemGross * acctPerDiemPct);
 
-    // ── 5. SUMMARY (P&L) ──
-    const netIncome = roundCents(grossRevenue - totalExpenses);
+    // ── 5. SUMMARY (P&L) ── meals covered by per diem are not deducted twice
+    const acctMeals = mealsTaxTreatment(periodExps, perDiemTotal, acctPerDiemPct);
+    const netIncome = roundCents(grossRevenue - totalExpenses + acctMeals.excluded);
     const seTax = roundCents(Math.max(0, (netIncome - perDiemTotal) * IRS.SE_RATE * IRS.SE_NET_FACTOR));
     const estimatedProfit = roundCents(netIncome - perDiemTotal - seTax);
     const avgRpm = totalAllMi > 0 ? grossRevenue / totalAllMi : 0;
@@ -16552,6 +16306,7 @@ async function generateAccountantPackage(period='ytd'){
       ['Days on Road', String(perDiemDays)],
       ['Per Diem Gross', '$' + perDiemGross.toFixed(2)],
       ['Per Diem Deductible (' + Math.round(acctPerDiemPct * 100) + '% IRS Sec 274n)', '$' + perDiemTotal.toFixed(2)],
+      ...(acctMeals.logged > 0 ? [['Meals Logged', '$' + acctMeals.logged.toFixed(2)], ['Meals Deductible (' + (acctMeals.covered ? 'covered by per diem' : Math.round(acctPerDiemPct * 100) + '% IRS Sec 274n') + ')', '$' + acctMeals.deductible.toFixed(2)]] : []),
       [''],
       ['MILEAGE (IRS Standard Rate Method)'],
       ['IRS Business Mileage Rate(s) Applied (per trip date)', mileageRatesUsed.length ? mileageRatesUsed.map(r => '$' + r.toFixed(3) + '/mile').join(', ') : 'n/a'],
@@ -16560,7 +16315,7 @@ async function generateAccountantPackage(period='ytd'){
       ['NOTE: Choose EITHER mileage OR actual expenses — not both.'],
       [''],
       ['BOTTOM LINE'],
-      ['Net Income (Revenue - Expenses)', '$' + netIncome.toFixed(2)],
+      ['Net Income (Revenue - Deductible Expenses)', '$' + netIncome.toFixed(2)],
       ['Per Diem Deduction (' + Math.round(acctPerDiemPct * 100) + '%)', '-$' + perDiemTotal.toFixed(2)],
       ['Est. SE Tax (15.3%)', '-$' + seTax.toFixed(2)],
       ['Estimated Profit', '$' + estimatedProfit.toFixed(2)],
@@ -18243,22 +17998,6 @@ async function cloudDecrypt(encrypted, iv, salt, passphrase){
 async function cloudFetch(url, opts = {}, timeoutMs = 15000){
   const c = new AbortController(); const t = setTimeout(() => c.abort(), timeoutMs);
   try { const r = await fetch(url, { ...opts, signal: c.signal }); clearTimeout(t); return r; } catch(e) { clearTimeout(t); throw e; }
-}
-
-/** Call /extract on the worker to parse raw load text into structured fields via AI.
- *  Returns the `fields` object on success, or throws with a user-facing message.
- */
-async function cloudExtractLoad(rawText){
-  const token = await getSetting('cloudBackupToken', '');
-  if (!token) throw new Error('Cloud backup not configured. Add a backup token in Settings to use AI Extract.');
-  const res = await cloudFetch(CLOUD_WORKER_URL + '/extract', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Device-Id': cloudGetDeviceId(), 'X-Backup-Token': token },
-    body: JSON.stringify({ text: String(rawText).slice(0, 4000) }),
-  }, 20000);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) throw new Error(data.error || 'AI extraction failed.');
-  return data.fields;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -21161,7 +20900,9 @@ async function openTaxSeasonExport(){
 
     // Expense categories mapped to Schedule C lines
     const expByCategory = {};
+    const f30Meals = mealsTaxTreatment(exps, perDiemDeduction, pdPct);
     for (const e of exps){
+      if (isMealExpense(e.category)) continue; // own line 24b below
       const cat = (e.category || 'Other').trim();
       expByCategory[cat] = (expByCategory[cat] || 0) + posNum(e.amount);
     }
@@ -21205,7 +20946,7 @@ async function openTaxSeasonExport(){
     // X-03 fix: exactly one of {vehicleDeduction via mileage, via bucket A}
     // can ever be non-zero — the old code summed both unconditionally.
     const vehicleDeduction = isActualExpense ? bucketATotal : (isStandardMileage ? mileageDeduction : 0);
-    const totalDeductions = methodUnset ? 0 : (vehicleDeduction + bucketBTotal + perDiemDeduction);
+    const totalDeductions = methodUnset ? 0 : (vehicleDeduction + bucketBTotal + perDiemDeduction + f30Meals.deductible);
     const netProfit = grossIncome - totalDeductions;
     const seTax = roundCents(Math.max(0, netProfit * IRS.SE_NET_FACTOR * IRS.SE_RATE));
 
@@ -21271,6 +21012,7 @@ async function openTaxSeasonExport(){
           ⚠️ ${escapeHtml(fmtMoney(schedC.insuranceUnresolved))} in "Insurance" entries have no resolved sub-type (auto vs. cargo/liability/occ-acc) — excluded from every total below. Edit those expenses and pick a specific category to include them.
         </div>` : ''}
       ${line('24b',`Per diem deduction (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction)}
+      ${f30Meals.logged > 0 ? (f30Meals.covered ? `<div id="f30MealsNote" style="margin-top:6px;padding:8px 10px;border-radius:8px;background:rgba(var(--accent-rgb),.07);border:1px solid var(--accent-border);font-size:11px;color:var(--text-secondary)">🍽️ ${escapeHtml(fmtMoney(f30Meals.logged))} in logged meals is not deducted: per diem already covers meals, and claiming both counts them twice.</div>` : line('24b', `Meals (actual, ${Math.round(pdPct*100)}%)`, f30Meals.deductible)) : ''}
       ${line('28', 'Total deductions', totalDeductions, true)}
       ${line('29', 'Tentative net profit', netProfit, true, netProfit >= 0 ? 'var(--good)' : 'var(--bad)')}
       <div style="margin-top:12px;padding:12px;background:rgba(var(--accent-rgb),.07);border-radius:10px;border:1px solid var(--accent-border)">
@@ -21314,6 +21056,7 @@ async function openTaxSeasonExport(){
         ['27a','Parking & storage',                                 schedC.parking.toFixed(2)],
         ['27a','Other expenses',                                    schedC.other.toFixed(2)],
         ['24b',`Per diem (${workDays} days)`,                      perDiemDeduction.toFixed(2)],
+        ...(f30Meals.logged > 0 ? [['24b', f30Meals.covered ? `Meals logged $${f30Meals.logged.toFixed(2)} — covered by per diem, not deducted` : `Meals (actual, ${Math.round(pdPct*100)}%)`, f30Meals.deductible.toFixed(2)]] : []),
         ['28', 'Total deductions',                                  totalDeductions.toFixed(2)],
         ['29', 'Tentative net profit',                              netProfit.toFixed(2)],
         ...(schedC.insuranceUnresolved > 0 ? [['NOTE', 'Insurance (unresolved sub-type, excluded)', schedC.insuranceUnresolved.toFixed(2)]] : []),
@@ -21368,6 +21111,7 @@ async function openTaxSeasonExport(){
         ['27a','Parking & storage', schedC.parking],
         ['27a','Other expenses', schedC.other],
         ['24b',`Per diem (${workDays} days × $${pdRate} × ${Math.round(pdPct*100)}%)`, perDiemDeduction],
+        ['24b',`Meals (actual, ${Math.round(pdPct*100)}%)`, f30Meals.deductible],
         ['28','Total deductions', totalDeductions],
         ['29','Tentative net profit', netProfit],
       ].filter(r => r[2] !== 0);
@@ -23172,7 +22916,9 @@ async function openCPAPackage(){
     }, 0));
     const mileRatesUsed = [...new Set(trips.map(t => getMileageRate(t.pickupDate || t.deliveryDate)))].sort((a, b) => a - b);
 
-    // Net + SE tax
+    // Net + SE tax — meals covered by per diem are not deducted twice
+    const meals    = mealsTaxTreatment(exps, pdDeductible, perDiemPct);
+    totalExp       = roundCents(totalExp - meals.excluded);
     const net      = roundCents(gross - totalExp);
     const seTax    = roundCents(Math.max(0, (net - pdDeductible) * IRS.SE_NET_FACTOR * IRS.SE_RATE));
     const estProfit= roundCents(net - pdDeductible - seTax);
@@ -23180,7 +22926,7 @@ async function openCPAPackage(){
     return {
       label, startDate, endDate, period,
       gross, totalExp, catMap, totalFuelCost, totalGallons,
-      loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct,
+      loadedMi, allMi, pdDays, pdRate, pdDeductible, perDiemPct, meals,
       mileDeduc, mileRatesUsed, net, seTax, estProfit,
       tripCount: trips.length, expCount: exps.length,
     };
@@ -23243,7 +22989,7 @@ async function openCPAPackage(){
             <span>Gross Revenue</span><b style="color:var(--good)">${fmtMoney(d.gross)}</b>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
-            <span>Total Expenses</span><b style="color:var(--bad)">-${fmtMoney(d.totalExp)}</b>
+            <span>Deductible Expenses${d.meals.excluded > 0 ? ` <span class="muted">(excl. ${fmtMoney(d.meals.excluded)} meals${d.meals.covered ? ' covered by per diem' : ' non-deductible share'})</span>` : ''}</span><b style="color:var(--bad)">-${fmtMoney(d.totalExp)}</b>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--card-border)">
             <span>Net Income</span><b style="color:${d.net>=0?'var(--good)':'var(--bad)'}">${fmtMoney(d.net)}</b>
@@ -24755,6 +24501,7 @@ async function renderMoneyCard() {
   let qGross = 0, qExpTotal = 0;
   for (const t of qTrips) qGross += Number(t.pay || 0);
   for (const e of qExps) qExpTotal += Number(e.amount || 0);
+  qExpTotal -= mealsTaxTreatment(qExps, perDiemDeduction, IRS.PER_DIEM_PCT_NON_DOT).excluded;
   const qNet = Math.max(0, qGross - qExpTotal);
   const taxableIncome = Math.max(0, qNet - perDiemDeduction);
   const seTax = roundCents(taxableIncome * IRS.SE_NET_FACTOR * IRS.SE_RATE);
@@ -25665,7 +25412,7 @@ if (typeof window !== 'undefined' && window.__FL_TESTS_ENABLED === true){
     sanitizeEvidence, putEvidence, getEvidence, listEvidence, findEvidenceByFingerprint,
     evidenceFingerprint, evidenceAuthorityRank, reconcileEvidenceFields,
     openOpportunityIntake, resolveLifecycleForTrip, renderLifecycleChips,
-    openLifecycleEditor, lifecycleFactsConflict, openDiagnosticsPanel,
+    openLifecycleEditor, lifecycleFactsConflict, openDiagnosticsPanel, checkFirstRunSetup,
     computeExportChecksumProtected, initDB,
     // v24.2 M6 historical import + calibration
     importHistoricalOpportunities, calibrateWinningRange, calibrateFromLifecycle,
