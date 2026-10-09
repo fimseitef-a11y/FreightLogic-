@@ -536,3 +536,11 @@ deploy, runtime activation, credential rotation or live freight/payment write.
 This ledger records a verified source checkpoint, not whole-audit closure.
 
 - 2026-10-06T20:56:48Z — PR #466 exact head `1eafdd13279a090ee3f4339146b7e3c4391a67ef`: GitHub Tests PASS — `node tests/run-all.mjs` 1047 passed / 0 failed across 107 specs; completion gates 10 passed / 0 failed across 3 specs. ST12-01 and ST12-02 PASS. Companion exact-head workflows Lanes, CodeQL, Performance, Native iOS Contract, AI Agent Cutover, and ELI Runtime all PASS. Merged as `50f1b14159fec816eb1b3f9bf858053eadad32f0`.
+
+### 2026-10-09T03:54:39.663Z — GPT ELI normalizer PR #472 takeover / #473
+
+- Source SHA c9564c54444c1b4518e498da193d69b9cd03e1f3: initial local reconstruction ran `node --test eli-runtime/tests/*.test.mjs` on Node v24.19.0, exit 0, 114 passed / 0 failed / 0 skipped. Reconstruction initially appended one extra final LF to files; this result is not the byte-exact source gate.
+- Successor exact SHA fc2153aa29344694f3ce799a93c59f20549b30ef, tree 886d6b3a87de5d032f166cdb86b8fa0305c21922 (identical to source SHA): removed only reconstruction's extra LF and verified all 40 ELI Git blob SHA-1 values against this tree. Controlled rerun reason: establish byte-exact replacement-head evidence after reconstruction correction. Same command on Linux/Node v24.19.0: exit 0, 114 passed / 0 failed / 0 skipped / 0 cancelled / 0 todo. No source or assertions changed.
+- Same exact successor head GitHub ELI Runtime run 37881328129 / job 113661452402, ubuntu-latest Node v22.23.3, `node --test eli-runtime/tests/*.test.mjs`: PASS 114/0, zero skipped; log read directly.
+- Same exact successor head Lanes run 37881328073: path-ownership, commit-prefix, historical lock-trailer all PASS. No LANES permission grants. Broader Tests/CodeQL/Performance/Native jobs still running at this checkpoint.
+- Merge/deployment and production rebuild are separate owner gates per reclGqE68rjGY3o1u. No live D1/Airtable freight changes; isMarketId unchanged. Historical match measurements in #472 were not rerun.
