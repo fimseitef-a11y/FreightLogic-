@@ -60,11 +60,12 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `tests/integration/meals-per-diem.spec.mjs` | claude | TEMP meals/per-diem 24.0.64 PR regression; retire at merge. |
-| `tests/run-all.mjs` | claude | TEMP meals/per-diem 24.0.64 PR registration; retire at merge. |
-| `scripts/verify-cloudflare-parity.mjs` | claude | TEMP meals/per-diem 24.0.64 PR release marker; retire at merge. |
-| `midwest-stack-config.json` | claude | TEMP meals/per-diem 24.0.64 PR release marker; retire at merge. |
-| `midwest-stack-authority.js` | claude | TEMP meals/per-diem 24.0.64 PR release marker; retire at merge. |
+| `tests/integration/load-detail.spec.mjs` | claude | TEMP Load Detail 24.0.65 PR regression LD-01..07; retire at merge. |
+| `tests/integration/product-ia-slice-b.spec.mjs` | claude | TEMP Load Detail 24.0.65 PR UXIA-04 handoff update; retire at merge. |
+| `tests/run-all.mjs` | claude | TEMP Load Detail 24.0.65 PR registration; retire at merge. |
+| `scripts/verify-cloudflare-parity.mjs` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
+| `midwest-stack-config.json` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
+| `midwest-stack-authority.js` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
 | `cloud-backup-worker.js` | gpt | Existing Backup/API Worker source and operator-authorized audit remediation. Production cutover, service activation and live migration remain separate gates. |
 | `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
