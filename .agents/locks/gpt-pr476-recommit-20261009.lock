@@ -1,6 +1,0 @@
-owner: gpt
-token: gpt-pr476-recommit-20261009-2d61
-started_utc: 2026-10-09T13:00:00Z
-expected_release_utc: 2026-10-09T16:00:00Z
-paths: .agents/LANES.md
-task: PR476 governed recommit for six PR474 temporary lanes
