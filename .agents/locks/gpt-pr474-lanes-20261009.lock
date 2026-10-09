@@ -1,6 +1,0 @@
-owner: gpt
-token: gpt-pr474-20261009-ownership-7f42
-started_utc: 2026-10-09T11:58:19.629Z
-expected_release_utc: 2026-10-09T12:43:19.629Z
-paths: .agents/LANES.md
-task: PR474 six temporary exact-path Claude ownership grants
