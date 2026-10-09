@@ -1,0 +1,506 @@
+diff --git a/app.js b/app.js
+index f1e3e2b..14da792 100644
+--- a/app.js
++++ b/app.js
+@@ -1,7 +1,9 @@
+ (() => {
+ 'use strict';
+ 
+-/** FreightLogic v24.0.64 USA ENGINE
++/** FreightLogic v24.0.65 USA ENGINE
++ *  v24.0.65 "Load Detail": Loads Details opens a read-only sheet over the
++ *  card's own projection (warnings first; Pass / Evaluate); no new math.
+  *  v24.0.64 "Meals Once": per diem replaces logged meals (no double count);
+  *  without per diem, meals deduct at Sec 274(n) %. Setup wizard no longer
+  *  replaces an open screen (DXI flake root cause). Dead code removed.
+@@ -599,7 +601,7 @@
+  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
+  */
+ 
+-const APP_VERSION = '24.0.64';
++const APP_VERSION = '24.0.65';
+ // ── Driver display preferences (Issue #205 section 1) ────────────────────────
+ //
+ // Text size and Glance Mode describe THIS PHONE, not the business, so they are
+@@ -24928,7 +24930,66 @@ async function _setLoadInboxOpportunity(evidenceId, opportunity){
+   return saved;
+ }
+ 
++// v24.5 Load Detail (UI_BRIEF §6.3). A read-only sheet over the SAME projection
++// the Loads card uses: it computes no economics, keeps Unknown as Unknown, and
++// puts warnings first. Evaluate hands off to the canonical evaluator; Pass is a
++// disposition and never a lifecycle loss. No map tiles: Maps is a handoff.
+ async function openLoadDecisionDetails(evidenceId){
++  const ev = await getEvidence(evidenceId);
++  if (!ev) throw new Error('Load evidence is unavailable.');
++  const lc = ev.lifecycleId ? await getLifecycle(ev.lifecycleId) : null;
++  const p = await buildLoadDecisionProjection(ev, lc);
++  const passed = ((await _loadInboxDispositions())?.[ev.evidenceId]?.decision || '') === 'PASS';
++  const h = escapeHtml, U = 'Unknown';
++  const loaded = knownNum(ev.loadedMi), dead = knownNum(ev.deadMi);
++  const all = loaded !== null && dead !== null ? loaded + dead : null;
++  const amount = knownNum(ev.amount), payout = knownNum(ev.canonicalRevenue) !== null;
++  const rpm = p.economics?.available ? p.economics.trueRPM : null;
++  const g = p.grade || {};
++  const warns = [];
++  if (loaded === null) warns.push('Loaded miles are unknown.');
++  if (dead === null) warns.push('Deadhead is unknown, so True RPM and grade are not calculated.');
++  if (amount === null) warns.push('No rate was observed.');
++  else if (!payout) warns.push('The observed amount is not proven carrier payout.');
++  if (!lc) warns.push('No safe lifecycle link exists yet for this load.');
++  const tier = (c) => {
++    const k = String(c || '').trim() ? classifyPositionMarket(c) : { known:false };
++    return !k.known ? 'not a recognised market' : k.tier === 'TIER1' ? 'Tier 1 market' : k.tier === 'TIER2' ? 'Tier 2 market' : k.tier === 'TRAP' ? 'trap market' : 'outside Tier 1/2';
++  };
++  const facts = [];
++  if (g.known) facts.push('Grade ' + g.grade + ': ' + g.gradeLabel);
++  if (all) facts.push('Deadhead is ' + Math.round(dead / all * 100) + '% of all miles');
++  facts.push('Origin: ' + tier(ev.origin) + '. Destination: ' + tier(ev.destination) + ' (static classification)');
++  if (p.twoBid?.available) facts.push('Baseline bid ' + fmtMoney(p.twoBid.baseline) + ', recommended ' + fmtMoney(p.twoBid.recommended) + (p.twoBid.evidence === 'LIMITED' ? ' (limited market evidence)' : ''));
++  const mi = (label, v) => '<div><b style="font-size:18px;font-family:var(--font-mono)">' + (v === null ? U : h(String(v)) + ' mi') + '</b><div class="muted" style="font-size:11px">' + label + '</div></div>';
++  const box = 'border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px';
++  const body = document.createElement('div');
++  body.setAttribute('data-load-detail', ev.evidenceId);
++  body.innerHTML =
++    (warns.length ? '<div data-ld-warn role="alert" style="' + box + ';border-color:var(--warn);color:var(--warn);font-size:12px">' + warns.map(w => '<div>⚠ ' + h(w) + '</div>').join('') + '</div>' : '') +
++    '<div data-ld-status style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;margin-bottom:8px"><span class="pill">' + h(lc ? lifecycleDisplayStage(lc) : (ev.linkState === 'UNRESOLVED' ? 'UNRESOLVED' : 'UNLINKED')) + (passed ? ' · PASSED' : '') + '</span><span class="muted">' + h(ev.provenance?.sourceName || ev.provenance?.sourceType || 'Source unknown') + ' · recorded ' + h(_timeAgoShort(finiteNum(ev.recordedAt, Date.now()))) + '</span></div>' +
++    '<div data-ld-lane style="' + box + '"><div style="font-size:20px;font-weight:800;line-height:1.25">' + h(ev.origin || 'Origin ' + U) + '<br>→ ' + h(ev.destination || 'Destination ' + U) + '</div><div class="muted" style="font-size:11px;margin-top:4px">' + h(ev.orderNo ? '#' + ev.orderNo + ' · ' : '') + h(ev.brokerDisplay || ev.broker || 'Broker ' + U) + '</div>' +
++      '<div data-ld-miles data-loaded="' + (loaded ?? '') + '" data-dead="' + (dead ?? '') + '" data-all="' + (all ?? '') + '" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">' + mi('loaded', loaded) + mi('deadhead', dead) + mi('all miles', all) + '</div>' +
++      '<div data-ld-rate data-true-rpm="' + (rpm ?? '') + '" data-grade="' + h(g.grade || '?') + '" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px"><div><div style="font-size:30px;font-weight:800;font-family:var(--font-mono)">' + (amount === null ? U : h(fmtMoney(amount))) + '</div><div class="muted" style="font-size:11px">' + (amount === null ? 'No rate observed' : payout ? 'Carrier payout' : 'Observed amount, not proven payout') + '</div><div style="font-size:13px;font-weight:700;margin-top:4px">' + (rpm === null ? 'True RPM unavailable' : '$' + rpm.toFixed(2) + ' / all mi') + '</div></div><div aria-label="Grade ' + h(g.grade || U) + '" style="font-size:34px;font-weight:800;color:' + (g.gradeColor || 'var(--text-tertiary)') + '">' + h(g.grade || '?') + '</div></div></div>' +
++    '<div data-ld-timing style="' + box + ';font-size:13px"><div>Pickup <b>' + h((ev.pickupAt || U).replace('T', ' ')) + '</b></div><div style="margin-top:4px">Delivery <b>' + h((ev.deliveryAt || U).replace('T', ' ')) + '</b></div>' + (ev.destination ? '<button type="button" class="btn" data-ld-nav style="min-height:44px;margin-top:10px;width:100%">Open route in Maps</button>' : '') + '</div>' +
++    '<div data-ld-facts style="' + box + ';font-size:12px"><b>What the numbers say</b><ul style="margin:8px 0 0;padding-left:18px">' + facts.map(f => '<li style="margin-top:3px">' + h(f) + '</li>').join('') + '</ul></div>' +
++    '<div data-ld-actions style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px"><button type="button" class="btn" data-ld-pass style="min-height:48px"' + (passed ? ' disabled' : '') + '>Pass</button><button type="button" class="btn primary" data-ld-eval style="min-height:48px">Evaluate</button></div>';
++  $('[data-ld-nav]', body)?.addEventListener('click', () => openTripNavigation({ origin: ev.origin, destination: ev.destination }));
++  $('[data-ld-pass]', body).addEventListener('click', async () => {
++    haptic(8);
++    await _setLoadInboxDisposition(ev.evidenceId, 'PASS');
++    closeModal();
++    await renderLoadsDecisionInbox();
++    toast('Passed. Not recorded as lost.');
++  });
++  $('[data-ld-eval]', body).addEventListener('click', async () => {
++    haptic(8); closeModal();
++    try { await evaluateLoadFromEvidence(ev.evidenceId); } catch (err) { toast(err?.message || 'Could not open the evaluator.', true); }
++  });
++  openModal('Load Detail', body);
++}
++
++async function evaluateLoadFromEvidence(evidenceId){
+   const ev = await getEvidence(evidenceId);
+   if (!ev) throw new Error('Load evidence is unavailable.');
+   const observed = knownNum(ev.canonicalRevenue) ?? knownNum(ev.amount);
+diff --git a/index.html b/index.html
+index c5d11a9..4af4f92 100644
+--- a/index.html
++++ b/index.html
+@@ -22,7 +22,7 @@
+        .mjs asserts that. -->
+   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+   <title>Freight Logic</title>
+-  <link rel="manifest" href="manifest.json?v=24.0.64">
++  <link rel="manifest" href="manifest.json?v=24.0.65">
+   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
+   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
+   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
+@@ -726,7 +726,7 @@
+       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
+     </div>
+   </div>
+-  <script src="app.js?v=24.0.64"></script>
+-  <script src="sw-bridge.js?v=24.0.64"></script>
++  <script src="app.js?v=24.0.65"></script>
++  <script src="sw-bridge.js?v=24.0.65"></script>
+ </body>
+ </html>
+diff --git a/manifest.json b/manifest.json
+index 001a406..cda429b 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  "name": "FreightLogic v24.0.64",
++  "name": "FreightLogic v24.0.65",
+   "short_name": "FreightLogic",
+   "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, realistic bid recommendations, trap detection, and Midwest Stack v2 market positioning.",
+   "start_url": "./",
+diff --git a/midwest-stack-authority.js b/midwest-stack-authority.js
+index 98afd02..1a411f2 100644
+--- a/midwest-stack-authority.js
++++ b/midwest-stack-authority.js
+@@ -1,11 +1,11 @@
+-/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.64
++/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.65
+  * Driver-first cargo-van decision intelligence layer.
+  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
+  */
+ (function(){
+   'use strict';
+ 
+-  const VERSION = '24.0.64';
++  const VERSION = '24.0.65';
+   const UPDATED_AT = '2026-08-20';
+ 
+   const CONFIG = Object.freeze({
+diff --git a/midwest-stack-config.json b/midwest-stack-config.json
+index a250231..6d4b22b 100644
+--- a/midwest-stack-config.json
++++ b/midwest-stack-config.json
+@@ -1,6 +1,6 @@
+ {
+   "schemaVersion": "1.0.0",
+-  "appTarget": "FreightLogic v24.0.64",
++  "appTarget": "FreightLogic v24.0.65",
+   "authorityName": "Midwest Stack v11 / Level X+ - Advisory Overlay",
+   "effectiveDate": "2026-08-26",
+   "operatorProfile": {
+diff --git a/modern-shell.js b/modern-shell.js
+index 2578bc2..fd1a76b 100644
+--- a/modern-shell.js
++++ b/modern-shell.js
+@@ -1,4 +1,4 @@
+-/* FreightLogic v24.0.64 — modern five-surface navigation adapter
++/* FreightLogic v24.0.65 — modern five-surface navigation adapter
+  * Structural navigation; presentation is owned by styles.css.
+  * Canonical routing, state, evaluation and data ownership remain in app.js.
+  */
+diff --git a/scripts/verify-cloudflare-parity.mjs b/scripts/verify-cloudflare-parity.mjs
+index 2a65864..a66b4e8 100644
+--- a/scripts/verify-cloudflare-parity.mjs
++++ b/scripts/verify-cloudflare-parity.mjs
+@@ -30,10 +30,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
+ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
+ 
+ const EXPECTED = {
+-  serviceWorkerVersion: "24.0.64",
+-  manifestName: "FreightLogic v24.0.64",
++  serviceWorkerVersion: "24.0.65",
++  manifestName: "FreightLogic v24.0.65",
+   workerVersion: "35",
+-  overlayScript: "midwest-stack-authority.js?v=24.0.64"
++  overlayScript: "midwest-stack-authority.js?v=24.0.65"
+ };
+ 
+ // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
+diff --git a/service-worker.js b/service-worker.js
+index b089824..3a43d8b 100644
+--- a/service-worker.js
++++ b/service-worker.js
+@@ -1,24 +1,24 @@
+-/* FreightLogic v24.0.64 — Browser Hardened Service Worker */
+-const SW_VERSION = '24.0.64';
++/* FreightLogic v24.0.65 — Browser Hardened Service Worker */
++const SW_VERSION = '24.0.65';
+ const CACHE_NAME = `freightlogic-${SW_VERSION}`;
+ const RECEIPT_CACHE = 'freightlogic-receipts-v2';
+ const SHARE_CACHE = 'freightlogic-share-v2';
+ const APP_SHELL = './index.html';
+-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.64"></script>';
++const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.65"></script>';
+ const CORE = [
+   './', APP_SHELL,
+-  './app.js?v=24.0.64',
++  './app.js?v=24.0.65',
+   './styles.css',
+-  './midwest-stack-authority.js?v=24.0.64',
+-  './manifest.json?v=24.0.64',
++  './midwest-stack-authority.js?v=24.0.65',
++  './manifest.json?v=24.0.65',
+   './midwest-stack-config.json',
+   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
+   // import works fully offline from the very first install.
+   './vendor/xlsx.full.min.js',
+   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
+   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
+-  './sw-bridge.js?v=24.0.64',
+-  './modern-shell.js?v=24.0.64'
++  './sw-bridge.js?v=24.0.65',
++  './modern-shell.js?v=24.0.65'
+ ];
+ 
+ // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
+@@ -27,7 +27,7 @@ const CORE = [
+ // generation is handled separately (a known asset may fall back to a
+ // query-insensitive cache hit; an unknown path may not).
+ function normalizeAssetPath(pathname) {
+-  // './app.js?v=24.0.64' and '/app.js' must resolve to the same identity.
++  // './app.js?v=24.0.65' and '/app.js' must resolve to the same identity.
+   return new URL(pathname, self.location.href).pathname;
+ }
+ const KNOWN_ASSET_PATHS = new Set(
+@@ -66,7 +66,7 @@ self.addEventListener('install', (event) => {
+     // shell before the TRUE_RPM decision layer was actually cached, with no
+     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
+     // for the same "must work on the very first offline install" reason.
+-    const critical = ['./', APP_SHELL, './app.js?v=24.0.64', './styles.css', './sw-bridge.js?v=24.0.64', './modern-shell.js?v=24.0.64', './manifest.json?v=24.0.64', './midwest-stack-authority.js?v=24.0.64', './vendor/xlsx.full.min.js'];
++    const critical = ['./', APP_SHELL, './app.js?v=24.0.65', './styles.css', './sw-bridge.js?v=24.0.65', './modern-shell.js?v=24.0.65', './manifest.json?v=24.0.65', './midwest-stack-authority.js?v=24.0.65', './vendor/xlsx.full.min.js'];
+     await cache.addAll(critical);
+     // Optional assets — failure does not abort install
+     const optional = CORE.filter(u => !critical.includes(u));
+diff --git a/sw-bridge.js b/sw-bridge.js
+index a4cf9a3..696af49 100644
+--- a/sw-bridge.js
++++ b/sw-bridge.js
+@@ -1,4 +1,4 @@
+-/* FreightLogic v24.0.64 — service worker update bridge */
++/* FreightLogic v24.0.65 — service worker update bridge */
+ (function(){
+   if (!('serviceWorker'in navigator)) return;
+ 
+@@ -63,6 +63,6 @@
+ // Keep structural navigation out of the 1 MB decision engine. Loading the
+ // adapter here lets app.js remain canonical while the shell can evolve in a
+ // small, reviewable file. Dynamic import is same-origin and CSP-compatible.
+-import('./modern-shell.js?v=24.0.64').catch((e) => {
++import('./modern-shell.js?v=24.0.65').catch((e) => {
+   console.warn('[FL] modern shell adapter failed to load:', e);
+ });
+diff --git a/tests/integration/load-detail.spec.mjs b/tests/integration/load-detail.spec.mjs
+new file mode 100644
+index 0000000..24a54cb
+--- /dev/null
++++ b/tests/integration/load-detail.spec.mjs
+@@ -0,0 +1,199 @@
++// v24.5 redesign — Load Detail (UI_BRIEF_V24.5.md §6.3, §9 step 7).
++// The Loads card's Details button opens a detail sheet that READS the same
++// canonical projection the card reads. It computes no economics of its own, keeps
++// Unknown as Unknown, puts warnings first, and offers Pass and Evaluate.
++import { launchApp, skipFirstRunWizard, createSuite, ok, eq } from '../lib/harness.mjs';
++
++const { test, run } = createSuite('integration/load-detail.spec.mjs');
++const sleep = (ms) => new Promise(r => setTimeout(r, ms));
++
++async function boot(){
++  const app = await launchApp();
++  await app.page.setViewportSize({ width: 390, height: 844 });
++  await skipFirstRunWizard(app.page);
++  await app.page.waitForFunction(() => !!window.__FL_TESTS, null, { timeout: 10000 });
++  await sleep(450);
++  return app;
++}
++
++async function seed(page, raw){
++  return page.evaluate(async (raw) => window.__FL_TESTS.intakeOpportunity(raw,
++    { sourceType: 'MANUAL', sourceName: 'Load Detail fixture', authority: 'OPERATOR_ENTERED_UNVERIFIED' }), raw);
++}
++
++async function openDetail(page, evidenceId){
++  await page.evaluate(() => { location.hash = '#loads'; });
++  await page.waitForSelector(`[data-load-open="${evidenceId}"]`, { timeout: 5000 });
++  await page.click(`[data-load-open="${evidenceId}"]`);
++  await page.waitForSelector(`[data-load-detail="${evidenceId}"]`, { timeout: 5000 });
++  await sleep(250);
++}
++
++const COMPLETE = {
++  orderNo: 'LD-COMPLETE', broker: 'Fixture Broker',
++  origin: 'Chicago, IL', destination: 'Detroit, MI',
++  loadedMi: 278, deadMi: 32, mileageSemantic: 'LOADED_MILES',
++  amount: 575, priceSemantic: 'CARRIER_PAYOUT',
++  pickupAt: '2026-10-12T08:00', deliveryAt: '2026-10-12T15:30',
++};
++
++const read = (page) => page.evaluate(() => {
++  const root = document.querySelector('[data-load-detail]');
++  const t = (sel) => (root.querySelector(sel)?.innerText || '').replace(/\s+/g, ' ').trim();
++  const miles = root.querySelector('[data-ld-miles]');
++  const rate = root.querySelector('[data-ld-rate]');
++  return {
++    hash: location.hash,
++    order: [...root.children].map(c => Object.keys(c.dataset)[0] || c.tagName),
++    warn: t('[data-ld-warn]'), status: t('[data-ld-status]'), lane: t('[data-ld-lane]'),
++    miles: t('[data-ld-miles]'), rate: t('[data-ld-rate]'), timing: t('[data-ld-timing]'), facts: t('[data-ld-facts]'),
++    loaded: miles?.getAttribute('data-loaded'), dead: miles?.getAttribute('data-dead'), all: miles?.getAttribute('data-all'),
++    trueRpm: rate?.getAttribute('data-true-rpm'), grade: rate?.getAttribute('data-grade'),
++    actions: [...root.querySelectorAll('[data-ld-actions] button')].map(b => b.textContent.trim()),
++    actionHeights: [...root.querySelectorAll('[data-ld-actions] button')].map(b => b.getBoundingClientRect().height),
++    media: root.querySelectorAll('img,iframe,canvas,[class*="map"]').length,
++    overflow: document.documentElement.scrollWidth > window.innerWidth,
++    modalTitle: document.getElementById('modalTitle')?.textContent || '',
++  };
++});
++
++test('[LD-01] Details opens the Load Detail sheet and shows the canonical figures the card shows', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, COMPLETE);
++    const id = res.evidence.evidenceId;
++    await openDetail(app.page, id);
++    const s = await read(app.page);
++    const canon = await app.page.evaluate(async (id) => {
++      const T = window.__FL_TESTS;
++      const ev = await T.getEvidence(id);
++      const p = await T.buildLoadDecisionProjection(ev, ev.lifecycleId ? await T.getLifecycle(ev.lifecycleId) : null);
++      const card = document.querySelector(`[data-load-decision-card][data-evidence-id="${id}"]`);
++      return { rpm: String(p.economics.trueRPM), grade: p.grade.grade,
++        cardRpm: card.getAttribute('data-true-rpm'), cardGrade: card.getAttribute('data-grade') };
++    }, id);
++    eq(s.hash, '#loads', 'Details must open the sheet in place, not jump to the evaluator');
++    eq(s.modalTitle, 'Load Detail');
++    ok(/Chicago, IL/.test(s.lane) && /Detroit, MI/.test(s.lane), `lane must show both ends (got "${s.lane}")`);
++    eq(s.loaded, '278'); eq(s.dead, '32'); eq(s.all, '310', 'all miles are loaded plus deadhead when both are known');
++    ok(/\$575/.test(s.rate) && /Carrier payout/i.test(s.rate), `rate must be labelled as carrier payout (got "${s.rate}")`);
++    eq(s.trueRpm, canon.rpm, 'the sheet must show the canonical True RPM, not a second calculation');
++    eq(s.trueRpm, canon.cardRpm, 'the sheet and the Loads card must agree on True RPM');
++    eq(s.grade, canon.grade); eq(s.grade, canon.cardGrade);
++    ok(new RegExp('\\$' + Number(canon.rpm).toFixed(2)).test(s.rate), 'True RPM must be visible in the rate block');
++  } finally { await app.close(); }
++});
++
++test('[LD-02] unknown deadhead stays Unknown: no all-miles, no True RPM, grade ?, and the warning comes first', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, { ...COMPLETE, orderNo: 'LD-NODH', deadMi: null });
++    await openDetail(app.page, res.evidence.evidenceId);
++    const s = await read(app.page);
++    eq(s.dead, '', 'an unstated deadhead must not become a number');
++    eq(s.all, '', 'all miles are not derivable without deadhead');
++    ok(/Deadhead\s*Unknown|Unknown\s*deadhead/i.test(s.miles), `deadhead must read Unknown (got "${s.miles}")`);
++    ok(!/\b0\s*mi/.test(s.miles), 'an unknown deadhead must never render as 0 mi');
++    eq(s.trueRpm, '', 'True RPM is unavailable without deadhead');
++    eq(s.grade, '?');
++    ok(/deadhead is unknown/i.test(s.warn), `the deadhead warning must be shown (got "${s.warn}")`);
++    eq(s.order[0], 'ldWarn', 'hard warnings must be the first block in the sheet');
++  } finally { await app.close(); }
++});
++
++test('[LD-03] an explicit zero deadhead is a verified zero and still grades', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, { ...COMPLETE, orderNo: 'LD-ZERO', deadMi: 0 });
++    await openDetail(app.page, res.evidence.evidenceId);
++    const s = await read(app.page);
++    eq(s.dead, '0'); eq(s.all, '278');
++    ok(s.trueRpm !== '' && s.grade !== '?', 'a verified zero deadhead must produce True RPM and a grade');
++    ok(!/deadhead is unknown/i.test(s.warn), 'no deadhead warning for a verified zero');
++  } finally { await app.close(); }
++});
++
++test('[LD-04] an observed amount that is not proven payout is labelled so and produces no True RPM', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, { ...COMPLETE, orderNo: 'LD-POSTED', priceSemantic: 'POSTED_RATE' });
++    await openDetail(app.page, res.evidence.evidenceId);
++    const s = await read(app.page);
++    ok(/Observed amount/i.test(s.rate) && !/Carrier payout/i.test(s.rate), `an unproven amount must not be called payout (got "${s.rate}")`);
++    eq(s.trueRpm, '', 'no True RPM from an amount that is not canonical revenue');
++    ok(/not proven carrier payout/i.test(s.warn), `the payout warning must be shown (got "${s.warn}")`);
++  } finally { await app.close(); }
++});
++
++test('[LD-05] status, freshness, timing and evidence bullets are shown; no map and exactly Pass and Evaluate', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, COMPLETE);
++    await openDetail(app.page, res.evidence.evidenceId);
++    const s = await read(app.page);
++    ok(/SEEN|QUOTED|BID|WON|UNLINKED|UNRESOLVED/.test(s.status), `status must show the lifecycle stage (got "${s.status}")`);
++    ok(/ago/.test(s.status), `freshness must be shown (got "${s.status}")`);
++    ok(/Load Detail fixture|MANUAL/.test(s.status), `the source must be named (got "${s.status}")`);
++    ok(/Pickup/.test(s.timing) && /Delivery/.test(s.timing) && /2026-10-12/.test(s.timing), `timing must show pickup and delivery (got "${s.timing}")`);
++    ok(/Grade [A-F]/.test(s.facts), `evidence bullets must name the canonical grade (got "${s.facts}")`);
++    ok(/static classification/i.test(s.facts), 'a market tier must be labelled as static classification, not live strength');
++    eq(s.media, 0, 'no map tile, image, iframe or canvas');
++    eq(JSON.stringify(s.actions), JSON.stringify(['Pass', 'Evaluate']));
++    ok(Math.min(...s.actionHeights) >= 48, `actions must be at least 48px tall (got ${s.actionHeights})`);
++    ok(!s.overflow, 'no horizontal overflow at 390px');
++  } finally { await app.close(); }
++});
++
++test('[LD-06] Evaluate hands the load to the existing canonical evaluator; unknown deadhead stays blank there', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, { ...COMPLETE, orderNo: 'LD-EVAL', deadMi: null });
++    await openDetail(app.page, res.evidence.evidenceId);
++    await app.page.click('[data-ld-eval]');
++    await app.page.waitForFunction(() => location.hash === '#omega', null, { timeout: 5000 });
++    await sleep(650);
++    const s = await app.page.evaluate(() => ({
++      revenue: document.getElementById('mwRevenue')?.value || '',
++      loaded: document.getElementById('mwLoadedMi')?.value || '',
++      dead: document.getElementById('mwDeadMi')?.value || '',
++      origin: document.getElementById('mwOrigin')?.value || '',
++      dest: document.getElementById('mwDest')?.value || '',
++    }));
++    eq(s.revenue, '575'); eq(s.loaded, '278'); eq(s.origin, 'Chicago, IL'); eq(s.dest, 'Detroit, MI');
++    eq(s.dead, '', 'an unknown deadhead must reach the evaluator blank, never as 0');
++  } finally { await app.close(); }
++});
++
++test('[LD-07] Pass records a PASS disposition, never a lifecycle loss, and the load moves to Passed', async () => {
++  const app = await boot();
++  try {
++    const res = await seed(app.page, { ...COMPLETE, orderNo: 'LD-PASS' });
++    const id = res.evidence.evidenceId;
++    await openDetail(app.page, id);
++    await app.page.click('[data-ld-pass]');
++    await sleep(700);
++    const s = await app.page.evaluate(async ({ id, lcId }) => {
++      const T = window.__FL_TESTS;
++      const map = await T.getSetting(T.LOADS_INBOX_DISPOSITION_KEY, {});
++      const lc = lcId ? await T.getLifecycle(lcId) : null;
++      return { decision: map?.[id]?.decision || '', opportunity: lc ? lc.opportunity : null,
++        sheetOpen: !!document.querySelector('[data-load-detail]') && document.getElementById('modal').classList.contains('open'),
++        hash: location.hash };
++    }, { id, lcId: res.evidence.lifecycleId });
++    eq(s.decision, 'PASS');
++    ok(s.opportunity !== 'LOST', 'Pass must never be recorded as Lost');
++    ok(!s.sheetOpen, 'the sheet closes after Pass');
++    eq(s.hash, '#loads');
++    await app.page.click('[data-load-tab="PASSED"]');
++    await sleep(500);
++    ok(await app.page.evaluate((id) => !!document.querySelector(`[data-load-decision-card][data-evidence-id="${id}"][data-load-bucket="PASSED"]`), id),
++      'the passed load must be listed under Passed');
++  } finally { await app.close(); }
++});
++
++export const runSpec = run;
++
++if (import.meta.url === `file://${process.argv[1]}`){
++  const r = await runSpec();
++  process.exit(r.fail > 0 ? 1 : 0);
++}
+diff --git a/tests/integration/product-ia-slice-b.spec.mjs b/tests/integration/product-ia-slice-b.spec.mjs
+index 7ad3382..4826de4 100644
+--- a/tests/integration/product-ia-slice-b.spec.mjs
++++ b/tests/integration/product-ia-slice-b.spec.mjs
+@@ -152,7 +152,7 @@ test('[UXIA-05] Awarded is operator-explicit and advances only the opportunity a
+   } finally { await app.close(); }
+ });
+ 
+-test('[UXIA-04] Open Details delegates to the existing canonical evaluator surface', async () => {
++test('[UXIA-04] Details then Evaluate delegates to the existing canonical evaluator surface', async () => {
+   const app=await boot();
+   try{
+     const res=await seed(app.page, {
+@@ -163,7 +163,11 @@ test('[UXIA-04] Open Details delegates to the existing canonical evaluator surfa
+     });
+     await app.page.evaluate(() => { location.hash='#loads'; });
+     await sleep(850);
++    // v24.5 Load Detail: Details opens the detail sheet first; its Evaluate action
++    // is what hands the load to the canonical evaluator (LD-06 covers the sheet).
+     await app.page.click(`[data-load-open="${res.evidence.evidenceId}"]`);
++    await app.page.waitForSelector('[data-ld-eval]', {timeout:5000});
++    await app.page.click('[data-ld-eval]');
+     await app.page.waitForFunction(() => location.hash==='#omega', null, {timeout:5000});
+     await sleep(650);
+     const s=await app.page.evaluate(() => ({
+diff --git a/tests/run-all.mjs b/tests/run-all.mjs
+index e82f3fa..e0bcfea 100644
+--- a/tests/run-all.mjs
++++ b/tests/run-all.mjs
+@@ -56,6 +56,7 @@ import { runSpec as productIASliceB } from './integration/product-ia-slice-b.spe
+ import { runSpec as productIASliceC } from './integration/product-ia-slice-c.spec.mjs';
+ import { runSpec as productIASliceD } from './integration/product-ia-slice-d.spec.mjs';
+ import { runSpec as addExpenseForm } from './integration/add-expense-form.spec.mjs';
++import { runSpec as loadDetail } from './integration/load-detail.spec.mjs';
+ import { runSpec as mealsPerDiem } from './integration/meals-per-diem.spec.mjs';
+ import { runSpec as uxIAA2Z } from './integration/ux-ia-a2z.spec.mjs';
+ import { runSpec as screenshotIntake } from './integration/screenshot-intake.spec.mjs';
+@@ -201,6 +202,7 @@ const specs = [
+   productIASliceD,
+   addExpenseForm,
+   mealsPerDiem,
++  loadDetail,
+   uxIAA2Z,
+   screenshotIntake,
+   shortcutsDeepLinks,

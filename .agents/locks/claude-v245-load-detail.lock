@@ -1,6 +1,0 @@
-owner: claude
-token: 3fb98e18-25b2-4b41-95f3-223b794c8954
-started_utc: 2026-10-09T18:52:25Z
-expected_release_utc: 2026-10-09T21:52:25Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Owner "Go" 2026-10-09 13:48 CT: v24.5 Load Detail sheet (UI_BRIEF 6.3, section 9 step 7) + next release markers. PR only; merge/deploy are owner gates.
