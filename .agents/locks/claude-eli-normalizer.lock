@@ -1,6 +1,0 @@
-owner: claude
-token: 98e4b4c1-fdd3-4cde-bbfa-b142819692c0
-started_utc: 2026-10-09T03:43:26Z
-expected_release_utc: 2026-10-09T06:43:26Z
-paths: .agents/LANES.md
-task: Owner-approved 2026-10-09 (eli-runtime scope, AUTOCTRL-20261008-CLAUDE-V245-ELI-01): temporary exact-file claude LANES rows for the five PR #472 eli-runtime paths; rows retire when #472 merges.

@@ -811,3 +811,5 @@ Current e1f CI:6workflows success, Tests failure run37069124274/job111044112061:
 - 2026-10-08T13:35:00Z — claude / PR #470 merged as 49099b3 (owner-approved; exact head 1b46ed4 all checks green, local full suite 1057/0 across 107 specs). Released lock claude-v245-takeover (token a0a01247-a0b7-40b8-bb67-dab1bd96d388). Claimed claude-lanes-restore (.agents/LANES.md only) to return the PR #470 temporary claude LANES rows to gpt.
 
 - 2026-10-09T03:43:18Z — claude (Claude Secondary (Fimseitef), Claude Code, owner-approved): reaped stale lock claude-lanes-restore, token 718536f2-0054-41f4-9f23-dc3749bf2496 (expected_release 2026-10-08T15:35Z, past +2h). Reason: task finished, PR #471 merged as 6c07b44. Coordination state only.
+
+- 2026-10-09T03:43:53Z — claude: released lock claude-eli-normalizer (token 98e4b4c1-fdd3-4cde-bbfa-b142819692c0) unused. Its LANES.md grant edit for PR #472 was blocked by the Claude Code auto-mode permission check; waiting on the owner to allow it or route the branch to gpt. No LANES.md change was made.
