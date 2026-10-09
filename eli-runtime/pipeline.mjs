@@ -23,7 +23,7 @@ import {
   buildEvidence,
   buildGovernanceRows,
   materializeLane,
-  normalizeMarketText,
+  marketLookupKey,
   isMarketId,
   sha256Hex,
 } from './ingest.mjs';
@@ -442,9 +442,9 @@ export async function resolveMarketInDb(db, value) {
       WHERE origin_market = ? OR destination_market = ? LIMIT 1`).bind(s, s).first();
     if (known) return s;
   }
-  const norm = normalizeMarketText(s);
-  if (!norm) return null;
-  const row = await db.prepare('SELECT market_cluster FROM market_aliases WHERE alias_norm = ?').bind(norm).first();
+  const { key } = marketLookupKey(s);
+  if (!key) return null;
+  const row = await db.prepare('SELECT market_cluster FROM market_aliases WHERE alias_norm = ?').bind(key).first();
   return row?.market_cluster ?? null;
 }
 
