@@ -60,6 +60,12 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
+| `styles.css` | claude | TEMP PR #474 only: Add Expense `.xf` presentation tokens; expires at merge of #474. |
+| `tests/run-all.mjs` | claude | TEMP PR #474 only: register Add Expense regression; expires at merge of #474. |
+| `tests/integration/add-expense-form.spec.mjs` | claude | TEMP PR #474 only: Add Expense regression AE-01..06; expires at merge of #474. |
+| `scripts/verify-cloudflare-parity.mjs` | claude | TEMP PR #474 only: release marker bump; expires at merge of #474. |
+| `midwest-stack-config.json` | claude | TEMP PR #474 only: appTarget marker bump; expires at merge of #474. |
+| `midwest-stack-authority.js` | claude | TEMP PR #474 only: VERSION/header marker bump; expires at merge of #474. |
 | `cloud-backup-worker.js` | gpt | Existing Backup/API Worker source and operator-authorized audit remediation. Production cutover, service activation and live migration remain separate gates. |
 | `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
