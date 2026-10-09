@@ -1,0 +1,6 @@
+owner: claude
+token: 0b4b52f1-877c-4775-ac62-98fb5b4939ae
+started_utc: 2026-10-09T18:01:07Z
+expected_release_utc: 2026-10-09T20:01:07Z
+paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
+task: Owner-directed 2026-10-09 ("fix it"): commit the parked meals/per-diem 24.0.64 patch (inbox claude-meals-per-diem-24.0.64.patch) after grant PR #479 merged, and open the PR. PR only; merge/deploy are owner gates.
