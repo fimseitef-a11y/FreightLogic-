@@ -1,6 +1,0 @@
-owner: claude
-token: 5153cc4f-6c4f-4108-afb1-59cf5d311268
-started_utc: 2026-10-09T03:54:15Z
-expected_release_utc: 2026-10-09T09:54:15Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Owner-directed 2026-10-09 (AUTOCTRL-20261008-CLAUDE-V245-ELI-01, v24.5 redesign lane): Add Expense form-pattern benchmark (brief §6.9 / §9 step 6) + its release generation. PR only; owner approves merge.
