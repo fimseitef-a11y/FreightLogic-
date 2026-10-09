@@ -63,19 +63,35 @@ export function cellsOf(record) {
   return {};
 }
 
-const REGION_CODES = new Set((
+const US_STATE_CODES = new Set((
   'al ak az ar ca co ct de dc fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm '
-  + 'ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy '
-  + 'ab bc mb nb nl ns nt nu on pe qc sk yt'
+  + 'ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy'
 ).split(' '));
+const CA_PROVINCE_CODES = new Set('ab bc mb nb nl ns nt nu on pe qc sk yt'.split(' '));
+const REGION_CODES = new Set([...US_STATE_CODES, ...CA_PROVINCE_CODES]);
 
+// Text-only normalization: case, spacing, ZIP, country suffix, parenthetical
+// notes, comma before a trailing region code, Saint/St and Mount/Mt spelling.
+// It never guesses a state and never fuzzy-matches.
 export function normalizeMarketText(value) {
   const s = text(value);
   if (!s) return null;
   let n = s
     .toLowerCase()
-    .replace(/\s+\d{5}(?:-\d{4})?\s*$/, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  for (let i = 0; i < 2; i += 1) {
+    n = n
+      .replace(/[\s,]+(?:usa|u\.s\.a\.?|us|u\.s\.?)$/, '')
+      .replace(/[\s,]+\d{5}(?:-\d{4})?$/, '')
+      .trim();
+  }
+  n = n
     .replace(/\s*,\s*/g, ', ')
+    .replace(/[,.\s]+$/, '')
+    .replace(/(^|[\s,])(?:st\.?|saint)\s+/g, '$1saint ')
+    .replace(/(^|[\s,])(?:mt\.?|mount)\s+/g, '$1mount ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!n.includes(',')) {
@@ -83,6 +99,42 @@ export function normalizeMarketText(value) {
     if (m && REGION_CODES.has(m[2])) n = `${m[1]}, ${m[2]}`;
   }
   return n || null;
+}
+
+// Location strings that are not one US city. They stay UNKNOWN and are reported
+// as data quality; they are never alias candidates.
+export const LOCATION_FLAGS = Object.freeze({
+  UNKNOWN_PLACEHOLDER: 'UNKNOWN_PLACEHOLDER',
+  MULTI_LEG: 'MULTI_LEG',
+  ROAD: 'ROAD',
+  MULTI_CITY: 'MULTI_CITY',
+  NON_US: 'NON_US',
+  NO_STATE: 'NO_STATE',
+});
+
+export function locationDataQualityFlag(value) {
+  const s = text(value);
+  if (!s) return null;
+  const raw = s.toLowerCase().replace(/\s+/g, ' ');
+  if (/^unknown\b/.test(raw)) return LOCATION_FLAGS.UNKNOWN_PLACEHOLDER;
+  if (/\bmulti[\s-]?(?:leg|stop)s?\b/.test(raw)) return LOCATION_FLAGS.MULTI_LEG;
+  if (/->|=>|→|\/|\s&\s/.test(raw)) return LOCATION_FLAGS.MULTI_CITY;
+  if (/\b(?:turnpike|tollway|interstate|expressway|freeway|highway|hwy)\b|\bi-\d+\b/.test(raw)) return LOCATION_FLAGS.ROAD;
+  if (/\bcanada\b|\b[a-z]\d[a-z] ?\d[a-z]\d\b/.test(raw)) return LOCATION_FLAGS.NON_US;
+  const n = normalizeMarketText(s);
+  const region = /, ([a-z]{2})$/.exec(n ?? '')?.[1];
+  if (region && CA_PROVINCE_CODES.has(region)) return LOCATION_FLAGS.NON_US;
+  if (!region || !US_STATE_CODES.has(region)) return LOCATION_FLAGS.NO_STATE;
+  return null;
+}
+
+// The one key used for BOTH alias_norm (from Airtable) and evidence lookup.
+// Absent input is { key: null, flag: null }; a flagged input has no key.
+export function marketLookupKey(value) {
+  if (!text(value)) return { key: null, flag: null };
+  const flag = locationDataQualityFlag(value);
+  if (flag) return { key: null, flag };
+  return { key: normalizeMarketText(value), flag: null };
 }
 
 export function isMarketId(value) {
@@ -97,7 +149,7 @@ export function buildAliasRows(records = [], syncedAt) {
     if (text(cells[MARKET_ALIAS_FIELD_IDS.resolutionStatus]) !== 'Verified') continue;
     const aliasText = text(cells[MARKET_ALIAS_FIELD_IDS.aliasText]);
     const marketCluster = text(cells[MARKET_ALIAS_FIELD_IDS.marketCluster]);
-    const aliasNorm = normalizeMarketText(aliasText);
+    const aliasNorm = marketLookupKey(aliasText).key;
     if (!aliasNorm || !isMarketId(marketCluster)) continue;
     const prior = seen.get(aliasNorm);
     if (prior && prior.marketCluster !== marketCluster) {
@@ -127,8 +179,8 @@ export function resolveMarket(value, aliasMap) {
   const s = text(value);
   if (!s) return null;
   if (isMarketId(s)) return s;
-  const norm = normalizeMarketText(s);
-  return (norm && aliasMap.get(norm)) || null;
+  const { key } = marketLookupKey(s);
+  return (key && aliasMap.get(key)) || null;
 }
 
 export function laneKeyOf(originMarket, destinationMarket) {
