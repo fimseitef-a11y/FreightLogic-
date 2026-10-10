@@ -1,6 +1,0 @@
-owner: claude
-token: 60894d59-c784-473c-86f3-07b844531380
-started_utc: 2026-10-10T06:15:41Z
-expected_release_utc: 2026-10-10T09:15:41Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: v24.5 Evaluate screen (UI_BRIEF 6.4): reasoning + evidence up front, app.js gzip budget via dead-code removal, release 24.0.65 -> 24.0.66. Authority AUTOCTRL-20261008-CLAUDE-V245-ELI-01, owner go 2026-10-10 01:02 CT. No merge, no deploy.

@@ -1,0 +1,423 @@
+diff --git a/app.js b/app.js
+index 14da792..2a233d1 100644
+--- a/app.js
++++ b/app.js
+@@ -1,7 +1,10 @@
+ (() => {
+ 'use strict';
+ 
+-/** FreightLogic v24.0.65 USA ENGINE
++/** FreightLogic v24.0.66 USA ENGINE
++ *  v24.0.66 "Show The Why": the Evaluate card lists the canonical reasons
++ *  (failing first, then passing; unrun checks named "Not assessed") and the
++ *  Confidence line outside Show Details; read-only, no new math.
+  *  v24.0.65 "Load Detail": Loads Details opens a read-only sheet over the
+  *  card's own projection (warnings first; Pass / Evaluate); no new math.
+  *  v24.0.64 "Meals Once": per diem replaces logged meals (no double count);
+@@ -601,7 +604,7 @@
+  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
+  */
+ 
+-const APP_VERSION = '24.0.65';
++const APP_VERSION = '24.0.66';
+ // ── Driver display preferences (Issue #205 section 1) ────────────────────────
+ //
+ // Text size and Glance Mode describe THIS PHONE, not the business, so they are
+@@ -11558,11 +11561,11 @@ function _renderConfidenceLine(decision){
+     </div>`;
+   }).join('');
+   return `<details style="margin-top:8px;text-align:left">
+-    <summary style="font-size:11px;color:${color};cursor:pointer;list-style:none">
++    <summary class="fl-eval-alert" style="color:${color};cursor:pointer;list-style:none">
+       Confidence: <b>${escapeHtml(c.overall)}</b>${c.reasons?.[0] ? ` — ${escapeHtml(c.reasons[0])}` : ''}
+     </summary>
+-    <div style="margin-top:6px;font-size:10px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
+-    <div style="font-size:9px;color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
++    <div class="fl-eval-alert" style="margin-top:6px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
++    <div class="fl-eval-alert" style="color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
+   </details>`;
+ }
+ 
+@@ -12643,6 +12646,22 @@ function _mwRenderDecision(out, d){
+     ${_topWarning ? `<div class="fl-eval-alert" style="margin-top:1px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.09);border:1px solid rgba(240,165,0,.28);color:var(--text)">${escapeHtml(_topWarning.icon)} ${escapeHtml(_topWarning.text)}</div>` : ''}
+   </div>`;
+ 
++  // ── WHY: the canonical steps, read-only, failing first (UI_BRIEF §6.4) ──
++  // Mirrors the Freight Intelligence rows in Show Details and computes nothing.
++  // pass === null means the check could not run: it is NAMED as not assessed and
++  // never shown as a pass. A null Personal Intelligence step is assessed-neutral,
++  // so it is neither. SSI-18: scalable classes only, no inline font-size.
++  const _whyRows = steps.filter(s => s.pass !== null).sort((a, b) => (a.pass === b.pass ? 0 : a.pass ? 1 : -1));
++  const _unrun = steps.filter(s => s.pass === null && s.label !== 'Personal Intelligence').map(s => s.label);
++  const _whyBlock = `<div data-eval-why style="margin-bottom:12px">
++    <div class="fl-eval-fact-label">Why</div>
++    ${_whyRows.map(s => `<div data-eval-why-row data-pass="${s.pass}" style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-subtle)">
++      <div class="fl-eval-fact-value" role="img" aria-label="${s.pass ? 'passed' : 'failed'}" style="width:18px;flex-shrink:0;color:${s.pass ? 'var(--good)' : 'var(--bad)'}">${s.pass ? '✓' : '✕'}</div>
++      <div style="min-width:0"><div class="fl-eval-fact-label">${escapeHtml(s.label)}</div><div class="fl-eval-alert">${escapeHtml(s.detail)}</div></div></div>`).join('')}
++    ${_unrun.length ? `<div data-eval-not-assessed class="fl-eval-alert" style="color:var(--text-tertiary);padding-top:7px;border-top:1px solid var(--border-subtle)">Not assessed: ${escapeHtml(_unrun.join(', '))}</div>` : ''}
++    ${_renderConfidenceLine(d._canonicalDecision)}
++  </div>`;
++
+   // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
+   const _heroColor = _heroColorEarly;
+   const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
+@@ -12670,6 +12689,7 @@ function _mwRenderDecision(out, d){
+     ${_compactFacts}
+     <div data-two-bid-slot></div>
+   </div>
++  ${_whyBlock}
+   <details id="mwEvalDetails" style="margin-bottom:12px">
+     <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
+       <span style="font-size:16px">📊</span> Show Details
+@@ -12705,7 +12725,6 @@ function _mwRenderDecision(out, d){
+       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
+     </div>
+     ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
+-    ${_renderConfidenceLine(d._canonicalDecision)}
+     <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
+     ${(crossBorder?.isCrossBorder && revenue !== effectiveRevenue) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">CAD normalized: ${fmtMoney(revenue)} CAD → ${fmtMoney(effectiveRevenue)} USD-equivalent for RPM/profit math</div>` : ''}
+     ${(crossBorder?.isCrossBorder) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Border cost applied: ${fmtMoney(borderAdminCost)} • Docs ready: ${crossBorder?.docsReady ? 'yes' : 'no'}</div>` : ''}
+diff --git a/index.html b/index.html
+index 4af4f92..8cfafb2 100644
+--- a/index.html
++++ b/index.html
+@@ -22,7 +22,7 @@
+        .mjs asserts that. -->
+   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; connect-src 'self' https://freightlogic-backup.fimseitef.workers.dev https://api.eia.gov https://api.weather.gov https://mobile.fmcsa.dot.gov https://bwt.cbp.gov; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" />
+   <title>Freight Logic</title>
+-  <link rel="manifest" href="manifest.json?v=24.0.65">
++  <link rel="manifest" href="manifest.json?v=24.0.66">
+   <link rel="apple-touch-icon" sizes="180x180" href="./icon180.png">
+   <link rel="apple-touch-icon" sizes="167x167" href="./icon167.png">
+   <link rel="apple-touch-icon" sizes="152x152" href="./icon152.png">
+@@ -726,7 +726,7 @@
+       <button class="btn primary" id="pwaInstallBtn" style="white-space:nowrap">Install</button>
+     </div>
+   </div>
+-  <script src="app.js?v=24.0.65"></script>
+-  <script src="sw-bridge.js?v=24.0.65"></script>
++  <script src="app.js?v=24.0.66"></script>
++  <script src="sw-bridge.js?v=24.0.66"></script>
+ </body>
+ </html>
+diff --git a/manifest.json b/manifest.json
+index cda429b..68671d9 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  "name": "FreightLogic v24.0.65",
++  "name": "FreightLogic v24.0.66",
+   "short_name": "FreightLogic",
+   "description": "Freight decision intelligence for expedited cargo van carriers. Load scoring, realistic bid recommendations, trap detection, and Midwest Stack v2 market positioning.",
+   "start_url": "./",
+diff --git a/midwest-stack-authority.js b/midwest-stack-authority.js
+index 1a411f2..0c67e0b 100644
+--- a/midwest-stack-authority.js
++++ b/midwest-stack-authority.js
+@@ -1,11 +1,11 @@
+-/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.65
++/* FreightLogic Midwest Stack v11 / Level X+ Advisory Overlay v24.0.66
+  * Driver-first cargo-van decision intelligence layer.
+  * Safe overlay: no app.js rewrite, no external dependencies, no persistent sensitive storage.
+  */
+ (function(){
+   'use strict';
+ 
+-  const VERSION = '24.0.65';
++  const VERSION = '24.0.66';
+   const UPDATED_AT = '2026-08-20';
+ 
+   const CONFIG = Object.freeze({
+diff --git a/midwest-stack-config.json b/midwest-stack-config.json
+index 6d4b22b..ce975ae 100644
+--- a/midwest-stack-config.json
++++ b/midwest-stack-config.json
+@@ -1,6 +1,6 @@
+ {
+   "schemaVersion": "1.0.0",
+-  "appTarget": "FreightLogic v24.0.65",
++  "appTarget": "FreightLogic v24.0.66",
+   "authorityName": "Midwest Stack v11 / Level X+ - Advisory Overlay",
+   "effectiveDate": "2026-08-26",
+   "operatorProfile": {
+diff --git a/modern-shell.js b/modern-shell.js
+index fd1a76b..c8dcdd9 100644
+--- a/modern-shell.js
++++ b/modern-shell.js
+@@ -1,4 +1,4 @@
+-/* FreightLogic v24.0.65 — modern five-surface navigation adapter
++/* FreightLogic v24.0.66 — modern five-surface navigation adapter
+  * Structural navigation; presentation is owned by styles.css.
+  * Canonical routing, state, evaluation and data ownership remain in app.js.
+  */
+diff --git a/scripts/verify-cloudflare-parity.mjs b/scripts/verify-cloudflare-parity.mjs
+index a66b4e8..3804adc 100644
+--- a/scripts/verify-cloudflare-parity.mjs
++++ b/scripts/verify-cloudflare-parity.mjs
+@@ -30,10 +30,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
+ const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
+ 
+ const EXPECTED = {
+-  serviceWorkerVersion: "24.0.65",
+-  manifestName: "FreightLogic v24.0.65",
++  serviceWorkerVersion: "24.0.66",
++  manifestName: "FreightLogic v24.0.66",
+   workerVersion: "35",
+-  overlayScript: "midwest-stack-authority.js?v=24.0.65"
++  overlayScript: "midwest-stack-authority.js?v=24.0.66"
+ };
+ 
+ // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that
+diff --git a/service-worker.js b/service-worker.js
+index 3a43d8b..c55b075 100644
+--- a/service-worker.js
++++ b/service-worker.js
+@@ -1,24 +1,24 @@
+-/* FreightLogic v24.0.65 — Browser Hardened Service Worker */
+-const SW_VERSION = '24.0.65';
++/* FreightLogic v24.0.66 — Browser Hardened Service Worker */
++const SW_VERSION = '24.0.66';
+ const CACHE_NAME = `freightlogic-${SW_VERSION}`;
+ const RECEIPT_CACHE = 'freightlogic-receipts-v2';
+ const SHARE_CACHE = 'freightlogic-share-v2';
+ const APP_SHELL = './index.html';
+-const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.65"></script>';
++const MIDWEST_STACK_TAG = '<script src="midwest-stack-authority.js?v=24.0.66"></script>';
+ const CORE = [
+   './', APP_SHELL,
+-  './app.js?v=24.0.65',
++  './app.js?v=24.0.66',
+   './styles.css',
+-  './midwest-stack-authority.js?v=24.0.65',
+-  './manifest.json?v=24.0.65',
++  './midwest-stack-authority.js?v=24.0.66',
++  './manifest.json?v=24.0.66',
+   './midwest-stack-config.json',
+   // X-10: SheetJS is now bundled (no CDN fallback) — precache it so Excel
+   // import works fully offline from the very first install.
+   './vendor/xlsx.full.min.js',
+   './icon64.png','./icon128.png','./icon192.png','./icon256.png','./icon512.png',
+   './icon180.png','./icon167.png','./icon152.png','./icon120.png','./icon1024.png','./favicon32.png','./favicon16.png',
+-  './sw-bridge.js?v=24.0.65',
+-  './modern-shell.js?v=24.0.65'
++  './sw-bridge.js?v=24.0.66',
++  './modern-shell.js?v=24.0.66'
+ ];
+ 
+ // v24.0.5 item 4: the finite set of assets this worker will serve from cache,
+@@ -27,7 +27,7 @@ const CORE = [
+ // generation is handled separately (a known asset may fall back to a
+ // query-insensitive cache hit; an unknown path may not).
+ function normalizeAssetPath(pathname) {
+-  // './app.js?v=24.0.65' and '/app.js' must resolve to the same identity.
++  // './app.js?v=24.0.66' and '/app.js' must resolve to the same identity.
+   return new URL(pathname, self.location.href).pathname;
+ }
+ const KNOWN_ASSET_PATHS = new Set(
+@@ -66,7 +66,7 @@ self.addEventListener('install', (event) => {
+     // shell before the TRUE_RPM decision layer was actually cached, with no
+     // error surfaced. X-10: the bundled SheetJS vendor file is critical too,
+     // for the same "must work on the very first offline install" reason.
+-    const critical = ['./', APP_SHELL, './app.js?v=24.0.65', './styles.css', './sw-bridge.js?v=24.0.65', './modern-shell.js?v=24.0.65', './manifest.json?v=24.0.65', './midwest-stack-authority.js?v=24.0.65', './vendor/xlsx.full.min.js'];
++    const critical = ['./', APP_SHELL, './app.js?v=24.0.66', './styles.css', './sw-bridge.js?v=24.0.66', './modern-shell.js?v=24.0.66', './manifest.json?v=24.0.66', './midwest-stack-authority.js?v=24.0.66', './vendor/xlsx.full.min.js'];
+     await cache.addAll(critical);
+     // Optional assets — failure does not abort install
+     const optional = CORE.filter(u => !critical.includes(u));
+diff --git a/sw-bridge.js b/sw-bridge.js
+index 696af49..6f960a8 100644
+--- a/sw-bridge.js
++++ b/sw-bridge.js
+@@ -1,4 +1,4 @@
+-/* FreightLogic v24.0.65 — service worker update bridge */
++/* FreightLogic v24.0.66 — service worker update bridge */
+ (function(){
+   if (!('serviceWorker'in navigator)) return;
+ 
+@@ -63,6 +63,6 @@
+ // Keep structural navigation out of the 1 MB decision engine. Loading the
+ // adapter here lets app.js remain canonical while the shell can evolve in a
+ // small, reviewable file. Dynamic import is same-origin and CSP-compatible.
+-import('./modern-shell.js?v=24.0.65').catch((e) => {
++import('./modern-shell.js?v=24.0.66').catch((e) => {
+   console.warn('[FL] modern shell adapter failed to load:', e);
+ });
+diff --git a/tests/integration/evaluate-reasoning.spec.mjs b/tests/integration/evaluate-reasoning.spec.mjs
+new file mode 100644
+index 0000000..4313755
+--- /dev/null
++++ b/tests/integration/evaluate-reasoning.spec.mjs
+@@ -0,0 +1,153 @@
++// Evaluate reasoning slice (v24.0.66) — UI_BRIEF_V24.5.md §6.4 "reasoning + evidence up front".
++//
++// Before this slice the evaluator's result card gave a driver the grade, the
++// verdict sentence, the bid triple and a four-cell fact strip, and kept every
++// REASON for the verdict (the Freight Intelligence steps) and the Confidence
++// line inside the collapsed "Show Details". A REJECT therefore said "no" and
++// made the driver open a drawer to find out why.
++//
++// The Why block renders the canonical steps read-only, failing first, outside
++// the collapsed details. It owns no economics: every row is a step the canonical
++// authority already produced, so EVR-01 asserts agreement with the details'
++// own copy of the same steps rather than a recomputation. Checks that could not
++// run (no origin/destination, no weekly gross) are NAMED as not assessed — an
++// unknown is never rendered as a pass. The Confidence line moves up with it
++// (once, not duplicated), and the whole block uses the shared scalable
++// presentation classes, never an inline font-size (SSI-18).
++import { launchApp, createSuite, ok, eq } from '../lib/harness.mjs';
++
++const { test, run } = createSuite('integration/evaluate-reasoning.spec.mjs');
++let app;
++const evalIn = (fn, arg) => app.page.evaluate(fn, arg);
++
++// Score one load through the real evaluator form and read what the card renders.
++const score = (load) => evalIn(async (l) => {
++  const T = window.__FL_TESTS;
++  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
++  location.hash = '#omega';
++  set('mwOrigin', l.origin); set('mwDest', l.dest);
++  set('mwLoadedMi', l.loaded); set('mwDeadMi', l.dead); set('mwRevenue', l.revenue);
++  await T.mwEvaluateLoad();
++  const out = document.getElementById('mwEvalOutput');
++  const why = out.querySelector('[data-eval-why]');
++  const details = out.querySelector('#mwEvalDetails');
++  const hero = out.querySelector('[data-decision-mode]');
++  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
++  const rows = why ? [...why.querySelectorAll('[data-eval-why-row]')].map(r => ({
++    pass: r.dataset.pass,
++    label: norm(r.querySelector('.fl-eval-fact-label')?.textContent),
++    detail: norm(r.querySelector('.fl-eval-alert')?.textContent),
++  })) : [];
++  const confSummaries = [...out.querySelectorAll('details > summary')].filter(x => /^\s*Confidence:/.test(x.textContent));
++  const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
++  return {
++    hasOutput: !!out,
++    whyCount: out.querySelectorAll('[data-eval-why]').length,
++    insideDetails: !!(why && why.closest('details')),
++    rows,
++    notAssessed: norm(why?.querySelector('[data-eval-not-assessed]')?.textContent),
++    detailsText: norm(details?.textContent),
++    detailsOpen: details ? details.hasAttribute('open') : null,
++    // The decision's confidence is the <summary> that starts "Confidence:". The
++    // Next Move block prints its own, different "Confidence:" (move confidence)
++    // as a plain div, so counting text would conflate two separate claims.
++    confidenceOutside: confSummaries.filter(x => !x.closest('#mwEvalDetails')).length,
++    confidenceInside: confSummaries.filter(x => x.closest('#mwEvalDetails')).length,
++    confidenceInWhy: confSummaries.filter(x => x.closest('[data-eval-why]')).length,
++    inlineFontSizeInWhy: why ? why.querySelectorAll('[style*="font-size"]').length : -1,
++    afterHero: !!(hero && why && (hero.compareDocumentPosition(why) & FOLLOWING)),
++    beforeDetails: !!(why && details && (why.compareDocumentPosition(details) & FOLLOWING)),
++    ids: ['mwBookTrip', 'mwClearNext', 'mwAskAI', 'mwShareBid', 'mwEvalDetails']
++      .filter(id => !document.getElementById(id)),
++    text: norm(out.textContent),
++  };
++}, load);
++
++const GOOD = { origin: 'Chicago, IL', dest: 'Indianapolis, IN', loaded: '180', dead: '20', revenue: '400' };
++const BAD = { origin: 'Chicago, IL', dest: 'Indianapolis, IN', loaded: '180', dead: '20', revenue: '150' };
++const NO_GEO = { origin: '', dest: '', loaded: '180', dead: '20', revenue: '400' };
++
++test('[EVR-01] the reasons render outside Show Details and agree with the details\' own steps', async () => {
++  const r = await score(GOOD);
++  console.log(`    [evidence] rows=${JSON.stringify(r.rows.map(x => `${x.pass}:${x.label}`))}`);
++  eq(r.whyCount, 1, 'exactly one Why block per result');
++  ok(!r.insideDetails, 'the Why block must not be buried inside the collapsed Show Details');
++  ok(r.rows.length >= 3, `a scored load carries its reasons — got ${r.rows.length}`);
++  for (const row of r.rows) {
++    ok(row.label && row.detail, `every row has a label and a detail — ${JSON.stringify(row)}`);
++    ok(r.detailsText.includes(row.label) && r.detailsText.includes(row.detail),
++      `row "${row.label}: ${row.detail}" must be the same canonical step the details list — not a recomputation`);
++  }
++  ok(r.rows.some(x => x.label === 'True RPM'), 'True RPM is always one of the reasons');
++});
++
++test('[EVR-02] a REJECT leads with what failed, then what passed', async () => {
++  const r = await score(BAD);
++  console.log(`    [evidence] order=${JSON.stringify(r.rows.map(x => `${x.pass}:${x.label}`))}`);
++  ok(/REJECT/.test(r.text), 'fixture must be a REJECT');
++  ok(r.rows.length > 0, 'the Why block exists on a REJECT');
++  eq(r.rows[0].pass, 'false', 'the first reason is a failing one');
++  const firstPass = r.rows.findIndex(x => x.pass === 'true');
++  const lastFail = r.rows.map(x => x.pass).lastIndexOf('false');
++  ok(firstPass === -1 || lastFail < firstPass, 'no passing reason is listed above a failing one');
++  ok(r.rows.some(x => x.pass === 'true'), 'fixture must also carry a passing reason, or the ordering proves nothing');
++});
++
++test('[EVR-03] a check that could not run is named "Not assessed", never shown as a pass', async () => {
++  const blank = await score(NO_GEO);
++  console.log(`    [evidence] notAssessed=${JSON.stringify(blank.notAssessed)} rows=${JSON.stringify(blank.rows.map(x => x.label))}`);
++  ok(/Not assessed/i.test(blank.notAssessed), 'a not-assessed line exists');
++  ok(/Geography/.test(blank.notAssessed), 'no origin/destination → Geography is named as not assessed');
++  ok(/Weekly Position/.test(blank.notAssessed), 'no weekly gross → Weekly Position is named as not assessed');
++  ok(!blank.rows.some(x => x.label === 'Geography' || x.label === 'Weekly Position'),
++    'an unassessed check is not also listed as a reason');
++  const full = await score(GOOD);
++  ok(!/Geography/.test(full.notAssessed), 'with a lane entered, Geography is assessed and not listed as missing');
++  ok(full.rows.some(x => x.label === 'Geography'), 'and it appears as a reason');
++});
++
++test('[EVR-04] the Confidence line is on the primary card once, not duplicated in the details', async () => {
++  const r = await score(GOOD);
++  console.log(`    [evidence] outside=${r.confidenceOutside} inside=${r.confidenceInside} inWhy=${r.confidenceInWhy}`);
++  eq(r.confidenceOutside, 1, 'exactly one Confidence line outside Show Details');
++  eq(r.confidenceInWhy, 1, 'and it lives with the reasons');
++  eq(r.confidenceInside, 0, 'moved, not copied — the details no longer repeat it');
++});
++
++test('[EVR-05] existing action IDs survive, details stay collapsed, and the Why block sits between hero and details', async () => {
++  const r = await score(GOOD);
++  eq(r.ids.length, 0, `these IDs must still exist: ${r.ids.join(', ')}`);
++  eq(r.detailsOpen, false, 'Show Details still starts collapsed');
++  ok(r.afterHero, 'the Why block follows the hero card');
++  ok(r.beforeDetails, 'and precedes Show Details');
++});
++
++test('[EVR-06] unknown deadhead renders no reasons; an explicit 0 is a verified zero and does', async () => {
++  const unknown = await score({ ...GOOD, dead: '' });
++  console.log(`    [evidence] blank-deadhead text=${JSON.stringify(unknown.text.slice(0, 140))}`);
++  eq(unknown.whyCount, 0, 'blank deadhead is UNKNOWN: no decision, therefore no reasons');
++  ok(/dead ?head/i.test(unknown.text), 'and the card asks for the deadhead figure');
++  const zero = await score({ ...GOOD, dead: '0' });
++  eq(zero.whyCount, 1, 'an explicit 0 deadhead is a verified fact and is scored');
++  const dh = zero.rows.find(x => x.label === 'Deadhead');
++  ok(dh && /^0\.0% empty/.test(dh.detail), `the Deadhead reason reads the verified zero — got ${JSON.stringify(dh)}`);
++});
++
++test('[EVR-07] the block uses scalable presentation classes, never an inline font-size (SSI-18)', async () => {
++  const r = await score(BAD);
++  eq(r.whyCount, 1, 'the Why block exists to be measured');
++  eq(r.inlineFontSizeInWhy, 0, 'no element inside the Why block carries an inline font-size');
++});
++
++export async function runSpec() {
++  app = await launchApp();
++  try { return await run(); }
++  finally { await app.close(); }
++}
++
++if (import.meta.url === `file://${process.argv[1]}`) {
++  const { stopServer } = await import('../lib/harness.mjs');
++  const r = await runSpec();
++  await stopServer();
++  process.exit(r.fail > 0 ? 1 : 0);
++}
+diff --git a/tests/run-all.mjs b/tests/run-all.mjs
+index e0bcfea..26338df 100644
+--- a/tests/run-all.mjs
++++ b/tests/run-all.mjs
+@@ -112,6 +112,7 @@ import { runSpec as shortcutsDeepLinks } from './integration/shortcuts-deep-link
+ import { runSpec as nextMoveS1 } from './integration/next-move-s1.spec.mjs';
+ import { runSpec as nextMoveS2 } from './integration/next-move-s2.spec.mjs';
+ import { runSpec as nextMoveS3 } from './integration/next-move-s3.spec.mjs';
++import { runSpec as evaluateReasoning } from './integration/evaluate-reasoning.spec.mjs';
+ import { runSpec as twoOutputBid } from './integration/two-output-bid.spec.mjs';
+ import { runSpec as navTodayLabel } from './integration/nav-today-label.spec.mjs';
+ import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs';
+@@ -209,6 +210,7 @@ const specs = [
+   nextMoveS1,
+   nextMoveS2,
+   nextMoveS3,
++  evaluateReasoning,
+   twoOutputBid,
+   navTodayLabel,
+   loadTextParse,
