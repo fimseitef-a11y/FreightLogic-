@@ -1,6 +1,0 @@
-owner: gpt
-token: c6bc9138-12f3-4416-9b74-05a805dc16b0
-started_utc: 2026-10-11T00:40:31.270Z
-expected_release_utc: 2026-10-11T02:10:31.270Z
-paths: .agents/LANES.md, .agents/locks/loadone-eli-source.lock
-task: Retire six merged Load Detail grants, add five bounded Evaluate 24.0.66 grants, remove stale main lock residue.
