@@ -60,12 +60,11 @@ This retirement was requested twice through `/.agents/inbox/` before it was take
 
 | Top-level path | Owner | Notes |
 |---|---|---|
-| `tests/integration/load-detail.spec.mjs` | claude | TEMP Load Detail 24.0.65 PR regression LD-01..07; retire at merge. |
-| `tests/integration/product-ia-slice-b.spec.mjs` | claude | TEMP Load Detail 24.0.65 PR UXIA-04 handoff update; retire at merge. |
-| `tests/run-all.mjs` | claude | TEMP Load Detail 24.0.65 PR registration; retire at merge. |
-| `scripts/verify-cloudflare-parity.mjs` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
-| `midwest-stack-config.json` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
-| `midwest-stack-authority.js` | claude | TEMP Load Detail 24.0.65 PR release marker; retire at merge. |
+| `tests/integration/evaluate-reasoning.spec.mjs` | claude | TEMP Evaluate 24.0.66 regression EVR-01..07 only; retire at merge or abandonment. |
+| `tests/run-all.mjs` | claude | TEMP Evaluate 24.0.66 one import and one spec-list entry only; retire at merge or abandonment. |
+| `scripts/verify-cloudflare-parity.mjs` | claude | TEMP Evaluate 24.0.66 EXPECTED version block only; retire at merge or abandonment. |
+| `midwest-stack-config.json` | claude | TEMP Evaluate 24.0.66 appTarget only; retire at merge or abandonment. |
+| `midwest-stack-authority.js` | claude | TEMP Evaluate 24.0.66 VERSION constant and header only; retire at merge or abandonment. |
 | `cloud-backup-worker.js` | gpt | Existing Backup/API Worker source and operator-authorized audit remediation. Production cutover, service activation and live migration remain separate gates. |
 | `midwest-stack-config.json` | gpt | Release/doctrine configuration; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
 | `midwest-stack-authority.js` | gpt | Release/doctrine authority; temporary #278 v24.0.32 long-haul release-marker ownership retired after PR #317 landed. |
