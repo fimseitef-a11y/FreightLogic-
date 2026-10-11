@@ -112,6 +112,7 @@ import { runSpec as shortcutsDeepLinks } from './integration/shortcuts-deep-link
 import { runSpec as nextMoveS1 } from './integration/next-move-s1.spec.mjs';
 import { runSpec as nextMoveS2 } from './integration/next-move-s2.spec.mjs';
 import { runSpec as nextMoveS3 } from './integration/next-move-s3.spec.mjs';
+import { runSpec as evaluateReasoning } from './integration/evaluate-reasoning.spec.mjs';
 import { runSpec as twoOutputBid } from './integration/two-output-bid.spec.mjs';
 import { runSpec as navTodayLabel } from './integration/nav-today-label.spec.mjs';
 import { runSpec as loadTextParse } from './integration/load-text-parse.spec.mjs';
@@ -209,6 +210,7 @@ const specs = [
   nextMoveS1,
   nextMoveS2,
   nextMoveS3,
+  evaluateReasoning,
   twoOutputBid,
   navTodayLabel,
   loadTextParse,

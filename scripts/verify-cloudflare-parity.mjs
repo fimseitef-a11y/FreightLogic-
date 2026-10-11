@@ -30,10 +30,10 @@ const appOrigin = (positional[0] || 'https://freightlogic-v2.fimseitef.workers.d
 const workerOrigin = (positional[1] || 'https://freightlogic-backup.fimseitef.workers.dev').replace(/\/$/, '');
 
 const EXPECTED = {
-  serviceWorkerVersion: "24.0.65",
-  manifestName: "FreightLogic v24.0.65",
+  serviceWorkerVersion: "24.0.66",
+  manifestName: "FreightLogic v24.0.66",
   workerVersion: "35",
-  overlayScript: "midwest-stack-authority.js?v=24.0.65"
+  overlayScript: "midwest-stack-authority.js?v=24.0.66"
 };
 
 // Every live fetch is bounded. This script is a RELEASE GATE, and a gate that

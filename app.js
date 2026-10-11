@@ -1,7 +1,10 @@
 (() => {
 'use strict';
 
-/** FreightLogic v24.0.65 USA ENGINE
+/** FreightLogic v24.0.66 USA ENGINE
+ *  v24.0.66 "Show The Why": the Evaluate card lists the canonical reasons
+ *  (failing first, then passing; unrun checks named "Not assessed") and the
+ *  Confidence line outside Show Details; read-only, no new math.
  *  v24.0.65 "Load Detail": Loads Details opens a read-only sheet over the
  *  card's own projection (warnings first; Pass / Evaluate); no new math.
  *  v24.0.64 "Meals Once": per diem replaces logged meals (no double count);
@@ -601,7 +604,7 @@
  *         user namespace, FreightLogic_v18 DB with XpediteOps_v1 migration
  */
 
-const APP_VERSION = '24.0.65';
+const APP_VERSION = '24.0.66';
 // ── Driver display preferences (Issue #205 section 1) ────────────────────────
 //
 // Text size and Glance Mode describe THIS PHONE, not the business, so they are
@@ -11558,11 +11561,11 @@ function _renderConfidenceLine(decision){
     </div>`;
   }).join('');
   return `<details style="margin-top:8px;text-align:left">
-    <summary style="font-size:11px;color:${color};cursor:pointer;list-style:none">
+    <summary class="fl-eval-alert" style="color:${color};cursor:pointer;list-style:none">
       Confidence: <b>${escapeHtml(c.overall)}</b>${c.reasons?.[0] ? ` — ${escapeHtml(c.reasons[0])}` : ''}
     </summary>
-    <div style="margin-top:6px;font-size:10px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
-    <div style="font-size:9px;color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
+    <div class="fl-eval-alert" style="margin-top:6px">${rows || '<span style="color:var(--text-tertiary)">No evidence recorded</span>'}</div>
+    <div class="fl-eval-alert" style="color:var(--text-tertiary);margin-top:6px">Confidence describes input quality only. It never changes the verdict, grade, True RPM, or bid floor.</div>
   </details>`;
 }
 
@@ -12643,6 +12646,22 @@ function _mwRenderDecision(out, d){
     ${_topWarning ? `<div class="fl-eval-alert" style="margin-top:1px;padding:8px 10px;border-radius:8px;background:rgba(240,165,0,.09);border:1px solid rgba(240,165,0,.28);color:var(--text)">${escapeHtml(_topWarning.icon)} ${escapeHtml(_topWarning.text)}</div>` : ''}
   </div>`;
 
+  // ── WHY: the canonical steps, read-only, failing first (UI_BRIEF §6.4) ──
+  // Mirrors the Freight Intelligence rows in Show Details and computes nothing.
+  // pass === null means the check could not run: it is NAMED as not assessed and
+  // never shown as a pass. A null Personal Intelligence step is assessed-neutral,
+  // so it is neither. SSI-18: scalable classes only, no inline font-size.
+  const _whyRows = steps.filter(s => s.pass !== null).sort((a, b) => (a.pass === b.pass ? 0 : a.pass ? 1 : -1));
+  const _unrun = steps.filter(s => s.pass === null && s.label !== 'Personal Intelligence').map(s => s.label);
+  const _whyBlock = `<div data-eval-why style="margin-bottom:12px">
+    <div class="fl-eval-fact-label">Why</div>
+    ${_whyRows.map(s => `<div data-eval-why-row data-pass="${s.pass}" style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-subtle)">
+      <div class="fl-eval-fact-value" role="img" aria-label="${s.pass ? 'passed' : 'failed'}" style="width:18px;flex-shrink:0;color:${s.pass ? 'var(--good)' : 'var(--bad)'}">${s.pass ? '✓' : '✕'}</div>
+      <div style="min-width:0"><div class="fl-eval-fact-label">${escapeHtml(s.label)}</div><div class="fl-eval-alert">${escapeHtml(s.detail)}</div></div></div>`).join('')}
+    ${_unrun.length ? `<div data-eval-not-assessed class="fl-eval-alert" style="color:var(--text-tertiary);padding-top:7px;border-top:1px solid var(--border-subtle)">Not assessed: ${escapeHtml(_unrun.join(', '))}</div>` : ''}
+    ${_renderConfidenceLine(d._canonicalDecision)}
+  </div>`;
+
   // ── SIMPLIFIED HERO: grade + verdict sentence + bid range ──
   const _heroColor = _heroColorEarly;
   const _verdictClass = isDZActive ? 'accept' : (verdict === 'REJECT' ? 'pass' : verdict === 'STRATEGIC' ? 'strategic' : 'accept');
@@ -12670,6 +12689,7 @@ function _mwRenderDecision(out, d){
     ${_compactFacts}
     <div data-two-bid-slot></div>
   </div>
+  ${_whyBlock}
   <details id="mwEvalDetails" style="margin-bottom:12px">
     <summary style="cursor:pointer;padding:10px 14px;border-radius:var(--r-sm);background:var(--surface-1);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
       <span style="font-size:16px">📊</span> Show Details
@@ -12705,7 +12725,6 @@ function _mwRenderDecision(out, d){
       ${isDZActive ? `<div style="font-size:10px;padding:4px 8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:#f0a500">🟠 DZ-FLOOR $${MW.dzFloorRPM.toFixed(2)} • DZ-ACCEPTABLE $1.00 • DZ-STANDARD $1.10 — capped at C</div>` : ''}
     </div>
     ${verdictReason ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(verdictReason)}</div>` : ''}
-    ${_renderConfidenceLine(d._canonicalDecision)}
     <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Normal floor: <b>$${MW.normalFloorRPM.toFixed(2)}</b> • Preferred floor: <b>$${MW.preferredFloorRPM.toFixed(2)}</b> • Strategic: <b>$${MW.strategicFloorRPM.toFixed(2)}</b></div>
     ${(crossBorder?.isCrossBorder && revenue !== effectiveRevenue) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">CAD normalized: ${fmtMoney(revenue)} CAD → ${fmtMoney(effectiveRevenue)} USD-equivalent for RPM/profit math</div>` : ''}
     ${(crossBorder?.isCrossBorder) ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Border cost applied: ${fmtMoney(borderAdminCost)} • Docs ready: ${crossBorder?.docsReady ? 'yes' : 'no'}</div>` : ''}
