@@ -1,6 +1,0 @@
-owner: claude
-token: 412f7120-ad1f-47ab-9536-a0ae18a1d7a3
-started_utc: 2026-10-11T01:18:00Z
-expected_release_utc: 2026-10-11T03:18:00Z
-paths: app.js, index.html, service-worker.js, sw-bridge.js, modern-shell.js, manifest.json
-task: Owner 2026-10-11 "complete anything you can": apply parked v24.5 Evaluate 24.0.66 patch on main e7654a9 after grant PR #483 merged, run full suite, open the PR. PR only; merge/deploy are owner gates.
